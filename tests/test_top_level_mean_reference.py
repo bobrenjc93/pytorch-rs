@@ -48,6 +48,12 @@ class TopLevelMeanReferenceTests(unittest.TestCase):
             dtype=module.float32,
         )
         noncontiguous = dense.transpose(0, 2)
+        cancellation = (
+            np.where(
+                np.arange(120) % 2 == 0, np.float32(1.0e8), np.float32(-1.0e8)
+            )
+            + (np.arange(120, dtype=np.float32) % 7)
+        ).reshape(3, 40)
         return (
             ("scalar", module.tensor(-3.5, dtype=module.float32)),
             ("negative zero", module.tensor(-0.0, dtype=module.float32)),
@@ -63,6 +69,10 @@ class TopLevelMeanReferenceTests(unittest.TestCase):
                 module.tensor(
                     [0.0, 0.0, 1.0, 3.0, 123456789.0], dtype=module.float32
                 ),
+            ),
+            (
+                "noncontiguous cancellation",
+                module.tensor(cancellation.tolist(), dtype=module.float32).transpose(0, 1),
             ),
             (
                 "positive NaN",

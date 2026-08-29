@@ -44,6 +44,12 @@ class TopLevelMeanTests(unittest.TestCase):
             np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
         )
         noncontiguous = dense.transpose(0, 2)
+        cancellation = (
+            np.where(
+                np.arange(120) % 2 == 0, np.float32(1.0e8), np.float32(-1.0e8)
+            )
+            + (np.arange(120, dtype=np.float32) % 7)
+        ).reshape(3, 40)
         return (
             ("scalar", torch.tensor(-3.5)),
             ("negative zero", torch.tensor(-0.0)),
@@ -54,6 +60,10 @@ class TopLevelMeanTests(unittest.TestCase):
             (
                 "finite cancellation",
                 torch.tensor([0.0, 0.0, 1.0, 3.0, 123456789.0]),
+            ),
+            (
+                "noncontiguous cancellation",
+                torch.tensor(cancellation.tolist()).transpose(0, 1),
             ),
             (
                 "NaN",

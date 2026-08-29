@@ -57,6 +57,13 @@ class TensorMeanTests(unittest.TestCase):
             np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
         )
         noncontiguous = dense.transpose(0, 2)
+        cancellation = (
+            np.where(
+                np.arange(120) % 2 == 0, np.float32(1.0e8), np.float32(-1.0e8)
+            )
+            + (np.arange(120, dtype=np.float32) % 7)
+        ).reshape(3, 40)
+        noncontiguous_cancellation = torch.tensor(cancellation.tolist()).transpose(0, 1)
         cases = (
             ("scalar", torch.tensor(-3.5), np.float32(-3.5).view(np.uint32).item()),
             ("negative zero", torch.tensor(-0.0), 0x0000_0000),
@@ -73,6 +80,7 @@ class TensorMeanTests(unittest.TestCase):
                 torch.tensor([0.0, 0.0, 1.0, 3.0, 123456789.0]),
                 0x4BBC_614F,
             ),
+            ("noncontiguous cancellation", noncontiguous_cancellation, 0x0000_0000),
             ("positive NaN", bits_to_tensor([0x7FC1_2345, 0x3F80_0000], [2]), 0x7FC1_2345),
             ("negative NaN", bits_to_tensor([0xFFC5_4321, 0x3F80_0000], [2]), 0xFFC5_4321),
             ("infinity", torch.tensor([float("inf"), 1.0]), 0x7F80_0000),

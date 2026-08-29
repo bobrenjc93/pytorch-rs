@@ -3332,29 +3332,7 @@ impl Tensor {
 
     #[must_use]
     pub fn sum(&self) -> Self {
-        let contiguous_values = self.contiguous_slice();
-        let total = if let Some(values) = contiguous_values {
-            values
-                .iter()
-                .copied()
-                .fold(0.0_f32, |total, value| total + value)
-        } else if let Some(total) = self.sum_contiguous_shared_gradient() {
-            total
-        } else if let Some(total) =
-            self.fold_owned_small_rank(0.0_f32, |total, value| total + value)
-        {
-            total
-        } else if let Some(total) = self.fold_owned_rank_6(0.0_f32, |total, value| total + value) {
-            total
-        } else if let Some(total) = self.fold_owned_rank_7(0.0_f32, |total, value| total + value) {
-            total
-        } else if let Some(total) = self.fold_owned_rank_8(0.0_f32, |total, value| total + value) {
-            total
-        } else {
-            (0..self.elements).fold(0.0_f32, |total, index| {
-                total + self.value_at_strided_linear_index(index)
-            })
-        };
+        let total = self.logical_sum();
         let mut output = Self::from_scalar(total, self.dtype(), self.device());
         if self.requires_grad() && is_grad_enabled() {
             output.autograd = Some(Arc::new(AutogradMeta {
@@ -3379,7 +3357,7 @@ impl Tensor {
         #[allow(clippy::cast_precision_loss)]
         let divisor = self.elements as f32;
         let scale = 1.0_f32 / divisor;
-        let total = pytorch_full_reduction_sum(self.logical_values(), self.elements);
+        let total = self.pytorch_reduction_sum();
         let mut output =
             Self::from_scalar(total, self.dtype(), self.device()).div_scalar(divisor)?;
         if self.requires_grad() && is_grad_enabled() {
@@ -3393,6 +3371,50 @@ impl Tensor {
             }));
         }
         Ok(output)
+    }
+
+    fn pytorch_reduction_sum(&self) -> f32 {
+        if let Some(values) = self.contiguous_slice() {
+            return pytorch_full_reduction_sum(values.iter().copied(), self.elements);
+        }
+
+        // PyTorch's TensorIterator coalesces dense permuted reductions into
+        // their physical storage interval before entering the vectorized full
+        // reduction kernel. Smaller or gapped views stay on the established
+        // logical sum path.
+        if self.elements >= PYTORCH_REDUCTION_VECTOR_WIDTH
+            && let Some(values) = self.dense_physical_slice()
+        {
+            return pytorch_full_reduction_sum(values.iter().copied(), self.elements);
+        }
+
+        self.logical_sum()
+    }
+
+    fn logical_sum(&self) -> f32 {
+        let contiguous_values = self.contiguous_slice();
+        if let Some(values) = contiguous_values {
+            values
+                .iter()
+                .copied()
+                .fold(0.0_f32, |total, value| total + value)
+        } else if let Some(total) = self.sum_contiguous_shared_gradient() {
+            total
+        } else if let Some(total) =
+            self.fold_owned_small_rank(0.0_f32, |total, value| total + value)
+        {
+            total
+        } else if let Some(total) = self.fold_owned_rank_6(0.0_f32, |total, value| total + value) {
+            total
+        } else if let Some(total) = self.fold_owned_rank_7(0.0_f32, |total, value| total + value) {
+            total
+        } else if let Some(total) = self.fold_owned_rank_8(0.0_f32, |total, value| total + value) {
+            total
+        } else {
+            (0..self.elements).fold(0.0_f32, |total, index| {
+                total + self.value_at_strided_linear_index(index)
+            })
+        }
     }
 
     fn sum_contiguous_shared_gradient(&self) -> Option<f32> {
@@ -6152,16 +6174,33 @@ mod tests {
         );
     }
 
+    fn assert_mean_bits(case: &str, tensor: &Tensor, expected_bits: u32) {
+        assert_eq!(
+            tensor.mean().unwrap().item().unwrap().to_bits(),
+            expected_bits,
+            "{case}"
+        );
+    }
+
+    fn transposed_mean_cancellation_fixture() -> Tensor {
+        let small_terms = [0.0_f32, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let mut cancellation = Vec::new();
+        for index in 0_usize..120 {
+            let large = if index % 2 == 0 {
+                1.0e8_f32
+            } else {
+                -1.0e8_f32
+            };
+            cancellation.push(large + small_terms[index % small_terms.len()]);
+        }
+        Tensor::from_vec(cancellation, [3, 40])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap()
+    }
+
     #[test]
     fn mean_matches_pytorch_full_reduction_order_and_reusable_metadata_grad() {
-        let bits = [
-            0x8000_0000,
-            0x0000_0000,
-            0x7f80_0000,
-            0xff80_0000,
-            0x7fc1_2345,
-            0xffc5_4321,
-        ];
         for (case, tensor, expected_bits) in [
             (
                 "negative zero",
@@ -6204,13 +6243,24 @@ mod tests {
                 0xffc0_0000,
             ),
         ] {
-            assert_eq!(
-                tensor.mean().unwrap().item().unwrap().to_bits(),
-                expected_bits,
-                "{case}"
-            );
+            assert_mean_bits(case, &tensor, expected_bits);
         }
 
+        let transposed_cancellation = transposed_mean_cancellation_fixture();
+        assert_mean_bits(
+            "noncontiguous cancellation",
+            &transposed_cancellation,
+            0x0000_0000,
+        );
+
+        let bits = [
+            0x8000_0000,
+            0x0000_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
         let source = offset_contiguous_tensor(&bits, &[2, 3])
             .transpose(0, 1)
             .unwrap();
