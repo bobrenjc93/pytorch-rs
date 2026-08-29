@@ -208,6 +208,7 @@ class CpuCapabilityReferenceTests(unittest.TestCase):
         supported_backends = {
             "cpu",
             "cuda",
+            "cusparselt",
             "cudnn",
             "kleidiai",
             "m",

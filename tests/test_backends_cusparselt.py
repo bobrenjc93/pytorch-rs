@@ -8,33 +8,36 @@ import subprocess
 import sys
 import threading
 import types
+import typing
 import unittest
 from unittest import mock
 
 import torch_rs as torch
 
 
-FUNCTION_DOC = "Return whether PyTorch is built with KleidiAI support."
+FUNCTION_DOC = "Return a bool indicating if cuSPARSELt is currently available."
 
 
-class KleidiAIAvailabilityTests(unittest.TestCase):
+class CuSparseLtAvailabilityTests(unittest.TestCase):
     def test_returns_exact_false_private_native_build_flag_without_probes(self):
-        function = torch.backends.kleidiai.is_available
+        function = torch.backends.cusparselt.is_available
         self.assertEqual(
             function.__code__.co_names,
-            ("torch", "_C", "_has_kleidiai"),
+            ("torch", "_C", "_has_cusparselt"),
         )
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
         environments = (
             {},
-            {"USE_KLEIDIAI": "1"},
-            {"KLEIDIAI_PATH": "/not/a/kleidiai/install"},
+            {"CUDA_VISIBLE_DEVICES": ""},
+            {"CUDA_VISIBLE_DEVICES": "0"},
             {
-                "ATEN_CPU_CAPABILITY": "avx512",
-                "KLEIDIAI_NUM_THREADS": "64",
-                "USE_KLEIDIAI": "1",
+                "CUDA_VISIBLE_DEVICES": "0",
+                "NVIDIA_VISIBLE_DEVICES": "all",
+                "PYTORCH_NVML_BASED_CUDA_CHECK": "1",
+                "CUSPARSELT_LOG_LEVEL": "5",
+                "CUSPARSELT_LIBRARY_PATH": "/not/a/cusparselt/install",
             },
         )
         for environment in environments:
@@ -43,35 +46,35 @@ class KleidiAIAvailabilityTests(unittest.TestCase):
                     result = function()
                     self.assertIs(type(result), bool)
                     self.assertIs(result, False)
-                    self.assertIs(result, torch._C._has_kleidiai)
+                    self.assertIs(result, torch._C._has_cusparselt)
 
-        self.assertFalse(hasattr(torch, "_has_kleidiai"))
-        self.assertIn("_has_kleidiai", vars(torch._C))
-        self.assertNotIn("_has_kleidiai", torch.__all__)
-        self.assertNotIn("_has_kleidiai", torch._C.__all__)
-        self.assertEqual(torch.backends.cpu.get_cpu_capability(), "DEFAULT")
+        self.assertFalse(hasattr(torch, "_has_cusparselt"))
+        self.assertIn("_has_cusparselt", vars(torch._C))
+        self.assertNotIn("_has_cusparselt", torch.__all__)
+        self.assertNotIn("_has_cusparselt", torch._C.__all__)
 
     def test_signature_documentation_and_module_identity_match_pytorch_2_13(self):
-        kleidiai = importlib.import_module("torch_rs.backends.kleidiai")
-        function = kleidiai.is_available
+        cusparselt = importlib.import_module("torch_rs.backends.cusparselt")
+        function = cusparselt.is_available
 
-        self.assertIs(torch.backends.kleidiai, kleidiai)
-        self.assertIs(sys.modules["torch_rs.backends.kleidiai"], kleidiai)
-        self.assertIs(type(kleidiai), types.ModuleType)
-        self.assertIsNone(kleidiai.__doc__)
-        self.assertFalse(hasattr(kleidiai, "__all__"))
+        self.assertIs(torch.backends.cusparselt, cusparselt)
+        self.assertIs(sys.modules["torch_rs.backends.cusparselt"], cusparselt)
+        self.assertIs(type(cusparselt), types.ModuleType)
+        self.assertIsNone(cusparselt.__doc__)
+        self.assertEqual(cusparselt.__all__, ["is_available"])
         self.assertEqual(
-            {name for name in vars(kleidiai) if not name.startswith("_")},
+            {name for name in vars(cusparselt) if not name.startswith("_")},
             {"is_available", "torch"},
         )
-        self.assertIs(kleidiai.torch, torch)
+        self.assertIs(cusparselt.torch, torch)
         self.assertIs(type(function), types.FunctionType)
-        self.assertEqual(str(inspect.signature(function)), "()")
-        self.assertEqual(inspect.get_annotations(function), {})
+        self.assertEqual(str(inspect.signature(function)), "() -> bool")
+        self.assertEqual(inspect.get_annotations(function), {"return": bool})
+        self.assertEqual(typing.get_type_hints(function), {"return": bool})
         self.assertEqual(function.__name__, "is_available")
         self.assertEqual(function.__qualname__, "is_available")
-        self.assertEqual(function.__module__, "torch_rs.backends.kleidiai")
-        self.assertIs(inspect.getmodule(function), kleidiai)
+        self.assertEqual(function.__module__, "torch_rs.backends.cusparselt")
+        self.assertIs(inspect.getmodule(function), cusparselt)
         self.assertEqual(function.__doc__, FUNCTION_DOC)
         self.assertIsNone(function.__defaults__)
         self.assertIsNone(function.__kwdefaults__)
@@ -80,11 +83,11 @@ class KleidiAIAvailabilityTests(unittest.TestCase):
 
     def test_imports_wildcards_copying_and_pickling_are_canonical(self):
         backends = importlib.import_module("torch_rs.backends")
-        kleidiai = importlib.import_module("torch_rs.backends.kleidiai")
-        function = kleidiai.is_available
+        cusparselt = importlib.import_module("torch_rs.backends.cusparselt")
+        function = cusparselt.is_available
 
         self.assertIs(torch.backends, backends)
-        self.assertIs(backends.kleidiai, kleidiai)
+        self.assertIs(backends.cusparselt, cusparselt)
         self.assertEqual(
             {name for name in vars(backends) if not name.startswith("_")},
             {
@@ -109,50 +112,49 @@ class KleidiAIAvailabilityTests(unittest.TestCase):
         child_wildcard = {}
         native_wildcard = {}
         exec("from torch_rs import backends", package_import)
-        exec("from torch_rs.backends import kleidiai", backend_import)
+        exec("from torch_rs.backends import cusparselt", backend_import)
         exec(
-            "from torch_rs.backends.kleidiai import is_available",
+            "from torch_rs.backends.cusparselt import is_available",
             function_import,
         )
-        exec("from torch_rs._C import _has_kleidiai", private_import)
+        exec("from torch_rs._C import _has_cusparselt", private_import)
         exec("from torch_rs.backends import *", parent_wildcard)
-        exec("from torch_rs.backends.kleidiai import *", child_wildcard)
+        exec("from torch_rs.backends.cusparselt import *", child_wildcard)
         exec("from torch_rs._C import *", native_wildcard)
 
         self.assertIs(package_import["backends"], backends)
-        self.assertIs(backend_import["kleidiai"], kleidiai)
+        self.assertIs(backend_import["cusparselt"], cusparselt)
         self.assertIs(function_import["is_available"], function)
-        self.assertIs(private_import["_has_kleidiai"], False)
-        self.assertIs(parent_wildcard["kleidiai"], kleidiai)
+        self.assertIs(private_import["_has_cusparselt"], False)
+        self.assertIs(parent_wildcard["cusparselt"], cusparselt)
         self.assertEqual(
             {name for name in child_wildcard if not name.startswith("__")},
-            {"is_available", "torch"},
+            {"is_available"},
         )
         self.assertIs(child_wildcard["is_available"], function)
-        self.assertIs(child_wildcard["torch"], torch)
-        self.assertNotIn("_has_kleidiai", native_wildcard)
+        self.assertNotIn("_has_cusparselt", native_wildcard)
 
         self.assertNotIn("backends", torch.__all__)
-        self.assertFalse(hasattr(torch, "kleidiai"))
+        self.assertFalse(hasattr(torch, "cusparselt"))
         top_level_wildcard = {}
         exec("from torch_rs import *", top_level_wildcard)
         self.assertNotIn("backends", top_level_wildcard)
-        self.assertNotIn("kleidiai", top_level_wildcard)
-        self.assertNotIn("_has_kleidiai", top_level_wildcard)
+        self.assertNotIn("cusparselt", top_level_wildcard)
+        self.assertNotIn("_has_cusparselt", top_level_wildcard)
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
-        self.assertIs(copy.copy(torch._C._has_kleidiai), False)
-        self.assertIs(copy.deepcopy(torch._C._has_kleidiai), False)
+        self.assertIs(copy.copy(torch._C._has_cusparselt), False)
+        self.assertIs(copy.deepcopy(torch._C._has_cusparselt), False)
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             with self.subTest(protocol=protocol):
                 payload = pickle.dumps(function, protocol=protocol)
-                self.assertIn(b"torch_rs.backends.kleidiai", payload)
+                self.assertIn(b"torch_rs.backends.cusparselt", payload)
                 self.assertIs(pickle.loads(payload), function)
                 self.assertIs(
                     pickle.loads(
                         pickle.dumps(
-                            torch._C._has_kleidiai,
+                            torch._C._has_cusparselt,
                             protocol=protocol,
                         )
                     ),
@@ -160,7 +162,7 @@ class KleidiAIAvailabilityTests(unittest.TestCase):
                 )
 
     def test_value_and_identity_are_stable_across_threads(self):
-        function = torch.backends.kleidiai.is_available
+        function = torch.backends.cusparselt.is_available
         worker_count = 16
         barrier = threading.Barrier(worker_count)
         results = [None] * worker_count
@@ -173,8 +175,8 @@ class KleidiAIAvailabilityTests(unittest.TestCase):
                 results[index] = (
                     value,
                     type(value) is bool,
-                    value is torch._C._has_kleidiai,
-                    function is torch.backends.kleidiai.is_available,
+                    value is torch._C._has_cusparselt,
+                    function is torch.backends.cusparselt.is_available,
                 )
             except BaseException as error:
                 errors.append(error)
@@ -196,19 +198,19 @@ class KleidiAIAvailabilityTests(unittest.TestCase):
         package = torch
         native = torch._C
         backends = torch.backends
-        kleidiai = backends.kleidiai
-        namespace = kleidiai.__dict__
-        old_function = kleidiai.is_available
+        cusparselt = backends.cusparselt
+        namespace = cusparselt.__dict__
+        old_function = cusparselt.is_available
 
-        reloaded = importlib.reload(kleidiai)
-        function = kleidiai.is_available
+        reloaded = importlib.reload(cusparselt)
+        function = cusparselt.is_available
 
-        self.assertIs(reloaded, kleidiai)
-        self.assertIs(kleidiai.__dict__, namespace)
-        self.assertIs(backends.kleidiai, kleidiai)
-        self.assertIs(sys.modules[kleidiai.__name__], kleidiai)
+        self.assertIs(reloaded, cusparselt)
+        self.assertIs(cusparselt.__dict__, namespace)
+        self.assertIs(backends.cusparselt, cusparselt)
+        self.assertIs(sys.modules[cusparselt.__name__], cusparselt)
         self.assertIsNot(function, old_function)
-        self.assertIs(function(), native._has_kleidiai)
+        self.assertIs(function(), native._has_cusparselt)
         self.assertIs(function(), False)
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
@@ -220,23 +222,23 @@ class KleidiAIAvailabilityTests(unittest.TestCase):
             message,
             "Can't pickle <function is_available at 0x...>: "
             "it's not the same object as "
-            "torch_rs.backends.kleidiai.is_available",
+            "torch_rs.backends.cusparselt.is_available",
         )
 
         self.assertIs(importlib.reload(package), package)
         self.assertIs(package._C, native)
         self.assertIs(package.backends, backends)
-        self.assertIs(backends.kleidiai, kleidiai)
-        self.assertIs(kleidiai.is_available, function)
-        self.assertIs(kleidiai.is_available(), False)
+        self.assertIs(backends.cusparselt, cusparselt)
+        self.assertIs(cusparselt.is_available, function)
+        self.assertIs(cusparselt.is_available(), False)
 
         self.assertIs(importlib.reload(native), native)
         self.assertIs(package._C, native)
-        self.assertIs(native._has_kleidiai, False)
-        self.assertIs(kleidiai.is_available(), native._has_kleidiai)
+        self.assertIs(native._has_cusparselt, False)
+        self.assertIs(cusparselt.is_available(), native._has_cusparselt)
 
     def test_rejects_arguments_with_pytorch_2_13_errors(self):
-        function = torch.backends.kleidiai.is_available
+        function = torch.backends.cusparselt.is_available
         cases = (
             (
                 lambda: function(None),
@@ -262,13 +264,32 @@ class KleidiAIAvailabilityTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
+    def test_version_algorithm_and_execution_apis_remain_unsupported(self):
+        cusparselt = torch.backends.cusparselt
+
+        for name in (
+            "get_max_alg_id",
+            "matmul",
+            "set_preferred_algorithm",
+            "version",
+        ):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(cusparselt, name))
+                with self.assertRaises(ImportError):
+                    exec(
+                        f"from torch_rs.backends.cusparselt import {name}",
+                        {},
+                    )
+
+        self.assertFalse(hasattr(torch, "cusparselt"))
+
     def test_import_and_call_are_probe_free_without_execution_claims(self):
         script = r'''
 import os
 import sys
 
 class RejectExternalRuntimeImport:
-    blocked = {"cpuinfo", "kai", "kleidiai", "numpy", "scipy", "torch"}
+    blocked = {"cuda", "cupy", "cusparselt", "nvidia", "numpy", "pynvml", "torch"}
 
     def find_spec(self, fullname, path=None, target=None):
         if fullname.split(".", 1)[0] in self.blocked:
@@ -277,28 +298,30 @@ class RejectExternalRuntimeImport:
 
 sys.meta_path.insert(0, RejectExternalRuntimeImport())
 os.environ.update(
-    ATEN_CPU_CAPABILITY="avx512",
-    KLEIDIAI_NUM_THREADS="64",
-    KLEIDIAI_PATH="/not/a/kleidiai/install",
-    USE_KLEIDIAI="1",
+    CUDA_VISIBLE_DEVICES="0",
+    CUSPARSELT_LIBRARY_PATH="/not/a/cusparselt/install",
+    CUSPARSELT_LOG_LEVEL="5",
+    NVIDIA_VISIBLE_DEVICES="all",
+    PYTORCH_NVML_BASED_CUDA_CHECK="1",
 )
 
 import torch_rs as torch
-from torch_rs.backends import kleidiai
-from torch_rs.backends.kleidiai import is_available
-from torch_rs._C import _has_kleidiai
+from torch_rs.backends import cusparselt
+from torch_rs.backends.cusparselt import is_available
+from torch_rs._C import _has_cusparselt
 
-assert torch.backends.kleidiai is kleidiai
-assert kleidiai.is_available is is_available
-assert is_available.__code__.co_names == ("torch", "_C", "_has_kleidiai")
-assert is_available() is _has_kleidiai is False
-assert torch.backends.cpu.get_cpu_capability() == "DEFAULT"
-assert not hasattr(torch, "_has_kleidiai")
-assert not hasattr(torch, "kleidiai")
-assert {name for name in vars(kleidiai) if not name.startswith("_")} == {
+assert torch.backends.cusparselt is cusparselt
+assert cusparselt.is_available is is_available
+assert is_available.__code__.co_names == ("torch", "_C", "_has_cusparselt")
+assert is_available() is _has_cusparselt is False
+assert not hasattr(torch, "_has_cusparselt")
+assert not hasattr(torch, "cusparselt")
+assert {name for name in vars(cusparselt) if not name.startswith("_")} == {
     "is_available",
     "torch",
 }
+assert not hasattr(cusparselt, "version")
+assert not hasattr(cusparselt, "get_max_alg_id")
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked
     for name in sys.modules
@@ -315,6 +338,50 @@ assert not any(
             0,
             msg=completed.stdout + completed.stderr,
         )
+
+    def test_h100_cuda_visibility_does_not_change_false_result(self):
+        smi = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,name,memory.total,driver_version,compute_cap",
+                "--format=csv,noheader",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if smi.returncode != 0 or "H100" not in smi.stdout:
+            self.skipTest("requires an NVIDIA H100 host")
+
+        script = (
+            "import torch_rs as torch; "
+            "print(torch.backends.cusparselt.is_available(), "
+            "torch._C._has_cusparselt, "
+            "hasattr(torch, 'cusparselt'))"
+        )
+        for visible_devices in ("", "0"):
+            with self.subTest(cuda_visible_devices=visible_devices):
+                environment = os.environ.copy()
+                environment.update(
+                    CUDA_VISIBLE_DEVICES=visible_devices,
+                    CUSPARSELT_LIBRARY_PATH="/not/a/cusparselt/install",
+                    CUSPARSELT_LOG_LEVEL="5",
+                    NVIDIA_VISIBLE_DEVICES="all",
+                    PYTORCH_NVML_BASED_CUDA_CHECK="1",
+                )
+                completed = subprocess.run(
+                    [sys.executable, "-c", script],
+                    check=False,
+                    capture_output=True,
+                    env=environment,
+                    text=True,
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    msg=completed.stdout + completed.stderr,
+                )
+                self.assertEqual(completed.stdout.strip(), "False False False")
 
 
 if __name__ == "__main__":

@@ -171,6 +171,7 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
                 in {
                     "cpu",
                     "cuda",
+                    "cusparselt",
                     "cudnn",
                     "kleidiai",
                     "m",

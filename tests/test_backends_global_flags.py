@@ -14,6 +14,7 @@ import torch_rs as torch
 BACKEND_MODULES = {
     "cpu",
     "cuda",
+    "cusparselt",
     "cudnn",
     "kleidiai",
     "mha",

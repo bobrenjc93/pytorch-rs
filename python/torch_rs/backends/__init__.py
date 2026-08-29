@@ -67,6 +67,7 @@ _sys.modules[__name__] = GenericModule(_sys.modules[__name__], __name__)
 
 from . import cpu as cpu
 from . import cuda as cuda
+from . import cusparselt as cusparselt
 from . import cudnn as cudnn
 from . import kleidiai as kleidiai
 from . import mha as mha
