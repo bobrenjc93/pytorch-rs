@@ -13,6 +13,7 @@ _MISSING_PARAMETER_TYPES = ()
 __all__ = [
     "assume_constant_result",
     "reset",
+    "list_backends",
     "disable",
     "set_default_backend",
     "get_default_backend",
@@ -27,6 +28,32 @@ __all__ = [
     "skip_guard_on_globals_unsafe",
     "skip_all_guards_unsafe",
 ]
+
+_BACKEND_TAGS = (
+    ("aot_eager", ("debug",)),
+    ("aot_eager_decomp_partition", ("debug",)),
+    ("aot_eager_decomp_partition_crossref", ("debug",)),
+    ("aot_eager_decomp_partition_with_mode", ("debug",)),
+    ("aot_eager_default_partitioner", ("debug",)),
+    ("aot_ts", ("debug",)),
+    ("cudagraphs", ()),
+    ("dynamo_accuracy_minifier_backend", ("debug",)),
+    ("dynamo_minifier_backend", ("debug",)),
+    ("eager", ("debug",)),
+    ("eager_debug", ("debug",)),
+    ("eager_noexcept", ("debug",)),
+    ("inductor", ()),
+    ("invoke_subgraph", ("debug",)),
+    ("non_leaf_compile_error_TESTING_ONLY", ("debug",)),
+    ("openxla", ()),
+    ("openxla_eval", ("experimental",)),
+    ("pre_dispatch_eager", ("debug",)),
+    ("relu_accuracy_error_TESTING_ONLY", ("debug",)),
+    ("relu_compile_error_TESTING_ONLY", ("debug",)),
+    ("relu_runtime_error_TESTING_ONLY", ("debug",)),
+    ("ts", ("debug",)),
+    ("tvm", ()),
+)
 
 
 def assume_constant_result(fn):
@@ -55,6 +82,21 @@ def reset() -> None:
     process-local state used by :func:`torch.compile`. It does not delete
     filesystem caches, such as Inductor's disk cache.
     """
+
+
+def list_backends(exclude_tags=("debug", "experimental")) -> list[str]:
+    """
+    Return valid strings that can be passed to `torch.compile(..., backend="name")`.
+
+    Args:
+        exclude_tags(optional): A tuple of strings representing tags to exclude.
+    """
+    exclude_tags_set = set(exclude_tags or ())
+    return sorted(
+        name
+        for name, tags in _BACKEND_TAGS
+        if not exclude_tags_set.intersection(tags)
+    )
 
 
 def _disable_function(fn, recursive, reason):
