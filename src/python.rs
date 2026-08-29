@@ -443,6 +443,35 @@ impl PyTensorBase {
         select_first_dimension(slf.py(), tensor, dimension, index, "Tensor.select")
     }
 
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn unsqueeze(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let ([dimension], keyword_error) =
+            bind_tensor_arguments("unsqueeze", args, kwargs, ["dim"])?;
+        let dimension = parse_unsqueeze_dimension(&dimension)?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+        if !slf.as_any().is_exact_instance_of::<PyTensor>() {
+            return Err(PyTypeError::new_err(UNSQUEEZE_EXACT_TENSOR_ERROR));
+        }
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "unsqueeze",
+            "torch.Tensor.unsqueeze",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+        apply_unsqueeze_py(slf.py(), tensor, dimension)
+    }
+
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
     #[doc = "\nIs ``True`` if the Tensor is quantized, ``False`` otherwise.\n"]
@@ -1976,6 +2005,21 @@ pub(crate) fn select_variable_function(
     dispatch_top_level_select(py, &input, &dimension, &index, args, kwargs)
 }
 
+pub(crate) fn unsqueeze_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let ([input, dimension], keyword_error) =
+        bind_tensor_arguments("unsqueeze", args, kwargs, ["input", "dim"])?;
+    let input = parse_exact_native_tensor_argument("unsqueeze", "input", &input)?;
+    let dimension = parse_unsqueeze_dimension(&dimension)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    dispatch_top_level_unsqueeze(py, input, dimension, args, kwargs)
+}
+
 pub(crate) fn permute_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2876,6 +2920,39 @@ fn dispatch_top_level_select(
             select_first_dimension(py, tensor, dimension, index, "torch.select")
         }
     }
+}
+
+fn dispatch_top_level_unsqueeze(
+    py: Python<'_>,
+    input: &Bound<'_, PyTensor>,
+    dimension: i64,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if torch_function_mode_stack::is_empty() {
+        return apply_unsqueeze_py(py, input, dimension);
+    }
+
+    let function = variable_function(py, "unsqueeze")?;
+    let types = PyTuple::empty(py);
+
+    let active_mode = torch_function_mode_stack::pop();
+    let Some(mode) = active_mode.get() else {
+        return apply_unsqueeze_py(py, input, dimension);
+    };
+    validate_torch_function_mode_handler(mode.bind(py))?;
+    let handler = mode.bind(py).getattr("__torch_function__")?;
+    let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+    if !is_not_implemented(py, &result) {
+        return Ok(result);
+    }
+
+    Err(torch_function_dispatch_error(
+        py,
+        "torch.unsqueeze",
+        Some(mode),
+        None,
+    )?)
 }
 
 pub(crate) fn dispatch_tensorbase_method_mode(
@@ -4239,25 +4316,6 @@ impl PyTensor {
             .map_err(|error| tensor_error(&error))
     }
 
-    #[pyo3(signature = (*args, **kwargs), text_signature = "(dim)")]
-    fn unsqueeze(
-        slf: &Bound<'_, Self>,
-        args: &Bound<'_, PyTuple>,
-        kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<PyTensor> {
-        let ([dimension], keyword_error) =
-            bind_tensor_arguments("unsqueeze", args, kwargs, ["dim"])?;
-        let dimension = parse_unsqueeze_dimension(&dimension)?;
-        if let Some(keyword_error) = keyword_error {
-            return Err(keyword_error);
-        }
-        if !slf.as_any().is_exact_instance_of::<PyTensor>() {
-            return Err(PyTypeError::new_err(UNSQUEEZE_EXACT_TENSOR_ERROR));
-        }
-        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        apply_unsqueeze(&tensor.inner, dimension).map(PyTensor::new)
-    }
-
     #[pyo3(signature = (*args, **kwargs), text_signature = "(start_dim=0, end_dim=-1)")]
     fn flatten(
         slf: PyRef<'_, Self>,
@@ -4966,19 +5024,6 @@ fn squeeze(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyR
     apply_squeeze(&input.inner, dimension)
         .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
-}
-
-#[pyfunction(signature = (*args, **kwargs), text_signature = "(input, dim)")]
-fn unsqueeze(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
-    let ([input, dimension], keyword_error) =
-        bind_tensor_arguments("unsqueeze", args, kwargs, ["input", "dim"])?;
-    let input = parse_exact_native_tensor_argument("unsqueeze", "input", &input)?;
-    let dimension = parse_unsqueeze_dimension(&dimension)?;
-    if let Some(keyword_error) = keyword_error {
-        return Err(keyword_error);
-    }
-    let input = input.try_borrow()?;
-    apply_unsqueeze(&input.inner, dimension).map(PyTensor::new)
 }
 
 #[pyfunction(signature = (*args, **kwargs), text_signature = "(input, start_dim=0, end_dim=-1)")]
@@ -7526,6 +7571,16 @@ fn apply_unsqueeze(input: &CoreTensor, dimension: i64) -> PyResult<CoreTensor> {
         return input.unsqueeze_back().map_err(|error| tensor_error(&error));
     }
     Err(PyNotImplementedError::new_err(UNSQUEEZE_ENDPOINT_ERROR))
+}
+
+fn apply_unsqueeze_py(
+    py: Python<'_>,
+    input: &Bound<'_, PyTensor>,
+    dimension: i64,
+) -> PyResult<Py<PyAny>> {
+    let input = input.try_borrow()?;
+    let inner = apply_unsqueeze(&input.inner, dimension)?;
+    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
 }
 
 fn normalize_unsqueeze_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
@@ -12370,7 +12425,6 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(swapdims, module)?)?;
     module.add_function(wrap_pyfunction!(swapaxes, module)?)?;
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
-    module.add_function(wrap_pyfunction!(unsqueeze, module)?)?;
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
     add_tensor_queries(module)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;

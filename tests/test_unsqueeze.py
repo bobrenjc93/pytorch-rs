@@ -1,4 +1,5 @@
 import gc
+import inspect
 import re
 import unittest
 
@@ -143,6 +144,154 @@ class UnsqueezeTests(unittest.TestCase):
         self.assertEqual(untracked.shape, (2, 3, 1))
         self.assertEqual(untracked.stride(), (3, 1, 1))
         self.assertEqual(untracked.data_ptr(), leaf.data_ptr())
+
+    def test_method_torch_function_modes_receive_descriptor_and_can_forward(self):
+        source = torch.zeros((2, 3))
+        descriptor = inspect.getattr_static(torch.Tensor, "unsqueeze")
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result=marker):
+                self.calls = []
+                self.result = result
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append((func, dispatch_types, args, kwargs))
+                return self.result
+
+        for call, expected_args, expected_kwargs in (
+            (lambda: source.unsqueeze(0), (source, 0), None),
+            (lambda: source.unsqueeze(dim=-1), (source,), {"dim": -1}),
+        ):
+            mode = RecordingMode()
+            with mode:
+                self.assertIs(call(), marker)
+            self.assertEqual(len(mode.calls), 1)
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            self.assertIs(function, descriptor)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, expected_args)
+            self.assertEqual(kwargs, expected_kwargs)
+
+        invalid = RecordingMode()
+        with invalid, self.assertRaises(TypeError):
+            source.unsqueeze([0])
+        self.assertEqual(invalid.calls, [])
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                order.append((self.label, func, dispatch_types, args, kwargs))
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = source.unsqueeze(dim=-1)
+        self.assert_unsqueeze_view(forwarded, source, axis=-1)
+        self.assertEqual([entry[0] for entry in order], ["upper", "lower"])
+        for _, function, dispatch_types, args, kwargs in order:
+            self.assertIs(function, descriptor)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, (source,))
+            self.assertEqual(kwargs, {"dim": -1})
+
+        declining = RecordingMode(NotImplemented)
+        lower = RecordingMode()
+        with self.assertRaisesRegex(
+            TypeError,
+            "^Multiple dispatch failed for 'torch\\.Tensor\\.unsqueeze'; all "
+            "__torch_function__ handlers returned NotImplemented:",
+        ):
+            with lower:
+                with declining:
+                    source.unsqueeze(0)
+        self.assertEqual(len(declining.calls), 1)
+        self.assertEqual(lower.calls, [])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+    def test_top_level_torch_function_modes_receive_variable_function_and_can_forward(self):
+        source = torch.zeros((2, 3))
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result=marker):
+                self.calls = []
+                self.result = result
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append((func, dispatch_types, args, kwargs))
+                return self.result
+
+        for call, expected_args, expected_kwargs in (
+            (lambda: torch.unsqueeze(source, 0), (source, 0), None),
+            (
+                lambda: torch.unsqueeze(input=source, dim=-1),
+                (),
+                {"input": source, "dim": -1},
+            ),
+        ):
+            mode = RecordingMode()
+            with mode:
+                self.assertIs(call(), marker)
+            self.assertEqual(len(mode.calls), 1)
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            self.assertIs(function, torch.unsqueeze)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, expected_args)
+            self.assertEqual(kwargs, expected_kwargs)
+
+        invalid = RecordingMode()
+        with invalid, self.assertRaises(TypeError):
+            torch.unsqueeze(source, [0])
+        self.assertEqual(invalid.calls, [])
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                order.append((self.label, func, dispatch_types, args, kwargs))
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = torch.unsqueeze(input=source, dim=-1)
+        self.assert_unsqueeze_view(forwarded, source, axis=-1)
+        self.assertEqual([entry[0] for entry in order], ["upper", "lower"])
+        for _, function, dispatch_types, args, kwargs in order:
+            self.assertIs(function, torch.unsqueeze)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, ())
+            self.assertEqual(kwargs, {"input": source, "dim": -1})
+
+        declining = RecordingMode(NotImplemented)
+        lower = RecordingMode()
+        with self.assertRaisesRegex(
+            TypeError,
+            "^Multiple dispatch failed for 'torch\\.unsqueeze'; all "
+            "__torch_function__ handlers returned NotImplemented:",
+        ):
+            with lower:
+                with declining:
+                    torch.unsqueeze(source, 0)
+        self.assertEqual(len(declining.calls), 1)
+        self.assertEqual(lower.calls, [])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+    def test_top_level_callable_uses_variable_function_owner(self):
+        function = torch.unsqueeze
+        self.assertEqual(function.__name__, "unsqueeze")
+        self.assertEqual(function.__qualname__, "_VariableFunctionsClass.unsqueeze")
+        self.assertEqual(function.__module__, "torch")
+        owner = function.__reduce__()[1][0]
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner.unsqueeze, function)
 
     def test_middle_out_subclass_non_tensor_and_sequence_dims_are_unsupported(self):
         source = torch.zeros((2, 3, 4))

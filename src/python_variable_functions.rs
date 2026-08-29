@@ -28,12 +28,12 @@ use crate::python::{
     rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
     sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
     square_variable_function, tanh_variable_function, trunc_variable_function,
-    unbind_variable_function,
+    unbind_variable_function, unsqueeze_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 42] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 43] = [
     "get_device",
     "scalar_tensor",
     "arange",
@@ -68,6 +68,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 42] = [
     "resolve_neg",
     "unbind",
     "select",
+    "unsqueeze",
     "permute",
     "movedim",
     "moveaxis",
@@ -839,6 +840,7 @@ variable_function_callback!(resolve_conj_callback, resolve_conj_variable_functio
 variable_function_callback!(resolve_neg_callback, resolve_neg_variable_function);
 variable_function_callback!(unbind_callback, unbind_variable_function);
 variable_function_callback!(select_callback, select_variable_function);
+variable_function_callback!(unsqueeze_callback, unsqueeze_variable_function);
 variable_function_callback!(permute_callback, permute_variable_function);
 variable_function_callback!(movedim_callback, movedim_variable_function);
 variable_function_callback!(moveaxis_callback, moveaxis_variable_function);
@@ -903,6 +905,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"resolve_neg", resolve_neg_callback, RESOLVE_NEG_DOC),
         variable_function_method!(c"unbind", unbind_callback, UNBIND_DOC),
         variable_function_method!(c"select", select_callback, SELECT_DOC),
+        variable_function_method!(c"unsqueeze", unsqueeze_callback, c""),
         variable_function_method!(c"permute", permute_callback, PERMUTE_DOC),
         variable_function_method!(c"movedim", movedim_callback, MOVEDIM_DOC),
         variable_function_method!(c"moveaxis", moveaxis_callback, MOVEAXIS_DOC),
