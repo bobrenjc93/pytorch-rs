@@ -78,6 +78,16 @@ def _check_deterministic_bool_argument(value, name, position=None):
     )
 
 
+def _deterministic_bool_argument_is_default(value):
+    return _builtins.int.__eq__(value, 0) is True
+
+
+def _deterministic_bool_argument_repr(value):
+    if _builtins.type(value) is _builtins.bool:
+        return _builtins.repr(value)
+    return _builtins.int.__repr__(value)
+
+
 def use_deterministic_algorithms(
     mode: _builtins.bool,
     *,
@@ -223,15 +233,17 @@ def use_deterministic_algorithms(
     """
     _check_deterministic_bool_argument(mode, "mode", position=1)
     _check_deterministic_bool_argument(warn_only, "warn_only")
-    if mode != 0:
+    if not _deterministic_bool_argument_is_default(mode):
         raise NotImplementedError(
             "use_deterministic_algorithms(): mode "
-            f"{mode!r} is not supported; only False and 0 are implemented"
+            f"{_deterministic_bool_argument_repr(mode)} is not supported; "
+            "only False and 0 are implemented"
         )
-    if warn_only != 0:
+    if not _deterministic_bool_argument_is_default(warn_only):
         raise NotImplementedError(
             "use_deterministic_algorithms(): warn_only "
-            f"{warn_only!r} is not supported; only False and 0 are implemented"
+            f"{_deterministic_bool_argument_repr(warn_only)} is not supported; "
+            "only False and 0 are implemented"
         )
     return None
 

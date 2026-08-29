@@ -22,6 +22,23 @@ class _RejectTruthiness:
         raise AssertionError("the setter must not request truthiness")
 
 
+class _ComparisonHostileInt(int):
+    def __bool__(self):
+        return False
+
+    def __eq__(self, other):
+        return True
+
+    def __ne__(self, other):
+        return False
+
+    def __int__(self):
+        return 0
+
+    def __index__(self):
+        return 0
+
+
 class UseDeterministicAlgorithmsTests(unittest.TestCase):
     def assert_default_state(self):
         debug_mode = torch.get_deterministic_debug_mode()
@@ -45,6 +62,10 @@ class UseDeterministicAlgorithmsTests(unittest.TestCase):
             lambda: torch.use_deterministic_algorithms(
                 _DefaultInt(0),
                 warn_only=_DefaultInt(0),
+            ),
+            lambda: torch.use_deterministic_algorithms(
+                _ComparisonHostileInt(0),
+                warn_only=_ComparisonHostileInt(0),
             ),
         )
 
@@ -157,12 +178,27 @@ class UseDeterministicAlgorithmsTests(unittest.TestCase):
                 "only False and 0 are implemented",
             ),
             (
+                lambda: torch.use_deterministic_algorithms(
+                    _ComparisonHostileInt(1)
+                ),
+                "use_deterministic_algorithms(): mode 1 is not supported; "
+                "only False and 0 are implemented",
+            ),
+            (
                 lambda: torch.use_deterministic_algorithms(False, warn_only=True),
                 "use_deterministic_algorithms(): warn_only True is not "
                 "supported; only False and 0 are implemented",
             ),
             (
                 lambda: torch.use_deterministic_algorithms(False, warn_only=1),
+                "use_deterministic_algorithms(): warn_only 1 is not supported; "
+                "only False and 0 are implemented",
+            ),
+            (
+                lambda: torch.use_deterministic_algorithms(
+                    False,
+                    warn_only=_ComparisonHostileInt(1),
+                ),
                 "use_deterministic_algorithms(): warn_only 1 is not supported; "
                 "only False and 0 are implemented",
             ),
