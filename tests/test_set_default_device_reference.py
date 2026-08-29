@@ -60,7 +60,13 @@ class SetDefaultDeviceReferenceTests(unittest.TestCase):
         cases = (
             lambda module: None,
             lambda module: "cpu",
+            lambda module: "cpu:0",
+            lambda module: "cpu:2",
             lambda module: module.device("cpu"),
+            lambda module: module.device("cpu", 0),
+            lambda module: module.device("cpu:2"),
+            lambda module: copy.copy(module.device("cpu:7")),
+            lambda module: pickle.loads(pickle.dumps(module.device("cpu:127"))),
         )
         for value in cases:
             with self.subTest(value=value):

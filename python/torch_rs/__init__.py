@@ -20,6 +20,7 @@ _sys.modules[f"{__name__}._C"] = _C
 # native class privately for package-local descriptor reconstruction.
 _TensorBase = Tensor.__base__
 _Device = device
+_default_device = _Device("cpu")
 
 # PyTorch's memory-format reducers use dotted public names such as
 # ``torch.channels_last``. Mirror its module self-alias so those names resolve
@@ -132,7 +133,7 @@ def is_deterministic_algorithms_warn_only_enabled() -> _builtins.bool:
 
 def get_default_device() -> "torch.device":
     r"""Gets the default ``torch.Tensor`` to be allocated on ``device``"""
-    return _Device("cpu")
+    return _Device(_default_device)
 
 
 def set_default_device(device: "Device") -> None:
@@ -181,46 +182,47 @@ def set_default_device(device: "Device") -> None:
         device(type='cuda', index=1)
 
     """
+    global _default_device
+
     if device is None:
+        _default_device = _Device("cpu")
         return None
 
     if _builtins.isinstance(device, _Device):
-        if device.type == "cpu" and device.index is None:
-            return None
-        raise NotImplementedError(
-            "set_default_device(): only an unindexed CPU default device is supported"
-        )
+        parsed = device
 
-    if _builtins.isinstance(device, _builtins.str):
+    elif _builtins.isinstance(device, _builtins.str):
         value = _builtins.str.__str__(device)
-        if value == "cpu":
-            return None
         parsed = _Device(value)
-        if parsed.type == "cpu" and parsed.index is None:
-            return None
-        raise NotImplementedError(
-            "set_default_device(): only an unindexed CPU default device is supported"
+
+    else:
+        device_type = _builtins.type(device)
+        if device_type is Tensor:
+            type_name = "Tensor"
+        elif device_type is dtype:
+            type_name = "torch.dtype"
+        elif device_type is memory_format:
+            type_name = "torch.memory_format"
+        elif device_type is layout:
+            type_name = "torch.layout"
+        elif device_type is Size:
+            type_name = "torch.Size"
+        elif device_type is finfo:
+            type_name = "torch.finfo"
+        else:
+            type_name = _builtins.object.__getattribute__(device_type, "__name__")
+        raise TypeError(
+            "set_default_device(): argument 'device' must be torch.device or str, "
+            f"not {type_name}"
         )
 
-    device_type = _builtins.type(device)
-    if device_type is Tensor:
-        type_name = "Tensor"
-    elif device_type is dtype:
-        type_name = "torch.dtype"
-    elif device_type is memory_format:
-        type_name = "torch.memory_format"
-    elif device_type is layout:
-        type_name = "torch.layout"
-    elif device_type is Size:
-        type_name = "torch.Size"
-    elif device_type is finfo:
-        type_name = "torch.finfo"
-    else:
-        type_name = _builtins.object.__getattribute__(device_type, "__name__")
-    raise TypeError(
-        "set_default_device(): argument 'device' must be torch.device or str, "
-        f"not {type_name}"
-    )
+    if parsed.type != "cpu":
+        raise NotImplementedError(
+            "set_default_device(): only CPU default devices are supported"
+        )
+
+    _default_device = _Device(parsed)
+    return None
 
 
 @_functools.cache

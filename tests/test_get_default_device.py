@@ -60,12 +60,15 @@ SET_FUNCTION_DOC = """Sets the default ``torch.Tensor`` to be allocated on ``dev
     """
 
 
-def assert_cpu_default(test_case):
+def assert_default_device(test_case, expected=None):
+    if expected is None:
+        expected = torch.device("cpu")
+
     default = torch.get_default_device()
     test_case.assertIsInstance(default, torch.device)
-    test_case.assertEqual(default, torch.device("cpu"))
+    test_case.assertEqual(default, expected)
     test_case.assertEqual(default.type, "cpu")
-    test_case.assertIsNone(default.index)
+    test_case.assertEqual(default.index, expected.index)
 
     factories = (
         ("tensor", lambda: torch.tensor([1.0, 2.0])),
@@ -78,12 +81,16 @@ def assert_cpu_default(test_case):
     for name, factory in factories:
         with test_case.subTest(factory=name):
             tensor = factory()
-            test_case.assertEqual(tensor.device, default)
+            test_case.assertEqual(tensor.device, torch.device("cpu"))
             test_case.assertEqual(tensor.device.type, "cpu")
             test_case.assertIsNone(tensor.device.index)
 
 
 class GetDefaultDeviceTests(unittest.TestCase):
+    def setUp(self):
+        torch.set_default_device(None)
+        self.addCleanup(torch.set_default_device, None)
+
     def test_returns_a_fresh_unindexed_cpu_device_used_by_every_factory(self):
         first = torch.get_default_device()
         second = torch.get_default_device()
@@ -95,7 +102,7 @@ class GetDefaultDeviceTests(unittest.TestCase):
         self.assertEqual(first.type, "cpu")
         self.assertIsNone(first.index)
 
-        assert_cpu_default(self)
+        assert_default_device(self)
 
     def test_result_is_stable_across_grad_contexts_and_threads(self):
         expected = torch.device("cpu")
@@ -198,7 +205,11 @@ class GetDefaultDeviceTests(unittest.TestCase):
 
 
 class SetDefaultDeviceTests(unittest.TestCase):
-    def test_cpu_forms_are_stateless_noops(self):
+    def setUp(self):
+        torch.set_default_device(None)
+        self.addCleanup(torch.set_default_device, None)
+
+    def test_cpu_forms_update_reported_default_without_affecting_factories(self):
         class CpuString(str):
             def __eq__(self, other):
                 raise AssertionError("set_default_device must not dispatch equality")
@@ -207,33 +218,41 @@ class SetDefaultDeviceTests(unittest.TestCase):
                 raise AssertionError("set_default_device must not dispatch str")
 
         supported = (
-            None,
-            "cpu",
-            CpuString("cpu"),
-            torch.device("cpu"),
-            copy.copy(torch.device("cpu")),
-            pickle.loads(pickle.dumps(torch.device("cpu"))),
+            (None, torch.device("cpu")),
+            ("cpu", torch.device("cpu")),
+            (CpuString("cpu"), torch.device("cpu")),
+            ("cpu:0", torch.device("cpu", 0)),
+            ("cpu:2", torch.device("cpu", 2)),
+            (torch.device("cpu"), torch.device("cpu")),
+            (torch.device("cpu", 0), torch.device("cpu", 0)),
+            (torch.device("cpu:2"), torch.device("cpu", 2)),
+            (copy.copy(torch.device("cpu:7")), torch.device("cpu", 7)),
+            (
+                pickle.loads(pickle.dumps(torch.device("cpu:127"))),
+                torch.device("cpu", 127),
+            ),
         )
-        for value in supported:
+        for value, expected in supported:
             with self.subTest(value=repr(value)):
                 grad_enabled = torch.is_grad_enabled()
                 self.assertIsNone(torch.set_default_device(value))
                 self.assertIs(torch.is_grad_enabled(), grad_enabled)
-                assert_cpu_default(self)
+                first = torch.get_default_device()
+                second = torch.get_default_device()
+                self.assertEqual(first, expected)
+                self.assertEqual(second, expected)
+                self.assertIsNot(first, second)
+                assert_default_device(self, expected)
 
         with torch.no_grad():
-            self.assertIsNone(torch.set_default_device("cpu"))
+            self.assertIsNone(torch.set_default_device("cpu:3"))
             self.assertFalse(torch.is_grad_enabled())
-            assert_cpu_default(self)
+            assert_default_device(self, torch.device("cpu", 3))
         self.assertTrue(torch.is_grad_enabled())
-        assert_cpu_default(self)
+        assert_default_device(self, torch.device("cpu", 3))
 
     def test_rejects_unsupported_devices_without_changing_defaults(self):
         invalid_values = (
-            "cpu:0",
-            "cpu:2",
-            torch.device("cpu", 0),
-            torch.device("cpu:2"),
             "cuda",
             "cuda:0",
             "mps",
@@ -249,11 +268,12 @@ class SetDefaultDeviceTests(unittest.TestCase):
             torch.float32,
         )
         expected = torch.tensor([1.0, 2.0]).tolist()
+        torch.set_default_device("cpu:2")
         for value in invalid_values:
             with self.subTest(value=repr(value)):
                 with self.assertRaises((TypeError, RuntimeError, NotImplementedError)):
                     torch.set_default_device(value)
-                assert_cpu_default(self)
+                assert_default_device(self, torch.device("cpu", 2))
                 self.assertEqual(torch.tensor([1.0, 2.0]).tolist(), expected)
 
     def test_rebinding_public_device_name_does_not_change_validation(self):
@@ -265,24 +285,29 @@ class SetDefaultDeviceTests(unittest.TestCase):
             self.assertIsInstance(default, original_device)
             self.assertEqual(default, original_device("cpu"))
 
-            with self.assertRaises((RuntimeError, NotImplementedError)):
-                torch.set_default_device("cpu:0")
+            self.assertIsNone(torch.set_default_device("cpu:0"))
+            self.assertEqual(torch.get_default_device(), original_device("cpu:0"))
+
+            with self.assertRaises(RuntimeError):
+                torch.set_default_device("cuda")
+            self.assertEqual(torch.get_default_device(), original_device("cpu:0"))
             self.assertEqual(torch.tensor([1.0]).device, original_device("cpu"))
         finally:
             torch.device = original_device
 
-        assert_cpu_default(self)
+        assert_default_device(self, torch.device("cpu:0"))
 
     def test_default_device_contexts_and_non_cpu_allocation_remain_unsupported(self):
         with self.assertRaises(TypeError):
             with torch.device("cpu"):
                 pass
 
+        torch.set_default_device("cpu:2")
         for device in ("cuda", "mps", "xpu", "meta"):
             with self.subTest(device=device):
                 with self.assertRaises(RuntimeError):
                     torch.zeros((1,), device=device)
-                assert_cpu_default(self)
+                assert_default_device(self, torch.device("cpu", 2))
 
     def test_callable_metadata_matches_pytorch_2_13(self):
         function = torch.set_default_device
@@ -324,8 +349,8 @@ class SetDefaultDeviceTests(unittest.TestCase):
                 self.assertIs(pickle.loads(payload), function)
 
         self.assertIsNone(function(None))
-        self.assertIsNone(function(device="cpu"))
-        assert_cpu_default(self)
+        self.assertIsNone(function(device="cpu:2"))
+        assert_default_device(self, torch.device("cpu", 2))
 
     def test_argument_binding_errors_match_pytorch_2_13(self):
         function = torch.set_default_device
@@ -352,10 +377,10 @@ class SetDefaultDeviceTests(unittest.TestCase):
                 with self.assertRaises(TypeError) as raised:
                     call()
                 self.assertEqual(str(raised.exception), message)
-                assert_cpu_default(self)
+                assert_default_device(self)
 
         self.assertIsNone(function(device="cpu"))
-        assert_cpu_default(self)
+        assert_default_device(self)
 
     def test_importing_calling_and_reloading_do_not_import_pytorch(self):
         script = r"""
@@ -371,19 +396,27 @@ class RejectPytorchImport:
 sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
-for device in (None, "cpu", torch.device("cpu")):
+for device, expected in (
+    (None, torch.device("cpu")),
+    ("cpu", torch.device("cpu")),
+    ("cpu:0", torch.device("cpu", 0)),
+    ("cpu:2", torch.device("cpu", 2)),
+    (torch.device("cpu"), torch.device("cpu")),
+    (torch.device("cpu", 3), torch.device("cpu", 3)),
+):
     assert torch.set_default_device(device) is None
-    assert torch.get_default_device() == torch.device("cpu")
+    assert torch.get_default_device() == expected
     assert torch.zeros((1,)).device == torch.device("cpu")
 
-for device in ("cpu:0", "cuda", "mps", "xpu", "meta", object()):
+torch.set_default_device("cpu:2")
+for device in ("cuda", "mps", "xpu", "meta", object()):
     try:
         torch.set_default_device(device)
     except (TypeError, RuntimeError, NotImplementedError):
         pass
     else:
         raise AssertionError(f"unsupported device was accepted: {device!r}")
-    assert torch.get_default_device() == torch.device("cpu")
+    assert torch.get_default_device() == torch.device("cpu", 2)
 
 assert importlib.reload(torch) is torch
 assert torch.set_default_device(device="cpu") is None
