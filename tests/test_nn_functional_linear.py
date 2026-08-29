@@ -11,20 +11,32 @@ import torch_rs.nn.functional as functional
 
 class FunctionalLinearTests(unittest.TestCase):
     @staticmethod
-    def linear_composition(input, weight):
+    def linear_composition(input, weight, bias=None):
         transposed_weight = weight.transpose(0, 1)
         if len(input.shape) == 1:
-            return input[None].matmul(transposed_weight).squeeze(0)
-        if len(input.shape) == 3:
+            output = input[None].matmul(transposed_weight).squeeze(0)
+        elif len(input.shape) == 3:
             output_shape = (*input.shape[:-1], weight.shape[0])
-            return (
+            output = (
                 input.flatten(0, 1)
                 .matmul(transposed_weight)
                 .reshape(output_shape)
             )
-        return input.matmul(transposed_weight)
+        else:
+            output = input.matmul(transposed_weight)
+        if bias is not None:
+            output = output + bias
+        return output
 
     def assert_matches_composition(self, actual, expected, *, case):
+        self.assert_matches_metadata(actual, expected, case=case)
+        with self.subTest(case=case, values=True):
+            np.testing.assert_array_equal(
+                np.asarray(actual).reshape(-1).view(np.uint32),
+                np.asarray(expected).reshape(-1).view(np.uint32),
+            )
+
+    def assert_matches_metadata(self, actual, expected, *, case):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, expected.shape)
             self.assertEqual(actual.stride(), expected.stride())
@@ -34,11 +46,25 @@ class FunctionalLinearTests(unittest.TestCase):
             self.assertEqual(actual.is_leaf, expected.is_leaf)
             self.assertIs(actual.dtype, torch.float32)
             self.assertEqual(actual.device, torch.device("cpu"))
-        with self.subTest(case=case, values=True):
-            np.testing.assert_array_equal(
-                np.asarray(actual).reshape(-1).view(np.uint32),
-                np.asarray(expected).reshape(-1).view(np.uint32),
-            )
+
+    @staticmethod
+    def row_bias_matmul_values(input, weight, bias):
+        input_values = np.asarray(input, dtype=np.float32)
+        weight_values = np.asarray(weight, dtype=np.float32)
+        bias_values = np.asarray(bias, dtype=np.float32)
+        rows, inner = input_values.shape
+        out_features = weight_values.shape[0]
+        output = np.empty((rows, out_features), dtype=np.float32)
+        for row in range(rows):
+            for column in range(out_features):
+                accumulator = np.float32(bias_values[column])
+                for depth in range(inner):
+                    product = np.float32(
+                        input_values[row, depth] * weight_values[column, depth]
+                    )
+                    accumulator = np.float32(accumulator + product)
+                output[row, column] = accumulator
+        return output
 
     def layout_cases(self):
         contiguous_input = torch.tensor(
@@ -81,6 +107,37 @@ class FunctionalLinearTests(unittest.TestCase):
             ("zero outputs", contiguous_input, torch.zeros((0, 3))),
             ("offset zero rows", empty_offset_input, torch.ones((4, 2))),
             ("all zero", torch.zeros((0, 0)), torch.zeros((0, 0))),
+        )
+
+    @staticmethod
+    def bias_for_features(features, variant):
+        if features == 0:
+            return torch.zeros((0,))
+
+        values = np.linspace(-0.75, 1.25, features, dtype=np.float32)
+        padding = np.full(features, 99.0, dtype=np.float32)
+        if variant % 4 == 0:
+            return torch.tensor(values.tolist())
+        if variant % 4 == 1:
+            return torch.tensor(
+                np.stack((values, padding), axis=1).tolist()
+            ).transpose(0, 1)[0]
+        if variant % 4 == 2:
+            return torch.tensor(np.stack((padding, values)).tolist())[1]
+
+        source = np.full((2, features, 2), 99.0, dtype=np.float32)
+        source[1, :, 0] = values
+        return torch.tensor(source.tolist())[1].transpose(0, 1)[0]
+
+    def matrix_bias_cases(self):
+        return tuple(
+            (
+                case,
+                input,
+                weight,
+                self.bias_for_features(weight.shape[0], index),
+            )
+            for index, (case, input, weight) in enumerate(self.layout_cases())
         )
 
     def vector_cases(self):
@@ -213,13 +270,13 @@ class FunctionalLinearTests(unittest.TestCase):
         normalized_doc = " ".join(linear.__doc__.split())
         for documented_limit in (
             "rank-1, rank-2, or rank-3 transformation",
-            "optional bias for rank-1 input",
+            "optional bias for rank-1 or rank-2 input",
             "exact ``torch_rs.Tensor`` operands",
             "CPU ``float32`` storage",
             "``bias`` must be ``None``",
             "exact rank-1 tensor",
             "``(out_features,)``",
-            "For rank-2 and rank-3 input, ``bias`` must be ``None``",
+            "For rank-3 input, ``bias`` must be ``None``",
             "fresh, independent row-major tensor",
             "Tensor subclasses",
             "active ``TorchFunctionMode`` contexts",
@@ -263,6 +320,47 @@ class FunctionalLinearTests(unittest.TestCase):
             )
             for form, call in calls:
                 self.assert_matches_composition(call(), expected, case=(case, form))
+
+    def test_rank_two_bias_values_layouts_and_storage(self):
+        for case, input, weight, bias in self.matrix_bias_cases():
+            expected_metadata = self.linear_composition(input, weight)
+            expected_values = self.row_bias_matmul_values(input, weight, bias)
+            calls = (
+                ("positional", lambda: functional.linear(input, weight, bias)),
+                (
+                    "bias keyword",
+                    lambda: functional.linear(input, weight, bias=bias),
+                ),
+                (
+                    "keywords",
+                    lambda: functional.linear(
+                        input=input,
+                        weight=weight,
+                        bias=bias,
+                    ),
+                ),
+            )
+            for form, call in calls:
+                actual = call()
+                self.assert_matches_metadata(
+                    actual,
+                    expected_metadata,
+                    case=(case, form),
+                )
+                with self.subTest(case=(case, form), values=True):
+                    np.testing.assert_array_equal(
+                        np.asarray(actual).reshape(-1).view(np.uint32),
+                        expected_values.reshape(-1).view(np.uint32),
+                    )
+                repeat = call()
+                with self.subTest(case=(case, form), storage=True):
+                    self.assertIsNot(actual, repeat)
+                    self.assertFalse(actual.is_set_to(repeat))
+                    self.assertFalse(actual.is_set_to(input))
+                    self.assertFalse(actual.is_set_to(weight))
+                    self.assertFalse(actual.is_set_to(bias))
+                    if actual.numel() != 0:
+                        self.assertNotEqual(actual.data_ptr(), repeat.data_ptr())
 
     def test_rank_one_layouts_reuse_unsqueeze_matmul_and_squeeze(self):
         for case, input, weight, _ in self.vector_cases():
@@ -335,6 +433,17 @@ class FunctionalLinearTests(unittest.TestCase):
                     np.asarray(output).reshape(-1).view(np.uint32).item(),
                     expected_bits,
                 )
+
+    def test_rank_two_bias_seeds_each_row_accumulator(self):
+        output = functional.linear(
+            torch.zeros((2, 0)),
+            torch.zeros((1, 0)),
+            torch.tensor([-0.0]),
+        )
+        np.testing.assert_array_equal(
+            np.asarray(output).reshape(-1).view(np.uint32),
+            np.asarray([0x80000000, 0x80000000], dtype=np.uint32),
+        )
 
     def test_rank_three_layouts_reuse_flatten_transpose_matmul_and_reshape(self):
         for case, input, weight in self.rank_three_cases():
@@ -430,6 +539,28 @@ class FunctionalLinearTests(unittest.TestCase):
             with self.subTest(bias_features=bias_features):
                 with self.assertRaisesRegex(RuntimeError, f"^{re.escape(message)}$"):
                     functional.linear(input, weight, torch.zeros((bias_features,)))
+
+    def test_rank_two_bias_length_mismatch_uses_pytorch_expansion_error(self):
+        weight = torch.zeros((4, 3))
+        for rows in (2, 0):
+            input = torch.zeros((rows, 3))
+            for bias_features in (0, 3, 5):
+                message = (
+                    "The expanded size of the tensor (4) must match the existing "
+                    f"size ({bias_features}) at non-singleton dimension 1.  "
+                    f"Target sizes: [{rows}, 4].  "
+                    f"Tensor sizes: [{bias_features}]"
+                )
+                with self.subTest(rows=rows, bias_features=bias_features):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        f"^{re.escape(message)}$",
+                    ):
+                        functional.linear(
+                            input,
+                            weight,
+                            torch.zeros((bias_features,)),
+                        )
 
     def test_requires_grad_operands_need_no_grad(self):
         for rank, input_values in (
@@ -532,6 +663,53 @@ class FunctionalLinearTests(unittest.TestCase):
                 self.assertIsNone(weight.grad)
                 self.assertIsNone(bias.grad)
 
+    def test_rank_two_bias_requires_grad_operands_need_no_grad(self):
+        for input_requires_grad, weight_requires_grad, bias_requires_grad in (
+            (True, False, False),
+            (False, True, False),
+            (False, False, True),
+            (True, True, False),
+            (True, False, True),
+            (False, True, True),
+            (True, True, True),
+        ):
+            input = torch.tensor(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                requires_grad=input_requires_grad,
+            )
+            weight = torch.tensor(
+                [[1.0, 0.0, -1.0], [2.0, 3.0, 4.0]],
+                requires_grad=weight_requires_grad,
+            )
+            bias = torch.tensor(
+                [0.5, -1.5],
+                requires_grad=bias_requires_grad,
+            )
+            with self.subTest(
+                input_requires_grad=input_requires_grad,
+                weight_requires_grad=weight_requires_grad,
+                bias_requires_grad=bias_requires_grad,
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^linear\(\): autograd recording is not supported$",
+                ):
+                    functional.linear(input, weight, bias)
+
+                with torch.no_grad():
+                    output = functional.linear(input, weight, bias)
+                    expected = self.linear_composition(input, weight, bias)
+                self.assert_matches_composition(
+                    output,
+                    expected,
+                    case="matrix bias no_grad",
+                )
+                self.assertFalse(output.requires_grad)
+                self.assertTrue(output.is_leaf)
+                self.assertIsNone(input.grad)
+                self.assertIsNone(weight.grad)
+                self.assertIsNone(bias.grad)
+
     def test_unsupported_features_are_rejected_before_native_composition(self):
         matrix = torch.ones((2, 2), requires_grad=True)
         plain_matrix = torch.ones((2, 2))
@@ -540,23 +718,38 @@ class FunctionalLinearTests(unittest.TestCase):
         rank_three = torch.ones((1, 2, 2))
         rank_four = torch.ones((1, 1, 2, 2))
 
-        for input in (plain_matrix, rank_three):
-            with self.subTest(biased_input=input.shape):
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    r"^torch_rs\.nn\.functional\.linear only supports bias "
-                    r"for rank-1 input$",
-                ):
-                    functional.linear(input, plain_matrix, torch.ones((2,)))
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^torch_rs\.nn\.functional\.linear only supports bias "
+            r"for rank-1 or rank-2 input$",
+        ):
+            functional.linear(rank_three, plain_matrix, torch.ones((2,)))
 
-        for shape in ((), (1, 2), (1, 1, 2)):
-            with self.subTest(bias_shape=shape):
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    r"^torch_rs\.nn\.functional\.linear only supports a "
-                    r"rank-1 bias tensor$",
-                ):
-                    functional.linear(vector, plain_matrix, torch.ones(shape))
+        for input in (vector, plain_matrix):
+            for shape in ((), (1, 2), (1, 1, 2)):
+                with self.subTest(input_shape=input.shape, bias_shape=shape):
+                    with self.assertRaisesRegex(
+                        NotImplementedError,
+                        r"^torch_rs\.nn\.functional\.linear only supports a "
+                        r"rank-1 bias tensor$",
+                    ):
+                        functional.linear(input, plain_matrix, torch.ones(shape))
+
+        with self.subTest(matrix_bias_broadcast_shape=(2, 1)):
+            with self.assertRaisesRegex(
+                NotImplementedError,
+                r"^torch_rs\.nn\.functional\.linear only supports a "
+                r"rank-1 bias tensor$",
+            ):
+                functional.linear(plain_matrix, plain_matrix, torch.ones((2, 1)))
+
+        with self.subTest(rank_three_bias_shape=(1, 2, 1)):
+            with self.assertRaisesRegex(
+                NotImplementedError,
+                r"^torch_rs\.nn\.functional\.linear only supports bias "
+                r"for rank-1 or rank-2 input$",
+            ):
+                functional.linear(rank_three, plain_matrix, torch.ones((1, 2, 1)))
 
         for input, weight in (
             (scalar, matrix),
