@@ -177,6 +177,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
                     "current_device",
                     "current_stream",
                     "stream",
+                    "set_device",
                     "device_count",
                     "Stream",
                     "StreamContext",
@@ -219,6 +220,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
                 "current_device",
                 "current_stream",
                 "stream",
+                "set_device",
                 "device_count",
                 "Stream",
                 "StreamContext",
@@ -270,7 +272,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_remaining_device_mutation_and_other_apis_are_unsupported(self):
+    def test_remaining_capabilities_and_other_apis_are_unsupported(self):
         actual_cpu = torch.cpu
         expected_cpu = reference_torch.cpu
         actual_public = {
@@ -286,6 +288,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
                 "current_device",
                 "current_stream",
                 "stream",
+                "set_device",
                 "device_count",
                 "Stream",
                 "StreamContext",
