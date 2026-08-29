@@ -43,6 +43,7 @@ assert torch.is_autocast_cache_enabled() is False
 assert torch.clear_autocast_cache() is None
 assert torch.is_autocast_cache_enabled() is False
 torch.set_autocast_cache_enabled(True)
+assert torch.use_deterministic_algorithms(False) is None
 assert torch.set_deterministic_debug_mode("default") is None
 assert torch.get_deterministic_debug_mode() == 0
 assert torch.are_deterministic_algorithms_enabled() is False
@@ -403,7 +404,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.get_num_threads()` reports the native engine's fixed single intra-op worker as the exact integer `1`. `torch.get_num_interop_threads()` likewise returns the exact integer `1`, reflecting the absence of a separate inter-op executor. Neither query probes hardware, environment variables, or PyTorch; both thread setters and parallel execution remain unsupported.
 
-`torch.set_deterministic_debug_mode(debug_mode)` accepts the default-equivalent `0`, `False`, and `"default"` forms as idempotent no-ops. `torch.get_deterministic_debug_mode()`, `torch.are_deterministic_algorithms_enabled()`, and `torch.is_deterministic_algorithms_warn_only_enabled()` remain coherently fixed at `0`, `False`, and `False` across threads, package reloads, and grad modes. Warn and error modes remain explicitly unsupported and are rejected before any state can change; `torch.use_deterministic_algorithms` is not exposed.
+`torch.use_deterministic_algorithms(mode, *, warn_only=False)` accepts the default-equivalent `False` and `0` mode forms with `warn_only=False` or `warn_only=0` as idempotent no-ops, while matching PyTorch's public callable metadata and export behavior. `torch.set_deterministic_debug_mode(debug_mode)` accepts the default-equivalent `0`, `False`, and `"default"` forms as idempotent no-ops. `torch.get_deterministic_debug_mode()`, `torch.are_deterministic_algorithms_enabled()`, and `torch.is_deterministic_algorithms_warn_only_enabled()` remain coherently fixed at `0`, `False`, and `False` across threads, package reloads, and grad modes. Enabling deterministic algorithms, warn-only deterministic mode, and debug warn/error modes remain explicitly unsupported and are rejected before any state can change.
 
 `torch.is_autocast_cache_enabled()`, `torch.set_autocast_cache_enabled(enabled)`, and `torch.clear_autocast_cache()` expose PyTorch-compatible autocast cache state helpers without adding autocast execution. Each thread starts with the exact `True` singleton, `set_autocast_cache_enabled` accepts exactly one exact boolean and returns `None`, and `clear_autocast_cache` returns `None` while preserving both cache-enabled and gradient-mode state. Invalid setter arguments are rejected without truth conversion or state mutation. The helpers are exported from both `torch` and `torch._C`; copy, deepcopy, pickle, wildcard import, and explicit native imports all preserve the canonical builtin identity. Reloading the native or package module preserves same-thread state and callable identity, while mutations remain thread-local and newly started threads observe the default enabled state. `torch.autocast`, `torch.amp`, `torch.cpu.amp`, mixed precision execution, device autocast state, and dtype promotion beyond the explicit float32-only helpers remain unsupported.
 
