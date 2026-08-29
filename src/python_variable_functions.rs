@@ -27,13 +27,13 @@ use crate::python::{
     reciprocal_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
     rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
     sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
-    square_variable_function, tanh_variable_function, trunc_variable_function,
-    unbind_variable_function,
+    square_variable_function, sum_variable_function, tanh_variable_function,
+    trunc_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 42] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 43] = [
     "get_device",
     "scalar_tensor",
     "arange",
@@ -61,6 +61,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 42] = [
     "sigmoid",
     "square",
     "tanh",
+    "sum",
     "is_vulkan_available",
     "is_conj",
     "is_inference",
@@ -467,6 +468,74 @@ Example::
     tensor([ 0.7156, -0.6218,  0.8257,  0.2553])
 ";
 
+const SUM_DOC: &std::ffi::CStr = c"
+sum(input, *, dtype=None) -> Tensor
+
+Returns the sum of all elements in the :attr:`input` tensor.
+
+Args:
+    input (Tensor): the input tensor.
+
+Keyword args:
+    dtype (:class:`torch.dtype`, optional): the desired data type of returned tensor.
+        If specified, the input tensor is casted to :attr:`dtype` before the operation
+        is performed. This is useful for preventing data type overflows. Default: None.
+
+.. note:: Use the `dtype` argument if you need the result in a specific tensor type.
+          Otherwise, the result type may be automatically promoted (e.g., from `torch.int32` to `torch.int64`).
+
+Example::
+
+    >>> a = torch.randn(1, 3)
+    >>> a
+    tensor([[ 0.1133, -0.9567,  0.2958]])
+    >>> torch.sum(a)
+    tensor(-0.5475)
+
+.. function:: sum(input, dim, keepdim=False, *, dtype=None) -> Tensor
+   :noindex:
+
+Returns the sum of each row of the :attr:`input` tensor in the given
+dimension :attr:`dim`. If :attr:`dim` is a list of dimensions,
+reduce over all of them.
+
+
+If :attr:`keepdim` is ``True``, the output tensor is of the same size
+as :attr:`input` except in the dimension(s) :attr:`dim` where it is of size 1.
+Otherwise, :attr:`dim` is squeezed (see :func:`torch.squeeze`), resulting in the
+output tensor having 1 (or ``len(dim)``) fewer dimension(s).
+
+
+Args:
+    input (Tensor): the input tensor.
+\x20\x20\x20\x20
+    dim (int or tuple of ints, optional): the dimension or dimensions to reduce.
+        If ``None``, all dimensions are reduced.
+
+\x20\x20\x20\x20
+    keepdim (bool, optional): whether the output tensor has :attr:`dim` retained or not. Default: ``False``.
+
+
+Keyword args:
+    dtype (:class:`torch.dtype`, optional): the desired data type of returned tensor.
+        If specified, the input tensor is casted to :attr:`dtype` before the operation
+        is performed. This is useful for preventing data type overflows. Default: None.
+
+Example::
+
+    >>> a = torch.randn(4, 4)
+    >>> a
+    tensor([[ 0.0569, -0.2475,  0.0737, -0.3429],
+            [-0.2993,  0.9138,  0.9337, -1.6864],
+            [ 0.1132,  0.7892, -0.1003,  0.5688],
+            [ 0.3637, -0.9906, -0.4752, -1.5197]])
+    >>> torch.sum(a, 1)
+    tensor([-0.4598, -0.1381,  1.3708, -2.6217])
+    >>> b = torch.arange(4 * 5 * 6).view(4, 5, 6)
+    >>> torch.sum(b, (2, 1))
+    tensor([  435.,  1335.,  2235.,  3135.])
+";
+
 const MUL_DOC: &std::ffi::CStr = cr"
 mul(input, other, *, out=None) -> Tensor
 
@@ -823,6 +892,7 @@ variable_function_callback!(sqrt_callback, sqrt_variable_function);
 variable_function_callback!(sigmoid_callback, sigmoid_variable_function);
 variable_function_callback!(square_callback, square_variable_function);
 variable_function_callback!(tanh_callback, tanh_variable_function);
+variable_function_callback!(sum_callback, sum_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
 variable_function_callback!(multiply_callback, multiply_variable_function);
 variable_function_callback!(
@@ -893,6 +963,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"sigmoid", sigmoid_callback, SIGMOID_DOC),
         variable_function_method!(c"square", square_callback, SQUARE_DOC),
         variable_function_method!(c"tanh", tanh_callback, TANH_DOC),
+        variable_function_method!(c"sum", sum_callback, SUM_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
         variable_function_method!(c"multiply", multiply_callback, MULTIPLY_DOC),
         variable_function_method!(c"is_vulkan_available", is_vulkan_available_callback, c""),
