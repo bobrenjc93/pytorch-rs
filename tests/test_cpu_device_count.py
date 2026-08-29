@@ -133,6 +133,7 @@ class CpuDeviceCountTests(unittest.TestCase):
                 "current_device",
                 "current_stream",
                 "stream",
+                "set_device",
                 "device_count",
                 "Stream",
                 "StreamContext",
@@ -156,6 +157,7 @@ class CpuDeviceCountTests(unittest.TestCase):
                 "current_device",
                 "current_stream",
                 "stream",
+                "set_device",
                 "device_count",
                 "Stream",
                 "StreamContext",
@@ -167,6 +169,7 @@ class CpuDeviceCountTests(unittest.TestCase):
         )
         self.assertIs(cpu_namespace["current_device"], cpu.current_device)
         self.assertIs(cpu_namespace["device_count"], function)
+        self.assertIs(cpu_namespace["set_device"], cpu.set_device)
         self.assertIs(cpu_namespace["is_available"], cpu.is_available)
         self.assertIs(cpu_namespace["is_initialized"], cpu.is_initialized)
         self.assertIs(cpu_namespace["synchronize"], cpu.synchronize)
@@ -222,6 +225,7 @@ class CpuDeviceCountTests(unittest.TestCase):
                 "current_device",
                 "current_stream",
                 "stream",
+                "set_device",
                 "device_count",
                 "Stream",
                 "StreamContext",
@@ -234,7 +238,6 @@ class CpuDeviceCountTests(unittest.TestCase):
         for name in (
             "amp",
             "get_capabilities",
-            "set_device",
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(cpu, name))

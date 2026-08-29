@@ -15,6 +15,7 @@ __all__ = [
     "current_device",
     "current_stream",
     "stream",
+    "set_device",
     "device_count",
     "Stream",
     "StreamContext",
@@ -46,6 +47,13 @@ def synchronize(device: _device | str | int | None = None) -> None:
         device (torch.device or int, optional): ignored, there's only one CPU device.
 
     N.B. This function only exists to facilitate device-agnostic code.
+    """
+
+
+def set_device(device: _device | str | int | None) -> None:
+    r"""Sets the current device, in CPU we do nothing.
+
+    N.B. This function only exists to facilitate device-agnostic code
     """
 
 
