@@ -449,8 +449,7 @@ impl PyTensorBase {
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
-        let ([dimension], keyword_error) =
-            bind_tensor_arguments("unsqueeze", args, kwargs, ["dim"])?;
+        let (dimension, keyword_error) = bind_method_unsqueeze_argument(args, kwargs)?;
         let dimension = parse_unsqueeze_dimension(&dimension)?;
         if let Some(keyword_error) = keyword_error {
             return Err(keyword_error);
@@ -2010,8 +2009,7 @@ pub(crate) fn unsqueeze_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let ([input, dimension], keyword_error) =
-        bind_tensor_arguments("unsqueeze", args, kwargs, ["input", "dim"])?;
+    let ([input, dimension], keyword_error) = bind_top_level_unsqueeze_arguments(args, kwargs)?;
     let input = parse_exact_native_tensor_argument("unsqueeze", "input", &input)?;
     let dimension = parse_unsqueeze_dimension(&dimension)?;
     if let Some(keyword_error) = keyword_error {
@@ -6903,6 +6901,151 @@ fn bind_top_level_unbind_arguments<'py>(
     }
 
     Ok((bound_input, dimension))
+}
+
+fn bind_method_unsqueeze_argument<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(ParsedCallArgument<'py>, Option<PyErr>)> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "unsqueeze() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut dimension = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "dim" | "axis" => {
+                    if dimension.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err(
+                                "unsqueeze() got multiple values for argument 'dim'",
+                            )
+                        });
+                    } else {
+                        dimension = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "unsqueeze() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let Some(dimension) = dimension else {
+        return Err(unsqueeze_missing_arguments_error(&["dim"]));
+    };
+    Ok((dimension, keyword_error))
+}
+
+fn bind_top_level_unsqueeze_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<([ParsedCallArgument<'py>; 2], Option<PyErr>)> {
+    const NAMES: [&str; 2] = ["input", "dim"];
+
+    if positional.len() > NAMES.len() {
+        return Err(PyTypeError::new_err(format!(
+            "unsqueeze() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments: [Option<ParsedCallArgument<'py>>; 2] = std::array::from_fn(|_| None);
+    for (argument_index, value) in positional.iter().enumerate() {
+        arguments[argument_index] = Some(ParsedCallArgument {
+            value,
+            position: Some(argument_index + 1),
+        });
+    }
+
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            let Some((argument_index, canonical_name)) = top_level_unsqueeze_keyword_position(&key)
+            else {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "unsqueeze() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+                continue;
+            };
+            if arguments[argument_index].is_some() {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "unsqueeze() got multiple values for argument '{canonical_name}'"
+                    ))
+                });
+                continue;
+            }
+            arguments[argument_index] = Some(ParsedCallArgument {
+                value,
+                position: None,
+            });
+        }
+    }
+
+    if let Some(first_missing) = arguments.iter().position(Option::is_none) {
+        if first_missing >= 1 {
+            let input = arguments[0]
+                .as_ref()
+                .expect("the unsqueeze input preceding a binding gap is present");
+            parse_exact_native_tensor_argument("unsqueeze", "input", input)?;
+        }
+        return Err(unsqueeze_missing_arguments_error(&NAMES[first_missing..]));
+    }
+
+    Ok((
+        arguments.map(|argument| argument.expect("all required unsqueeze arguments were bound")),
+        keyword_error,
+    ))
+}
+
+fn top_level_unsqueeze_keyword_position(key: &str) -> Option<(usize, &'static str)> {
+    match key {
+        "input" | "x" | "a" | "x1" => Some((0, "input")),
+        "dim" | "axis" => Some((1, "dim")),
+        _ => None,
+    }
+}
+
+fn unsqueeze_missing_arguments_error(missing: &[&str]) -> PyErr {
+    let quoted_names = missing
+        .iter()
+        .map(|name| format!("\"{name}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let argument = if missing.len() == 1 {
+        "arguments"
+    } else {
+        "argument"
+    };
+    PyTypeError::new_err(format!(
+        "unsqueeze() missing {} required positional {argument}: {quoted_names}",
+        missing.len()
+    ))
 }
 
 fn bind_select_arguments<'py>(

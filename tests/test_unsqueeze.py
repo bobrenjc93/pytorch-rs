@@ -49,6 +49,21 @@ class UnsqueezeTests(unittest.TestCase):
                 with self.subTest(case=case, form=form):
                     self.assert_unsqueeze_view(view, source, axis=-1)
 
+    def test_axis_and_input_aliases_are_endpoint_views(self):
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        source = torch.tensor(values.tolist()).transpose(0, 2)[1]
+        for form, view, axis in (
+            ("method axis front", source.unsqueeze(axis=0), 0),
+            ("method axis back", source.unsqueeze(axis=-1), -1),
+            ("top-level positional axis", torch.unsqueeze(source, axis=0), 0),
+            ("top-level input axis", torch.unsqueeze(input=source, axis=-1), -1),
+            ("top-level x alias", torch.unsqueeze(x=source, dim=0), 0),
+            ("top-level a alias", torch.unsqueeze(a=source, dim=-1), -1),
+            ("top-level x1 axis alias", torch.unsqueeze(x1=source, axis=0), 0),
+        ):
+            with self.subTest(form=form):
+                self.assert_unsqueeze_view(view, source, axis=axis)
+
     def test_endpoint_strides_offsets_and_source_lifetime_are_preserved(self):
         values = np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4)
         base = torch.tensor(values.tolist())
@@ -162,6 +177,7 @@ class UnsqueezeTests(unittest.TestCase):
         for call, expected_args, expected_kwargs in (
             (lambda: source.unsqueeze(0), (source, 0), None),
             (lambda: source.unsqueeze(dim=-1), (source,), {"dim": -1}),
+            (lambda: source.unsqueeze(axis=0), (source,), {"axis": 0}),
         ):
             mode = RecordingMode()
             with mode:
@@ -190,14 +206,14 @@ class UnsqueezeTests(unittest.TestCase):
 
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
-                forwarded = source.unsqueeze(dim=-1)
+                forwarded = source.unsqueeze(axis=-1)
         self.assert_unsqueeze_view(forwarded, source, axis=-1)
         self.assertEqual([entry[0] for entry in order], ["upper", "lower"])
         for _, function, dispatch_types, args, kwargs in order:
             self.assertIs(function, descriptor)
             self.assertEqual(dispatch_types, ())
             self.assertEqual(args, (source,))
-            self.assertEqual(kwargs, {"dim": -1})
+            self.assertEqual(kwargs, {"axis": -1})
 
         declining = RecordingMode(NotImplemented)
         lower = RecordingMode()
@@ -233,6 +249,26 @@ class UnsqueezeTests(unittest.TestCase):
                 (),
                 {"input": source, "dim": -1},
             ),
+            (
+                lambda: torch.unsqueeze(source, axis=0),
+                (source,),
+                {"axis": 0},
+            ),
+            (
+                lambda: torch.unsqueeze(x=source, axis=-1),
+                (),
+                {"x": source, "axis": -1},
+            ),
+            (
+                lambda: torch.unsqueeze(a=source, dim=0),
+                (),
+                {"a": source, "dim": 0},
+            ),
+            (
+                lambda: torch.unsqueeze(x1=source, dim=-1),
+                (),
+                {"x1": source, "dim": -1},
+            ),
         ):
             mode = RecordingMode()
             with mode:
@@ -261,14 +297,14 @@ class UnsqueezeTests(unittest.TestCase):
 
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
-                forwarded = torch.unsqueeze(input=source, dim=-1)
+                forwarded = torch.unsqueeze(x=source, axis=-1)
         self.assert_unsqueeze_view(forwarded, source, axis=-1)
         self.assertEqual([entry[0] for entry in order], ["upper", "lower"])
         for _, function, dispatch_types, args, kwargs in order:
             self.assertIs(function, torch.unsqueeze)
             self.assertEqual(dispatch_types, ())
             self.assertEqual(args, ())
-            self.assertEqual(kwargs, {"input": source, "dim": -1})
+            self.assertEqual(kwargs, {"x": source, "axis": -1})
 
         declining = RecordingMode(NotImplemented)
         lower = RecordingMode()
@@ -319,10 +355,23 @@ class UnsqueezeTests(unittest.TestCase):
         for call in (
             lambda: source.unsqueeze(0, out=source),
             lambda: torch.unsqueeze(source, 0, out=source),
+            lambda: torch.unsqueeze(source, axis=0, out=source),
         ):
             with self.subTest(call=call):
                 with self.assertRaisesRegex(
                     TypeError, r"unexpected keyword argument 'out'"
+                ):
+                    call()
+
+        for call, argument in (
+            (lambda: source.unsqueeze(0, axis=0), "dim"),
+            (lambda: source.unsqueeze(dim=0, axis=0), "dim"),
+            (lambda: torch.unsqueeze(source, dim=0, axis=0), "dim"),
+            (lambda: torch.unsqueeze(input=source, x=source, dim=0), "input"),
+        ):
+            with self.subTest(argument=argument):
+                with self.assertRaisesRegex(
+                    TypeError, f"multiple values for argument '{argument}'"
                 ):
                     call()
 
