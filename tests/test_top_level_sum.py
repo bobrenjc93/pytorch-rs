@@ -56,6 +56,10 @@ class TopLevelSumTests(unittest.TestCase):
     def supported_calls(source):
         return (
             ("positional", lambda: torch.sum(source)),
+            ("positional none dim", lambda: torch.sum(source, None)),
+            ("keyword none dim", lambda: torch.sum(source, dim=None)),
+            ("none dim keepdim false", lambda: torch.sum(source, None, False)),
+            ("none dim out none", lambda: torch.sum(source, dim=None, out=None)),
             ("input", lambda: torch.sum(input=source)),
             ("x", lambda: torch.sum(x=source)),
             ("a", lambda: torch.sum(a=source)),
@@ -64,6 +68,12 @@ class TopLevelSumTests(unittest.TestCase):
             ("dtype float32", lambda: torch.sum(source, dtype=torch.float32)),
             ("dtype float alias", lambda: torch.sum(source, dtype=torch.float)),
             ("alias and dtype", lambda: torch.sum(x=source, dtype=torch.float32)),
+            (
+                "none dim dtype out none",
+                lambda: torch.sum(
+                    input=source, dim=None, keepdim=False, dtype=torch.float32, out=None
+                ),
+            ),
         )
 
     @staticmethod
@@ -114,11 +124,11 @@ class TopLevelSumTests(unittest.TestCase):
 
         leaf = torch.tensor([1.0, -2.0, 3.0], requires_grad=True)
         with torch.no_grad():
-            untracked = torch.sum(leaf, dtype=torch.float)
+            untracked = torch.sum(leaf, dim=None, dtype=torch.float)
         self.assertFalse(untracked.requires_grad)
         self.assertTrue(untracked.is_leaf)
         self.assertIsNone(leaf.grad)
-        self.assertTrue(torch.sum(leaf, dtype=torch.float32).requires_grad)
+        self.assertTrue(torch.sum(leaf, None, dtype=torch.float32).requires_grad)
 
     def test_modes_and_overrides_observe_calls_before_native_limits(self):
         tensor = torch.tensor([[1.0, -2.0], [3.0, 4.0]], requires_grad=True)
@@ -155,6 +165,18 @@ class TopLevelSumTests(unittest.TestCase):
         self.assertIs(args[0], tensor)
         self.assertEqual(args[1], 0)
         self.assertEqual(kwargs, {"keepdim": True})
+
+        none_dim_mode = RecordingMode()
+        with none_dim_mode:
+            self.assertIs(torch.sum(tensor, None, keepdim=False, out=None), marker)
+        self.assertEqual(len(none_dim_mode.calls), 1)
+        function, dispatch_types, args, kwargs = none_dim_mode.calls[0]
+        self.assertIs(function, torch.sum)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(len(args), 2)
+        self.assertIs(args[0], tensor)
+        self.assertIsNone(args[1])
+        self.assertEqual(kwargs, {"keepdim": False, "out": None})
 
         override_calls = []
 
@@ -305,6 +327,10 @@ class TopLevelSumTests(unittest.TestCase):
                 f"{invalid}(Tensor, dtype=object), {EXPECTED_OVERLOADS}",
             ),
             (
+                lambda: torch.sum(tensor, None, dtype=1),
+                "sum(): argument 'dtype' must be torch.dtype, not int",
+            ),
+            (
                 lambda: torch.sum(tensor, torch.float32),
                 f"{invalid}(Tensor, torch.dtype), {EXPECTED_OVERLOADS}",
             ),
@@ -340,6 +366,10 @@ class TopLevelSumTests(unittest.TestCase):
                 lambda: torch.sum(tensor, 0, out=[]),
                 "sum(): argument 'out' must be Tensor, not list",
             ),
+            (
+                lambda: torch.sum(tensor, None, out=[]),
+                "sum(): argument 'out' must be Tensor, not list",
+            ),
         )
         for call, message in cases:
             with self.subTest(message=message):
@@ -352,13 +382,13 @@ class TopLevelSumTests(unittest.TestCase):
         destination = torch.tensor([17.0, 19.0, 23.0])
         cases = (
             ("positional dim", lambda: torch.sum(tensor, 0)),
-            ("positional none dim", lambda: torch.sum(tensor, None)),
             ("keyword dim", lambda: torch.sum(input=tensor, dim=0)),
-            ("none dim", lambda: torch.sum(tensor, dim=None)),
             ("tuple dim", lambda: torch.sum(tensor, (0, 1))),
             ("list dim", lambda: torch.sum(tensor, [0, 1])),
             ("keepdim", lambda: torch.sum(tensor, 0, keepdim=True)),
+            ("none dim keepdim true", lambda: torch.sum(tensor, None, keepdim=True)),
             ("out", lambda: torch.sum(tensor, 0, out=destination)),
+            ("none dim concrete out", lambda: torch.sum(tensor, None, out=destination)),
             ("dtype plus dim", lambda: torch.sum(tensor, 0, dtype=torch.float32)),
         )
         for case, call in cases:

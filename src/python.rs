@@ -7551,11 +7551,6 @@ fn bind_top_level_sum_arguments<'py>(
         keywords,
     )?;
 
-    let dtype = match keyword_dtype {
-        Some(dtype) => bind_top_level_sum_dtype(&dtype.value, has_dimension, positional, keywords)?,
-        None => BoundTopLevelSumDType::Native,
-    };
-
     let dimension = top_level_sum_dimension_argument(positional, keyword_dim)?;
     if let Some(dimension) = &dimension
         && !is_sum_dimension_argument(&dimension.value)?
@@ -7575,13 +7570,29 @@ fn bind_top_level_sum_arguments<'py>(
         )?);
     }
 
+    let dtype = match keyword_dtype {
+        Some(dtype) => bind_top_level_sum_dtype(&dtype.value, has_dimension, positional, keywords)?,
+        None => BoundTopLevelSumDType::Native,
+    };
+
     let out = parse_top_level_sum_out(keyword_out)?;
+    let explicit_full_dimension = dimension
+        .as_ref()
+        .is_some_and(|dimension| dimension.value.is_none());
+    let keepdim_is_false = keepdim.as_ref().is_none_or(|keepdim| {
+        keepdim
+            .value
+            .extract::<bool>()
+            .is_ok_and(|keepdim| !keepdim)
+    });
+    let full_reduction =
+        !has_dimension || explicit_full_dimension && keepdim_is_false && out.is_none();
 
     Ok(BoundTopLevelSumCall {
         input,
         dtype,
         out,
-        default_full_reduction: !has_dimension,
+        default_full_reduction: full_reduction,
     })
 }
 
@@ -7803,32 +7814,138 @@ fn bind_method_sum_arguments(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<()> {
-    if positional.len() == 3 && keywords.is_none_or(PyDictMethods::is_empty) {
-        return Err(PyTypeError::new_err(
-            "sum() takes from 1 to 2 positional arguments but 3 were given",
-        ));
+    if positional.len() > 2 {
+        if positional.len() == 3 && keywords.is_none_or(PyDictMethods::is_empty) {
+            return Err(PyTypeError::new_err(
+                "sum() takes from 1 to 2 positional arguments but 3 were given",
+            ));
+        }
+        return Err(sum_method_invalid_combination(positional, keywords)?);
     }
 
-    if positional.is_empty() {
-        match keywords {
-            None => return Ok(()),
-            Some(keywords) if keywords.is_empty() => return Ok(()),
-            Some(keywords) if keywords.len() == 1 => {
-                if let Some(dtype) = keywords.get_item("dtype")? {
-                    if dtype.is_none() {
-                        return Ok(());
-                    }
-                    if let Ok(dtype) = dtype.cast::<PyDType>()
-                        && dtype.try_borrow()?.inner() == DType::Float32
-                    {
-                        return Ok(());
-                    }
-                }
-            }
-            Some(_) => {}
+    let keyword_dim = top_level_sum_keyword(keywords, "dim")?;
+    let keyword_keepdim = top_level_sum_keyword(keywords, "keepdim")?;
+    let keyword_dtype = top_level_sum_keyword(keywords, "dtype")?;
+    if method_sum_has_unexpected_keyword(keywords)?
+        || positional.len() >= 1 && keyword_dim.is_some()
+        || positional.len() >= 2 && keyword_keepdim.is_some()
+    {
+        return Err(sum_method_invalid_combination(positional, keywords)?);
+    }
+
+    let has_dimension = positional.len() >= 1 || keyword_dim.is_some();
+    let has_keepdim = positional.len() >= 2 || keyword_keepdim.is_some();
+    if !has_dimension {
+        if has_keepdim {
+            return Err(sum_method_invalid_combination(positional, keywords)?);
+        }
+        if let Some(dtype) = keyword_dtype {
+            bind_method_sum_dtype(&dtype.value, false, positional, keywords)?;
+        }
+        return Ok(());
+    }
+
+    let dimension = method_sum_dimension_argument(positional, keyword_dim)?;
+    let Some(dimension) = dimension else {
+        unreachable!("sum method dimension is present when it has a positional or keyword value")
+    };
+    if !dimension.value.is_none() || !is_sum_dimension_argument(&dimension.value)? {
+        return Err(sum_method_invalid_combination(positional, keywords)?);
+    }
+
+    let keepdim = method_sum_keepdim_argument(positional, keyword_keepdim)?;
+    if let Some(keepdim) = &keepdim
+        && !keepdim.value.is_exact_instance_of::<PyBool>()
+    {
+        return Err(sum_argument_type_error(
+            "keepdim",
+            keepdim.position,
+            "bool",
+            &keepdim.value,
+        )?);
+    }
+    if keepdim
+        .as_ref()
+        .is_some_and(|keepdim| keepdim.value.extract::<bool>().is_ok_and(|keepdim| keepdim))
+    {
+        return Err(sum_method_invalid_combination(positional, keywords)?);
+    }
+
+    if let Some(dtype) = keyword_dtype {
+        bind_method_sum_dtype(&dtype.value, true, positional, keywords)?;
+    }
+    Ok(())
+}
+
+fn method_sum_has_unexpected_keyword(keywords: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
+    let Some(keywords) = keywords else {
+        return Ok(false);
+    };
+    for key in keywords.keys() {
+        let key = key.extract::<String>()?;
+        if !matches!(key.as_str(), "dim" | "keepdim" | "dtype") {
+            return Ok(true);
         }
     }
+    Ok(false)
+}
 
+fn method_sum_dimension_argument<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keyword_dim: Option<TopLevelSumKeyword<'py>>,
+) -> PyResult<Option<ParsedCallArgument<'py>>> {
+    if !positional.is_empty() {
+        return Ok(Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        }));
+    }
+
+    Ok(keyword_dim.map(|dimension| ParsedCallArgument {
+        value: dimension.value,
+        position: None,
+    }))
+}
+
+fn method_sum_keepdim_argument<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keyword_keepdim: Option<TopLevelSumKeyword<'py>>,
+) -> PyResult<Option<ParsedCallArgument<'py>>> {
+    if positional.len() >= 2 {
+        return Ok(Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        }));
+    }
+
+    Ok(keyword_keepdim.map(|keepdim| ParsedCallArgument {
+        value: keepdim.value,
+        position: None,
+    }))
+}
+
+fn bind_method_sum_dtype(
+    dtype: &Bound<'_, PyAny>,
+    has_dimension: bool,
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<()> {
+    if dtype.is_none() {
+        return Ok(());
+    }
+    if let Ok(dtype) = dtype.cast::<PyDType>()
+        && dtype.try_borrow()?.inner() == DType::Float32
+    {
+        return Ok(());
+    }
+    if has_dimension {
+        return Err(sum_argument_type_error(
+            "dtype",
+            None,
+            "torch.dtype",
+            dtype,
+        )?);
+    }
     Err(sum_method_invalid_combination(positional, keywords)?)
 }
 

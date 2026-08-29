@@ -41,9 +41,16 @@ class TensorSumTests(unittest.TestCase):
     def supported_calls(source):
         return (
             ("default", lambda: source.sum()),
+            ("positional none dim", lambda: source.sum(None)),
+            ("keyword none dim", lambda: source.sum(dim=None)),
+            ("none dim keepdim false", lambda: source.sum(None, False)),
             ("dtype none", lambda: source.sum(dtype=None)),
             ("dtype float32", lambda: source.sum(dtype=torch.float32)),
             ("dtype float alias", lambda: source.sum(dtype=torch.float)),
+            (
+                "none dim dtype float32",
+                lambda: source.sum(dim=None, keepdim=False, dtype=torch.float32),
+            ),
         )
 
     def test_dtype_only_forms_reuse_full_reduction_values_and_metadata(self):
@@ -72,7 +79,7 @@ class TensorSumTests(unittest.TestCase):
         leaf = torch.tensor(
             [[1.0, -2.0, 3.0], [4.0, 5.0, -6.0]], requires_grad=True
         )
-        loss = leaf.transpose(0, 1).sum(dtype=torch.float32)
+        loss = leaf.transpose(0, 1).sum(dim=None, keepdim=False, dtype=torch.float32)
         self.assertTrue(loss.requires_grad)
         self.assertFalse(loss.is_leaf)
         loss.backward()
@@ -80,15 +87,15 @@ class TensorSumTests(unittest.TestCase):
         self.assertEqual(leaf.grad.tolist(), [[2.0, 2.0, 2.0], [2.0, 2.0, 2.0]])
 
         empty = torch.zeros((2, 0, 3), requires_grad=True)
-        empty.transpose(0, 2).sum(dtype=None).backward()
+        empty.transpose(0, 2).sum(None, False, dtype=None).backward()
         self.assertEqual(empty.grad.shape, empty.shape)
         self.assertEqual(empty.grad.tolist(), [[], []])
 
         with torch.no_grad():
-            untracked = leaf.sum(dtype=torch.float)
+            untracked = leaf.sum(dim=None, dtype=torch.float)
         self.assertFalse(untracked.requires_grad)
         self.assertTrue(untracked.is_leaf)
-        self.assertTrue(leaf.sum(dtype=torch.float32).requires_grad)
+        self.assertTrue(leaf.sum(None, dtype=torch.float32).requires_grad)
 
     def test_descriptor_documentation_and_unbound_dtype_calls(self):
         tensor = torch.tensor([1.0, 2.0])
@@ -121,6 +128,14 @@ class TensorSumTests(unittest.TestCase):
                 f"{invalid}(dtype=object, ), {EXPECTED_OVERLOADS}",
             ),
             (
+                lambda: tensor.sum(dim=None, dtype=1),
+                "sum(): argument 'dtype' must be torch.dtype, not int",
+            ),
+            (
+                lambda: tensor.sum(None, False, dtype=object()),
+                "sum(): argument 'dtype' must be torch.dtype, not object",
+            ),
+            (
                 lambda: tensor.sum(torch.float32),
                 f"{invalid}(torch.dtype), {EXPECTED_OVERLOADS}",
             ),
@@ -142,10 +157,9 @@ class TensorSumTests(unittest.TestCase):
         tensor = torch.ones((2, 3))
         cases = (
             ("positional dim", lambda: tensor.sum(0)),
-            ("positional none dim", lambda: tensor.sum(None)),
             ("keyword dim", lambda: tensor.sum(dim=0)),
-            ("none dim", lambda: tensor.sum(dim=None)),
             ("positional keepdim", lambda: tensor.sum(0, False)),
+            ("none dim keepdim true", lambda: tensor.sum(None, True)),
             ("keyword keepdim", lambda: tensor.sum(dim=0, keepdim=True)),
             ("out", lambda: tensor.sum(out=None)),
         )
