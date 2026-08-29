@@ -190,6 +190,57 @@ def sigmoid(input):
     return input.sigmoid()
 
 
+def _silu_impl(input, inplace):
+    if inplace:
+        if type(input) is not Tensor:
+            raise TypeError(
+                "silu_(): argument 'input' (position 1) must be Tensor, "
+                f"not {type(input).__name__}"
+            )
+        raise NotImplementedError(
+            "torch_rs.nn.functional.silu does not support inplace=True"
+        )
+    if type(input) is not Tensor:
+        raise TypeError(
+            "silu(): argument 'input' (position 1) must be Tensor, "
+            f"not {type(input).__name__}"
+        )
+
+    try:
+        sigmoid = input.sigmoid()
+    except RuntimeError as error:
+        if str(error) == "sigmoid(): autograd recording is not supported":
+            raise RuntimeError("silu(): autograd recording is not supported") from None
+        raise
+    return input * sigmoid
+
+
+def silu(input: Tensor, inplace: bool = False) -> Tensor:
+    r"""Apply the Sigmoid Linear Unit (SiLU) function, element-wise.
+
+    The SiLU function is also known as the swish function.
+
+    .. math::
+        \text{silu}(x) = x * \sigma(x), \text{where } \sigma(x) \text{ is the logistic sigmoid.}
+
+    .. note::
+        See `Gaussian Error Linear Units (GELUs) <https://arxiv.org/abs/1606.08415>`_
+        where the SiLU (Sigmoid Linear Unit) was originally coined, and see
+        `Sigmoid-Weighted Linear Units for Neural Network Function Approximation
+        in Reinforcement Learning <https://arxiv.org/abs/1702.03118>`_ and `Swish:
+        a Self-Gated Activation Function <https://arxiv.org/abs/1710.05941v1>`_
+        where the SiLU was experimented with later.
+
+    See :class:`~torch.nn.SiLU` for more details.
+    """
+    return _dispatch_unary_torch_function(
+        silu,
+        _silu_impl,
+        input,
+        {"inplace": inplace},
+    )
+
+
 def _softsign_impl(input):
     if isinstance(input, Tensor) and torch.is_grad_enabled() and input.requires_grad:
         raise RuntimeError("softsign(): autograd recording is not supported")
