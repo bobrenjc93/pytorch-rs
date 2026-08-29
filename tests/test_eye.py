@@ -239,15 +239,24 @@ class EyeTests(unittest.TestCase):
                 ):
                     torch.eye(*dimensions)
 
-        with self.assertRaisesRegex(
-            RuntimeError,
-            re.escape("numel: integer multiplication overflow"),
-        ):
-            torch.eye(sys.maxsize, 3)
+        for dimensions in ((sys.maxsize, 2), (sys.maxsize, 3)):
+            with self.subTest(dimensions=dimensions):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    re.escape("numel: integer multiplication overflow"),
+                ):
+                    torch.eye(*dimensions)
 
-        oversized = sys.maxsize // 4 + 1
-        with self.assertRaisesRegex(RuntimeError, "exceeds the platform capacity"):
-            torch.eye(oversized, 1)
+        for dimensions in ((sys.maxsize, 1), (sys.maxsize // 4 + 1, 1)):
+            with self.subTest(dimensions=dimensions):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    re.escape(
+                        "Storage size calculation overflowed with "
+                        f"sizes={list(dimensions)}"
+                    ),
+                ):
+                    torch.eye(*dimensions)
 
         no_rows = torch.eye(0, sys.maxsize)
         self.assertEqual(no_rows.shape, (0, sys.maxsize))

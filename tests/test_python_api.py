@@ -734,11 +734,20 @@ class PythonApiBaselineTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "m must be greater or equal to 0, got -2"):
             torch.eye(1, -2)
 
-        with self.assertRaisesRegex(RuntimeError, "numel: integer multiplication overflow"):
-            torch.eye(sys.maxsize, 3)
+        for dimensions in ((sys.maxsize, 2), (sys.maxsize, 3)):
+            with self.subTest(dimensions=dimensions):
+                with self.assertRaisesRegex(
+                    RuntimeError, "numel: integer multiplication overflow"
+                ):
+                    torch.eye(*dimensions)
 
         oversized = sys.maxsize // 4 + 1
-        with self.assertRaisesRegex(RuntimeError, "exceeds the platform capacity"):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            re.escape(
+                f"Storage size calculation overflowed with sizes=[{oversized}, 1]"
+            ),
+        ):
             torch.eye(oversized, 1)
 
         no_rows = torch.eye(0, sys.maxsize)

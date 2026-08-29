@@ -5012,10 +5012,11 @@ fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
 fn eye(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_eye_arguments(args, kwargs)?;
     let (n, m, dtype, device, requires_grad) = parse_eye_arguments(arguments)?;
+    let shape = [n, m];
 
     CoreTensor::eye_with_metadata(n, m, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-        .map_err(|error| eye_shape_error(&error))
+        .map_err(|error| eye_shape_error(&error, &shape))
 }
 
 #[pyfunction(
@@ -11816,12 +11817,28 @@ fn creation_shape_error(error: &TensorError, shape: &[usize]) -> PyErr {
     }
 }
 
-fn eye_shape_error(error: &TensorError) -> PyErr {
-    if matches!(error, TensorError::ElementCountOverflow) {
-        PyRuntimeError::new_err("numel: integer multiplication overflow")
-    } else {
-        tensor_error(error)
+fn eye_shape_error(error: &TensorError, shape: &[usize]) -> PyErr {
+    match error {
+        TensorError::ElementCountOverflow => {
+            PyRuntimeError::new_err("numel: integer multiplication overflow")
+        }
+        TensorError::StorageCapacityOverflow { .. } if eye_numel_exceeds_signed_limit(shape) => {
+            PyRuntimeError::new_err("numel: integer multiplication overflow")
+        }
+        TensorError::StorageCapacityOverflow { .. } => PyRuntimeError::new_err(format!(
+            "Storage size calculation overflowed with sizes={shape:?}"
+        )),
+        _ => tensor_error(error),
     }
+}
+
+fn eye_numel_exceeds_signed_limit(shape: &[usize]) -> bool {
+    shape
+        .iter()
+        .try_fold(1_usize, |elements, dimension| {
+            elements.checked_mul(*dimension)
+        })
+        .is_none_or(|elements| elements > isize::MAX.unsigned_abs())
 }
 
 fn scalar_creation_error(error: &TensorError, scalar_dimension: Option<usize>) -> PyErr {

@@ -70,15 +70,6 @@ class EyeReferenceTests(unittest.TestCase):
         self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
 
-    def assert_error_contains(self, actual_call, expected_call, marker):
-        with self.assertRaises(Exception) as actual_raised:
-            actual_call()
-        with self.assertRaises(Exception) as expected_raised:
-            expected_call()
-        self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
-        self.assertIn(marker, str(actual_raised.exception))
-        self.assertIn(marker, str(expected_raised.exception))
-
     def test_square_rectangular_and_zero_size_results_match_pytorch_2_13(self):
         cases = (
             lambda module: module.eye(3),
@@ -155,18 +146,16 @@ class EyeReferenceTests(unittest.TestCase):
             lambda module: module.eye(1, 2**63),
             lambda module: module.eye(np.uint64(2**63)),
             lambda module: module.eye(IndexDimension(2**63)),
+            lambda module: module.eye(sys.maxsize, 2),
+            lambda module: module.eye(sys.maxsize, 3),
+            lambda module: module.eye(sys.maxsize, 1),
+            lambda module: module.eye(sys.maxsize // 4 + 1, 1),
         )
         for call in exact_cases:
             with self.subTest(call=call):
                 self.assert_error_matches(
                     lambda: call(torch), lambda: call(reference_torch)
                 )
-
-        self.assert_error_contains(
-            lambda: torch.eye(sys.maxsize, 3),
-            lambda: reference_torch.eye(sys.maxsize, 3),
-            "numel: integer multiplication overflow",
-        )
 
     def test_zero_size_huge_dimension_metadata_matches_pytorch_2_13(self):
         cases = (
