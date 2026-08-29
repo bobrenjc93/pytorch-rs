@@ -124,6 +124,7 @@ class CudnnIsAvailableTests(unittest.TestCase):
             {
                 "cpu",
                 "cuda",
+                "cusparselt",
                 "cudnn",
                 "kleidiai",
                 "m",

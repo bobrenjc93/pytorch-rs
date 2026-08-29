@@ -21,6 +21,7 @@ except ImportError:
 BACKEND_MODULES = {
     "cpu",
     "cuda",
+    "cusparselt",
     "cudnn",
     "kleidiai",
     "mha",
