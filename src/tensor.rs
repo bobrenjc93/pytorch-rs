@@ -3360,6 +3360,21 @@ impl Tensor {
         output
     }
 
+    #[cfg(any(feature = "python-bindings", test))]
+    #[must_use]
+    pub(crate) fn sum_loss_reduction(&self) -> Self {
+        let total = if let Some(values) = self.dense_physical_slice() {
+            values
+                .iter()
+                .copied()
+                .fold(0.0_f32, l1_loss_sum_accumulate_value)
+        } else {
+            self.logical_values()
+                .fold(0.0_f32, l1_loss_sum_accumulate_value)
+        };
+        Self::from_scalar(total, self.dtype(), self.device())
+    }
+
     fn sum_contiguous_shared_gradient(&self) -> Option<f32> {
         if self.elements == 0 || !self.is_contiguous() {
             return None;
@@ -5521,6 +5536,20 @@ fn l1_loss_difference_value(left: f32, right: f32) -> f32 {
         return f32::from_bits(right_bits | QUIET_NAN_MASK);
     }
     left - right
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_accumulate_value(total: f32, value: f32) -> f32 {
+    const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+    let value_bits = value.to_bits();
+    if value_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        return f32::from_bits((value_bits | QUIET_NAN_MASK) & !F32_SIGN_MASK);
+    }
+    if total.to_bits() & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        return total;
+    }
+    total + value
 }
 
 fn relu_value(value: f32) -> f32 {
@@ -8821,6 +8850,78 @@ mod tests {
                     0x7fc2_abcd,
                     0x7fc6_789a,
                 ])
+        );
+    }
+
+    #[test]
+    fn l1_loss_sum_reduction_uses_dense_storage_order_and_nan_payloads() {
+        let dense_noncontiguous = Tensor::from_owned_parts(
+            [
+                0x4040_0000,
+                0x3f74_de9c,
+                0x3f8b_2164,
+                0x3e85_90b0,
+                0x4013_7a70,
+                0x408b_2164,
+                0x4061_642d,
+                0x40b2_1643,
+                0x40f3_7a6f,
+                0x40d9_0b22,
+                0x410d_37a7,
+                0x412d_e9bd,
+                0x4142_1643,
+                0x4162_c859,
+                0x4181_bd38,
+                0x4176_42c8,
+                0x418b_7a6f,
+                0x419b_d37a,
+                0x4195_37a7,
+                0x41a5_90b2,
+                0x41b5_e9bd,
+                0x41af_4dea,
+                0x41bf_a6f5,
+                0x41d0_0000,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            vec![2, 3, 4],
+            vec![12, 1, 3],
+            DType::Float32,
+            Device::Cpu,
+        );
+        assert_eq!(
+            dense_noncontiguous
+                .sum_loss_reduction()
+                .item()
+                .unwrap()
+                .to_bits(),
+            0x438d_f4de
+        );
+
+        let nan_values = [
+            0x0000_0000,
+            0x0000_0000,
+            0x0000_0002,
+            0x0000_0002,
+            0x00ff_fffe,
+            0x00ff_fffe,
+            0x0100_0000,
+            0x0100_0000,
+            0x4000_0000,
+            0x4000_0000,
+            0x7f80_0000,
+            0x7f80_0000,
+            0x7fc0_0000,
+            0x7fc0_0000,
+            0x7fc6_789a,
+            0x7fc2_abcd,
+            0x7fc6_789a,
+            0x7fc2_abcd,
+        ];
+        let nan_tensor = Tensor::from_vec(nan_values.map(f32::from_bits).to_vec(), [3, 6]).unwrap();
+        assert_eq!(
+            nan_tensor.sum_loss_reduction().item().unwrap().to_bits(),
+            0x7fc2_abcd
         );
     }
 

@@ -45,14 +45,15 @@ l1_loss(input, target, size_average=None, reduce=None, reduction='mean', weight=
 Measures the element-wise mean absolute error between ``input`` and ``target``.
 
 The current native implementation requires exact ``torch_rs.Tensor`` operands
-with CPU ``float32`` storage, broadcastable shapes, ``reduction='none'``,
-``size_average=None``, ``reduce=None``, and ``weight=None``. It composes
-subtraction and absolute value and returns a fresh, independent tensor with
-PyTorch-compatible values, shape, strides, scalar metadata, and
-size-mismatch warning.
+with CPU ``float32`` storage, broadcastable shapes, ``reduction='none'`` or
+``reduction='sum'``, ``size_average=None``, ``reduce=None``, and
+``weight=None``. It composes subtraction and absolute value, reducing with the
+native full-tensor sum for ``reduction='sum'``, and returns a fresh,
+independent tensor with PyTorch-compatible values, shape, strides, scalar
+metadata, and size-mismatch warning.
 
-Unbroadcastable shapes, reduced outputs, weights, Tensor subclasses, active
-``TorchFunctionMode`` contexts, and active autograd recording are not
+Unbroadcastable shapes, mean-style reductions, weights, Tensor subclasses,
+active ``TorchFunctionMode`` contexts, and active autograd recording are not
 supported. Gradient-requiring operands may be used inside ``torch.no_grad()``.
 """
 
