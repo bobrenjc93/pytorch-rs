@@ -27,6 +27,8 @@ import torch_rs as torch
 
 x = torch.tensor([[-1.0, 2.0], [3.0, -4.0]])
 y = torch.ones([2, 2])
+filled = torch.full((2, 2), -0.0)
+assert filled.tolist() == [[-0.0, -0.0], [-0.0, -0.0]]
 result = torch.relu(x + y)
 assert result.tolist() == [[0.0, 3.0], [4.0, 0.0]]
 product = torch.matmul(input=x, other=y)
@@ -346,6 +348,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 ### Creation and math
 
 `torch.eye(n, m=None, *, dtype=None, device=None, requires_grad=False)` creates CPU float32 identity tensors for square, rectangular, and zero-size shapes. It accepts exact and integer-protocol dimensions, including NumPy integer scalars, while rejecting booleans; omitted `m` mirrors `n`, and explicit `m=None` remains invalid. Supported dtype forms are omitted, `None`, `torch.float32`, and `torch.float`; supported device forms are omitted, `None`, CPU strings, and `torch.device("cpu")` values, all normalized to the CPU device. `requires_grad=True` creates a leaf tensor even under `torch.no_grad()`, while omitted, `None`, and `False` leave gradient tracking disabled. Negative dimensions, Python integer overflows, and checked storage-size overflows report PyTorch-compatible errors before allocation. Other dtypes, accelerator or meta devices, `out`, `layout`, `pin_memory`, sparse layouts, and backend-specific allocation behavior remain unsupported.
+
+`torch.full(size, fill_value, *, dtype=None, device=None, requires_grad=False)` creates fresh CPU float32 tensors for scalar, empty, and multidimensional sizes. Tuple and list sizes may contain integer-protocol dimensions, including NumPy integer scalars; booleans, negative dimensions, Python integer overflows, stride overflows for empty tensors, storage-size overflows, unsupported devices, and non-representable finite float fill values are rejected before allocation. Supported dtype forms are omitted, `None`, `torch.float32`, and `torch.float`; supported device forms are omitted, `None`, CPU strings, and `torch.device("cpu")` values, all normalized to the CPU device. Float fill values preserve NaNs, infinities, and signed zero under PyTorch 2.13-compatible float32 conversion. Integer and boolean fill values are accepted only as values for the existing float32 storage contract; PyTorch's non-float32 dtype inference remains outside the supported surface. `requires_grad=True` creates a leaf tensor even under `torch.no_grad()`, while omitted, `None`, and `False` leave gradient tracking disabled. Other dtype descriptors, accelerator or meta devices, `out`, `layout`, `pin_memory`, sparse layouts, and backend-specific allocation behavior remain unsupported.
 
 `Tensor.abs()`, `Tensor.absolute()`, Python `abs(tensor)`, and top-level `torch.abs(input, *, out=None)`/`torch.absolute(input, *, out=None)` share the native stride-aware float32 CPU absolute-value kernel for inference. They preserve PyTorch-compatible output shape, strides, dtype, device, signed-zero, infinities, NaNs, offsets, empty tensor metadata, `TorchFunctionMode` dispatch, and fresh output storage. Active autograd recording, concrete output tensors, dtype/device extension keywords, and in-place `abs_`/`absolute_` variants remain unsupported.
 
