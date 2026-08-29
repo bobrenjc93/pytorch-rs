@@ -22,6 +22,7 @@ SUPPORTED_COMPILER_EXPORTS = {
     "set_default_backend",
     "get_default_backend",
     "set_enable_guard_collectives",
+    "cudagraph_mark_step_begin",
     "is_compiling",
     "is_dynamo_compiling",
     "is_exporting",
