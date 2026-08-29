@@ -1061,6 +1061,31 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nadd(other, *, alpha=1) -> Tensor\n\nAdd a scalar or tensor to :attr:`self` tensor. If both :attr:`alpha`\nand :attr:`other` are specified, each element of :attr:`other` is scaled by\n:attr:`alpha` before being used.\n\nWhen :attr:`other` is a tensor, the shape of :attr:`other` must be\n:ref:`broadcastable <broadcasting-semantics>` with the shape of the underlying\ntensor\n\nSee :func:`torch.add`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn add(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<PyTensor> {
+        let (other, alpha, keyword_error) = bind_add_arguments(args, kwargs)?;
+        let scalar = parse_add_other(&other)?;
+        if let Some(alpha) = alpha.as_ref() {
+            validate_add_alpha(alpha)?;
+        }
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+
+        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+        BinaryOperation::Add
+            .apply_scalar(&tensor.inner, scalar, false)
+            .map(PyTensor::new)
+            .map_err(|error| tensor_error(&error))
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nneg() -> Tensor\n\nSee :func:`torch.neg`\n"]
     #[pyo3(text_signature = None)]
     fn neg(slf: &Bound<'_, Self>) -> PyResult<PyTensor> {
@@ -9617,6 +9642,95 @@ fn bind_multiplication_argument<'py>(
     bind_other_argument_with_x2_fallback(operation.name(), positional, keywords)
 }
 
+fn bind_add_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(
+    ParsedCallArgument<'py>,
+    Option<ParsedCallArgument<'py>>,
+    Option<PyErr>,
+)> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "add() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut other = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut x2_fallback = None;
+    let mut alpha = None;
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "other" => {
+                    if other.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("add() got multiple values for argument 'other'")
+                        });
+                    } else {
+                        other = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                "x2" => {
+                    if other.is_some() || x2_fallback.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("add() got an unexpected keyword argument 'x2'")
+                        });
+                    } else {
+                        x2_fallback = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                "alpha" => {
+                    if alpha.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("add() got multiple values for argument 'alpha'")
+                        });
+                    } else {
+                        alpha = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "add() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let other = other.or(x2_fallback).ok_or_else(|| {
+        if positional.is_empty() && keywords.is_none_or(PyDictMethods::is_empty) {
+            PyTypeError::new_err(
+                "add() received an invalid combination of arguments - got (), but expected (Tensor other, *, Number alpha = 1)",
+            )
+        } else {
+            PyTypeError::new_err("add() missing 1 required positional arguments: \"other\"")
+        }
+    })?;
+    Ok((other, alpha, keyword_error))
+}
+
 fn bind_other_argument_with_x2_fallback<'py>(
     function: &str,
     positional: &Bound<'py, PyTuple>,
@@ -9688,6 +9802,68 @@ fn mul_argument_type_error(position: Option<usize>, actual: &str) -> PyErr {
     PyTypeError::new_err(format!(
         "mul(): argument 'other'{position} must be Tensor, not {actual}"
     ))
+}
+
+fn parse_add_other(argument: &ParsedCallArgument<'_>) -> PyResult<f32> {
+    if argument.value.cast::<PyTensor>().is_ok() {
+        return Err(PyNotImplementedError::new_err(
+            "Tensor.add() only supports scalar 'other'; Tensor operands are not supported",
+        ));
+    }
+
+    parse_add_number_argument(argument, "other").map(ParsedArithmeticScalar::into_f32)
+}
+
+fn validate_add_alpha(argument: &ParsedCallArgument<'_>) -> PyResult<()> {
+    let alpha = parse_add_number_argument(argument, "alpha")?;
+    if alpha.is_python_bool() {
+        return Err(PyRuntimeError::new_err(
+            "Boolean alpha only supported for Boolean results.",
+        ));
+    }
+    let alpha = match alpha {
+        ParsedArithmeticScalar::Number(value) => value.into_scalar_tensor_f32()?,
+        ParsedArithmeticScalar::PythonBool(_) => unreachable!("Python bool alpha was rejected"),
+        ParsedArithmeticScalar::WideNumpyUnsigned => {
+            unreachable!("wide NumPy unsigned alpha was rejected before conversion")
+        }
+    };
+    if alpha.to_bits() != 1.0_f32.to_bits() {
+        return Err(PyNotImplementedError::new_err(
+            "Tensor.add() only supports the default alpha=1",
+        ));
+    }
+    Ok(())
+}
+
+fn parse_add_number_argument(
+    argument: &ParsedCallArgument<'_>,
+    name: &str,
+) -> PyResult<ParsedArithmeticScalar> {
+    match parse_arithmetic_scalar(&argument.value) {
+        Ok(Some(ParsedArithmeticScalar::WideNumpyUnsigned)) => {
+            Err(PyTypeError::new_err("an integer is required"))
+        }
+        Ok(Some(scalar)) => Ok(scalar),
+        Ok(None) => {
+            let position = argument
+                .position
+                .map_or_else(String::new, |position| format!(" (position {position})"));
+            let actual = python_type_name(&argument.value)?;
+            Err(PyTypeError::new_err(format!(
+                "add(): argument '{name}'{position} must be Number, not {actual}"
+            )))
+        }
+        Err(_) if argument.value.is_instance_of::<PyInt>() => {
+            let message = if python_integer_is_negative(&argument.value)? {
+                "can't convert negative int to unsigned"
+            } else {
+                "int too big to convert"
+            };
+            Err(PyOverflowError::new_err(message))
+        }
+        Err(error) => Err(error),
+    }
 }
 
 #[allow(

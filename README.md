@@ -30,8 +30,10 @@ import torch_rs as torch
 x = torch.tensor([[-1.0, 2.0], [3.0, -4.0]])
 bias = torch.ones([2, 2])
 result = torch.relu(x + bias)
+shifted = x.add(2.0)
 
 assert result.tolist() == [[0.0, 3.0], [4.0, 0.0]]
+assert shifted.tolist() == [[1.0, 4.0], [5.0, -2.0]]
 ```
 
 ## Scope
