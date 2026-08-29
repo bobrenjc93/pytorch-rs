@@ -2062,8 +2062,15 @@ pub(crate) fn div_variable_function(
     if let Some(keyword_error) = arguments.keyword_error {
         return Err(keyword_error);
     }
-    validate_top_level_div_options(arguments.rounding_mode.as_ref(), arguments.out.as_ref())?;
-    dispatch_top_level_division(py, &input, &other, args, kwargs)
+    dispatch_top_level_division(
+        py,
+        &input,
+        &other,
+        arguments.rounding_mode.as_ref(),
+        arguments.out.as_ref(),
+        args,
+        kwargs,
+    )
 }
 
 pub(crate) fn mul_variable_function(
@@ -3635,39 +3642,53 @@ fn ordered_binary_overrides<'py>(
     second: Option<&ProbedTorchFunctionOverride<'py>>,
     allocation_error: &'static str,
 ) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    ordered_torch_function_overrides(&[first, second], allocation_error)
+}
+
+fn ordered_torch_function_overrides<'py>(
+    probed_operands: &[Option<&ProbedTorchFunctionOverride<'py>>],
+    allocation_error: &'static str,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
     let mut overrides = Vec::new();
     overrides
-        .try_reserve_exact(2)
+        .try_reserve_exact(probed_operands.len())
         .map_err(|_| PyMemoryError::new_err(allocation_error))?;
 
-    if let Some(probed) = first {
-        overrides.push(probed.clone());
+    for probed in probed_operands.iter().flatten() {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
     }
-    if let Some(probed) = second {
-        let Some(first) = overrides.first() else {
-            overrides.push(probed.clone());
-            return Ok(overrides);
-        };
-        // PyTorch reports a class-valued operand itself in the dispatch types,
-        // but orders an incoming operand by its runtime type. Its metaclass is
-        // therefore compared with the first reported class, preserving class
-        // argument order and repeated class identities without changing
-        // ordinary instance subclass precedence.
-        if first.dispatch_type.is(probed.precedence_type.as_any()) {
-            return Ok(overrides);
-        }
+    Ok(overrides)
+}
 
-        let first_type = first
+fn insert_ordered_torch_function_override<'py>(
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+    probed: &ProbedTorchFunctionOverride<'py>,
+) -> PyResult<()> {
+    // PyTorch reports a class-valued operand itself in the dispatch types, but
+    // orders an incoming operand by its runtime type. Its metaclass is therefore
+    // compared with reported classes, preserving class argument order and
+    // repeated class identities without changing ordinary instance subclass
+    // precedence.
+    if overrides
+        .iter()
+        .any(|existing| existing.dispatch_type.is(probed.precedence_type.as_any()))
+    {
+        return Ok(());
+    }
+
+    for (index, existing) in overrides.iter().enumerate() {
+        let existing_type = existing
             .dispatch_type
             .cast::<PyType>()
             .expect("a torch-function dispatch type is a Python type");
-        if probed.precedence_type.is_subclass(first_type.as_any())? {
-            overrides.insert(0, probed.clone());
-        } else {
-            overrides.push(probed.clone());
+        if probed.precedence_type.is_subclass(existing_type.as_any())? {
+            overrides.insert(index, probed.clone());
+            return Ok(());
         }
     }
-    Ok(overrides)
+
+    overrides.push(probed.clone());
+    Ok(())
 }
 
 fn ordered_matmul_overrides<'py>(
@@ -3720,6 +3741,8 @@ fn ordered_multiplication_overrides<'py>(
 fn ordered_division_overrides<'py>(
     input: &BoundDivInput<'py>,
     other: &BoundDivOther<'py>,
+    rounding_mode: Option<&Bound<'py, PyAny>>,
+    out: Option<&Bound<'py, PyAny>>,
 ) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
     let input = match input {
         BoundDivInput::Override(probed) => Some(probed),
@@ -3729,7 +3752,12 @@ fn ordered_division_overrides<'py>(
         BoundDivOther::Override(probed) => Some(probed),
         BoundDivOther::Tensor(_) | BoundDivOther::Scalar(_) => None,
     };
-    ordered_binary_overrides(input, other, "unable to allocate div dispatch operands")
+    let rounding_mode = rounding_mode.and_then(probe_torch_function_override);
+    let out = out.and_then(probe_torch_function_override);
+    ordered_torch_function_overrides(
+        &[input, other, rounding_mode.as_ref(), out.as_ref()],
+        "unable to allocate div dispatch operands",
+    )
 }
 
 fn dispatch_top_level_matmul(
@@ -3836,12 +3864,14 @@ fn dispatch_top_level_division(
     py: Python<'_>,
     input: &BoundDivInput<'_>,
     other: &BoundDivOther<'_>,
+    rounding_mode: Option<&Bound<'_, PyAny>>,
+    out: Option<&Bound<'_, PyAny>>,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let overrides = ordered_division_overrides(input, other)?;
+    let overrides = ordered_division_overrides(input, other, rounding_mode, out)?;
     if torch_function_mode_stack::is_empty() && overrides.is_empty() {
-        return apply_top_level_division(py, input, other);
+        return apply_top_level_division(py, input, other, rounding_mode, out);
     }
 
     let function = variable_function(py, "div")?;
@@ -3882,7 +3912,11 @@ fn apply_top_level_division(
     py: Python<'_>,
     input: &BoundDivInput<'_>,
     other: &BoundDivOther<'_>,
+    rounding_mode: Option<&Bound<'_, PyAny>>,
+    out: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Py<PyAny>> {
+    validate_top_level_div_options(rounding_mode, out)?;
+
     let result = match (input, other) {
         (BoundDivInput::Tensor(input), BoundDivOther::Tensor(other)) => {
             validate_top_level_div_autograd(input, Some(other))?;
@@ -9473,29 +9507,23 @@ fn bind_top_level_div_arguments<'py>(
         for (key, value) in keywords {
             let key = key.extract::<String>()?;
             match key.as_str() {
-                "input" => {
-                    if positional.is_empty() {
-                        input = Some(ParsedCallArgument {
-                            value,
-                            position: None,
-                        });
-                    } else {
-                        keyword_error.get_or_insert_with(|| {
-                            PyTypeError::new_err("div() got multiple values for argument 'input'")
-                        });
-                    }
+                "input" | "x" | "a" | "x1" => {
+                    bind_top_level_div_operand_keyword(
+                        &mut input,
+                        value,
+                        &key,
+                        !positional.is_empty(),
+                        &mut keyword_error,
+                    );
                 }
-                "other" => {
-                    if positional.len() >= 2 {
-                        keyword_error.get_or_insert_with(|| {
-                            PyTypeError::new_err("div() got multiple values for argument 'other'")
-                        });
-                    } else {
-                        other = Some(ParsedCallArgument {
-                            value,
-                            position: None,
-                        });
-                    }
+                "other" | "x2" => {
+                    bind_top_level_div_operand_keyword(
+                        &mut other,
+                        value,
+                        &key,
+                        positional.len() >= 2,
+                        &mut keyword_error,
+                    );
                 }
                 "rounding_mode" => {
                     rounding_mode = Some(value);
@@ -9539,6 +9567,25 @@ fn bind_top_level_div_arguments<'py>(
         out,
         keyword_error,
     })
+}
+
+fn bind_top_level_div_operand_keyword<'py>(
+    target: &mut Option<ParsedCallArgument<'py>>,
+    value: Bound<'py, PyAny>,
+    key: &str,
+    blocked_by_positional: bool,
+    keyword_error: &mut Option<PyErr>,
+) {
+    if blocked_by_positional || target.is_some() {
+        keyword_error.get_or_insert_with(|| {
+            PyTypeError::new_err(format!("div() got multiple values for argument '{key}'"))
+        });
+    } else {
+        *target = Some(ParsedCallArgument {
+            value,
+            position: None,
+        });
+    }
 }
 
 fn bind_top_level_permute_arguments<'py>(

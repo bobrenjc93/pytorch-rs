@@ -86,6 +86,10 @@ class TopLevelDivTests(unittest.TestCase):
         for case, call in (
             ("positional tensors", lambda: torch.div(left, right)),
             ("canonical tensor keywords", lambda: torch.div(input=left, other=right)),
+            ("legacy x/other keywords", lambda: torch.div(x=left, other=right)),
+            ("legacy a/other keywords", lambda: torch.div(a=left, other=right)),
+            ("legacy x1/x2 keywords", lambda: torch.div(x1=left, x2=right)),
+            ("mixed input/x2 keywords", lambda: torch.div(input=left, x2=right)),
             (
                 "rounding and out none",
                 lambda: torch.div(
@@ -108,6 +112,11 @@ class TopLevelDivTests(unittest.TestCase):
                     lambda scalar=scalar: torch.div(
                         input=offset, other=scalar, rounding_mode=None
                     ),
+                    offset / scalar,
+                ),
+                (
+                    "legacy alias tensor/scalar",
+                    lambda scalar=scalar: torch.div(x=offset, other=scalar),
                     offset / scalar,
                 ),
             ):
@@ -181,12 +190,30 @@ class TopLevelDivTests(unittest.TestCase):
             ("tensor/tensor", lambda: torch.div(left, right), (left, right), None),
             ("tensor/scalar", lambda: torch.div(left, 3.0), (left, 3.0), None),
             (
+                "legacy aliases",
+                lambda: torch.div(x1=left, x2=right),
+                (),
+                ("x1", "x2"),
+            ),
+            (
                 "canonical keywords",
                 lambda: torch.div(
                     input=left, other=right, rounding_mode=None, out=None
                 ),
                 (),
                 ("input", "other", "rounding_mode", "out"),
+            ),
+            (
+                "concrete out",
+                lambda: torch.div(left, right, out=torch.zeros((1,))),
+                (left, right),
+                ("out",),
+            ),
+            (
+                "concrete rounding mode",
+                lambda: torch.div(left, right, rounding_mode="trunc"),
+                (left, right),
+                ("rounding_mode",),
             ),
         )
         for case, call, expected_args, expected_keywords in calls:
@@ -224,9 +251,6 @@ class TopLevelDivTests(unittest.TestCase):
             lambda: torch.div([], right),
             lambda: torch.div(4.0, right),
             lambda: torch.div(left, []),
-            lambda: torch.div(left, right, out=torch.zeros((1,))),
-            lambda: torch.div(left, right, rounding_mode="trunc"),
-            lambda: torch.div(x1=left, x2=right),
         ):
             mode = RecordingMode()
             with mode:
@@ -271,6 +295,49 @@ class TopLevelDivTests(unittest.TestCase):
         self.assertEqual(dispatch_types, (RightOverride,))
         self.assertEqual(args, ())
         self.assertEqual(tuple(kwargs), ("input", "other"))
+
+        events.clear()
+        self.assertIs(torch.div(native, native, out=RightOverride()), marker)
+        _, function, dispatch_types, args, kwargs = events[0]
+        self.assertIs(function, torch.div)
+        self.assertEqual(dispatch_types, (RightOverride,))
+        self.assertEqual(args, (native, native))
+        self.assertEqual(tuple(kwargs), ("out",))
+
+        events.clear()
+        self.assertIs(torch.div(RightOverride(), native, rounding_mode="trunc"), marker)
+        self.assertEqual([event[0] for event in events], ["right"])
+        _, function, dispatch_types, args, kwargs = events[0]
+        self.assertIs(function, torch.div)
+        self.assertEqual(dispatch_types, (RightOverride,))
+        self.assertEqual(len(args), 2)
+        self.assertEqual(tuple(kwargs), ("rounding_mode",))
+
+        events.clear()
+        self.assertIs(torch.div(native, native, rounding_mode=RightOverride()), marker)
+        _, function, dispatch_types, args, kwargs = events[0]
+        self.assertIs(function, torch.div)
+        self.assertEqual(dispatch_types, (RightOverride,))
+        self.assertEqual(args, (native, native))
+        self.assertEqual(tuple(kwargs), ("rounding_mode",))
+
+        order_events = []
+
+        class BaseOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                order_events.append(("base", types))
+                return NotImplemented
+
+        class DerivedOutOverride(BaseOverride):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                order_events.append(("derived", types))
+                return marker
+
+        self.assertIs(torch.div(BaseOverride(), native, out=DerivedOutOverride()), marker)
+        self.assertEqual([event[0] for event in order_events], ["derived"])
+        self.assertEqual(order_events[0][1], (DerivedOutOverride, BaseOverride))
 
         scalar_events = []
 
@@ -336,20 +403,8 @@ class TopLevelDivTests(unittest.TestCase):
                 "div(): argument 'input' (position 1) must be Tensor, not float",
             ),
             (
-                lambda: torch.div(x=tensor, other=tensor),
-                "div() got an unexpected keyword argument 'x'",
-            ),
-            (
-                lambda: torch.div(x1=tensor, x2=tensor),
-                "div() got an unexpected keyword argument 'x1'",
-            ),
-            (
                 lambda: torch.div(tensor, tensor, input=tensor),
                 "div() got multiple values for argument 'input'",
-            ),
-            (
-                lambda: torch.div(tensor, tensor, x2=tensor),
-                "div() got an unexpected keyword argument 'x2'",
             ),
             (
                 lambda: torch.div(tensor, tensor, extra=True),
@@ -378,6 +433,15 @@ class TopLevelDivTests(unittest.TestCase):
                 with self.assertRaisesRegex(Exception, f"^{re.escape(message)}$"):
                     call()
         self.assertEqual(destination.tolist(), [17.0])
+        self.assert_tensor_matches(
+            torch.div(x=tensor, other=tensor), tensor / tensor, case="x alias"
+        )
+        self.assert_tensor_matches(
+            torch.div(x1=tensor, x2=tensor), tensor / tensor, case="x1/x2 aliases"
+        )
+        self.assert_tensor_matches(
+            torch.div(input=tensor, x2=tensor), tensor / tensor, case="input/x2 aliases"
+        )
 
         function = torch.div
         self.assertIs(type(function), types.BuiltinFunctionType)

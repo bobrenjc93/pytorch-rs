@@ -67,6 +67,26 @@ class TopLevelDivReferenceTests(unittest.TestCase):
                 ),
             ),
             (
+                "x/other aliases",
+                lambda: torch.div(x=actual_left, other=actual_right),
+                lambda: reference_torch.div(x=expected_left, other=expected_right),
+            ),
+            (
+                "a/other aliases",
+                lambda: torch.div(a=actual_left, other=actual_right),
+                lambda: reference_torch.div(a=expected_left, other=expected_right),
+            ),
+            (
+                "x1/x2 aliases",
+                lambda: torch.div(x1=actual_left, x2=actual_right),
+                lambda: reference_torch.div(x1=expected_left, x2=expected_right),
+            ),
+            (
+                "input/x2 aliases",
+                lambda: torch.div(input=actual_left, x2=actual_right),
+                lambda: reference_torch.div(input=expected_left, x2=expected_right),
+            ),
+            (
                 "none options",
                 lambda: torch.div(
                     input=actual_left,
@@ -90,6 +110,11 @@ class TopLevelDivReferenceTests(unittest.TestCase):
                 "keyword tensor/scalar",
                 lambda: torch.div(input=actual_left[1], other=-2.5),
                 lambda: reference_torch.div(input=expected_left[1], other=-2.5),
+            ),
+            (
+                "alias tensor/scalar",
+                lambda: torch.div(x=actual_left[1], other=-2.5),
+                lambda: reference_torch.div(x=expected_left[1], other=-2.5),
             ),
         )
         for case, actual_call, expected_call in calls:
@@ -146,6 +171,7 @@ class TopLevelDivReferenceTests(unittest.TestCase):
     def torch_function_dispatch_observation(self, module):
         left = module.tensor([6.0])
         right = module.tensor([3.0])
+        destination = module.zeros((1,))
         function = module.div
         marker = object()
 
@@ -162,11 +188,17 @@ class TopLevelDivReferenceTests(unittest.TestCase):
         calls = (
             (lambda: function(left, right), None),
             (lambda: function(left, 3.0), None),
+            (lambda: function(x1=left, x2=right), ("x1", "x2")),
             (
                 lambda: function(
                     input=left, other=right, rounding_mode=None, out=None
                 ),
                 ("input", "other", "rounding_mode", "out"),
+            ),
+            (lambda: function(left, right, out=destination), ("out",)),
+            (
+                lambda: function(left, right, rounding_mode="trunc"),
+                ("rounding_mode",),
             ),
         )
         for call, keywords in calls:
@@ -195,10 +227,16 @@ class TopLevelDivReferenceTests(unittest.TestCase):
                 cls.calls.append((func, types, args, kwargs))
                 return marker
 
-        for call in (
-            lambda value: function(value, right),
-            lambda value: function(left, value),
-            lambda value: function(input=left, other=value),
+        for call, expected_args, expected_keywords in (
+            (lambda value: function(value, right), 2, None),
+            (lambda value: function(left, value), 2, None),
+            (lambda value: function(input=left, other=value), 0, ("input", "other")),
+            (lambda value: function(left, right, out=value), 2, ("out",)),
+            (
+                lambda value: function(left, right, rounding_mode=value),
+                2,
+                ("rounding_mode",),
+            ),
         ):
             value = Override()
             Override.calls.clear()
@@ -209,9 +247,9 @@ class TopLevelDivReferenceTests(unittest.TestCase):
                     result is marker,
                     func is function,
                     dispatch_types == (Override,),
-                    len(args),
+                    len(args) == expected_args,
                     kwargs is None,
-                    kwargs is not None and tuple(kwargs) == ("input", "other"),
+                    kwargs is not None and tuple(kwargs) == expected_keywords,
                 )
             )
 
@@ -231,11 +269,29 @@ class TopLevelDivReferenceTests(unittest.TestCase):
 
         both_result = function(LeftOverride(), RightOverride())
 
+        out_order = []
+
+        class BaseOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                out_order.append(("base", tuple(item.__name__ for item in types)))
+                return NotImplemented
+
+        class DerivedOutOverride(BaseOverride):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                out_order.append(("derived", tuple(item.__name__ for item in types)))
+                return marker
+
+        out_order_result = function(BaseOverride(), right, out=DerivedOutOverride())
+
         return (
             mode_observations,
             override_observations,
             both_result is marker,
             order,
+            out_order_result is marker,
+            out_order,
         )
 
     def test_torch_function_mode_and_operand_dispatch_match_pytorch_2_13(self):
