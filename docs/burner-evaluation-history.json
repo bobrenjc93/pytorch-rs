@@ -7885,6 +7885,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 83
       }
+    },
+    {
+      "key": "pr:1313",
+      "recordedAt": "2026-08-29T12:30:56.438Z",
+      "label": "PR #1313",
+      "kind": "leaf",
+      "prNumber": 1313,
+      "title": "Expose torch.compiler.list_backends metadata",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 85.5,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 83
+      }
     }
   ]
 }
