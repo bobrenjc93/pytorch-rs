@@ -6,11 +6,13 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 
 ## Category index
 
-- [Tensors](#tensors)
-- [Creation and math](#creation-and-math)
-- [NN and data](#nn-and-data)
-- [Backends, compiler, and distributed](#backends-compiler-and-distributed)
-- [Unsupported boundaries](#unsupported-boundaries)
+| Surface area | Contract section |
+| --- | --- |
+| Tensors | [Tensors](#tensors) |
+| Factories and math | [Creation and math](#creation-and-math) |
+| NN and data utilities | [NN and data](#nn-and-data) |
+| Backend, compiler, and distributed state | [Backends, compiler, and distributed](#backends-compiler-and-distributed) |
+| Unsupported boundary | [Unsupported boundaries](#unsupported-boundaries) |
 
 ## Current baseline
 
