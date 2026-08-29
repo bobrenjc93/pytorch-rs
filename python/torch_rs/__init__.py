@@ -19,6 +19,7 @@ _sys.modules[f"{__name__}._C"] = _C
 # TensorBase reports PyTorch's ``torch._C`` metadata, so retain its actual
 # native class privately for package-local descriptor reconstruction.
 _TensorBase = Tensor.__base__
+_Device = device
 
 # PyTorch's memory-format reducers use dotted public names such as
 # ``torch.channels_last``. Mirror its module self-alias so those names resolve
@@ -131,7 +132,95 @@ def is_deterministic_algorithms_warn_only_enabled() -> _builtins.bool:
 
 def get_default_device() -> "torch.device":
     r"""Gets the default ``torch.Tensor`` to be allocated on ``device``"""
-    return torch.device("cpu")
+    return _Device("cpu")
+
+
+def set_default_device(device: "Device") -> None:
+    r"""Sets the default ``torch.Tensor`` to be allocated on ``device``.  This
+    does not affect factory function calls which are called with an explicit
+    ``device`` argument.  Factory calls will be performed as if they
+    were passed ``device`` as an argument.
+
+    To only temporarily change the default device instead of setting it
+    globally, use ``with torch.device(device):`` instead.
+
+    The default device is initially ``cpu``.  If you set the default tensor
+    device to another device (e.g., ``cuda``) without a device index, tensors
+    will be allocated on whatever the current device for the device type,
+    even after :func:`torch.cuda.set_device` is called.
+
+    .. warning::
+
+        This function imposes a slight performance cost on every Python
+        call to the torch API (not just factory functions).  If this
+        is causing problems for you, please comment on
+        https://github.com/pytorch/pytorch/issues/92701
+
+    .. note::
+
+        This doesn't affect functions that create tensors that share the same memory as the input, like:
+        :func:`torch.from_numpy` and :func:`torch.frombuffer`
+
+    Args:
+        device (device or string): the device to set as default
+
+    Example::
+
+        >>> # xdoctest: +SKIP("requires cuda, changes global state")
+        >>> torch.get_default_device()
+        device(type='cpu')
+        >>> torch.set_default_device('cuda')  # current device is 0
+        >>> torch.get_default_device()
+        device(type='cuda', index=0)
+        >>> torch.set_default_device('cuda')
+        >>> torch.cuda.set_device('cuda:1')  # current device is 1
+        >>> torch.get_default_device()
+        device(type='cuda', index=1)
+        >>> torch.set_default_device('cuda:1')
+        >>> torch.get_default_device()
+        device(type='cuda', index=1)
+
+    """
+    if device is None:
+        return None
+
+    if _builtins.isinstance(device, _Device):
+        if device.type == "cpu" and device.index is None:
+            return None
+        raise NotImplementedError(
+            "set_default_device(): only an unindexed CPU default device is supported"
+        )
+
+    if _builtins.isinstance(device, _builtins.str):
+        value = _builtins.str.__str__(device)
+        if value == "cpu":
+            return None
+        parsed = _Device(value)
+        if parsed.type == "cpu" and parsed.index is None:
+            return None
+        raise NotImplementedError(
+            "set_default_device(): only an unindexed CPU default device is supported"
+        )
+
+    device_type = _builtins.type(device)
+    if device_type is Tensor:
+        type_name = "Tensor"
+    elif device_type is dtype:
+        type_name = "torch.dtype"
+    elif device_type is memory_format:
+        type_name = "torch.memory_format"
+    elif device_type is layout:
+        type_name = "torch.layout"
+    elif device_type is Size:
+        type_name = "torch.Size"
+    elif device_type is finfo:
+        type_name = "torch.finfo"
+    else:
+        type_name = _builtins.object.__getattribute__(device_type, "__name__")
+    raise TypeError(
+        "set_default_device(): argument 'device' must be torch.device or str, "
+        f"not {type_name}"
+    )
 
 
 @_functools.cache
@@ -421,6 +510,7 @@ __all__ = [
     "set_deterministic_debug_mode",
     "is_deterministic_algorithms_warn_only_enabled",
     "get_default_device",
+    "set_default_device",
     "get_device_module",
     "get_float32_matmul_precision",
     "set_float32_matmul_precision",
