@@ -41,11 +41,6 @@ class UseDeterministicAlgorithmsTests(unittest.TestCase):
             lambda: torch.use_deterministic_algorithms(0),
             lambda: torch.use_deterministic_algorithms(mode=0),
             lambda: torch.use_deterministic_algorithms(0, warn_only=0),
-            lambda: torch.use_deterministic_algorithms(_DefaultInt(0)),
-            lambda: torch.use_deterministic_algorithms(
-                _DefaultInt(0),
-                warn_only=_DefaultInt(0),
-            ),
         )
 
         for context in (contextlib.nullcontext(), torch.no_grad()):
@@ -61,8 +56,8 @@ class UseDeterministicAlgorithmsTests(unittest.TestCase):
         self.assert_default_state()
 
     def test_default_state_is_coherent_across_threads(self):
-        modes = (False, 0, _DefaultInt(0))
-        warn_only_values = (False, 0, _DefaultInt(0))
+        modes = (False, 0)
+        warn_only_values = (False, 0)
         worker_count = 10
         barrier = threading.Barrier(worker_count)
         results = [None] * worker_count
@@ -130,7 +125,7 @@ class UseDeterministicAlgorithmsTests(unittest.TestCase):
         for setter, mode in (
             (old_setter, False),
             (package.use_deterministic_algorithms, 0),
-            (old_setter, _DefaultInt(0)),
+            (old_setter, 0),
         ):
             with self.subTest(setter=setter.__name__, mode=mode):
                 self.assertIs(setter(mode), None)
@@ -152,7 +147,7 @@ class UseDeterministicAlgorithmsTests(unittest.TestCase):
                 "deterministic algorithm enforcement is not implemented",
             ),
             (
-                lambda: torch.use_deterministic_algorithms(_DefaultInt(2)),
+                lambda: torch.use_deterministic_algorithms(2),
                 "use_deterministic_algorithms(): mode 2 is not supported; "
                 "deterministic algorithm enforcement is not implemented",
             ),
@@ -169,7 +164,7 @@ class UseDeterministicAlgorithmsTests(unittest.TestCase):
             (
                 lambda: torch.use_deterministic_algorithms(
                     0,
-                    warn_only=_DefaultInt(2),
+                    warn_only=2,
                 ),
                 "use_deterministic_algorithms(): warn_only 2 is not supported; "
                 "deterministic warnings are not implemented",
@@ -201,6 +196,7 @@ class UseDeterministicAlgorithmsTests(unittest.TestCase):
             ([], "list"),
             (object(), "object"),
             (_RejectTruthiness(), "_RejectTruthiness"),
+            (_DefaultInt(0), "_DefaultInt"),
             (torch.tensor(0.0), "Tensor"),
             (torch.float32, "torch.dtype"),
             (torch.device("cpu"), "torch.device"),

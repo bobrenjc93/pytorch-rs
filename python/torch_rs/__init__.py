@@ -74,9 +74,10 @@ def _deterministic_flag_type_name(value):
 
 
 def _deterministic_bool_or_int_value(value, argument_name, position=None):
-    if _builtins.isinstance(value, _builtins.bool):
+    value_type = _builtins.type(value)
+    if value_type is _builtins.bool:
         return value
-    if _builtins.isinstance(value, _builtins.int):
+    if value_type is _builtins.int:
         return _builtins.int.__bool__(value)
 
     location = f" (position {position})" if position is not None else ""

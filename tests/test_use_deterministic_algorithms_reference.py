@@ -265,6 +265,7 @@ class UseDeterministicAlgorithmsReferenceTests(unittest.TestCase):
             [],
             object(),
             _CustomMode(),
+            _DefaultInt(0),
         ]
         if np is not None:
             shared_values.extend([np.bool_(False), np.int64(0)])
@@ -345,12 +346,10 @@ class UseDeterministicAlgorithmsReferenceTests(unittest.TestCase):
                     (True, 0, True, True),
                 )
 
-    def test_falsey_integer_forms_are_supported_default_noops(self):
+    def test_exact_falsey_integer_forms_are_supported_default_noops(self):
         for mode, warn_only in (
             (0, False),
             (0, 0),
-            (_DefaultInt(0), False),
-            (_DefaultInt(0), _DefaultInt(0)),
         ):
             with self.subTest(mode=mode, warn_only=warn_only):
                 self.assertIsNone(
