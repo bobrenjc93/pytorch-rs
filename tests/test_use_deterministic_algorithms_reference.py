@@ -255,9 +255,13 @@ class UseDeterministicAlgorithmsReferenceTests(unittest.TestCase):
                     (True, 0, True, True),
                 )
 
-    def test_non_bool_or_int_errors_match_pytorch_2_13(self):
+    def test_non_bool_errors_match_pytorch_2_13(self):
         shared_values = [
             None,
+            0,
+            1,
+            2,
+            -1,
             0.0,
             b"",
             bytearray(b""),
@@ -345,20 +349,6 @@ class UseDeterministicAlgorithmsReferenceTests(unittest.TestCase):
                     self.state(reference_torch)[:4],
                     (True, 0, True, True),
                 )
-
-    def test_exact_falsey_integer_forms_are_supported_default_noops(self):
-        for mode, warn_only in (
-            (0, False),
-            (0, 0),
-        ):
-            with self.subTest(mode=mode, warn_only=warn_only):
-                self.assertIsNone(
-                    torch.use_deterministic_algorithms(
-                        mode,
-                        warn_only=warn_only,
-                    )
-                )
-                self.assertEqual(self.state(torch)[:4], (True, 0, True, True))
 
     def test_nondefault_modes_remain_an_explicit_difference(self):
         for call, expected_state in (

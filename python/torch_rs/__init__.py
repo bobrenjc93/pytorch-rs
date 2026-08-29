@@ -73,12 +73,10 @@ def _deterministic_flag_type_name(value):
     return name
 
 
-def _deterministic_bool_or_int_value(value, argument_name, position=None):
+def _deterministic_bool_value(value, argument_name, position=None):
     value_type = _builtins.type(value)
     if value_type is _builtins.bool:
         return value
-    if value_type is _builtins.int:
-        return _builtins.int.__bool__(value)
 
     location = f" (position {position})" if position is not None else ""
     type_name = _deterministic_flag_type_name(value)
@@ -231,8 +229,8 @@ def use_deterministic_algorithms(
         ...
         RuntimeError: avg_pool3d_backward_cuda does not have a deterministic implementation...
     """
-    requested_mode = _deterministic_bool_or_int_value(mode, "mode", 1)
-    requested_warn_only = _deterministic_bool_or_int_value(warn_only, "warn_only")
+    requested_mode = _deterministic_bool_value(mode, "mode", 1)
+    requested_warn_only = _deterministic_bool_value(warn_only, "warn_only")
     if requested_mode:
         raise NotImplementedError(
             "use_deterministic_algorithms(): mode "
