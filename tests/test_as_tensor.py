@@ -169,6 +169,35 @@ class AsTensorTests(unittest.TestCase):
         self.assertEqual(args, ([1.0],))
         self.assertIsNone(kwargs)
 
+    def test_invalid_calls_do_not_dispatch_to_torch_function_mode(self):
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return object()
+
+        cases = (
+            ("missing data", lambda: torch.as_tensor()),
+            ("extra positional", lambda: torch.as_tensor([1.0], torch.float32)),
+            ("unexpected keyword", lambda: torch.as_tensor([1.0], requires_grad=True)),
+            ("duplicate data", lambda: torch.as_tensor([1.0], data=[2.0])),
+            ("invalid dtype", lambda: torch.as_tensor([1.0], dtype="float32")),
+            ("invalid device object", lambda: torch.as_tensor([1.0], device=object())),
+            (
+                "invalid device dtype",
+                lambda: torch.as_tensor([1.0], device=torch.float32),
+            ),
+        )
+        for name, call in cases:
+            mode = RecordingMode()
+            with self.subTest(name=name):
+                with self.assertRaises(TypeError):
+                    with mode:
+                        call()
+                self.assertEqual(mode.calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()

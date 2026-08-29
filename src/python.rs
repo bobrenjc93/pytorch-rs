@@ -1472,6 +1472,7 @@ pub(crate) fn as_tensor_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
+    let arguments = bind_and_validate_as_tensor_arguments(args, kwargs)?;
     if !torch_function_mode_stack::is_empty() {
         let function = variable_function(py, "as_tensor")?;
         let types = PyTuple::empty(py);
@@ -1493,7 +1494,7 @@ pub(crate) fn as_tensor_variable_function(
         }
     }
 
-    Ok(as_tensor_impl(args, kwargs)?.into_any())
+    Ok(as_tensor_impl(py, arguments)?.into_any())
 }
 
 pub(crate) fn arange_variable_function(
@@ -3960,6 +3961,13 @@ struct AsTensorCallArguments<'py> {
     keyword_error: Option<PyErr>,
 }
 
+struct ValidatedAsTensorCallArguments<'py> {
+    data: Bound<'py, PyAny>,
+    dtype: DType,
+    dtype_was_explicit: bool,
+    device: Option<Bound<'py, PyAny>>,
+}
+
 struct CreationCallArguments<'py> {
     size: Option<Bound<'py, PyAny>>,
     size_origin: Option<CreationSizeOrigin>,
@@ -4768,10 +4776,10 @@ fn tensor_copy_with_metadata(
         .map_err(|error| tensor_error(&error))
 }
 
-fn as_tensor_impl(
-    args: &Bound<'_, PyTuple>,
-    kwargs: Option<&Bound<'_, PyDict>>,
-) -> PyResult<Py<PyTensor>> {
+fn bind_and_validate_as_tensor_arguments<'py>(
+    args: &Bound<'py, PyTuple>,
+    kwargs: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ValidatedAsTensorCallArguments<'py>> {
     let arguments = bind_as_tensor_arguments(args, kwargs)?;
     let AsTensorCallArguments {
         data,
@@ -4787,10 +4795,30 @@ fn as_tensor_impl(
 
     let dtype_was_explicit = dtype.is_some();
     let dtype = parse_dtype("as_tensor", dtype.as_ref())?;
-    validate_as_tensor_device_argument_type(device.as_ref())?;
+    validate_as_tensor_pre_dispatch_device_argument_type(device.as_ref())?;
     if let Some(error) = keyword_error {
         return Err(error);
     }
+    Ok(ValidatedAsTensorCallArguments {
+        data,
+        dtype,
+        dtype_was_explicit,
+        device,
+    })
+}
+
+fn as_tensor_impl(
+    py: Python<'_>,
+    arguments: ValidatedAsTensorCallArguments<'_>,
+) -> PyResult<Py<PyTensor>> {
+    let ValidatedAsTensorCallArguments {
+        data,
+        dtype,
+        dtype_was_explicit,
+        device,
+    } = arguments;
+
+    validate_as_tensor_device_argument_type(device.as_ref())?;
     let device_uses_identity = as_tensor_device_uses_identity(device.as_ref())?;
     let device = parse_device("as_tensor", device.as_ref())?;
 
@@ -4810,11 +4838,11 @@ fn as_tensor_impl(
             .map(PyTensor::new)
             .map_err(|error| tensor_error(&error))?;
         drop(source);
-        return Py::new(args.py(), copy);
+        return Py::new(py, copy);
     }
 
     let tensor = tensor_copy_with_metadata(&data, dtype, device, dtype_was_explicit, false)?;
-    Py::new(args.py(), tensor)
+    Py::new(py, tensor)
 }
 
 fn bind_as_tensor_arguments<'py>(
@@ -4883,6 +4911,25 @@ fn validate_as_tensor_device_argument_type(device: Option<&Bound<'_, PyAny>>) ->
         return Ok(());
     };
     if device.cast::<PyDevice>().is_ok() || device.cast::<PyString>().is_ok() {
+        return Ok(());
+    }
+    let actual = python_type_name(device)?;
+    Err(PyTypeError::new_err(format!(
+        "as_tensor(): argument 'device' must be torch.device, not {actual}"
+    )))
+}
+
+fn validate_as_tensor_pre_dispatch_device_argument_type(
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    let Some(device) = device else {
+        return Ok(());
+    };
+    if device.cast::<PyDevice>().is_ok()
+        || device.cast::<PyString>().is_ok()
+        || device.cast::<PyBytes>().is_ok()
+        || (!device.is_instance_of::<PyBool>() && device.is_instance_of::<PyInt>())
+    {
         return Ok(());
     }
     let actual = python_type_name(device)?;
