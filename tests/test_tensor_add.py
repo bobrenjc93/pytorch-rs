@@ -153,6 +153,172 @@ class TensorAddTests(unittest.TestCase):
         self.assertFalse(no_grad_output.requires_grad)
         self.assertTrue(no_grad_leaf.add(2.0).requires_grad)
 
+    def test_torch_function_modes_receive_original_calls_and_can_forward(self):
+        left = torch.tensor([1.0])
+        tensor_other = torch.tensor([2.0])
+        descriptor = inspect.getattr_static(torch.Tensor, "add")
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        calls = (
+            ("positional scalar", lambda: left.add(2.0), (left, 2.0), None),
+            ("other keyword", lambda: left.add(other=2.0), (left,), {"other": 2.0}),
+            ("x2 keyword", lambda: left.add(x2=2.0), (left,), {"x2": 2.0}),
+            (
+                "alpha keyword",
+                lambda: left.add(2.0, alpha=1),
+                (left, 2.0),
+                {"alpha": 1},
+            ),
+            (
+                "non-default alpha",
+                lambda: left.add(2.0, alpha=2),
+                (left, 2.0),
+                {"alpha": 2},
+            ),
+            (
+                "tensor other",
+                lambda: left.add(tensor_other),
+                (left, tensor_other),
+                None,
+            ),
+        )
+        for case, call, expected_args, expected_kwargs in calls:
+            mode = RecordingMode()
+            with mode:
+                self.assertIs(call(), marker)
+            self.assertEqual(len(mode.calls), 1)
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            with self.subTest(case=case):
+                self.assertIs(function, descriptor)
+                self.assertEqual(dispatch_types, ())
+                self.assertEqual(len(args), len(expected_args))
+                self.assertIs(args[0], left)
+                for actual, expected in zip(args[1:], expected_args[1:], strict=True):
+                    if expected is tensor_other:
+                        self.assertIs(actual, tensor_other)
+                    else:
+                        self.assertEqual(actual, expected)
+                if expected_kwargs is None:
+                    self.assertIsNone(kwargs)
+                else:
+                    self.assertEqual(tuple(kwargs), tuple(expected_kwargs))
+                    for key, expected in expected_kwargs.items():
+                        self.assertEqual(kwargs[key], expected)
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                actual = left.add(other=2.0, alpha=1)
+        self.assertEqual(order, ["upper", "lower"])
+        self.assert_tensor_matches(actual, left + 2.0, left, case="forwarded modes")
+
+        invalid_calls = (
+            (
+                lambda: left.add(2.0, alpha=[]),
+                "add(): argument 'alpha' must be Number, not list",
+            ),
+            (
+                lambda: left.add(2.0, alpha=2, wat=2),
+                "add() received an invalid combination of arguments - got "
+                "unrecognized keyword arguments: wat, alpha",
+            ),
+        )
+        for call, message in invalid_calls:
+            mode = RecordingMode()
+            with mode:
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    call()
+            self.assertEqual(mode.calls, [])
+
+    def test_torch_function_operand_overrides_dispatch(self):
+        left = torch.tensor([1.0])
+        descriptor = inspect.getattr_static(torch.Tensor, "add")
+        marker = object()
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        calls = (
+            ("positional other", lambda value: left.add(value), None),
+            ("other keyword", lambda value: left.add(other=value), "other"),
+            ("x2 keyword", lambda value: left.add(x2=value), "x2"),
+            ("alpha keyword", lambda value: left.add(2.0, alpha=value), "alpha"),
+        )
+        for case, call, keyword in calls:
+            value = Override()
+            Override.calls.clear()
+            self.assertIs(call(value), marker)
+            self.assertEqual(len(Override.calls), 1)
+            function, dispatch_types, args, kwargs = Override.calls[0]
+            with self.subTest(case=case):
+                self.assertIs(function, descriptor)
+                self.assertEqual(dispatch_types, (Override,))
+                self.assertIs(args[0], left)
+                if keyword is None:
+                    self.assertEqual(len(args), 2)
+                    self.assertIs(args[1], value)
+                    self.assertIsNone(kwargs)
+                else:
+                    expected_args_len = 2 if keyword == "alpha" else 1
+                    self.assertEqual(len(args), expected_args_len)
+                    self.assertEqual(tuple(kwargs), (keyword,))
+                    self.assertIs(kwargs[keyword], value)
+
+        mode_calls = []
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                mode_calls.append((func, types, args, kwargs))
+                return NotImplemented
+
+        value = Override()
+        Override.calls.clear()
+        with DecliningMode():
+            self.assertIs(left.add(2.0, alpha=value), marker)
+        self.assertEqual(len(mode_calls), 1)
+        self.assertEqual(len(Override.calls), 1)
+        self.assertIs(mode_calls[0][0], descriptor)
+        self.assertEqual(mode_calls[0][1], (Override,))
+        self.assertEqual(len(mode_calls[0][2]), 2)
+        self.assertIs(mode_calls[0][3]["alpha"], value)
+        self.assertIs(Override.calls[0][0], descriptor)
+        self.assertEqual(len(Override.calls[0][2]), 2)
+        self.assertIs(Override.calls[0][3]["alpha"], value)
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^Multiple dispatch failed for 'torch\.Tensor\.add'; all "
+            r"__torch_function__ handlers returned NotImplemented:",
+        ):
+            left.add(DecliningOverride())
+
     def test_descriptor_metadata_unbound_call_and_argument_errors(self):
         tensor = torch.tensor([1.0])
         descriptor = inspect.getattr_static(torch.Tensor, "add")
@@ -209,6 +375,12 @@ class TensorAddTests(unittest.TestCase):
                 lambda: tensor.add(1, out=tensor),
                 TypeError,
                 "add() got an unexpected keyword argument 'out'",
+            ),
+            (
+                lambda: tensor.add(2.0, alpha=2, wat=2),
+                TypeError,
+                "add() received an invalid combination of arguments - got "
+                "unrecognized keyword arguments: wat, alpha",
             ),
             (
                 lambda: tensor.add(wat=2),

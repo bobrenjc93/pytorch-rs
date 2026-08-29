@@ -252,6 +252,152 @@ class TensorAddReferenceTests(unittest.TestCase):
             case="unbound call",
         )
 
+    def torch_function_dispatch_contract(self, module):
+        left = module.tensor([1.0])
+        tensor_other = module.tensor([2.0])
+        descriptor = inspect.getattr_static(module.Tensor, "add")
+        marker = object()
+        observations = []
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        def normalize_value(value):
+            if value is left:
+                return "left"
+            if value is tensor_other:
+                return "tensor_other"
+            if isinstance(value, Override):
+                return "override"
+            return value
+
+        def normalize_event(event):
+            func, dispatch_types, args, kwargs = event
+            normalized_kwargs = None
+            if kwargs is not None:
+                normalized_kwargs = tuple(
+                    (key, normalize_value(kwargs[key])) for key in kwargs
+                )
+            return (
+                func is descriptor,
+                tuple(dispatch_type.__name__ for dispatch_type in dispatch_types),
+                tuple(normalize_value(argument) for argument in args),
+                normalized_kwargs,
+            )
+
+        mode_cases = (
+            ("positional scalar", lambda: left.add(2.0)),
+            ("other keyword", lambda: left.add(other=2.0)),
+            ("x2 keyword", lambda: left.add(x2=2.0)),
+            ("alpha keyword", lambda: left.add(2.0, alpha=1)),
+            ("non-default alpha", lambda: left.add(2.0, alpha=2)),
+            ("tensor other", lambda: left.add(tensor_other)),
+        )
+        for label, call in mode_cases:
+            mode = RecordingMode()
+            with mode:
+                result = call()
+            observations.append(
+                ("mode", label, result is marker, tuple(map(normalize_event, mode.calls)))
+            )
+
+        order = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = left.add(other=2.0, alpha=1)
+        observations.append(
+            (
+                "forwarded modes",
+                tuple(order),
+                tuple(np.asarray(forwarded, dtype=np.float32).reshape(-1).tolist()),
+            )
+        )
+
+        override_cases = (
+            ("positional other", lambda value: left.add(value)),
+            ("other keyword", lambda value: left.add(other=value)),
+            ("x2 keyword", lambda value: left.add(x2=value)),
+            ("alpha keyword", lambda value: left.add(2.0, alpha=value)),
+        )
+        for label, call in override_cases:
+            value = Override()
+            Override.calls.clear()
+            result = call(value)
+            observations.append(
+                (
+                    "override",
+                    label,
+                    result is marker,
+                    tuple(map(normalize_event, Override.calls)),
+                )
+            )
+
+        mode_calls = []
+
+        class DecliningMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                mode_calls.append((func, types, args, kwargs))
+                return NotImplemented
+
+        value = Override()
+        Override.calls.clear()
+        with DecliningMode():
+            result = left.add(2.0, alpha=value)
+        observations.append(
+            (
+                "declining mode",
+                result is marker,
+                tuple(map(normalize_event, mode_calls)),
+                tuple(map(normalize_event, Override.calls)),
+            )
+        )
+
+        mode = RecordingMode()
+        try:
+            with mode:
+                left.add(2.0, alpha=2, wat=2)
+        except Exception as error:
+            observations.append(
+                (
+                    "invalid alpha keyword",
+                    type(error).__name__,
+                    str(error),
+                    len(mode.calls),
+                )
+            )
+        else:
+            observations.append(("invalid alpha keyword", None, None, len(mode.calls)))
+
+        return tuple(observations)
+
+    def test_torch_function_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.torch_function_dispatch_contract(torch),
+            self.torch_function_dispatch_contract(reference_torch),
+        )
+
     def test_matching_error_behavior_for_supported_boundary_cases(self):
         actual = torch.tensor([1.0])
         expected = reference_torch.tensor([1.0])
@@ -274,6 +420,10 @@ class TensorAddReferenceTests(unittest.TestCase):
             (
                 lambda: actual.add(2.0, alpha=[]),
                 lambda: expected.add(2.0, alpha=[]),
+            ),
+            (
+                lambda: actual.add(2.0, alpha=2, wat=2),
+                lambda: expected.add(2.0, alpha=2, wat=2),
             ),
             (
                 lambda: actual.add(2.0, alpha=np.uint64(2**63)),
