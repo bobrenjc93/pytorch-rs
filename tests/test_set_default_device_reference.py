@@ -1,6 +1,7 @@
 import copy
 import inspect
 import pickle
+import threading
 import types
 import unittest
 
@@ -56,6 +57,64 @@ class SetDefaultDeviceReferenceTests(unittest.TestCase):
             tuple((tensor.device.type, tensor.device.index) for tensor in factories),
         )
 
+    def thread_local_outcome(self, module):
+        def normalize(device):
+            return str(device), repr(device), device.type, device.index
+
+        module.set_default_device("cpu:2")
+        worker_count = 4
+        barrier = threading.Barrier(worker_count)
+        results = [None] * worker_count
+        errors = []
+
+        def worker(index):
+            try:
+                barrier.wait(timeout=10)
+                initial = module.get_default_device()
+                module.set_default_device(f"cpu:{index + 3}")
+                after_set = module.get_default_device()
+                tensor_device = module.ones((1,)).device
+                module.set_default_device(None)
+                after_reset = module.get_default_device()
+                results[index] = (
+                    normalize(initial),
+                    normalize(after_set),
+                    normalize(tensor_device),
+                    normalize(after_reset),
+                )
+            except BaseException as error:
+                errors.append((type(error).__name__, str(error)))
+
+        threads = [
+            threading.Thread(target=worker, args=(index,))
+            for index in range(worker_count)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(errors, [])
+        main_after_workers = module.get_default_device()
+
+        module.set_default_device("cpu:7")
+        observed = []
+        thread = threading.Thread(
+            target=lambda: observed.append(normalize(module.get_default_device()))
+        )
+        thread.start()
+        thread.join(timeout=10)
+        self.assertFalse(thread.is_alive())
+        main_after_new_thread = module.get_default_device()
+
+        return (
+            results,
+            normalize(main_after_workers),
+            observed,
+            normalize(main_after_new_thread),
+        )
+
     def test_supported_cpu_forms_match_pytorch_2_13(self):
         cases = (
             lambda module: None,
@@ -76,6 +135,12 @@ class SetDefaultDeviceReferenceTests(unittest.TestCase):
                     self.default_device_outcome(torch, value),
                     self.default_device_outcome(reference_torch, value),
                 )
+
+    def test_thread_local_default_device_state_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.thread_local_outcome(torch),
+            self.thread_local_outcome(reference_torch),
+        )
 
     def test_callable_metadata_matches_pytorch_2_13(self):
         actual = torch.set_default_device

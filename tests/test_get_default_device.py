@@ -276,6 +276,61 @@ class SetDefaultDeviceTests(unittest.TestCase):
                 assert_default_device(self, torch.device("cpu", 2))
                 self.assertEqual(torch.tensor([1.0, 2.0]).tolist(), expected)
 
+    def test_set_default_device_state_is_thread_local(self):
+        torch.set_default_device("cpu:2")
+        worker_count = 4
+        barrier = threading.Barrier(worker_count)
+        results = [None] * worker_count
+        errors = []
+
+        def worker(index):
+            try:
+                barrier.wait(timeout=10)
+                initial = torch.get_default_device()
+                torch.set_default_device(f"cpu:{index + 3}")
+                after_set = torch.get_default_device()
+                tensor_device = torch.ones((1,)).device
+                torch.set_default_device(None)
+                after_reset = torch.get_default_device()
+                results[index] = (
+                    initial,
+                    after_set,
+                    tensor_device,
+                    after_reset,
+                )
+            except BaseException as error:
+                errors.append(error)
+
+        threads = [
+            threading.Thread(target=worker, args=(index,))
+            for index in range(worker_count)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(errors, [])
+        self.assertEqual(torch.get_default_device(), torch.device("cpu", 2))
+        for index, result in enumerate(results):
+            initial, after_set, tensor_device, after_reset = result
+            self.assertEqual(initial, torch.device("cpu"))
+            self.assertEqual(after_set, torch.device("cpu", index + 3))
+            self.assertEqual(tensor_device, torch.device("cpu"))
+            self.assertEqual(after_reset, torch.device("cpu"))
+
+        torch.set_default_device("cpu:7")
+        observed = []
+        thread = threading.Thread(
+            target=lambda: observed.append(torch.get_default_device())
+        )
+        thread.start()
+        thread.join(timeout=10)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(observed, [torch.device("cpu")])
+        self.assertEqual(torch.get_default_device(), torch.device("cpu", 7))
+
     def test_rebinding_public_device_name_does_not_change_validation(self):
         original_device = torch.device
         torch.device = lambda specification: object()

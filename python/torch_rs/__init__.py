@@ -5,6 +5,7 @@ import copyreg as _copyreg
 import functools as _functools
 import multiprocessing.reduction as _multiprocessing_reduction
 import sys as _sys
+import threading as _threading
 import types as _types
 from math import e, inf, nan, pi
 
@@ -20,7 +21,7 @@ _sys.modules[f"{__name__}._C"] = _C
 # native class privately for package-local descriptor reconstruction.
 _TensorBase = Tensor.__base__
 _Device = device
-_default_device = _Device("cpu")
+_default_device_state = _threading.local()
 
 # PyTorch's memory-format reducers use dotted public names such as
 # ``torch.channels_last``. Mirror its module self-alias so those names resolve
@@ -133,7 +134,7 @@ def is_deterministic_algorithms_warn_only_enabled() -> _builtins.bool:
 
 def get_default_device() -> "torch.device":
     r"""Gets the default ``torch.Tensor`` to be allocated on ``device``"""
-    return _Device(_default_device)
+    return _Device(_builtins.getattr(_default_device_state, "device", "cpu"))
 
 
 def set_default_device(device: "Device") -> None:
@@ -182,10 +183,8 @@ def set_default_device(device: "Device") -> None:
         device(type='cuda', index=1)
 
     """
-    global _default_device
-
     if device is None:
-        _default_device = _Device("cpu")
+        _default_device_state.device = _Device("cpu")
         return None
 
     if _builtins.isinstance(device, _Device):
@@ -221,7 +220,7 @@ def set_default_device(device: "Device") -> None:
             "set_default_device(): only CPU default devices are supported"
         )
 
-    _default_device = _Device(parsed)
+    _default_device_state.device = _Device(parsed)
     return None
 
 
@@ -557,5 +556,6 @@ del (
     _multiprocessing_reduction,
     _native,
     _sys,
+    _threading,
     _types,
 )
