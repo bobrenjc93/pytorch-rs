@@ -4,6 +4,7 @@ import importlib
 import inspect
 import os
 import pickle
+import re
 import subprocess
 import sys
 import threading
@@ -15,32 +16,34 @@ from unittest import mock
 import torch_rs as torch
 
 
-FUNCTION_DOC = """Waits for all kernels in all streams on the CPU device to complete.
+FUNCTION_DOC = """Sets the current device, in CPU we do nothing.
 
-    Args:
-        device (torch.device or int, optional): ignored, there's only one CPU device.
-
-    N.B. This function only exists to facilitate device-agnostic code.
+    N.B. This function only exists to facilitate device-agnostic code
     """
 
 
-class ExplodingDevice:
+class UnusableDevice:
+    def __getattribute__(self, name):
+        raise AssertionError(f"device attribute was inspected: {name}")
+
     def __repr__(self):
-        raise AssertionError("device repr was inspected")
+        raise AssertionError("device representation was inspected")
 
-    def __str__(self):
-        raise AssertionError("device string was inspected")
 
-    def __index__(self):
-        raise AssertionError("device index was inspected")
-
+class UnusableComparison:
     def __bool__(self):
         raise AssertionError("device truthiness was inspected")
 
+    def __eq__(self, other):
+        raise AssertionError("device equality was inspected")
 
-class CpuSynchronizeTests(unittest.TestCase):
-    def test_returns_exact_none_for_every_ignored_device_without_runtime_probes(self):
-        function = torch.cpu.synchronize
+
+class CpuSetDeviceTests(unittest.TestCase):
+    def test_accepts_arbitrary_device_without_runtime_probes(self):
+        cpu = torch.cpu
+        function = cpu.set_device
+        baseline_stream = cpu.current_stream()
+        baseline_device = cpu.current_device()
 
         self.assertEqual(function.__code__.co_names, ())
         self.assertEqual(function.__code__.co_freevars, ())
@@ -55,13 +58,15 @@ class CpuSynchronizeTests(unittest.TestCase):
             "cpu",
             "cpu:127",
             "cuda:0",
+            "mps:0",
             "",
             torch.device("cpu"),
             torch.device("cpu", 0),
             torch.tensor([1.0]),
             [],
             {"device": "cuda:0"},
-            ExplodingDevice(),
+            UnusableDevice(),
+            UnusableComparison(),
         )
         environments = (
             {},
@@ -70,61 +75,29 @@ class CpuSynchronizeTests(unittest.TestCase):
             {
                 "CUDA_VISIBLE_DEVICES": "0",
                 "OMP_NUM_THREADS": "1",
+                "MKL_DEBUG_CPU_TYPE": "5",
                 "PYTORCH_NVML_BASED_CUDA_CHECK": "1",
             },
         )
         for environment in environments:
             with mock.patch.dict(os.environ, environment, clear=True):
-                self.assertIs(function(), None)
-                for case, device in enumerate(devices):
-                    with self.subTest(environment=environment, case=case):
-                        self.assertIs(function(device), None)
-                        self.assertIs(function(device=device), None)
+                with mock.patch(
+                    "os.cpu_count",
+                    side_effect=AssertionError("CPU hardware was probed"),
+                ):
+                    for case, device in enumerate(devices):
+                        with self.subTest(environment=environment, case=case):
+                            self.assertIsNone(function(device))
+                            self.assertEqual(cpu.current_device(), baseline_device)
+                            self.assertIs(cpu.current_stream(), baseline_stream)
 
-    def test_noop_preserves_tensor_and_autograd_state(self):
-        leaf = torch.tensor([[1.0, 2.0]], requires_grad=True)
-        result = (leaf * 3.0).transpose(0, 1)
-        metadata = (
-            result.shape,
-            result.stride(),
-            result.storage_offset(),
-            result.data_ptr(),
-            result.requires_grad,
-            result.is_leaf,
-        )
-
-        self.assertIs(torch.cpu.synchronize(result), None)
-        self.assertEqual(
-            (
-                result.shape,
-                result.stride(),
-                result.storage_offset(),
-                result.data_ptr(),
-                result.requires_grad,
-                result.is_leaf,
-            ),
-            metadata,
-        )
-        self.assertEqual(result.tolist(), [[3.0], [6.0]])
-        self.assertIsNone(leaf.grad)
-
-        result.sum().backward()
-        self.assertEqual(leaf.grad.tolist(), [[3.0, 3.0]])
-
-    def test_none_is_stable_across_threads_and_grad_modes(self):
-        function = torch.cpu.synchronize
+    def test_noop_is_stable_across_threads_and_grad_modes(self):
+        cpu = torch.cpu
+        function = cpu.set_device
+        baseline_stream = cpu.current_stream()
+        baseline_device = cpu.current_device()
         worker_count = 8
         barrier = threading.Barrier(worker_count)
-        devices = (
-            None,
-            0,
-            "cuda:0",
-            torch.device("cpu"),
-            torch.tensor(1.0),
-            ExplodingDevice(),
-            {"index": 7},
-            object(),
-        )
         results = [None] * worker_count
         errors = []
 
@@ -135,9 +108,9 @@ class CpuSynchronizeTests(unittest.TestCase):
                     barrier.wait(timeout=10)
                     results[index] = (
                         torch.is_grad_enabled(),
-                        function(devices[index]),
-                        torch.is_grad_enabled(),
-                        function(device=devices[-index - 1]),
+                        function(UnusableDevice()),
+                        cpu.current_device(),
+                        cpu.current_stream() is baseline_stream,
                         torch.is_grad_enabled(),
                     )
             except BaseException as error:
@@ -161,24 +134,54 @@ class CpuSynchronizeTests(unittest.TestCase):
                 (
                     expected_grad_state,
                     None,
-                    expected_grad_state,
-                    None,
+                    baseline_device,
+                    True,
                     expected_grad_state,
                 ),
             )
-            self.assertIs(result[1], None)
-            self.assertIs(result[3], None)
+
+    def test_tensor_execution_and_autograd_are_unchanged(self):
+        leaf = torch.tensor([[1.0, 2.0]], requires_grad=True)
+        result = (leaf * 3.0).transpose(0, 1)
+        metadata = (
+            result.shape,
+            result.stride(),
+            result.storage_offset(),
+            result.data_ptr(),
+            result.requires_grad,
+            result.is_leaf,
+        )
+
+        self.assertIsNone(torch.cpu.set_device(result))
+        self.assertEqual(torch.cpu.current_device(), "cpu")
+        self.assertIs(torch.cpu.current_stream(), torch.cpu._current_stream)
+        self.assertEqual(
+            (
+                result.shape,
+                result.stride(),
+                result.storage_offset(),
+                result.data_ptr(),
+                result.requires_grad,
+                result.is_leaf,
+            ),
+            metadata,
+        )
+        self.assertEqual(result.tolist(), [[3.0], [6.0]])
+        self.assertIsNone(leaf.grad)
+
+        result.sum().backward()
+        self.assertEqual(leaf.grad.tolist(), [[3.0, 3.0]])
 
     def test_signature_annotations_documentation_and_module_identity(self):
         cpu = importlib.import_module("torch_rs.cpu")
-        function = cpu.synchronize
+        function = cpu.set_device
 
         self.assertIs(torch.cpu, cpu)
         self.assertIs(sys.modules["torch_rs.cpu"], cpu)
         self.assertIs(type(function), types.FunctionType)
         self.assertEqual(
             str(inspect.signature(function)),
-            "(device: torch_rs.device | str | int | None = None) -> None",
+            "(device: torch_rs.device | str | int | None) -> None",
         )
         device_annotation = torch.device | str | int | None
         self.assertEqual(
@@ -189,21 +192,21 @@ class CpuSynchronizeTests(unittest.TestCase):
             typing.get_type_hints(function),
             {"device": device_annotation, "return": type(None)},
         )
-        self.assertEqual(function.__name__, "synchronize")
-        self.assertEqual(function.__qualname__, "synchronize")
+        self.assertEqual(function.__name__, "set_device")
+        self.assertEqual(function.__qualname__, "set_device")
         self.assertEqual(function.__module__, "torch_rs.cpu")
         self.assertIs(inspect.getmodule(function), cpu)
         self.assertEqual(
             inspect.cleandoc(function.__doc__), inspect.cleandoc(FUNCTION_DOC)
         )
-        self.assertEqual(function.__defaults__, (None,))
+        self.assertIsNone(function.__defaults__)
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
         self.assertFalse(hasattr(function, "__text_signature__"))
 
     def test_imports_exports_copy_and_pickle_use_the_canonical_module(self):
         cpu = torch.cpu
-        function = cpu.synchronize
+        function = cpu.set_device
 
         self.assertEqual(
             cpu.__all__,
@@ -227,42 +230,26 @@ class CpuSynchronizeTests(unittest.TestCase):
         self.assertIs(package_import["cpu"], cpu)
 
         direct_import = {}
-        exec("from torch_rs.cpu import synchronize", direct_import)
-        self.assertIs(direct_import["synchronize"], function)
+        exec("from torch_rs.cpu import set_device", direct_import)
+        self.assertIs(direct_import["set_device"], function)
 
         cpu_namespace = {}
         exec("from torch_rs.cpu import *", cpu_namespace)
         self.assertEqual(
             {name for name in cpu_namespace if not name.startswith("__")},
-            {
-                "current_device",
-                "current_stream",
-                "stream",
-                "set_device",
-                "device_count",
-                "Stream",
-                "StreamContext",
-                "Event",
-                "is_available",
-                "is_initialized",
-                "synchronize",
-            },
+            set(cpu.__all__),
         )
-        self.assertIs(cpu_namespace["current_device"], cpu.current_device)
-        self.assertIs(cpu_namespace["set_device"], cpu.set_device)
-        self.assertIs(cpu_namespace["synchronize"], function)
-        self.assertIs(cpu_namespace["is_available"], cpu.is_available)
-        self.assertIs(cpu_namespace["is_initialized"], cpu.is_initialized)
-        self.assertIs(cpu_namespace["device_count"], cpu.device_count)
+        for name in cpu.__all__:
+            with self.subTest(cpu_export=name):
+                self.assertIs(cpu_namespace[name], getattr(cpu, name))
 
-        for name in ("cpu", "device_count", "is_available", "synchronize"):
-            with self.subTest(top_level_export=name):
-                self.assertNotIn(name, torch.__all__)
+        self.assertNotIn("cpu", torch.__all__)
+        self.assertNotIn("set_device", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("cpu", top_level_namespace)
-        self.assertNotIn("synchronize", top_level_namespace)
-        self.assertFalse(hasattr(torch, "synchronize"))
+        self.assertNotIn("set_device", top_level_namespace)
+        self.assertFalse(hasattr(torch, "set_device"))
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
@@ -272,24 +259,24 @@ class CpuSynchronizeTests(unittest.TestCase):
                 self.assertIn(b"torch_rs.cpu", payload)
                 self.assertIs(pickle.loads(payload), function)
 
-    def test_argument_errors_match_pytorch_2_13(self):
-        function = torch.cpu.synchronize
+    def test_rejects_arguments_with_pytorch_2_13_errors(self):
+        function = torch.cpu.set_device
         cases = (
             (
-                lambda: function(None, None),
-                "synchronize() takes from 0 to 1 positional arguments but 2 were given",
+                lambda: function(),
+                "set_device() missing 1 required positional argument: 'device'",
             ),
             (
-                lambda: function(None, None, None),
-                "synchronize() takes from 0 to 1 positional arguments but 3 were given",
+                lambda: function(None, None),
+                "set_device() takes 1 positional argument but 2 were given",
             ),
             (
                 lambda: function(unexpected=True),
-                "synchronize() got an unexpected keyword argument 'unexpected'",
+                "set_device() got an unexpected keyword argument 'unexpected'",
             ),
             (
                 lambda: function(None, device=None),
-                "synchronize() got multiple values for argument 'device'",
+                "set_device() got multiple values for argument 'device'",
             ),
         )
         for call, message in cases:
@@ -299,37 +286,35 @@ class CpuSynchronizeTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_remaining_device_mutation_apis_are_unsupported(self):
+    def test_module_reload_replaces_function_and_preserves_state_shape(self):
         cpu = torch.cpu
+        old_function = cpu.set_device
+        namespace = cpu.__dict__
 
+        self.assertIs(importlib.reload(cpu), cpu)
+        new_function = cpu.set_device
+        self.assertIs(torch.cpu, cpu)
+        self.assertIs(sys.modules["torch_rs.cpu"], cpu)
+        self.assertIs(cpu.__dict__, namespace)
+        self.assertIsNot(new_function, old_function)
+        self.assertIsNone(new_function(UnusableDevice()))
+        self.assertEqual(cpu.current_device(), "cpu")
+        self.assertIs(cpu.current_stream(), cpu._default_cpu_stream)
+        self.assertIs(copy.copy(new_function), new_function)
+        self.assertIs(copy.deepcopy(new_function), new_function)
+        self.assertIs(pickle.loads(pickle.dumps(new_function)), new_function)
+        with self.assertRaises(pickle.PicklingError) as raised:
+            pickle.dumps(old_function)
+        message = re.sub(r"0x[0-9a-fA-F]+", "0x...", str(raised.exception))
         self.assertEqual(
-            {name for name in vars(cpu) if not name.startswith("_")},
-            {
-                "current_device",
-                "current_stream",
-                "stream",
-                "set_device",
-                "device_count",
-                "Stream",
-                "StreamContext",
-                "Event",
-                "is_available",
-                "is_initialized",
-                "synchronize",
-            },
+            message,
+            "Can't pickle <function set_device at 0x...>: "
+            "it's not the same object as torch_rs.cpu.set_device",
         )
-        for name in (
-            "amp",
-            "get_capabilities",
-        ):
-            with self.subTest(name=name):
-                self.assertFalse(hasattr(cpu, name))
-
-        with self.assertRaises(ModuleNotFoundError):
-            importlib.import_module("torch_rs.cpu.amp")
 
     def test_importing_and_calling_does_not_import_pytorch(self):
         script = r"""
+import os
 import sys
 
 class RejectPytorchImport:
@@ -338,18 +323,24 @@ class RejectPytorchImport:
             raise RuntimeError(f"PyTorch import was attempted: {fullname}")
         return None
 
-class IgnoredDevice:
-    def __repr__(self):
-        raise AssertionError("device was inspected")
+class UnusableDevice:
+    def __getattribute__(self, name):
+        raise AssertionError(f"device attribute was inspected: {name}")
 
 sys.meta_path.insert(0, RejectPytorchImport())
+os.environ.update(
+    CUDA_VISIBLE_DEVICES="0",
+    OMP_NUM_THREADS="1",
+    MKL_DEBUG_CPU_TYPE="5",
+    PYTORCH_NVML_BASED_CUDA_CHECK="1",
+)
 import torch_rs as torch
 
-function = torch.cpu.synchronize
+function = torch.cpu.set_device
 assert function.__code__.co_names == ()
-assert function() is None
-assert function(IgnoredDevice()) is None
-assert function(device="cuda:0") is None
+assert function(UnusableDevice()) is None
+assert torch.cpu.current_device() == "cpu"
+assert torch.cpu.current_stream() is torch.cpu._default_cpu_stream
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(

@@ -206,6 +206,7 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
             "current_device",
             "current_stream",
             "stream",
+            "set_device",
             "device_count",
             "Stream",
             "StreamContext",
@@ -315,6 +316,7 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
                 "current_device",
                 "current_stream",
                 "stream",
+                "set_device",
                 "device_count",
                 "Stream",
                 "StreamContext",
@@ -329,7 +331,6 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
             {
                 "amp",
                 "get_capabilities",
-                "set_device",
             }.issubset(unsupported)
         )
         for name in unsupported:
