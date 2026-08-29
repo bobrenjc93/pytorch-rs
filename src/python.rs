@@ -1755,6 +1755,22 @@ pub(crate) fn ravel_variable_function(
     )
 }
 
+pub(crate) fn abs_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::ABS, py, args, kwargs)
+}
+
+pub(crate) fn absolute_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::ABSOLUTE, py, args, kwargs)
+}
+
 pub(crate) fn reciprocal_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2214,6 +2230,22 @@ struct UnaryOutOperation {
 }
 
 impl UnaryOutOperation {
+    const ABS: Self = Self {
+        name: "abs",
+        qualified_name: "torch.abs",
+        dispatch_allocation_error: "unable to allocate abs dispatch operands",
+        out_unsupported_error: "abs(): the 'out' argument is not supported",
+        apply: CoreTensor::abs,
+    };
+
+    const ABSOLUTE: Self = Self {
+        name: "absolute",
+        qualified_name: "torch.absolute",
+        dispatch_allocation_error: "unable to allocate absolute dispatch operands",
+        out_unsupported_error: "absolute(): the 'out' argument is not supported",
+        apply: CoreTensor::abs,
+    };
+
     const NEG: Self = Self {
         name: "neg",
         qualified_name: "torch.neg",
