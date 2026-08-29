@@ -51,6 +51,22 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
         )
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
 
+    def assert_overflow_shape_error_matches(self, actual_call, expected_call, position):
+        with self.assertRaises(Exception) as actual_raised:
+            actual_call()
+        with self.assertRaises(Exception) as expected_raised:
+            expected_call()
+        self.assertEqual(
+            type(actual_raised.exception).__name__,
+            type(expected_raised.exception).__name__,
+        )
+        marker = (
+            f"reshape(): argument 'shape' failed to unpack the object at pos {position} "
+            'with error "Overflow when unpacking long long'
+        )
+        self.assertIn(marker, str(actual_raised.exception))
+        self.assertIn(marker, str(expected_raised.exception))
+
     def test_layouts_aliasing_call_forms_and_lifetimes_match_pytorch_2_13(self):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         actual_base = torch.tensor(values.tolist(), requires_grad=True)
@@ -255,6 +271,49 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
+
+    def test_oversized_shape_dimension_errors_match_pytorch_2_13(self):
+        actual = torch.tensor([1.0])
+        expected = reference_torch.tensor([1.0])
+        too_large = 2**63
+        too_small = -(2**63) - 1
+        cases = (
+            (
+                "positional-tuple",
+                lambda: torch.reshape(actual, (too_large,)),
+                lambda: reference_torch.reshape(expected, (too_large,)),
+                1,
+            ),
+            (
+                "keyword-list",
+                lambda: torch.reshape(input=actual, shape=[too_large]),
+                lambda: reference_torch.reshape(input=expected, shape=[too_large]),
+                1,
+            ),
+            (
+                "second-dimension",
+                lambda: torch.reshape(actual, (1, too_large)),
+                lambda: reference_torch.reshape(expected, (1, too_large)),
+                2,
+            ),
+            (
+                "negative-overflow",
+                lambda: torch.reshape(actual, (too_small,)),
+                lambda: reference_torch.reshape(expected, (too_small,)),
+                1,
+            ),
+            (
+                "numpy-uint64",
+                lambda: torch.reshape(actual, (np.uint64(too_large),)),
+                lambda: reference_torch.reshape(expected, (np.uint64(too_large),)),
+                1,
+            ),
+        )
+        for name, actual_call, expected_call, position in cases:
+            with self.subTest(name=name):
+                self.assert_overflow_shape_error_matches(
+                    actual_call, expected_call, position
+                )
 
     def dispatch_contract(self, module):
         override_calls = []

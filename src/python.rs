@@ -10895,14 +10895,14 @@ fn is_view_shape_dimension(dimension: &Bound<'_, PyAny>) -> bool {
     if dimension.is_instance_of::<PyBool>() {
         return false;
     }
-    view_number_index(dimension).is_ok()
+    python_number_index(dimension).is_ok()
 }
 
 #[allow(
     unsafe_code,
     reason = "PyNumber_Index invokes the native Python number-index protocol and returns a new reference"
 )]
-fn view_number_index<'py>(dimension: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyInt>> {
+fn python_number_index<'py>(dimension: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyInt>> {
     // SAFETY: `dimension` is live for the call. PyNumber_Index returns a new
     // Python int reference or sets an exception and returns null.
     unsafe {
@@ -10936,7 +10936,7 @@ fn parse_view_shape_dimensions<'py>(
     let mut parsed = try_size_vector(length)?;
     for (index, dimension) in dimensions.enumerate() {
         let position = index + 1;
-        let indexed = view_number_index(&dimension);
+        let indexed = python_number_index(&dimension);
         let Ok(indexed) = indexed else {
             return Err(view_shape_dimension_unpack_error(position, &dimension)?);
         };
@@ -11762,26 +11762,19 @@ fn parse_top_level_reshape_dimension(
     index: usize,
     dimension: &Bound<'_, PyAny>,
 ) -> PyResult<i64> {
-    let parsed = if dimension.is_instance_of::<PyBool>() {
-        Err(top_level_reshape_shape_element_type_error(
+    if dimension.is_instance_of::<PyBool>() {
+        return Err(top_level_reshape_shape_dimension_type_error(
             argument, index, dimension,
-        )?)
-    } else if let Ok(dimension) = dimension.extract::<i64>() {
-        Ok(dimension)
-    } else {
-        Err(top_level_reshape_shape_element_type_error(
-            argument, index, dimension,
-        )?)
-    };
-
-    match parsed {
-        Ok(dimension) => Ok(dimension),
-        Err(error) if argument.position.is_none() => {
-            drop(error);
-            Err(top_level_reshape_shape_type_error(argument)?)
-        }
-        Err(error) => Err(error),
+        )?);
     }
+    let Ok(indexed) = python_number_index(dimension) else {
+        return Err(top_level_reshape_shape_dimension_type_error(
+            argument, index, dimension,
+        )?);
+    };
+    indexed
+        .extract::<i64>()
+        .map_err(|_| top_level_reshape_shape_dimension_unpack_error(index + 1))
 }
 
 fn top_level_reshape_shape_type_error(argument: &ParsedCallArgument<'_>) -> PyResult<PyErr> {
@@ -11790,6 +11783,24 @@ fn top_level_reshape_shape_type_error(argument: &ParsedCallArgument<'_>) -> PyRe
         "reshape(): argument 'shape'{} must be tuple of ints, not {actual}",
         position_suffix(argument.position)
     )))
+}
+
+fn top_level_reshape_shape_dimension_type_error(
+    argument: &ParsedCallArgument<'_>,
+    index: usize,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    if argument.position.is_none() {
+        top_level_reshape_shape_type_error(argument)
+    } else {
+        top_level_reshape_shape_element_type_error(argument, index, value)
+    }
+}
+
+fn top_level_reshape_shape_dimension_unpack_error(position: usize) -> PyErr {
+    PyTypeError::new_err(format!(
+        "reshape(): argument 'shape' failed to unpack the object at pos {position} with error \"Overflow when unpacking long long\""
+    ))
 }
 
 fn top_level_reshape_shape_element_type_error(

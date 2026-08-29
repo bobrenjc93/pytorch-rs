@@ -465,6 +465,57 @@ class TopLevelReshapeTests(unittest.TestCase):
                 with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
                     call()
 
+    def test_oversized_shape_dimensions_preserve_unpack_error(self):
+        tensor = torch.tensor([1.0])
+        too_large = 2**63
+        too_small = -(2**63) - 1
+        cases = (
+            (
+                "positional-tuple",
+                lambda: torch.reshape(tensor, (too_large,)),
+                1,
+            ),
+            (
+                "positional-list",
+                lambda: torch.reshape(tensor, [too_large]),
+                1,
+            ),
+            (
+                "keyword-tuple",
+                lambda: torch.reshape(input=tensor, shape=(too_large,)),
+                1,
+            ),
+            (
+                "keyword-list",
+                lambda: torch.reshape(input=tensor, shape=[too_large]),
+                1,
+            ),
+            (
+                "second-dimension",
+                lambda: torch.reshape(tensor, (1, too_large)),
+                2,
+            ),
+            (
+                "negative-overflow",
+                lambda: torch.reshape(tensor, (too_small,)),
+                1,
+            ),
+            (
+                "numpy-uint64",
+                lambda: torch.reshape(tensor, (np.uint64(too_large),)),
+                1,
+            ),
+        )
+        for name, call, position in cases:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    rf"^reshape\(\): argument 'shape' failed to unpack the object "
+                    rf"at pos {position} with error "
+                    r'"Overflow when unpacking long long',
+                ):
+                    call()
+
     def test_callable_metadata_documentation_ownership_exports_and_pickling(self):
         function = torch.reshape
         self.assertIs(type(function), types.BuiltinFunctionType)
