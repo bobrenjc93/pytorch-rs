@@ -22,24 +22,45 @@ except ImportError:
 
 class _RejectTruthiness:
     def __bool__(self):
-        raise AssertionError("enable_flash_sdp must not request truthiness")
+        raise AssertionError("enable_cudnn_sdp must not request truthiness")
+
+
+SUPPORTED_CUDA_BACKEND = {
+    "allow_fp16_bf16_reduction_math_sdp",
+    "cudnn_sdp_enabled",
+    "enable_cudnn_sdp",
+    "enable_flash_sdp",
+    "enable_math_sdp",
+    "enable_mem_efficient_sdp",
+    "flash_sdp_enabled",
+    "fp16_bf16_reduction_math_sdp_allowed",
+    "is_built",
+    "is_ck_sdpa_available",
+    "is_flash_attention_available",
+    "math_sdp_enabled",
+    "mem_efficient_sdp_enabled",
+}
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class CudaFlashSdpReferenceTests(unittest.TestCase):
+class CudaCudnnSdpReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "backends.cuda Flash SDP differentials require pinned "
+                "backends.cuda cuDNN SDP differentials require pinned "
                 "PyTorch 2.13.0"
             )
 
     def setUp(self):
         self.actual = importlib.import_module("torch_rs.backends.cuda")
         self.expected = importlib.import_module("torch.backends.cuda")
-        self.original_actual = torch._C._get_flash_sdp_enabled()
-        self.original_expected = reference_torch._C._get_flash_sdp_enabled()
+        self.actual_cudnn = importlib.import_module("torch_rs.backends.cudnn")
+        self.expected_cudnn = importlib.import_module("torch.backends.cudnn")
+        self.original_actual = torch._C._get_cudnn_sdp_enabled()
+        self.original_expected = reference_torch._C._get_cudnn_sdp_enabled()
+        self.original_actual_flash = torch._C._get_flash_sdp_enabled()
+        self.original_expected_flash = reference_torch._C._get_flash_sdp_enabled()
         self.original_actual_math = torch._C._get_math_sdp_enabled()
         self.original_expected_math = reference_torch._C._get_math_sdp_enabled()
         self.original_actual_mem_efficient = (
@@ -48,31 +69,43 @@ class CudaFlashSdpReferenceTests(unittest.TestCase):
         self.original_expected_mem_efficient = (
             reference_torch._C._get_mem_efficient_sdp_enabled()
         )
-        self.original_actual_cudnn = torch._C._get_cudnn_sdp_enabled()
-        self.original_expected_cudnn = reference_torch._C._get_cudnn_sdp_enabled()
         self.original_actual_reduction = (
             torch._C._get_math_sdp_allow_fp16_bf16_reduction()
         )
         self.original_expected_reduction = (
             reference_torch._C._get_math_sdp_allow_fp16_bf16_reduction()
         )
-        self.actual.enable_flash_sdp(True)
-        self.expected.enable_flash_sdp(True)
+        self.original_actual_cudnn_backend = self.cudnn_backend_state(
+            self.actual_cudnn
+        )
+        self.original_expected_cudnn_backend = self.cudnn_backend_state(
+            self.expected_cudnn
+        )
+        self.actual.enable_cudnn_sdp(True)
+        self.expected.enable_cudnn_sdp(True)
 
     def tearDown(self):
-        self.actual.enable_flash_sdp(self.original_actual)
-        self.expected.enable_flash_sdp(self.original_expected)
+        self.actual.enable_cudnn_sdp(self.original_actual)
+        self.expected.enable_cudnn_sdp(self.original_expected)
+        self.actual.enable_flash_sdp(self.original_actual_flash)
+        self.expected.enable_flash_sdp(self.original_expected_flash)
         self.actual.enable_math_sdp(self.original_actual_math)
         self.expected.enable_math_sdp(self.original_expected_math)
         self.actual.enable_mem_efficient_sdp(self.original_actual_mem_efficient)
         self.expected.enable_mem_efficient_sdp(self.original_expected_mem_efficient)
-        self.actual.enable_cudnn_sdp(self.original_actual_cudnn)
-        self.expected.enable_cudnn_sdp(self.original_expected_cudnn)
         self.actual.allow_fp16_bf16_reduction_math_sdp(
             self.original_actual_reduction
         )
         self.expected.allow_fp16_bf16_reduction_math_sdp(
             self.original_expected_reduction
+        )
+        self.set_cudnn_backend_state(
+            self.actual_cudnn,
+            self.original_actual_cudnn_backend,
+        )
+        self.set_cudnn_backend_state(
+            self.expected_cudnn,
+            self.original_expected_cudnn_backend,
         )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -83,6 +116,24 @@ class CudaFlashSdpReferenceTests(unittest.TestCase):
         self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
+
+    def cudnn_backend_state(self, module):
+        return (
+            module.enabled,
+            module.benchmark,
+            module.benchmark_limit,
+            module.deterministic,
+            module.allow_tf32,
+        )
+
+    def set_cudnn_backend_state(self, module, state):
+        (
+            module.enabled,
+            module.benchmark,
+            module.benchmark_limit,
+            module.deterministic,
+            module.allow_tf32,
+        ) = state
 
     def pickle_shape(self, function, protocol):
         shape = []
@@ -99,22 +150,22 @@ class CudaFlashSdpReferenceTests(unittest.TestCase):
     def transition_contract(self, root, module):
         outcomes = []
         for enabled in (False, True, True, False, False, True):
-            result = module.enable_flash_sdp(enabled)
-            state = module.flash_sdp_enabled()
+            result = module.enable_cudnn_sdp(enabled)
+            state = module.cudnn_sdp_enabled()
             outcomes.append(
                 (
                     result,
                     type(state) is bool,
                     state is enabled,
-                    root._C._get_flash_sdp_enabled() is enabled,
+                    root._C._get_cudnn_sdp_enabled() is enabled,
                 )
             )
-        outcomes.append(module.enable_flash_sdp(enabled=False))
-        outcomes.append(module.flash_sdp_enabled() is False)
+        outcomes.append(module.enable_cudnn_sdp(enabled=False))
+        outcomes.append(module.cudnn_sdp_enabled() is False)
         return outcomes
 
     def thread_contract(self, root, module):
-        module.enable_flash_sdp(True)
+        module.enable_cudnn_sdp(True)
         worker_changed = threading.Event()
         main_changed = threading.Event()
         observations = []
@@ -122,13 +173,13 @@ class CudaFlashSdpReferenceTests(unittest.TestCase):
 
         def worker():
             try:
-                observations.append(module.flash_sdp_enabled())
-                observations.append(module.enable_flash_sdp(False))
+                observations.append(module.cudnn_sdp_enabled())
+                observations.append(module.enable_cudnn_sdp(False))
                 worker_changed.set()
                 if not main_changed.wait(timeout=10):
                     raise RuntimeError("timed out waiting for main-thread update")
-                observations.append(module.flash_sdp_enabled())
-                observations.append(module.enable_flash_sdp(False))
+                observations.append(module.cudnn_sdp_enabled())
+                observations.append(module.enable_cudnn_sdp(False))
             except BaseException as error:
                 errors.append((type(error).__name__, str(error)))
                 worker_changed.set()
@@ -136,8 +187,8 @@ class CudaFlashSdpReferenceTests(unittest.TestCase):
         thread = threading.Thread(target=worker)
         thread.start()
         worker_ready = worker_changed.wait(timeout=10)
-        state_after_worker = root._C._get_flash_sdp_enabled()
-        main_result = module.enable_flash_sdp(True)
+        state_after_worker = root._C._get_cudnn_sdp_enabled()
+        main_result = module.enable_cudnn_sdp(True)
         main_changed.set()
         thread.join(timeout=10)
         return (
@@ -147,20 +198,20 @@ class CudaFlashSdpReferenceTests(unittest.TestCase):
             not thread.is_alive(),
             errors,
             observations,
-            root._C._get_flash_sdp_enabled(),
+            root._C._get_cudnn_sdp_enabled(),
         )
 
     def reload_contract(self, root, module):
-        old_getter = module.flash_sdp_enabled
-        old_setter = module.enable_flash_sdp
+        old_getter = module.cudnn_sdp_enabled
+        old_setter = module.enable_cudnn_sdp
         namespace = module.__dict__
-        module.enable_flash_sdp(False)
+        module.enable_cudnn_sdp(False)
         reloaded = importlib.reload(module)
-        preserved_state = module.flash_sdp_enabled()
-        new_result = module.enable_flash_sdp(True)
+        preserved_state = module.cudnn_sdp_enabled()
+        new_result = module.enable_cudnn_sdp(True)
         old_getter_result = old_getter()
         old_result = old_setter(False)
-        final_result = module.enable_flash_sdp(True)
+        final_result = module.enable_cudnn_sdp(True)
 
         stale_errors = []
         for old_function in (old_getter, old_setter):
@@ -176,15 +227,15 @@ class CudaFlashSdpReferenceTests(unittest.TestCase):
                     )
                 )
             else:
-                self.fail("a stale Flash SDP function remained pickleable")
+                self.fail("a stale cuDNN SDP function remained pickleable")
 
         return (
             reloaded is module,
             module.__dict__ is namespace,
             root.backends.cuda is module,
             sys.modules[module.__name__] is module,
-            module.flash_sdp_enabled is not old_getter,
-            module.enable_flash_sdp is not old_setter,
+            module.cudnn_sdp_enabled is not old_getter,
+            module.enable_cudnn_sdp is not old_setter,
             preserved_state,
             new_result,
             old_getter_result,
@@ -243,75 +294,60 @@ class CudaFlashSdpReferenceTests(unittest.TestCase):
             reference_torch.finfo(reference_torch.float32),
         )
         for state in (False, True):
-            self.actual.enable_flash_sdp(state)
-            self.expected.enable_flash_sdp(state)
+            self.actual.enable_cudnn_sdp(state)
+            self.expected.enable_cudnn_sdp(state)
             for case, (actual_value, expected_value) in enumerate(
                 zip(actual_values, expected_values)
             ):
                 with self.subTest(kind="value", state=state, case=case):
                     self.assert_error_matches(
                         lambda value=actual_value: (
-                            self.actual.enable_flash_sdp(value)
+                            self.actual.enable_cudnn_sdp(value)
                         ),
                         lambda value=expected_value: (
-                            self.expected.enable_flash_sdp(value)
+                            self.expected.enable_cudnn_sdp(value)
                         ),
                     )
-                    self.assertIs(self.actual.flash_sdp_enabled(), state)
-                    self.assertIs(self.expected.flash_sdp_enabled(), state)
+                    self.assertIs(self.actual.cudnn_sdp_enabled(), state)
+                    self.assertIs(self.expected.cudnn_sdp_enabled(), state)
 
         cases = (
             (
-                lambda: self.actual.flash_sdp_enabled(None),
-                lambda: self.expected.flash_sdp_enabled(None),
+                lambda: self.actual.cudnn_sdp_enabled(None),
+                lambda: self.expected.cudnn_sdp_enabled(None),
             ),
             (
-                lambda: self.actual.flash_sdp_enabled(enabled=True),
-                lambda: self.expected.flash_sdp_enabled(enabled=True),
+                lambda: self.actual.cudnn_sdp_enabled(enabled=True),
+                lambda: self.expected.cudnn_sdp_enabled(enabled=True),
             ),
             (
-                lambda: self.actual.enable_flash_sdp(),
-                lambda: self.expected.enable_flash_sdp(),
+                lambda: self.actual.enable_cudnn_sdp(),
+                lambda: self.expected.enable_cudnn_sdp(),
             ),
             (
-                lambda: self.actual.enable_flash_sdp(True, False),
-                lambda: self.expected.enable_flash_sdp(True, False),
+                lambda: self.actual.enable_cudnn_sdp(True, False),
+                lambda: self.expected.enable_cudnn_sdp(True, False),
             ),
             (
-                lambda: self.actual.enable_flash_sdp(_enabled=False),
-                lambda: self.expected.enable_flash_sdp(_enabled=False),
+                lambda: self.actual.enable_cudnn_sdp(_enabled=False),
+                lambda: self.expected.enable_cudnn_sdp(_enabled=False),
             ),
             (
-                lambda: self.actual.enable_flash_sdp(True, enabled=False),
-                lambda: self.expected.enable_flash_sdp(True, enabled=False),
+                lambda: self.actual.enable_cudnn_sdp(True, enabled=False),
+                lambda: self.expected.enable_cudnn_sdp(True, enabled=False),
             ),
         )
-        self.actual.enable_flash_sdp(True)
-        self.expected.enable_flash_sdp(True)
+        self.actual.enable_cudnn_sdp(True)
+        self.expected.enable_cudnn_sdp(True)
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(kind="binding", case=case):
                 self.assert_error_matches(actual_call, expected_call)
-                self.assertIs(self.actual.flash_sdp_enabled(), True)
-                self.assertIs(self.expected.flash_sdp_enabled(), True)
+                self.assertIs(self.actual.cudnn_sdp_enabled(), True)
+                self.assertIs(self.expected.cudnn_sdp_enabled(), True)
 
     def test_metadata_exports_copying_and_pickling_match_pytorch_2_13(self):
         actual = self.actual
         expected = self.expected
-        supported = {
-            "allow_fp16_bf16_reduction_math_sdp",
-            "cudnn_sdp_enabled",
-            "enable_cudnn_sdp",
-            "enable_flash_sdp",
-            "enable_math_sdp",
-            "enable_mem_efficient_sdp",
-            "flash_sdp_enabled",
-            "fp16_bf16_reduction_math_sdp_allowed",
-            "is_built",
-            "is_ck_sdpa_available",
-            "is_flash_attention_available",
-            "math_sdp_enabled",
-            "mem_efficient_sdp_enabled",
-        }
 
         self.assertIs(torch.backends.cuda, actual)
         self.assertIs(reference_torch.backends.cuda, expected)
@@ -320,20 +356,20 @@ class CudaFlashSdpReferenceTests(unittest.TestCase):
         self.assertEqual(actual.__doc__, expected.__doc__)
         self.assertEqual(
             actual.__all__,
-            [name for name in expected.__all__ if name in supported],
+            [name for name in expected.__all__ if name in SUPPORTED_CUDA_BACKEND],
         )
         self.assertEqual(
             {name for name in vars(actual) if not name.startswith("_")},
             {
                 name
                 for name in vars(expected)
-                if name in supported | {"torch"}
+                if name in SUPPORTED_CUDA_BACKEND | {"torch"}
             },
         )
         self.assertIs(actual.torch, torch)
         self.assertIs(expected.torch, reference_torch)
 
-        for name in ("flash_sdp_enabled", "enable_flash_sdp"):
+        for name in ("cudnn_sdp_enabled", "enable_cudnn_sdp"):
             actual_function = getattr(actual, name)
             expected_function = getattr(expected, name)
             with self.subTest(function=name):
@@ -411,44 +447,49 @@ class CudaFlashSdpReferenceTests(unittest.TestCase):
             wildcard = {}
             exec(f"from {package_name}.backends import cuda", backend_import)
             exec(
-                f"from {package_name}.backends.cuda import flash_sdp_enabled",
+                f"from {package_name}.backends.cuda import cudnn_sdp_enabled",
                 getter_import,
             )
             exec(
-                f"from {package_name}.backends.cuda import enable_flash_sdp",
+                f"from {package_name}.backends.cuda import enable_cudnn_sdp",
                 setter_import,
             )
             exec(f"from {package_name}.backends.cuda import *", wildcard)
             self.assertIs(backend_import["cuda"], module)
-            self.assertIs(getter_import["flash_sdp_enabled"], module.flash_sdp_enabled)
-            self.assertIs(setter_import["enable_flash_sdp"], module.enable_flash_sdp)
+            self.assertIs(getter_import["cudnn_sdp_enabled"], module.cudnn_sdp_enabled)
+            self.assertIs(setter_import["enable_cudnn_sdp"], module.enable_cudnn_sdp)
             self.assertEqual(
-                {name for name in wildcard if name in supported},
-                supported,
+                {name for name in wildcard if name in SUPPORTED_CUDA_BACKEND},
+                SUPPORTED_CUDA_BACKEND,
             )
 
     def test_preference_is_independent_from_other_flags_and_execution_support(self):
         actual_other_states = {
-            "cudnn": self.actual.cudnn_sdp_enabled(),
+            "cudnn_backend": self.cudnn_backend_state(self.actual_cudnn),
+            "flash": self.actual.flash_sdp_enabled(),
             "math": self.actual.math_sdp_enabled(),
             "mem_efficient": self.actual.mem_efficient_sdp_enabled(),
             "reduction": self.actual.fp16_bf16_reduction_math_sdp_allowed(),
         }
         expected_other_states = {
-            "cudnn": self.expected.cudnn_sdp_enabled(),
+            "cudnn_backend": self.cudnn_backend_state(self.expected_cudnn),
+            "flash": self.expected.flash_sdp_enabled(),
             "math": self.expected.math_sdp_enabled(),
             "mem_efficient": self.expected.mem_efficient_sdp_enabled(),
             "reduction": self.expected.fp16_bf16_reduction_math_sdp_allowed(),
         }
         for enabled in (False, True):
             with self.subTest(enabled=enabled):
-                self.assertIs(self.actual.enable_flash_sdp(enabled), None)
-                self.assertIs(self.expected.enable_flash_sdp(enabled), None)
-                self.assertIs(self.actual.flash_sdp_enabled(), enabled)
-                self.assertIs(self.expected.flash_sdp_enabled(), enabled)
+                self.assertIs(self.actual.enable_cudnn_sdp(enabled), None)
+                self.assertIs(self.expected.enable_cudnn_sdp(enabled), None)
+                self.assertIs(self.actual.cudnn_sdp_enabled(), enabled)
+                self.assertIs(self.expected.cudnn_sdp_enabled(), enabled)
                 self.assertEqual(
                     {
-                        "cudnn": self.actual.cudnn_sdp_enabled(),
+                        "cudnn_backend": self.cudnn_backend_state(
+                            self.actual_cudnn
+                        ),
+                        "flash": self.actual.flash_sdp_enabled(),
                         "math": self.actual.math_sdp_enabled(),
                         "mem_efficient": self.actual.mem_efficient_sdp_enabled(),
                         "reduction": (
@@ -459,7 +500,10 @@ class CudaFlashSdpReferenceTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     {
-                        "cudnn": self.expected.cudnn_sdp_enabled(),
+                        "cudnn_backend": self.cudnn_backend_state(
+                            self.expected_cudnn
+                        ),
+                        "flash": self.expected.flash_sdp_enabled(),
                         "math": self.expected.math_sdp_enabled(),
                         "mem_efficient": self.expected.mem_efficient_sdp_enabled(),
                         "reduction": (
@@ -472,19 +516,24 @@ class CudaFlashSdpReferenceTests(unittest.TestCase):
                 self.assertIs(self.actual.is_ck_sdpa_available(), False)
                 self.assertIs(self.actual.is_flash_attention_available(), False)
 
-        self.actual.enable_flash_sdp(True)
-        self.expected.enable_flash_sdp(True)
+        self.actual.enable_cudnn_sdp(True)
+        self.expected.enable_cudnn_sdp(True)
         for enabled in (False, True):
+            with self.subTest(flash_enabled=enabled):
+                self.assertIs(self.actual.enable_flash_sdp(enabled), None)
+                self.assertIs(self.expected.enable_flash_sdp(enabled), None)
+                self.assertIs(self.actual.cudnn_sdp_enabled(), True)
+                self.assertIs(self.expected.cudnn_sdp_enabled(), True)
             with self.subTest(math_enabled=enabled):
                 self.assertIs(self.actual.enable_math_sdp(enabled), None)
                 self.assertIs(self.expected.enable_math_sdp(enabled), None)
-                self.assertIs(self.actual.flash_sdp_enabled(), True)
-                self.assertIs(self.expected.flash_sdp_enabled(), True)
+                self.assertIs(self.actual.cudnn_sdp_enabled(), True)
+                self.assertIs(self.expected.cudnn_sdp_enabled(), True)
             with self.subTest(mem_efficient_enabled=enabled):
                 self.assertIs(self.actual.enable_mem_efficient_sdp(enabled), None)
                 self.assertIs(self.expected.enable_mem_efficient_sdp(enabled), None)
-                self.assertIs(self.actual.flash_sdp_enabled(), True)
-                self.assertIs(self.expected.flash_sdp_enabled(), True)
+                self.assertIs(self.actual.cudnn_sdp_enabled(), True)
+                self.assertIs(self.expected.cudnn_sdp_enabled(), True)
             with self.subTest(reduction_enabled=enabled):
                 self.assertIs(
                     self.actual.allow_fp16_bf16_reduction_math_sdp(enabled),
@@ -494,13 +543,27 @@ class CudaFlashSdpReferenceTests(unittest.TestCase):
                     self.expected.allow_fp16_bf16_reduction_math_sdp(enabled),
                     None,
                 )
-                self.assertIs(self.actual.flash_sdp_enabled(), True)
-                self.assertIs(self.expected.flash_sdp_enabled(), True)
-            with self.subTest(cudnn_enabled=enabled):
-                self.assertIs(self.actual.enable_cudnn_sdp(enabled), None)
-                self.assertIs(self.expected.enable_cudnn_sdp(enabled), None)
-                self.assertIs(self.actual.flash_sdp_enabled(), True)
-                self.assertIs(self.expected.flash_sdp_enabled(), True)
+                self.assertIs(self.actual.cudnn_sdp_enabled(), True)
+                self.assertIs(self.expected.cudnn_sdp_enabled(), True)
+
+        actual_backend_target = (
+            not self.actual_cudnn.enabled,
+            not self.actual_cudnn.benchmark,
+            self.actual_cudnn.benchmark_limit + 1,
+            not self.actual_cudnn.deterministic,
+            not self.actual_cudnn.allow_tf32,
+        )
+        expected_backend_target = (
+            not self.expected_cudnn.enabled,
+            not self.expected_cudnn.benchmark,
+            self.expected_cudnn.benchmark_limit + 1,
+            not self.expected_cudnn.deterministic,
+            not self.expected_cudnn.allow_tf32,
+        )
+        self.set_cudnn_backend_state(self.actual_cudnn, actual_backend_target)
+        self.set_cudnn_backend_state(self.expected_cudnn, expected_backend_target)
+        self.assertIs(self.actual.cudnn_sdp_enabled(), True)
+        self.assertIs(self.expected.cudnn_sdp_enabled(), True)
 
         self.assertFalse(hasattr(torch.nn.functional, "scaled_dot_product_attention"))
         self.assertFalse(hasattr(torch, "cuda"))

@@ -263,6 +263,8 @@ print(json.dumps({
             [
                 "is_built",
                 "is_ck_sdpa_available",
+                "enable_cudnn_sdp",
+                "cudnn_sdp_enabled",
                 "enable_flash_sdp",
                 "flash_sdp_enabled",
                 "enable_mem_efficient_sdp",
@@ -278,6 +280,8 @@ print(json.dumps({
             {name for name in vars(cuda) if not name.startswith("_")},
             {
                 "allow_fp16_bf16_reduction_math_sdp",
+                "cudnn_sdp_enabled",
+                "enable_cudnn_sdp",
                 "enable_flash_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
@@ -356,6 +360,8 @@ print(json.dumps({
             {name for name in child_wildcard if not name.startswith("__")},
             {
                 "allow_fp16_bf16_reduction_math_sdp",
+                "cudnn_sdp_enabled",
+                "enable_cudnn_sdp",
                 "enable_flash_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
@@ -442,12 +448,6 @@ print(json.dumps({
         self.assertIs(self.cuda.is_built(), False)
         self.assertIs(self.cuda.is_ck_sdpa_available(), False)
         self.assertIs(self.cuda.is_flash_attention_available(), False)
-        for name in (
-            "cudnn_sdp_enabled",
-            "enable_cudnn_sdp",
-        ):
-            with self.subTest(unsupported_preference=name):
-                self.assertFalse(hasattr(self.cuda, name))
         self.assertFalse(
             hasattr(torch.nn.functional, "scaled_dot_product_attention")
         )

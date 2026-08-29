@@ -269,6 +269,8 @@ class CudaMathSdpReferenceTests(unittest.TestCase):
         expected = self.expected
         supported = {
             "allow_fp16_bf16_reduction_math_sdp",
+            "cudnn_sdp_enabled",
+            "enable_cudnn_sdp",
             "enable_flash_sdp",
             "enable_math_sdp",
             "enable_mem_efficient_sdp",
@@ -397,6 +399,7 @@ class CudaMathSdpReferenceTests(unittest.TestCase):
 
     def test_preference_is_independent_from_other_flags_and_execution_support(self):
         actual_other_states = {
+            "cudnn": self.actual.cudnn_sdp_enabled(),
             "flash": self.actual.flash_sdp_enabled(),
             "mem_efficient": self.actual.mem_efficient_sdp_enabled(),
         }
@@ -413,6 +416,7 @@ class CudaMathSdpReferenceTests(unittest.TestCase):
                 self.assertIs(self.expected.math_sdp_enabled(), enabled)
                 self.assertEqual(
                     {
+                        "cudnn": self.actual.cudnn_sdp_enabled(),
                         "flash": self.actual.flash_sdp_enabled(),
                         "mem_efficient": self.actual.mem_efficient_sdp_enabled(),
                     },
@@ -429,14 +433,6 @@ class CudaMathSdpReferenceTests(unittest.TestCase):
                 self.assertIs(self.actual.is_built(), False)
                 self.assertIs(self.actual.is_ck_sdpa_available(), False)
                 self.assertIs(self.actual.is_flash_attention_available(), False)
-
-        for name in (
-            "cudnn_sdp_enabled",
-            "enable_cudnn_sdp",
-        ):
-            with self.subTest(unsupported_preference=name):
-                self.assertFalse(hasattr(self.actual, name))
-                self.assertTrue(hasattr(self.expected, name))
 
         self.assertFalse(hasattr(torch.nn.functional, "scaled_dot_product_attention"))
         self.assertFalse(hasattr(torch, "cuda"))
