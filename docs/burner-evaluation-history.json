@@ -7847,6 +7847,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 82
       }
+    },
+    {
+      "key": "pr:1302",
+      "recordedAt": "2026-08-29T10:45:22.197Z",
+      "label": "PR #1302",
+      "kind": "leaf",
+      "prNumber": 1302,
+      "title": "Add supported-surface navigation anchors",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 85.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 83
+      }
     }
   ]
 }
