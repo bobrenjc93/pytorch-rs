@@ -70,6 +70,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                     "fp16_bf16_reduction_math_sdp_allowed",
                     "is_built",
                     "is_ck_sdpa_available",
+                    "matmul",
                     "is_flash_attention_available",
                     "math_sdp_enabled",
                     "mem_efficient_sdp_enabled",
@@ -146,6 +147,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                     "fp16_bf16_reduction_math_sdp_allowed",
                     "is_built",
                     "is_ck_sdpa_available",
+                    "matmul",
                     "is_flash_attention_available",
                     "math_sdp_enabled",
                     "mem_efficient_sdp_enabled",
@@ -275,6 +277,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                 "is_built",
                 "is_ck_sdpa_available",
                 "is_flash_attention_available",
+                "matmul",
                 "math_sdp_enabled",
                 "mem_efficient_sdp_enabled",
                 "torch",
@@ -285,7 +288,6 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
             {
                 "SDPAParams",
                 "cufft_plan_cache",
-                "matmul",
             }.issubset(expected_public - actual_public)
         )
         self.assertFalse(hasattr(torch, "cuda"))

@@ -5,6 +5,7 @@ import torch_rs as torch
 __all__ = [
     "is_built",
     "is_ck_sdpa_available",
+    "matmul",
     "enable_flash_sdp",
     "flash_sdp_enabled",
     "enable_mem_efficient_sdp",
@@ -121,3 +122,6 @@ def is_flash_attention_available() -> bool:
         in non-CUDA environments.
     """
     return torch._C._is_flash_attention_available()
+
+
+from . import matmul as matmul

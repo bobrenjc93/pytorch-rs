@@ -38,9 +38,10 @@ assert result.tolist() == [[0.0, 3.0], [4.0, 0.0]]
 
 The current native backend supports eager CPU `float32` tensors, core
 construction and layout/view operations, selected math and neural-network
-functions, and limited first-order autograd. Accelerator tensors, additional
-tensor dtypes, and the full module, optimizer, model-serialization, compiler,
-and distributed stacks remain unsupported.
+functions, limited first-order autograd, and selected backend preference
+shims such as `torch.backends.cuda.matmul.allow_tf32`. Accelerator tensors,
+additional tensor dtypes, and the full module, optimizer, model-serialization,
+compiler, and distributed stacks remain unsupported.
 
 See the [exhaustive supported surface](docs/supported-surface.md) for exact API
 and limitation details, [FEATURES.md](FEATURES.md) for the weighted coverage

@@ -62,6 +62,7 @@ class CudaIsBuiltTests(unittest.TestCase):
             [
                 "is_built",
                 "is_ck_sdpa_available",
+                "matmul",
                 "enable_flash_sdp",
                 "flash_sdp_enabled",
                 "enable_mem_efficient_sdp",
@@ -137,6 +138,7 @@ class CudaIsBuiltTests(unittest.TestCase):
                 "fp16_bf16_reduction_math_sdp_allowed",
                 "is_built",
                 "is_ck_sdpa_available",
+                "matmul",
                 "is_flash_attention_available",
                 "math_sdp_enabled",
                 "mem_efficient_sdp_enabled",
@@ -221,11 +223,22 @@ class CudaIsBuiltTests(unittest.TestCase):
             "current_stream",
             "device_count",
             "is_available",
-            "matmul",
             "synchronize",
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(cuda_backend, name))
+
+        self.assertTrue(hasattr(cuda_backend, "matmul"))
+        for name in (
+            "allow_fp16_accumulation",
+            "allow_fp16_reduced_precision_reduction",
+            "allow_fp16_reduced_precision_reduction_split_k",
+            "allow_bf16_reduced_precision_reduction",
+            "allow_bf16_reduced_precision_reduction_split_k",
+            "fp32_precision",
+        ):
+            with self.subTest(matmul_preference=name):
+                self.assertFalse(hasattr(cuda_backend.matmul, name))
 
         self.assertFalse(hasattr(torch, "cuda"))
         self.assertNotIn("torch_rs.cuda", sys.modules)

@@ -257,6 +257,7 @@ print(json.dumps({
             [
                 "is_built",
                 "is_ck_sdpa_available",
+                "matmul",
                 "enable_flash_sdp",
                 "flash_sdp_enabled",
                 "enable_mem_efficient_sdp",
@@ -279,6 +280,7 @@ print(json.dumps({
                 "fp16_bf16_reduction_math_sdp_allowed",
                 "is_built",
                 "is_ck_sdpa_available",
+                "matmul",
                 "is_flash_attention_available",
                 "math_sdp_enabled",
                 "mem_efficient_sdp_enabled",
@@ -358,6 +360,7 @@ print(json.dumps({
                 "is_built",
                 "is_ck_sdpa_available",
                 "is_flash_attention_available",
+                "matmul",
                 "math_sdp_enabled",
                 "mem_efficient_sdp_enabled",
             },

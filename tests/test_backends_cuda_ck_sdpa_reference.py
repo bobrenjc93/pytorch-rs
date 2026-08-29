@@ -106,6 +106,7 @@ class CudaCkSdpaAvailabilityReferenceTests(unittest.TestCase):
                     "is_built",
                     "is_ck_sdpa_available",
                     "is_flash_attention_available",
+                    "matmul",
                     "math_sdp_enabled",
                     "mem_efficient_sdp_enabled",
                 }
