@@ -40,12 +40,16 @@ class CudaMathSdpReferenceTests(unittest.TestCase):
         self.expected = importlib.import_module("torch.backends.cuda")
         self.original_actual = torch._C._get_math_sdp_enabled()
         self.original_expected = reference_torch._C._get_math_sdp_enabled()
+        self.original_actual_flash = torch._C._get_flash_sdp_enabled()
+        self.original_expected_flash = reference_torch._C._get_flash_sdp_enabled()
         self.actual.enable_math_sdp(True)
         self.expected.enable_math_sdp(True)
 
     def tearDown(self):
         self.actual.enable_math_sdp(self.original_actual)
         self.expected.enable_math_sdp(self.original_expected)
+        self.actual.enable_flash_sdp(self.original_actual_flash)
+        self.expected.enable_flash_sdp(self.original_expected_flash)
 
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
@@ -269,8 +273,10 @@ class CudaMathSdpReferenceTests(unittest.TestCase):
         expected = self.expected
         supported = {
             "allow_fp16_bf16_reduction_math_sdp",
+            "enable_flash_sdp",
             "enable_math_sdp",
             "enable_mem_efficient_sdp",
+            "flash_sdp_enabled",
             "fp16_bf16_reduction_math_sdp_allowed",
             "is_built",
             "is_ck_sdpa_available",
@@ -395,6 +401,7 @@ class CudaMathSdpReferenceTests(unittest.TestCase):
 
     def test_preference_is_independent_from_other_flags_and_execution_support(self):
         actual_other_states = {
+            "flash": self.actual.flash_sdp_enabled(),
             "mem_efficient": self.actual.mem_efficient_sdp_enabled(),
         }
         expected_other_states = {
@@ -410,6 +417,7 @@ class CudaMathSdpReferenceTests(unittest.TestCase):
                 self.assertIs(self.expected.math_sdp_enabled(), enabled)
                 self.assertEqual(
                     {
+                        "flash": self.actual.flash_sdp_enabled(),
                         "mem_efficient": self.actual.mem_efficient_sdp_enabled(),
                     },
                     actual_other_states,
@@ -426,12 +434,7 @@ class CudaMathSdpReferenceTests(unittest.TestCase):
                 self.assertIs(self.actual.is_ck_sdpa_available(), False)
                 self.assertIs(self.actual.is_flash_attention_available(), False)
 
-        for name in (
-            "cudnn_sdp_enabled",
-            "enable_cudnn_sdp",
-            "enable_flash_sdp",
-            "flash_sdp_enabled",
-        ):
+        for name in ("cudnn_sdp_enabled", "enable_cudnn_sdp"):
             with self.subTest(unsupported_preference=name):
                 self.assertFalse(hasattr(self.actual, name))
                 self.assertTrue(hasattr(self.expected, name))
