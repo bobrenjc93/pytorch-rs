@@ -126,6 +126,100 @@ class TensorSumReferenceTests(unittest.TestCase):
             expected_untracked = expected_leaf.sum(dtype=reference_torch.float)
         self.assert_scalar_matches(actual_untracked, expected_untracked, case="no_grad")
 
+    def test_rank_seven_sum_permuted_offset_edge_cases_match_pytorch_2_13(self):
+        values = np.arange(384, dtype=np.float32).reshape(2, 2, 3, 2, 2, 2, 2, 2)
+        permutations = (
+            (6, 4, 2, 0, 5, 3, 1),
+            (3, 1, 6, 0, 4, 2, 5),
+            (1, 0, 2, 3, 4, 5, 6),
+        )
+        for permutation in permutations:
+            actual = torch.tensor(values.tolist(), dtype=torch.float32)[1].permute(
+                *permutation
+            )
+            expected = reference_torch.tensor(
+                values, dtype=reference_torch.float32
+            )[1].permute(*permutation)
+            self.assertFalse(actual.is_contiguous())
+            self.assertGreater(actual.storage_offset(), 0)
+            self.assert_scalar_matches(
+                actual.sum(),
+                expected.sum(),
+                case=("rank-7 offset permutation", permutation),
+            )
+
+        singleton_values = np.arange(96, dtype=np.float32).reshape(
+            2, 2, 1, 3, 2, 1, 2, 2
+        )
+        actual_singleton = torch.tensor(singleton_values.tolist(), dtype=torch.float32)[
+            1
+        ].permute(2, 0, 3, 5, 6, 4, 1)
+        expected_singleton = reference_torch.tensor(
+            singleton_values, dtype=reference_torch.float32
+        )[1].permute(2, 0, 3, 5, 6, 4, 1)
+        self.assertFalse(actual_singleton.is_contiguous())
+        self.assert_scalar_matches(
+            actual_singleton.sum(), expected_singleton.sum(), case="rank-7 singleton"
+        )
+
+        actual_empty = torch.zeros((2, 2, 0, 3, 4, 2, 1, 2), requires_grad=True)
+        expected_empty = reference_torch.zeros(
+            (2, 2, 0, 3, 4, 2, 1, 2),
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        actual_empty_view = actual_empty[1].permute(6, 1, 0, 5, 4, 3, 2)
+        expected_empty_view = expected_empty[1].permute(6, 1, 0, 5, 4, 3, 2)
+        self.assert_scalar_matches(
+            actual_empty_view.sum(), expected_empty_view.sum(), case="rank-7 empty"
+        )
+        actual_empty_view.sum().backward()
+        expected_empty_view.sum().backward()
+        self.assertEqual(actual_empty.grad.shape, tuple(expected_empty.grad.shape))
+        np.testing.assert_array_equal(
+            np.asarray(actual_empty.grad), expected_empty.grad.cpu().numpy()
+        )
+
+        actual_leaf = torch.tensor(values.tolist(), requires_grad=True)
+        expected_leaf = reference_torch.tensor(
+            values, dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_loss = actual_leaf[1].permute(3, 1, 6, 0, 4, 2, 5).sum(
+            dtype=torch.float32
+        )
+        expected_loss = expected_leaf[1].permute(3, 1, 6, 0, 4, 2, 5).sum(
+            dtype=reference_torch.float32
+        )
+        self.assert_scalar_matches(actual_loss, expected_loss, case="rank-7 tracked")
+        for _ in range(2):
+            actual_loss.backward()
+            expected_loss.backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_leaf.grad), expected_leaf.grad.cpu().numpy()
+        )
+
+        actual_no_grad_leaf = torch.ones(
+            (2, 2, 3, 2, 2, 2, 2, 2), requires_grad=True
+        )
+        expected_no_grad_leaf = reference_torch.ones(
+            (2, 2, 3, 2, 2, 2, 2, 2),
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        with torch.no_grad():
+            actual_untracked = actual_no_grad_leaf[1].permute(
+                6, 4, 2, 0, 5, 3, 1
+            ).sum(dtype=torch.float)
+        with reference_torch.no_grad():
+            expected_untracked = expected_no_grad_leaf[1].permute(
+                6, 4, 2, 0, 5, 3, 1
+            ).sum(dtype=reference_torch.float)
+        self.assert_scalar_matches(
+            actual_untracked, expected_untracked, case="rank-7 no_grad"
+        )
+        self.assertIsNone(actual_no_grad_leaf.grad)
+        self.assertIsNone(expected_no_grad_leaf.grad)
+
     def test_descriptor_shape_and_documentation_match_pytorch_2_13(self):
         actual_tensor = torch.tensor([1.0, 2.0])
         expected_tensor = reference_torch.tensor(
