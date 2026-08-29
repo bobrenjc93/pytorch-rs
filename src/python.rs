@@ -2110,6 +2110,28 @@ pub(crate) fn matmul_variable_function(
     dispatch_top_level_matmul(py, &input, &other, args, kwargs)
 }
 
+pub(crate) fn sub_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (arguments, keyword_error) = bind_top_level_sub_arguments(args, kwargs)?;
+    let input = parse_top_level_sub_operand("input", &arguments.input)?;
+    let other = parse_top_level_sub_operand("other", &arguments.other)?;
+    let alpha = parse_top_level_sub_alpha(arguments.alpha.as_ref())?;
+    let out = parse_top_level_sub_out(arguments.out.as_ref())?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    let call = BoundSubCall {
+        input,
+        other,
+        alpha,
+        out,
+    };
+    dispatch_top_level_sub(py, &call, args, kwargs)
+}
+
 pub(crate) fn mul_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2206,6 +2228,13 @@ pub(crate) struct ParsedCallArgument<'py> {
 struct ConsumedDTypeKeyword<'py> {
     key: Bound<'py, PyAny>,
     position: usize,
+}
+
+struct TopLevelSubCallArguments<'py> {
+    input: ParsedCallArgument<'py>,
+    other: ParsedCallArgument<'py>,
+    alpha: Option<ParsedCallArgument<'py>>,
+    out: Option<ParsedCallArgument<'py>>,
 }
 
 #[derive(Clone)]
@@ -2426,6 +2455,24 @@ struct BoundTopLevelSumCall<'py> {
     dtype: BoundTopLevelSumDType<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
     default_full_reduction: bool,
+}
+
+enum BoundSubOperand<'py> {
+    Tensor(Bound<'py, PyTensor>),
+    Scalar(Bound<'py, PyAny>, Option<usize>),
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+enum BoundSubAlpha<'py> {
+    Native(Option<Bound<'py, PyAny>>),
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+struct BoundSubCall<'py> {
+    input: BoundSubOperand<'py>,
+    other: BoundSubOperand<'py>,
+    alpha: BoundSubAlpha<'py>,
+    out: Option<BoundTensorOrTorchFunction<'py>>,
 }
 
 enum BoundMulOperand<'py> {
@@ -4047,6 +4094,114 @@ fn dispatch_top_level_matmul(
         active_mode.get(),
         &overrides,
     )?)
+}
+
+fn ordered_sub_overrides<'py>(
+    call: &BoundSubCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(4)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate sub dispatch operands"))?;
+
+    if let BoundSubOperand::Override(probed) = &call.input {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let BoundSubOperand::Override(probed) = &call.other {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let BoundSubAlpha::Override(probed) = &call.alpha {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(BoundTensorOrTorchFunction::Override(probed)) = &call.out {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
+fn dispatch_top_level_sub(
+    py: Python<'_>,
+    call: &BoundSubCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_sub_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_sub(py, call);
+    }
+
+    let function = variable_function(py, "sub")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Generated variable functions validate their schema before dispatch and
+    // disable the top mode for the complete attempt. A forwarding mode
+    // therefore reaches the next mode, then operand overrides, then native.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_top_level_sub(py, call);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.sub",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_sub(py: Python<'_>, call: &BoundSubCall<'_>) -> PyResult<Py<PyAny>> {
+    validate_default_sub_alpha(&call.alpha)?;
+    if call.out.is_some() {
+        return Err(PyRuntimeError::new_err(
+            "sub(): the 'out' argument is not supported",
+        ));
+    }
+
+    let input = match &call.input {
+        BoundSubOperand::Tensor(tensor) => tensor,
+        BoundSubOperand::Scalar(value, position) => {
+            return Err(sub_operand_type_error("input", *position, value)?);
+        }
+        BoundSubOperand::Override(_) => {
+            unreachable!("sub overrides were dispatched before the native path")
+        }
+    };
+    let other = match &call.other {
+        BoundSubOperand::Tensor(tensor) => tensor,
+        BoundSubOperand::Scalar(value, position) => {
+            return Err(sub_operand_type_error("other", *position, value)?);
+        }
+        BoundSubOperand::Override(_) => {
+            unreachable!("sub overrides were dispatched before the native path")
+        }
+    };
+    let other = other.try_borrow()?;
+    let result = input
+        .try_borrow()?
+        .inner
+        .sub(&other.inner)
+        .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(result))?.into_any())
 }
 
 fn dispatch_top_level_multiplication(
@@ -9815,6 +9970,189 @@ impl LegacyBinaryInputKind {
     }
 }
 
+fn bind_top_level_sub_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(TopLevelSubCallArguments<'py>, Option<PyErr>)> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "sub() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let keyword_argument =
+        |names: &[&'static str]| -> PyResult<Option<(Bound<'py, PyAny>, &'static str)>> {
+            let Some(keywords) = keywords else {
+                return Ok(None);
+            };
+            for name in names {
+                if let Some(value) = keywords.get_item(*name)? {
+                    return Ok(Some((value, *name)));
+                }
+            }
+            Ok(None)
+        };
+
+    let (input, input_keyword) = if positional.is_empty() {
+        match keyword_argument(&["input", "x", "a", "x1"])? {
+            Some((value, keyword)) => (
+                Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                }),
+                Some(keyword),
+            ),
+            None => (None, None),
+        }
+    } else {
+        (
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            }),
+            None,
+        )
+    };
+    let (other, other_keyword) = if positional.len() < 2 {
+        match keyword_argument(&["other", "x2"])? {
+            Some((value, keyword)) => (
+                Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                }),
+                Some(keyword),
+            ),
+            None => (None, None),
+        }
+    } else {
+        (
+            Some(ParsedCallArgument {
+                value: positional.get_item(1)?,
+                position: Some(2),
+            }),
+            None,
+        )
+    };
+
+    let Some(input) = input else {
+        if positional.is_empty() && keywords.is_some_and(|keywords| !keywords.is_empty()) {
+            return Err(top_level_sub_unrecognized_keywords(keywords.expect(
+                "keywords were checked as present when reporting unrecognized keywords",
+            ))?);
+        }
+        return Err(top_level_sub_invalid_combination(positional, keywords)?);
+    };
+    let Some(other) = other else {
+        if positional.len() == 1 && keywords.is_none_or(PyDictMethods::is_empty) {
+            return Err(top_level_sub_invalid_combination(positional, keywords)?);
+        }
+        parse_top_level_sub_operand("input", &input)?;
+        return Err(PyTypeError::new_err(
+            "sub() missing 1 required positional arguments: \"other\"",
+        ));
+    };
+
+    let mut arguments = TopLevelSubCallArguments {
+        input,
+        other,
+        alpha: None,
+        out: None,
+    };
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "input" | "x" | "a" | "x1" => {
+                    if input_keyword == Some(key.as_str()) {
+                        continue;
+                    }
+                    if key == "input" && arguments.input.position.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("sub() got multiple values for argument 'input'")
+                        });
+                    } else {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err(format!(
+                                "sub() got an unexpected keyword argument '{key}'"
+                            ))
+                        });
+                    }
+                }
+                "other" | "x2" => {
+                    if other_keyword == Some(key.as_str()) {
+                        continue;
+                    }
+                    if key == "other" && arguments.other.position.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("sub() got multiple values for argument 'other'")
+                        });
+                    } else {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err(format!(
+                                "sub() got an unexpected keyword argument '{key}'"
+                            ))
+                        });
+                    }
+                }
+                "alpha" => {
+                    arguments.alpha = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "out" => {
+                    arguments.out = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "sub() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    Ok((arguments, keyword_error))
+}
+
+fn top_level_sub_invalid_combination(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    Ok(PyTypeError::new_err(format!(
+        "sub() received an invalid combination of arguments - got ({summary}), but expected (Tensor input, Tensor other, *, Number alpha = 1, Tensor out = None)"
+    )))
+}
+
+fn top_level_sub_unrecognized_keywords(keywords: &Bound<'_, PyDict>) -> PyResult<PyErr> {
+    let allocation = PythonAllocationFallback::new(keywords.py());
+    let mut keyword_names = try_size_vector_with(keywords.len(), &allocation)?;
+    for key in keywords.keys() {
+        let key = pytorch_keyword_name(&key)?;
+        try_push_size_with(
+            &mut keyword_names,
+            (try_string_from_str_with(key, &allocation)?, ()),
+            &allocation,
+        )?;
+    }
+    let keyword_names = pytorch_unordered_keyword_order(keyword_names, &allocation)?
+        .into_iter()
+        .map(|(name, ())| name)
+        .collect::<Vec<_>>()
+        .join(", ");
+    Ok(PyTypeError::new_err(format!(
+        "sub() received an invalid combination of arguments - got unrecognized keyword arguments: {keyword_names}"
+    )))
+}
+
 fn bind_legacy_binary_arguments<'py>(
     function: &str,
     positional: &Bound<'py, PyTuple>,
@@ -10133,6 +10471,192 @@ fn parse_tensor_or_torch_function_argument<'py>(
     }
     parse_tensor_argument(function, argument, value)
         .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
+}
+
+fn parse_top_level_sub_operand<'py>(
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+) -> PyResult<BoundSubOperand<'py>> {
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundSubOperand::Tensor(
+            value
+                .value
+                .cast::<PyTensor>()
+                .expect("exact PyTensor values must cast")
+                .clone(),
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundSubOperand::Override(probed));
+    }
+    if is_sub_alpha_number(&value.value)? {
+        return Ok(BoundSubOperand::Scalar(value.value.clone(), value.position));
+    }
+
+    let position = value
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(&value.value)?;
+    Err(PyTypeError::new_err(format!(
+        "sub(): argument '{argument}'{position} must be Tensor, not {actual}"
+    )))
+}
+
+fn sub_operand_type_error(
+    argument: &str,
+    position: Option<usize>,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(value)?;
+    Ok(PyTypeError::new_err(format!(
+        "sub(): argument '{argument}'{position} must be Tensor, not {actual}"
+    )))
+}
+
+fn parse_top_level_sub_alpha<'py>(
+    value: Option<&ParsedCallArgument<'py>>,
+) -> PyResult<BoundSubAlpha<'py>> {
+    let Some(value) = value else {
+        return Ok(BoundSubAlpha::Native(None));
+    };
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundSubAlpha::Override(probed));
+    }
+    if is_sub_alpha_number(&value.value)? {
+        return Ok(BoundSubAlpha::Native(Some(value.value.clone())));
+    }
+
+    let actual = python_type_name(&value.value)?;
+    Err(PyTypeError::new_err(format!(
+        "sub(): argument 'alpha' must be Number, not {actual}"
+    )))
+}
+
+fn parse_top_level_sub_out<'py>(
+    value: Option<&ParsedCallArgument<'py>>,
+) -> PyResult<Option<BoundTensorOrTorchFunction<'py>>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if value.value.is_none() {
+        return Ok(None);
+    }
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(Some(BoundTensorOrTorchFunction::Tensor(
+            value
+                .value
+                .cast::<PyTensor>()
+                .expect("exact PyTensor values must cast")
+                .clone(),
+        )));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(Some(BoundTensorOrTorchFunction::Override(probed)));
+    }
+
+    let actual = python_type_name(&value.value)?;
+    Err(PyTypeError::new_err(format!(
+        "sub(): argument 'out' must be Tensor, not {actual}"
+    )))
+}
+
+fn is_sub_alpha_number(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if value.is_exact_instance_of::<PyBool>()
+        || value.is_instance_of::<PyInt>()
+        || value.is_instance_of::<PyFloat>()
+        || value.is_instance_of::<PyComplex>()
+    {
+        return Ok(true);
+    }
+
+    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
+        return Ok(false);
+    };
+    let generic = numpy.getattr("generic")?;
+    if !value.is_instance(&generic)? {
+        return Ok(false);
+    }
+
+    Ok(value.is_instance(&numpy.getattr("bool_")?)?
+        || value.is_instance(&numpy.getattr("integer")?)?
+        || value.is_instance(&numpy.getattr("floating")?)?
+        || value.is_instance(&numpy.getattr("complexfloating")?)?)
+}
+
+fn validate_default_sub_alpha(alpha: &BoundSubAlpha<'_>) -> PyResult<()> {
+    let BoundSubAlpha::Native(alpha) = alpha else {
+        unreachable!("sub alpha overrides were dispatched before the native path")
+    };
+    let Some(alpha) = alpha else {
+        return Ok(());
+    };
+    if alpha.is_exact_instance_of::<PyBool>() {
+        return Err(bool_sub_alpha_error());
+    }
+    if is_sub_alpha_complex(alpha)? {
+        return Err(PyRuntimeError::new_err(
+            "For non-complex input tensors, argument alpha must not be a complex number.",
+        ));
+    }
+    let scalar = match parse_arithmetic_scalar(alpha) {
+        Ok(Some(ParsedArithmeticScalar::WideNumpyUnsigned)) => {
+            return Err(PyTypeError::new_err("an integer is required"));
+        }
+        Ok(Some(scalar)) => scalar,
+        Ok(None) => {
+            let actual = python_type_name(alpha)?;
+            return Err(PyTypeError::new_err(format!(
+                "sub(): argument 'alpha' must be Number, not {actual}"
+            )));
+        }
+        Err(_) if alpha.is_instance_of::<PyInt>() => {
+            let message = if python_integer_is_negative(alpha)? {
+                "can't convert negative int to unsigned"
+            } else {
+                "int too big to convert"
+            };
+            return Err(PyOverflowError::new_err(message));
+        }
+        Err(error) => return Err(error),
+    };
+    if sub_alpha_is_one(&scalar) {
+        Ok(())
+    } else {
+        Err(PyNotImplementedError::new_err(
+            "sub(): non-default alpha is not supported; only alpha=1 is implemented",
+        ))
+    }
+}
+
+fn is_sub_alpha_complex(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if value.is_instance_of::<PyComplex>() {
+        return Ok(true);
+    }
+
+    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
+        return Ok(false);
+    };
+    let generic = numpy.getattr("generic")?;
+    if !value.is_instance(&generic)? {
+        return Ok(false);
+    }
+    value.is_instance(&numpy.getattr("complexfloating")?)
+}
+
+fn sub_alpha_is_one(alpha: &ParsedArithmeticScalar) -> bool {
+    match alpha {
+        ParsedArithmeticScalar::PythonBool(_) => false,
+        ParsedArithmeticScalar::Number(ParsedFillValue::Float(value)) => *value == 1.0,
+        ParsedArithmeticScalar::Number(ParsedFillValue::SignedInteger(value)) => *value == 1,
+        ParsedArithmeticScalar::Number(ParsedFillValue::UnsignedInteger(value)) => *value == 1,
+        ParsedArithmeticScalar::Number(ParsedFillValue::TensorScalar(value)) => *value == 1.0,
+        ParsedArithmeticScalar::WideNumpyUnsigned => false,
+    }
+}
+
+fn bool_sub_alpha_error() -> PyErr {
+    PyRuntimeError::new_err("Boolean alpha only supported for Boolean results.")
 }
 
 fn is_real_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
