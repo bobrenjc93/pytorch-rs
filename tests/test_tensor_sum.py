@@ -90,6 +90,54 @@ class TensorSumTests(unittest.TestCase):
         self.assertTrue(untracked.is_leaf)
         self.assertTrue(leaf.sum(dtype=torch.float32).requires_grad)
 
+    def test_rank_seven_sum_covers_offsets_singletons_empty_backward_and_no_grad(self):
+        values = np.arange(384, dtype=np.float32).reshape(
+            2, 2, 3, 2, 2, 2, 2, 2
+        )
+        leaf = torch.tensor(values.tolist(), requires_grad=True)
+        view = leaf[1].permute(3, 1, 6, 0, 4, 2, 5)
+        self.assertFalse(view.is_contiguous())
+        self.assertGreater(view.storage_offset(), 0)
+        self.assert_scalar(
+            view.sum(), np.float32(values[1].sum()), case="rank-7 offset"
+        )
+
+        loss = view.sum(dtype=torch.float32)
+        loss.backward()
+        loss.backward()
+        expected_grad = np.zeros_like(values)
+        expected_grad[1] = np.float32(2.0)
+        np.testing.assert_array_equal(np.asarray(leaf.grad), expected_grad)
+
+        singleton_values = np.arange(96, dtype=np.float32).reshape(
+            2, 2, 1, 3, 2, 1, 2, 2
+        )
+        singleton = torch.tensor(singleton_values.tolist())[1].permute(
+            2, 0, 3, 5, 6, 4, 1
+        )
+        self.assertFalse(singleton.is_contiguous())
+        self.assert_scalar(
+            singleton.sum(),
+            np.float32(singleton_values[1].sum()),
+            case="rank-7 singleton",
+        )
+
+        empty = torch.zeros((2, 2, 0, 3, 4, 2, 1, 2), requires_grad=True)
+        empty_view = empty[1].permute(6, 1, 0, 5, 4, 3, 2)
+        self.assert_scalar(empty_view.sum(), np.float32(0.0), case="rank-7 empty")
+        empty_view.sum().backward()
+        self.assertEqual(empty.grad.shape, empty.shape)
+        self.assertEqual(empty.grad.numel(), 0)
+
+        no_grad_leaf = torch.ones((2, 2, 3, 2, 2, 2, 2, 2), requires_grad=True)
+        no_grad_view = no_grad_leaf[1].permute(6, 4, 2, 0, 5, 3, 1)
+        with torch.no_grad():
+            no_grad_sum = no_grad_view.sum(dtype=torch.float)
+        self.assert_scalar(no_grad_sum, np.float32(192.0), case="rank-7 no_grad")
+        self.assertFalse(no_grad_sum.requires_grad)
+        self.assertTrue(no_grad_sum.is_leaf)
+        self.assertIsNone(no_grad_leaf.grad)
+
     def test_descriptor_documentation_and_unbound_dtype_calls(self):
         tensor = torch.tensor([1.0, 2.0])
         descriptor = inspect.getattr_static(torch.Tensor, "sum")

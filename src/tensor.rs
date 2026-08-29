@@ -3304,6 +3304,8 @@ impl Tensor {
             total
         } else if let Some(total) = self.fold_owned_rank_6(0.0_f32, |total, value| total + value) {
             total
+        } else if let Some(total) = self.sum_owned_noncontiguous_rank_7() {
+            total
         } else {
             (0..self.elements).fold(0.0_f32, |total, index| {
                 total + self.value_at_strided_linear_index(index)
@@ -3337,6 +3339,17 @@ impl Tensor {
                     .copied()
                     .fold(0.0_f32, |total, value| total + value)
             })
+    }
+
+    fn sum_owned_noncontiguous_rank_7(&self) -> Option<f32> {
+        let (values, shape, strides) = self.owned_fixed_rank_parts::<7>()?;
+        if layout_is_contiguous(&shape, &strides, self.elements) {
+            return None;
+        }
+        Some(
+            StridedOffsetOdometer::new(shape, strides, self.offset, self.elements)
+                .fold(0.0_f32, |total, offset| total + values[offset]),
+        )
     }
 
     /// Extracts the value of a one-element tensor.
@@ -6132,6 +6145,25 @@ mod tests {
             48,
         );
         assert_empty_stride_odometer_is_fused([2, 0, 3, 4, 5, 2], [120, usize::MAX, 40, 10, 2, 1]);
+
+        let source_shape = [2, 3, 2, 2, 2, 2, 2];
+        let source_strides = [96, 32, 16, 8, 4, 2, 1];
+        for permutation in rank_7_permutations() {
+            let shape = permutation.map(|axis| source_shape[axis]);
+            let strides = permutation.map(|axis| source_strides[axis]);
+            assert_stride_odometer_matches_decoded_offsets(shape, strides, 7, 192);
+        }
+
+        assert_stride_odometer_matches_decoded_offsets(
+            [3, 1, 2, 1, 4, 2, 2],
+            [1, usize::MAX, 48, usize::MAX, 12, 6, 3],
+            5,
+            96,
+        );
+        assert_empty_stride_odometer_is_fused(
+            [2, 0, 3, 4, 5, 2, 2],
+            [240, usize::MAX, 80, 20, 4, 2, 1],
+        );
     }
 
     #[test]
@@ -7246,6 +7278,192 @@ mod tests {
     }
 
     #[test]
+    fn owned_rank_7_sum_matches_fallback_for_every_permutation() {
+        let edge_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+        ];
+        let bits = (0..192)
+            .map(|index| edge_bits[index % edge_bits.len()])
+            .collect::<Vec<_>>();
+        let offset = offset_contiguous_tensor(&bits, &[2, 3, 2, 2, 2, 2, 2]);
+
+        for permutation in rank_7_permutations() {
+            let owned = offset.permute_axes(permutation).unwrap();
+            let shared = shared_gradient_copy(&owned);
+            let expected = shared.sum().item().unwrap();
+            assert_ne!(owned.storage_offset(), 0);
+            assert!(matches!(
+                shared.logical_values().inner,
+                LogicalValuesInner::Strided { .. }
+            ));
+
+            if owned.is_contiguous() {
+                assert!(owned.sum_owned_noncontiguous_rank_7().is_none());
+                assert!(matches!(
+                    owned.logical_values().inner,
+                    LogicalValuesInner::Contiguous(_)
+                ));
+            } else {
+                let direct = owned.sum_owned_noncontiguous_rank_7().unwrap();
+                assert_eq!(direct.to_bits(), expected.to_bits());
+                assert!(matches!(
+                    owned.logical_values().inner,
+                    LogicalValuesInner::Strided { .. }
+                ));
+            }
+            assert_eq!(owned.sum().item().unwrap().to_bits(), expected.to_bits());
+
+            let owned_contiguous = owned.try_contiguous(MemoryFormat::Contiguous).unwrap();
+            let shared_contiguous = shared.try_contiguous(MemoryFormat::Contiguous).unwrap();
+            assert_eq!(owned_contiguous.stride(), shared_contiguous.stride());
+            assert!(
+                owned_contiguous
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(shared_contiguous.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+
+    #[test]
+    fn owned_rank_7_sum_handles_singleton_empty_repeated_backward_and_no_grad() {
+        let singleton_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x4000_0000,
+            0xc000_0000,
+            0x4080_0000,
+            0xc080_0000,
+            0x40a0_0000,
+            0xc0a0_0000,
+        ];
+        let bits = (0..48)
+            .map(|index| singleton_bits[index % singleton_bits.len()])
+            .collect::<Vec<_>>();
+        let singleton = offset_contiguous_tensor(&bits, &[2, 1, 3, 2, 1, 2, 2])
+            .permute_axes([2, 0, 3, 5, 6, 4, 1])
+            .unwrap();
+        let shared_singleton = shared_gradient_copy(&singleton);
+        assert_eq!(singleton.shape(), [3, 2, 2, 2, 2, 1, 1]);
+        assert!(!singleton.is_contiguous());
+        assert!(matches!(
+            singleton.logical_values().inner,
+            LogicalValuesInner::Strided { .. }
+        ));
+        assert_eq!(
+            singleton
+                .sum_owned_noncontiguous_rank_7()
+                .unwrap()
+                .to_bits(),
+            shared_singleton.sum().item().unwrap().to_bits()
+        );
+        assert_eq!(
+            singleton.sum().item().unwrap().to_bits(),
+            shared_singleton.sum().item().unwrap().to_bits()
+        );
+
+        let empty = Tensor::zeros([2, 0, 3, 4, 5, 2, 2])
+            .unwrap()
+            .permute_axes([6, 2, 0, 5, 4, 3, 1])
+            .unwrap();
+        let shared_empty = shared_gradient_copy(&empty);
+        assert!(empty.is_contiguous());
+        assert!(empty.sum_owned_noncontiguous_rank_7().is_none());
+        assert_eq!(empty.sum().item().unwrap().to_bits(), 0.0_f32.to_bits());
+        assert_eq!(
+            empty.sum().item().unwrap().to_bits(),
+            shared_empty.sum().item().unwrap().to_bits()
+        );
+
+        let source = Tensor::from_vec(
+            (0_u16..1920).map(f32::from).collect(),
+            [2, 2, 3, 4, 5, 2, 2, 2],
+        )
+        .unwrap()
+        .with_requires_grad(true);
+        let view = source
+            .index_integer(1)
+            .unwrap()
+            .permute_axes([3, 1, 6, 0, 4, 2, 5])
+            .unwrap();
+        assert_eq!(view.shape(), [5, 3, 2, 2, 2, 4, 2]);
+        assert!(!view.is_contiguous());
+        assert!(view.sum_owned_noncontiguous_rank_7().is_some());
+
+        let repeated = view.sum();
+        repeated.backward().unwrap();
+        repeated.backward().unwrap();
+        let gradient = source.grad().unwrap().unwrap();
+        assert_eq!(&gradient.as_slice()[..960], &[0.0; 960]);
+        assert_eq!(&gradient.as_slice()[960..], &[2.0; 960]);
+
+        let no_grad_leaf = Tensor::ones([2, 3, 2, 2, 2, 2, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let no_grad_view = no_grad_leaf.permute_axes([6, 4, 2, 0, 5, 3, 1]).unwrap();
+        assert!(!no_grad_view.is_contiguous());
+        assert!(no_grad_view.requires_grad());
+        let no_grad_sum = {
+            let _guard = crate::no_grad();
+            no_grad_view.sum()
+        };
+        assert_eq!(no_grad_sum.item().unwrap().to_bits(), 192.0_f32.to_bits());
+        assert!(!no_grad_sum.requires_grad());
+        assert_eq!(no_grad_sum.output_nr(), 0);
+        assert!(no_grad_leaf.grad().unwrap().is_none());
+    }
+
+    #[test]
+    fn rank_7_sum_fast_path_preserves_existing_rank_boundaries() {
+        let rank_5 = Tensor::zeros([2, 3, 4, 5, 2])
+            .unwrap()
+            .permute_axes([4, 3, 2, 1, 0])
+            .unwrap();
+        let rank_6 = Tensor::zeros([2, 3, 4, 5, 2, 2])
+            .unwrap()
+            .permute_axes([5, 3, 1, 4, 2, 0])
+            .unwrap();
+        let rank_7 = Tensor::zeros([2, 3, 4, 5, 2, 2, 2])
+            .unwrap()
+            .permute_axes([6, 4, 2, 0, 5, 3, 1])
+            .unwrap();
+        let rank_8 = Tensor::zeros([2, 3, 4, 5, 2, 2, 2, 2])
+            .unwrap()
+            .permute_axes([7, 5, 3, 1, 6, 4, 2, 0])
+            .unwrap();
+        let shared_rank_7 = shared_gradient_copy(&rank_7);
+
+        assert!(rank_5.sum_owned_noncontiguous_rank_7().is_none());
+        assert!(rank_6.sum_owned_noncontiguous_rank_7().is_none());
+        assert!(rank_7.sum_owned_noncontiguous_rank_7().is_some());
+        assert!(rank_8.sum_owned_noncontiguous_rank_7().is_none());
+        assert!(shared_rank_7.sum_owned_noncontiguous_rank_7().is_none());
+        assert!(matches!(
+            rank_7.logical_values().inner,
+            LogicalValuesInner::Strided { .. }
+        ));
+        assert!(matches!(
+            rank_8.logical_values().inner,
+            LogicalValuesInner::Strided { .. }
+        ));
+    }
+
+    #[test]
     fn equality_fast_path_matches_logical_iteration_semantics() {
         for elements in 0..=17 {
             let left = vec![1.0; elements];
@@ -7832,6 +8050,25 @@ mod tests {
 
         let mut current = [0, 1, 2, 3, 4, 5];
         let mut permutations = Vec::with_capacity(720);
+        permute(0, &mut current, &mut permutations);
+        permutations
+    }
+
+    fn rank_7_permutations() -> Vec<[usize; 7]> {
+        fn permute(axis: usize, current: &mut [usize; 7], permutations: &mut Vec<[usize; 7]>) {
+            if axis == current.len() {
+                permutations.push(*current);
+                return;
+            }
+            for candidate in axis..current.len() {
+                current.swap(axis, candidate);
+                permute(axis + 1, current, permutations);
+                current.swap(axis, candidate);
+            }
+        }
+
+        let mut current = [0, 1, 2, 3, 4, 5, 6];
+        let mut permutations = Vec::with_capacity(5_040);
         permute(0, &mut current, &mut permutations);
         permutations
     }
