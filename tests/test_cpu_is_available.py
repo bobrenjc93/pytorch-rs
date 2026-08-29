@@ -134,6 +134,7 @@ class CpuIsAvailableTests(unittest.TestCase):
                 "current_device",
                 "current_stream",
                 "stream",
+                "set_device",
                 "device_count",
                 "Stream",
                 "StreamContext",
@@ -157,6 +158,7 @@ class CpuIsAvailableTests(unittest.TestCase):
                 "current_device",
                 "current_stream",
                 "stream",
+                "set_device",
                 "device_count",
                 "Stream",
                 "StreamContext",
@@ -170,6 +172,7 @@ class CpuIsAvailableTests(unittest.TestCase):
         self.assertIs(cpu_namespace["is_initialized"], cpu.is_initialized)
         self.assertIs(cpu_namespace["current_device"], cpu.current_device)
         self.assertIs(cpu_namespace["device_count"], cpu.device_count)
+        self.assertIs(cpu_namespace["set_device"], cpu.set_device)
         self.assertIs(cpu_namespace["synchronize"], cpu.synchronize)
 
         self.assertNotIn("cpu", torch.__all__)
@@ -225,6 +228,7 @@ class CpuIsAvailableTests(unittest.TestCase):
                 "current_device",
                 "current_stream",
                 "stream",
+                "set_device",
                 "device_count",
                 "Stream",
                 "StreamContext",
@@ -237,7 +241,6 @@ class CpuIsAvailableTests(unittest.TestCase):
         for name in (
             "amp",
             "get_capabilities",
-            "set_device",
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(cpu, name))

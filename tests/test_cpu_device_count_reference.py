@@ -177,6 +177,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
                     "current_device",
                     "current_stream",
                     "stream",
+                    "set_device",
                     "device_count",
                     "Stream",
                     "StreamContext",
@@ -219,6 +220,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
                 "current_device",
                 "current_stream",
                 "stream",
+                "set_device",
                 "device_count",
                 "Stream",
                 "StreamContext",
@@ -232,6 +234,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
             actual_cpu_namespace["current_device"], actual_cpu.current_device
         )
         self.assertIs(actual_cpu_namespace["device_count"], actual)
+        self.assertIs(actual_cpu_namespace["set_device"], actual_cpu.set_device)
         self.assertIs(actual_cpu_namespace["synchronize"], actual_cpu.synchronize)
         self.assertIs(expected_cpu_namespace["device_count"], expected)
 
@@ -286,6 +289,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
                 "current_device",
                 "current_stream",
                 "stream",
+                "set_device",
                 "device_count",
                 "Stream",
                 "StreamContext",
