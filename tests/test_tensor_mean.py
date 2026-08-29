@@ -64,6 +64,16 @@ class TensorMeanTests(unittest.TestCase):
             + (np.arange(120, dtype=np.float32) % 7)
         ).reshape(3, 40)
         noncontiguous_cancellation = torch.tensor(cancellation.tolist()).transpose(0, 1)
+        multiple_nan_bits = [
+            0x7FC1_2345,
+            0x0000_0000,
+            0xFFC5_4321,
+            0x0000_0000,
+            0x0000_0000,
+            0x0000_0000,
+            0x0000_0000,
+            0x0000_0000,
+        ]
         cases = (
             ("scalar", torch.tensor(-3.5), np.float32(-3.5).view(np.uint32).item()),
             ("negative zero", torch.tensor(-0.0), 0x0000_0000),
@@ -81,6 +91,12 @@ class TensorMeanTests(unittest.TestCase):
                 0x4BBC_614F,
             ),
             ("noncontiguous cancellation", noncontiguous_cancellation, 0x0000_0000),
+            ("multiple NaNs", bits_to_tensor(multiple_nan_bits, [8]), 0xFFC5_4321),
+            (
+                "dense transposed multiple NaNs",
+                bits_to_tensor(multiple_nan_bits, [2, 4]).transpose(0, 1),
+                0xFFC5_4321,
+            ),
             ("positive NaN", bits_to_tensor([0x7FC1_2345, 0x3F80_0000], [2]), 0x7FC1_2345),
             ("negative NaN", bits_to_tensor([0xFFC5_4321, 0x3F80_0000], [2]), 0xFFC5_4321),
             ("infinity", torch.tensor([float("inf"), 1.0]), 0x7F80_0000),

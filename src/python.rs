@@ -3537,7 +3537,7 @@ fn dispatch_top_level_mean(
 }
 
 fn apply_top_level_mean(py: Python<'_>, call: &BoundTopLevelMeanCall<'_>) -> PyResult<Py<PyAny>> {
-    if !call.default_full_reduction {
+    if !call.default_full_reduction || call.out.is_some() {
         return Err(PyNotImplementedError::new_err(
             "mean(): dim, keepdim, and out reductions are not supported",
         ));
@@ -8009,7 +8009,7 @@ fn bind_top_level_mean_arguments<'py>(
     let has_dimension = positional.len() >= 2 || keyword_dim.is_some();
     let has_keepdim = positional.len() >= 3 || keyword_keepdim.is_some();
     let has_out = keyword_out.is_some();
-    if !has_dimension && (has_keepdim || has_out) {
+    if !has_dimension && has_keepdim {
         return Err(top_level_mean_invalid_combination(positional, keywords)?);
     }
 

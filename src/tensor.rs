@@ -4008,9 +4008,17 @@ fn pytorch_full_reduction_sum(values: impl IntoIterator<Item = f32>, elements: u
 
     let mut total = lanes[0] + scalar_tail;
     for lane in &lanes[1..] {
-        total += *lane;
+        total = pytorch_horizontal_reduction_add(total, *lane);
     }
     total
+}
+
+fn pytorch_horizontal_reduction_add(left: f32, right: f32) -> f32 {
+    if left.is_nan() && right.is_nan() {
+        right
+    } else {
+        left + right
+    }
 }
 
 fn pytorch_small_full_reduction_sum(
@@ -6199,8 +6207,21 @@ mod tests {
             .unwrap()
     }
 
+    fn multiple_nan_mean_bits() -> [u32; 8] {
+        [
+            0x7fc1_2345,
+            0x0000_0000,
+            0xffc5_4321,
+            0x0000_0000,
+            0x0000_0000,
+            0x0000_0000,
+            0x0000_0000,
+            0x0000_0000,
+        ]
+    }
+
     #[test]
-    fn mean_matches_pytorch_full_reduction_order_and_reusable_metadata_grad() {
+    fn mean_matches_pytorch_full_reduction_order() {
         for (case, tensor, expected_bits) in [
             (
                 "negative zero",
@@ -6252,6 +6273,20 @@ mod tests {
             &transposed_cancellation,
             0x0000_0000,
         );
+        let multiple_nans = multiple_nan_mean_bits();
+        assert_mean_bits(
+            "multiple NaNs",
+            &Tensor::from_vec(multiple_nans.map(f32::from_bits).to_vec(), [8]).unwrap(),
+            0xffc5_4321,
+        );
+        assert_mean_bits(
+            "dense transposed multiple NaNs",
+            &Tensor::from_vec(multiple_nans.map(f32::from_bits).to_vec(), [2, 4])
+                .unwrap()
+                .transpose(0, 1)
+                .unwrap(),
+            0xffc5_4321,
+        );
 
         let bits = [
             0x8000_0000,
@@ -6269,7 +6304,10 @@ mod tests {
             source.mean().unwrap().item().unwrap().to_bits(),
             expected.item().unwrap().to_bits()
         );
+    }
 
+    #[test]
+    fn mean_preserves_reusable_metadata_grad_and_no_grad() {
         let leaf = Tensor::from_vec(vec![1.0, -2.0, 3.0, 4.0, 5.0, -6.0], [2, 3])
             .unwrap()
             .with_requires_grad(true);

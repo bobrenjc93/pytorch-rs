@@ -56,6 +56,19 @@ class TensorMeanReferenceTests(unittest.TestCase):
             )
             + (np.arange(120, dtype=np.float32) % 7)
         ).reshape(3, 40)
+        multiple_nan_values = np.asarray(
+            [
+                0x7FC1_2345,
+                0x0000_0000,
+                0xFFC5_4321,
+                0x0000_0000,
+                0x0000_0000,
+                0x0000_0000,
+                0x0000_0000,
+                0x0000_0000,
+            ],
+            dtype=np.uint32,
+        ).view(np.float32)
         return (
             ("scalar", module.tensor(-3.5, dtype=module.float32)),
             ("negative zero", module.tensor(-0.0, dtype=module.float32)),
@@ -75,6 +88,16 @@ class TensorMeanReferenceTests(unittest.TestCase):
             (
                 "noncontiguous cancellation",
                 module.tensor(cancellation.tolist(), dtype=module.float32).transpose(0, 1),
+            ),
+            (
+                "multiple NaNs",
+                module.tensor(multiple_nan_values, dtype=module.float32),
+            ),
+            (
+                "dense transposed multiple NaNs",
+                module.tensor(
+                    multiple_nan_values.reshape(2, 4).tolist(), dtype=module.float32
+                ).transpose(0, 1),
             ),
             (
                 "positive NaN",

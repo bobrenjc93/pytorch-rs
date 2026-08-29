@@ -54,6 +54,19 @@ class TopLevelMeanReferenceTests(unittest.TestCase):
             )
             + (np.arange(120, dtype=np.float32) % 7)
         ).reshape(3, 40)
+        multiple_nan_values = np.asarray(
+            [
+                0x7FC1_2345,
+                0x0000_0000,
+                0xFFC5_4321,
+                0x0000_0000,
+                0x0000_0000,
+                0x0000_0000,
+                0x0000_0000,
+                0x0000_0000,
+            ],
+            dtype=np.uint32,
+        ).view(np.float32)
         return (
             ("scalar", module.tensor(-3.5, dtype=module.float32)),
             ("negative zero", module.tensor(-0.0, dtype=module.float32)),
@@ -73,6 +86,16 @@ class TopLevelMeanReferenceTests(unittest.TestCase):
             (
                 "noncontiguous cancellation",
                 module.tensor(cancellation.tolist(), dtype=module.float32).transpose(0, 1),
+            ),
+            (
+                "multiple NaNs",
+                module.tensor(multiple_nan_values, dtype=module.float32),
+            ),
+            (
+                "dense transposed multiple NaNs",
+                module.tensor(
+                    multiple_nan_values.reshape(2, 4).tolist(), dtype=module.float32
+                ).transpose(0, 1),
             ),
             (
                 "positive NaN",
@@ -98,6 +121,8 @@ class TopLevelMeanReferenceTests(unittest.TestCase):
             return module.mean(source, dtype=module.float)
         if form == "alias and dtype":
             return module.mean(x=source, dtype=module.float32)
+        if form == "out none":
+            return module.mean(source, out=None)
         return module.mean(**{form: source})
 
     @staticmethod
@@ -135,6 +160,7 @@ class TopLevelMeanReferenceTests(unittest.TestCase):
             "dtype float32",
             "dtype float alias",
             "alias and dtype",
+            "out none",
         )
         for actual_case, expected_case in zip(
             actual_cases, expected_cases, strict=True
@@ -158,6 +184,7 @@ class TopLevelMeanReferenceTests(unittest.TestCase):
             "dtype float32",
             "dtype float alias",
             "alias and dtype",
+            "out none",
         )
         for case in ("scalar", "empty", "offset", "noncontiguous"):
             for form in forms:
@@ -250,6 +277,7 @@ class TopLevelMeanReferenceTests(unittest.TestCase):
             dtype=module.float32,
             requires_grad=True,
         )
+        destination = module.tensor(17.0, dtype=module.float32)
         function = module.mean
         marker = object()
 
@@ -268,6 +296,8 @@ class TopLevelMeanReferenceTests(unittest.TestCase):
             ("input", lambda: function(input=tensor), ("input",)),
             ("x", lambda: function(x=tensor), ("x",)),
             ("dtype", lambda: function(tensor, dtype=module.float32), ("dtype",)),
+            ("out none", lambda: function(tensor, out=None), ("out",)),
+            ("out", lambda: function(tensor, out=destination), ("out",)),
             ("dim positional", lambda: function(tensor, 0), None),
             (
                 "dim keyword",
@@ -306,6 +336,7 @@ class TopLevelMeanReferenceTests(unittest.TestCase):
         for label, call, expected_keyword in (
             ("input", lambda value: function(value), None),
             ("dtype", lambda value: function(tensor, dtype=value), "dtype"),
+            ("default out", lambda value: function(tensor, out=value), "out"),
             ("out", lambda value: function(tensor, 0, out=value), "out"),
         ):
             value = Override()
@@ -395,6 +426,18 @@ class TopLevelMeanReferenceTests(unittest.TestCase):
             [17.0, 19.0, 23.0],
             dtype=reference_torch.float32,
         )
+        with self.assertRaises(NotImplementedError):
+            torch.mean(actual, out=actual_destination)
+        expected_scalar_destination = reference_torch.tensor(
+            17.0, dtype=reference_torch.float32
+        )
+        expected_scalar_out = reference_torch.mean(
+            expected, out=expected_scalar_destination
+        )
+        self.assertIs(expected_scalar_out, expected_scalar_destination)
+        self.assertEqual(expected_scalar_destination.shape, ())
+        self.assertEqual(expected_scalar_destination.item(), 1.0)
+
         with self.assertRaises(NotImplementedError):
             torch.mean(actual, 0, out=actual_destination)
         expected_out = reference_torch.mean(expected, 0, out=expected_destination)

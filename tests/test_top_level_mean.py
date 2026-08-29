@@ -50,6 +50,19 @@ class TopLevelMeanTests(unittest.TestCase):
             )
             + (np.arange(120, dtype=np.float32) % 7)
         ).reshape(3, 40)
+        multiple_nan_values = np.asarray(
+            [
+                0x7FC1_2345,
+                0x0000_0000,
+                0xFFC5_4321,
+                0x0000_0000,
+                0x0000_0000,
+                0x0000_0000,
+                0x0000_0000,
+                0x0000_0000,
+            ],
+            dtype=np.uint32,
+        ).view(np.float32)
         return (
             ("scalar", torch.tensor(-3.5)),
             ("negative zero", torch.tensor(-0.0)),
@@ -64,6 +77,16 @@ class TopLevelMeanTests(unittest.TestCase):
             (
                 "noncontiguous cancellation",
                 torch.tensor(cancellation.tolist()).transpose(0, 1),
+            ),
+            (
+                "multiple NaNs",
+                torch.tensor(memoryview(multiple_nan_values), dtype=torch.float32),
+            ),
+            (
+                "dense transposed multiple NaNs",
+                torch.tensor(
+                    memoryview(multiple_nan_values), dtype=torch.float32
+                ).reshape(2, 4).transpose(0, 1),
             ),
             (
                 "NaN",
@@ -91,6 +114,7 @@ class TopLevelMeanTests(unittest.TestCase):
             ("dtype float32", lambda: torch.mean(source, dtype=torch.float32)),
             ("dtype float alias", lambda: torch.mean(source, dtype=torch.float)),
             ("alias and dtype", lambda: torch.mean(x=source, dtype=torch.float32)),
+            ("out none", lambda: torch.mean(source, out=None)),
         )
 
     @staticmethod
@@ -149,7 +173,7 @@ class TopLevelMeanTests(unittest.TestCase):
 
     def test_modes_and_overrides_observe_calls_before_native_limits(self):
         tensor = torch.tensor([[1.0, -2.0], [3.0, 4.0]], requires_grad=True)
-        destination = torch.tensor([17.0, 19.0])
+        destination = torch.tensor(17.0)
         marker = object()
 
         class RecordingMode(torch.overrides.TorchFunctionMode):
@@ -163,13 +187,24 @@ class TopLevelMeanTests(unittest.TestCase):
 
         mode = RecordingMode()
         with mode:
-            self.assertIs(torch.mean(input=tensor, dtype=torch.float32), marker)
+            self.assertIs(torch.mean(input=tensor, dtype=torch.float32, out=None), marker)
         self.assertEqual(len(mode.calls), 1)
         function, dispatch_types, args, kwargs = mode.calls[0]
         self.assertIs(function, torch.mean)
         self.assertEqual(dispatch_types, ())
         self.assertEqual(args, ())
-        self.assertEqual(kwargs, {"input": tensor, "dtype": torch.float32})
+        self.assertEqual(kwargs, {"input": tensor, "dtype": torch.float32, "out": None})
+
+        out_mode = RecordingMode()
+        with out_mode:
+            self.assertIs(torch.mean(tensor, out=destination), marker)
+        self.assertEqual(len(out_mode.calls), 1)
+        function, dispatch_types, args, kwargs = out_mode.calls[0]
+        self.assertIs(function, torch.mean)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(len(args), 1)
+        self.assertIs(args[0], tensor)
+        self.assertEqual(kwargs, {"out": destination})
 
         dim_mode = RecordingMode()
         with dim_mode:
@@ -193,8 +228,9 @@ class TopLevelMeanTests(unittest.TestCase):
 
         self.assertIs(torch.mean(Override()), marker)
         self.assertIs(torch.mean(tensor, dtype=Override()), marker)
+        self.assertIs(torch.mean(tensor, out=Override()), marker)
         self.assertIs(torch.mean(tensor, 0, out=Override()), marker)
-        self.assertEqual(len(override_calls), 3)
+        self.assertEqual(len(override_calls), 4)
         for function, dispatch_types, _, _ in override_calls:
             self.assertIs(function, torch.mean)
             self.assertEqual(dispatch_types, (Override,))
@@ -211,17 +247,11 @@ class TopLevelMeanTests(unittest.TestCase):
 
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
-                forwarded = torch.mean(input=tensor, dtype=torch.float32)
+                forwarded = torch.mean(input=tensor, dtype=torch.float32, out=None)
         self.assertEqual(forwarding_order, ["upper", "lower"])
         self.assertEqual(forwarded.item(), 1.5)
         forwarded.backward()
         self.assertEqual(tensor.grad.tolist(), [[0.25, 0.25], [0.25, 0.25]])
-
-        invalid_mode = RecordingMode()
-        with self.assertRaises(TypeError):
-            with invalid_mode:
-                torch.mean(tensor, out=None)
-        self.assertEqual(invalid_mode.calls, [])
 
     def test_callable_metadata_documentation_pickling_and_exports(self):
         function = torch.mean
@@ -265,7 +295,6 @@ class TopLevelMeanTests(unittest.TestCase):
 
     def test_binding_errors_document_the_supported_overload(self):
         tensor = torch.ones((2, 3))
-        destination = torch.tensor([17.0, 19.0, 23.0])
         invalid = "mean() received an invalid combination of arguments - got "
         cases = (
             (lambda: torch.mean(), f"{invalid}(), {EXPECTED_OVERLOADS}"),
@@ -314,14 +343,6 @@ class TopLevelMeanTests(unittest.TestCase):
                 f"{invalid}(Tensor, keepdim=bool), {EXPECTED_OVERLOADS}",
             ),
             (
-                lambda: torch.mean(tensor, out=None),
-                f"{invalid}(Tensor, out=NoneType), {EXPECTED_OVERLOADS}",
-            ),
-            (
-                lambda: torch.mean(tensor, out=destination),
-                f"{invalid}(Tensor, out=Tensor), {EXPECTED_OVERLOADS}",
-            ),
-            (
                 lambda: torch.mean(tensor, tensor),
                 f"{invalid}(Tensor, Tensor), {EXPECTED_OVERLOADS}",
             ),
@@ -338,7 +359,6 @@ class TopLevelMeanTests(unittest.TestCase):
             with self.subTest(message=message):
                 with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
                     call()
-        self.assertEqual(destination.tolist(), [17.0, 19.0, 23.0])
 
     def test_dim_keepdim_out_and_cross_dtype_forms_remain_unsupported(self):
         tensor = torch.ones((2, 3))
@@ -354,7 +374,8 @@ class TopLevelMeanTests(unittest.TestCase):
             ("tuple dim", lambda: torch.mean(tensor, (0, 1))),
             ("list dim", lambda: torch.mean(tensor, [0, 1])),
             ("keepdim", lambda: torch.mean(tensor, 0, keepdim=True)),
-            ("out", lambda: torch.mean(tensor, 0, out=destination)),
+            ("default out", lambda: torch.mean(tensor, out=destination)),
+            ("dim out", lambda: torch.mean(tensor, 0, out=destination)),
             ("dtype plus dim", lambda: torch.mean(tensor, 0, dtype=torch.float32)),
         )
         for case, call in cases:
