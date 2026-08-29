@@ -7676,6 +7676,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 82
       }
+    },
+    {
+      "key": "pr:1266",
+      "recordedAt": "2026-08-29T02:13:10.670Z",
+      "label": "PR #1266",
+      "kind": "leaf",
+      "prNumber": 1266,
+      "title": "Fast-path owned rank-5 logical iteration",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 83.4,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 82
+      }
     }
   ]
 }
