@@ -229,6 +229,7 @@ class MhaFastpathReferenceTests(unittest.TestCase):
             "cpu",
             "cuda",
             "cudnn",
+            "cusparselt",
             "kleidiai",
             "m",
             "mha",
