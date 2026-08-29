@@ -59,6 +59,8 @@ const BROADCAST_TENSORS_EXACT_TENSORS_ERROR: &str =
     "broadcast_tensors() only supports exact native Tensor inputs";
 const BROADCAST_TENSORS_EXPANSION_ERROR: &str =
     "torch_rs.broadcast_tensors does not support shape expansion";
+const UNSQUEEZE_EXACT_TENSOR_ERROR: &str = "unsqueeze() only supports exact native Tensor input";
+const UNSQUEEZE_ENDPOINT_ERROR: &str = "unsqueeze() only supports inserting at the front or back";
 
 // These are compile-time facts about the native Cargo build. Keep them native
 // so importing the Python package never probes the host or imports another
@@ -4237,6 +4239,25 @@ impl PyTensor {
             .map_err(|error| tensor_error(&error))
     }
 
+    #[pyo3(signature = (*args, **kwargs), text_signature = "(dim)")]
+    fn unsqueeze(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<PyTensor> {
+        let ([dimension], keyword_error) =
+            bind_tensor_arguments("unsqueeze", args, kwargs, ["dim"])?;
+        let dimension = parse_unsqueeze_dimension(&dimension)?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+        if !slf.as_any().is_exact_instance_of::<PyTensor>() {
+            return Err(PyTypeError::new_err(UNSQUEEZE_EXACT_TENSOR_ERROR));
+        }
+        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+        apply_unsqueeze(&tensor.inner, dimension).map(PyTensor::new)
+    }
+
     #[pyo3(signature = (*args, **kwargs), text_signature = "(start_dim=0, end_dim=-1)")]
     fn flatten(
         slf: PyRef<'_, Self>,
@@ -4945,6 +4966,19 @@ fn squeeze(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyR
     apply_squeeze(&input.inner, dimension)
         .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
+}
+
+#[pyfunction(signature = (*args, **kwargs), text_signature = "(input, dim)")]
+fn unsqueeze(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let ([input, dimension], keyword_error) =
+        bind_tensor_arguments("unsqueeze", args, kwargs, ["input", "dim"])?;
+    let input = parse_exact_native_tensor_argument("unsqueeze", "input", &input)?;
+    let dimension = parse_unsqueeze_dimension(&dimension)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    let input = input.try_borrow()?;
+    apply_unsqueeze(&input.inner, dimension).map(PyTensor::new)
 }
 
 #[pyfunction(signature = (*args, **kwargs), text_signature = "(input, start_dim=0, end_dim=-1)")]
@@ -7478,6 +7512,76 @@ fn apply_squeeze(
         ParsedSqueezeDimensions::Single(dimension) => input.squeeze_dim(dimension),
         ParsedSqueezeDimensions::Multiple(dimensions) => input.squeeze_dims(dimensions),
     }
+}
+
+fn apply_unsqueeze(input: &CoreTensor, dimension: i64) -> PyResult<CoreTensor> {
+    let rank = input.shape().len();
+    let axis = normalize_unsqueeze_dimension(dimension, rank)?;
+    if axis == 0 {
+        return input
+            .unsqueeze_front()
+            .map_err(|error| tensor_error(&error));
+    }
+    if axis == rank {
+        return input.unsqueeze_back().map_err(|error| tensor_error(&error));
+    }
+    Err(PyNotImplementedError::new_err(UNSQUEEZE_ENDPOINT_ERROR))
+}
+
+fn normalize_unsqueeze_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
+    let rank = i64::try_from(rank)
+        .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+    let insertion_rank = rank
+        .checked_add(1)
+        .ok_or_else(|| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+    if dimension < -insertion_rank || dimension > rank {
+        return Err(PyIndexError::new_err(format!(
+            "Dimension out of range (expected to be in range of [{}, {}], but got {dimension})",
+            -insertion_rank, rank
+        )));
+    }
+    usize::try_from(if dimension < 0 {
+        dimension + insertion_rank
+    } else {
+        dimension
+    })
+    .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds the platform limit"))
+}
+
+fn parse_unsqueeze_dimension(dimension: &ParsedCallArgument<'_>) -> PyResult<i64> {
+    if dimension.value.is_instance_of::<PyBool>() {
+        let actual = python_type_name(&dimension.value)?;
+        return Err(unsqueeze_dimension_type_error(dimension.position, &actual));
+    }
+    let indexed = call_python_index(&dimension.value).map_err(|_| {
+        python_type_name(&dimension.value).map_or_else(
+            |error| error,
+            |actual| unsqueeze_dimension_type_error(dimension.position, &actual),
+        )
+    })?;
+    indexed
+        .extract::<i64>()
+        .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"))
+}
+
+fn parse_exact_native_tensor_argument<'a, 'py>(
+    function: &str,
+    argument: &str,
+    value: &'a ParsedCallArgument<'py>,
+) -> PyResult<&'a Bound<'py, PyTensor>> {
+    if !value.value.is_exact_instance_of::<PyTensor>() {
+        return Err(PyTypeError::new_err(format!(
+            "{function}() only supports exact native Tensor {argument}"
+        )));
+    }
+    Ok(value.value.cast::<PyTensor>()?)
+}
+
+fn unsqueeze_dimension_type_error(position: Option<usize>, actual: &str) -> PyErr {
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    PyTypeError::new_err(format!(
+        "unsqueeze(): argument 'dim'{position} must be int, not {actual}"
+    ))
 }
 
 fn bind_method_squeeze_arguments(
@@ -12266,6 +12370,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(swapdims, module)?)?;
     module.add_function(wrap_pyfunction!(swapaxes, module)?)?;
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
+    module.add_function(wrap_pyfunction!(unsqueeze, module)?)?;
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
     add_tensor_queries(module)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
