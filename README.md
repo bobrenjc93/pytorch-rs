@@ -63,6 +63,9 @@ See [BENCHMARKING.md](BENCHMARKING.md) and [FEATURES.md](FEATURES.md) for the fu
 
 ## Development
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup expectations, focused test
+selection, draft-PR workflow, and documentation ownership.
+
 ```bash
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings

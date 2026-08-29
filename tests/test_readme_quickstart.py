@@ -5,6 +5,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 README = REPOSITORY_ROOT / "README.md"
+CONTRIBUTING = REPOSITORY_ROOT / "CONTRIBUTING.md"
 
 
 class ReadmeQuickstartTests(unittest.TestCase):
@@ -35,6 +36,14 @@ class ReadmeQuickstartTests(unittest.TestCase):
         source = matches[0].group("source").rstrip()
         self.assertLessEqual(len(source.splitlines()), 15)
         exec(compile(source, f"{README}#first-success", "exec"), {})
+
+    def test_readme_links_contributing_guide(self):
+        readme = README.read_text(encoding="utf-8")
+        self.assertIn("[CONTRIBUTING.md](CONTRIBUTING.md)", readme)
+        self.assertTrue(CONTRIBUTING.is_file())
+
+        contributing = CONTRIBUTING.read_text(encoding="utf-8")
+        self.assertLess(len(contributing.splitlines()), 120)
 
 
 if __name__ == "__main__":
