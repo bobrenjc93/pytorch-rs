@@ -5474,6 +5474,15 @@ fn add_math_sdp_reduction_builtins(module: &Bound<'_, PyModule>) -> PyResult<()>
     Ok(())
 }
 
+fn add_backend_state_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    add_cudnn_builtins(module)?;
+    add_flash_sdp_builtins(module)?;
+    add_mem_efficient_sdp_builtins(module)?;
+    add_math_sdp_builtins(module)?;
+    add_math_sdp_reduction_builtins(module)?;
+    add_nnpack_builtins(module)
+}
+
 #[pyfunction(name = "_set_nnpack_enabled", signature = (enabled, /), text_signature = None)]
 fn set_nnpack_enabled_native(enabled: &Bound<'_, PyAny>) -> PyResult<()> {
     if !enabled.is_exact_instance_of::<PyBool>() {
@@ -12176,12 +12185,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("finfo", finfo_type_object(py)?.clone_ref(py))?;
     add_default_dtype_validator(module)?;
     add_warn_always_builtins(module)?;
-    add_cudnn_builtins(module)?;
-    add_flash_sdp_builtins(module)?;
-    add_mem_efficient_sdp_builtins(module)?;
-    add_math_sdp_builtins(module)?;
-    add_math_sdp_reduction_builtins(module)?;
-    add_nnpack_builtins(module)?;
+    add_backend_state_builtins(module)?;
     add_compiler_state_builtins(module)?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
