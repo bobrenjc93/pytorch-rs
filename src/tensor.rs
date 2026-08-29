@@ -3357,8 +3357,8 @@ impl Tensor {
     /// Multiplies two rank-2 matrices after broadcasting a rank-1 bias across
     /// the output rows.
     ///
-    /// Bias values seed the accumulators before products are added, matching
-    /// `addmm` ordering while reusing the ordinary matrix multiplication loop.
+    /// Bias values seed the accumulators before products are added while
+    /// reusing the ordinary matrix multiplication loop.
     ///
     /// # Errors
     ///
@@ -3371,14 +3371,7 @@ impl Tensor {
         bias: &Self,
     ) -> Result<Self, TensorError> {
         self.matmul_with_initializer(other, |rows, columns, output_elements| {
-            if bias.shape.len() != 1 || (bias.shape[0] != columns && bias.shape[0] != 1) {
-                let mut expected_bias_shape = try_result_vector(1, output_elements)?;
-                expected_bias_shape.push(columns);
-                return Err(TensorError::ShapeMismatch {
-                    left: expected_bias_shape,
-                    right: try_clone_result_shape(&bias.shape, bias.elements)?,
-                });
-            }
+            validate_matmul_row_bias(columns, output_elements, bias)?;
 
             let mut output = try_result_vector(output_elements, output_elements)?;
             if output_elements != 0 {
@@ -3393,6 +3386,93 @@ impl Tensor {
             }
             Ok(output)
         })
+    }
+
+    /// Multiplies two rank-2 matrices, then broadcasts and adds a rank-1 bias
+    /// across the output rows.
+    ///
+    /// This matches the rank-3 `linear` ordering: products are accumulated
+    /// before bias is applied, but zero-inner products still materialize from
+    /// the bias values.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn matmul_then_add_row_bias(
+        &self,
+        other: &Self,
+        bias: &Self,
+    ) -> Result<Self, TensorError> {
+        if self.shape.len() != 2 || other.shape.len() != 2 {
+            return Err(TensorError::MatmulRequiresMatrices {
+                left: self.shape.clone(),
+                right: other.shape.clone(),
+            });
+        }
+        let (rows, inner) = (self.shape[0], self.shape[1]);
+        let (other_inner, columns) = (other.shape[0], other.shape[1]);
+        if inner != other_inner {
+            return Err(TensorError::MatmulInnerDimensionMismatch {
+                left: self.shape.clone(),
+                right: other.shape.clone(),
+            });
+        }
+
+        let mut output_shape = try_result_vector(2, 0)?;
+        output_shape.push(rows);
+        output_shape.push(columns);
+        let (output_elements, output_strides) = validated_layout(&output_shape)?;
+        validate_matmul_row_bias(columns, output_elements, bias)?;
+
+        let bias_values = if bias.shape[0] == 1 {
+            filled_storage(1, bias.value_at_linear_index(0))?
+        } else {
+            bias.try_to_vec()?
+        };
+        let mut output = try_result_vector(output_elements, output_elements)?;
+        if output_elements != 0 {
+            for row in 0..rows {
+                for column in 0..columns {
+                    let bias_value = bias_values[if bias_values.len() == 1 { 0 } else { column }];
+                    let value = if inner == 0 {
+                        bias_value
+                    } else {
+                        let mut accumulated = self.matrix_product(other, row, 0, column)?;
+                        for depth in 1..inner {
+                            accumulated += self.matrix_product(other, row, depth, column)?;
+                        }
+                        accumulated + bias_value
+                    };
+                    output.push(value);
+                }
+            }
+        }
+
+        Ok(Self::from_owned_parts(
+            output,
+            output_shape,
+            output_strides,
+            self.dtype(),
+            self.device(),
+        ))
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn matrix_product(
+        &self,
+        other: &Self,
+        row: usize,
+        depth: usize,
+        column: usize,
+    ) -> Result<f32, TensorError> {
+        let left_offset = checked_matrix_offset(self, row, depth)?;
+        let left = self
+            .storage
+            .value(left_offset)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let right_offset = checked_matrix_offset(other, depth, column)?;
+        let right = other
+            .storage
+            .value(right_offset)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        Ok(left * right)
     }
 
     fn matmul_with_initializer(
@@ -4952,6 +5032,23 @@ fn checked_matrix_offset(tensor: &Tensor, row: usize, column: usize) -> Result<u
         .and_then(|offset| offset.checked_add(column_offset))
         .filter(|offset| *offset < tensor.storage.len())
         .ok_or(TensorError::IndexCalculationOverflow)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn validate_matmul_row_bias(
+    columns: usize,
+    output_elements: usize,
+    bias: &Tensor,
+) -> Result<(), TensorError> {
+    if bias.shape.len() != 1 || (bias.shape[0] != columns && bias.shape[0] != 1) {
+        let mut expected_bias_shape = try_result_vector(1, output_elements)?;
+        expected_bias_shape.push(columns);
+        return Err(TensorError::ShapeMismatch {
+            left: expected_bias_shape,
+            right: try_clone_result_shape(&bias.shape, bias.elements)?,
+        });
+    }
+    Ok(())
 }
 
 // Isolate contiguous code generation from the unchanged strided dispatch.

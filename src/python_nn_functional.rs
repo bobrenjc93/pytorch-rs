@@ -393,13 +393,14 @@ fn linear_rank_three(
     let folded_input_layout = input.numel() == 0
         || input.stride()[1].checked_mul(input_shape[1]) == Some(input.stride()[0]);
     let folds_to_matrix = weight.requires_grad() || folded_input_layout;
+    let reports_flattened_bias_errors = input.is_contiguous();
     if !folds_to_matrix && input_shape[2] != weight_shape[1] {
         return Err(PyRuntimeError::new_err(format!(
             "Expected size for first two dimensions of batch2 tensor to be: [{}, {}] but got: [{}, {}].",
             input_shape[0], input_shape[2], input_shape[0], weight_shape[1]
         )));
     }
-    if !folded_input_layout
+    if !reports_flattened_bias_errors
         && input_shape[2] == weight_shape[1]
         && let Some(bias) = bias
         && bias.inner().shape()[0] != weight_shape[0]
@@ -419,12 +420,11 @@ fn linear_rank_three(
         i64::try_from(weight_shape[0])
             .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
     ];
-    if !folded_input_layout && let Some(bias) = bias {
+    if let Some(bias) = bias {
         return Ok(input
             .flatten(0, 1)
-            .and_then(|input| input.matmul(transposed_weight))
-            .and_then(|output| output.reshape(output_shape))
-            .and_then(|output| output.add(bias.inner())));
+            .and_then(|input| input.matmul_then_add_row_bias(transposed_weight, bias.inner()))
+            .and_then(|output| output.reshape(output_shape)));
     }
     Ok(input
         .flatten(0, 1)

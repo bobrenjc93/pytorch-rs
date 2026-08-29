@@ -948,32 +948,51 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                 )
 
     def test_noncontiguous_rank_three_bias_is_added_after_matmul(self):
-        values = np.full((3, 2, 2), 1.0e20, dtype=np.float32)
-        actual_input = torch.tensor(values.tolist()).transpose(0, 1)
         actual_weight = torch.tensor([[1.0, -1.0]])
         actual_bias = torch.tensor([1.0])
-        expected_input = reference_torch.tensor(
-            values.tolist(),
-            dtype=reference_torch.float32,
-        ).transpose(0, 1)
         expected_weight = reference_torch.tensor(
             [[1.0, -1.0]],
             dtype=reference_torch.float32,
         )
         expected_bias = reference_torch.tensor([1.0], dtype=reference_torch.float32)
-
-        actual = functional.linear(actual_input, actual_weight, actual_bias)
-        expected = reference_functional.linear(
-            expected_input,
-            expected_weight,
-            expected_bias,
+        cases = (
+            (
+                "contiguous",
+                np.full((2, 3, 2), 1.0e20, dtype=np.float32),
+                lambda tensor: tensor,
+            ),
+            (
+                "unfoldable leading transpose",
+                np.full((3, 2, 2), 1.0e20, dtype=np.float32),
+                lambda tensor: tensor.transpose(0, 1),
+            ),
+            (
+                "foldable permutation",
+                np.full((2, 2, 3), 1.0e20, dtype=np.float32),
+                lambda tensor: tensor.permute(1, 2, 0),
+            ),
         )
 
-        self.assert_matches(actual, expected, case="non-associative bias order")
-        np.testing.assert_array_equal(
-            np.asarray(actual, dtype=np.float32),
-            np.ones((2, 3, 1), dtype=np.float32),
-        )
+        for case, values, transform in cases:
+            actual_input = transform(torch.tensor(values.tolist()))
+            expected_input = transform(
+                reference_torch.tensor(
+                    values.tolist(),
+                    dtype=reference_torch.float32,
+                )
+            )
+            actual = functional.linear(actual_input, actual_weight, actual_bias)
+            expected = reference_functional.linear(
+                expected_input,
+                expected_weight,
+                expected_bias,
+            )
+
+            self.assert_matches(actual, expected, case=case)
+            np.testing.assert_array_equal(
+                np.asarray(actual, dtype=np.float32),
+                np.ones((2, 3, 1), dtype=np.float32),
+            )
 
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, weight_requires_grad in (
@@ -1400,47 +1419,70 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                     )
 
     def test_noncontiguous_rank_three_bias_length_error_matches(self):
-        actual_input = torch.zeros((3, 2, 4)).transpose(0, 1)
-        expected_input = reference_torch.zeros(
-            (3, 2, 4), dtype=reference_torch.float32
-        ).transpose(0, 1)
-        for weight_requires_grad in (False, True):
-            actual_weight = torch.zeros(
-                (5, 4),
-                requires_grad=weight_requires_grad,
-            )
-            expected_weight = reference_torch.zeros(
-                (5, 4),
-                dtype=reference_torch.float32,
-                requires_grad=weight_requires_grad,
-            )
-            for bias_features in (0, 2, 3, 4, 6):
-                actual_bias = torch.zeros((bias_features,))
-                expected_bias = reference_torch.zeros(
-                    (bias_features,),
+        cases = (
+            (
+                "unfoldable leading transpose",
+                torch.zeros((3, 2, 4)).transpose(0, 1),
+                reference_torch.zeros(
+                    (3, 2, 4),
                     dtype=reference_torch.float32,
+                ).transpose(0, 1),
+            ),
+            (
+                "foldable permutation",
+                torch.zeros((4, 2, 3)).permute(1, 2, 0),
+                reference_torch.zeros(
+                    (4, 2, 3),
+                    dtype=reference_torch.float32,
+                ).permute(1, 2, 0),
+            ),
+        )
+        for case, actual_input, expected_input in cases:
+            self.assertFalse(actual_input.is_contiguous())
+            self.assertFalse(expected_input.is_contiguous())
+            for weight_requires_grad in (False, True):
+                actual_weight = torch.zeros(
+                    (5, 4),
+                    requires_grad=weight_requires_grad,
                 )
-                with self.subTest(
-                    weight_requires_grad=weight_requires_grad,
-                    bias_features=bias_features,
-                ):
-                    with torch.no_grad():
-                        with self.assertRaises(Exception) as actual_raised:
-                            functional.linear(actual_input, actual_weight, actual_bias)
-                    with reference_torch.no_grad():
-                        with self.assertRaises(Exception) as expected_raised:
-                            reference_functional.linear(
-                                expected_input,
-                                expected_weight,
-                                expected_bias,
-                            )
-                    self.assertIs(
-                        type(actual_raised.exception),
-                        type(expected_raised.exception),
+                expected_weight = reference_torch.zeros(
+                    (5, 4),
+                    dtype=reference_torch.float32,
+                    requires_grad=weight_requires_grad,
+                )
+                for bias_features in (0, 2, 3, 4, 6):
+                    actual_bias = torch.zeros((bias_features,))
+                    expected_bias = reference_torch.zeros(
+                        (bias_features,),
+                        dtype=reference_torch.float32,
                     )
-                    self.assertEqual(
-                        str(actual_raised.exception), str(expected_raised.exception)
-                    )
+                    with self.subTest(
+                        case=case,
+                        weight_requires_grad=weight_requires_grad,
+                        bias_features=bias_features,
+                    ):
+                        with torch.no_grad():
+                            with self.assertRaises(Exception) as actual_raised:
+                                functional.linear(
+                                    actual_input,
+                                    actual_weight,
+                                    actual_bias,
+                                )
+                        with reference_torch.no_grad():
+                            with self.assertRaises(Exception) as expected_raised:
+                                reference_functional.linear(
+                                    expected_input,
+                                    expected_weight,
+                                    expected_bias,
+                                )
+                        self.assertIs(
+                            type(actual_raised.exception),
+                            type(expected_raised.exception),
+                        )
+                        self.assertEqual(
+                            str(actual_raised.exception),
+                            str(expected_raised.exception),
+                        )
 
     def test_noncontiguous_rank_three_inner_dimension_error_matches(self):
         cases = (

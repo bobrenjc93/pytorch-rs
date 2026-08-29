@@ -668,18 +668,68 @@ class FunctionalLinearTests(unittest.TestCase):
                 )
 
     def test_noncontiguous_rank_three_bias_is_added_after_matmul(self):
-        input = torch.tensor(
-            np.full((3, 2, 2), 1.0e20, dtype=np.float32).tolist()
-        ).transpose(0, 1)
         weight = torch.tensor([[1.0, -1.0]])
         bias = torch.tensor([1.0])
+        cases = (
+            (
+                "contiguous",
+                torch.tensor(
+                    np.full((2, 3, 2), 1.0e20, dtype=np.float32).tolist()
+                ),
+            ),
+            (
+                "unfoldable leading transpose",
+                torch.tensor(
+                    np.full((3, 2, 2), 1.0e20, dtype=np.float32).tolist()
+                ).transpose(0, 1),
+            ),
+            (
+                "foldable permutation",
+                torch.tensor(
+                    np.full((2, 2, 3), 1.0e20, dtype=np.float32).tolist()
+                ).permute(1, 2, 0),
+            ),
+        )
 
-        output = functional.linear(input, weight, bias)
+        for case, input in cases:
+            output = functional.linear(input, weight, bias)
 
-        self.assert_matches_composition(output, torch.ones((2, 3, 1)), case="values")
-        self.assertFalse(output.is_set_to(input))
-        self.assertFalse(output.is_set_to(weight))
-        self.assertFalse(output.is_set_to(bias))
+            self.assert_matches_composition(
+                output,
+                torch.ones((2, 3, 1)),
+                case=case,
+            )
+            self.assertFalse(output.is_set_to(input))
+            self.assertFalse(output.is_set_to(weight))
+            self.assertFalse(output.is_set_to(bias))
+
+    def test_noncontiguous_rank_three_bias_length_mismatch_uses_dimension_two_error(self):
+        cases = (
+            (
+                "unfoldable leading transpose",
+                torch.zeros((3, 2, 4)).transpose(0, 1),
+            ),
+            (
+                "foldable permutation",
+                torch.zeros((4, 2, 3)).permute(1, 2, 0),
+            ),
+        )
+        for case, input in cases:
+            for bias_features in (0, 2, 3, 4, 6):
+                message = (
+                    "The size of tensor a (5) must match the size of tensor "
+                    f"b ({bias_features}) at non-singleton dimension 2"
+                )
+                with self.subTest(case=case, bias_features=bias_features):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        f"^{re.escape(message)}$",
+                    ):
+                        functional.linear(
+                            input,
+                            torch.zeros((5, 4)),
+                            torch.zeros((bias_features,)),
+                        )
 
     def test_every_call_returns_fresh_storage_including_empty_outputs(self):
         cases = tuple(
