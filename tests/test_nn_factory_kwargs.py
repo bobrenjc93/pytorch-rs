@@ -67,7 +67,7 @@ class FactoryKwargsTests(unittest.TestCase):
         exec("from torch_rs.nn import *", wildcard_namespace)
         self.assertEqual(
             {name for name in wildcard_namespace if not name.startswith("_")},
-            {"factory_kwargs", "functional", "init", "modules"},
+            {"Parameter", "factory_kwargs", "functional", "init", "modules"},
         )
         self.assertIs(wildcard_namespace["factory_kwargs"], nn.factory_kwargs)
 

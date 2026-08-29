@@ -290,6 +290,7 @@ class CompilerSetDefaultBackendTests(unittest.TestCase):
                 "keep_portable_guards_unsafe",
                 "skip_guard_on_inbuilt_nn_modules_unsafe",
                 "skip_guard_on_all_nn_modules_unsafe",
+                "keep_tensor_guards_unsafe",
                 "skip_guard_on_globals_unsafe",
                 "skip_all_guards_unsafe",
             ],
