@@ -947,6 +947,34 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                     expected.detach().cpu().numpy().reshape(-1).view(np.uint32),
                 )
 
+    def test_noncontiguous_rank_three_bias_is_added_after_matmul(self):
+        values = np.full((3, 2, 2), 1.0e20, dtype=np.float32)
+        actual_input = torch.tensor(values.tolist()).transpose(0, 1)
+        actual_weight = torch.tensor([[1.0, -1.0]])
+        actual_bias = torch.tensor([1.0])
+        expected_input = reference_torch.tensor(
+            values.tolist(),
+            dtype=reference_torch.float32,
+        ).transpose(0, 1)
+        expected_weight = reference_torch.tensor(
+            [[1.0, -1.0]],
+            dtype=reference_torch.float32,
+        )
+        expected_bias = reference_torch.tensor([1.0], dtype=reference_torch.float32)
+
+        actual = functional.linear(actual_input, actual_weight, actual_bias)
+        expected = reference_functional.linear(
+            expected_input,
+            expected_weight,
+            expected_bias,
+        )
+
+        self.assert_matches(actual, expected, case="non-associative bias order")
+        np.testing.assert_array_equal(
+            np.asarray(actual, dtype=np.float32),
+            np.ones((2, 3, 1), dtype=np.float32),
+        )
+
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, weight_requires_grad in (
             (True, False),
@@ -1471,14 +1499,12 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
     def test_noncontiguous_rank_three_tracked_weight_error_matches_in_no_grad(self):
         actual_input = torch.zeros((3, 2, 4)).transpose(0, 1)
         actual_weight = torch.zeros((5, 6), requires_grad=True)
-        actual_bias = torch.zeros((5,))
         expected_input = reference_torch.zeros(
             (3, 2, 4), dtype=reference_torch.float32
         ).transpose(0, 1)
         expected_weight = reference_torch.zeros(
             (5, 6), dtype=reference_torch.float32, requires_grad=True
         )
-        expected_bias = reference_torch.zeros((5,), dtype=reference_torch.float32)
 
         with torch.no_grad():
             with self.assertRaises(Exception) as actual_raised:
@@ -1489,18 +1515,29 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
         self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
 
-        with torch.no_grad():
-            with self.assertRaises(Exception) as actual_raised:
-                functional.linear(actual_input, actual_weight, actual_bias)
-        with reference_torch.no_grad():
-            with self.assertRaises(Exception) as expected_raised:
-                reference_functional.linear(
-                    expected_input,
-                    expected_weight,
-                    expected_bias,
+        for bias_features in (5, 4, 1, 0):
+            actual_bias = torch.zeros((bias_features,))
+            expected_bias = reference_torch.zeros(
+                (bias_features,),
+                dtype=reference_torch.float32,
+            )
+            with self.subTest(bias_features=bias_features):
+                with torch.no_grad():
+                    with self.assertRaises(Exception) as actual_raised:
+                        functional.linear(actual_input, actual_weight, actual_bias)
+                with reference_torch.no_grad():
+                    with self.assertRaises(Exception) as expected_raised:
+                        reference_functional.linear(
+                            expected_input,
+                            expected_weight,
+                            expected_bias,
+                        )
+                self.assertIs(
+                    type(actual_raised.exception), type(expected_raised.exception)
                 )
-        self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
-        self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+                self.assertEqual(
+                    str(actual_raised.exception), str(expected_raised.exception)
+                )
 
 
 if __name__ == "__main__":

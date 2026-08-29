@@ -667,6 +667,20 @@ class FunctionalLinearTests(unittest.TestCase):
                     np.asarray(expected_bits, dtype=np.uint32),
                 )
 
+    def test_noncontiguous_rank_three_bias_is_added_after_matmul(self):
+        input = torch.tensor(
+            np.full((3, 2, 2), 1.0e20, dtype=np.float32).tolist()
+        ).transpose(0, 1)
+        weight = torch.tensor([[1.0, -1.0]])
+        bias = torch.tensor([1.0])
+
+        output = functional.linear(input, weight, bias)
+
+        self.assert_matches_composition(output, torch.ones((2, 3, 1)), case="values")
+        self.assertFalse(output.is_set_to(input))
+        self.assertFalse(output.is_set_to(weight))
+        self.assertFalse(output.is_set_to(bias))
+
     def test_every_call_returns_fresh_storage_including_empty_outputs(self):
         cases = tuple(
             (f"matrix {case}", input, weight)

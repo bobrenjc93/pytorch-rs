@@ -400,6 +400,7 @@ fn linear_rank_three(
         )));
     }
     if !folded_input_layout
+        && input_shape[2] == weight_shape[1]
         && let Some(bias) = bias
         && bias.inner().shape()[0] != weight_shape[0]
         && bias.inner().shape()[0] != 1
@@ -418,6 +419,13 @@ fn linear_rank_three(
         i64::try_from(weight_shape[0])
             .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
     ];
+    if !folded_input_layout && let Some(bias) = bias {
+        return Ok(input
+            .flatten(0, 1)
+            .and_then(|input| input.matmul(transposed_weight))
+            .and_then(|output| output.reshape(output_shape))
+            .and_then(|output| output.add(bias.inner())));
+    }
     Ok(input
         .flatten(0, 1)
         .and_then(|input| {
