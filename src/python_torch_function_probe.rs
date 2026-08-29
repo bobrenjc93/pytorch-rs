@@ -13,7 +13,7 @@ use crate::{python::PyTensor, python_torch_function_mode};
 const HAS_TORCH_FUNCTION_UNARY_DOC: &CStr = c"Special case of `has_torch_function` for single inputs.\n    Instead of:\n      `has_torch_function((t,))`\n    call:\n      `has_torch_function_unary(t)`\n    which skips unnecessary packing and unpacking work.\n    ";
 const HAS_TORCH_FUNCTION_UNARY_SIGNATURE_DOC: &CStr = c"_has_torch_function_unary($self, object, /)\n--\n\nSpecial case of `has_torch_function` for single inputs.\n    Instead of:\n      `has_torch_function((t,))`\n    call:\n      `has_torch_function_unary(t)`\n    which skips unnecessary packing and unpacking work.\n    ";
 
-fn is_disabled_torch_function_handler(handler: &Bound<'_, PyAny>) -> bool {
+pub(crate) fn is_disabled_torch_function_handler(handler: &Bound<'_, PyAny>) -> bool {
     if handler.cast::<PyCFunction>().is_err() {
         return false;
     }

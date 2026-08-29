@@ -2,6 +2,7 @@ import gc
 import inspect
 import pickle
 import re
+import subprocess
 import sys
 import types
 import unittest
@@ -436,6 +437,56 @@ class TopLevelReshapeTests(unittest.TestCase):
             with self.subTest(declining_shape=type(shape).__name__):
                 with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
                     torch.reshape(tensor, shape)
+
+    def test_disabled_torch_function_shape_handlers_are_ignored_without_crashing(self):
+        source = r"""
+import sys
+try:
+    import torch
+except ImportError:
+    raise SystemExit(77)
+import torch_rs
+
+class Disabled:
+    __torch_function__ = torch._C._disabled_torch_function_impl
+
+tensor = torch_rs.tensor([1.0, 2.0, 3.0, 4.0])
+cases = (
+    lambda: torch_rs.reshape(tensor, (Disabled(), 2)),
+    lambda: torch_rs.reshape(tensor, (1, Disabled())),
+    lambda: torch_rs.reshape(tensor, Disabled()),
+)
+for call in cases:
+    try:
+        call()
+    except TypeError as error:
+        print(str(error).splitlines()[0])
+    else:
+        raise SystemExit("expected TypeError")
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            text=True,
+            capture_output=True,
+        )
+        if completed.returncode == 77:
+            self.skipTest("install the reference dependency group")
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertEqual(
+            completed.stdout.splitlines(),
+            [
+                "reshape(): argument 'shape' (position 2) must be tuple of ints, "
+                "but found element of type Disabled at pos 0",
+                "reshape(): argument 'shape' failed to unpack the object at pos 2 "
+                'with error "type must be tuple of ints,but got Disabled"',
+                "reshape(): argument 'shape' (position 2) must be tuple of ints, "
+                "not Disabled",
+            ],
+        )
 
     def test_binding_and_type_error_precedence_matches_pytorch_schema(self):
         tensor = torch.tensor([1.0, 2.0, 3.0, 4.0])

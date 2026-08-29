@@ -1,7 +1,9 @@
 import gc
 import inspect
+import json
 import pickle
 import re
+import subprocess
 import sys
 import types
 import unittest
@@ -622,6 +624,47 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
             self.dispatch_contract(torch),
             self.dispatch_contract(reference_torch),
         )
+
+    def test_disabled_torch_function_shape_handlers_match_pytorch_2_13(self):
+        source = r"""
+import json
+import torch
+import torch_rs
+
+class Disabled:
+    __torch_function__ = torch._C._disabled_torch_function_impl
+
+def capture(module):
+    tensor = module.tensor([1.0, 2.0, 3.0, 4.0])
+    cases = (
+        lambda: module.reshape(tensor, (Disabled(), 2)),
+        lambda: module.reshape(tensor, (1, Disabled())),
+        lambda: module.reshape(tensor, Disabled()),
+    )
+    outcomes = []
+    for call in cases:
+        try:
+            call()
+        except Exception as error:
+            outcomes.append((type(error).__name__, str(error).splitlines()[0]))
+        else:
+            outcomes.append(("ok", ""))
+    return outcomes
+
+print(json.dumps({"actual": capture(torch_rs), "expected": capture(torch)}))
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        outcomes = json.loads(completed.stdout)
+        self.assertEqual(outcomes["actual"], outcomes["expected"])
 
     def callable_contract(self, module):
         function = module.reshape
