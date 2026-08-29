@@ -133,6 +133,7 @@ class CpuDeviceCountTests(unittest.TestCase):
                 "current_device",
                 "current_stream",
                 "stream",
+                "set_device",
                 "device_count",
                 "Stream",
                 "StreamContext",
@@ -156,6 +157,7 @@ class CpuDeviceCountTests(unittest.TestCase):
                 "current_device",
                 "current_stream",
                 "stream",
+                "set_device",
                 "device_count",
                 "Stream",
                 "StreamContext",
@@ -222,6 +224,7 @@ class CpuDeviceCountTests(unittest.TestCase):
                 "current_device",
                 "current_stream",
                 "stream",
+                "set_device",
                 "device_count",
                 "Stream",
                 "StreamContext",
@@ -234,7 +237,6 @@ class CpuDeviceCountTests(unittest.TestCase):
         for name in (
             "amp",
             "get_capabilities",
-            "set_device",
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(cpu, name))
