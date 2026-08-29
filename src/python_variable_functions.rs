@@ -26,13 +26,14 @@ use crate::python::{
     positive_variable_function, promote_types_variable_function, ravel_variable_function,
     reciprocal_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
     rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
-    sin_variable_function, sqrt_variable_function, square_variable_function,
-    tanh_variable_function, trunc_variable_function, unbind_variable_function,
+    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
+    square_variable_function, tanh_variable_function, trunc_variable_function,
+    unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 41] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 42] = [
     "get_device",
     "scalar_tensor",
     "arange",
@@ -57,6 +58,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 41] = [
     "fix",
     "sin",
     "sqrt",
+    "sigmoid",
     "square",
     "tanh",
     "is_vulkan_available",
@@ -413,6 +415,12 @@ Example::
     tensor([-2.0755,  1.0226,  0.0831,  0.4806])
     >>> torch.sqrt(a)
     tensor([    nan,  1.0112,  0.2883,  0.6933])
+";
+
+const SIGMOID_DOC: &std::ffi::CStr = c"
+sigmoid(input, *, out=None) -> Tensor
+
+Alias for :func:`torch.special.expit`.
 ";
 
 const SQUARE_DOC: &std::ffi::CStr = cr"
@@ -812,6 +820,7 @@ variable_function_callback!(trunc_callback, trunc_variable_function);
 variable_function_callback!(fix_callback, fix_variable_function);
 variable_function_callback!(sin_callback, sin_variable_function);
 variable_function_callback!(sqrt_callback, sqrt_variable_function);
+variable_function_callback!(sigmoid_callback, sigmoid_variable_function);
 variable_function_callback!(square_callback, square_variable_function);
 variable_function_callback!(tanh_callback, tanh_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
@@ -881,6 +890,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"fix", fix_callback, FIX_DOC),
         variable_function_method!(c"sin", sin_callback, SIN_DOC),
         variable_function_method!(c"sqrt", sqrt_callback, SQRT_DOC),
+        variable_function_method!(c"sigmoid", sigmoid_callback, SIGMOID_DOC),
         variable_function_method!(c"square", square_callback, SQUARE_DOC),
         variable_function_method!(c"tanh", tanh_callback, TANH_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),

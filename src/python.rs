@@ -1870,6 +1870,14 @@ pub(crate) fn sqrt_variable_function(
     unary_out_variable_function(UnaryOutOperation::SQRT, py, args, kwargs)
 }
 
+pub(crate) fn sigmoid_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::SIGMOID, py, args, kwargs)
+}
+
 pub(crate) fn square_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2343,6 +2351,14 @@ impl UnaryOutOperation {
         dispatch_allocation_error: "unable to allocate sqrt dispatch operands",
         out_unsupported_error: "sqrt(): the 'out' argument is not supported",
         apply: CoreTensor::sqrt,
+    };
+
+    const SIGMOID: Self = Self {
+        name: "sigmoid",
+        qualified_name: "torch.sigmoid",
+        dispatch_allocation_error: "unable to allocate sigmoid dispatch operands",
+        out_unsupported_error: "sigmoid(): the 'out' argument is not supported",
+        apply: CoreTensor::sigmoid,
     };
 
     const SQUARE: Self = Self {
