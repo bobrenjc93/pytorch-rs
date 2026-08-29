@@ -3914,7 +3914,9 @@ struct ScalarTensorCallArguments<'py> {
 }
 
 struct ArangeCallArguments<'py> {
+    start: Option<ParsedCallArgument<'py>>,
     end: Option<ParsedCallArgument<'py>>,
+    step: Option<ParsedCallArgument<'py>>,
     unsupported_overload: bool,
     out: Option<Bound<'py, PyAny>>,
     dtype: Option<Bound<'py, PyAny>>,
@@ -5688,19 +5690,29 @@ fn bind_arange_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<ArangeCallArguments<'py>> {
-    if positional.len() > 1 {
+    if positional.len() > 3 {
         return Err(arange_overload_unsupported());
     }
 
+    let mut arguments = bind_arange_positional_arguments(positional)?;
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        bind_arange_keyword_argument(&mut arguments, &key, value, positional.len());
+    }
+    Ok(arguments)
+}
+
+fn bind_arange_positional_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+) -> PyResult<ArangeCallArguments<'py>> {
     let mut arguments = ArangeCallArguments {
-        end: if positional.is_empty() {
-            None
-        } else {
-            Some(ParsedCallArgument {
-                value: positional.get_item(0)?,
-                position: Some(1),
-            })
-        },
+        start: None,
+        end: None,
+        step: None,
         unsupported_overload: false,
         out: None,
         dtype: None,
@@ -5710,48 +5722,120 @@ fn bind_arange_arguments<'py>(
         requires_grad: None,
         keyword_error: None,
     };
-    let Some(keywords) = keywords else {
-        return Ok(arguments);
-    };
-
-    for (key, value) in keywords {
-        let key = key.extract::<String>()?;
-        match key.as_str() {
-            "end" => {
-                if arguments.end.is_some() {
-                    // A positional value combined with `end=` selects
-                    // PyTorch's two-bound overload rather than duplicating the
-                    // one-bound argument. That overload remains unsupported.
-                    arguments.unsupported_overload = true;
-                } else {
-                    arguments.end = optional_call_argument(value).map(|value| ParsedCallArgument {
-                        value,
-                        position: None,
-                    });
-                }
-            }
-            "start" | "step" => arguments.unsupported_overload = true,
-            "out" => arguments.out = optional_call_argument(value),
-            "dtype" => arguments.dtype = optional_call_argument(value),
-            "layout" => arguments.layout = optional_call_argument(value),
-            "device" => arguments.device = optional_call_argument(value),
-            "pin_memory" => arguments.pin_memory = optional_call_argument(value),
-            "requires_grad" => arguments.requires_grad = optional_call_argument(value),
-            _ => {
-                arguments.keyword_error.get_or_insert_with(|| {
-                    PyTypeError::new_err(format!(
-                        "arange() got an unexpected keyword argument '{key}'"
-                    ))
-                });
-            }
+    match positional.len() {
+        0 => {}
+        1 => {
+            arguments.end = Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            });
         }
+        2 => {
+            arguments.start = Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            });
+            arguments.end = Some(ParsedCallArgument {
+                value: positional.get_item(1)?,
+                position: Some(2),
+            });
+        }
+        3 => {
+            arguments.start = Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            });
+            arguments.end = Some(ParsedCallArgument {
+                value: positional.get_item(1)?,
+                position: Some(2),
+            });
+            arguments.step = Some(ParsedCallArgument {
+                value: positional.get_item(2)?,
+                position: Some(3),
+            });
+        }
+        _ => unreachable!("positional arange arguments were bounded above"),
     }
     Ok(arguments)
 }
 
+fn bind_arange_keyword_argument<'py>(
+    arguments: &mut ArangeCallArguments<'py>,
+    key: &str,
+    value: Bound<'py, PyAny>,
+    positional_count: usize,
+) {
+    match key {
+        "end" => bind_arange_end_keyword(arguments, value),
+        "start" => {
+            if arguments.start.is_some() || positional_count == 1 {
+                arguments.unsupported_overload = true;
+            } else {
+                arguments.start = Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                });
+            }
+        }
+        "step" => {
+            if arguments.step.is_some() {
+                arguments.unsupported_overload = true;
+            } else {
+                arguments.step = Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                });
+            }
+        }
+        "out" => arguments.out = optional_call_argument(value),
+        "dtype" => arguments.dtype = optional_call_argument(value),
+        "layout" => arguments.layout = optional_call_argument(value),
+        "device" => arguments.device = optional_call_argument(value),
+        "pin_memory" => arguments.pin_memory = optional_call_argument(value),
+        "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+        _ => {
+            arguments.keyword_error.get_or_insert_with(|| {
+                PyTypeError::new_err(format!(
+                    "arange() got an unexpected keyword argument '{key}'"
+                ))
+            });
+        }
+    }
+}
+
+fn bind_arange_end_keyword<'py>(
+    arguments: &mut ArangeCallArguments<'py>,
+    value: Bound<'py, PyAny>,
+) {
+    if arguments
+        .end
+        .as_ref()
+        .is_some_and(|end| end.position == Some(1))
+        && arguments.start.is_none()
+    {
+        // A single positional value plus `end=` selects PyTorch's two-bound
+        // overload, so reinterpret that positional value as `start` instead of
+        // treating it as a duplicate `end`.
+        arguments.start = arguments.end.take();
+        arguments.end = optional_call_argument(value).map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        });
+    } else if arguments.end.is_some() {
+        arguments.unsupported_overload = true;
+    } else {
+        arguments.end = optional_call_argument(value).map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        });
+    }
+}
+
 fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize, bool)> {
     let ArangeCallArguments {
+        start,
         end,
+        step,
         unsupported_overload,
         out,
         dtype,
@@ -5762,7 +5846,7 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize
         keyword_error,
     } = arguments;
 
-    if unsupported_overload {
+    if unsupported_overload || (step.is_some() && start.is_none()) {
         return Err(arange_overload_unsupported());
     }
     let Some(end) = end else {
@@ -5799,6 +5883,12 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize
             "arange(): argument 'end'{position} must be an exact Python float, not {actual}"
         )));
     }
+    if let Some(start) = start.as_ref() {
+        validate_arange_default_argument(start, ArangeDefaultArgument::Start)?;
+    }
+    if let Some(step) = step.as_ref() {
+        validate_arange_default_argument(step, ArangeDefaultArgument::Step)?;
+    }
 
     let dtype = parse_dtype("arange", dtype.as_ref())?;
     parse_factory_layout("arange", layout.as_ref())?;
@@ -5827,6 +5917,40 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize
     }
     let elements = arange_element_count(extract_arange_end(&end.value)?)?;
     Ok((elements, requires_grad))
+}
+
+#[derive(Clone, Copy)]
+enum ArangeDefaultArgument {
+    Start,
+    Step,
+}
+
+#[allow(clippy::cast_precision_loss, clippy::float_cmp)]
+fn validate_arange_default_argument(
+    argument: &ParsedCallArgument<'_>,
+    expected: ArangeDefaultArgument,
+) -> PyResult<()> {
+    let expected_value = match expected {
+        ArangeDefaultArgument::Start => 0.0,
+        ArangeDefaultArgument::Step => 1.0,
+    };
+    let is_supported = if argument.value.is_exact_instance_of::<PyFloat>() {
+        argument.value.extract::<f64>()? == expected_value
+    } else if argument.value.is_exact_instance_of::<PyInt>() {
+        argument
+            .value
+            .extract::<i64>()
+            .is_ok_and(|value| value as f64 == expected_value)
+    } else if is_numpy_scalar_of_types(&argument.value, &["floating"])? {
+        argument.value.extract::<f64>()? == expected_value
+    } else {
+        false
+    };
+    if is_supported {
+        Ok(())
+    } else {
+        Err(arange_overload_unsupported())
+    }
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -5886,7 +6010,7 @@ fn arange_element_count(end: f64) -> PyResult<usize> {
 
 fn arange_overload_unsupported() -> PyErr {
     PyTypeError::new_err(
-        "arange(): start and step overloads are not supported; pass one exact Python float endpoint",
+        "arange(): only one-bound ranges and default-equivalent start=0, step=1 ranges are supported",
     )
 }
 
