@@ -2974,6 +2974,17 @@ impl Tensor {
         Ok(output)
     }
 
+    /// Computes an absolute difference through subtraction followed by abs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the input shapes are not broadcastable or when
+    /// result metadata or storage allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn absolute_difference(&self, other: &Self) -> Result<Self, TensorError> {
+        self.zip_map(other, l1_loss_difference_value)?.abs()
+    }
+
     /// Multiplies tensors element by element with trailing-dimension broadcasting.
     ///
     /// # Errors
@@ -5463,6 +5474,17 @@ fn absolute_value(value: f32) -> f32 {
     f32::from_bits(value.to_bits() & !F32_SIGN_MASK)
 }
 
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_difference_value(left: f32, right: f32) -> f32 {
+    const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+    let right_bits = right.to_bits();
+    if right_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        return f32::from_bits(right_bits | QUIET_NAN_MASK);
+    }
+    left - right
+}
+
 fn relu_value(value: f32) -> f32 {
     // Only exact zeros bypass the established max path, so FTZ/DAZ cannot
     // classify a subnormal as zero and NaN behavior remains unchanged.
@@ -5629,7 +5651,7 @@ mod tests {
         AutogradKind, CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType,
         Device, F32_SIGN_MASK, GradFn, LogicalValuesInner, MemoryFormat,
         OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor, TensorError,
-        contiguous_values_equal, logical_offset_for_linear_index,
+        contiguous_values_equal, l1_loss_difference_value, logical_offset_for_linear_index,
         materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
         validate_view_bounds,
     };
@@ -7974,6 +7996,155 @@ mod tests {
         let empty_left = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
         let empty_right = Tensor::ones([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
         assert_matches(&empty_left, &empty_right);
+    }
+
+    #[test]
+    fn absolute_difference_same_shape_matches_the_established_composition() {
+        let assert_matches = |left: &Tensor, right: &Tensor| {
+            let difference = left.zip_map(right, l1_loss_difference_value).unwrap();
+            let expected = difference.abs().unwrap();
+            let actual = left.absolute_difference(right).unwrap();
+
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert_eq!(actual.storage_offset(), expected.storage_offset());
+            assert_eq!(actual.dtype(), expected.dtype());
+            assert_eq!(actual.device(), expected.device());
+            assert!(!actual.shares_storage_with(left));
+            assert!(!actual.shares_storage_with(right));
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        };
+
+        let left_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+            0xff85_4321,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+        ];
+        let right_bits = [
+            0x8000_0000,
+            0x0000_0000,
+            0x8000_0001,
+            0x0000_0001,
+            0xff80_0000,
+            0x7f80_0000,
+            0xffc6_789a,
+            0x7fc2_abcd,
+            0xff86_789a,
+            0x7f82_abcd,
+            0x0000_0000,
+            0x8000_0000,
+        ];
+        let contiguous_left = Tensor::from_vec(
+            left_bits.map(f32::from_bits).to_vec(),
+            [3, left_bits.len() / 3],
+        )
+        .unwrap();
+        let contiguous_right = Tensor::from_vec(
+            right_bits.map(f32::from_bits).to_vec(),
+            [3, right_bits.len() / 3],
+        )
+        .unwrap();
+        assert_matches(&contiguous_left, &contiguous_right);
+
+        let offset_left = offset_contiguous_tensor(&left_bits, &[3, 4]);
+        let offset_right = offset_contiguous_tensor(&right_bits, &[3, 4]);
+        assert_matches(&offset_left, &offset_right);
+
+        let strided_left = offset_strided_matrix(left_bits[..9].try_into().unwrap());
+        let strided_right = offset_strided_matrix(right_bits[..9].try_into().unwrap());
+        assert_matches(&strided_left, &strided_right);
+
+        let channels_last_left = Tensor::from_vec(
+            (0_u16..48).map(|value| f32::from(value) - 17.0).collect(),
+            [2, 3, 2, 4],
+        )
+        .unwrap()
+        .try_contiguous(MemoryFormat::ChannelsLast)
+        .unwrap();
+        let channels_last_right = Tensor::from_vec(
+            (0_u16..48)
+                .map(|value| 9.0 - f32::from(value) * 0.25)
+                .collect(),
+            [2, 3, 2, 4],
+        )
+        .unwrap()
+        .try_contiguous(MemoryFormat::ChannelsLast)
+        .unwrap();
+        assert_matches(&channels_last_left, &channels_last_right);
+
+        let mixed_singleton_left =
+            Tensor::from_vec(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0], [2, 1, 3]).unwrap();
+        let mixed_singleton_right =
+            Tensor::from_vec(vec![-1.0, 0.0, 1.0, 2.0, 3.0, 4.0], [3, 1, 2])
+                .unwrap()
+                .permute_axes([2, 1, 0])
+                .unwrap();
+        assert_matches(&mixed_singleton_left, &mixed_singleton_right);
+
+        let empty_left = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        let empty_right = Tensor::ones([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        assert_matches(&empty_left, &empty_right);
+    }
+
+    #[test]
+    fn absolute_difference_uses_pytorch_l1_nan_payload_precedence() {
+        let left_nan = Tensor::from_vec(
+            [
+                0x7fc1_2345,
+                0xffc5_4321,
+                0x7f81_2345,
+                0xff85_4321,
+                0x3f80_0000,
+                0xbf80_0000,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            [2, 3],
+        )
+        .unwrap();
+        let right_nan = Tensor::from_vec(
+            [
+                0xffc6_789a,
+                0x7fc2_abcd,
+                0xff86_789a,
+                0x7f82_abcd,
+                0x7f82_abcd,
+                0xff86_789a,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            [2, 3],
+        )
+        .unwrap();
+        assert!(
+            left_nan
+                .absolute_difference(&right_nan)
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq([
+                    0x7fc6_789a,
+                    0x7fc2_abcd,
+                    0x7fc6_789a,
+                    0x7fc2_abcd,
+                    0x7fc2_abcd,
+                    0x7fc6_789a,
+                ])
+        );
     }
 
     #[test]
