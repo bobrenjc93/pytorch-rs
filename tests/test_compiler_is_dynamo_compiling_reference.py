@@ -144,6 +144,7 @@ class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
                 in {
                     "assume_constant_result",
                     "reset",
+                    "list_backends",
                     "disable",
                     "set_default_backend",
                     "get_default_backend",
