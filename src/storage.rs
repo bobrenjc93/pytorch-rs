@@ -54,6 +54,21 @@ impl StorageData<f32> {
         self.with_values(|values| values[start..end].to_vec())
     }
 
+    fn with_shared_gradient_range<R>(
+        &self,
+        start: usize,
+        end: usize,
+        read: impl FnOnce(&[f32]) -> R,
+    ) -> Option<R> {
+        let Self::SharedGradient(values) = self else {
+            return None;
+        };
+        let values = values
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        values.get(start..end).map(read)
+    }
+
     fn into_range(self, start: usize, end: usize) -> Vec<f32> {
         let values = match self {
             Self::Inline(value) => return std::slice::from_ref(&value)[start..end].to_vec(),
@@ -199,6 +214,17 @@ impl Storage {
         }
     }
 
+    pub(crate) fn with_shared_gradient_range<R>(
+        &self,
+        start: usize,
+        end: usize,
+        read: impl FnOnce(&[f32]) -> R,
+    ) -> Option<R> {
+        match &self.payload {
+            StoragePayload::CpuFloat32(data) => data.with_shared_gradient_range(start, end, read),
+        }
+    }
+
     pub(crate) fn into_range(self, start: usize, end: usize) -> Vec<f32> {
         match self.payload {
             StoragePayload::CpuFloat32(data) => data.into_range(start, end),
@@ -268,6 +294,7 @@ mod tests {
         );
         assert_eq!(storage.value(2), Some(3.0));
         assert_eq!(storage.value(4), None);
+        assert_eq!(storage.with_shared_gradient_range(1, 3, <[f32]>::len), None);
         assert_eq!(
             storage
                 .try_copy_values(|values| Ok::<_, Infallible>(values.to_vec()))
@@ -297,6 +324,7 @@ mod tests {
         );
         assert_eq!(storage.value(0).unwrap().to_bits(), (-0.0_f32).to_bits());
         assert_eq!(storage.value(1), None);
+        assert_eq!(storage.with_shared_gradient_range(0, 1, <[f32]>::len), None);
         assert_eq!(
             storage
                 .try_copy_values(|values| Ok::<_, Infallible>(values.to_vec()))
@@ -323,6 +351,11 @@ mod tests {
         assert_eq!(storage.data_ptr(), pointer);
         assert_eq!(storage.owned_values(), None);
         assert_eq!(storage.copy_range(0, 2), [1.0, -2.0]);
+        assert_eq!(
+            storage.with_shared_gradient_range(1, 3, <[f32]>::to_vec),
+            Some(vec![-2.0, 3.5])
+        );
+        assert_eq!(storage.with_shared_gradient_range(2, 4, <[f32]>::len), None);
 
         storage.accumulate_shared_gradient(vec![2.0, 4.0, -1.5]);
 
@@ -396,6 +429,15 @@ mod tests {
         assert_eq!(storage.data_ptr(), pointer.cast());
         assert_eq!(storage.value(1), Some(2.0));
         assert_eq!(storage.copy_range(1, 3), [2.0, 3.0]);
+        assert_eq!(
+            storage.with_shared_gradient_range(0, 3, |values| {
+                values
+                    .iter()
+                    .copied()
+                    .fold(0.0_f32, |total, value| total + value)
+            }),
+            Some(6.0)
+        );
         assert_eq!(
             storage
                 .try_copy_values(|values| Ok::<_, Infallible>(values.to_vec()))
