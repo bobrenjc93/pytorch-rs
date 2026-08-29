@@ -6,6 +6,17 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 README = REPOSITORY_ROOT / "README.md"
 CONTRIBUTING = REPOSITORY_ROOT / "CONTRIBUTING.md"
+SUPPORTED_SURFACE = REPOSITORY_ROOT / "docs" / "supported-surface.md"
+SUPPORTED_SURFACE_ANCHORS = (
+    ("Tensors", "tensors"),
+    ("Creation and math", "creation-and-math"),
+    ("NN and data", "nn-and-data"),
+    (
+        "Backends, compiler, and distributed",
+        "backends-compiler-and-distributed",
+    ),
+    ("Unsupported boundaries", "unsupported-boundaries"),
+)
 
 
 class ReadmeQuickstartTests(unittest.TestCase):
@@ -44,6 +55,28 @@ class ReadmeQuickstartTests(unittest.TestCase):
 
         contributing = CONTRIBUTING.read_text(encoding="utf-8")
         self.assertLess(len(contributing.splitlines()), 120)
+
+    def test_readme_routes_to_supported_surface_anchors(self):
+        readme = README.read_text(encoding="utf-8")
+        route = "docs/supported-surface.md"
+        self.assertRegex(readme, rf"\[[^\]]+\]\({re.escape(route)}\)")
+        self.assertTrue(SUPPORTED_SURFACE.is_file())
+
+        supported = SUPPORTED_SURFACE.read_text(encoding="utf-8")
+        self.assertIn("## Category index", supported)
+        self.assertIn("## Current baseline", supported)
+        self.assertLess(
+            supported.index("## Category index"),
+            supported.index("## Current baseline"),
+        )
+        for title, anchor in SUPPORTED_SURFACE_ANCHORS:
+            with self.subTest(anchor=anchor):
+                self.assertIn(f"- [{title}](#{anchor})", supported)
+                self.assertRegex(
+                    supported,
+                    rf"(?m)^### {re.escape(title)}$",
+                    msg=f"missing supported-surface anchor: {anchor}",
+                )
 
 
 if __name__ == "__main__":
