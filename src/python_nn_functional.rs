@@ -268,9 +268,9 @@ fn exact_l1_loss_tensor<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, P
 
 const TENSOR_SIZE_PREFIX: &str = "torch.Size([";
 const TENSOR_SIZE_SUFFIX: &str = "])";
-const MSE_WARNING_PREFIX: &str = "Using a target size (";
-const MSE_WARNING_INFIX: &str = ") that is different to the input size (";
-const MSE_WARNING_SUFFIX: &str = "). This will likely lead to incorrect results due to broadcasting. Please ensure they have the same size.";
+const LOSS_BROADCAST_WARNING_PREFIX: &str = "Using a target size (";
+const LOSS_BROADCAST_WARNING_INFIX: &str = ") that is different to the input size (";
+const LOSS_BROADCAST_WARNING_SUFFIX: &str = "). This will likely lead to incorrect results due to broadcasting. Please ensure they have the same size.";
 
 fn decimal_length(mut value: usize) -> usize {
     let mut length = 1;
@@ -292,53 +292,61 @@ fn tensor_size_display_length(shape: &[usize]) -> Option<usize> {
     )
 }
 
-fn push_tensor_size(output: &mut String, shape: &[usize]) -> PyResult<()> {
+fn push_tensor_size(output: &mut String, shape: &[usize], operation: &str) -> PyResult<()> {
     output.push_str(TENSOR_SIZE_PREFIX);
     for (position, dimension) in shape.iter().enumerate() {
         if position != 0 {
             output.push_str(", ");
         }
-        write!(output, "{dimension}")
-            .map_err(|_| PyRuntimeError::new_err("unable to format mse_loss broadcast warning"))?;
+        write!(output, "{dimension}").map_err(|_| {
+            PyRuntimeError::new_err(format!("unable to format {operation} broadcast warning"))
+        })?;
     }
     output.push_str(TENSOR_SIZE_SUFFIX);
     Ok(())
 }
 
-fn warn_mse_loss_broadcast(
+fn loss_broadcast_warning_too_large(operation: &str) -> PyErr {
+    PyMemoryError::new_err(format!("{operation} broadcast warning is too large"))
+}
+
+fn warn_loss_broadcast(
     py: Python<'_>,
+    operation: &str,
     input_shape: &[usize],
     target_shape: &[usize],
 ) -> PyResult<()> {
-    let capacity = MSE_WARNING_PREFIX
+    let capacity = LOSS_BROADCAST_WARNING_PREFIX
         .len()
         .checked_add(
             tensor_size_display_length(target_shape)
-                .ok_or_else(|| PyMemoryError::new_err("mse_loss broadcast warning is too large"))?,
+                .ok_or_else(|| loss_broadcast_warning_too_large(operation))?,
         )
-        .and_then(|length| length.checked_add(MSE_WARNING_INFIX.len()))
+        .and_then(|length| length.checked_add(LOSS_BROADCAST_WARNING_INFIX.len()))
         .and_then(|length| {
             tensor_size_display_length(input_shape)
                 .and_then(|input_length| length.checked_add(input_length))
         })
-        .and_then(|length| length.checked_add(MSE_WARNING_SUFFIX.len()))
-        .ok_or_else(|| PyMemoryError::new_err("mse_loss broadcast warning is too large"))?;
+        .and_then(|length| length.checked_add(LOSS_BROADCAST_WARNING_SUFFIX.len()))
+        .ok_or_else(|| loss_broadcast_warning_too_large(operation))?;
     let capacity_with_nul = capacity
         .checked_add(1)
-        .ok_or_else(|| PyMemoryError::new_err("mse_loss broadcast warning is too large"))?;
+        .ok_or_else(|| loss_broadcast_warning_too_large(operation))?;
     let mut message = String::new();
-    message
-        .try_reserve_exact(capacity_with_nul)
-        .map_err(|_| PyMemoryError::new_err("unable to allocate mse_loss broadcast warning"))?;
-    message.push_str(MSE_WARNING_PREFIX);
-    push_tensor_size(&mut message, target_shape)?;
-    message.push_str(MSE_WARNING_INFIX);
-    push_tensor_size(&mut message, input_shape)?;
-    message.push_str(MSE_WARNING_SUFFIX);
+    message.try_reserve_exact(capacity_with_nul).map_err(|_| {
+        PyMemoryError::new_err(format!("unable to allocate {operation} broadcast warning"))
+    })?;
+    message.push_str(LOSS_BROADCAST_WARNING_PREFIX);
+    push_tensor_size(&mut message, target_shape, operation)?;
+    message.push_str(LOSS_BROADCAST_WARNING_INFIX);
+    push_tensor_size(&mut message, input_shape, operation)?;
+    message.push_str(LOSS_BROADCAST_WARNING_SUFFIX);
     debug_assert_eq!(message.len(), capacity);
     message.push('\0');
     let message = CString::from_vec_with_nul(message.into_bytes()).map_err(|_| {
-        PyRuntimeError::new_err("mse_loss broadcast warning unexpectedly contained a NUL byte")
+        PyRuntimeError::new_err(format!(
+            "{operation} broadcast warning unexpectedly contained a NUL byte"
+        ))
     })?;
     PyErr::warn(py, &py.get_type::<PyUserWarning>(), &message, 2)
 }
@@ -558,10 +566,10 @@ fn _nn_functional_l1_loss(
             "torch_rs.nn.functional.l1_loss only supports CPU float32 tensors",
         ));
     }
-    if input.inner().shape() != target.inner().shape() {
-        return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.l1_loss does not support broadcasting",
-        ));
+    let input_shape = input.inner().shape();
+    let target_shape = target.inner().shape();
+    if input_shape != target_shape {
+        warn_loss_broadcast(py, "l1_loss", input_shape, target_shape)?;
     }
     if is_grad_enabled() && (input.inner().requires_grad() || target.inner().requires_grad()) {
         return Err(PyRuntimeError::new_err(
@@ -636,7 +644,7 @@ fn _nn_functional_mse_loss(
         ));
     }
     if broadcasts_one_scalar {
-        warn_mse_loss_broadcast(py, input_shape, target_shape)?;
+        warn_loss_broadcast(py, "mse_loss", input_shape, target_shape)?;
     }
     if is_grad_enabled() && (input.inner().requires_grad() || target.inner().requires_grad()) {
         return Err(PyRuntimeError::new_err(

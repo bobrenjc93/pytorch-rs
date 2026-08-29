@@ -8101,6 +8101,46 @@ mod tests {
     }
 
     #[test]
+    fn absolute_difference_broadcast_matches_the_established_composition() {
+        let assert_matches = |left: &Tensor, right: &Tensor| {
+            let difference = left.zip_map(right, l1_loss_difference_value).unwrap();
+            let expected = difference.abs().unwrap();
+            let actual = left.absolute_difference(right).unwrap();
+
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert_eq!(actual.storage_offset(), expected.storage_offset());
+            assert_eq!(actual.dtype(), expected.dtype());
+            assert_eq!(actual.device(), expected.device());
+            assert!(!actual.shares_storage_with(left));
+            assert!(!actual.shares_storage_with(right));
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        };
+
+        let matrix = Tensor::from_vec((0_u16..6).map(f32::from).collect(), [2, 3]).unwrap();
+        let vector = Tensor::from_vec(vec![1.0, 2.0, 3.0], [3]).unwrap();
+        assert_matches(&matrix, &vector);
+
+        let column = Tensor::from_vec(vec![1.0, 2.0], [2, 1]).unwrap();
+        assert_matches(&matrix, &column);
+
+        let scalar = Tensor::from_vec(vec![13.0, -0.0], [2])
+            .unwrap()
+            .index_integer(1)
+            .unwrap();
+        assert_matches(&scalar, &matrix);
+
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        let singleton_empty = Tensor::ones([1, 0, 1]).unwrap();
+        assert_matches(&empty, &singleton_empty);
+    }
+
+    #[test]
     fn absolute_difference_uses_pytorch_l1_nan_payload_precedence() {
         let left_nan = Tensor::from_vec(
             [

@@ -3,6 +3,7 @@ import inspect
 import re
 import types
 import unittest
+import warnings
 
 import numpy as np
 import torch_rs as torch
@@ -122,6 +123,36 @@ class FunctionalL1LossTests(unittest.TestCase):
             ("same operand", same, same),
         )
 
+    def broadcast_cases(self):
+        matrix = torch.tensor(
+            np.arange(6, dtype=np.float32).reshape(2, 3).tolist()
+        )
+        offset_matrix = torch.tensor(
+            np.arange(12, dtype=np.float32).reshape(2, 2, 3).tolist()
+        )[1]
+        empty_strided = torch.zeros((2, 0, 3)).transpose(0, 2)
+
+        return (
+            ("scalar target", matrix, torch.tensor(2.0)),
+            ("vector target", matrix, torch.tensor([1.0, 2.0, 3.0])),
+            ("column target", matrix, torch.tensor([[1.0], [2.0]])),
+            ("scalar input", torch.tensor(-0.0), offset_matrix),
+            (
+                "empty singleton broadcast",
+                empty_strided,
+                torch.ones((1, 0, 1)),
+            ),
+        )
+
+    @staticmethod
+    def broadcast_warning(input, target):
+        return (
+            f"Using a target size (torch.Size({list(target.shape)})) that is "
+            f"different to the input size (torch.Size({list(input.shape)})). "
+            "This will likely lead to incorrect results due to broadcasting. "
+            "Please ensure they have the same size."
+        )
+
     @staticmethod
     def call(input, target, form):
         if form == "reduction keyword":
@@ -162,14 +193,15 @@ class FunctionalL1LossTests(unittest.TestCase):
         for documented_limit in (
             "exact ``torch_rs.Tensor`` operands",
             "CPU ``float32`` storage",
-            "matching shapes",
+            "broadcastable shapes",
             "``reduction='none'``",
             "``size_average=None``",
             "``reduce=None``",
             "``weight=None``",
             "composes subtraction and absolute value",
             "fresh, independent tensor",
-            "Broadcasting",
+            "size-mismatch warning",
+            "Unbroadcastable shapes",
             "weights",
             "Tensor subclasses",
             "active ``TorchFunctionMode`` contexts",
@@ -228,6 +260,52 @@ class FunctionalL1LossTests(unittest.TestCase):
                     np.testing.assert_array_equal(
                         self.tensor_state(target)[-1], target_state[-1]
                     )
+
+    def test_broadcasted_inputs_match_composition_warning_and_storage(self):
+        for case, input, target in self.broadcast_cases():
+            difference = input - target
+            expected = difference.abs()
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                warning_line = inspect.currentframe().f_lineno + 1
+                actual = functional.l1_loss(input, target, reduction="none")
+
+            with self.subTest(case=case, warning=True):
+                self.assertEqual(len(caught), 1)
+                self.assertIs(caught[0].category, UserWarning)
+                self.assertEqual(
+                    str(caught[0].message),
+                    self.broadcast_warning(input, target),
+                )
+                self.assertEqual(caught[0].filename, __file__)
+                self.assertEqual(caught[0].lineno, warning_line)
+
+            self.assert_matches_composition(actual, expected, case=case)
+            with self.subTest(case=case, storage=True):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    repeated = functional.l1_loss(input, target, reduction="none")
+                self.assertIsNot(actual, repeated)
+                self.assertFalse(actual.is_set_to(repeated))
+                self.assertFalse(actual.is_set_to(input))
+                self.assertFalse(actual.is_set_to(target))
+                if actual.numel() != 0:
+                    self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+                    self.assertNotEqual(actual.data_ptr(), input.data_ptr())
+                    self.assertNotEqual(actual.data_ptr(), target.data_ptr())
+
+            with self.subTest(case=case, nonmutation=True):
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1], input_state[-1]
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1], target_state[-1]
+                )
 
     def test_mixed_layout_singleton_keeps_binary_tensoriterator_stride(self):
         input = torch.tensor(
@@ -431,21 +509,25 @@ class FunctionalL1LossTests(unittest.TestCase):
                         weight=weight,
                     )
 
-        broadcast_error = (
-            "torch_rs.nn.functional.l1_loss does not support broadcasting"
+        unbroadcastable_target = torch.zeros((2, 2))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"^The size of tensor a \(3\) must match the size of tensor b "
+                r"\(2\) at non-singleton dimension 1$",
+            ):
+                functional.l1_loss(
+                    input,
+                    unbroadcastable_target,
+                    reduction="none",
+                )
+        self.assertEqual(len(caught), 1)
+        self.assertIs(caught[0].category, UserWarning)
+        self.assertEqual(
+            str(caught[0].message),
+            self.broadcast_warning(input, unbroadcastable_target),
         )
-        for other in (
-            torch.zeros(()),
-            torch.zeros((3,)),
-            torch.zeros((2, 1)),
-            torch.zeros((2, 2)),
-        ):
-            with self.subTest(target_shape=other.shape):
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    f"^{re.escape(broadcast_error)}$",
-                ):
-                    functional.l1_loss(input, other, reduction="none")
 
         class Override:
             calls = 0

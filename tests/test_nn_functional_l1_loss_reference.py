@@ -1,5 +1,6 @@
 import inspect
 import unittest
+import warnings
 
 import numpy as np
 import torch_rs as torch
@@ -113,6 +114,39 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 mixed_singleton_target,
             ),
             ("same operand", same, same),
+        )
+
+    def make_broadcast_cases(self, module):
+        matrix = self.tensor(
+            module,
+            np.arange(6, dtype=np.float32).reshape(2, 3).tolist(),
+        )
+        offset_matrix = self.tensor(
+            module,
+            np.arange(12, dtype=np.float32).reshape(2, 2, 3).tolist(),
+        )[1]
+        empty_strided = module.zeros(
+            (2, 0, 3), dtype=module.float32
+        ).transpose(0, 2)
+
+        return (
+            ("scalar target", matrix, self.tensor(module, 2.0)),
+            (
+                "vector target",
+                matrix,
+                self.tensor(module, [1.0, 2.0, 3.0]),
+            ),
+            (
+                "column target",
+                matrix,
+                self.tensor(module, [[1.0], [2.0]]),
+            ),
+            ("scalar input", self.tensor(module, -0.0), offset_matrix),
+            (
+                "empty singleton broadcast",
+                empty_strided,
+                module.ones((1, 0, 1), dtype=module.float32),
+            ),
         )
 
     @staticmethod
@@ -250,6 +284,96 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
                 )
+
+    def test_broadcasted_outputs_strides_warnings_and_storage_match_pytorch_2_13(self):
+        actual_cases = self.make_broadcast_cases(torch)
+        expected_cases = self.make_broadcast_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+
+            with warnings.catch_warnings(record=True) as actual_warnings:
+                warnings.simplefilter("always")
+                actual = functional.l1_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="none",
+                )
+            with warnings.catch_warnings(record=True) as expected_warnings:
+                warnings.simplefilter("always")
+                expected = reference_functional.l1_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="none",
+                )
+
+            with self.subTest(case=case, warning=True):
+                self.assertEqual(len(actual_warnings), len(expected_warnings))
+                self.assertEqual(len(actual_warnings), 1)
+                self.assertIs(actual_warnings[0].category, UserWarning)
+                self.assertIs(expected_warnings[0].category, UserWarning)
+                self.assertEqual(
+                    str(actual_warnings[0].message),
+                    str(expected_warnings[0].message),
+                )
+
+            self.assert_matches(actual, expected, case=case)
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                actual_repeat = functional.l1_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="none",
+                )
+                expected_repeat = reference_functional.l1_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="none",
+                )
+            with self.subTest(case=case, storage=True):
+                self.assertFalse(actual.is_set_to(actual_repeat))
+                self.assertFalse(expected.is_set_to(expected_repeat))
+                self.assertFalse(actual.is_set_to(actual_input))
+                self.assertFalse(expected.is_set_to(expected_input))
+                self.assertFalse(actual.is_set_to(actual_target))
+                self.assertFalse(expected.is_set_to(expected_target))
+
+    def test_unbroadcastable_shape_warning_and_error_match_pytorch_2_13(self):
+        actual_input = torch.ones((2, 3))
+        actual_target = torch.zeros((2, 2))
+        expected_input = reference_torch.ones((2, 3), dtype=reference_torch.float32)
+        expected_target = reference_torch.zeros((2, 2), dtype=reference_torch.float32)
+
+        with warnings.catch_warnings(record=True) as actual_warnings:
+            warnings.simplefilter("always")
+            with self.assertRaises(RuntimeError) as actual_error:
+                functional.l1_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="none",
+                )
+        with warnings.catch_warnings(record=True) as expected_warnings:
+            warnings.simplefilter("always")
+            with self.assertRaises(RuntimeError) as expected_error:
+                reference_functional.l1_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="none",
+                )
+
+        self.assertEqual(str(actual_error.exception), str(expected_error.exception))
+        self.assertEqual(len(actual_warnings), len(expected_warnings))
+        self.assertEqual(len(actual_warnings), 1)
+        self.assertEqual(
+            str(actual_warnings[0].message),
+            str(expected_warnings[0].message),
+        )
 
     def test_mixed_layout_singleton_stride_matches_pytorch_2_13(self):
         actual_input = self.tensor(
