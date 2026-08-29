@@ -3978,18 +3978,24 @@ fn validate_default_subtraction_alpha(
             "Boolean alpha only supported for Boolean results.",
         ));
     }
-    if !matches!(
-        scalar,
-        ParsedArithmeticScalar::Number(ParsedFillValue::SignedInteger(1))
-            | ParsedArithmeticScalar::Number(ParsedFillValue::UnsignedInteger(1))
-            | ParsedArithmeticScalar::Number(ParsedFillValue::Float(1.0))
-    ) {
+    if !is_default_subtraction_alpha(&scalar) {
         return Err(PyRuntimeError::new_err(format!(
             "{}(): non-default alpha is not supported",
             operation.name()
         )));
     }
     Ok(())
+}
+
+fn is_default_subtraction_alpha(scalar: &ParsedArithmeticScalar) -> bool {
+    match scalar {
+        ParsedArithmeticScalar::Number(ParsedFillValue::SignedInteger(value)) => *value == 1,
+        ParsedArithmeticScalar::Number(ParsedFillValue::UnsignedInteger(value)) => *value == 1,
+        ParsedArithmeticScalar::Number(ParsedFillValue::Float(value)) => {
+            value.total_cmp(&1.0).is_eq()
+        }
+        _ => false,
+    }
 }
 
 fn dispatch_top_level_matmul(
@@ -9870,113 +9876,169 @@ fn bind_subtraction_method_selection<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<SubtractionMethodSelection<'py>> {
-    if positional.len() > 1 {
-        return match operation {
-            SubtractionOperation::Sub => Err(PyTypeError::new_err(format!(
-                "sub() takes 1 positional argument but {} were given",
-                positional.len()
-            ))),
-            SubtractionOperation::Subtract => {
-                Err(subtract_method_binding_error(positional, keywords)?)
-            }
-        };
-    }
-
-    let mut other = if positional.is_empty() {
-        None
-    } else {
-        Some(ParsedCallArgument {
-            value: positional.get_item(0)?,
-            position: Some(1),
-        })
-    };
+    validate_subtraction_positional_count(operation, positional, keywords)?;
+    let mut other = positional_subtraction_method_other(positional)?;
     let mut alpha = None;
-    let mut keyword_error = None;
-    if let Some(keywords) = keywords {
-        let other_keyword = keywords.get_item("other")?;
-        let x2_keyword = keywords.get_item("x2")?;
-        if other.is_none() {
-            if let Some(value) = other_keyword.as_ref() {
-                other = Some(ParsedCallArgument {
-                    value: value.clone(),
-                    position: None,
-                });
-            } else if let Some(value) = x2_keyword.as_ref() {
-                other = Some(ParsedCallArgument {
-                    value: value.clone(),
-                    position: None,
-                });
-            }
-        }
-        if let Some(value) = keywords.get_item("alpha")? {
-            alpha = Some(ParsedCallArgument {
-                value,
-                position: None,
-            });
-        }
-
-        for key in keywords.keys() {
-            let key = pytorch_keyword_name(&key)?;
-            match key {
-                "alpha" => {}
-                "other" => {
-                    if positional.len() == 1 || x2_keyword.is_some() {
-                        if keyword_error.is_none() {
-                            keyword_error = Some(match operation {
-                                SubtractionOperation::Sub => PyTypeError::new_err(
-                                    "sub() got multiple values for argument 'other'",
-                                ),
-                                SubtractionOperation::Subtract => {
-                                    subtract_method_binding_error(positional, Some(keywords))?
-                                }
-                            });
-                        }
-                    }
-                }
-                "x2" => {
-                    if (positional.len() == 1 || other_keyword.is_some()) && keyword_error.is_none()
-                    {
-                        keyword_error = Some(match operation {
-                            SubtractionOperation::Sub => PyTypeError::new_err(
-                                "sub() got an unexpected keyword argument 'x2'",
-                            ),
-                            SubtractionOperation::Subtract => {
-                                subtract_method_binding_error(positional, Some(keywords))?
-                            }
-                        });
-                    }
-                }
-                _ => {
-                    if keyword_error.is_none() {
-                        keyword_error = Some(match operation {
-                            SubtractionOperation::Sub => PyTypeError::new_err(format!(
-                                "sub() got an unexpected keyword argument '{key}'"
-                            )),
-                            SubtractionOperation::Subtract => {
-                                subtract_method_binding_error(positional, Some(keywords))?
-                            }
-                        });
-                    }
-                }
-            }
-        }
-    }
+    let keyword_error = keywords
+        .map(|keywords| {
+            bind_subtraction_method_keywords(
+                operation, positional, keywords, &mut other, &mut alpha,
+            )
+        })
+        .transpose()?
+        .flatten();
 
     let Some(other) = other else {
-        return match operation {
-            SubtractionOperation::Sub => Err(PyTypeError::new_err(
-                "sub() missing 1 required positional arguments: \"other\"",
-            )),
-            SubtractionOperation::Subtract => {
-                Err(subtract_method_binding_error(positional, keywords)?)
-            }
-        };
+        return Err(missing_subtraction_method_other(
+            operation, positional, keywords,
+        )?);
     };
     Ok(SubtractionMethodSelection {
         other,
         alpha,
         keyword_error,
     })
+}
+
+fn validate_subtraction_positional_count(
+    operation: SubtractionOperation,
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<()> {
+    if positional.len() <= 1 {
+        return Ok(());
+    }
+    match operation {
+        SubtractionOperation::Sub => Err(PyTypeError::new_err(format!(
+            "sub() takes 1 positional argument but {} were given",
+            positional.len()
+        ))),
+        SubtractionOperation::Subtract => Err(subtract_method_binding_error(positional, keywords)?),
+    }
+}
+
+fn positional_subtraction_method_other<'py>(
+    positional: &Bound<'py, PyTuple>,
+) -> PyResult<Option<ParsedCallArgument<'py>>> {
+    if positional.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(ParsedCallArgument {
+        value: positional.get_item(0)?,
+        position: Some(1),
+    }))
+}
+
+fn bind_subtraction_method_keywords<'py>(
+    operation: SubtractionOperation,
+    positional: &Bound<'py, PyTuple>,
+    keywords: &Bound<'py, PyDict>,
+    other: &mut Option<ParsedCallArgument<'py>>,
+    alpha: &mut Option<ParsedCallArgument<'py>>,
+) -> PyResult<Option<PyErr>> {
+    let other_keyword = keywords.get_item("other")?;
+    let x2_keyword = keywords.get_item("x2")?;
+    assign_keyword_subtraction_other(other, other_keyword.as_ref(), x2_keyword.as_ref());
+    if let Some(value) = keywords.get_item("alpha")? {
+        *alpha = Some(ParsedCallArgument {
+            value,
+            position: None,
+        });
+    }
+
+    let mut keyword_error = None;
+    for key in keywords.keys() {
+        let key = pytorch_keyword_name(&key)?;
+        if keyword_error.is_none() {
+            keyword_error = subtraction_method_keyword_error(
+                operation,
+                positional,
+                keywords,
+                key,
+                !positional.is_empty(),
+                other_keyword.is_some(),
+                x2_keyword.is_some(),
+            )?;
+        }
+    }
+    Ok(keyword_error)
+}
+
+fn assign_keyword_subtraction_other<'py>(
+    other: &mut Option<ParsedCallArgument<'py>>,
+    other_keyword: Option<&Bound<'py, PyAny>>,
+    x2_keyword: Option<&Bound<'py, PyAny>>,
+) {
+    if other.is_some() {
+        return;
+    }
+    let value = other_keyword.or(x2_keyword);
+    if let Some(value) = value {
+        *other = Some(ParsedCallArgument {
+            value: value.clone(),
+            position: None,
+        });
+    }
+}
+
+fn subtraction_method_keyword_error(
+    operation: SubtractionOperation,
+    positional: &Bound<'_, PyTuple>,
+    keywords: &Bound<'_, PyDict>,
+    key: &str,
+    has_positional_other: bool,
+    has_other_keyword: bool,
+    has_x2_keyword: bool,
+) -> PyResult<Option<PyErr>> {
+    match key {
+        "other" if has_positional_other || has_x2_keyword => {
+            let error = match operation {
+                SubtractionOperation::Sub => {
+                    PyTypeError::new_err("sub() got multiple values for argument 'other'")
+                }
+                SubtractionOperation::Subtract => {
+                    subtract_method_binding_error(positional, Some(keywords))?
+                }
+            };
+            Ok(Some(error))
+        }
+        "x2" if has_positional_other || has_other_keyword => {
+            let error = match operation {
+                SubtractionOperation::Sub => {
+                    PyTypeError::new_err("sub() got an unexpected keyword argument 'x2'")
+                }
+                SubtractionOperation::Subtract => {
+                    subtract_method_binding_error(positional, Some(keywords))?
+                }
+            };
+            Ok(Some(error))
+        }
+        "alpha" | "other" | "x2" => Ok(None),
+        _ => {
+            let error = match operation {
+                SubtractionOperation::Sub => PyTypeError::new_err(format!(
+                    "sub() got an unexpected keyword argument '{key}'"
+                )),
+                SubtractionOperation::Subtract => {
+                    subtract_method_binding_error(positional, Some(keywords))?
+                }
+            };
+            Ok(Some(error))
+        }
+    }
+}
+
+fn missing_subtraction_method_other(
+    operation: SubtractionOperation,
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    match operation {
+        SubtractionOperation::Sub => Ok(PyTypeError::new_err(
+            "sub() missing 1 required positional arguments: \"other\"",
+        )),
+        SubtractionOperation::Subtract => subtract_method_binding_error(positional, keywords),
+    }
 }
 
 fn parse_subtraction_method_operand<'py>(
