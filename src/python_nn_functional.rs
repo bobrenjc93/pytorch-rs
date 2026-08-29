@@ -10,7 +10,7 @@ use pyo3::types::{PyAny, PyModule, PyString};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
-    DType, Device, TensorError, is_grad_enabled,
+    DType, Device, Tensor, TensorError, is_grad_enabled,
     python::PyTensor,
     python_argument_schema::{ArgumentSchema, parse_float_like_argument},
     python_tensor_errors::tensor_error,
@@ -331,16 +331,16 @@ fn warn_mse_loss_broadcast(
     PyErr::warn(py, &py.get_type::<PyUserWarning>(), &message, 2)
 }
 
-fn linear_vector_bias_size_error(out_features: usize, bias_features: usize) -> PyErr {
+fn linear_bias_size_error(rows: usize, out_features: usize, bias_features: usize) -> PyErr {
     PyRuntimeError::new_err(format!(
-        "The expanded size of the tensor ({out_features}) must match the existing size ({bias_features}) at non-singleton dimension 1.  Target sizes: [1, {out_features}].  Tensor sizes: [{bias_features}]"
+        "The expanded size of the tensor ({out_features}) must match the existing size ({bias_features}) at non-singleton dimension 1.  Target sizes: [{rows}, {out_features}].  Tensor sizes: [{bias_features}]"
     ))
 }
 
 fn validate_linear_bias(input_rank: usize, bias: Option<&PyTensor>) -> PyResult<()> {
-    if bias.is_some() && input_rank != 1 {
+    if bias.is_some() && !matches!(input_rank, 1 | 2) {
         return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.linear only supports bias for rank-1 input",
+            "torch_rs.nn.functional.linear only supports bias for rank-1 or rank-2 input",
         ));
     }
     if bias.is_some_and(|bias| bias.inner().shape().len() != 1) {
@@ -349,6 +349,92 @@ fn validate_linear_bias(input_rank: usize, bias: Option<&PyTensor>) -> PyResult<
         ));
     }
     Ok(())
+}
+
+fn linear_rank_one(
+    input: &Tensor,
+    transposed_weight: &Tensor,
+    bias: Option<&PyTensor>,
+) -> Result<Tensor, TensorError> {
+    input
+        .unsqueeze_front()
+        .and_then(|input| {
+            bias.map_or_else(
+                || input.matmul(transposed_weight),
+                |bias| input.matmul_with_row_bias(transposed_weight, bias.inner()),
+            )
+        })
+        .and_then(|output| output.squeeze_dim(0))
+}
+
+fn linear_rank_two(
+    input: &Tensor,
+    transposed_weight: &Tensor,
+    bias: Option<&PyTensor>,
+) -> Result<Tensor, TensorError> {
+    bias.map_or_else(
+        || input.matmul(transposed_weight),
+        |bias| input.matmul_with_row_bias(transposed_weight, bias.inner()),
+    )
+}
+
+fn linear_rank_three(
+    input: &Tensor,
+    weight: &Tensor,
+    transposed_weight: &Tensor,
+) -> PyResult<Result<Tensor, TensorError>> {
+    let input_shape = input.shape();
+    let weight_shape = weight.shape();
+    // PyTorch's rank-3 by rank-2 matmul folds the leading dimensions
+    // when they are stride-compatible, the input is empty, or the
+    // matrix operand requires gradients. Otherwise its batched path
+    // reports this layout-dependent inner-dimension error.
+    let folds_to_matrix = weight.requires_grad()
+        || input.numel() == 0
+        || input.stride()[1].checked_mul(input_shape[1]) == Some(input.stride()[0]);
+    if !folds_to_matrix && input_shape[2] != weight_shape[1] {
+        return Err(PyRuntimeError::new_err(format!(
+            "Expected size for first two dimensions of batch2 tensor to be: [{}, {}] but got: [{}, {}].",
+            input_shape[0], input_shape[2], input_shape[0], weight_shape[1]
+        )));
+    }
+    let output_shape = [
+        i64::try_from(input_shape[0])
+            .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
+        i64::try_from(input_shape[1])
+            .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
+        i64::try_from(weight_shape[0])
+            .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
+    ];
+    Ok(input
+        .flatten(0, 1)
+        .and_then(|input| input.matmul(transposed_weight))
+        .and_then(|output| output.reshape(output_shape)))
+}
+
+fn resolve_linear_output(
+    output: Result<Tensor, TensorError>,
+    input_rank: usize,
+    input: &Tensor,
+    weight: &Tensor,
+    bias: Option<&PyTensor>,
+) -> PyResult<Tensor> {
+    match output {
+        Ok(output) => Ok(output),
+        Err(TensorError::ShapeMismatch { .. }) if bias.is_some() => {
+            let bias_features = bias
+                .expect("only biased linear can report a bias shape mismatch")
+                .inner()
+                .shape()[0];
+            let target_rows = if input_rank == 1 { 1 } else { input.shape()[0] };
+            Err(linear_bias_size_error(
+                target_rows,
+                weight.shape()[0],
+                bias_features,
+            ))
+        }
+        Err(error) => Err(tensor_error(&error)),
+    }
 }
 
 #[pyfunction]
@@ -396,65 +482,18 @@ fn _nn_functional_linear(
         .transpose(0, 1)
         .map_err(|error| tensor_error(&error))?;
     let output = match input_rank {
-        1 => input
-            .inner()
-            .unsqueeze_front()
-            .and_then(|input| {
-                bias.as_ref().map_or_else(
-                    || input.matmul(&transposed_weight),
-                    |bias| input.matmul_with_row_bias(&transposed_weight, bias.inner()),
-                )
-            })
-            .and_then(|output| output.squeeze_dim(0)),
-        2 => input.inner().matmul(&transposed_weight),
-        3 => {
-            let input_shape = input.inner().shape();
-            let weight_shape = weight.inner().shape();
-            // PyTorch's rank-3 by rank-2 matmul folds the leading dimensions
-            // when they are stride-compatible, the input is empty, or the
-            // matrix operand requires gradients. Otherwise its batched path
-            // reports this layout-dependent inner-dimension error.
-            let folds_to_matrix = weight.inner().requires_grad()
-                || input.inner().numel() == 0
-                || input.inner().stride()[1].checked_mul(input_shape[1])
-                    == Some(input.inner().stride()[0]);
-            if !folds_to_matrix && input_shape[2] != weight_shape[1] {
-                return Err(PyRuntimeError::new_err(format!(
-                    "Expected size for first two dimensions of batch2 tensor to be: [{}, {}] but got: [{}, {}].",
-                    input_shape[0], input_shape[2], input_shape[0], weight_shape[1]
-                )));
-            }
-            let output_shape = [
-                i64::try_from(input_shape[0])
-                    .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
-                i64::try_from(input_shape[1])
-                    .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
-                i64::try_from(weight_shape[0])
-                    .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
-            ];
-            input
-                .inner()
-                .flatten(0, 1)
-                .and_then(|input| input.matmul(&transposed_weight))
-                .and_then(|output| output.reshape(output_shape))
-        }
+        1 => linear_rank_one(input.inner(), &transposed_weight, bias.as_deref()),
+        2 => linear_rank_two(input.inner(), &transposed_weight, bias.as_deref()),
+        3 => linear_rank_three(input.inner(), weight.inner(), &transposed_weight)?,
         _ => unreachable!("linear input rank was validated above"),
     };
-    let output = match output {
-        Ok(output) => output,
-        Err(TensorError::ShapeMismatch { .. }) if bias.is_some() => {
-            let bias_features = bias
-                .as_ref()
-                .expect("only biased linear can report a bias shape mismatch")
-                .inner()
-                .shape()[0];
-            return Err(linear_vector_bias_size_error(
-                weight.inner().shape()[0],
-                bias_features,
-            ));
-        }
-        Err(error) => return Err(tensor_error(&error)),
-    };
+    let output = resolve_linear_output(
+        output,
+        input_rank,
+        input.inner(),
+        weight.inner(),
+        bias.as_deref(),
+    )?;
     PyTensor::new(output).into_py_any(py)
 }
 

@@ -3335,7 +3335,7 @@ impl Tensor {
         bias: &Self,
     ) -> Result<Self, TensorError> {
         self.matmul_with_initializer(other, |rows, columns, output_elements| {
-            if bias.shape.len() != 1 || bias.shape[0] != columns {
+            if bias.shape.len() != 1 || (bias.shape[0] != columns && bias.shape[0] != 1) {
                 let mut expected_bias_shape = try_result_vector(1, output_elements)?;
                 expected_bias_shape.push(columns);
                 return Err(TensorError::ShapeMismatch {
@@ -3344,10 +3344,16 @@ impl Tensor {
                 });
             }
 
-            let bias_values = bias.try_to_vec()?;
             let mut output = try_result_vector(output_elements, output_elements)?;
-            for _ in 0..rows {
-                output.extend_from_slice(&bias_values);
+            if output_elements != 0 {
+                if bias.shape[0] == 1 {
+                    output.resize(output_elements, bias.value_at_linear_index(0));
+                } else {
+                    let bias_values = bias.try_to_vec()?;
+                    for _ in 0..rows {
+                        output.extend_from_slice(&bias_values);
+                    }
+                }
             }
             Ok(output)
         })
@@ -7681,6 +7687,35 @@ mod tests {
             .matmul_with_row_bias(&Tensor::zeros([0, 1]).unwrap(), &bias)
             .unwrap();
         assert_eq!(empty_inner.as_slice()[0].to_bits(), (-0.0_f32).to_bits());
+
+        let singleton_biased_columns = Tensor::zeros([1, 0])
+            .unwrap()
+            .matmul_with_row_bias(&Tensor::zeros([0, 2]).unwrap(), &bias)
+            .unwrap();
+        assert_eq!(
+            singleton_biased_columns
+                .logical_values()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            vec![(-0.0_f32).to_bits(), (-0.0_f32).to_bits()]
+        );
+
+        for actual in [
+            Tensor::zeros([2, 3])
+                .unwrap()
+                .matmul_with_row_bias(&Tensor::zeros([3, 0]).unwrap(), &bias)
+                .unwrap(),
+            Tensor::zeros([0, 3])
+                .unwrap()
+                .matmul_with_row_bias(&Tensor::zeros([3, 4]).unwrap(), &bias)
+                .unwrap(),
+            Tensor::zeros([0, 3])
+                .unwrap()
+                .matmul_with_row_bias(&Tensor::zeros([3, 0]).unwrap(), &bias)
+                .unwrap(),
+        ] {
+            assert_eq!(actual.numel(), 0);
+        }
     }
 
     #[test]
