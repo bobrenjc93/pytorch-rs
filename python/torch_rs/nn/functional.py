@@ -10,6 +10,7 @@ from torch_rs.overrides import _dispatch_unary_torch_function
 
 from ..torch_rs import (
     _nn_functional_dropout,
+    _nn_functional_l1_loss,
     _nn_functional_linear,
     _nn_functional_mse_loss,
 )
@@ -35,6 +36,24 @@ independent row-major tensor with the corresponding final dimension replaced by
 Tensor subclasses, active ``TorchFunctionMode`` contexts, and active autograd
 recording are not supported. Gradient-requiring input, weight, or supported
 bias operands may be used inside ``torch.no_grad()``.
+"""
+
+
+_L1_LOSS_DOC = r"""
+l1_loss(input, target, size_average=None, reduce=None, reduction='mean', weight=None) -> Tensor
+
+Measures the element-wise mean absolute error between ``input`` and ``target``.
+
+The current native implementation requires exact ``torch_rs.Tensor`` operands
+with CPU ``float32`` storage, broadcastable shapes, ``reduction='none'``,
+``size_average=None``, ``reduce=None``, and ``weight=None``. It composes
+subtraction and absolute value and returns a fresh, independent tensor with
+PyTorch-compatible values, shape, strides, scalar metadata, and
+size-mismatch warning.
+
+Unbroadcastable shapes, reduced outputs, weights, Tensor subclasses, active
+``TorchFunctionMode`` contexts, and active autograd recording are not
+supported. Gradient-requiring operands may be used inside ``torch.no_grad()``.
 """
 
 
@@ -280,6 +299,27 @@ def linear(input: Tensor, weight: Tensor, bias: Tensor | None = None) -> Tensor:
 
 
 linear.__doc__ = _LINEAR_DOC
+
+
+def l1_loss(
+    input: Tensor,
+    target: Tensor,
+    size_average: bool | None = None,
+    reduce: bool | None = None,
+    reduction: str = "mean",
+    weight: Tensor | None = None,
+) -> Tensor:
+    return _nn_functional_l1_loss(
+        input,
+        target,
+        size_average,
+        reduce,
+        reduction,
+        weight,
+    )
+
+
+l1_loss.__doc__ = _L1_LOSS_DOC
 
 
 def mse_loss(
