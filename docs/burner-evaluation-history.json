@@ -7828,6 +7828,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 82
       }
+    },
+    {
+      "key": "pr:1299",
+      "recordedAt": "2026-08-29T09:44:43.416Z",
+      "label": "PR #1299",
+      "kind": "leaf",
+      "prNumber": 1299,
+      "title": "Expose torch.compiler.keep_tensor_guards_unsafe",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 85.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 82
+      }
     }
   ]
 }
