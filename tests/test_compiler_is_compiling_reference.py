@@ -143,6 +143,7 @@ class CompilerIsCompilingReferenceTests(unittest.TestCase):
                 in {
                     "assume_constant_result",
                     "reset",
+                    "list_backends",
                     "disable",
                     "set_default_backend",
                     "get_default_backend",
@@ -282,6 +283,7 @@ class CompilerIsCompilingReferenceTests(unittest.TestCase):
         unsupported = set(reference_torch.compiler.__all__) - {
             "assume_constant_result",
             "reset",
+            "list_backends",
             "disable",
             "set_default_backend",
             "get_default_backend",
