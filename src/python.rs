@@ -4740,6 +4740,10 @@ pub(crate) fn as_tensor_variable_function(
     if let Some(keyword_error) = keyword_error {
         return Err(keyword_error);
     }
+    if let Some(result) = dispatch_as_tensor_mode(py, args, kwargs)? {
+        return Ok(result);
+    }
+
     let (device, device_has_index) = parse_as_tensor_device(device.as_ref())?;
 
     if data.value.is_exact_instance_of::<PyTensor>() {
@@ -4758,6 +4762,36 @@ pub(crate) fn as_tensor_variable_function(
 
     let tensor = tensor_from_data(&data.value, dtype, device, dtype_was_explicit, false)?;
     Ok(Py::new(py, tensor)?.into_any())
+}
+
+fn dispatch_as_tensor_mode(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    if torch_function_mode_stack::is_empty() {
+        return Ok(None);
+    }
+
+    let function = variable_function(py, "as_tensor")?;
+    let types = PyTuple::empty(py);
+    let active_mode = torch_function_mode_stack::pop();
+    let Some(mode) = active_mode.get() else {
+        return Ok(None);
+    };
+    validate_torch_function_mode_handler(mode.bind(py))?;
+    let handler = mode.bind(py).getattr("__torch_function__")?;
+    let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+    if !is_not_implemented(py, &result) {
+        return Ok(Some(result));
+    }
+
+    Err(torch_function_dispatch_error(
+        py,
+        "torch.as_tensor",
+        Some(mode),
+        None,
+    )?)
 }
 
 const MIN_BACKWARD_LEAF_ROOTS: usize = 2;

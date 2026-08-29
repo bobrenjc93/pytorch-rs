@@ -224,6 +224,103 @@ class AsTensorReferenceTests(unittest.TestCase):
             with self.subTest(actual_call=actual_call):
                 self.assert_error_matches(actual_call, expected_call)
 
+    def mode_dispatch_contract(self, module):
+        source = module.tensor([1.0], dtype=module.float32)
+        events = []
+
+        def summarize(func, types, args, kwargs):
+            normalized_kwargs = None
+            if kwargs is not None:
+                normalized_kwargs = tuple(
+                    sorted((key, str(value)) for key, value in kwargs.items())
+                )
+            return (
+                func.__name__,
+                tuple(type_.__name__ for type_ in types),
+                len(args),
+                bool(args) and args[0] is source,
+                normalized_kwargs,
+                tuple(
+                    getattr(mode, "label", type(mode).__name__)
+                    for mode in module.overrides._get_current_function_mode_stack()
+                ),
+            )
+
+        marker = object()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label, result):
+                self.label = label
+                self.result = result
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append((self.label, summarize(func, types, args, kwargs)))
+                return self.result
+
+        with RecordingMode("accept-dtype", marker):
+            accepted_dtype = module.as_tensor(source, dtype=module.float32)
+        with RecordingMode("accept-cuda", marker):
+            accepted_cuda = module.as_tensor(source, device="cuda:0")
+
+        validation = RecordingMode("validation", marker)
+        validation_errors = []
+        with validation:
+            for call in (
+                lambda: module.as_tensor(source, dtype=1),
+                lambda: module.as_tensor(source, device=1.5),
+            ):
+                try:
+                    call()
+                except Exception as error:
+                    validation_errors.append((type(error).__name__, str(error)))
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append((self.label, summarize(func, types, args, kwargs)))
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                forwarded = module.as_tensor(source, dtype=module.float32)
+
+        class DecliningMode(module.overrides.TorchFunctionMode):
+            label = "declining"
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append((self.label, summarize(func, types, args, kwargs)))
+                return NotImplemented
+
+        try:
+            with DecliningMode():
+                module.as_tensor(source, device="cuda:0")
+        except Exception as error:
+            declining_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+            )
+        else:
+            declining_error = None
+
+        return {
+            "accepted_dtype": accepted_dtype is marker,
+            "accepted_cuda": accepted_cuda is marker,
+            "validation_errors": tuple(validation_errors),
+            "forwarded_identity": forwarded is source,
+            "events": tuple(events),
+            "declining_error": declining_error,
+        }
+
+    def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_dispatch_contract(torch),
+            self.mode_dispatch_contract(reference_torch),
+        )
+
     def callable_contract(self, module):
         function = module.as_tensor
         owner = function.__reduce__()[1][0]

@@ -216,6 +216,162 @@ class AsTensorTests(unittest.TestCase):
                 with self.assertRaisesRegex(error_type, f"^{re.escape(message)}$"):
                     call()
 
+    def test_torch_function_mode_dispatch_before_native_conversion(self):
+        source = torch.tensor([1.0])
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.calls = []
+                self.result = result
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                        tuple(torch.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                return self.result
+
+        mode = RecordingMode(marker)
+        with mode:
+            self.assertIs(torch.as_tensor(source, dtype=torch.float32), marker)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [mode]
+            )
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+        self.assertEqual(len(mode.calls), 1)
+        function, dispatch_types, args, kwargs, handler_stack = mode.calls[0]
+        self.assertIs(function, torch.as_tensor)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(len(args), 1)
+        self.assertIs(args[0], source)
+        self.assertIs(kwargs["dtype"], torch.float32)
+        self.assertEqual(handler_stack, ())
+
+        cuda_mode = RecordingMode(marker)
+        with cuda_mode:
+            self.assertIs(torch.as_tensor(source, device="cuda:0"), marker)
+        self.assertEqual(len(cuda_mode.calls), 1)
+        _, dispatch_types, args, kwargs, _ = cuda_mode.calls[0]
+        self.assertEqual(dispatch_types, ())
+        self.assertIs(args[0], source)
+        self.assertEqual(kwargs, {"device": "cuda:0"})
+
+        validation_mode = RecordingMode(marker)
+        with validation_mode:
+            with self.assertRaisesRegex(
+                TypeError,
+                r"^as_tensor\(\): argument 'dtype' must be torch\.dtype, not int$",
+            ):
+                torch.as_tensor(source, dtype=1)
+            with self.assertRaisesRegex(
+                TypeError,
+                r"^as_tensor\(\): argument 'device' must be torch\.device, not float$",
+            ):
+                torch.as_tensor(source, device=1.5)
+        self.assertEqual(validation_mode.calls, [])
+
+        events = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append(
+                    (
+                        self.label,
+                        tuple(
+                            mode.label
+                            for mode in torch.overrides._get_current_function_mode_stack()
+                        ),
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                self.assertIs(torch.as_tensor(source, dtype=torch.float32), source)
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(), [lower, upper]
+                )
+            self.assertEqual(torch.overrides._get_current_function_mode_stack(), [lower])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+        self.assertEqual(
+            [
+                (
+                    label,
+                    stack,
+                    function is torch.as_tensor,
+                    types,
+                    len(args),
+                    args[0] is source,
+                    kwargs,
+                )
+                for label, stack, function, types, args, kwargs in events
+            ],
+            [
+                ("upper", ("lower",), True, (), 1, True, {"dtype": torch.float32}),
+                ("lower", (), True, (), 1, True, {"dtype": torch.float32}),
+            ],
+        )
+
+        events.clear()
+        forwarding = ForwardingMode("native-error")
+        with forwarding:
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "^as_tensor\\(\\): device 'cuda:0' is not supported; only 'cpu' is implemented$",
+            ):
+                torch.as_tensor(source, device="cuda:0")
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [forwarding]
+            )
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+        self.assertEqual(
+            [
+                (label, stack, function is torch.as_tensor, types, args[0] is source, kwargs)
+                for label, stack, function, types, args, kwargs in events
+            ],
+            [("native-error", (), True, (), True, {"device": "cuda:0"})],
+        )
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return NotImplemented
+
+        for options in ({"dtype": torch.float32}, {"device": "cuda:0"}):
+            declining = DecliningMode()
+            with self.subTest(options=options):
+                with declining:
+                    with self.assertRaisesRegex(
+                        TypeError,
+                        r"^Multiple dispatch failed for 'torch\.as_tensor'; all "
+                        r"__torch_function__ handlers returned NotImplemented:",
+                    ):
+                        torch.as_tensor(source, **options)
+                    self.assertEqual(
+                        torch.overrides._get_current_function_mode_stack(),
+                        [declining],
+                    )
+                self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+                self.assertEqual(len(declining.calls), 1)
+
     def test_callable_metadata_and_exports_match_pytorch_2_13(self):
         function = torch.as_tensor
         self.assertIs(type(function), types.BuiltinFunctionType)
