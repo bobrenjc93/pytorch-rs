@@ -1015,7 +1015,8 @@ class FunctionalSigmoidTests(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "^'int' object is not callable$"):
             functional.sigmoid(NonCallableReceiver())
 
-        self.assertFalse(hasattr(torch, "sigmoid"))
+        self.assertTrue(hasattr(torch, "sigmoid"))
+        self.assertIn("sigmoid", torch.__all__)
         self.assertFalse(hasattr(nn, "Sigmoid"))
         self.assertFalse(hasattr(torch.Tensor, "sigmoid_"))
         self.assertFalse(hasattr(functional, "sigmoid_"))
