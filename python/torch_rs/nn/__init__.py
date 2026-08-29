@@ -3,6 +3,16 @@ from . import init as init
 from . import modules as modules
 
 
+def __getattr__(name):
+    if name == "Parameter":
+        from .parameter import Parameter
+
+        globals().pop("parameter", None)
+        globals().pop("Parameter", None)
+        return Parameter
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 def factory_kwargs(kwargs):
     r"""Return a canonicalized dict of factory kwargs.
 
