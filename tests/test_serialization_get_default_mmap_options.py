@@ -134,6 +134,10 @@ class SerializationDefaultMmapOptionsTests(unittest.TestCase):
             "set_default_load_endianness",
             "get_default_mmap_options",
             "set_default_mmap_options",
+            "clear_safe_globals",
+            "get_safe_globals",
+            "add_safe_globals",
+            "safe_globals",
         ]
 
         self.assertEqual(serialization.__all__, exported_names)
@@ -241,7 +245,7 @@ class SerializationDefaultMmapOptionsTests(unittest.TestCase):
 
         self.assertTrue(hasattr(serialization, "get_default_mmap_options"))
         self.assertTrue(hasattr(serialization, "set_default_mmap_options"))
-        for name in ("save", "load"):
+        for name in ("save", "load", "get_unsafe_globals_in_checkpoint"):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(serialization, name))
                 self.assertNotIn(name, serialization.__all__)
