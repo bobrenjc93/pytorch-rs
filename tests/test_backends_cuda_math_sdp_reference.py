@@ -269,8 +269,10 @@ class CudaMathSdpReferenceTests(unittest.TestCase):
         expected = self.expected
         supported = {
             "allow_fp16_bf16_reduction_math_sdp",
+            "enable_flash_sdp",
             "enable_math_sdp",
             "enable_mem_efficient_sdp",
+            "flash_sdp_enabled",
             "fp16_bf16_reduction_math_sdp_allowed",
             "is_built",
             "is_ck_sdpa_available",
@@ -395,6 +397,7 @@ class CudaMathSdpReferenceTests(unittest.TestCase):
 
     def test_preference_is_independent_from_other_flags_and_execution_support(self):
         actual_other_states = {
+            "flash": self.actual.flash_sdp_enabled(),
             "mem_efficient": self.actual.mem_efficient_sdp_enabled(),
         }
         expected_other_states = {
@@ -410,6 +413,7 @@ class CudaMathSdpReferenceTests(unittest.TestCase):
                 self.assertIs(self.expected.math_sdp_enabled(), enabled)
                 self.assertEqual(
                     {
+                        "flash": self.actual.flash_sdp_enabled(),
                         "mem_efficient": self.actual.mem_efficient_sdp_enabled(),
                     },
                     actual_other_states,
@@ -429,8 +433,6 @@ class CudaMathSdpReferenceTests(unittest.TestCase):
         for name in (
             "cudnn_sdp_enabled",
             "enable_cudnn_sdp",
-            "enable_flash_sdp",
-            "flash_sdp_enabled",
         ):
             with self.subTest(unsupported_preference=name):
                 self.assertFalse(hasattr(self.actual, name))
