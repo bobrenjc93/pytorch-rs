@@ -183,6 +183,124 @@ class TensorDivideMethodReferenceTests(unittest.TestCase):
                 case=(name, "ieee tensor values"),
             )
 
+    def test_rounding_modes_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual_left = torch.tensor(
+            [
+                math.nan,
+                math.inf,
+                -math.inf,
+                math.inf,
+                -math.inf,
+                1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                0.0,
+                -0.0,
+                0.0,
+                -0.0,
+            ]
+        )
+        expected_left = reference_torch.tensor(
+            [
+                math.nan,
+                math.inf,
+                -math.inf,
+                math.inf,
+                -math.inf,
+                1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                0.0,
+                -0.0,
+                0.0,
+                -0.0,
+            ]
+        )
+        actual_right = torch.tensor(
+            [
+                1.0,
+                math.inf,
+                -math.inf,
+                2.0,
+                2.0,
+                0.0,
+                0.0,
+                -0.0,
+                -0.0,
+                2.0,
+                2.0,
+                -2.0,
+                -2.0,
+            ]
+        )
+        expected_right = reference_torch.tensor(
+            [
+                1.0,
+                math.inf,
+                -math.inf,
+                2.0,
+                2.0,
+                0.0,
+                0.0,
+                -0.0,
+                -0.0,
+                2.0,
+                2.0,
+                -2.0,
+                -2.0,
+            ]
+        )
+
+        for name in ("div", "divide"):
+            for rounding_mode in (
+                "floor",
+                "trunc",
+                b"floor",
+                b"trunc",
+                np.str_("floor"),
+                np.bytes_(b"trunc"),
+            ):
+                self.assert_matches(
+                    getattr(actual_left, name)(
+                        actual_right, rounding_mode=rounding_mode
+                    ),
+                    getattr(expected_left, name)(
+                        expected_right, rounding_mode=rounding_mode
+                    ),
+                    case=(name, "tensor rounding", rounding_mode),
+                )
+
+            actual_scalar_left = torch.tensor([1.5, -1.5, 5.0, -5.0])
+            expected_scalar_left = reference_torch.tensor([1.5, -1.5, 5.0, -5.0])
+            for rounding_mode in ("floor", "trunc"):
+                self.assert_matches(
+                    getattr(actual_scalar_left, name)(
+                        2.0, rounding_mode=rounding_mode
+                    ),
+                    getattr(expected_scalar_left, name)(
+                        2.0, rounding_mode=rounding_mode
+                    ),
+                    case=(name, "scalar rounding", rounding_mode),
+                )
+
+            actual_empty = torch.zeros((2, 0, 3)).transpose(0, 2)
+            expected_empty = reference_torch.zeros((2, 0, 3)).transpose(0, 2)
+            actual_broadcast = torch.ones((1, 1, 2))
+            expected_broadcast = reference_torch.ones((1, 1, 2))
+            for rounding_mode in ("floor", "trunc"):
+                self.assert_matches(
+                    getattr(actual_empty, name)(
+                        actual_broadcast, rounding_mode=rounding_mode
+                    ),
+                    getattr(expected_empty, name)(
+                        expected_broadcast, rounding_mode=rounding_mode
+                    ),
+                    case=(name, "empty broadcast rounding", rounding_mode),
+                )
+
     def test_descriptor_metadata_copy_and_pickle_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         actual = torch.tensor([1.0])
@@ -240,7 +358,7 @@ class TensorDivideMethodReferenceTests(unittest.TestCase):
                         actual_descriptor,
                     )
 
-    def test_pytorch_matching_rejections_except_unsupported_rounding_modes(self):
+    def test_pytorch_matching_rejections(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         actual = torch.tensor([1.0])
         expected = reference_torch.tensor([1.0])
@@ -268,6 +386,14 @@ class TensorDivideMethodReferenceTests(unittest.TestCase):
                     ),
                 ),
                 (
+                    lambda name=name: getattr(actual, name)(
+                        actual, rounding_mode="bad"
+                    ),
+                    lambda name=name: getattr(expected, name)(
+                        expected, rounding_mode="bad"
+                    ),
+                ),
+                (
                     lambda name=name: getattr(actual, name)(actual, actual),
                     lambda name=name: getattr(expected, name)(expected, expected),
                 ),
@@ -281,9 +407,6 @@ class TensorDivideMethodReferenceTests(unittest.TestCase):
             for actual_call, expected_call in cases:
                 with self.subTest(name=name, actual_call=actual_call):
                     self.assert_error_matches(actual_call, expected_call)
-
-            with self.assertRaises(NotImplementedError):
-                getattr(actual, name)(actual, rounding_mode="floor")
 
 
 if __name__ == "__main__":

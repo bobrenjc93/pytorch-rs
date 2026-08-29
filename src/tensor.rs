@@ -3068,6 +3068,30 @@ impl Tensor {
         self.zip_map(other, |left, right| left / right)
     }
 
+    /// Divides tensors element by element and rounds the result down like
+    /// `torch.div(..., rounding_mode="floor")`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the shapes are not broadcastable or when result
+    /// shape calculation or allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn div_floor(&self, other: &Self) -> Result<Self, TensorError> {
+        self.zip_map(other, div_floor_value)
+    }
+
+    /// Divides tensors element by element and rounds the result toward zero
+    /// like `torch.div(..., rounding_mode="trunc")`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the shapes are not broadcastable or when result
+    /// shape calculation or allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn div_trunc(&self, other: &Self) -> Result<Self, TensorError> {
+        self.zip_map(other, div_trunc_value)
+    }
+
     /// Adds a scalar to every element.
     ///
     /// # Errors
@@ -3139,6 +3163,28 @@ impl Tensor {
     /// Returns an error when result allocation fails.
     pub fn div_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
         self.map_scalar(scalar, |value, scalar| value / scalar)
+    }
+
+    /// Divides every element by a scalar and rounds the result down like
+    /// `torch.div(..., rounding_mode="floor")`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn div_scalar_floor(&self, scalar: f32) -> Result<Self, TensorError> {
+        self.map_scalar(scalar, div_floor_value)
+    }
+
+    /// Divides every element by a scalar and rounds the result toward zero
+    /// like `torch.div(..., rounding_mode="trunc")`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn div_scalar_trunc(&self, scalar: f32) -> Result<Self, TensorError> {
+        self.map_scalar(scalar, div_trunc_value)
     }
 
     /// Subtracts every element from a scalar.
@@ -5543,6 +5589,37 @@ fn round_value(value: f32, operation: fn(f32) -> f32) -> f32 {
     } else {
         operation(value)
     }
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn div_floor_value(left: f32, right: f32) -> f32 {
+    if (right.to_bits() & !F32_SIGN_MASK) == 0 {
+        return left / right;
+    }
+
+    let remainder = left % right;
+    let quotient = (left - remainder) / right;
+    let adjusted = if remainder != 0.0 && ((right < 0.0) != (remainder < 0.0)) {
+        quotient - 1.0
+    } else {
+        quotient
+    };
+
+    if adjusted == 0.0 {
+        0.0_f32.copysign(left / right)
+    } else {
+        let floored = floor_value(adjusted);
+        if adjusted - floored > 0.5 {
+            floored + 1.0
+        } else {
+            floored
+        }
+    }
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn div_trunc_value(left: f32, right: f32) -> f32 {
+    trunc_value(left / right)
 }
 
 fn floor_value(value: f32) -> f32 {
@@ -9924,6 +10001,156 @@ mod tests {
         assert_eq!(
             tensor.sqrt(),
             Err(TensorError::AllocationFailed { elements })
+        );
+    }
+
+    #[test]
+    fn rounded_division_matches_pytorch_float32_ieee_bits() {
+        let left = Tensor::from_vec(
+            vec![
+                f32::NAN,
+                f32::INFINITY,
+                f32::NEG_INFINITY,
+                f32::INFINITY,
+                f32::NEG_INFINITY,
+                1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                0.0,
+                -0.0,
+                0.0,
+                -0.0,
+            ],
+            [13],
+        )
+        .unwrap();
+        let right = Tensor::from_vec(
+            vec![
+                1.0,
+                f32::INFINITY,
+                f32::NEG_INFINITY,
+                2.0,
+                2.0,
+                0.0,
+                0.0,
+                -0.0,
+                -0.0,
+                2.0,
+                2.0,
+                -2.0,
+                -2.0,
+            ],
+            [13],
+        )
+        .unwrap();
+
+        assert!(
+            left.div_floor(&right)
+                .unwrap()
+                .as_slice()
+                .iter()
+                .copied()
+                .map(f32::to_bits)
+                .eq([
+                    0x7fc0_0000,
+                    0xffc0_0000,
+                    0xffc0_0000,
+                    0xffc0_0000,
+                    0xffc0_0000,
+                    f32::INFINITY.to_bits(),
+                    f32::NEG_INFINITY.to_bits(),
+                    f32::NEG_INFINITY.to_bits(),
+                    f32::INFINITY.to_bits(),
+                    0.0_f32.to_bits(),
+                    (-0.0_f32).to_bits(),
+                    (-0.0_f32).to_bits(),
+                    0.0_f32.to_bits(),
+                ])
+        );
+        assert!(
+            left.div_trunc(&right)
+                .unwrap()
+                .as_slice()
+                .iter()
+                .copied()
+                .map(f32::to_bits)
+                .eq([
+                    0x7fc0_0000,
+                    0xffc0_0000,
+                    0xffc0_0000,
+                    f32::INFINITY.to_bits(),
+                    f32::NEG_INFINITY.to_bits(),
+                    f32::INFINITY.to_bits(),
+                    f32::NEG_INFINITY.to_bits(),
+                    f32::NEG_INFINITY.to_bits(),
+                    f32::INFINITY.to_bits(),
+                    0.0_f32.to_bits(),
+                    (-0.0_f32).to_bits(),
+                    (-0.0_f32).to_bits(),
+                    0.0_f32.to_bits(),
+                ])
+        );
+    }
+
+    #[test]
+    fn rounded_division_preserves_binary_output_layouts() {
+        let transposed = Tensor::from_vec(vec![1.5, -1.5, 5.0, -5.0], [2, 2])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let row = Tensor::from_vec(vec![2.0, -2.0], [1, 2]).unwrap();
+        let binary_layout = transposed.div(&row).unwrap();
+        let floor = transposed.div_floor(&row).unwrap();
+        let trunc = transposed.div_trunc(&row).unwrap();
+        assert_eq!(floor.stride(), binary_layout.stride());
+        assert_eq!(trunc.stride(), binary_layout.stride());
+        assert!(floor.logical_values().map(f32::to_bits).eq([
+            0.0_f32.to_bits(),
+            (-3.0_f32).to_bits(),
+            (-1.0_f32).to_bits(),
+            2.0_f32.to_bits(),
+        ]));
+        assert!(trunc.logical_values().map(f32::to_bits).eq([
+            0.0_f32.to_bits(),
+            (-2.0_f32).to_bits(),
+            (-0.0_f32).to_bits(),
+            2.0_f32.to_bits(),
+        ]));
+
+        let scalar_floor = transposed.div_scalar_floor(2.0).unwrap();
+        let scalar_trunc = transposed.div_scalar_trunc(2.0).unwrap();
+        assert_eq!(
+            scalar_floor.stride(),
+            transposed.div_scalar(2.0).unwrap().stride()
+        );
+        assert_eq!(
+            scalar_trunc.stride(),
+            transposed.div_scalar(2.0).unwrap().stride()
+        );
+        assert!(scalar_floor.logical_values().map(f32::to_bits).eq([
+            0.0_f32.to_bits(),
+            2.0_f32.to_bits(),
+            (-1.0_f32).to_bits(),
+            (-3.0_f32).to_bits(),
+        ]));
+        assert!(scalar_trunc.logical_values().map(f32::to_bits).eq([
+            0.0_f32.to_bits(),
+            2.0_f32.to_bits(),
+            (-0.0_f32).to_bits(),
+            (-2.0_f32).to_bits(),
+        ]));
+
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        let broadcast = Tensor::ones([1, 1, 2]).unwrap();
+        let empty_layout = empty.div(&broadcast).unwrap();
+        assert_eq!(
+            empty.div_floor(&broadcast).unwrap().stride(),
+            empty_layout.stride()
+        );
+        assert_eq!(
+            empty.div_trunc(&broadcast).unwrap().stride(),
+            empty_layout.stride()
         );
     }
 

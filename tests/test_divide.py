@@ -33,6 +33,23 @@ class TensorDivideMethodTests(unittest.TestCase):
                 np.asarray(expected).reshape(-1).view(np.uint32),
             )
 
+    def assert_layout_matches(self, actual, expected, *, case):
+        with self.subTest(case=case, metadata=True):
+            self.assertEqual(actual.shape, expected.shape)
+            self.assertEqual(actual.stride(), expected.stride())
+            self.assertEqual(actual.storage_offset(), expected.storage_offset())
+            self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+            self.assertEqual(actual.requires_grad, expected.requires_grad)
+            self.assertIs(actual.dtype, torch.float32)
+            self.assertEqual(actual.device, torch.device("cpu"))
+
+    def assert_tensor_bits(self, actual, expected_bits, *, case):
+        with self.subTest(case=case, values=True):
+            np.testing.assert_array_equal(
+                np.asarray(actual).reshape(-1).view(np.uint32),
+                np.asarray(expected_bits, dtype=np.uint32),
+            )
+
     def test_tensor_and_real_scalar_calls_reuse_operator_semantics(self):
         left = torch.tensor([[[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]]]).transpose(
             0, 2
@@ -55,6 +72,32 @@ class TensorDivideMethodTests(unittest.TestCase):
                 left / right,
                 case=(name, "rounding none"),
             )
+            rounded_left = torch.tensor(
+                [[1.5, -1.5], [5.0, -5.0]]
+            ).transpose(0, 1)
+            rounded_right = torch.tensor([[2.0, -2.0]])
+            for rounding_mode, expected_bits in (
+                ("floor", [0x0000_0000, 0xC040_0000, 0xBF80_0000, 0x4000_0000]),
+                ("trunc", [0x0000_0000, 0xC000_0000, 0x8000_0000, 0x4000_0000]),
+                (b"floor", [0x0000_0000, 0xC040_0000, 0xBF80_0000, 0x4000_0000]),
+                (
+                    np.bytes_(b"trunc"),
+                    [0x0000_0000, 0xC000_0000, 0x8000_0000, 0x4000_0000],
+                ),
+            ):
+                actual = getattr(rounded_left, name)(
+                    rounded_right, rounding_mode=rounding_mode
+                )
+                self.assert_layout_matches(
+                    actual,
+                    rounded_left / rounded_right,
+                    case=(name, "rounded tensor layout", rounding_mode),
+                )
+                self.assert_tensor_bits(
+                    actual,
+                    expected_bits,
+                    case=(name, "rounded tensor values", rounding_mode),
+                )
 
             offset_view = left[1]
             for scalar in (
@@ -81,6 +124,17 @@ class TensorDivideMethodTests(unittest.TestCase):
                 offset_view / np.float32(-2.5),
                 case=(name, "scalar x2 keyword"),
             )
+            rounded = torch.tensor([1.5, -1.5, 5.0, -5.0])
+            self.assert_tensor_matches(
+                getattr(rounded, name)(2.0, rounding_mode=np.str_("floor")),
+                torch.tensor([0.0, -1.0, 2.0, -3.0]),
+                case=(name, "scalar floor"),
+            )
+            self.assert_tensor_matches(
+                getattr(rounded, name)(2.0, rounding_mode="trunc"),
+                torch.tensor([0.0, -0.0, 2.0, -2.0]),
+                case=(name, "scalar trunc"),
+            )
 
             empty = torch.zeros((2, 0, 3)).transpose(0, 2)
             broadcast = torch.ones((1, 1, 2))
@@ -88,6 +142,11 @@ class TensorDivideMethodTests(unittest.TestCase):
                 getattr(empty, name)(other=broadcast),
                 empty / broadcast,
                 case=(name, "strided broadcast empty"),
+            )
+            self.assert_layout_matches(
+                getattr(empty, name)(other=broadcast, rounding_mode="floor"),
+                empty / broadcast,
+                case=(name, "rounded strided broadcast empty"),
             )
 
             numerator = torch.tensor(
@@ -129,6 +188,44 @@ class TensorDivideMethodTests(unittest.TestCase):
                 numerator / denominator,
                 case=(name, "ieee tensor values"),
             )
+            self.assert_tensor_bits(
+                getattr(numerator, name)(denominator, rounding_mode="floor"),
+                [
+                    0x7FC0_0000,
+                    0xFFC0_0000,
+                    0xFFC0_0000,
+                    0xFFC0_0000,
+                    0xFFC0_0000,
+                    0x7F80_0000,
+                    0xFF80_0000,
+                    0xFF80_0000,
+                    0x7F80_0000,
+                    0x0000_0000,
+                    0x8000_0000,
+                    0x8000_0000,
+                    0x0000_0000,
+                ],
+                case=(name, "ieee floor values"),
+            )
+            self.assert_tensor_bits(
+                getattr(numerator, name)(denominator, rounding_mode="trunc"),
+                [
+                    0x7FC0_0000,
+                    0xFFC0_0000,
+                    0xFFC0_0000,
+                    0x7F80_0000,
+                    0xFF80_0000,
+                    0x7F80_0000,
+                    0xFF80_0000,
+                    0xFF80_0000,
+                    0x7F80_0000,
+                    0x0000_0000,
+                    0x8000_0000,
+                    0x8000_0000,
+                    0x0000_0000,
+                ],
+                case=(name, "ieee trunc values"),
+            )
 
             scalar_bits = np.array([0xC25F_B64C], dtype=np.uint32)
             scalar = scalar_bits.view(np.float32)[0].item()
@@ -162,6 +259,10 @@ class TensorDivideMethodTests(unittest.TestCase):
             with torch.no_grad():
                 scalar_output = getattr(method_left, name)(other=2.0)
             self.assertFalse(scalar_output.requires_grad)
+
+            rounded_output = getattr(method_left, name)(2.0, rounding_mode="floor")
+            self.assertFalse(rounded_output.requires_grad)
+            self.assertIsNone(method_left.grad)
 
     def test_descriptor_metadata_copy_and_pickle(self):
         tensor = torch.tensor([1.0])
@@ -233,7 +334,7 @@ class TensorDivideMethodTests(unittest.TestCase):
                     {"other": other, "rounding_mode": None},
                 ),
                 (
-                    "unsupported rounding",
+                    "rounding floor",
                     lambda: getattr(tensor, name)(other, rounding_mode="floor"),
                     (tensor, other),
                     {"rounding_mode": "floor"},
@@ -375,11 +476,19 @@ class TensorDivideMethodTests(unittest.TestCase):
         destination = torch.tensor([17.0])
 
         for name in ("div", "divide"):
-            for rounding_mode in ("floor", "trunc", b"floor", np.str_("trunc")):
+            for rounding_mode, rendered in (
+                ("bad", "bad"),
+                ("", ""),
+                (b"bad", "bad"),
+                (b"", ""),
+                (np.str_("bad"), "bad"),
+                (np.bytes_(b"bad"), "bad"),
+            ):
                 with self.subTest(name=name, rounding_mode=rounding_mode):
                     with self.assertRaisesRegex(
-                        NotImplementedError,
-                        rf"^{name}\(\) does not support non-None rounding_mode$",
+                        RuntimeError,
+                        "^div expected rounding_mode to be one of None, 'trunc', "
+                        f"or 'floor' but found '{re.escape(rendered)}'$",
                     ):
                         getattr(tensor, name)(other, rounding_mode=rounding_mode)
 

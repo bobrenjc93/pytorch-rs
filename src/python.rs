@@ -2448,6 +2448,13 @@ enum BoundDivisionOperand<'py> {
     Override(ProbedTorchFunctionOverride<'py>),
 }
 
+#[derive(Clone, Copy)]
+enum DivisionRoundingMode {
+    None,
+    Floor,
+    Trunc,
+}
+
 enum BoundDTypeOperand<'py> {
     DType(DType),
     Override(ProbedTorchFunctionOverride<'py>),
@@ -4080,7 +4087,7 @@ fn dispatch_tensorbase_division(
 ) -> PyResult<Py<PyAny>> {
     let overrides = ordered_division_overrides(&call.other)?;
     if torch_function_mode_stack::is_empty() && overrides.is_empty() {
-        return apply_tensorbase_division(operation, py, tensor, call);
+        return apply_tensorbase_division(py, tensor, call);
     }
 
     let function = py
@@ -4146,7 +4153,7 @@ fn dispatch_tensorbase_division(
                     None,
                 )?);
             }
-            apply_tensorbase_division(operation, py, tensor, call)
+            apply_tensorbase_division(py, tensor, call)
         }
     }
 }
@@ -4162,20 +4169,21 @@ fn ordered_division_overrides<'py>(
 }
 
 fn apply_tensorbase_division(
-    operation: DivisionOperation,
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
     call: &BoundDivisionCall<'_>,
 ) -> PyResult<Py<PyAny>> {
-    reject_non_none_rounding_mode(operation, call.rounding_mode.as_ref())?;
+    let rounding_mode = parse_division_rounding_mode(call.rounding_mode.as_ref())?;
     let result = match &call.other {
         BoundDivisionOperand::Tensor(other) => {
+            let tensor = tensor.try_borrow()?;
             let other = other.try_borrow()?;
-            BinaryOperation::Divide.apply_tensors(&tensor.try_borrow()?.inner, &other.inner)
+            apply_tensor_division_rounding(&tensor.inner, &other.inner, rounding_mode)
         }
         BoundDivisionOperand::Scalar(scalar) => {
             let scalar = parse_division_scalar(scalar)?;
-            BinaryOperation::Divide.apply_scalar(&tensor.try_borrow()?.inner, scalar, false)
+            let tensor = tensor.try_borrow()?;
+            apply_scalar_division_rounding(&tensor.inner, scalar, rounding_mode)
         }
         BoundDivisionOperand::Override(_) => {
             unreachable!("division overrides were dispatched before the native path")
@@ -4186,6 +4194,30 @@ fn apply_tensorbase_division(
         PyTensor::new(result.map_err(|error| tensor_error(&error))?),
     )?
     .into_any())
+}
+
+fn apply_tensor_division_rounding(
+    left: &CoreTensor,
+    right: &CoreTensor,
+    rounding_mode: DivisionRoundingMode,
+) -> Result<CoreTensor, TensorError> {
+    match rounding_mode {
+        DivisionRoundingMode::None => left.div(right),
+        DivisionRoundingMode::Floor => left.div_floor(right),
+        DivisionRoundingMode::Trunc => left.div_trunc(right),
+    }
+}
+
+fn apply_scalar_division_rounding(
+    tensor: &CoreTensor,
+    scalar: f32,
+    rounding_mode: DivisionRoundingMode,
+) -> Result<CoreTensor, TensorError> {
+    match rounding_mode {
+        DivisionRoundingMode::None => BinaryOperation::Divide.apply_scalar(tensor, scalar, false),
+        DivisionRoundingMode::Floor => tensor.div_scalar_floor(scalar),
+        DivisionRoundingMode::Trunc => tensor.div_scalar_trunc(scalar),
+    }
 }
 
 fn parse_top_level_mul_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
@@ -4226,17 +4258,38 @@ fn parse_division_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
     }
 }
 
-fn reject_non_none_rounding_mode(
-    operation: DivisionOperation,
+fn parse_division_rounding_mode(
     rounding_mode: Option<&Bound<'_, PyAny>>,
-) -> PyResult<()> {
-    if rounding_mode.is_some_and(|value| !value.is_none()) {
-        return Err(PyNotImplementedError::new_err(format!(
-            "{}() does not support non-None rounding_mode",
-            operation.name()
-        )));
+) -> PyResult<DivisionRoundingMode> {
+    let Some(rounding_mode) = rounding_mode else {
+        return Ok(DivisionRoundingMode::None);
+    };
+    if rounding_mode.is_none() {
+        return Ok(DivisionRoundingMode::None);
     }
-    Ok(())
+
+    let mode = division_rounding_mode_text(rounding_mode)?;
+    match mode.as_str() {
+        "floor" => Ok(DivisionRoundingMode::Floor),
+        "trunc" => Ok(DivisionRoundingMode::Trunc),
+        _ => Err(invalid_division_rounding_mode(&mode)),
+    }
+}
+
+fn division_rounding_mode_text(rounding_mode: &Bound<'_, PyAny>) -> PyResult<String> {
+    if let Ok(mode) = rounding_mode.cast::<PyString>() {
+        return Ok(mode.to_str()?.to_owned());
+    }
+    if let Ok(mode) = rounding_mode.cast::<PyBytes>() {
+        return Ok(String::from_utf8_lossy(mode.as_bytes()).into_owned());
+    }
+    rounding_mode.str()?.extract()
+}
+
+fn invalid_division_rounding_mode(mode: &str) -> PyErr {
+    PyRuntimeError::new_err(format!(
+        "div expected rounding_mode to be one of None, 'trunc', or 'floor' but found '{mode}'"
+    ))
 }
 
 struct ScalarTensorCallArguments<'py> {
