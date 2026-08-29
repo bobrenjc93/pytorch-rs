@@ -4,6 +4,7 @@ import inspect
 import os
 import pickle
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -340,16 +341,21 @@ assert not any(
         )
 
     def test_h100_cuda_visibility_does_not_change_false_result(self):
-        smi = subprocess.run(
-            [
-                "nvidia-smi",
-                "--query-gpu=index,name,memory.total,driver_version,compute_cap",
-                "--format=csv,noheader",
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        if shutil.which("nvidia-smi") is None:
+            self.skipTest("requires nvidia-smi on an NVIDIA H100 host")
+        try:
+            smi = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=index,name,memory.total,driver_version,compute_cap",
+                    "--format=csv,noheader",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except OSError as error:
+            self.skipTest(f"requires nvidia-smi on an NVIDIA H100 host: {error}")
         if smi.returncode != 0 or "H100" not in smi.stdout:
             self.skipTest("requires an NVIDIA H100 host")
 
