@@ -7790,6 +7790,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 82
       }
+    },
+    {
+      "key": "pr:1290",
+      "recordedAt": "2026-08-29T07:44:17.744Z",
+      "label": "PR #1290",
+      "kind": "leaf",
+      "prNumber": 1290,
+      "title": "Support rank-2 bias in nn.functional.linear",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 84.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 82
+      }
     }
   ]
 }
