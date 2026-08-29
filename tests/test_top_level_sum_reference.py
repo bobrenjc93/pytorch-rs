@@ -216,6 +216,14 @@ class TopLevelSumReferenceTests(unittest.TestCase):
                 lambda: reference_torch.sum(expected, dim=None),
             ),
             (
+                lambda: torch.sum(actual, axis=0),
+                lambda: reference_torch.sum(expected, axis=0),
+            ),
+            (
+                lambda: torch.sum(actual, axis=None),
+                lambda: reference_torch.sum(expected, axis=None),
+            ),
+            (
                 lambda: torch.sum(actual, 0, False),
                 lambda: reference_torch.sum(expected, 0, False),
             ),
@@ -224,8 +232,16 @@ class TopLevelSumReferenceTests(unittest.TestCase):
                 lambda: reference_torch.sum(expected, dim=0, keepdim=True),
             ),
             (
+                lambda: torch.sum(actual, axis=0, keepdims=True),
+                lambda: reference_torch.sum(expected, axis=0, keepdims=True),
+            ),
+            (
                 lambda: torch.sum(actual, 0, out=destination),
                 lambda: reference_torch.sum(expected, 0, out=expected_destination),
+            ),
+            (
+                lambda: torch.sum(actual, axis=0, out=destination),
+                lambda: reference_torch.sum(expected, axis=0, out=expected_destination),
             ),
             (
                 lambda: torch.sum(actual, dtype=reference_torch.float64),

@@ -249,6 +249,16 @@ class TopLevelSumTests(unittest.TestCase):
         self.assertEqual(args, ())
         self.assertEqual(kwargs, {"input": tensor, "dtype": torch.float32})
 
+        mode = RecordingMode(marker)
+        with mode:
+            self.assertIs(torch.sum(tensor, axis=0, keepdims=True), marker)
+        self.assertEqual(len(mode.calls), 1)
+        function, dispatch_types, args, kwargs = mode.calls[0]
+        self.assertIs(function, torch.sum)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(args, (tensor,))
+        self.assertEqual(kwargs, {"axis": 0, "keepdims": True})
+
         class ForwardingMode(torch.overrides.TorchFunctionMode):
             def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
                 return func(*args, **(kwargs or {}))
@@ -287,10 +297,14 @@ class TopLevelSumTests(unittest.TestCase):
             ("positional none dim", lambda: torch.sum(tensor, None)),
             ("keyword dim", lambda: torch.sum(tensor, dim=0)),
             ("none dim", lambda: torch.sum(tensor, dim=None)),
+            ("axis", lambda: torch.sum(tensor, axis=0)),
+            ("none axis", lambda: torch.sum(tensor, axis=None)),
             ("positional keepdim", lambda: torch.sum(tensor, 0, False)),
             ("keyword keepdim", lambda: torch.sum(tensor, dim=0, keepdim=True)),
+            ("keyword keepdims", lambda: torch.sum(tensor, axis=0, keepdims=True)),
             ("out none without dim", lambda: torch.sum(tensor, out=None)),
             ("out with dim", lambda: torch.sum(tensor, 0, out=destination)),
+            ("out with axis", lambda: torch.sum(tensor, axis=0, out=destination)),
         )
         for case, call in unsupported:
             with self.subTest(case=case):
@@ -319,6 +333,92 @@ class TopLevelSumTests(unittest.TestCase):
         self.assertEqual(dispatch_types, (Override,))
         self.assertEqual(args, (tensor,))
         self.assertEqual(kwargs, {"dim": dimension})
+
+        Override.calls.clear()
+        axis = Override()
+        self.assertIs(torch.sum(tensor, axis=axis), marker)
+        self.assertEqual(len(Override.calls), 1)
+        function, dispatch_types, args, kwargs = Override.calls[0]
+        self.assertIs(function, torch.sum)
+        self.assertEqual(dispatch_types, (Override,))
+        self.assertEqual(args, (tensor,))
+        self.assertEqual(kwargs, {"axis": axis})
+
+        Override.calls.clear()
+        keepdims = Override()
+        self.assertIs(torch.sum(tensor, dim=0, keepdims=keepdims), marker)
+        self.assertEqual(len(Override.calls), 1)
+        function, dispatch_types, args, kwargs = Override.calls[0]
+        self.assertIs(function, torch.sum)
+        self.assertEqual(dispatch_types, (Override,))
+        self.assertEqual(args, (tensor,))
+        self.assertEqual(kwargs, {"dim": 0, "keepdims": keepdims})
+
+        Override.calls.clear()
+        tuple_dimension = Override()
+        self.assertIs(torch.sum(tensor, dim=(0, tuple_dimension)), marker)
+        self.assertEqual(len(Override.calls), 1)
+        function, dispatch_types, args, kwargs = Override.calls[0]
+        self.assertIs(function, torch.sum)
+        self.assertEqual(dispatch_types, (Override,))
+        self.assertEqual(args, (tensor,))
+        self.assertEqual(kwargs, {"dim": (0, tuple_dimension)})
+
+    def test_invalid_reduction_arguments_are_rejected_before_dispatch(self):
+        tensor = torch.ones((2, 3))
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append((func, dispatch_types, args, kwargs))
+                return marker
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                cls.calls.append((func, dispatch_types, args, kwargs))
+                return marker
+
+        invalid_mode_calls = (
+            ("object dim", lambda: torch.sum(tensor, dim=object())),
+            ("string dim", lambda: torch.sum(tensor, dim="0")),
+            ("bool dim", lambda: torch.sum(tensor, dim=True)),
+            ("tuple bool dim", lambda: torch.sum(tensor, dim=(True,))),
+            ("object axis", lambda: torch.sum(tensor, axis=object())),
+            ("bad keepdim", lambda: torch.sum(tensor, dim=0, keepdim="x")),
+            ("bad keepdims", lambda: torch.sum(tensor, axis=0, keepdims=1)),
+            ("bad out", lambda: torch.sum(tensor, dim=0, out=object())),
+        )
+        for case, call in invalid_mode_calls:
+            with self.subTest(case=case):
+                mode = RecordingMode()
+                with mode:
+                    with self.assertRaises(TypeError):
+                        call()
+                self.assertEqual(mode.calls, [])
+
+        invalid_override_calls = (
+            ("input override bad dim", lambda: torch.sum(Override(), dim="0")),
+            (
+                "input override bad keepdim",
+                lambda: torch.sum(Override(), dim=0, keepdim="x"),
+            ),
+            (
+                "input override bad out",
+                lambda: torch.sum(Override(), dim=0, out=object()),
+            ),
+        )
+        for case, call in invalid_override_calls:
+            with self.subTest(case=case):
+                Override.calls.clear()
+                with self.assertRaises(TypeError):
+                    call()
+                self.assertEqual(Override.calls, [])
 
     def test_binding_dtype_and_type_errors_match_the_supported_boundary(self):
         tensor = torch.ones((2, 3))
@@ -363,6 +463,30 @@ class TopLevelSumTests(unittest.TestCase):
             (
                 lambda: torch.sum(tensor, extra=True),
                 f"{invalid}(Tensor, extra=bool), {EXPECTED_OVERLOADS}",
+            ),
+            (
+                lambda: torch.sum(tensor, dim=0, axis=1),
+                "sum() got an unexpected keyword argument 'axis'",
+            ),
+            (
+                lambda: torch.sum(tensor, axis=1, dim=0),
+                "sum() got an unexpected keyword argument 'axis'",
+            ),
+            (
+                lambda: torch.sum(tensor, 0, axis=1),
+                "sum() got an unexpected keyword argument 'axis'",
+            ),
+            (
+                lambda: torch.sum(tensor, dim=0, keepdim=True, keepdims=False),
+                "sum() got an unexpected keyword argument 'keepdims'",
+            ),
+            (
+                lambda: torch.sum(tensor, dim=0, keepdims=False, keepdim=True),
+                "sum() got an unexpected keyword argument 'keepdims'",
+            ),
+            (
+                lambda: torch.sum(tensor, 0, True, keepdims=False),
+                "sum() got an unexpected keyword argument 'keepdims'",
             ),
         )
         for call, message in cases:

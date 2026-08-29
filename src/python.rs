@@ -2396,7 +2396,7 @@ struct BoundUnaryOutCall<'py> {
 struct BoundTopLevelSumCall<'py> {
     input: BoundTensorOrTorchFunction<'py>,
     dtype_override: Option<ProbedTorchFunctionOverride<'py>>,
-    dimension_override: Option<ProbedTorchFunctionOverride<'py>>,
+    dimension_overrides: Vec<ProbedTorchFunctionOverride<'py>>,
     keepdim_override: Option<ProbedTorchFunctionOverride<'py>>,
     out_override: Option<ProbedTorchFunctionOverride<'py>>,
     unsupported_reduction_form: bool,
@@ -3258,13 +3258,15 @@ fn ordered_sum_overrides<'py>(
 ) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
     let mut overrides = Vec::new();
     overrides
-        .try_reserve_exact(5)
+        .try_reserve_exact(4 + call.dimension_overrides.len())
         .map_err(|_| PyMemoryError::new_err("unable to allocate sum dispatch operands"))?;
     if let BoundTensorOrTorchFunction::Override(probed) = &call.input {
         push_ordered_torch_function_override(&mut overrides, probed)?;
     }
+    for probed in &call.dimension_overrides {
+        push_ordered_torch_function_override(&mut overrides, probed)?;
+    }
     for probed in [
-        call.dimension_override.as_ref(),
         call.keepdim_override.as_ref(),
         call.dtype_override.as_ref(),
         call.out_override.as_ref(),
@@ -7424,6 +7426,28 @@ fn sum_method_invalid_combination(
     )))
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SumDimensionSource {
+    Positional,
+    DimKeyword,
+    AxisKeyword,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SumKeepdimSource {
+    Positional,
+    KeepdimKeyword,
+    KeepdimsKeyword,
+}
+
+struct TopLevelSumArguments<'py> {
+    input: ParsedCallArgument<'py>,
+    dimension: Option<ParsedCallArgument<'py>>,
+    keepdim: Option<ParsedCallArgument<'py>>,
+    dtype: Option<ParsedCallArgument<'py>>,
+    out: Option<ParsedCallArgument<'py>>,
+}
+
 fn bind_top_level_sum_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
@@ -7435,6 +7459,62 @@ fn bind_top_level_sum_arguments<'py>(
         )));
     }
 
+    let TopLevelSumArguments {
+        input,
+        dimension,
+        keepdim,
+        dtype,
+        out,
+    } = bind_top_level_sum_argument_values(positional, keywords)?;
+
+    if dimension.is_none() && (keepdim.is_some() || out.is_some()) {
+        return Err(top_level_sum_invalid_combination(positional, keywords)?);
+    }
+
+    let has_overload_argument =
+        dimension.is_some() || keepdim.is_some() || dtype.is_some() || out.is_some();
+    let dimension_overrides = match &dimension {
+        None => Vec::new(),
+        Some(dimension) => validate_top_level_sum_dimension(
+            dimension,
+            keepdim.is_some() || dtype.is_some() || out.is_some(),
+            positional,
+            keywords,
+        )?,
+    };
+    let keepdim_override = match &keepdim {
+        None => None,
+        Some(keepdim) => validate_top_level_sum_keepdim(keepdim)?,
+    };
+    let out_override = match &out {
+        None => None,
+        Some(out) => validate_top_level_sum_out(out)?,
+    };
+    let dtype_override = parse_top_level_sum_dtype_override(dtype.as_ref(), positional, keywords)?;
+    let input = match parse_tensor_or_torch_function_argument("sum", "input", &input) {
+        Ok(input) => input,
+        Err(error) if has_overload_argument => {
+            drop(error);
+            return Err(top_level_sum_invalid_combination(positional, keywords)?);
+        }
+        Err(error) => return Err(error),
+    };
+    let unsupported_reduction_form = dimension.is_some() || keepdim.is_some() || out.is_some();
+
+    Ok(BoundTopLevelSumCall {
+        input,
+        dtype_override,
+        dimension_overrides,
+        keepdim_override,
+        out_override,
+        unsupported_reduction_form,
+    })
+}
+
+fn bind_top_level_sum_argument_values<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<TopLevelSumArguments<'py>> {
     let keyword_argument =
         |names: &[&'static str]| -> PyResult<Option<(Bound<'py, PyAny>, &'static str)>> {
             let Some(keywords) = keywords else {
@@ -7481,6 +7561,7 @@ fn bind_top_level_sum_arguments<'py>(
     } else {
         None
     };
+    let mut dimension_source = dimension.as_ref().map(|_| SumDimensionSource::Positional);
     let mut keepdim = if positional.len() >= 3 {
         Some(ParsedCallArgument {
             value: positional.get_item(2)?,
@@ -7489,9 +7570,46 @@ fn bind_top_level_sum_arguments<'py>(
     } else {
         None
     };
+    let mut keepdim_source = keepdim.as_ref().map(|_| SumKeepdimSource::Positional);
     let mut dtype = None;
     let mut out = None;
 
+    bind_top_level_sum_keywords(
+        positional,
+        keywords,
+        selected_input_keyword,
+        &mut dimension,
+        &mut dimension_source,
+        &mut keepdim,
+        &mut keepdim_source,
+        &mut dtype,
+        &mut out,
+    )?;
+
+    Ok(TopLevelSumArguments {
+        input,
+        dimension,
+        keepdim,
+        dtype,
+        out,
+    })
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "sum keyword binding updates the generated-call argument slots in place"
+)]
+fn bind_top_level_sum_keywords<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+    selected_input_keyword: Option<&str>,
+    dimension: &mut Option<ParsedCallArgument<'py>>,
+    dimension_source: &mut Option<SumDimensionSource>,
+    keepdim: &mut Option<ParsedCallArgument<'py>>,
+    keepdim_source: &mut Option<SumKeepdimSource>,
+    dtype: &mut Option<ParsedCallArgument<'py>>,
+    out: &mut Option<ParsedCallArgument<'py>>,
+) -> PyResult<()> {
     if let Some(keywords) = keywords {
         for (key, value) in keywords {
             let key = key.extract::<String>()?;
@@ -7507,34 +7625,58 @@ fn bind_top_level_sum_arguments<'py>(
                 }
                 "dim" => {
                     if dimension.is_some() {
-                        return Err(PyTypeError::new_err(
-                            "sum() got multiple values for argument 'dim'",
-                        ));
+                        if *dimension_source == Some(SumDimensionSource::AxisKeyword) {
+                            return Err(sum_unexpected_keyword_argument("axis"));
+                        }
+                        return Err(sum_multiple_values_error("dim"));
                     }
-                    dimension = Some(ParsedCallArgument {
+                    *dimension = Some(ParsedCallArgument {
                         value,
                         position: None,
                     });
+                    *dimension_source = Some(SumDimensionSource::DimKeyword);
+                }
+                "axis" => {
+                    if dimension.is_some() {
+                        return Err(sum_unexpected_keyword_argument("axis"));
+                    }
+                    *dimension = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                    *dimension_source = Some(SumDimensionSource::AxisKeyword);
                 }
                 "keepdim" => {
                     if keepdim.is_some() {
-                        return Err(PyTypeError::new_err(
-                            "sum() got multiple values for argument 'keepdim'",
-                        ));
+                        if *keepdim_source == Some(SumKeepdimSource::KeepdimsKeyword) {
+                            return Err(sum_unexpected_keyword_argument("keepdims"));
+                        }
+                        return Err(sum_multiple_values_error("keepdim"));
                     }
-                    keepdim = Some(ParsedCallArgument {
+                    *keepdim = Some(ParsedCallArgument {
                         value,
                         position: None,
                     });
+                    *keepdim_source = Some(SumKeepdimSource::KeepdimKeyword);
+                }
+                "keepdims" => {
+                    if keepdim.is_some() {
+                        return Err(sum_unexpected_keyword_argument("keepdims"));
+                    }
+                    *keepdim = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                    *keepdim_source = Some(SumKeepdimSource::KeepdimsKeyword);
                 }
                 "dtype" => {
-                    dtype = Some(ParsedCallArgument {
+                    *dtype = Some(ParsedCallArgument {
                         value,
                         position: None,
                     });
                 }
                 "out" => {
-                    out = Some(ParsedCallArgument {
+                    *out = Some(ParsedCallArgument {
                         value,
                         position: None,
                     });
@@ -7548,13 +7690,14 @@ fn bind_top_level_sum_arguments<'py>(
             }
         }
     }
+    Ok(())
+}
 
-    if dimension.is_none() && (keepdim.is_some() || out.is_some()) {
-        return Err(top_level_sum_invalid_combination(positional, keywords)?);
-    }
-
-    let has_overload_argument =
-        dimension.is_some() || keepdim.is_some() || dtype.is_some() || out.is_some();
+fn parse_top_level_sum_dtype_override<'py>(
+    dtype: Option<&ParsedCallArgument<'py>>,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<Option<ProbedTorchFunctionOverride<'py>>> {
     let dtype_override = match dtype.as_ref() {
         None => None,
         Some(dtype) if dtype.value.is_none() => None,
@@ -7570,34 +7713,141 @@ fn bind_top_level_sum_arguments<'py>(
             }
         }
     };
-    let input = match parse_tensor_or_torch_function_argument("sum", "input", &input) {
-        Ok(input) => input,
-        Err(error) if has_overload_argument => {
-            drop(error);
-            return Err(top_level_sum_invalid_combination(positional, keywords)?);
-        }
-        Err(error) => return Err(error),
-    };
-    let dimension_override = dimension
-        .as_ref()
-        .and_then(|dimension| probe_torch_function_override(&dimension.value));
-    let keepdim_override = keepdim
-        .as_ref()
-        .and_then(|keepdim| probe_torch_function_override(&keepdim.value));
-    let out_override = out
-        .as_ref()
-        .filter(|out| !out.value.is_none())
-        .and_then(|out| probe_torch_function_override(&out.value));
-    let unsupported_reduction_form = dimension.is_some() || keepdim.is_some() || out.is_some();
+    Ok(dtype_override)
+}
 
-    Ok(BoundTopLevelSumCall {
-        input,
-        dtype_override,
-        dimension_override,
-        keepdim_override,
-        out_override,
-        unsupported_reduction_form,
-    })
+fn sum_multiple_values_error(argument: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "sum() got multiple values for argument '{argument}'"
+    ))
+}
+
+fn sum_unexpected_keyword_argument(keyword: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "sum() got an unexpected keyword argument '{keyword}'"
+    ))
+}
+
+fn validate_top_level_sum_dimension<'py>(
+    dimension: &ParsedCallArgument<'py>,
+    has_trailing_overload_argument: bool,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let Some(overrides) = collect_top_level_sum_dimension_overrides(&dimension.value)? else {
+        return if has_trailing_overload_argument {
+            Err(sum_argument_type_error(
+                "dim",
+                dimension.position,
+                "tuple of ints",
+                &python_type_name(&dimension.value)?,
+            ))
+        } else {
+            Err(top_level_sum_invalid_combination(positional, keywords)?)
+        };
+    };
+    Ok(overrides)
+}
+
+fn collect_top_level_sum_dimension_overrides<'py>(
+    value: &Bound<'py, PyAny>,
+) -> PyResult<Option<Vec<ProbedTorchFunctionOverride<'py>>>> {
+    let mut overrides = Vec::new();
+    if collect_top_level_sum_dimension_value(value, &mut overrides)? {
+        Ok(Some(overrides))
+    } else {
+        Ok(None)
+    }
+}
+
+fn collect_top_level_sum_dimension_value<'py>(
+    value: &Bound<'py, PyAny>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+) -> PyResult<bool> {
+    if let Some(probed) = probe_torch_function_override(value) {
+        push_ordered_torch_function_override(overrides, &probed)?;
+        return Ok(true);
+    }
+    if value.is_none() || is_top_level_sum_integer_dimension(value) {
+        return Ok(true);
+    }
+    if let Ok(dimensions) = value.cast::<PyTuple>() {
+        return collect_top_level_sum_dimension_sequence(dimensions.iter(), overrides);
+    }
+    if let Ok(dimensions) = value.cast::<PyList>() {
+        return collect_top_level_sum_dimension_sequence(dimensions.iter(), overrides);
+    }
+    Ok(false)
+}
+
+fn collect_top_level_sum_dimension_sequence<'py>(
+    dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+) -> PyResult<bool> {
+    for dimension in dimensions {
+        if let Some(probed) = probe_torch_function_override(&dimension) {
+            push_ordered_torch_function_override(overrides, &probed)?;
+        } else if !is_top_level_sum_integer_dimension(&dimension) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn is_top_level_sum_integer_dimension(value: &Bound<'_, PyAny>) -> bool {
+    if value.is_instance_of::<PyBool>() {
+        return false;
+    }
+    if value.is_instance_of::<PyInt>() {
+        return true;
+    }
+    call_python_index(value).is_ok()
+}
+
+fn validate_top_level_sum_keepdim<'py>(
+    keepdim: &ParsedCallArgument<'py>,
+) -> PyResult<Option<ProbedTorchFunctionOverride<'py>>> {
+    if let Some(probed) = probe_torch_function_override(&keepdim.value) {
+        return Ok(Some(probed));
+    }
+    if keepdim.value.is_exact_instance_of::<PyBool>() {
+        return Ok(None);
+    }
+    Err(sum_argument_type_error(
+        "keepdim",
+        keepdim.position,
+        "bool",
+        &python_type_name(&keepdim.value)?,
+    ))
+}
+
+fn validate_top_level_sum_out<'py>(
+    out: &ParsedCallArgument<'py>,
+) -> PyResult<Option<ProbedTorchFunctionOverride<'py>>> {
+    if out.value.is_none() || out.value.cast::<PyTensor>().is_ok() {
+        return Ok(None);
+    }
+    if let Some(probed) = probe_torch_function_override(&out.value) {
+        return Ok(Some(probed));
+    }
+    Err(sum_argument_type_error(
+        "out",
+        out.position,
+        "Tensor",
+        &python_type_name(&out.value)?,
+    ))
+}
+
+fn sum_argument_type_error(
+    argument: &str,
+    position: Option<usize>,
+    expected: &str,
+    actual: &str,
+) -> PyErr {
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    PyTypeError::new_err(format!(
+        "sum(): argument '{argument}'{position} must be {expected}, not {actual}"
+    ))
 }
 
 fn top_level_sum_invalid_combination(
