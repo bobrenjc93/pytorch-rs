@@ -44,12 +44,14 @@ class CudaReducedPrecisionMathSdpTests(unittest.TestCase):
         self.original = torch._C._get_math_sdp_allow_fp16_bf16_reduction()
         self.original_math = torch._C._get_math_sdp_enabled()
         self.original_mem_efficient = torch._C._get_mem_efficient_sdp_enabled()
+        self.original_flash = torch._C._get_flash_sdp_enabled()
         self.cuda.allow_fp16_bf16_reduction_math_sdp(False)
 
     def tearDown(self):
         self.cuda.allow_fp16_bf16_reduction_math_sdp(self.original)
         self.cuda.enable_math_sdp(self.original_math)
         self.cuda.enable_mem_efficient_sdp(self.original_mem_efficient)
+        self.cuda.enable_flash_sdp(self.original_flash)
 
     def test_fresh_process_defaults_to_exact_false_without_execution_support(self):
         script = r'''
@@ -58,6 +60,7 @@ import json
 import torch_rs as torch
 
 cuda = torch.backends.cuda
+flash_before = cuda.flash_sdp_enabled()
 math_before = cuda.math_sdp_enabled()
 mem_efficient_before = cuda.mem_efficient_sdp_enabled()
 initial = cuda.fp16_bf16_reduction_math_sdp_allowed()
@@ -71,6 +74,7 @@ print(json.dumps({
     "enabled": enabled,
     "second": second,
     "restored": cuda.fp16_bf16_reduction_math_sdp_allowed(),
+    "flash_unchanged": cuda.flash_sdp_enabled() is flash_before,
     "math_unchanged": cuda.math_sdp_enabled() is math_before,
     "mem_efficient_unchanged": (
         cuda.mem_efficient_sdp_enabled() is mem_efficient_before
@@ -104,6 +108,7 @@ print(json.dumps({
                 "enabled": True,
                 "second": None,
                 "restored": False,
+                "flash_unchanged": True,
                 "math_unchanged": True,
                 "mem_efficient_unchanged": True,
                 "built": False,
@@ -118,6 +123,7 @@ print(json.dumps({
 
     def test_exact_bool_updates_are_independent_preferences(self):
         cuda = self.cuda
+        flash_state = cuda.flash_sdp_enabled()
         math_state = cuda.math_sdp_enabled()
         mem_efficient_state = cuda.mem_efficient_sdp_enabled()
 
@@ -137,6 +143,7 @@ print(json.dumps({
                     torch._C._get_math_sdp_allow_fp16_bf16_reduction(),
                     enabled,
                 )
+                self.assertIs(cuda.flash_sdp_enabled(), flash_state)
                 self.assertIs(cuda.math_sdp_enabled(), math_state)
                 self.assertIs(
                     cuda.mem_efficient_sdp_enabled(),
@@ -282,6 +289,8 @@ print(json.dumps({
             [
                 "is_built",
                 "is_ck_sdpa_available",
+                "enable_flash_sdp",
+                "flash_sdp_enabled",
                 "enable_mem_efficient_sdp",
                 "mem_efficient_sdp_enabled",
                 "math_sdp_enabled",
@@ -295,8 +304,10 @@ print(json.dumps({
             {name for name in vars(cuda) if not name.startswith("_")},
             {
                 "allow_fp16_bf16_reduction_math_sdp",
+                "enable_flash_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
+                "flash_sdp_enabled",
                 "fp16_bf16_reduction_math_sdp_allowed",
                 "is_built",
                 "is_ck_sdpa_available",
@@ -446,6 +457,7 @@ print(json.dumps({
 
         math_state = cuda.math_sdp_enabled()
         mem_efficient_state = cuda.mem_efficient_sdp_enabled()
+        flash_state = cuda.flash_sdp_enabled()
         self.assertIs(getattr(torch._C, setter_name)(False), None)
         self.assertIs(getattr(torch._C, getter_name)(), False)
         self.assertIs(cuda.fp16_bf16_reduction_math_sdp_allowed(), False)
@@ -455,6 +467,8 @@ print(json.dumps({
             cuda.enable_mem_efficient_sdp(not mem_efficient_state),
             None,
         )
+        self.assertIs(cuda.fp16_bf16_reduction_math_sdp_allowed(), False)
+        self.assertIs(cuda.enable_flash_sdp(not flash_state), None)
         self.assertIs(cuda.fp16_bf16_reduction_math_sdp_allowed(), False)
         self.assertFalse(hasattr(torch, "float16"))
         self.assertFalse(hasattr(torch, "bfloat16"))
