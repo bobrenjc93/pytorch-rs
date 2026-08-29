@@ -2212,7 +2212,7 @@ enum BoundTensorOrTorchFunction<'py> {
 }
 
 enum BoundReshapeShape<'py> {
-    Shape(Vec<i64>),
+    Shape(ReshapeShapeArguments<'py>),
     Override(ProbedTorchFunctionOverride<'py>),
 }
 
@@ -3214,6 +3214,7 @@ fn apply_top_level_reshape(py: Python<'_>, call: &BoundReshapeCall<'_>) -> PyRes
     let BoundReshapeShape::Shape(shape) = &call.shape else {
         unreachable!("reshape shape overrides were dispatched before the native path")
     };
+    let shape = parse_top_level_reshape_shape_dimensions(shape)?;
     let inner = input
         .try_borrow()?
         .inner
@@ -9673,7 +9674,7 @@ fn parse_top_level_reshape_shape_argument<'py>(
             }
             return Err(error);
         }
-        return parse_top_level_reshape_shape_dimensions(arguments).map(BoundReshapeShape::Shape);
+        return Ok(BoundReshapeShape::Shape(arguments));
     }
 
     if let Some(probed) = probe_torch_function_override(&argument.value) {
@@ -9728,7 +9729,7 @@ fn validate_reshape_sequence_first(
 }
 
 fn parse_top_level_reshape_shape_dimensions(
-    arguments: ReshapeShapeArguments<'_>,
+    arguments: &ReshapeShapeArguments<'_>,
 ) -> PyResult<Vec<i64>> {
     match arguments {
         ReshapeShapeArguments::Tuple(dimensions) => {

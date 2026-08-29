@@ -271,6 +271,34 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
         shape_result = module.reshape(tensor, shape_value)
         shape_function, shape_types, shape_args, shape_kwargs = override_calls[0]
 
+        class CountingIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return 1
+
+        class BadIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                raise RuntimeError("shape element should be deferred")
+
+        deferred_input_valid = CountingIndex()
+        deferred_input_invalid = BadIndex()
+        deferred_input_shape = (deferred_input_valid, deferred_input_invalid)
+        override_calls.clear()
+        deferred_input_result = module.reshape(input_value, deferred_input_shape)
+        (
+            deferred_input_function,
+            deferred_input_types,
+            deferred_input_args,
+            deferred_input_kwargs,
+        ) = override_calls[0]
+
         mode_calls = []
 
         class Mode(module.overrides.TorchFunctionMode):
@@ -281,6 +309,19 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
         with Mode():
             mode_result = module.reshape(input=tensor, shape=(2, 1))
         mode_function, mode_types, mode_args, mode_kwargs = mode_calls[0]
+
+        deferred_mode_valid = CountingIndex()
+        deferred_mode_invalid = BadIndex()
+        deferred_mode_shape = (deferred_mode_valid, deferred_mode_invalid)
+        mode_calls.clear()
+        with Mode():
+            deferred_mode_result = module.reshape(tensor, deferred_mode_shape)
+        (
+            deferred_mode_function,
+            deferred_mode_types,
+            deferred_mode_args,
+            deferred_mode_kwargs,
+        ) = mode_calls[0]
 
         class ForwardingMode(module.overrides.TorchFunctionMode):
             def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
@@ -314,11 +355,27 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
             "shape_args": len(shape_args),
             "shape_kwargs": shape_kwargs,
             "shape_identity": shape_args[1] is shape_value,
+            "deferred_input_result": deferred_input_result,
+            "deferred_input_function": deferred_input_function is module.reshape,
+            "deferred_input_types": tuple(value.__name__ for value in deferred_input_types),
+            "deferred_input_args": len(deferred_input_args),
+            "deferred_input_shape_identity": deferred_input_args[1] is deferred_input_shape,
+            "deferred_input_kwargs": deferred_input_kwargs,
+            "deferred_input_good_calls": deferred_input_valid.calls,
+            "deferred_input_bad_calls": deferred_input_invalid.calls,
             "mode_result": mode_result,
             "mode_function": mode_function is module.reshape,
             "mode_types": tuple(mode_types),
             "mode_args": len(mode_args),
             "mode_kwargs": tuple(mode_kwargs),
+            "deferred_mode_result": deferred_mode_result,
+            "deferred_mode_function": deferred_mode_function is module.reshape,
+            "deferred_mode_types": tuple(deferred_mode_types),
+            "deferred_mode_args": len(deferred_mode_args),
+            "deferred_mode_shape_identity": deferred_mode_args[1] is deferred_mode_shape,
+            "deferred_mode_kwargs": deferred_mode_kwargs,
+            "deferred_mode_good_calls": deferred_mode_valid.calls,
+            "deferred_mode_bad_calls": deferred_mode_invalid.calls,
             "forwarded_shape": tuple(forwarded.shape),
             "forwarded_values": tuple(np.asarray(forwarded).reshape(-1)),
             "decline_error": decline_error,

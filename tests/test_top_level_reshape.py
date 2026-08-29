@@ -253,6 +253,35 @@ class TopLevelReshapeTests(unittest.TestCase):
         self.assertEqual(args, (tensor, shape))
         self.assertIsNone(kwargs)
 
+        class CountingIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return 1
+
+        class BadIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                raise RuntimeError("shape element should be deferred")
+
+        valid = CountingIndex()
+        invalid = BadIndex()
+        deferred_shape = (valid, invalid)
+        Override.calls.clear()
+        self.assertIs(torch.reshape(value, deferred_shape), marker)
+        self.assertEqual(valid.calls, 1)
+        self.assertEqual(invalid.calls, 0)
+        function, dispatch_types, args, kwargs = Override.calls[0]
+        self.assertIs(function, torch.reshape)
+        self.assertEqual(dispatch_types, (Override,))
+        self.assertEqual(args, (value, deferred_shape))
+        self.assertIsNone(kwargs)
+
         events = []
 
         class LeftOverride:
@@ -293,6 +322,20 @@ class TopLevelReshapeTests(unittest.TestCase):
         self.assertEqual(dispatch_types, ())
         self.assertEqual(args, ())
         self.assertEqual(kwargs, {"input": tensor, "shape": (2, 1)})
+
+        valid = CountingIndex()
+        invalid = BadIndex()
+        deferred_shape = (valid, invalid)
+        mode = RecordingMode(marker)
+        with mode:
+            self.assertIs(torch.reshape(tensor, deferred_shape), marker)
+        self.assertEqual(valid.calls, 1)
+        self.assertEqual(invalid.calls, 0)
+        function, dispatch_types, args, kwargs = mode.calls[0]
+        self.assertIs(function, torch.reshape)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(args, (tensor, deferred_shape))
+        self.assertIsNone(kwargs)
 
         class ForwardingMode(torch.overrides.TorchFunctionMode):
             def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
