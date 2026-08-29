@@ -1774,7 +1774,7 @@ pub(crate) fn reshape_variable_function(
 ) -> PyResult<Py<PyAny>> {
     let ([input, shape], keyword_error) = bind_top_level_reshape_arguments(args, kwargs)?;
     let input = parse_tensor_or_torch_function_argument("reshape", "input", &input)?;
-    let shape = parse_top_level_reshape_shape(&shape)?;
+    let shape = bind_top_level_reshape_shape(&shape)?;
     if let Some(keyword_error) = keyword_error {
         return Err(keyword_error);
     }
@@ -2209,6 +2209,11 @@ struct ProbedTorchFunctionOverride<'py> {
 enum BoundTensorOrTorchFunction<'py> {
     Tensor(Bound<'py, PyTensor>),
     Override(ProbedTorchFunctionOverride<'py>),
+}
+
+enum BoundTopLevelReshapeShape<'py> {
+    Native(Vec<i64>),
+    Override(Vec<ProbedTorchFunctionOverride<'py>>),
 }
 
 type SingleTensorNativeCallback = fn(Python<'_>, &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>>;
@@ -3151,23 +3156,23 @@ fn apply_top_level_ravel(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResu
 fn dispatch_top_level_reshape(
     py: Python<'_>,
     input: &BoundTensorOrTorchFunction<'_>,
-    shape: &[i64],
+    shape: &BoundTopLevelReshapeShape<'_>,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_top_level_reshape_overrides(input, shape)?;
     if torch_function_mode_stack::is_empty()
         && let BoundTensorOrTorchFunction::Tensor(tensor) = input
+        && let BoundTopLevelReshapeShape::Native(shape) = shape
     {
         return apply_top_level_reshape(py, tensor, shape);
     }
 
     let function = variable_function(py, "reshape")?;
-    let types = match input {
-        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
-        BoundTensorOrTorchFunction::Override(probed) => {
-            PyTuple::new(py, [probed.dispatch_type.clone()])?
-        }
-    };
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
 
     // Generated variable functions validate their schema before dispatch and
     // disable the top mode for the full dispatch attempt. Forwarding from a
@@ -3182,33 +3187,20 @@ fn dispatch_top_level_reshape(
         }
     }
 
-    match input {
-        BoundTensorOrTorchFunction::Override(probed) => {
-            let handler = resolve_torch_function_override(py, probed)?;
-            let result =
-                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
-            if !is_not_implemented(py, &result) {
-                return Ok(result);
-            }
-            Err(torch_function_dispatch_error(
-                py,
-                "torch.reshape",
-                active_mode.get(),
-                Some(probed.dispatch_type.as_unbound()),
-            )?)
-        }
-        BoundTensorOrTorchFunction::Tensor(tensor) => {
-            if active_mode.get().is_some() {
-                return Err(torch_function_dispatch_error(
-                    py,
-                    "torch.reshape",
-                    active_mode.get(),
-                    None,
-                )?);
-            }
-            apply_top_level_reshape(py, tensor, shape)
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
         }
     }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.reshape",
+        active_mode.get(),
+        &overrides,
+    )?)
 }
 
 fn apply_top_level_reshape(
@@ -3765,31 +3757,63 @@ fn ordered_binary_overrides<'py>(
         .map_err(|_| PyMemoryError::new_err(allocation_error))?;
 
     if let Some(probed) = first {
-        overrides.push(probed.clone());
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
     }
     if let Some(probed) = second {
-        let Some(first) = overrides.first() else {
-            overrides.push(probed.clone());
-            return Ok(overrides);
-        };
-        // PyTorch reports a class-valued operand itself in the dispatch types,
-        // but orders an incoming operand by its runtime type. Its metaclass is
-        // therefore compared with the first reported class, preserving class
-        // argument order and repeated class identities without changing
-        // ordinary instance subclass precedence.
-        if first.dispatch_type.is(probed.precedence_type.as_any()) {
-            return Ok(overrides);
-        }
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
 
-        let first_type = first
+fn insert_ordered_torch_function_override<'py>(
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+    probed: &ProbedTorchFunctionOverride<'py>,
+) -> PyResult<()> {
+    // PyTorch reports a class-valued operand itself in the dispatch types, but
+    // orders an incoming operand by its runtime type. Its metaclass is
+    // therefore compared with reported classes, preserving class argument
+    // order and repeated class identities without changing ordinary instance
+    // subclass precedence.
+    if overrides
+        .iter()
+        .any(|existing| existing.dispatch_type.is(probed.precedence_type.as_any()))
+    {
+        return Ok(());
+    }
+
+    let mut position = overrides.len();
+    for (index, existing) in overrides.iter().enumerate() {
+        let existing_type = existing
             .dispatch_type
             .cast::<PyType>()
             .expect("a torch-function dispatch type is a Python type");
-        if probed.precedence_type.is_subclass(first_type.as_any())? {
-            overrides.insert(0, probed.clone());
-        } else {
-            overrides.push(probed.clone());
+        if probed.precedence_type.is_subclass(existing_type.as_any())? {
+            position = index;
+            break;
         }
+    }
+    overrides.insert(position, probed.clone());
+    Ok(())
+}
+
+fn ordered_top_level_reshape_overrides<'py>(
+    input: &BoundTensorOrTorchFunction<'py>,
+    shape: &BoundTopLevelReshapeShape<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let shape_overrides = match shape {
+        BoundTopLevelReshapeShape::Native(_) => &[][..],
+        BoundTopLevelReshapeShape::Override(overrides) => overrides,
+    };
+    let input_count = usize::from(matches!(input, BoundTensorOrTorchFunction::Override(_)));
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(input_count + shape_overrides.len())
+        .map_err(|_| PyMemoryError::new_err("unable to allocate reshape dispatch operands"))?;
+    if let BoundTensorOrTorchFunction::Override(probed) = input {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    for probed in shape_overrides {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
     }
     Ok(overrides)
 }
@@ -11654,22 +11678,22 @@ fn parse_reshape_shape(
     parse_reshape_dimensions(shape_dimensions.len(), shape_dimensions.iter())
 }
 
-fn parse_top_level_reshape_shape(argument: &ParsedCallArgument<'_>) -> PyResult<Vec<i64>> {
-    let parsed = if let Ok(dimensions) = argument.value.cast::<PyList>() {
-        parse_top_level_reshape_dimensions(argument, dimensions.len(), dimensions.iter())
+fn bind_top_level_reshape_shape<'py>(
+    argument: &ParsedCallArgument<'py>,
+) -> PyResult<BoundTopLevelReshapeShape<'py>> {
+    if let Ok(dimensions) = argument.value.cast::<PyList>() {
+        bind_top_level_reshape_dimensions(argument, dimensions.len(), dimensions.iter())
     } else if let Ok(dimensions) = argument.value.cast::<PyTuple>() {
-        parse_top_level_reshape_dimensions(argument, dimensions.len(), dimensions.iter())
+        bind_top_level_reshape_dimensions(argument, dimensions.len(), dimensions.iter())
+    } else if let Some(probed) = probe_torch_function_override(&argument.value) {
+        let mut overrides = Vec::new();
+        overrides
+            .try_reserve_exact(1)
+            .map_err(|_| PyMemoryError::new_err("unable to allocate reshape dispatch operands"))?;
+        overrides.push(probed);
+        Ok(BoundTopLevelReshapeShape::Override(overrides))
     } else {
-        return Err(top_level_reshape_shape_type_error(argument)?);
-    };
-
-    match parsed {
-        Ok(shape) => Ok(shape),
-        Err(error) if argument.position.is_none() => {
-            drop(error);
-            Err(top_level_reshape_shape_type_error(argument)?)
-        }
-        Err(error) => Err(error),
+        Err(top_level_reshape_shape_type_error(argument)?)
     }
 }
 
@@ -11695,26 +11719,69 @@ fn parse_reshape_dimensions<'py>(
     Ok(parsed)
 }
 
-fn parse_top_level_reshape_dimensions<'py>(
+fn bind_top_level_reshape_dimensions<'py>(
     argument: &ParsedCallArgument<'_>,
     length: usize,
     dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
-) -> PyResult<Vec<i64>> {
+) -> PyResult<BoundTopLevelReshapeShape<'py>> {
     let mut parsed = try_size_vector(length)?;
-    for (index, dimension) in dimensions.enumerate() {
-        if dimension.is_instance_of::<PyBool>() {
-            return Err(top_level_reshape_shape_element_type_error(
-                argument, index, &dimension,
-            )?);
+    let mut dimensions = dimensions.enumerate();
+    while let Some((index, dimension)) = dimensions.next() {
+        if let Some(probed) = probe_torch_function_override(&dimension) {
+            let overrides =
+                collect_top_level_reshape_shape_overrides(length, index, probed, dimensions)?;
+            return Ok(BoundTopLevelReshapeShape::Override(overrides));
         }
-        let Ok(dimension_value) = dimension.extract::<i64>() else {
-            return Err(top_level_reshape_shape_element_type_error(
-                argument, index, &dimension,
-            )?);
-        };
+        let dimension_value = parse_top_level_reshape_dimension(argument, index, &dimension)?;
         try_push_size(&mut parsed, dimension_value)?;
     }
-    Ok(parsed)
+    Ok(BoundTopLevelReshapeShape::Native(parsed))
+}
+
+fn collect_top_level_reshape_shape_overrides<'py>(
+    length: usize,
+    index: usize,
+    probed: ProbedTorchFunctionOverride<'py>,
+    dimensions: impl Iterator<Item = (usize, Bound<'py, PyAny>)>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(length.saturating_sub(index))
+        .map_err(|_| PyMemoryError::new_err("unable to allocate reshape dispatch operands"))?;
+    overrides.push(probed);
+    for (_, dimension) in dimensions {
+        if let Some(probed) = probe_torch_function_override(&dimension) {
+            overrides.push(probed);
+        }
+    }
+    Ok(overrides)
+}
+
+fn parse_top_level_reshape_dimension(
+    argument: &ParsedCallArgument<'_>,
+    index: usize,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<i64> {
+    let parsed = if dimension.is_instance_of::<PyBool>() {
+        Err(top_level_reshape_shape_element_type_error(
+            argument, index, dimension,
+        )?)
+    } else if let Ok(dimension) = dimension.extract::<i64>() {
+        Ok(dimension)
+    } else {
+        Err(top_level_reshape_shape_element_type_error(
+            argument, index, dimension,
+        )?)
+    };
+
+    match parsed {
+        Ok(dimension) => Ok(dimension),
+        Err(error) if argument.position.is_none() => {
+            drop(error);
+            Err(top_level_reshape_shape_type_error(argument)?)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn top_level_reshape_shape_type_error(argument: &ParsedCallArgument<'_>) -> PyResult<PyErr> {

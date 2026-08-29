@@ -229,6 +229,90 @@ class TopLevelReshapeTests(unittest.TestCase):
 
         tensor = torch.tensor([1.0, 2.0, 3.0, 4.0])
 
+        for form, shape, call in (
+            (
+                "shape object",
+                Override(),
+                lambda shape: torch.reshape(tensor, shape),
+            ),
+            (
+                "shape tuple element",
+                (Override(), 2),
+                lambda shape: torch.reshape(tensor, shape),
+            ),
+            (
+                "shape list element",
+                [Override(), 2],
+                lambda shape: torch.reshape(input=tensor, shape=shape),
+            ),
+        ):
+            with self.subTest(form=form):
+                Override.calls.clear()
+                self.assertIs(call(shape), marker)
+                self.assertEqual(len(Override.calls), 1)
+                function, dispatch_types, args, kwargs = Override.calls[0]
+                self.assertIs(function, torch.reshape)
+                self.assertEqual(dispatch_types, (Override,))
+                if form == "shape list element":
+                    self.assertEqual(args, ())
+                    self.assertEqual(kwargs, {"input": tensor, "shape": shape})
+                else:
+                    self.assertEqual(args, (tensor, shape))
+                    self.assertIsNone(kwargs)
+
+        class InputOverride:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                cls.calls.append((func, dispatch_types, args, kwargs))
+                return marker
+
+        class ShapeOverride:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                cls.calls.append((func, dispatch_types, args, kwargs))
+                return marker
+
+        self.assertIs(torch.reshape(InputOverride(), ShapeOverride()), marker)
+        self.assertEqual(len(InputOverride.calls), 1)
+        self.assertEqual(ShapeOverride.calls, [])
+        function, dispatch_types, args, kwargs = InputOverride.calls[0]
+        self.assertIs(function, torch.reshape)
+        self.assertEqual(dispatch_types, (InputOverride, ShapeOverride))
+        self.assertEqual(len(args), 2)
+        self.assertIsNone(kwargs)
+
+        class BaseShape:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                cls.calls.append(("base", dispatch_types))
+                return marker
+
+        class DerivedShape(BaseShape):
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                cls.calls.append(("derived", dispatch_types))
+                return marker
+
+        self.assertIs(torch.reshape(tensor, (BaseShape(), DerivedShape())), marker)
+        self.assertEqual(
+            BaseShape.calls, [("derived", (DerivedShape, BaseShape))]
+        )
+
+        Override.calls.clear()
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^reshape\(\): argument 'shape' \(position 2\) must be tuple of ints, "
+            r"but found element of type float at pos 0$",
+        ):
+            torch.reshape(tensor, (2.0, Override()))
+        self.assertEqual(Override.calls, [])
+
         class RecordingMode(torch.overrides.TorchFunctionMode):
             def __init__(self, result):
                 self.result = result
@@ -245,6 +329,17 @@ class TopLevelReshapeTests(unittest.TestCase):
             mode.calls,
             [(torch.reshape, (), (), {"input": tensor, "shape": (2, 2)})],
         )
+
+        mode = RecordingMode(marker)
+        shape = Override()
+        Override.calls.clear()
+        with mode:
+            self.assertIs(torch.reshape(tensor, shape), marker)
+        self.assertEqual(
+            mode.calls,
+            [(torch.reshape, (Override,), (tensor, shape), None)],
+        )
+        self.assertEqual(Override.calls, [])
 
         order = []
 
@@ -289,6 +384,11 @@ class TopLevelReshapeTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
             torch.reshape(DecliningOverride(), (2, 2))
+
+        for shape in (DecliningOverride(), (DecliningOverride(), 2)):
+            with self.subTest(declining_shape=type(shape).__name__):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    torch.reshape(tensor, shape)
 
     def test_binding_and_type_error_precedence_matches_pytorch_schema(self):
         tensor = torch.tensor([1.0, 2.0, 3.0, 4.0])

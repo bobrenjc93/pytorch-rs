@@ -297,6 +297,58 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
             with ForwardingMode("upper"):
                 forwarded = module.reshape(tensor, (2, 2))
 
+        shape_calls = []
+
+        class ShapeOverride:
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                shape_calls.append((func, dispatch_types, args, kwargs))
+                return "shape"
+
+        shape_object = ShapeOverride()
+        shape_object_result = module.reshape(tensor, shape_object)
+        shape_object_call = shape_calls[-1]
+        shape_tuple = (ShapeOverride(), 2)
+        shape_tuple_result = module.reshape(tensor, shape_tuple)
+        shape_tuple_call = shape_calls[-1]
+        shape_list = [ShapeOverride(), 2]
+        shape_list_result = module.reshape(input=tensor, shape=shape_list)
+        shape_list_call = shape_calls[-1]
+
+        input_shape_calls = []
+
+        class InputOverride:
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                input_shape_calls.append((func, dispatch_types, args, kwargs))
+                return "input"
+
+        input_shape_result = module.reshape(InputOverride(), ShapeOverride())
+        input_shape_call = input_shape_calls[-1]
+
+        subclass_calls = []
+
+        class BaseShape:
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                subclass_calls.append(("base", dispatch_types))
+                return "base"
+
+        class DerivedShape(BaseShape):
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                subclass_calls.append(("derived", dispatch_types))
+                return "derived"
+
+        subclass_result = module.reshape(tensor, (BaseShape(), DerivedShape()))
+
+        try:
+            module.reshape(tensor, (2.0, ShapeOverride()))
+        except Exception as error:
+            invalid_before_shape_override = (type(error).__name__, str(error))
+        else:
+            invalid_before_shape_override = None
+
         class DecliningOverride:
             @classmethod
             def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
@@ -308,6 +360,13 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
             decline_error = (type(error).__name__, str(error))
         else:
             decline_error = None
+
+        try:
+            module.reshape(tensor, (DecliningOverride(), 2))
+        except Exception as error:
+            decline_shape_error = (type(error).__name__, str(error))
+        else:
+            decline_shape_error = None
 
         return {
             "override_result": override_result,
@@ -332,7 +391,42 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
             "forwarded_shape": tuple(forwarded.shape),
             "forwarded_stride": forwarded.stride(),
             "forwarded_values": np.asarray(forwarded).tolist(),
+            "shape_object_result": shape_object_result,
+            "shape_object_function": shape_object_call[0] is module.reshape,
+            "shape_object_types": tuple(value.__name__ for value in shape_object_call[1]),
+            "shape_object_args": (
+                shape_object_call[2][0] is tensor,
+                shape_object_call[2][1] is shape_object,
+            ),
+            "shape_object_kwargs": shape_object_call[3],
+            "shape_tuple_result": shape_tuple_result,
+            "shape_tuple_function": shape_tuple_call[0] is module.reshape,
+            "shape_tuple_types": tuple(value.__name__ for value in shape_tuple_call[1]),
+            "shape_tuple_args": (
+                shape_tuple_call[2][0] is tensor,
+                shape_tuple_call[2][1] is shape_tuple,
+            ),
+            "shape_tuple_kwargs": shape_tuple_call[3],
+            "shape_list_result": shape_list_result,
+            "shape_list_function": shape_list_call[0] is module.reshape,
+            "shape_list_types": tuple(value.__name__ for value in shape_list_call[1]),
+            "shape_list_args": len(shape_list_call[2]),
+            "shape_list_kwargs": tuple(shape_list_call[3]),
+            "shape_list_input_identity": shape_list_call[3]["input"] is tensor,
+            "shape_list_shape_identity": shape_list_call[3]["shape"] is shape_list,
+            "input_shape_result": input_shape_result,
+            "input_shape_function": input_shape_call[0] is module.reshape,
+            "input_shape_types": tuple(value.__name__ for value in input_shape_call[1]),
+            "input_shape_arg_length": len(input_shape_call[2]),
+            "input_shape_kwargs": input_shape_call[3],
+            "subclass_result": subclass_result,
+            "subclass_calls": tuple(
+                (label, tuple(value.__name__ for value in dispatch_types))
+                for label, dispatch_types in subclass_calls
+            ),
+            "invalid_before_shape_override": invalid_before_shape_override,
             "decline_error": decline_error,
+            "decline_shape_error": decline_shape_error,
         }
 
     def test_overrides_and_modes_match_pytorch_2_13(self):
