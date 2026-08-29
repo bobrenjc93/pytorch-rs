@@ -69,9 +69,17 @@ class ReadmeQuickstartTests(unittest.TestCase):
             supported.index("## Category index"),
             supported.index("## Current baseline"),
         )
+
+        category_index = supported[
+            supported.index("## Category index") : supported.index(
+                "## Current baseline"
+            )
+        ]
+        self.assertIn("| Surface area | Contract section |", category_index)
+        self.assertIn("| --- | --- |", category_index)
         for title, anchor in SUPPORTED_SURFACE_ANCHORS:
             with self.subTest(anchor=anchor):
-                self.assertIn(f"- [{title}](#{anchor})", supported)
+                self.assertIn(f"[{title}](#{anchor})", category_index)
                 self.assertRegex(
                     supported,
                     rf"(?m)^### {re.escape(title)}$",
