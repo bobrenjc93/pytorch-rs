@@ -47,7 +47,7 @@ impl PyDevice {
         self.inner
     }
 
-    const fn has_index(&self) -> bool {
+    pub(crate) const fn has_index(&self) -> bool {
         self.index != UNINDEXED_DEVICE
     }
 }
@@ -66,7 +66,10 @@ pub(crate) fn parse_device_value(function: &str, device: &Bound<'_, PyAny>) -> P
     parse_device_descriptor(function, device).map(|descriptor| descriptor.inner())
 }
 
-fn parse_device_descriptor(function: &str, device: &Bound<'_, PyAny>) -> PyResult<PyDevice> {
+pub(crate) fn parse_device_descriptor(
+    function: &str,
+    device: &Bound<'_, PyAny>,
+) -> PyResult<PyDevice> {
     if let Ok(device) = device.cast::<PyDevice>() {
         return Ok(device.try_borrow()?.clone());
     }
