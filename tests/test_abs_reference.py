@@ -4,6 +4,7 @@ import ctypes
 import inspect
 import json
 import pickle
+import re
 import subprocess
 import sys
 import types
@@ -135,6 +136,17 @@ class TensorAbsReferenceTests(unittest.TestCase):
             ("operator", lambda: builtins.abs(tensor)),
         )
 
+    @staticmethod
+    def call_top_level(module, name, tensor, form):
+        function = getattr(module, name)
+        if form == "positional":
+            return function(tensor)
+        if form == "out none":
+            return function(tensor, out=None)
+        if form == "alias and out none":
+            return function(x=tensor, out=None)
+        return function(**{form: tensor})
+
     def test_values_layouts_and_fresh_storage_match_pytorch_2_13(self):
         actual_cases = self.make_cases(torch)
         expected_cases = self.make_cases(reference_torch)
@@ -163,6 +175,46 @@ class TensorAbsReferenceTests(unittest.TestCase):
                     self.assertNotEqual(
                         expected_output.data_ptr(), expected.data_ptr()
                     )
+
+    def test_top_level_values_layouts_and_fresh_storage_match_pytorch_2_13(self):
+        actual_cases = self.make_cases(torch)
+        expected_cases = self.make_cases(reference_torch)
+        forms = (
+            "positional",
+            "input",
+            "x",
+            "a",
+            "x1",
+            "out none",
+            "alias and out none",
+        )
+        for name in ("abs", "absolute"):
+            for (case, actual), (expected_case, expected) in zip(
+                actual_cases, expected_cases, strict=True
+            ):
+                self.assertEqual(case, expected_case)
+                for form in forms:
+                    actual_output = self.call_top_level(
+                        torch, name, actual, form
+                    )
+                    expected_output = self.call_top_level(
+                        reference_torch, name, expected, form
+                    )
+                    self.assert_tensor_matches(
+                        actual_output,
+                        expected_output,
+                        case=(case, name, form),
+                        raw_bits=case == "IEEE edges",
+                    )
+                    self.assertFalse(actual_output.is_set_to(actual))
+                    self.assertFalse(expected_output.is_set_to(expected))
+                    if actual.numel():
+                        self.assertNotEqual(
+                            actual_output.data_ptr(), actual.data_ptr()
+                        )
+                        self.assertNotEqual(
+                            expected_output.data_ptr(), expected.data_ptr()
+                        )
 
     @staticmethod
     def error(action):
@@ -415,6 +467,303 @@ print(json.dumps(observations, sort_keys=True))
             self.mode_dispatch_observation("torch"),
         )
 
+    def top_level_callable_contract(self, module, name):
+        function = getattr(module, name)
+        owner = function.__reduce__()[1][0]
+        wildcard_namespace = {}
+        exec(f"from {module.__name__} import *", wildcard_namespace)
+        try:
+            inspect.signature(function)
+        except Exception as error:
+            signature_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+            )
+        else:
+            signature_error = None
+        return {
+            "type": type(function).__name__,
+            "is_builtin": type(function) is types.BuiltinFunctionType,
+            "name": function.__name__,
+            "qualname": function.__qualname__,
+            "module": function.__module__,
+            "doc": function.__doc__,
+            "text_signature": function.__text_signature__,
+            "repr": re.sub(r"0x[0-9a-f]+", "0x...", repr(function)),
+            "signature_error": signature_error,
+            "owner_name": owner.__name__,
+            "owner_qualname": owner.__qualname__,
+            "owner_module": owner.__module__.replace("torch_rs._C", "torch._C"),
+            "owner_path_identity": owner is module._C._VariableFunctionsClass,
+            "owner_callable_identity": getattr(owner, name) is function,
+            "all_count": module.__all__.count(name),
+            "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
+            "owner_not_top_level": not hasattr(module, "_VariableFunctionsClass"),
+            "wildcard_identity": wildcard_namespace[name] is function,
+            "distinct_from_other": (
+                module.abs is not module.absolute,
+                owner.abs is not owner.absolute,
+            ),
+            "pickle_identities": tuple(
+                pickle.loads(pickle.dumps(function, protocol=protocol)) is function
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+            ),
+        }
+
+    def test_top_level_callable_contract_matches_pytorch_2_13(self):
+        for name in ("abs", "absolute"):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    self.top_level_callable_contract(torch, name),
+                    self.top_level_callable_contract(reference_torch, name),
+                )
+
+    @staticmethod
+    def top_level_dispatch_observation(module, name):
+        tensor = module.tensor([-4.0], dtype=module.float32)
+        destination = module.tensor([0.0], dtype=module.float32)
+        function = getattr(module, name)
+        marker = object()
+        mode_observations = []
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, result=marker):
+                self.calls = []
+                self.result = result
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        mode_calls = (
+            (lambda: function(tensor), None),
+            (lambda: function(input=tensor), ("input",)),
+            (lambda: function(x=tensor), ("x",)),
+            (lambda: function(tensor, out=None), ("out",)),
+            (lambda: function(input=tensor, out=None), ("input", "out")),
+            (lambda: function(tensor, out=destination), ("out",)),
+        )
+        for call, keyword_names in mode_calls:
+            mode = RecordingMode()
+            with mode:
+                result = call()
+            func, dispatch_types, args, kwargs = mode.calls[0]
+            mode_observations.append(
+                (
+                    result is marker,
+                    func is function,
+                    dispatch_types == (),
+                    len(args),
+                    kwargs is None,
+                    None if kwargs is None else tuple(kwargs),
+                    keyword_names,
+                )
+            )
+
+        override_observations = []
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        for call, keyword in (
+            (lambda value: function(value), None),
+            (lambda value: function(input=value), "input"),
+            (lambda value: function(tensor, out=value), "out"),
+            (lambda value: function(x=value, out=None), "x"),
+        ):
+            value = Override()
+            Override.calls.clear()
+            result = call(value)
+            func, dispatch_types, args, kwargs = Override.calls[0]
+            override_observations.append(
+                (
+                    result is marker,
+                    func is function,
+                    tuple(item.__name__ for item in dispatch_types),
+                    len(args),
+                    kwargs is None,
+                    None if kwargs is None else tuple(kwargs),
+                    keyword is not None
+                    and kwargs is not None
+                    and kwargs[keyword] is value,
+                )
+            )
+
+        subclass_order = []
+
+        class BaseOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                subclass_order.append(
+                    ("base", tuple(item.__name__ for item in types))
+                )
+                return marker
+
+        class DerivedOverride(BaseOverride):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                subclass_order.append(
+                    ("derived", tuple(item.__name__ for item in types))
+                )
+                return marker
+
+        subclass_result = function(BaseOverride(), out=DerivedOverride())
+
+        forward_order = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                forward_order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = function(input=tensor, out=None)
+
+        fallback_events = []
+
+        class FallbackOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                fallback_events.append("override")
+                return marker
+
+        declining_mode = RecordingMode(NotImplemented)
+        with declining_mode:
+            fallback_result = function(FallbackOverride())
+
+        invalid_observations = []
+        for call in (
+            lambda: function(),
+            lambda: function([], out=destination),
+            lambda: function(tensor, out=[]),
+            lambda: function(tensor, extra=True),
+            lambda: function(tensor, tensor),
+        ):
+            mode = RecordingMode()
+            try:
+                with mode:
+                    call()
+            except Exception as error:
+                invalid_observations.append(
+                    (type(error).__name__, str(error), len(mode.calls))
+                )
+
+        return (
+            mode_observations,
+            override_observations,
+            subclass_result is marker,
+            subclass_order,
+            forward_order,
+            tuple(np.asarray(forwarded).reshape(-1)),
+            fallback_result is marker,
+            len(declining_mode.calls),
+            fallback_events,
+            invalid_observations,
+        )
+
+    def test_top_level_modes_and_overrides_match_pytorch_2_13(self):
+        for name in ("abs", "absolute"):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    self.top_level_dispatch_observation(torch, name),
+                    self.top_level_dispatch_observation(reference_torch, name),
+                )
+
+    def test_top_level_declining_override_diagnostics_match_pytorch_2_13(self):
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        for name in ("abs", "absolute"):
+            function = getattr(torch, name)
+            reference_function = getattr(reference_torch, name)
+            with self.subTest(name=name, operand="input"):
+                self.assertEqual(
+                    self.error(lambda: function(Override())),
+                    self.error(lambda: reference_function(Override())),
+                )
+            with self.subTest(name=name, operand="out"):
+                self.assertEqual(
+                    self.error(
+                        lambda: function(torch.tensor([1.0]), out=Override())
+                    ),
+                    self.error(
+                        lambda: reference_function(
+                            reference_torch.tensor([1.0]), out=Override()
+                        )
+                    ),
+                )
+
+    def test_top_level_binding_errors_match_pytorch_2_13(self):
+        actual = torch.tensor([1.0])
+        expected = reference_torch.tensor([1.0])
+        for name in ("abs", "absolute"):
+            function = getattr(torch, name)
+            reference_function = getattr(reference_torch, name)
+            cases = (
+                (lambda: function(), lambda: reference_function()),
+                (
+                    lambda: function(actual, actual),
+                    lambda: reference_function(expected, expected),
+                ),
+                (
+                    lambda: function(actual, input=actual),
+                    lambda: reference_function(expected, input=expected),
+                ),
+                (
+                    lambda: function(out=actual),
+                    lambda: reference_function(out=expected),
+                ),
+                (
+                    lambda: function(1, extra=True),
+                    lambda: reference_function(1, extra=True),
+                ),
+                (lambda: function(input=[]), lambda: reference_function(input=[])),
+                (
+                    lambda: function(actual, out=[]),
+                    lambda: reference_function(expected, out=[]),
+                ),
+                (
+                    lambda: function(actual, extra=True, out=[]),
+                    lambda: reference_function(expected, extra=True, out=[]),
+                ),
+                (
+                    lambda: function(actual, extra=True),
+                    lambda: reference_function(expected, extra=True),
+                ),
+                (
+                    lambda: function(input=actual, a=actual),
+                    lambda: reference_function(input=expected, a=expected),
+                ),
+                (
+                    lambda: function(a=actual, x=actual, out=None),
+                    lambda: reference_function(a=expected, x=expected, out=None),
+                ),
+                (
+                    lambda: function(x=actual, a=actual, out=None),
+                    lambda: reference_function(x=expected, a=expected, out=None),
+                ),
+                (
+                    lambda: function(np.zeros((2, 3), dtype=np.float32)),
+                    lambda: reference_function(
+                        np.zeros((2, 3), dtype=np.float32)
+                    ),
+                ),
+            )
+            for case, (actual_call, expected_call) in enumerate(cases):
+                with self.subTest(name=name, case=case):
+                    self.assertEqual(self.error(actual_call), self.error(expected_call))
+
     def test_inference_boundary_and_unsupported_surface_are_explicit(self):
         actual = torch.tensor([-2.0, -0.0, 3.0], requires_grad=True)
         expected = reference_torch.tensor(
@@ -454,8 +803,76 @@ print(json.dumps(observations, sort_keys=True))
                 actual_call(), expected_call(), case=(form, "detached")
             )
 
+        forms = (
+            "positional",
+            "input",
+            "x",
+            "a",
+            "x1",
+            "out none",
+            "alias and out none",
+        )
         for name in ("abs", "absolute"):
-            self.assertFalse(hasattr(torch, name))
+            for form in forms:
+                actual = torch.tensor(
+                    [-2.0, -0.0, 3.0], requires_grad=True
+                )
+                expected = reference_torch.tensor(
+                    [-2.0, -0.0, 3.0],
+                    dtype=reference_torch.float32,
+                    requires_grad=True,
+                )
+                with self.subTest(name=name, form=form, mode="recording"):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        r"^abs\(\): autograd recording is not supported$",
+                    ):
+                        self.call_top_level(torch, name, actual, form)
+                    self.assertTrue(
+                        self.call_top_level(
+                            reference_torch, name, expected, form
+                        ).requires_grad
+                    )
+
+                with torch.no_grad():
+                    actual_no_grad = self.call_top_level(
+                        torch, name, actual, form
+                    )
+                with reference_torch.no_grad():
+                    expected_no_grad = self.call_top_level(
+                        reference_torch, name, expected, form
+                    )
+                self.assert_tensor_matches(
+                    actual_no_grad,
+                    expected_no_grad,
+                    case=(name, form, "no_grad"),
+                )
+
+                self.assert_tensor_matches(
+                    self.call_top_level(torch, name, actual.detach(), form),
+                    self.call_top_level(
+                        reference_torch, name, expected.detach(), form
+                    ),
+                    case=(name, form, "detached"),
+                )
+
+            destination = torch.tensor([17.0, 19.0, 23.0])
+            function = getattr(torch, name)
+            for form, call in (
+                ("positional", lambda: function(actual, out=destination)),
+                ("keyword", lambda: function(input=actual, out=destination)),
+                ("alias", lambda: function(x=actual, out=destination)),
+            ):
+                with self.subTest(name=name, form=form, mode="concrete out"):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        rf"^{name}\(\): the 'out' argument is not supported$",
+                    ):
+                        call()
+                    self.assertEqual(destination.tolist(), [17.0, 19.0, 23.0])
+
+        for name in ("abs", "absolute"):
+            self.assertTrue(hasattr(torch, name))
             self.assertTrue(hasattr(reference_torch, name))
         self.assertTrue(hasattr(torch.Tensor, "absolute"))
         self.assertTrue(hasattr(torch.Tensor, "__abs__"))

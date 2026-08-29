@@ -15,10 +15,10 @@ use pyo3::types::{PyDict, PyModule, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
-    adjoint_variable_function, arange_variable_function, atleast_1d_variable_function,
-    atleast_2d_variable_function, atleast_3d_variable_function,
-    broadcast_tensors_variable_function, can_cast_variable_function, ceil_variable_function,
-    detach_variable_function, exp_variable_function, fix_variable_function,
+    abs_variable_function, absolute_variable_function, adjoint_variable_function,
+    arange_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
+    atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
+    ceil_variable_function, detach_variable_function, exp_variable_function, fix_variable_function,
     floor_variable_function, get_device_variable_function, is_conj_variable_function,
     is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
     movedim_variable_function, mul_variable_function, multiply_variable_function,
@@ -32,7 +32,7 @@ use crate::python::{
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 39] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 41] = [
     "get_device",
     "scalar_tensor",
     "arange",
@@ -44,6 +44,8 @@ const VARIABLE_FUNCTION_NAMES: [&str; 39] = [
     "positive",
     "detach",
     "ravel",
+    "abs",
+    "absolute",
     "reciprocal",
     "rsqrt",
     "neg",
@@ -153,6 +155,32 @@ Example::
 const POSITIVE_DOC: &std::ffi::CStr = c"\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n";
 
 const RAVEL_DOC: &std::ffi::CStr = c"\nravel(input) -> Tensor\n\nReturn a contiguous flattened tensor. A copy is made only if needed.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.tensor([[[1, 2],\n    ...                    [3, 4]],\n    ...                   [[5, 6],\n    ...                    [7, 8]]])\n    >>> torch.ravel(t)\n    tensor([1, 2, 3, 4, 5, 6, 7, 8])\n";
+
+const ABS_DOC: &std::ffi::CStr = cr"
+abs(input: Tensor, *, out: Optional[Tensor]) -> Tensor
+
+Computes the absolute value of each element in :attr:`input`.
+
+.. math::
+    \text{out}_{i} = |\text{input}_{i}|
+
+Args:
+    input (Tensor): the input tensor.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> torch.abs(torch.tensor([-1, -2, 3]))
+    tensor([ 1,  2,  3])
+";
+
+const ABSOLUTE_DOC: &std::ffi::CStr = c"
+absolute(input: Tensor, *, out: Optional[Tensor]) -> Tensor
+
+Alias for :func:`torch.abs`
+";
 
 const RECIPROCAL_DOC: &std::ffi::CStr = cr"
 reciprocal(input, *, out=None) -> Tensor
@@ -771,6 +799,8 @@ variable_function_callback!(adjoint_callback, adjoint_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
 variable_function_callback!(detach_callback, detach_variable_function);
 variable_function_callback!(ravel_callback, ravel_variable_function);
+variable_function_callback!(abs_callback, abs_variable_function);
+variable_function_callback!(absolute_callback, absolute_variable_function);
 variable_function_callback!(reciprocal_callback, reciprocal_variable_function);
 variable_function_callback!(rsqrt_callback, rsqrt_variable_function);
 variable_function_callback!(neg_callback, neg_variable_function);
@@ -838,6 +868,8 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"positive", positive_callback, POSITIVE_DOC),
         variable_function_method!(c"detach", detach_callback, c""),
         variable_function_method!(c"ravel", ravel_callback, RAVEL_DOC),
+        variable_function_method!(c"abs", abs_callback, ABS_DOC),
+        variable_function_method!(c"absolute", absolute_callback, ABSOLUTE_DOC),
         variable_function_method!(c"reciprocal", reciprocal_callback, RECIPROCAL_DOC),
         variable_function_method!(c"rsqrt", rsqrt_callback, RSQRT_DOC),
         variable_function_method!(c"neg", neg_callback, NEG_DOC),
