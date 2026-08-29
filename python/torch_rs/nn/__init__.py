@@ -1,6 +1,9 @@
 from . import functional as functional
 from . import init as init
 from . import modules as modules
+from .parameter import Parameter as Parameter
+
+globals().pop("parameter", None)
 
 
 def factory_kwargs(kwargs):
