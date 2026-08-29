@@ -15,6 +15,7 @@ __all__ = [
     "current_device",
     "current_stream",
     "stream",
+    "set_device",
     "device_count",
     "Stream",
     "StreamContext",
@@ -135,6 +136,13 @@ def stream(stream: Stream) -> _AbstractContextManager:
     N.B. This function only exists to facilitate device-agnostic code
     """
     return StreamContext(stream)
+
+
+def set_device(device: _device | str | int | None) -> None:
+    r"""Sets the current device, in CPU we do nothing.
+
+    N.B. This function only exists to facilitate device-agnostic code
+    """
 
 
 def current_device() -> str:
