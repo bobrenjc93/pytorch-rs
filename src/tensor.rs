@@ -12,7 +12,6 @@ use crate::storage::Storage;
 use crate::tensor_error::TensorError;
 
 const F32_SIGN_MASK: u32 = 0x8000_0000;
-#[cfg(feature = "python-bindings")]
 const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
 // Keep latency-sized products on the smaller single-row loop.
@@ -1774,42 +1773,45 @@ impl Tensor {
         }
     }
 
-    #[cfg(feature = "python-bindings")]
-    pub(crate) fn unsqueeze_front(&self) -> Result<Self, TensorError> {
+    /// Inserts a singleton dimension without copying storage.
+    ///
+    /// Negative dimensions wrap from the output rank, so valid dimensions are
+    /// in `[-self.dim() - 1, self.dim()]`. The inserted stride follows
+    /// `PyTorch`'s native view metadata rule: it is `1` at the trailing edge
+    /// and otherwise `stride[dim] * size[dim]` using signed wrapping semantics
+    /// for zero-element views.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an out-of-range dimension, unsupported negative or
+    /// symbolic wrapped strides, or if view metadata allocation fails.
+    pub fn unsqueeze(&self, dimension: i64) -> Result<Self, TensorError> {
+        let axis = normalize_unsqueeze_dimension(dimension, self.shape.len())?;
         let mut shape = try_result_vector(self.shape.len() + 1, self.elements)?;
+        shape.extend_from_slice(&self.shape[..axis]);
         shape.push(1);
-        shape.extend_from_slice(&self.shape);
+        shape.extend_from_slice(&self.shape[axis..]);
 
-        let leading_stride = match (self.shape.first(), self.strides.first()) {
-            (Some(dimension), Some(stride)) => {
-                // PyTorch carries sizes and strides through signed 64-bit
-                // arithmetic here, including wrapping for zero-element views.
-                let leading_stride = signed_wrapping_stride_product_value(*stride, *dimension)?;
-                // Packed SymInt values below -2^62 identify symbolic nodes
-                // instead of concrete integers, even in an eager stride list.
-                if leading_stride < MIN_CONCRETE_SYMINT {
-                    return Err(TensorError::NonConcreteInteger);
-                }
-                if leading_stride < 0 {
-                    let mut strides = try_result_vector(self.strides.len() + 1, self.elements)?;
-                    strides.push(leading_stride);
-                    for &stride in &self.strides {
-                        strides.push(
-                            i64::try_from(stride)
-                                .map_err(|_| TensorError::StrideCalculationOverflow)?,
-                        );
-                    }
-                    return Err(TensorError::NegativeStrides { strides });
-                }
-                usize::try_from(leading_stride)
-                    .map_err(|_| TensorError::StrideCalculationOverflow)?
+        let inserted_stride = if axis == self.shape.len() {
+            1
+        } else {
+            let stride =
+                signed_wrapping_stride_product_value(self.strides[axis], self.shape[axis])?;
+            if stride < MIN_CONCRETE_SYMINT {
+                return Err(TensorError::NonConcreteInteger);
             }
-            (None, None) => 1,
-            _ => unreachable!("validated tensor shape and stride ranks must match"),
+            if stride < 0 {
+                return Err(TensorError::NegativeStrides {
+                    strides: self.unsqueeze_signed_strides(axis, stride)?,
+                });
+            }
+            usize::try_from(stride).map_err(|_| TensorError::StrideCalculationOverflow)?
         };
+
         let mut strides = try_result_vector(self.strides.len() + 1, self.elements)?;
-        strides.push(leading_stride);
-        strides.extend_from_slice(&self.strides);
+        strides.extend_from_slice(&self.strides[..axis]);
+        strides.push(inserted_stride);
+        strides.extend_from_slice(&self.strides[axis..]);
 
         self.finish_view_transform(
             Self {
@@ -1827,30 +1829,33 @@ impl Tensor {
         )
     }
 
+    fn unsqueeze_signed_strides(
+        &self,
+        axis: usize,
+        inserted_stride: i64,
+    ) -> Result<Vec<i64>, TensorError> {
+        let mut strides = try_result_vector(self.strides.len() + 1, self.elements)?;
+        for (index, &stride) in self.strides.iter().enumerate() {
+            if index == axis {
+                strides.push(inserted_stride);
+            }
+            strides
+                .push(i64::try_from(stride).map_err(|_| TensorError::StrideCalculationOverflow)?);
+        }
+        if axis == self.strides.len() {
+            strides.push(inserted_stride);
+        }
+        Ok(strides)
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn unsqueeze_front(&self) -> Result<Self, TensorError> {
+        self.unsqueeze(0)
+    }
+
     #[cfg(feature = "python-bindings")]
     pub(crate) fn unsqueeze_back(&self) -> Result<Self, TensorError> {
-        let mut shape = try_result_vector(self.shape.len() + 1, self.elements)?;
-        shape.extend_from_slice(&self.shape);
-        shape.push(1);
-
-        let mut strides = try_result_vector(self.strides.len() + 1, self.elements)?;
-        strides.extend_from_slice(&self.strides);
-        strides.push(1);
-
-        self.finish_view_transform(
-            Self {
-                storage: Arc::clone(&self.storage),
-                shape,
-                strides,
-                offset: self.offset,
-                elements: self.elements,
-                output_nr: 0,
-                view_requires_grad: false,
-                autograd: None,
-            },
-            TransformMapping::Identity,
-            AutogradNode::Unsqueeze,
-        )
+        self.unsqueeze(-1)
     }
 
     /// Removes every singleton dimension without copying storage.
@@ -4834,6 +4839,32 @@ fn normalize_transpose_dimension(dimension: i64, rank: usize) -> Result<usize, T
         dimension
     })
     .map_err(|_| TensorError::DimensionOutOfRange { dimension, rank })
+}
+
+fn normalize_unsqueeze_dimension(dimension: i64, rank: usize) -> Result<usize, TensorError> {
+    let effective_rank = rank
+        .checked_add(1)
+        .ok_or(TensorError::DimensionOutOfRange { dimension, rank })?;
+    let signed_rank =
+        i64::try_from(effective_rank).map_err(|_| TensorError::DimensionOutOfRange {
+            dimension,
+            rank: effective_rank,
+        })?;
+    if dimension < -signed_rank || dimension >= signed_rank {
+        return Err(TensorError::DimensionOutOfRange {
+            dimension,
+            rank: effective_rank,
+        });
+    }
+    usize::try_from(if dimension < 0 {
+        dimension + signed_rank
+    } else {
+        dimension
+    })
+    .map_err(|_| TensorError::DimensionOutOfRange {
+        dimension,
+        rank: effective_rank,
+    })
 }
 
 fn dimension_for_error(dimension: usize) -> i64 {

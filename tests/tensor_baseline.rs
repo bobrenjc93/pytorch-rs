@@ -2840,6 +2840,69 @@ fn squeeze_is_a_metadata_only_shared_storage_view() {
 }
 
 #[test]
+fn unsqueeze_is_a_metadata_only_shared_storage_view() {
+    let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4])
+        .unwrap()
+        .transpose(0, 2)
+        .unwrap()
+        .index_integer(1)
+        .unwrap();
+    assert_eq!(source.shape(), [3, 2]);
+    assert_eq!(source.stride(), [4, 12]);
+    assert_eq!(source.storage_offset(), 1);
+
+    let leading = source.unsqueeze(0).unwrap();
+    assert_eq!(leading.shape(), [1, 3, 2]);
+    assert_eq!(leading.stride(), [12, 4, 12]);
+    assert_eq!(leading.storage_offset(), source.storage_offset());
+    assert!(leading.shares_storage_with(&source));
+
+    let middle = source.unsqueeze(1).unwrap();
+    assert_eq!(middle.shape(), [3, 1, 2]);
+    assert_eq!(middle.stride(), [4, 24, 12]);
+    assert_eq!(middle.storage_offset(), source.storage_offset());
+    assert!(middle.shares_storage_with(&source));
+    assert_eq!(
+        middle.logical_values().collect::<Vec<_>>(),
+        source.logical_values().collect::<Vec<_>>()
+    );
+
+    let trailing = source.unsqueeze(-1).unwrap();
+    assert_eq!(trailing.shape(), [3, 2, 1]);
+    assert_eq!(trailing.stride(), [4, 12, 1]);
+    assert_eq!(trailing.storage_offset(), source.storage_offset());
+    assert!(trailing.shares_storage_with(&source));
+
+    let scalar = Tensor::from_vec(vec![2.5], []).unwrap();
+    let scalar_view = scalar.unsqueeze(-1).unwrap();
+    assert_eq!(scalar_view.shape(), [1]);
+    assert_eq!(scalar_view.stride(), [1]);
+    assert_eq!(scalar_view.item().unwrap().to_bits(), 2.5_f32.to_bits());
+    assert!(scalar_view.shares_storage_with(&scalar));
+}
+
+#[test]
+fn unsqueeze_normalizes_dimensions_and_reports_range_errors() {
+    let tensor = Tensor::zeros([2, 3]).unwrap();
+    assert_eq!(tensor.unsqueeze(-3).unwrap().shape(), [1, 2, 3]);
+    assert_eq!(tensor.unsqueeze(2).unwrap().shape(), [2, 3, 1]);
+    assert_eq!(
+        tensor.unsqueeze(3),
+        Err(TensorError::DimensionOutOfRange {
+            dimension: 3,
+            rank: 3,
+        })
+    );
+    assert_eq!(
+        tensor.unsqueeze(-4),
+        Err(TensorError::DimensionOutOfRange {
+            dimension: -4,
+            rank: 3,
+        })
+    );
+}
+
+#[test]
 fn squeeze_preserves_non_contiguous_layouts_offsets_lifetimes_and_consumers() {
     let view = {
         let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 1, 3, 4]).unwrap();
