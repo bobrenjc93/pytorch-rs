@@ -289,6 +289,10 @@ class SerializationDefaultLoadEndiannessReferenceTests(unittest.TestCase):
             "set_default_load_endianness",
             "get_default_mmap_options",
             "set_default_mmap_options",
+            "clear_safe_globals",
+            "get_safe_globals",
+            "add_safe_globals",
+            "safe_globals",
         )
 
         self.assertEqual(
@@ -477,6 +481,10 @@ class SerializationDefaultLoadEndiannessReferenceTests(unittest.TestCase):
                 "set_default_load_endianness",
                 "get_default_mmap_options",
                 "set_default_mmap_options",
+                "clear_safe_globals",
+                "get_safe_globals",
+                "add_safe_globals",
+                "safe_globals",
             },
         )
         for name in ("save", "load"):
@@ -488,6 +496,10 @@ class SerializationDefaultLoadEndiannessReferenceTests(unittest.TestCase):
             "LoadEndianness",
             "get_default_load_endianness",
             "set_default_load_endianness",
+            "clear_safe_globals",
+            "get_safe_globals",
+            "add_safe_globals",
+            "safe_globals",
         ):
             with self.subTest(top_level_name=name):
                 self.assertFalse(hasattr(torch, name))
