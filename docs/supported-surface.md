@@ -6,13 +6,13 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 
 ## Category index
 
-| Surface area | Contract section |
-| --- | --- |
-| Tensors | [Tensors](#tensors) |
-| Factories and math | [Creation and math](#creation-and-math) |
-| NN and data utilities | [NN and data](#nn-and-data) |
-| Backend, compiler, and distributed state | [Backends, compiler, and distributed](#backends-compiler-and-distributed) |
-| Unsupported boundary | [Unsupported boundaries](#unsupported-boundaries) |
+| Surface area | Supported summary | Contract section |
+| --- | --- | --- |
+| Tensors | CPU `float32` tensors with storage, shape, stride, view, layout, indexing, formatting, and autograd metadata coverage. | [Tensors](#tensors) |
+| Factories and math | Tensor factories, unary and binary math, reductions, matmul, dtype helpers, and inference-only `torch.nn.functional.softsign`. | [Creation and math](#creation-and-math) |
+| NN and data utilities | Functional linear, loss, and deterministic dropout paths, state-dict prefix utilities, serialization settings, and dataset helpers. | [NN and data](#nn-and-data) |
+| Backend, compiler, and distributed state | CPU and accelerator metadata, autocast cache state helpers, backend flags, compiler/JIT state helpers, and uninitialized distributed queries. | [Backends, compiler, and distributed](#backends-compiler-and-distributed) |
+| Unsupported boundary | Explicit unsupported APIs and behavioral limits that remain outside the baseline contract. | [Unsupported boundaries](#unsupported-boundaries) |
 
 ## Current baseline
 

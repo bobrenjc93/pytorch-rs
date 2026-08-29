@@ -17,6 +17,13 @@ SUPPORTED_SURFACE_ANCHORS = (
     ),
     ("Unsupported boundaries", "unsupported-boundaries"),
 )
+SUPPORTED_SURFACE_INDEX_SUMMARIES = (
+    "CPU `float32` tensors",
+    "inference-only `torch.nn.functional.softsign`",
+    "Functional linear, loss, and deterministic dropout paths",
+    "autocast cache state helpers",
+    "Explicit unsupported APIs",
+)
 
 
 class ReadmeQuickstartTests(unittest.TestCase):
@@ -75,8 +82,14 @@ class ReadmeQuickstartTests(unittest.TestCase):
                 "## Current baseline"
             )
         ]
-        self.assertIn("| Surface area | Contract section |", category_index)
-        self.assertIn("| --- | --- |", category_index)
+        self.assertIn(
+            "| Surface area | Supported summary | Contract section |",
+            category_index,
+        )
+        self.assertIn("| --- | --- | --- |", category_index)
+        for summary in SUPPORTED_SURFACE_INDEX_SUMMARIES:
+            with self.subTest(summary=summary):
+                self.assertIn(summary, category_index)
         for title, anchor in SUPPORTED_SURFACE_ANCHORS:
             with self.subTest(anchor=anchor):
                 self.assertIn(f"[{title}](#{anchor})", category_index)
