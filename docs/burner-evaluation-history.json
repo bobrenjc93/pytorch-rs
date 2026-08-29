@@ -7752,6 +7752,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 82
       }
+    },
+    {
+      "key": "pr:1280",
+      "recordedAt": "2026-08-29T05:51:47.608Z",
+      "label": "PR #1280",
+      "kind": "leaf",
+      "prNumber": 1280,
+      "title": "Add CUDA Flash SDP preference control",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 84.5,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 82
+      }
     }
   ]
 }
