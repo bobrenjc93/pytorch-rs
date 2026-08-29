@@ -75,8 +75,6 @@ def _deterministic_bool_type_name(value):
 def _deterministic_bool_value(value, name, position=""):
     if _builtins.isinstance(value, _builtins.bool):
         return value
-    if _builtins.isinstance(value, _builtins.int):
-        return _builtins.int.__ne__(value, 0)
     raise TypeError(
         "_set_deterministic_algorithms(): argument "
         f"'{name}'{position} must be bool, not "
@@ -233,12 +231,12 @@ def use_deterministic_algorithms(
     if requested_mode:
         raise NotImplementedError(
             "use_deterministic_algorithms(): mode "
-            f"{mode!r} is not supported; only False and 0 are implemented"
+            f"{mode!r} is not supported; only False is implemented"
         )
     if requested_warn_only:
         raise NotImplementedError(
             "use_deterministic_algorithms(): warn_only "
-            f"{warn_only!r} is not supported; only False and 0 are implemented"
+            f"{warn_only!r} is not supported; only False is implemented"
         )
     return None
 

@@ -13,7 +13,7 @@ import unittest
 import torch_rs as torch
 
 
-class _DefaultInt(int):
+class _IntSubclass(int):
     pass
 
 
@@ -39,14 +39,6 @@ class UseDeterministicAlgorithmsTests(unittest.TestCase):
             lambda: torch.use_deterministic_algorithms(mode=False),
             lambda: torch.use_deterministic_algorithms(False, warn_only=False),
             lambda: torch.use_deterministic_algorithms(mode=False, warn_only=False),
-            lambda: torch.use_deterministic_algorithms(0),
-            lambda: torch.use_deterministic_algorithms(mode=0),
-            lambda: torch.use_deterministic_algorithms(0, warn_only=0),
-            lambda: torch.use_deterministic_algorithms(_DefaultInt(0)),
-            lambda: torch.use_deterministic_algorithms(
-                mode=_DefaultInt(0),
-                warn_only=_DefaultInt(0),
-            ),
         )
 
         for context in (contextlib.nullcontext(), torch.no_grad()):
@@ -66,8 +58,6 @@ class UseDeterministicAlgorithmsTests(unittest.TestCase):
             lambda: torch.use_deterministic_algorithms(False),
             lambda: torch.use_deterministic_algorithms(mode=False),
             lambda: torch.use_deterministic_algorithms(False, warn_only=False),
-            lambda: torch.use_deterministic_algorithms(0),
-            lambda: torch.use_deterministic_algorithms(0, warn_only=0),
         )
         worker_count = 10
         barrier = threading.Barrier(worker_count)
@@ -131,7 +121,7 @@ class UseDeterministicAlgorithmsTests(unittest.TestCase):
         self.assertIsNot(package.use_deterministic_algorithms, old_setter)
 
         for setter, mode in (
-            (old_setter, 0),
+            (old_setter, False),
             (package.use_deterministic_algorithms, False),
         ):
             with self.subTest(setter=setter.__name__, mode=mode):
@@ -147,42 +137,21 @@ class UseDeterministicAlgorithmsTests(unittest.TestCase):
                 lambda: torch.use_deterministic_algorithms(True),
                 (
                     "use_deterministic_algorithms(): mode True is not "
-                    "supported; only False and 0 are implemented"
+                    "supported; only False is implemented"
                 ),
             ),
             (
                 lambda: torch.use_deterministic_algorithms(mode=True),
                 (
                     "use_deterministic_algorithms(): mode True is not "
-                    "supported; only False and 0 are implemented"
-                ),
-            ),
-            (
-                lambda: torch.use_deterministic_algorithms(1),
-                (
-                    "use_deterministic_algorithms(): mode 1 is not "
-                    "supported; only False and 0 are implemented"
-                ),
-            ),
-            (
-                lambda: torch.use_deterministic_algorithms(_DefaultInt(-1)),
-                (
-                    "use_deterministic_algorithms(): mode -1 is not "
-                    "supported; only False and 0 are implemented"
+                    "supported; only False is implemented"
                 ),
             ),
             (
                 lambda: torch.use_deterministic_algorithms(False, warn_only=True),
                 (
                     "use_deterministic_algorithms(): warn_only True is not "
-                    "supported; only False and 0 are implemented"
-                ),
-            ),
-            (
-                lambda: torch.use_deterministic_algorithms(0, warn_only=1),
-                (
-                    "use_deterministic_algorithms(): warn_only 1 is not "
-                    "supported; only False and 0 are implemented"
+                    "supported; only False is implemented"
                 ),
             ),
         )
@@ -205,6 +174,11 @@ class UseDeterministicAlgorithmsTests(unittest.TestCase):
     def test_malformed_input_errors_match_pytorch_2_13_spelling(self):
         invalid_types = (
             (None, "NoneType"),
+            (0, "int"),
+            (1, "int"),
+            (-1, "int"),
+            (_IntSubclass(0), "_IntSubclass"),
+            (_IntSubclass(1), "_IntSubclass"),
             (0.0, "float"),
             (b"", "bytes"),
             (bytearray(b""), "bytearray"),
@@ -346,11 +320,10 @@ class RejectPytorchImport:
 sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
-for mode in (False, 0):
-    assert torch.use_deterministic_algorithms(mode) is None
-    assert torch.get_deterministic_debug_mode() == 0
-    assert torch.are_deterministic_algorithms_enabled() is False
-    assert torch.is_deterministic_algorithms_warn_only_enabled() is False
+assert torch.use_deterministic_algorithms(False) is None
+assert torch.get_deterministic_debug_mode() == 0
+assert torch.are_deterministic_algorithms_enabled() is False
+assert torch.is_deterministic_algorithms_warn_only_enabled() is False
 
 for call in (
     lambda: torch.use_deterministic_algorithms(True),
@@ -362,6 +335,17 @@ for call in (
         pass
     else:
         raise AssertionError("unsupported deterministic mode was accepted")
+
+for call in (
+    lambda: torch.use_deterministic_algorithms(0),
+    lambda: torch.use_deterministic_algorithms(False, warn_only=0),
+):
+    try:
+        call()
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("integer deterministic argument was accepted")
 
 assert importlib.reload(torch) is torch
 assert torch.use_deterministic_algorithms(False) is None

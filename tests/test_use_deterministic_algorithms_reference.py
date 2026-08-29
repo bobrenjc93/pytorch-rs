@@ -17,7 +17,7 @@ except ImportError:
     reference_torch = None
 
 
-class _DefaultInt(int):
+class _IntSubclass(int):
     pass
 
 
@@ -165,26 +165,61 @@ class UseDeterministicAlgorithmsReferenceTests(unittest.TestCase):
             self.threaded_default_outcomes(reference_torch),
         )
 
-    def test_falsey_integer_forms_are_default_noops_in_torch_rs(self):
-        for call in (
-            lambda: torch.use_deterministic_algorithms(0),
-            lambda: torch.use_deterministic_algorithms(mode=0),
-            lambda: torch.use_deterministic_algorithms(0, warn_only=0),
-            lambda: torch.use_deterministic_algorithms(_DefaultInt(0)),
-            lambda: torch.use_deterministic_algorithms(
-                mode=_DefaultInt(0),
-                warn_only=_DefaultInt(0),
+    def test_integer_forms_are_rejected_like_pytorch_2_13(self):
+        for actual_call, expected_call in (
+            (
+                lambda: torch.use_deterministic_algorithms(0),
+                lambda: reference_torch.use_deterministic_algorithms(0),
+            ),
+            (
+                lambda: torch.use_deterministic_algorithms(mode=0),
+                lambda: reference_torch.use_deterministic_algorithms(mode=0),
+            ),
+            (
+                lambda: torch.use_deterministic_algorithms(False, warn_only=0),
+                lambda: reference_torch.use_deterministic_algorithms(
+                    False,
+                    warn_only=0,
+                ),
+            ),
+            (
+                lambda: torch.use_deterministic_algorithms(_IntSubclass(0)),
+                lambda: reference_torch.use_deterministic_algorithms(
+                    _IntSubclass(0)
+                ),
+            ),
+            (
+                lambda: torch.use_deterministic_algorithms(
+                    False,
+                    warn_only=_IntSubclass(0),
+                ),
+                lambda: reference_torch.use_deterministic_algorithms(
+                    False,
+                    warn_only=_IntSubclass(0),
+                ),
+            ),
+            (
+                lambda: torch.use_deterministic_algorithms(1),
+                lambda: reference_torch.use_deterministic_algorithms(1),
+            ),
+            (
+                lambda: torch.use_deterministic_algorithms(
+                    False,
+                    warn_only=1,
+                ),
+                lambda: reference_torch.use_deterministic_algorithms(
+                    False,
+                    warn_only=1,
+                ),
             ),
         ):
-            with self.subTest(call=call):
-                self.assertIs(call(), None)
+            with self.subTest(actual_call=actual_call):
+                self.assert_error_matches(actual_call, expected_call)
                 self.assertEqual(self.state(torch)[:4], (True, 0, True, True))
-
-        self.assert_error_matches(
-            lambda: torch.use_deterministic_algorithms(0.0),
-            lambda: reference_torch.use_deterministic_algorithms(0.0),
-        )
-        self.assertEqual(self.state(torch)[:4], (True, 0, True, True))
+                self.assertEqual(
+                    self.state(reference_torch)[:4],
+                    (True, 0, True, True),
+                )
 
     def test_callable_metadata_matches_pytorch_2_13(self):
         actual_module = importlib.import_module("torch_rs")
