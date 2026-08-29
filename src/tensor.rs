@@ -3071,17 +3071,27 @@ impl Tensor {
 
     #[must_use]
     pub fn sum(&self) -> Self {
-        // Select the layout once so contiguous values stay on the slice
-        // iterator while arbitrary views retain the stride-aware iterator.
-        let total = match self.logical_values().inner {
-            LogicalValuesInner::Contiguous(values) => {
-                values.fold(0.0_f32, |total, value| total + value)
-            }
-            LogicalValuesInner::OwnedSmallRank(values) => {
-                values.fold(0.0_f32, |total, value| total + value)
-            }
-            inner @ LogicalValuesInner::Strided { .. } => {
-                LogicalValues { inner }.fold(0.0_f32, |total, value| total + value)
+        let contiguous_values = self.contiguous_slice();
+        let total = if let Some(values) = contiguous_values {
+            values
+                .iter()
+                .copied()
+                .fold(0.0_f32, |total, value| total + value)
+        } else if let Some(total) = self.sum_contiguous_shared_gradient() {
+            total
+        } else {
+            // Select the layout once so owned strided views retain their
+            // fixed-rank iterator while arbitrary views use the fallback.
+            match self.logical_values_from_contiguous_slice(None).inner {
+                LogicalValuesInner::Contiguous(_) => {
+                    unreachable!("contiguous storage was already handled")
+                }
+                LogicalValuesInner::OwnedSmallRank(values) => {
+                    values.fold(0.0_f32, |total, value| total + value)
+                }
+                inner @ LogicalValuesInner::Strided { .. } => {
+                    LogicalValues { inner }.fold(0.0_f32, |total, value| total + value)
+                }
             }
         };
         let mut output = Self::from_scalar(total, self.dtype(), self.device());
@@ -3095,6 +3105,23 @@ impl Tensor {
             }));
         }
         output
+    }
+
+    fn sum_contiguous_shared_gradient(&self) -> Option<f32> {
+        if self.elements == 0 || !self.is_contiguous() {
+            return None;
+        }
+        let end = self
+            .offset
+            .checked_add(self.elements)
+            .expect("validated contiguous tensor range must fit in storage");
+        self.storage
+            .with_shared_gradient_range(self.offset, end, |values| {
+                values
+                    .iter()
+                    .copied()
+                    .fold(0.0_f32, |total, value| total + value)
+            })
     }
 
     /// Extracts the value of a one-element tensor.
@@ -5622,6 +5649,45 @@ mod tests {
         assert!(shared.is_contiguous());
         assert!(shared.contiguous_slice().is_none());
         assert_matches_logical_fold(&shared);
+
+        let shared_offset = shared_gradient_copy(&offset);
+        assert!(shared_offset.is_contiguous());
+        assert_eq!(shared_offset.storage_offset(), 4);
+        assert!(shared_offset.contiguous_slice().is_none());
+        assert_matches_logical_fold(&shared_offset);
+    }
+
+    #[test]
+    fn sum_reads_current_contiguous_live_gradient_storage_bitwise() {
+        let leaf = Tensor::from_vec(vec![0.0; 4], [4])
+            .unwrap()
+            .with_requires_grad(true);
+        let first_weights = Tensor::from_vec(vec![1.0e20, -1.0e20, 3.0, -0.0], [4]).unwrap();
+        leaf.mul(&first_weights).unwrap().sum().backward().unwrap();
+
+        let live_gradient = leaf.live_grad().unwrap().unwrap();
+        assert!(live_gradient.is_contiguous());
+        assert!(live_gradient.contiguous_slice().is_none());
+        assert_eq!(
+            live_gradient.sum().item().unwrap().to_bits(),
+            3.0_f32.to_bits()
+        );
+
+        let second_weights = Tensor::from_vec(vec![0.0, 0.0, 0.5, -0.5], [4]).unwrap();
+        leaf.mul(&second_weights).unwrap().sum().backward().unwrap();
+        assert_eq!(
+            live_gradient.sum().item().unwrap().to_bits(),
+            3.0_f32.to_bits()
+        );
+
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+        empty.sum().backward().unwrap();
+        let empty_gradient = empty.live_grad().unwrap().unwrap();
+        assert!(empty_gradient.is_contiguous());
+        assert_eq!(
+            empty_gradient.sum().item().unwrap().to_bits(),
+            0.0_f32.to_bits()
+        );
     }
 
     #[test]
