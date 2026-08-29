@@ -11730,40 +11730,38 @@ fn bind_top_level_reshape_dimensions<'py>(
     dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
 ) -> PyResult<BoundTopLevelReshapeShape<'py>> {
     let mut native_dimensions = try_size_vector(length)?;
-    let mut dimensions = dimensions.enumerate();
-    while let Some((index, dimension)) = dimensions.next() {
+    let mut overrides = None;
+    for (index, dimension) in dimensions.enumerate() {
         if let Some(probed) = probe_torch_function_override(&dimension) {
-            let overrides =
-                collect_top_level_reshape_shape_overrides(length, index, probed, dimensions)?;
-            return Ok(BoundTopLevelReshapeShape::Override(overrides));
+            if overrides.is_none() {
+                let mut collected = Vec::new();
+                collected
+                    .try_reserve_exact(length.saturating_sub(index))
+                    .map_err(|_| {
+                        PyMemoryError::new_err("unable to allocate reshape dispatch operands")
+                    })?;
+                overrides = Some(collected);
+            }
+            if let Some(overrides) = &mut overrides {
+                overrides.push(probed);
+            }
+        } else if index == 0 {
+            validate_top_level_reshape_dimension(argument, index, &dimension)?;
         }
-        validate_top_level_reshape_dimension(argument, index, &dimension)?;
-        try_push_size(&mut native_dimensions, dimension)?;
-    }
-    Ok(BoundTopLevelReshapeShape::Native(
-        BoundTopLevelNativeReshapeShape {
-            dimensions: native_dimensions,
-        },
-    ))
-}
 
-fn collect_top_level_reshape_shape_overrides<'py>(
-    length: usize,
-    index: usize,
-    probed: ProbedTorchFunctionOverride<'py>,
-    dimensions: impl Iterator<Item = (usize, Bound<'py, PyAny>)>,
-) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
-    let mut overrides = Vec::new();
-    overrides
-        .try_reserve_exact(length.saturating_sub(index))
-        .map_err(|_| PyMemoryError::new_err("unable to allocate reshape dispatch operands"))?;
-    overrides.push(probed);
-    for (_, dimension) in dimensions {
-        if let Some(probed) = probe_torch_function_override(&dimension) {
-            overrides.push(probed);
+        if overrides.is_none() {
+            try_push_size(&mut native_dimensions, dimension)?;
         }
     }
-    Ok(overrides)
+    if let Some(overrides) = overrides {
+        Ok(BoundTopLevelReshapeShape::Override(overrides))
+    } else {
+        Ok(BoundTopLevelReshapeShape::Native(
+            BoundTopLevelNativeReshapeShape {
+                dimensions: native_dimensions,
+            },
+        ))
+    }
 }
 
 fn validate_top_level_reshape_dimension(

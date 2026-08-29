@@ -412,6 +412,20 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
             mode_result = module.reshape(input=tensor, shape=(2, 2))
         mode_function, mode_types, mode_args, mode_kwargs = mode_calls[0]
 
+        mode_calls.clear()
+        with Mode():
+            late_invalid_mode_result = module.reshape(tensor, (1, 2.0))
+        late_invalid_mode_call = mode_calls[0]
+
+        mode_calls.clear()
+        try:
+            with Mode():
+                module.reshape(tensor, (2.0, 1))
+        except Exception as error:
+            first_invalid_mode = (type(error).__name__, str(error), len(mode_calls))
+        else:
+            first_invalid_mode = None
+
         order = []
 
         class ForwardingMode(module.overrides.TorchFunctionMode):
@@ -443,6 +457,9 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
         shape_list = [ShapeOverride(), 2]
         shape_list_result = module.reshape(input=tensor, shape=shape_list)
         shape_list_call = shape_calls[-1]
+        late_invalid_shape = (1, 2.0, ShapeOverride())
+        late_invalid_shape_result = module.reshape(tensor, late_invalid_shape)
+        late_invalid_shape_call = shape_calls[-1]
 
         input_shape_calls = []
 
@@ -454,6 +471,16 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
 
         input_shape_result = module.reshape(InputOverride(), ShapeOverride())
         input_shape_call = input_shape_calls[-1]
+        late_invalid_input = InputOverride()
+        late_invalid_input_result = module.reshape(late_invalid_input, (1, 2.0))
+        late_invalid_input_call = input_shape_calls[-1]
+        input_shape_calls.clear()
+        try:
+            module.reshape(InputOverride(), (2.0, 2))
+        except Exception as error:
+            first_invalid_input = (type(error).__name__, str(error), len(input_shape_calls))
+        else:
+            first_invalid_input = None
 
         subclass_calls = []
 
@@ -512,6 +539,17 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
             "mode_kwargs": tuple(mode_kwargs),
             "mode_value_identity": mode_kwargs["input"] is tensor,
             "mode_shape": mode_kwargs["shape"],
+            "late_invalid_mode_result": late_invalid_mode_result,
+            "late_invalid_mode_function": late_invalid_mode_call[0] is module.reshape,
+            "late_invalid_mode_types": tuple(
+                value.__name__ for value in late_invalid_mode_call[1]
+            ),
+            "late_invalid_mode_args": (
+                late_invalid_mode_call[2][0] is tensor,
+                late_invalid_mode_call[2][1],
+            ),
+            "late_invalid_mode_kwargs": late_invalid_mode_call[3],
+            "first_invalid_mode": first_invalid_mode,
             "forward_order": tuple(item[0] for item in order),
             "forward_functions": tuple(item[1] is module.reshape for item in order),
             "forward_types": tuple(item[2] for item in order),
@@ -543,11 +581,32 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
             "shape_list_kwargs": tuple(shape_list_call[3]),
             "shape_list_input_identity": shape_list_call[3]["input"] is tensor,
             "shape_list_shape_identity": shape_list_call[3]["shape"] is shape_list,
+            "late_invalid_shape_result": late_invalid_shape_result,
+            "late_invalid_shape_function": late_invalid_shape_call[0] is module.reshape,
+            "late_invalid_shape_types": tuple(
+                value.__name__ for value in late_invalid_shape_call[1]
+            ),
+            "late_invalid_shape_args": (
+                late_invalid_shape_call[2][0] is tensor,
+                late_invalid_shape_call[2][1] is late_invalid_shape,
+            ),
+            "late_invalid_shape_kwargs": late_invalid_shape_call[3],
             "input_shape_result": input_shape_result,
             "input_shape_function": input_shape_call[0] is module.reshape,
             "input_shape_types": tuple(value.__name__ for value in input_shape_call[1]),
             "input_shape_arg_length": len(input_shape_call[2]),
             "input_shape_kwargs": input_shape_call[3],
+            "late_invalid_input_result": late_invalid_input_result,
+            "late_invalid_input_function": late_invalid_input_call[0] is module.reshape,
+            "late_invalid_input_types": tuple(
+                value.__name__ for value in late_invalid_input_call[1]
+            ),
+            "late_invalid_input_args": (
+                late_invalid_input_call[2][0] is late_invalid_input,
+                late_invalid_input_call[2][1],
+            ),
+            "late_invalid_input_kwargs": late_invalid_input_call[3],
+            "first_invalid_input": first_invalid_input,
             "subclass_result": subclass_result,
             "subclass_calls": tuple(
                 (label, tuple(value.__name__ for value in dispatch_types))

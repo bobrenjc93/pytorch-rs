@@ -285,6 +285,16 @@ class TopLevelReshapeTests(unittest.TestCase):
         self.assertEqual(len(args), 2)
         self.assertIsNone(kwargs)
 
+        input_value = InputOverride()
+        InputOverride.calls.clear()
+        self.assertIs(torch.reshape(input_value, (1, 2.0)), marker)
+        self.assertEqual(len(InputOverride.calls), 1)
+        function, dispatch_types, args, kwargs = InputOverride.calls[0]
+        self.assertIs(function, torch.reshape)
+        self.assertEqual(dispatch_types, (InputOverride,))
+        self.assertEqual(args, (input_value, (1, 2.0)))
+        self.assertIsNone(kwargs)
+
         class BaseShape:
             calls = []
 
@@ -304,6 +314,16 @@ class TopLevelReshapeTests(unittest.TestCase):
             BaseShape.calls, [("derived", (DerivedShape, BaseShape))]
         )
 
+        shape = (1, 2.0, ShapeOverride())
+        ShapeOverride.calls.clear()
+        self.assertIs(torch.reshape(tensor, shape), marker)
+        self.assertEqual(len(ShapeOverride.calls), 1)
+        function, dispatch_types, args, kwargs = ShapeOverride.calls[0]
+        self.assertIs(function, torch.reshape)
+        self.assertEqual(dispatch_types, (ShapeOverride,))
+        self.assertEqual(args, (tensor, shape))
+        self.assertIsNone(kwargs)
+
         Override.calls.clear()
         with self.assertRaisesRegex(
             TypeError,
@@ -312,6 +332,15 @@ class TopLevelReshapeTests(unittest.TestCase):
         ):
             torch.reshape(tensor, (2.0, Override()))
         self.assertEqual(Override.calls, [])
+
+        InputOverride.calls.clear()
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^reshape\(\): argument 'shape' \(position 2\) must be tuple of ints, "
+            r"but found element of type float at pos 0$",
+        ):
+            torch.reshape(InputOverride(), (2.0, 2))
+        self.assertEqual(InputOverride.calls, [])
 
         class RecordingMode(torch.overrides.TorchFunctionMode):
             def __init__(self, result):
@@ -329,6 +358,24 @@ class TopLevelReshapeTests(unittest.TestCase):
             mode.calls,
             [(torch.reshape, (), (), {"input": tensor, "shape": (2, 2)})],
         )
+
+        mode = RecordingMode(marker)
+        with mode:
+            self.assertIs(torch.reshape(tensor, (1, 2.0)), marker)
+        self.assertEqual(
+            mode.calls,
+            [(torch.reshape, (), (tensor, (1, 2.0)), None)],
+        )
+
+        mode = RecordingMode(marker)
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^reshape\(\): argument 'shape' \(position 2\) must be tuple of ints, "
+            r"but found element of type float at pos 0$",
+        ):
+            with mode:
+                torch.reshape(tensor, (2.0, 1))
+        self.assertEqual(mode.calls, [])
 
         mode = RecordingMode(marker)
         shape = Override()
