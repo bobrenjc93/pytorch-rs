@@ -42,12 +42,14 @@ class CudaReducedPrecisionMathSdpTests(unittest.TestCase):
     def setUp(self):
         self.cuda = importlib.import_module("torch_rs.backends.cuda")
         self.original = torch._C._get_math_sdp_allow_fp16_bf16_reduction()
+        self.original_flash = torch._C._get_flash_sdp_enabled()
         self.original_math = torch._C._get_math_sdp_enabled()
         self.original_mem_efficient = torch._C._get_mem_efficient_sdp_enabled()
         self.cuda.allow_fp16_bf16_reduction_math_sdp(False)
 
     def tearDown(self):
         self.cuda.allow_fp16_bf16_reduction_math_sdp(self.original)
+        self.cuda.enable_flash_sdp(self.original_flash)
         self.cuda.enable_math_sdp(self.original_math)
         self.cuda.enable_mem_efficient_sdp(self.original_mem_efficient)
 
@@ -118,6 +120,7 @@ print(json.dumps({
 
     def test_exact_bool_updates_are_independent_preferences(self):
         cuda = self.cuda
+        flash_state = cuda.flash_sdp_enabled()
         math_state = cuda.math_sdp_enabled()
         mem_efficient_state = cuda.mem_efficient_sdp_enabled()
 
@@ -137,6 +140,7 @@ print(json.dumps({
                     torch._C._get_math_sdp_allow_fp16_bf16_reduction(),
                     enabled,
                 )
+                self.assertIs(cuda.flash_sdp_enabled(), flash_state)
                 self.assertIs(cuda.math_sdp_enabled(), math_state)
                 self.assertIs(
                     cuda.mem_efficient_sdp_enabled(),
@@ -282,6 +286,8 @@ print(json.dumps({
             [
                 "is_built",
                 "is_ck_sdpa_available",
+                "enable_flash_sdp",
+                "flash_sdp_enabled",
                 "enable_mem_efficient_sdp",
                 "mem_efficient_sdp_enabled",
                 "math_sdp_enabled",
@@ -295,8 +301,10 @@ print(json.dumps({
             {name for name in vars(cuda) if not name.startswith("_")},
             {
                 "allow_fp16_bf16_reduction_math_sdp",
+                "enable_flash_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
+                "flash_sdp_enabled",
                 "fp16_bf16_reduction_math_sdp_allowed",
                 "is_built",
                 "is_ck_sdpa_available",
@@ -444,10 +452,14 @@ print(json.dumps({
         self.assertNotIn(getter_name, torch._C.__all__)
         self.assertNotIn(setter_name, torch._C.__all__)
 
+        flash_state = cuda.flash_sdp_enabled()
         math_state = cuda.math_sdp_enabled()
         mem_efficient_state = cuda.mem_efficient_sdp_enabled()
         self.assertIs(getattr(torch._C, setter_name)(False), None)
         self.assertIs(getattr(torch._C, getter_name)(), False)
+        self.assertIs(cuda.fp16_bf16_reduction_math_sdp_allowed(), False)
+        self.assertIs(cuda.flash_sdp_enabled(), flash_state)
+        self.assertIs(cuda.enable_flash_sdp(not flash_state), None)
         self.assertIs(cuda.fp16_bf16_reduction_math_sdp_allowed(), False)
         self.assertIs(cuda.enable_math_sdp(not math_state), None)
         self.assertIs(cuda.fp16_bf16_reduction_math_sdp_allowed(), False)
