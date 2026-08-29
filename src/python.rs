@@ -5863,18 +5863,10 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize
     };
     // Peek only at a valid native dtype here so unsupported endpoint/dtype
     // combinations retain the endpoint-first error ordering below.
-    let exact_integer_with_explicit_float32 = if exact_integer_endpoint {
-        match dtype
-            .as_ref()
-            .and_then(|dtype| dtype.cast::<PyDType>().ok())
-        {
-            Some(dtype) => dtype.try_borrow()?.inner() == DType::Float32,
-            None => false,
-        }
-    } else {
-        false
-    };
-    if !exact_float_endpoint && !numpy_float_endpoint && !exact_integer_with_explicit_float32 {
+    let exact_integer_with_float32_output = exact_integer_endpoint
+        && (arange_explicit_float32_dtype(dtype.as_ref())?
+            || arange_has_float_inference_operand(start.as_ref(), step.as_ref())?);
+    if !exact_float_endpoint && !numpy_float_endpoint && !exact_integer_with_float32_output {
         let position = end
             .position
             .map_or_else(String::new, |position| format!(" (position {position})"));
@@ -5917,6 +5909,36 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize
     }
     let elements = arange_element_count(extract_arange_end(&end.value)?)?;
     Ok((elements, requires_grad))
+}
+
+fn arange_explicit_float32_dtype(dtype: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+    let Some(dtype) = dtype else {
+        return Ok(false);
+    };
+    if let Ok(dtype) = dtype.cast::<PyDType>() {
+        return Ok(dtype.try_borrow()?.inner() == DType::Float32);
+    }
+    Ok(false)
+}
+
+fn arange_has_float_inference_operand(
+    start: Option<&ParsedCallArgument<'_>>,
+    step: Option<&ParsedCallArgument<'_>>,
+) -> PyResult<bool> {
+    Ok(arange_argument_is_supported_float(start)? || arange_argument_is_supported_float(step)?)
+}
+
+fn arange_argument_is_supported_float(argument: Option<&ParsedCallArgument<'_>>) -> PyResult<bool> {
+    let Some(argument) = argument else {
+        return Ok(false);
+    };
+    if argument.value.is_exact_instance_of::<PyFloat>() {
+        return Ok(true);
+    }
+    if argument.value.is_exact_instance_of::<PyInt>() {
+        return Ok(false);
+    }
+    is_numpy_scalar_of_types(&argument.value, &["floating"])
 }
 
 #[derive(Clone, Copy)]

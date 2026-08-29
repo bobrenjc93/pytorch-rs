@@ -357,6 +357,60 @@ class ArangeReferenceTests(unittest.TestCase):
                             self.tensor_contract(reference_torch, expected),
                         )
 
+    def test_floating_start_or_step_integer_endpoints_match_pytorch_2_13(self):
+        cases = (
+            (
+                "float start",
+                lambda module: module.arange(0.0, 3),
+            ),
+            (
+                "float start int step",
+                lambda module: module.arange(0.0, 3, 1),
+            ),
+            (
+                "float step",
+                lambda module: module.arange(0, 3, 1.0),
+            ),
+            (
+                "keyword float start",
+                lambda module: module.arange(start=0.0, end=3),
+            ),
+            (
+                "keyword float step",
+                lambda module: module.arange(start=0, end=3, step=1.0),
+            ),
+            (
+                "mixed positional keyword",
+                lambda module: module.arange(0, 3, step=1.0),
+            ),
+            (
+                "dtype none",
+                lambda module: module.arange(0.0, 3, 1, dtype=None),
+            ),
+            (
+                "numpy float start",
+                lambda module: module.arange(np.float32(0.0), 3),
+            ),
+            (
+                "numpy float step",
+                lambda module: module.arange(0, 3, np.float32(1.0)),
+            ),
+            (
+                "numpy keyword float start",
+                lambda module: module.arange(
+                    start=np.float32(0.0), end=3, step=1
+                ),
+            ),
+        )
+        for form, call in cases:
+            with self.subTest(form=form):
+                actual = call(torch)
+                expected = call(reference_torch)
+                self.assertEqual(
+                    self.tensor_contract(torch, actual),
+                    self.tensor_contract(reference_torch, expected),
+                )
+
     def test_default_equivalent_options_match_pytorch_2_13(self):
         option_factories = (
             lambda module: {},
@@ -434,6 +488,8 @@ class ArangeReferenceTests(unittest.TestCase):
             lambda module: module.arange(
                 0, 4, 1, dtype=module.float32, requires_grad=True
             ),
+            lambda module: module.arange(0.0, 4, requires_grad=True),
+            lambda module: module.arange(0, 4, 1.0, requires_grad=True),
         )
         empty_cases = (
             lambda module: module.arange(0.0, 0.0, requires_grad=True),
@@ -443,6 +499,8 @@ class ArangeReferenceTests(unittest.TestCase):
             lambda module: module.arange(
                 0, 0, dtype=module.float32, requires_grad=True
             ),
+            lambda module: module.arange(0.0, 0, requires_grad=True),
+            lambda module: module.arange(0, 0, 1.0, requires_grad=True),
         )
         for index, make_leaf in enumerate(cases):
             outcomes = []
@@ -616,6 +674,20 @@ class ArangeReferenceTests(unittest.TestCase):
                 ),
                 lambda module, requires_grad: module.arange(
                     0, 0, 1, dtype=module.float, requires_grad=requires_grad
+                ),
+            ),
+            (
+                lambda module, requires_grad: module.arange(
+                    0.0, 8, requires_grad=requires_grad
+                ),
+                lambda module, requires_grad: module.arange(
+                    0, 8, 1.0, requires_grad=requires_grad
+                ),
+                lambda module, requires_grad: module.arange(
+                    0.0, 0, requires_grad=requires_grad
+                ),
+                lambda module, requires_grad: module.arange(
+                    0, 0, 1.0, requires_grad=requires_grad
                 ),
             ),
         )

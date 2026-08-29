@@ -280,6 +280,29 @@ class ArangeTests(unittest.TestCase):
                     with self.subTest(end=end, dtype=dtype, form=form):
                         self.assert_default_tensor(call(), expected)
 
+    def test_floating_start_or_step_infers_float32_for_integer_endpoints(self):
+        cases = (
+            ("float start", lambda: torch.arange(0.0, 3)),
+            ("float start int step", lambda: torch.arange(0.0, 3, 1)),
+            ("float step", lambda: torch.arange(0, 3, 1.0)),
+            ("keyword float start", lambda: torch.arange(start=0.0, end=3)),
+            (
+                "keyword float step",
+                lambda: torch.arange(start=0, end=3, step=1.0),
+            ),
+            ("mixed positional keyword", lambda: torch.arange(0, 3, step=1.0)),
+            ("dtype none", lambda: torch.arange(0.0, 3, 1, dtype=None)),
+            ("numpy float start", lambda: torch.arange(np.float32(0.0), 3)),
+            ("numpy float step", lambda: torch.arange(0, 3, np.float32(1.0))),
+            (
+                "numpy keyword float start",
+                lambda: torch.arange(start=np.float32(0.0), end=3, step=1),
+            ),
+        )
+        for form, call in cases:
+            with self.subTest(form=form):
+                self.assert_default_tensor(call(), [0.0, 1.0, 2.0])
+
     def test_default_equivalent_metadata_is_accepted(self):
         option_cases = (
             {},
@@ -371,6 +394,14 @@ class ArangeTests(unittest.TestCase):
                 "integer endpoint",
                 lambda: torch.arange(0, 4, 1, dtype=torch.float32, requires_grad=True),
             ),
+            (
+                "float start integer endpoint",
+                lambda: torch.arange(0.0, 4, requires_grad=True),
+            ),
+            (
+                "float step integer endpoint",
+                lambda: torch.arange(0, 4, 1.0, requires_grad=True),
+            ),
         )
         weights = torch.tensor([1.0, 2.0, 3.0, 4.0])
         for form, call in cases:
@@ -393,6 +424,8 @@ class ArangeTests(unittest.TestCase):
             lambda: torch.arange(0.0, 0.0, requires_grad=True),
             lambda: torch.arange(start=-0.0, end=-0.0, step=1, requires_grad=True),
             lambda: torch.arange(0, 0, dtype=torch.float32, requires_grad=True),
+            lambda: torch.arange(0.0, 0, requires_grad=True),
+            lambda: torch.arange(0, 0, 1.0, requires_grad=True),
         ):
             with self.subTest(call=call):
                 self.assert_default_tensor(call(), [], requires_grad=True)
@@ -502,6 +535,21 @@ class ArangeTests(unittest.TestCase):
                     ),
                     lambda requires_grad=requires_grad: torch.arange(
                         -0.0, -0.0, 1, requires_grad=requires_grad
+                    ),
+                ),
+                (
+                    "float-inferred integer endpoint",
+                    lambda requires_grad=requires_grad: torch.arange(
+                        0.0, 8, requires_grad=requires_grad
+                    ),
+                    lambda requires_grad=requires_grad: torch.arange(
+                        0, 8, 1.0, requires_grad=requires_grad
+                    ),
+                    lambda requires_grad=requires_grad: torch.arange(
+                        0.0, 0, requires_grad=requires_grad
+                    ),
+                    lambda requires_grad=requires_grad: torch.arange(
+                        0, 0, 1.0, requires_grad=requires_grad
                     ),
                 ),
             ):
@@ -871,8 +919,7 @@ class ArangeTests(unittest.TestCase):
             lambda: torch.arange(0, 3, 1),
             lambda: torch.arange(start=0, end=3),
             lambda: torch.arange(0, end=3, dtype=None),
-            lambda: torch.arange(0.0, 3),
-            lambda: torch.arange(0.0, 3, 1),
+            lambda: torch.arange(0, 3, step=1),
             lambda: torch.arange(True, dtype=torch.float32),
             lambda: torch.arange(False, 3.0),
             lambda: torch.arange(0.0, True, dtype=torch.float32),
@@ -966,9 +1013,13 @@ class ArangeTests(unittest.TestCase):
             lambda: torch.arange(0.0, 3.0, end=4.0),
             lambda: torch.arange(3.0, step=1.0),
             lambda: torch.arange(0.25, 3.0),
+            lambda: torch.arange(0.25, 3),
             lambda: torch.arange(0.0, 3.0, 0.5),
+            lambda: torch.arange(0.0, 3, 0.5),
+            lambda: torch.arange(0, 3, 2.0),
             lambda: torch.arange(0.0, 3.0, step=2.0),
             lambda: torch.arange(0.0, 3.0, -1.0),
+            lambda: torch.arange(0, 3, -1.0),
             lambda: torch.arange(1, 3, dtype=torch.float32),
             lambda: torch.arange(3, step=1, dtype=torch.float32),
             lambda: torch.arange(start=1, end=3, dtype=torch.float32),
