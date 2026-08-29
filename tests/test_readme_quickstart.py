@@ -17,6 +17,14 @@ SUPPORTED_SURFACE_ANCHORS = (
     ),
     ("Unsupported boundaries", "unsupported-boundaries"),
 )
+SUPPORTED_SURFACE_SUBSECTION_ANCHORS = (
+    ("Metadata and views", "metadata-and-views", "####"),
+    ("Creation", "creation", "####"),
+    ("Elementwise and reductions", "elementwise-and-reductions", "####"),
+    ("NN and data helpers", "nn-and-data-helpers", "####"),
+    ("Backend and compiler metadata", "backend-and-compiler-metadata", "####"),
+    ("Unsupported boundaries", "unsupported-boundaries", "###"),
+)
 SUPPORTED_SURFACE_INDEX_SUMMARIES = (
     "CPU `float32` tensors",
     "inference-only `torch.nn.functional.softsign`",
@@ -98,6 +106,19 @@ class ReadmeQuickstartTests(unittest.TestCase):
                     rf"(?m)^### {re.escape(title)}$",
                     msg=f"missing supported-surface anchor: {anchor}",
                 )
+
+        previous_position = supported.index("## Current baseline")
+        for title, anchor, heading_level in SUPPORTED_SURFACE_SUBSECTION_ANCHORS:
+            with self.subTest(anchor=anchor):
+                heading = f"{heading_level} {title}"
+                self.assertRegex(
+                    supported,
+                    rf"(?m)^{re.escape(heading)}$",
+                    msg=f"missing supported-surface subsection anchor: {anchor}",
+                )
+                position = supported.index(heading)
+                self.assertGreater(position, previous_position)
+                previous_position = position
 
 
 if __name__ == "__main__":
