@@ -224,6 +224,40 @@ fn _nn_functional_dropout_tensor_autograd_suffix(input: &PyTensor) -> String {
     )
 }
 
+#[pyfunction]
+fn _nn_functional_silu(py: Python<'_>, input: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    let schema = ArgumentSchema::new("silu", "input", 1, "Tensor");
+    if !input.is_exact_instance_of::<PyTensor>() {
+        return Err(schema.type_error(input)?);
+    }
+    let input = input
+        .cast::<PyTensor>()
+        .expect("an exact PyTensor instance must downcast")
+        .try_borrow()?;
+    if input.inner().dtype() != DType::Float32 || input.inner().device() != Device::Cpu {
+        return Err(PyNotImplementedError::new_err(
+            "torch_rs.nn.functional.silu only supports CPU float32 tensors",
+        ));
+    }
+
+    let output = input
+        .inner()
+        .silu_sigmoid_multiply()
+        .map_err(|error| tensor_error(&error))?;
+    PyTensor::new(output).into_py_any(py)
+}
+
+#[pyfunction]
+fn _nn_functional_silu_(input: &Bound<'_, PyAny>) -> PyResult<()> {
+    let schema = ArgumentSchema::new("silu_", "input", 1, "Tensor");
+    if !input.is_exact_instance_of::<PyTensor>() {
+        return Err(schema.type_error(input)?);
+    }
+    Err(PyNotImplementedError::new_err(
+        "torch_rs.nn.functional.silu does not support inplace=True",
+    ))
+}
+
 fn exact_linear_tensor<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTensor>> {
     if !value.is_exact_instance_of::<PyTensor>() {
         return Err(PyTypeError::new_err(LINEAR_EXACT_TENSORS_ERROR));
@@ -537,6 +571,8 @@ pub(crate) fn add_nn_functional_bridges(module: &Bound<'_, PyModule>) -> PyResul
     for function in [
         wrap_pyfunction!(_nn_functional_dropout, module)?,
         wrap_pyfunction!(_nn_functional_dropout_tensor_autograd_suffix, module)?,
+        wrap_pyfunction!(_nn_functional_silu, module)?,
+        wrap_pyfunction!(_nn_functional_silu_, module)?,
         wrap_pyfunction!(_nn_functional_linear, module)?,
         wrap_pyfunction!(_nn_functional_mse_loss, module)?,
     ] {

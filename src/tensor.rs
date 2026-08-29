@@ -3218,6 +3218,24 @@ impl Tensor {
         self.finish_saved_output_unary_vjp(output, AutogradNode::Sigmoid, apply_sigmoid_vjp)
     }
 
+    /// Applies `SiLU` values while retaining the existing sigmoid-and-multiply
+    /// autograd graph used by the Python functional wrapper.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the composed sigmoid or multiply operation is not
+    /// supported for the input, or when result metadata or storage allocation
+    /// fails.
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn silu_sigmoid_multiply(&self) -> Result<Self, TensorError> {
+        let sigmoid = self.sigmoid()?;
+        let mut output = self.mul(&sigmoid)?;
+        let data = self.materialize_with_strides(&output.strides, silu_value)?;
+        output.storage = Arc::new(Storage::from_owned(data, self.dtype(), self.device()));
+        output.offset = 0;
+        Ok(output)
+    }
+
     /// Computes the hyperbolic tangent of every element.
     ///
     /// # Errors
@@ -5457,6 +5475,11 @@ fn trunc_value(value: f32) -> f32 {
 
 fn sigmoid_value(value: f32) -> f32 {
     1.0 / (1.0 + (-value).exp())
+}
+
+#[cfg(feature = "python-bindings")]
+fn silu_value(value: f32) -> f32 {
+    value / (1.0 + (-value).exp())
 }
 
 fn sqrt_value(value: f32) -> f32 {

@@ -12,6 +12,8 @@ from ..torch_rs import (
     _nn_functional_dropout,
     _nn_functional_linear,
     _nn_functional_mse_loss,
+    _nn_functional_silu,
+    _nn_functional_silu_,
 )
 
 
@@ -188,6 +190,44 @@ def sigmoid(input):
     See :class:`~torch.nn.Sigmoid` for more details.
     """
     return input.sigmoid()
+
+
+def _silu_impl(input, inplace):
+    if type(input) is not Tensor:
+        if inplace:
+            return _nn_functional_silu_(input)
+        return _nn_functional_silu(input)
+    if inplace:
+        raise NotImplementedError(
+            "torch_rs.nn.functional.silu does not support inplace=True"
+        )
+    return _nn_functional_silu(input)
+
+
+def silu(input: Tensor, inplace: bool = False) -> Tensor:
+    r"""Apply the Sigmoid Linear Unit (SiLU) function, element-wise.
+
+    The SiLU function is also known as the swish function.
+
+    .. math::
+        \text{silu}(x) = x * \sigma(x), \text{where } \sigma(x) \text{ is the logistic sigmoid.}
+
+    .. note::
+        See `Gaussian Error Linear Units (GELUs) <https://arxiv.org/abs/1606.08415>`_
+        where the SiLU (Sigmoid Linear Unit) was originally coined, and see
+        `Sigmoid-Weighted Linear Units for Neural Network Function Approximation
+        in Reinforcement Learning <https://arxiv.org/abs/1702.03118>`_ and `Swish:
+        a Self-Gated Activation Function <https://arxiv.org/abs/1710.05941v1>`_
+        where the SiLU was experimented with later.
+
+    See :class:`~torch.nn.SiLU` for more details.
+    """
+    return _dispatch_unary_torch_function(
+        silu,
+        _silu_impl,
+        input,
+        {"inplace": inplace},
+    )
 
 
 def _softsign_impl(input):
