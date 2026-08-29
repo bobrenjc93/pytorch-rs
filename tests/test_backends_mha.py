@@ -175,6 +175,7 @@ class MhaFastpathTests(unittest.TestCase):
             {
                 "cpu",
                 "cuda",
+                "cusparselt",
                 "cudnn",
                 "kleidiai",
                 "m",
