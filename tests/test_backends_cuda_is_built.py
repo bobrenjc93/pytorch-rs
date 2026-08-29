@@ -99,6 +99,7 @@ class CudaIsBuiltTests(unittest.TestCase):
             {
                 "cpu",
                 "cuda",
+                "cusparselt",
                 "cudnn",
                 "kleidiai",
                 "m",

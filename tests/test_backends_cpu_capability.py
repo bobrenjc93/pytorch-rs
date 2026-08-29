@@ -143,6 +143,7 @@ class CpuCapabilityTests(unittest.TestCase):
             {
                 "cpu",
                 "cuda",
+                "cusparselt",
                 "cudnn",
                 "kleidiai",
                 "m",
