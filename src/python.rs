@@ -1767,6 +1767,20 @@ pub(crate) fn ravel_variable_function(
     )
 }
 
+pub(crate) fn reshape_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let ([input, shape], keyword_error) = bind_top_level_reshape_arguments(args, kwargs)?;
+    let input = parse_tensor_or_torch_function_argument("reshape", "input", &input)?;
+    let shape = parse_top_level_reshape_shape(&shape)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    dispatch_top_level_reshape(py, &input, &shape, args, kwargs)
+}
+
 pub(crate) fn abs_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -3130,6 +3144,82 @@ fn apply_top_level_ravel(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResu
         .try_borrow()?
         .inner
         .ravel()
+        .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+}
+
+fn dispatch_top_level_reshape(
+    py: Python<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
+    shape: &[i64],
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if torch_function_mode_stack::is_empty()
+        && let BoundTensorOrTorchFunction::Tensor(tensor) = input
+    {
+        return apply_top_level_reshape(py, tensor, shape);
+    }
+
+    let function = variable_function(py, "reshape")?;
+    let types = match input {
+        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
+        BoundTensorOrTorchFunction::Override(probed) => {
+            PyTuple::new(py, [probed.dispatch_type.clone()])?
+        }
+    };
+
+    // Generated variable functions validate their schema before dispatch and
+    // disable the top mode for the full dispatch attempt. Forwarding from a
+    // mode therefore reaches the next mode, then input overrides, then native.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    match input {
+        BoundTensorOrTorchFunction::Override(probed) => {
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                "torch.reshape",
+                active_mode.get(),
+                Some(probed.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundTensorOrTorchFunction::Tensor(tensor) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.reshape",
+                    active_mode.get(),
+                    None,
+                )?);
+            }
+            apply_top_level_reshape(py, tensor, shape)
+        }
+    }
+}
+
+fn apply_top_level_reshape(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    shape: &[i64],
+) -> PyResult<Py<PyAny>> {
+    let inner = tensor
+        .try_borrow()?
+        .inner
+        .reshape(shape)
         .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
 }
@@ -9380,6 +9470,94 @@ fn bind_legacy_binary_arguments<'py>(
     Ok(([input, other], keyword_error))
 }
 
+fn bind_top_level_reshape_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<([ParsedCallArgument<'py>; 2], Option<PyErr>)> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "reshape() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let keyword_argument = |names: &[&str]| -> PyResult<Option<Bound<'py, PyAny>>> {
+        let Some(keywords) = keywords else {
+            return Ok(None);
+        };
+        for name in names {
+            if let Some(value) = keywords.get_item(*name)? {
+                return Ok(Some(value));
+            }
+        }
+        Ok(None)
+    };
+
+    let input = if positional.is_empty() {
+        keyword_argument(&["input", "x", "a", "x1"])?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let shape = if positional.len() < 2 {
+        keyword_argument(&["shape"])?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    };
+
+    let Some(input) = input else {
+        return Err(PyTypeError::new_err(
+            "reshape() missing 2 required positional argument: \"input\", \"shape\"",
+        ));
+    };
+    let Some(shape) = shape else {
+        parse_tensor_or_torch_function_argument("reshape", "input", &input)?;
+        return Err(PyTypeError::new_err(
+            "reshape() missing 1 required positional arguments: \"shape\"",
+        ));
+    };
+
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        let keyword_arguments =
+            usize::from(input.position.is_none()) + usize::from(shape.position.is_none());
+        if keywords.len() > keyword_arguments {
+            for key in keywords.keys() {
+                let key = key.extract::<String>()?;
+                let position = match key.as_str() {
+                    "input" => 0,
+                    "shape" => 1,
+                    _ => {
+                        keyword_error = Some(PyTypeError::new_err(format!(
+                            "reshape() got an unexpected keyword argument '{key}'"
+                        )));
+                        break;
+                    }
+                };
+                if position < positional.len() {
+                    keyword_error = Some(PyTypeError::new_err(format!(
+                        "reshape() got multiple values for argument '{key}'"
+                    )));
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok(([input, shape], keyword_error))
+}
+
 fn bind_top_level_permute_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
@@ -11476,6 +11654,25 @@ fn parse_reshape_shape(
     parse_reshape_dimensions(shape_dimensions.len(), shape_dimensions.iter())
 }
 
+fn parse_top_level_reshape_shape(argument: &ParsedCallArgument<'_>) -> PyResult<Vec<i64>> {
+    let parsed = if let Ok(dimensions) = argument.value.cast::<PyList>() {
+        parse_top_level_reshape_dimensions(argument, dimensions.len(), dimensions.iter())
+    } else if let Ok(dimensions) = argument.value.cast::<PyTuple>() {
+        parse_top_level_reshape_dimensions(argument, dimensions.len(), dimensions.iter())
+    } else {
+        return Err(top_level_reshape_shape_type_error(argument)?);
+    };
+
+    match parsed {
+        Ok(shape) => Ok(shape),
+        Err(error) if argument.position.is_none() => {
+            drop(error);
+            Err(top_level_reshape_shape_type_error(argument)?)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn parse_reshape_dimensions<'py>(
     length: usize,
     dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
@@ -11496,6 +11693,52 @@ fn parse_reshape_dimensions<'py>(
         )?;
     }
     Ok(parsed)
+}
+
+fn parse_top_level_reshape_dimensions<'py>(
+    argument: &ParsedCallArgument<'_>,
+    length: usize,
+    dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
+) -> PyResult<Vec<i64>> {
+    let mut parsed = try_size_vector(length)?;
+    for (index, dimension) in dimensions.enumerate() {
+        if dimension.is_instance_of::<PyBool>() {
+            return Err(top_level_reshape_shape_element_type_error(
+                argument, index, &dimension,
+            )?);
+        }
+        let Ok(dimension_value) = dimension.extract::<i64>() else {
+            return Err(top_level_reshape_shape_element_type_error(
+                argument, index, &dimension,
+            )?);
+        };
+        try_push_size(&mut parsed, dimension_value)?;
+    }
+    Ok(parsed)
+}
+
+fn top_level_reshape_shape_type_error(argument: &ParsedCallArgument<'_>) -> PyResult<PyErr> {
+    let actual = python_type_name(&argument.value)?;
+    Ok(PyTypeError::new_err(format!(
+        "reshape(): argument 'shape'{} must be tuple of ints, not {actual}",
+        position_suffix(argument.position)
+    )))
+}
+
+fn top_level_reshape_shape_element_type_error(
+    argument: &ParsedCallArgument<'_>,
+    index: usize,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    let actual = python_type_name(value)?;
+    Ok(PyTypeError::new_err(format!(
+        "reshape(): argument 'shape'{} must be tuple of ints, but found element of type {actual} at pos {index}",
+        position_suffix(argument.position)
+    )))
+}
+
+fn position_suffix(position: Option<usize>) -> String {
+    position.map_or_else(String::new, |position| format!(" (position {position})"))
 }
 
 fn invalid_reshape_dimension(index: usize, reason: &str) -> PyErr {
