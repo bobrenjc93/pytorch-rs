@@ -270,17 +270,52 @@ fn eye_rejects_shape_and_storage_overflow_before_allocation() {
 fn full_handles_scalar_empty_and_multidimensional_shapes() {
     let scalar = Tensor::full([], -2.5).unwrap();
     assert!(scalar.shape().is_empty());
+    assert!(scalar.stride().is_empty());
+    assert_eq!(scalar.storage_offset(), 0);
+    assert_eq!(scalar.dtype(), DType::Float32);
+    assert_eq!(scalar.device(), Device::Cpu);
+    assert!(scalar.is_leaf());
+    assert!(!scalar.requires_grad());
     assert_eq!(scalar.numel(), 1);
     assert!((scalar.item().unwrap() + 2.5).abs() < f32::EPSILON);
 
     let empty = Tensor::full([2, 0, 3], 7.0).unwrap();
     assert_eq!(empty.shape(), [2, 0, 3]);
+    assert_eq!(empty.stride(), [3, 3, 1]);
+    assert_eq!(empty.storage_offset(), 0);
+    assert_eq!(empty.dtype(), DType::Float32);
+    assert_eq!(empty.device(), Device::Cpu);
+    assert!(empty.is_leaf());
+    assert!(!empty.requires_grad());
     assert_eq!(empty.numel(), 0);
     assert!(empty.as_slice().is_empty());
 
     let matrix = Tensor::full([2, 3], 1.25).unwrap();
     assert_eq!(matrix.shape(), [2, 3]);
+    assert_eq!(matrix.stride(), [3, 1]);
+    assert_eq!(matrix.storage_offset(), 0);
+    assert_eq!(matrix.dtype(), DType::Float32);
+    assert_eq!(matrix.device(), Device::Cpu);
+    assert!(matrix.is_leaf());
+    assert!(!matrix.requires_grad());
     assert_eq!(matrix.as_slice(), [1.25; 6]);
+}
+
+#[test]
+fn full_allocates_fresh_leaf_storage_for_each_nonempty_result() {
+    let first = Tensor::full([2, 3], -1.25).unwrap();
+    let second = Tensor::full([2, 3], -1.25).unwrap();
+
+    assert_ne!(first.data_ptr(), second.data_ptr());
+    assert!(!first.shares_storage_with(&second));
+    assert!(!first.is_set_to(&second));
+
+    let tracked = Tensor::full([2], 4.0).unwrap().with_requires_grad(true);
+    assert!(tracked.requires_grad());
+    assert!(tracked.is_leaf());
+    assert_eq!(tracked.storage_offset(), 0);
+    assert_eq!(tracked.dtype(), DType::Float32);
+    assert_eq!(tracked.device(), Device::Cpu);
 }
 
 #[test]

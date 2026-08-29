@@ -11808,9 +11808,12 @@ fn bool_subtraction_error() -> PyErr {
 }
 
 fn creation_shape_error(error: &TensorError, shape: &[usize]) -> PyErr {
-    if matches!(error, TensorError::ElementCountOverflow) {
+    if matches!(
+        error,
+        TensorError::ElementCountOverflow | TensorError::StorageCapacityOverflow { .. }
+    ) {
         PyRuntimeError::new_err(format!(
-            "Storage size calculation overflowed with size {shape:?}"
+            "Storage size calculation overflowed with sizes={shape:?}"
         ))
     } else {
         tensor_error(error)
@@ -11944,7 +11947,7 @@ impl ParsedArithmeticScalar {
 }
 
 fn fill_value_overflow() -> PyErr {
-    PyRuntimeError::new_err("value cannot be converted to float32 without overflow")
+    PyRuntimeError::new_err("value cannot be converted to type float without overflow")
 }
 
 fn scalar_tensor_overflow() -> PyErr {

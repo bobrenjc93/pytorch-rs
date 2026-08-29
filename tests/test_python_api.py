@@ -1930,13 +1930,16 @@ class PythonApiBaselineTests(unittest.TestCase):
 
     def test_full_rejects_storage_capacity_overflow(self):
         oversized = sys.maxsize // 4 + 1
-        with self.assertRaisesRegex(RuntimeError, "exceeds the platform capacity"):
+        with self.assertRaisesRegex(RuntimeError, "Storage size calculation overflowed"):
             torch.full([oversized], 1.0)
 
     def test_full_rejects_finite_fill_value_overflow(self):
         for fill_value in (1e40, -1e40):
             with self.subTest(fill_value=fill_value):
-                with self.assertRaisesRegex(RuntimeError, "float32 without overflow"):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "value cannot be converted to type float without overflow",
+                ):
                     torch.full((2,), fill_value)
 
     def test_full_maps_shape_product_overflow_to_runtime_error(self):
