@@ -315,6 +315,76 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
                     actual_call, expected_call, position
                 )
 
+    def stateful_index_contract(self, module):
+        class StatefulIndexDimension:
+            def __init__(self, values):
+                self.values = list(values)
+                self.calls = 0
+
+            def __index__(self):
+                value = self.values[self.calls]
+                self.calls += 1
+                return value
+
+        tensor = module.tensor([1.0, 2.0, 3.0, 4.0])
+
+        dimension = StatefulIndexDimension((1, 2))
+        result = module.reshape(tensor, (dimension, 2))
+        positional = (tuple(result.shape), dimension.calls, np.asarray(result).tolist())
+
+        dimension = StatefulIndexDimension((1, 2))
+        result = module.reshape(input=tensor, shape=[dimension, 2])
+        keyword_list = (tuple(result.shape), dimension.calls, np.asarray(result).tolist())
+
+        dimension = StatefulIndexDimension((2**63, 2))
+        result = module.reshape(tensor, (dimension, 2))
+        first_overflow = (tuple(result.shape), dimension.calls, np.asarray(result).tolist())
+
+        dimension = StatefulIndexDimension((2, 1))
+        try:
+            module.reshape(tensor, (dimension, 2))
+        except Exception as error:
+            invalid = (type(error).__name__, str(error), dimension.calls)
+        else:
+            invalid = None
+
+        dimension = StatefulIndexDimension((2, 2**63))
+        try:
+            module.reshape(tensor, (dimension, 2))
+        except Exception as error:
+            message = str(error)
+            overflow = (
+                type(error).__name__,
+                "failed to unpack the object at pos 1" in message,
+                "Overflow when unpacking long long" in message,
+                dimension.calls,
+            )
+        else:
+            overflow = None
+
+        dimension = StatefulIndexDimension((2, 2.0))
+        try:
+            module.reshape(tensor, (dimension, 2))
+        except Exception as error:
+            second_type = (type(error).__name__, str(error), dimension.calls)
+        else:
+            second_type = None
+
+        return {
+            "positional": positional,
+            "keyword_list": keyword_list,
+            "first_overflow": first_overflow,
+            "invalid": invalid,
+            "overflow": overflow,
+            "second_type": second_type,
+        }
+
+    def test_stateful_index_dimension_conversion_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.stateful_index_contract(torch),
+            self.stateful_index_contract(reference_torch),
+        )
+
     def dispatch_contract(self, module):
         override_calls = []
 

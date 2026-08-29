@@ -2211,8 +2211,12 @@ enum BoundTensorOrTorchFunction<'py> {
     Override(ProbedTorchFunctionOverride<'py>),
 }
 
+struct BoundTopLevelNativeReshapeShape<'py> {
+    dimensions: Vec<Bound<'py, PyAny>>,
+}
+
 enum BoundTopLevelReshapeShape<'py> {
-    Native(Vec<i64>),
+    Native(BoundTopLevelNativeReshapeShape<'py>),
     Override(Vec<ProbedTorchFunctionOverride<'py>>),
 }
 
@@ -3206,12 +3210,13 @@ fn dispatch_top_level_reshape(
 fn apply_top_level_reshape(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
-    shape: &[i64],
+    shape: &BoundTopLevelNativeReshapeShape<'_>,
 ) -> PyResult<Py<PyAny>> {
+    let shape = parse_top_level_reshape_native_dimensions(shape)?;
     let inner = tensor
         .try_borrow()?
         .inner
-        .reshape(shape)
+        .reshape(&shape)
         .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
 }
@@ -11724,7 +11729,7 @@ fn bind_top_level_reshape_dimensions<'py>(
     length: usize,
     dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
 ) -> PyResult<BoundTopLevelReshapeShape<'py>> {
-    let mut parsed = try_size_vector(length)?;
+    let mut native_dimensions = try_size_vector(length)?;
     let mut dimensions = dimensions.enumerate();
     while let Some((index, dimension)) = dimensions.next() {
         if let Some(probed) = probe_torch_function_override(&dimension) {
@@ -11732,10 +11737,14 @@ fn bind_top_level_reshape_dimensions<'py>(
                 collect_top_level_reshape_shape_overrides(length, index, probed, dimensions)?;
             return Ok(BoundTopLevelReshapeShape::Override(overrides));
         }
-        let dimension_value = parse_top_level_reshape_dimension(argument, index, &dimension)?;
-        try_push_size(&mut parsed, dimension_value)?;
+        validate_top_level_reshape_dimension(argument, index, &dimension)?;
+        try_push_size(&mut native_dimensions, dimension)?;
     }
-    Ok(BoundTopLevelReshapeShape::Native(parsed))
+    Ok(BoundTopLevelReshapeShape::Native(
+        BoundTopLevelNativeReshapeShape {
+            dimensions: native_dimensions,
+        },
+    ))
 }
 
 fn collect_top_level_reshape_shape_overrides<'py>(
@@ -11757,11 +11766,11 @@ fn collect_top_level_reshape_shape_overrides<'py>(
     Ok(overrides)
 }
 
-fn parse_top_level_reshape_dimension(
+fn validate_top_level_reshape_dimension(
     argument: &ParsedCallArgument<'_>,
     index: usize,
     dimension: &Bound<'_, PyAny>,
-) -> PyResult<i64> {
+) -> PyResult<()> {
     if dimension.is_instance_of::<PyBool>() {
         return Err(top_level_reshape_shape_dimension_type_error(
             argument, index, dimension,
@@ -11772,9 +11781,27 @@ fn parse_top_level_reshape_dimension(
             argument, index, dimension,
         )?);
     };
-    indexed
-        .extract::<i64>()
-        .map_err(|_| top_level_reshape_shape_dimension_unpack_error(index + 1))
+    drop(indexed);
+    Ok(())
+}
+
+fn parse_top_level_reshape_native_dimensions(
+    shape: &BoundTopLevelNativeReshapeShape<'_>,
+) -> PyResult<Vec<i64>> {
+    let mut parsed = try_size_vector(shape.dimensions.len())?;
+    for (index, dimension) in shape.dimensions.iter().enumerate() {
+        let position = index + 1;
+        let Ok(indexed) = python_number_index(dimension) else {
+            return Err(top_level_reshape_shape_dimension_unpack_type_error(
+                position, dimension,
+            )?);
+        };
+        let dimension = indexed
+            .extract::<i64>()
+            .map_err(|_| top_level_reshape_shape_dimension_unpack_error(position))?;
+        try_push_size(&mut parsed, dimension)?;
+    }
+    Ok(parsed)
 }
 
 fn top_level_reshape_shape_type_error(argument: &ParsedCallArgument<'_>) -> PyResult<PyErr> {
@@ -11801,6 +11828,16 @@ fn top_level_reshape_shape_dimension_unpack_error(position: usize) -> PyErr {
     PyTypeError::new_err(format!(
         "reshape(): argument 'shape' failed to unpack the object at pos {position} with error \"Overflow when unpacking long long\""
     ))
+}
+
+fn top_level_reshape_shape_dimension_unpack_type_error(
+    position: usize,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    let actual = python_type_name(value)?;
+    Ok(PyTypeError::new_err(format!(
+        "reshape(): argument 'shape' failed to unpack the object at pos {position} with error \"type must be tuple of ints,but got {actual}\""
+    )))
 }
 
 fn top_level_reshape_shape_element_type_error(

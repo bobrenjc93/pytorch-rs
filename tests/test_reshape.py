@@ -516,6 +516,59 @@ class TopLevelReshapeTests(unittest.TestCase):
                 ):
                     call()
 
+    def test_stateful_index_dimensions_are_converted_again_by_native_reshape(self):
+        class StatefulIndexDimension:
+            def __init__(self, values):
+                self.values = list(values)
+                self.calls = 0
+
+            def __index__(self):
+                value = self.values[self.calls]
+                self.calls += 1
+                return value
+
+        tensor = torch.tensor([1.0, 2.0, 3.0, 4.0])
+        dimension = StatefulIndexDimension((1, 2))
+        result = torch.reshape(tensor, (dimension, 2))
+        self.assertEqual(result.shape, (2, 2))
+        self.assertEqual(dimension.calls, 2)
+
+        dimension = StatefulIndexDimension((1, 2))
+        result = torch.reshape(input=tensor, shape=[dimension, 2])
+        self.assertEqual(result.shape, (2, 2))
+        self.assertEqual(dimension.calls, 2)
+
+        dimension = StatefulIndexDimension((2**63, 2))
+        result = torch.reshape(tensor, (dimension, 2))
+        self.assertEqual(result.shape, (2, 2))
+        self.assertEqual(dimension.calls, 2)
+
+        dimension = StatefulIndexDimension((2, 1))
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^shape '\[1, 2\]' is invalid for input of size 4$",
+        ):
+            torch.reshape(tensor, (dimension, 2))
+        self.assertEqual(dimension.calls, 2)
+
+        dimension = StatefulIndexDimension((2, 2**63))
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^reshape\(\): argument 'shape' failed to unpack the object at pos 1 "
+            r'with error "Overflow when unpacking long long',
+        ):
+            torch.reshape(tensor, (dimension, 2))
+        self.assertEqual(dimension.calls, 2)
+
+        dimension = StatefulIndexDimension((2, 2.0))
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^reshape\(\): argument 'shape' failed to unpack the object at pos 1 "
+            r'with error "type must be tuple of ints,but got StatefulIndexDimension"$',
+        ):
+            torch.reshape(tensor, (dimension, 2))
+        self.assertEqual(dimension.calls, 2)
+
     def test_callable_metadata_documentation_ownership_exports_and_pickling(self):
         function = torch.reshape
         self.assertIs(type(function), types.BuiltinFunctionType)
