@@ -16,7 +16,7 @@ use pyo3::types::{
 };
 
 use crate::{
-    DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError,
+    DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, is_grad_enabled,
     python_cpython_compat as cpython_compat,
     python_device::{PyDevice, device_argument_type_error, parse_device_value},
     python_dtype::{PyDType, add_default_dtype_validator, dtype_object},
@@ -2051,6 +2051,21 @@ pub(crate) fn matmul_variable_function(
     dispatch_top_level_matmul(py, &input, &other, args, kwargs)
 }
 
+pub(crate) fn div_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let arguments = bind_top_level_div_arguments(args, kwargs)?;
+    let input = parse_top_level_div_input("input", &arguments.input)?;
+    let other = parse_top_level_div_other("other", &arguments.other)?;
+    if let Some(keyword_error) = arguments.keyword_error {
+        return Err(keyword_error);
+    }
+    validate_top_level_div_options(arguments.rounding_mode.as_ref(), arguments.out.as_ref())?;
+    dispatch_top_level_division(py, &input, &other, args, kwargs)
+}
+
 pub(crate) fn mul_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2325,6 +2340,17 @@ struct BoundUnaryOutCall<'py> {
 }
 
 enum BoundMulOperand<'py> {
+    Tensor(Bound<'py, PyTensor>),
+    Scalar(Bound<'py, PyAny>),
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+enum BoundDivInput<'py> {
+    Tensor(Bound<'py, PyTensor>),
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+enum BoundDivOther<'py> {
     Tensor(Bound<'py, PyTensor>),
     Scalar(Bound<'py, PyAny>),
     Override(ProbedTorchFunctionOverride<'py>),
@@ -3691,6 +3717,21 @@ fn ordered_multiplication_overrides<'py>(
     ordered_binary_overrides(input, other, operation.dispatch_allocation_error())
 }
 
+fn ordered_division_overrides<'py>(
+    input: &BoundDivInput<'py>,
+    other: &BoundDivOther<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let input = match input {
+        BoundDivInput::Override(probed) => Some(probed),
+        BoundDivInput::Tensor(_) => None,
+    };
+    let other = match other {
+        BoundDivOther::Override(probed) => Some(probed),
+        BoundDivOther::Tensor(_) | BoundDivOther::Scalar(_) => None,
+    };
+    ordered_binary_overrides(input, other, "unable to allocate div dispatch operands")
+}
+
 fn dispatch_top_level_matmul(
     py: Python<'_>,
     input: &BoundTensorOrTorchFunction<'_>,
@@ -3791,6 +3832,101 @@ fn dispatch_top_level_multiplication(
     )?)
 }
 
+fn dispatch_top_level_division(
+    py: Python<'_>,
+    input: &BoundDivInput<'_>,
+    other: &BoundDivOther<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_division_overrides(input, other)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_division(py, input, other);
+    }
+
+    let function = variable_function(py, "div")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Disable the top mode for the complete dispatch attempt. A mode can call
+    // the public function explicitly to forward to the next mode.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.div",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_division(
+    py: Python<'_>,
+    input: &BoundDivInput<'_>,
+    other: &BoundDivOther<'_>,
+) -> PyResult<Py<PyAny>> {
+    let result = match (input, other) {
+        (BoundDivInput::Tensor(input), BoundDivOther::Tensor(other)) => {
+            validate_top_level_div_autograd(input, Some(other))?;
+            let other = other.try_borrow()?;
+            BinaryOperation::Divide.apply_tensors(&input.try_borrow()?.inner, &other.inner)
+        }
+        (BoundDivInput::Tensor(input), BoundDivOther::Scalar(scalar)) => {
+            validate_top_level_div_autograd(input, None)?;
+            let scalar = parse_top_level_real_scalar(scalar)?;
+            BinaryOperation::Divide.apply_scalar(&input.try_borrow()?.inner, scalar, false)
+        }
+        (BoundDivInput::Override(_), _) | (_, BoundDivOther::Override(_)) => {
+            unreachable!("division overrides were dispatched before the native path")
+        }
+    };
+    Ok(Py::new(
+        py,
+        PyTensor::new(result.map_err(|error| tensor_error(&error))?),
+    )?
+    .into_any())
+}
+
+fn validate_top_level_div_autograd(
+    input: &Bound<'_, PyTensor>,
+    other: Option<&Bound<'_, PyTensor>>,
+) -> PyResult<()> {
+    if !is_grad_enabled() {
+        return Ok(());
+    }
+
+    let input_requires_grad = input.try_borrow()?.inner.requires_grad();
+    let other_requires_grad = if let Some(other) = other {
+        other.try_borrow()?.inner.requires_grad()
+    } else {
+        false
+    };
+    if input_requires_grad || other_requires_grad {
+        return Err(tensor_error(&TensorError::AutogradRecordingUnsupported {
+            operation: "div",
+        }));
+    }
+    Ok(())
+}
+
 fn apply_top_level_multiplication(
     operation: MultiplicationOperation,
     py: Python<'_>,
@@ -3804,7 +3940,7 @@ fn apply_top_level_multiplication(
         }
         (BoundMulOperand::Tensor(tensor), BoundMulOperand::Scalar(scalar))
         | (BoundMulOperand::Scalar(scalar), BoundMulOperand::Tensor(tensor)) => {
-            let scalar = parse_top_level_mul_scalar(scalar)?;
+            let scalar = parse_top_level_real_scalar(scalar)?;
             BinaryOperation::Multiply.apply_scalar(&tensor.try_borrow()?.inner, scalar, false)
         }
         (BoundMulOperand::Scalar(_), BoundMulOperand::Scalar(_)) => {
@@ -3824,13 +3960,13 @@ fn apply_top_level_multiplication(
     .into_any())
 }
 
-fn parse_top_level_mul_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
+fn parse_top_level_real_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
     match parse_arithmetic_scalar(value) {
         Ok(Some(ParsedArithmeticScalar::WideNumpyUnsigned)) => {
             Err(PyTypeError::new_err("an integer is required"))
         }
         Ok(Some(scalar)) => Ok(scalar.into_f32()),
-        Ok(None) => unreachable!("top-level mul scalar types were checked while binding"),
+        Ok(None) => unreachable!("top-level scalar types were checked while binding"),
         Err(_) if value.is_instance_of::<PyInt>() => {
             let message = if python_integer_is_negative(value)? {
                 "can't convert negative int to unsigned"
@@ -3862,6 +3998,14 @@ struct ArangeCallArguments<'py> {
     device: Option<Bound<'py, PyAny>>,
     pin_memory: Option<Bound<'py, PyAny>>,
     requires_grad: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
+struct DivCallArguments<'py> {
+    input: ParsedCallArgument<'py>,
+    other: ParsedCallArgument<'py>,
+    rounding_mode: Option<Bound<'py, PyAny>>,
+    out: Option<Bound<'py, PyAny>>,
     keyword_error: Option<PyErr>,
 }
 
@@ -9294,6 +9438,109 @@ fn bind_legacy_binary_arguments<'py>(
     Ok(([input, other], keyword_error))
 }
 
+fn bind_top_level_div_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<DivCallArguments<'py>> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "div() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut input = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut other = if positional.len() < 2 {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    };
+    let mut rounding_mode = None;
+    let mut out = None;
+    let mut keyword_error = None;
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "input" => {
+                    if positional.is_empty() {
+                        input = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    } else {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("div() got multiple values for argument 'input'")
+                        });
+                    }
+                }
+                "other" => {
+                    if positional.len() >= 2 {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("div() got multiple values for argument 'other'")
+                        });
+                    } else {
+                        other = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                "rounding_mode" => {
+                    rounding_mode = Some(value);
+                }
+                "out" => {
+                    out = Some(value);
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "div() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let Some(input) = input else {
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+        return Err(PyTypeError::new_err(
+            "div() missing 2 required positional argument: \"input\", \"other\"",
+        ));
+    };
+    let Some(other) = other else {
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+        parse_top_level_div_input("input", &input)?;
+        return Err(PyTypeError::new_err(
+            "div() missing 1 required positional arguments: \"other\"",
+        ));
+    };
+
+    Ok(DivCallArguments {
+        input,
+        other,
+        rounding_mode,
+        out,
+        keyword_error,
+    })
+}
+
 fn bind_top_level_permute_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
@@ -9461,6 +9708,56 @@ fn parse_top_level_multiplication_operand<'py>(
 
     parse_tensor_argument(operation.name(), argument, value)?;
     unreachable!("unsupported multiplication operands were rejected by parse_tensor_argument")
+}
+
+fn parse_top_level_div_input<'py>(
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+) -> PyResult<BoundDivInput<'py>> {
+    if let Ok(tensor) = value.value.cast::<PyTensor>() {
+        return Ok(BoundDivInput::Tensor(tensor.clone()));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundDivInput::Override(probed));
+    }
+
+    parse_tensor_argument("div", argument, value)?;
+    unreachable!("unsupported division inputs were rejected by parse_tensor_argument")
+}
+
+fn parse_top_level_div_other<'py>(
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+) -> PyResult<BoundDivOther<'py>> {
+    if let Ok(tensor) = value.value.cast::<PyTensor>() {
+        return Ok(BoundDivOther::Tensor(tensor.clone()));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundDivOther::Override(probed));
+    }
+    if is_real_arithmetic_scalar(&value.value)? {
+        return Ok(BoundDivOther::Scalar(value.value.clone()));
+    }
+
+    parse_tensor_argument("div", argument, value)?;
+    unreachable!("unsupported division operands were rejected by parse_tensor_argument")
+}
+
+fn validate_top_level_div_options(
+    rounding_mode: Option<&Bound<'_, PyAny>>,
+    out: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    if out.is_some_and(|out| !out.is_none()) {
+        return Err(PyRuntimeError::new_err(
+            "div(): the 'out' argument is not supported",
+        ));
+    }
+    if rounding_mode.is_some_and(|rounding_mode| !rounding_mode.is_none()) {
+        return Err(PyRuntimeError::new_err(
+            "div(): rounding_mode is not supported; only None is implemented",
+        ));
+    }
+    Ok(())
 }
 
 fn bind_matmul_argument<'py>(
