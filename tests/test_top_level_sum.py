@@ -8,7 +8,8 @@ import numpy as np
 import torch_rs as torch
 
 
-FUNCTION_DOC = """
+FUNCTION_DOC = (
+    """
 sum(input, *, dtype=None) -> Tensor
 
 Returns the sum of all elements in the :attr:`input` tensor.
@@ -48,12 +49,14 @@ output tensor having 1 (or ``len(dim)``) fewer dimension(s).
 
 Args:
     input (Tensor): the input tensor.
-    
-    dim (int or tuple of ints, optional): the dimension or dimensions to reduce.
+"""
+    "\x20\x20\x20\x20\n"
+    """    dim (int or tuple of ints, optional): the dimension or dimensions to reduce.
         If ``None``, all dimensions are reduced.
 
-    
-    keepdim (bool, optional): whether the output tensor has :attr:`dim` retained or not. Default: ``False``.
+"""
+    "\x20\x20\x20\x20\n"
+    """    keepdim (bool, optional): whether the output tensor has :attr:`dim` retained or not. Default: ``False``.
 
 
 Keyword args:
@@ -75,6 +78,7 @@ Example::
     >>> torch.sum(b, (2, 1))
     tensor([  435.,  1335.,  2235.,  3135.])
 """
+)
 
 EXPECTED_OVERLOADS = (
     "but expected one of:\n"
