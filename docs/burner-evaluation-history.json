@@ -7809,6 +7809,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 82
       }
+    },
+    {
+      "key": "pr:1293",
+      "recordedAt": "2026-08-29T08:38:36.425Z",
+      "label": "PR #1293",
+      "kind": "leaf",
+      "prNumber": 1293,
+      "title": "Add serialization safe-globals state helpers",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 85.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 82
+      }
     }
   ]
 }
