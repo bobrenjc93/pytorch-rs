@@ -5012,11 +5012,10 @@ fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
 fn eye(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_eye_arguments(args, kwargs)?;
     let (n, m, dtype, device, requires_grad) = parse_eye_arguments(arguments)?;
-    let shape = [n, m];
 
     CoreTensor::eye_with_metadata(n, m, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-        .map_err(|error| creation_shape_error(&error, &shape))
+        .map_err(|error| eye_shape_error(&error))
 }
 
 #[pyfunction(
@@ -11812,6 +11811,14 @@ fn creation_shape_error(error: &TensorError, shape: &[usize]) -> PyErr {
         PyRuntimeError::new_err(format!(
             "Storage size calculation overflowed with size {shape:?}"
         ))
+    } else {
+        tensor_error(error)
+    }
+}
+
+fn eye_shape_error(error: &TensorError) -> PyErr {
+    if matches!(error, TensorError::ElementCountOverflow) {
+        PyRuntimeError::new_err("numel: integer multiplication overflow")
     } else {
         tensor_error(error)
     }
