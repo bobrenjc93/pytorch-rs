@@ -610,6 +610,27 @@ impl Tensor {
         Self::zeros_with_metadata(shape, DType::Float32, Device::Cpu)
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn empty_with_metadata(
+        shape: impl Into<Vec<usize>>,
+        dtype: DType,
+        device: Device,
+    ) -> Result<Self, TensorError> {
+        let shape = shape.into();
+        let (elements, strides) = validated_layout(&shape)?;
+        validate_storage_capacity(elements)?;
+        if elements != 0 {
+            return Err(TensorError::ShapeDataMismatch { shape, elements: 0 });
+        }
+        Ok(Self::from_owned_parts(
+            Vec::new(),
+            shape,
+            strides,
+            dtype,
+            device,
+        ))
+    }
+
     pub(crate) fn zeros_with_metadata(
         shape: impl Into<Vec<usize>>,
         dtype: DType,

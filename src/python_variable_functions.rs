@@ -19,27 +19,28 @@ use crate::python::{
     arange_variable_function, as_tensor_variable_function, atleast_1d_variable_function,
     atleast_2d_variable_function, atleast_3d_variable_function,
     broadcast_tensors_variable_function, can_cast_variable_function, ceil_variable_function,
-    conj_variable_function, detach_variable_function, exp_variable_function, fix_variable_function,
-    floor_variable_function, get_device_variable_function, imag_variable_function,
-    is_conj_variable_function, is_inference_variable_function, matmul_variable_function,
-    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
-    multiply_variable_function, neg_variable_function, negative_variable_function,
-    permute_variable_function, positive_variable_function, promote_types_variable_function,
-    ravel_variable_function, real_variable_function, reciprocal_variable_function,
-    reshape_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
-    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
-    square_variable_function, sum_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function,
+    conj_variable_function, detach_variable_function, empty_variable_function,
+    exp_variable_function, fix_variable_function, floor_variable_function,
+    get_device_variable_function, imag_variable_function, is_conj_variable_function,
+    is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
+    movedim_variable_function, mul_variable_function, multiply_variable_function,
+    neg_variable_function, negative_variable_function, permute_variable_function,
+    positive_variable_function, promote_types_variable_function, ravel_variable_function,
+    real_variable_function, reciprocal_variable_function, reshape_variable_function,
+    resolve_conj_variable_function, resolve_neg_variable_function, rsqrt_variable_function,
+    scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
+    sin_variable_function, sqrt_variable_function, square_variable_function, sum_variable_function,
+    tanh_variable_function, trunc_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 48] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 49] = [
     "get_device",
     "as_tensor",
     "scalar_tensor",
     "arange",
+    "empty",
     "atleast_1d",
     "atleast_2d",
     "atleast_3d",
@@ -160,6 +161,48 @@ Example::
     tensor([ 1,  2,  3])
     >>> torch.arange(1, 2.5, 0.5)
     tensor([ 1.0000,  1.5000,  2.0000])
+";
+
+const EMPTY_DOC: &std::ffi::CStr = cr"
+empty(*size, *, out=None, dtype=None, layout=torch.strided, device=None, requires_grad=False, pin_memory=False, memory_format=torch.contiguous_format) -> Tensor
+
+Returns a tensor filled with uninitialized data. The shape of the tensor is
+defined by the variable argument :attr:`size`.
+
+.. note::
+    If :func:`torch.use_deterministic_algorithms()` and
+    :attr:`torch.utils.deterministic.fill_uninitialized_memory` are both set to
+    ``True``, the output tensor is initialized to prevent any possible
+    nondeterministic behavior from using the data as an input to an operation.
+    Floating point and complex tensors are filled with NaN, and integer tensors
+    are filled with the maximum value.
+
+Args:
+    size (int...): a sequence of integers defining the shape of the output tensor.
+        Can be a variable number of arguments or a collection like a list or tuple.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+    dtype (:class:`torch.dtype`, optional): the desired data type of returned tensor.
+        Default: if ``None``, uses a global default (see :func:`torch.set_default_dtype`).
+    layout (:class:`torch.layout`, optional): the desired layout of returned Tensor.
+        Default: ``torch.strided``.
+    device (:class:`torch.device`, optional): the desired device of returned tensor.
+        Default: if ``None``, uses the current device for the default tensor type
+        (see :func:`torch.set_default_device`). :attr:`device` will be the CPU
+        for CPU tensor types and the current CUDA device for CUDA tensor types.
+    requires_grad (bool, optional): If autograd should record operations on the
+        returned tensor. Default: ``False``.
+    pin_memory (bool, optional): If set, returned tensor would be allocated in
+        the pinned memory. Works only for CPU tensors. Default: ``False``.
+    memory_format (:class:`torch.memory_format`, optional): the desired memory format of
+        returned Tensor. Default: ``torch.contiguous_format``.
+
+Example::
+
+    >>> torch.empty((2,3), dtype=torch.int64)
+    tensor([[ 9.4064e+13,  2.8000e+01,  9.3493e+13],
+            [ 7.5751e+18,  7.1428e+18,  7.5955e+18]])
 ";
 
 const AS_TENSOR_DOC: &std::ffi::CStr = cr#"
@@ -955,6 +998,7 @@ variable_function_callback!(get_device_callback, get_device_variable_function);
 variable_function_callback!(as_tensor_callback, as_tensor_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
 variable_function_callback!(arange_callback, arange_variable_function);
+variable_function_callback!(empty_callback, empty_variable_function);
 variable_function_callback!(atleast_1d_callback, atleast_1d_variable_function);
 variable_function_callback!(atleast_2d_callback, atleast_2d_variable_function);
 variable_function_callback!(atleast_3d_callback, atleast_3d_variable_function);
@@ -1034,6 +1078,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"as_tensor", as_tensor_callback, AS_TENSOR_DOC),
         variable_function_method!(c"scalar_tensor", scalar_tensor_callback, c""),
         variable_function_method!(c"arange", arange_callback, ARANGE_DOC),
+        variable_function_method!(c"empty", empty_callback, EMPTY_DOC),
         variable_function_method!(c"atleast_1d", atleast_1d_callback, c""),
         variable_function_method!(c"atleast_2d", atleast_2d_callback, c""),
         variable_function_method!(c"atleast_3d", atleast_3d_callback, c""),

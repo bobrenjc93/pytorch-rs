@@ -1534,6 +1534,37 @@ pub(crate) fn arange_variable_function(
         .unbind())
 }
 
+pub(crate) fn empty_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if !torch_function_mode_stack::is_empty() {
+        let function = variable_function(py, "empty")?;
+        let types = PyTuple::empty(py);
+        let active_mode = torch_function_mode_stack::pop();
+        if let Some(mode) = active_mode.get() {
+            validate_torch_function_mode_handler(mode.bind(py))?;
+            let handler = mode.bind(py).getattr("__torch_function__")?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            return Err(torch_function_dispatch_error(
+                py,
+                "torch.empty",
+                Some(mode),
+                None,
+            )?);
+        }
+    }
+
+    Ok(Bound::new(py, empty_impl(args, kwargs)?)?
+        .into_any()
+        .unbind())
+}
+
 fn dispatch_empty_variadic_tensor_input(
     py: Python<'_>,
     name: &str,
@@ -5159,6 +5190,23 @@ fn arange_impl(
         .map_err(|error| scalar_creation_error(&error, Some(elements)))
 }
 
+fn empty_impl(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let arguments = bind_empty_arguments(args, kwargs)?;
+    let (size, dtype, device, requires_grad) = parse_creation_arguments("empty", arguments)?;
+    let ParsedCreationSize { dimensions, .. } = size;
+    let elements = CoreTensor::validate_full_shape(&dimensions)
+        .map_err(|error| creation_shape_error(&error, &dimensions))?;
+    if elements != 0 {
+        return Err(PyNotImplementedError::new_err(
+            "empty(): nonzero-element uninitialized allocation is not supported; only zero-element CPU float32 tensors are implemented",
+        ));
+    }
+
+    CoreTensor::empty_with_metadata(dimensions, dtype, device)
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
+        .map_err(|error| tensor_error(&error))
+}
+
 fn parse_requires_grad(function: &str, requires_grad: &Bound<'_, PyAny>) -> PyResult<bool> {
     if requires_grad.is_exact_instance_of::<PyBool>() {
         return requires_grad.is_truthy();
@@ -6054,6 +6102,69 @@ fn bind_creation_arguments<'py>(
                 arguments.keyword_error.get_or_insert_with(|| {
                     PyTypeError::new_err(format!(
                         "{function}() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
+}
+
+fn bind_empty_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<CreationCallArguments<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "empty() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut size_was_provided = !positional.is_empty();
+    let mut arguments = CreationCallArguments {
+        size: if positional.is_empty() {
+            None
+        } else {
+            Some(positional.get_item(0)?)
+        },
+        size_origin: if positional.is_empty() {
+            None
+        } else {
+            Some(CreationSizeOrigin::Positional)
+        },
+        shape: None,
+        out: None,
+        dtype: None,
+        device: None,
+        requires_grad: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "size" => {
+                if size_was_provided {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("empty() got multiple values for argument 'size'")
+                    });
+                } else {
+                    size_was_provided = true;
+                    arguments.size = Some(value);
+                    arguments.size_origin = Some(CreationSizeOrigin::SizeKeyword);
+                }
+            }
+            "out" => arguments.out = optional_call_argument(value),
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "empty() got an unexpected keyword argument '{key}'"
                     ))
                 });
             }
@@ -7066,6 +7177,10 @@ fn parse_creation_size<'py>(
         }
     };
 
+    if function == "empty" {
+        return parse_empty_creation_size(value, origin);
+    }
+
     let sequence_error = match value.extract::<Vec<usize>>() {
         Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
         Err(error) => error,
@@ -7075,6 +7190,95 @@ fn parse_creation_size<'py>(
     }
 
     bind_creation_positional_dimension(function, value, sequence_error)
+}
+
+fn parse_empty_creation_size<'py>(
+    value: &Bound<'py, PyAny>,
+    origin: CreationSizeOrigin,
+) -> PyResult<PendingCreationSize<'py>> {
+    let argument_position = if origin == CreationSizeOrigin::Positional {
+        Some(1)
+    } else {
+        None
+    };
+    if let Ok(size) = value.cast::<PyList>() {
+        let dimensions = parse_empty_size_dimensions(size.len(), size.iter(), argument_position)?;
+        return Ok(PendingCreationSize::Dimensions(dimensions));
+    }
+    if let Ok(size) = value.cast::<PyTuple>() {
+        let dimensions = parse_empty_size_dimensions(size.len(), size.iter(), argument_position)?;
+        return Ok(PendingCreationSize::Dimensions(dimensions));
+    }
+
+    let sequence_error = empty_size_argument_type_error(value, Some(1))?;
+    if origin != CreationSizeOrigin::Positional {
+        return Err(empty_size_argument_type_error(value, argument_position)?);
+    }
+
+    bind_creation_positional_dimension("empty", value, sequence_error)
+}
+
+fn parse_empty_size_dimensions<'py>(
+    length: usize,
+    dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
+    argument_position: Option<usize>,
+) -> PyResult<Vec<usize>> {
+    let mut signed = try_size_vector(length)?;
+    for (index, dimension) in dimensions.enumerate() {
+        if dimension.is_instance_of::<PyBool>() || is_numpy_scalar_of_types(&dimension, &["bool_"])?
+        {
+            return Err(empty_size_element_type_error(
+                &dimension,
+                index,
+                argument_position,
+            )?);
+        }
+        let Ok(indexed) = python_number_index(&dimension) else {
+            return Err(empty_size_element_type_error(
+                &dimension,
+                index,
+                argument_position,
+            )?);
+        };
+        let dimension = indexed
+            .extract::<i64>()
+            .map_err(|_| empty_size_overflow_error(index + 1))?;
+        try_push_size(&mut signed, dimension)?;
+    }
+    validate_size(signed)
+}
+
+fn empty_size_argument_type_error(
+    value: &Bound<'_, PyAny>,
+    argument_position: Option<usize>,
+) -> PyResult<PyErr> {
+    let actual = python_type_name(value)?;
+    Ok(PyTypeError::new_err(format!(
+        "empty(): argument 'size'{} must be tuple of ints, not {actual}",
+        creation_argument_position(argument_position)
+    )))
+}
+
+fn empty_size_element_type_error(
+    value: &Bound<'_, PyAny>,
+    index: usize,
+    argument_position: Option<usize>,
+) -> PyResult<PyErr> {
+    let actual = python_type_name(value)?;
+    Ok(PyTypeError::new_err(format!(
+        "empty(): argument 'size'{} must be tuple of ints, but found element of type {actual} at pos {index}",
+        creation_argument_position(argument_position)
+    )))
+}
+
+fn creation_argument_position(argument_position: Option<usize>) -> String {
+    argument_position.map_or_else(String::new, |position| format!(" (position {position})"))
+}
+
+fn empty_size_overflow_error(position: usize) -> PyErr {
+    PyTypeError::new_err(format!(
+        "empty(): argument 'size' failed to unpack the object at pos {position} with error \"Overflow when unpacking long long\""
+    ))
 }
 
 fn bind_creation_positional_dimension<'py>(
@@ -7153,7 +7357,7 @@ fn creation_negative_dimension_error(function: &str, dimension: i64) -> PyErr {
     if function == "zeros" {
         PyRuntimeError::new_err("zeros: Dimension size must be non-negative.")
     } else {
-        debug_assert_eq!(function, "ones");
+        debug_assert!(matches!(function, "empty" | "ones"));
         PyRuntimeError::new_err(format!(
             "Trying to create tensor with negative dimension {dimension}: [{dimension}]"
         ))
