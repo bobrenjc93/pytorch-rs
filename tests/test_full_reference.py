@@ -118,6 +118,62 @@ class FullReferenceTests(unittest.TestCase):
         self.assertEqual(actual_dynamic.calls, 1)
         self.assertGreaterEqual(expected_dynamic.calls, 1)
 
+    def test_out_none_results_and_storage_freshness_match_pytorch_2_13(self):
+        cases = (
+            ("scalar tuple", lambda module: module.full((), -2.5, out=None)),
+            ("scalar list", lambda module: module.full([], -2.5, out=None)),
+            (
+                "empty middle",
+                lambda module: module.full([2, 0, 3], 7.0, out=None),
+            ),
+            (
+                "multidimensional",
+                lambda module: module.full((2, 3), 1.25, out=None),
+            ),
+            (
+                "size keyword",
+                lambda module: module.full(size=[2], fill_value=3.0, out=None),
+            ),
+            (
+                "requires grad",
+                lambda module: module.full(
+                    (2,),
+                    4.0,
+                    out=None,
+                    dtype=module.float32,
+                    device=module.device("cpu"),
+                    requires_grad=True,
+                ),
+            ),
+            (
+                "integer protocol dimensions",
+                lambda module: module.full(
+                    [IndexDimension(2), np.int64(0), IntSubclass(3)],
+                    np.float32(1.5),
+                    out=None,
+                ),
+            ),
+        )
+
+        for case, factory in cases:
+            with self.subTest(case=case):
+                actual = factory(torch)
+                actual_peer = factory(torch)
+                expected = factory(reference_torch)
+                expected_peer = factory(reference_torch)
+                self.assertEqual(
+                    self.tensor_contract(torch, actual),
+                    self.tensor_contract(reference_torch, expected),
+                )
+                self.assertEqual(
+                    actual.is_set_to(actual_peer),
+                    expected.is_set_to(expected_peer),
+                )
+                self.assertEqual(
+                    actual.data_ptr() == actual_peer.data_ptr(),
+                    expected.data_ptr() == expected_peer.data_ptr(),
+                )
+
     def test_nonfinite_and_signed_zero_values_match_pytorch_2_13(self):
         for fill_value in (math.nan, math.inf, -math.inf, 0.0, -0.0):
             with self.subTest(fill_value=repr(fill_value)):
@@ -134,6 +190,7 @@ class FullReferenceTests(unittest.TestCase):
             lambda module: {"dtype": None},
             lambda module: {"dtype": module.float32},
             lambda module: {"dtype": module.float},
+            lambda module: {"out": None},
             lambda module: {"device": None},
             lambda module: {"device": "cpu"},
             lambda module: {"device": "cpu:0"},
@@ -143,6 +200,7 @@ class FullReferenceTests(unittest.TestCase):
             lambda module: {"requires_grad": False},
             lambda module: {"requires_grad": True},
             lambda module: {
+                "out": None,
                 "dtype": module.float32,
                 "device": module.device("cpu"),
                 "requires_grad": True,
@@ -221,6 +279,65 @@ class FullReferenceTests(unittest.TestCase):
                     lambda: call(torch), lambda: call(reference_torch)
                 )
 
+    def test_out_none_error_order_matches_pytorch_2_13(self):
+        cases = (
+            ("missing size", lambda module: module.full(out=None)),
+            ("missing fill", lambda module: module.full((1,), out=None)),
+            ("negative size", lambda module: module.full((-1,), 3.0, out=None)),
+            (
+                "invalid dtype",
+                lambda module: module.full((1,), 3.0, dtype=object(), out=None),
+            ),
+            (
+                "invalid device",
+                lambda module: module.full((1,), 3.0, device=object(), out=None),
+            ),
+            (
+                "unknown keyword",
+                lambda module: module.full((1,), 3.0, unexpected=True, out=None),
+            ),
+            (
+                "duplicate size",
+                lambda module: module.full((1,), 3.0, size=(1,), out=None),
+            ),
+        )
+        for case, call in cases:
+            with self.subTest(case=case):
+                actual_type, actual_message = self.capture_error(lambda: call(torch))
+                expected_type, expected_message = self.capture_error(
+                    lambda: call(reference_torch)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(
+                    actual_message.replace("torch.device or str", "torch.device"),
+                    expected_message,
+                )
+
+    def test_out_type_error_order_matches_pytorch_2_13(self):
+        cases = (
+            ("missing size", lambda module: module.full(out=[])),
+            ("missing fill", lambda module: module.full((1,), out=[])),
+            ("valid shape", lambda module: module.full((1,), 1.0, out=[])),
+            ("negative size", lambda module: module.full((-1,), 1.0, out=[])),
+            (
+                "invalid dtype",
+                lambda module: module.full((1,), 1.0, dtype=object(), out=[]),
+            ),
+            (
+                "unknown keyword",
+                lambda module: module.full((1,), 1.0, unexpected=True, out=[]),
+            ),
+            (
+                "duplicate size",
+                lambda module: module.full((1,), 1.0, size=(1,), out=[]),
+            ),
+        )
+        for case, call in cases:
+            with self.subTest(case=case):
+                self.assert_error_matches(
+                    lambda: call(torch), lambda: call(reference_torch)
+                )
+
     def test_unsupported_dtype_device_layout_and_out_errors_are_pinned(self):
         self.assertFalse(hasattr(torch, "float64"))
         self.assertTrue(hasattr(reference_torch, "float64"))
@@ -229,6 +346,11 @@ class FullReferenceTests(unittest.TestCase):
             r"^full\(\): argument 'dtype' must be torch\.dtype, not dtype$",
         ):
             torch.full((1,), 1.0, dtype=reference_torch.float64)
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^full\(\): argument 'dtype' must be torch\.dtype, not dtype$",
+        ):
+            torch.full((1,), 1.0, out=None, dtype=reference_torch.float64)
         self.assertIs(
             reference_torch.full((1,), 1.0, dtype=reference_torch.float64).dtype,
             reference_torch.float64,
@@ -239,6 +361,11 @@ class FullReferenceTests(unittest.TestCase):
             r"^full\(\): device 'meta' is not supported; only 'cpu' is implemented$",
         ):
             torch.full((1,), 1.0, device="meta")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^full\(\): device 'meta' is not supported; only 'cpu' is implemented$",
+        ):
+            torch.full((1,), 1.0, out=None, device="meta")
         meta = reference_torch.full((1,), 1.0, device="meta")
         self.assertEqual(str(meta.device), "meta")
         self.assertIs(meta.dtype, reference_torch.float32)
@@ -246,7 +373,6 @@ class FullReferenceTests(unittest.TestCase):
 
         for keyword, value in (
             ("layout", torch.strided),
-            ("out", None),
             ("pin_memory", False),
         ):
             with self.subTest(keyword=keyword):
@@ -254,7 +380,20 @@ class FullReferenceTests(unittest.TestCase):
                     TypeError,
                     rf"^full\(\) got an unexpected keyword argument '{keyword}'$",
                 ):
-                    torch.full((1,), 1.0, **{keyword: value})
+                    torch.full((1,), 1.0, out=None, **{keyword: value})
+
+        out = torch.zeros((1,))
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^full\(\): the 'out' argument is not supported$",
+        ):
+            torch.full((1,), 1.0, out=out)
+        self.assertEqual(out.tolist(), [0.0])
+
+        for fill_value in ([1.0], object(), 1 + 2j):
+            with self.subTest(fill_value=type(fill_value).__name__):
+                with self.assertRaisesRegex(TypeError, "fill_value"):
+                    torch.full((1,), fill_value, out=None)
 
         self.assertIs(
             reference_torch.full(
@@ -268,6 +407,28 @@ class FullReferenceTests(unittest.TestCase):
         self.assertFalse(
             reference_torch.full((1,), 1.0, pin_memory=False).is_pinned()
         )
+
+    def test_callable_import_and_wildcard_exports_match_pytorch_2_13(self):
+        def contract(module):
+            function = module.full
+            import_namespace = {}
+            wildcard_namespace = {}
+            exec(
+                f"from {module.__name__} import full as imported_full",
+                import_namespace,
+            )
+            exec(f"from {module.__name__} import *", wildcard_namespace)
+            return {
+                "callable": callable(function),
+                "type": type(function).__name__,
+                "name": function.__name__,
+                "all_count": module.__all__.count("full"),
+                "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
+                "import_identity": import_namespace["imported_full"] is function,
+                "wildcard_identity": wildcard_namespace["full"] is function,
+            }
+
+        self.assertEqual(contract(torch), contract(reference_torch))
 
 
 if __name__ == "__main__":
