@@ -21,10 +21,12 @@ class OnesTests(unittest.TestCase):
     def test_one_positional_integer_matches_singleton_size(self):
         metadata = (
             {},
+            {"out": None},
             {"dtype": torch.float32},
             {"device": "cpu"},
             {"device": torch.device("cpu")},
             {
+                "out": None,
                 "dtype": torch.float32,
                 "device": torch.device("cpu"),
                 "requires_grad": True,
@@ -36,6 +38,29 @@ class OnesTests(unittest.TestCase):
                     torch.ones(2, **keywords),
                     torch.ones((2,), **keywords),
                 )
+
+    def test_out_none_uses_default_fresh_allocation(self):
+        cases = (
+            ("scalar", lambda keywords: torch.ones(2, **keywords)),
+            ("tuple", lambda keywords: torch.ones((2, 3), **keywords)),
+            ("size keyword", lambda keywords: torch.ones(size=(2,), **keywords)),
+            (
+                "shape alias",
+                lambda keywords: torch.ones(None, shape=(2,), **keywords),
+            ),
+            (
+                "requires grad",
+                lambda keywords: torch.ones((2,), requires_grad=True, **keywords),
+            ),
+            ("empty", lambda keywords: torch.ones((0,), **keywords)),
+        )
+
+        for case, factory in cases:
+            with self.subTest(case=case):
+                baseline = factory({})
+                with_out_none = factory({"out": None})
+                self.assert_tensor_matches(with_out_none, baseline)
+                self.assertFalse(with_out_none.is_set_to(baseline))
 
     def test_one_positional_dimension_uses_the_index_protocol(self):
         class IntSubclass(int):
@@ -167,6 +192,27 @@ class OnesTests(unittest.TestCase):
         ):
             with self.subTest(call=call):
                 with self.assertRaises(TypeError):
+                    call()
+
+    def test_out_tensor_layout_and_pin_memory_remain_unsupported(self):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            re.escape("ones(): the 'out' argument is not supported"),
+        ):
+            torch.ones(2, out=torch.ones(2))
+
+        for call, message in (
+            (
+                lambda: torch.ones(2, layout=torch.strided, out=None),
+                "ones() got an unexpected keyword argument 'layout'",
+            ),
+            (
+                lambda: torch.ones(2, pin_memory=False, out=None),
+                "ones() got an unexpected keyword argument 'pin_memory'",
+            ),
+        ):
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
                     call()
 
 
