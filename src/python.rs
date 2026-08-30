@@ -1092,6 +1092,26 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nadd(other, *, alpha=1) -> Tensor\n\nAdd a scalar or tensor to :attr:`self` tensor. If both :attr:`alpha`\nand :attr:`other` are specified, each element of :attr:`other` is scaled by\n:attr:`alpha` before being used.\n\nWhen :attr:`other` is a tensor, the shape of :attr:`other` must be\n:ref:`broadcastable <broadcasting-semantics>` with the shape of the underlying\ntensor\n\nSee :func:`torch.add`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn add(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let call = bind_add_method_arguments(args, kwargs)?;
+        let other = parse_add_operand(&call.other)?;
+        let alpha = parse_add_alpha(call.alpha.as_ref())?;
+        if let Some(keyword_error) = call.keyword_error {
+            return Err(keyword_error);
+        }
+
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        dispatch_add_method(slf.py(), tensor, &other, &alpha, args, kwargs)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nmatmul(tensor2) -> Tensor\n\nSee :func:`torch.matmul`\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn matmul(
@@ -2452,6 +2472,24 @@ struct BoundTopLevelSumCall<'py> {
 enum BoundMulOperand<'py> {
     Tensor(Bound<'py, PyTensor>),
     Scalar(Bound<'py, PyAny>),
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+struct BoundAddMethodCall<'py> {
+    other: ParsedCallArgument<'py>,
+    alpha: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
+enum BoundAddOperand<'py> {
+    Tensor(Bound<'py, PyTensor>),
+    Scalar(Bound<'py, PyAny>),
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+enum BoundAddAlpha<'py> {
+    Default,
+    NonDefault,
     Override(ProbedTorchFunctionOverride<'py>),
 }
 
@@ -3896,6 +3934,114 @@ fn dispatch_matmul(
             Ok(Py::new(py, result)?.into_any())
         }
     }
+}
+
+fn ordered_add_method_overrides<'py>(
+    other: &BoundAddOperand<'py>,
+    alpha: &BoundAddAlpha<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let other = match other {
+        BoundAddOperand::Override(probed) => Some(probed),
+        BoundAddOperand::Tensor(_) | BoundAddOperand::Scalar(_) => None,
+    };
+    let alpha = match alpha {
+        BoundAddAlpha::Override(probed) => Some(probed),
+        BoundAddAlpha::Default | BoundAddAlpha::NonDefault => None,
+    };
+    ordered_binary_overrides(other, alpha, "unable to allocate add dispatch operands")
+}
+
+fn dispatch_add_method(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    other: &BoundAddOperand<'_>,
+    alpha: &BoundAddAlpha<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_add_method_overrides(other, alpha)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_add_method(py, tensor, other, alpha);
+    }
+
+    let function = py.get_type::<PyTensorBase>().getattr("add")?.unbind();
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+    let argument_count = args
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("add dispatch argument count overflowed"))?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate add dispatch arguments"))?;
+    call_arguments.push(tensor.clone().into_any());
+    call_arguments.extend(args.iter());
+    let call_args = PyTuple::new(py, call_arguments)?;
+
+    // Generated tensor methods validate their schema before dispatch and
+    // disable the top mode for the complete attempt. Explicit forwarding from
+    // a mode therefore reaches the next mode, then operand overrides, then
+    // native arithmetic.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.Tensor.add",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_add_method(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    other: &BoundAddOperand<'_>,
+    alpha: &BoundAddAlpha<'_>,
+) -> PyResult<Py<PyAny>> {
+    if matches!(alpha, BoundAddAlpha::NonDefault) {
+        return Err(PyNotImplementedError::new_err(
+            "Tensor.add() only supports alpha=1",
+        ));
+    }
+    let result = match other {
+        BoundAddOperand::Tensor(other) => {
+            let other = other.try_borrow()?;
+            BinaryOperation::Add.apply_tensors(&tensor.try_borrow()?.inner, &other.inner)
+        }
+        BoundAddOperand::Scalar(scalar) => {
+            let scalar = parse_named_arithmetic_scalar(scalar)?;
+            BinaryOperation::Add.apply_scalar(&tensor.try_borrow()?.inner, scalar, false)
+        }
+        BoundAddOperand::Override(_) => {
+            unreachable!("add overrides were dispatched before the native path")
+        }
+    };
+    Ok(Py::new(
+        py,
+        PyTensor::new(result.map_err(|error| tensor_error(&error))?),
+    )?
+    .into_any())
 }
 
 fn ordered_binary_overrides<'py>(
@@ -10322,6 +10468,162 @@ fn parse_top_level_multiplication_operand<'py>(
     unreachable!("unsupported multiplication operands were rejected by parse_tensor_argument")
 }
 
+fn bind_add_method_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundAddMethodCall<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "add() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut other = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut other_keyword_present = false;
+    let mut x2_fallback = None;
+    let mut x2_keyword_present = false;
+    let mut alpha = None;
+    let mut invalid_keyword_seen = false;
+    let mut keyword_error = None;
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "other" => {
+                    other_keyword_present = true;
+                    if other.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("add() got multiple values for argument 'other'")
+                        });
+                    } else {
+                        other = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                "x2" => {
+                    x2_keyword_present = true;
+                    if x2_fallback.is_none() {
+                        x2_fallback = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                "alpha" => {
+                    alpha = Some(value);
+                }
+                _ => {
+                    invalid_keyword_seen = true;
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "add() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let x2_is_supported_alias = x2_keyword_present
+        && positional.is_empty()
+        && !other_keyword_present
+        && !invalid_keyword_seen;
+    if x2_keyword_present && !x2_is_supported_alias {
+        keyword_error.get_or_insert_with(|| {
+            PyTypeError::new_err("add() got an unexpected keyword argument 'x2'")
+        });
+    }
+
+    let other = other.or(x2_fallback).ok_or_else(|| {
+        PyTypeError::new_err("add() missing 1 required positional arguments: \"other\"")
+    })?;
+
+    Ok(BoundAddMethodCall {
+        other,
+        alpha,
+        keyword_error,
+    })
+}
+
+fn parse_add_operand<'py>(value: &ParsedCallArgument<'py>) -> PyResult<BoundAddOperand<'py>> {
+    if let Ok(tensor) = value.value.cast::<PyTensor>() {
+        return Ok(BoundAddOperand::Tensor(tensor.clone()));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundAddOperand::Override(probed));
+    }
+    if is_real_arithmetic_scalar(&value.value)? {
+        return Ok(BoundAddOperand::Scalar(value.value.clone()));
+    }
+
+    parse_tensor_argument("add", "other", value)?;
+    unreachable!("unsupported add operands were rejected by parse_tensor_argument")
+}
+
+fn parse_add_alpha<'py>(value: Option<&Bound<'py, PyAny>>) -> PyResult<BoundAddAlpha<'py>> {
+    let Some(value) = value else {
+        return Ok(BoundAddAlpha::Default);
+    };
+    if let Some(probed) = probe_torch_function_override(value) {
+        return Ok(BoundAddAlpha::Override(probed));
+    }
+
+    let scalar = parse_named_arithmetic_scalar_kind("add", "alpha", value)?;
+    if scalar.is_python_bool() {
+        return Err(PyRuntimeError::new_err(
+            "Boolean alpha only supported for Boolean results.",
+        ));
+    }
+    if scalar.is_one() {
+        Ok(BoundAddAlpha::Default)
+    } else {
+        Ok(BoundAddAlpha::NonDefault)
+    }
+}
+
+fn parse_named_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
+    parse_named_arithmetic_scalar_kind("add", "other", value).map(ParsedArithmeticScalar::into_f32)
+}
+
+fn parse_named_arithmetic_scalar_kind(
+    function: &str,
+    argument: &str,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<ParsedArithmeticScalar> {
+    match parse_arithmetic_scalar(value) {
+        Ok(Some(ParsedArithmeticScalar::WideNumpyUnsigned)) => {
+            Err(PyTypeError::new_err("an integer is required"))
+        }
+        Ok(Some(scalar)) => Ok(scalar),
+        Ok(None) => {
+            let actual = python_type_name(value)?;
+            Err(PyTypeError::new_err(format!(
+                "{function}(): argument '{argument}' must be Number, not {actual}"
+            )))
+        }
+        Err(_) if value.is_instance_of::<PyInt>() => {
+            let message = if python_integer_is_negative(value)? {
+                "can't convert negative int to unsigned"
+            } else {
+                "int too big to convert"
+            };
+            Err(PyOverflowError::new_err(message))
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn bind_matmul_argument<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
@@ -12782,6 +13084,15 @@ fn scalar_creation_error(error: &TensorError, scalar_dimension: Option<usize>) -
 }
 
 impl ParsedFillValue {
+    fn is_one(&self) -> bool {
+        match self {
+            Self::Float(value) => value.to_bits() == 1.0_f64.to_bits(),
+            Self::SignedInteger(value) => *value == 1,
+            Self::UnsignedInteger(value) => *value == 1,
+            Self::TensorScalar(value) => value.to_bits() == 1.0_f32.to_bits(),
+        }
+    }
+
     fn into_f32(self) -> PyResult<f32> {
         match self {
             Self::Float(value) => {
@@ -12855,6 +13166,16 @@ impl ParsedFillValue {
 impl ParsedArithmeticScalar {
     fn is_python_bool(&self) -> bool {
         matches!(self, Self::PythonBool(_))
+    }
+
+    fn is_one(&self) -> bool {
+        match self {
+            Self::PythonBool(value) => *value,
+            Self::Number(value) => value.is_one(),
+            Self::WideNumpyUnsigned => {
+                unreachable!("wide NumPy unsigned operands are dispatched before conversion")
+            }
+        }
     }
 
     fn into_f32(self) -> f32 {
