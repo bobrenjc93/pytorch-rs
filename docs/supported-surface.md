@@ -88,6 +88,8 @@ absolute_error = torch.nn.functional.l1_loss(x, y, reduction="none")
 assert absolute_error.tolist() == [[2.0, 1.0], [2.0, 5.0]]
 squared_error = torch.nn.functional.mse_loss(x, y, reduction="none")
 assert squared_error.tolist() == [[4.0, 1.0], [4.0, 25.0]]
+squared_error_total = torch.nn.functional.mse_loss(x, y, reduction="sum")
+assert squared_error_total.item() == 34.0
 assert torch.nn.functional.dropout(x, training=False) is x
 assert torch.nn.functional.dropout(x, p=0, training=True, inplace=True) is x
 fully_dropped = torch.nn.functional.dropout(x, p=1, training=True)
@@ -552,7 +554,7 @@ same native kernel; `inplace=True` is rejected before the input can be mutated.
 
 `torch.nn.functional.l1_loss(input, target, size_average=None, reduce=None, reduction="none", weight=None)` accepts exact native CPU float32 tensors with broadcastable shapes and composes subtraction and absolute value. Scalar, empty, offset, row-major, noncontiguous, channel-last, and broadcasted operands produce PyTorch-compatible bitwise values, shapes, strides, size-mismatch warnings, and fresh independent storage without mutating either operand. Unbroadcastable shapes, `"mean"` and `"sum"` reductions, weights, legacy reduction arguments, Tensor subclasses, active `TorchFunctionMode` contexts, and active autograd recording remain explicitly unsupported; gradient-requiring operands work under `torch.no_grad()`.
 
-`torch.nn.functional.mse_loss(input, target, size_average=None, reduce=None, reduction="none", weight=None)` accepts exact native CPU float32 tensors that are either same-shaped or have exactly one rank-0 operand, and fuses subtraction and square into one native binary pass. Scalar broadcasting emits PyTorch 2.13's size-mismatch warning. Scalar, empty, offset, row-major, noncontiguous, and channel-last operands produce PyTorch-compatible bitwise values, shapes, strides, and fresh independent storage without mutating either operand. Other broadcasting, `"mean"` and `"sum"` reductions, weights, legacy reduction arguments, Tensor subclasses, active `TorchFunctionMode` contexts, and active autograd recording remain explicitly unsupported; gradient-requiring operands work under `torch.no_grad()`.
+`torch.nn.functional.mse_loss(input, target, size_average=None, reduce=None, reduction="none" or "sum", weight=None)` accepts exact native CPU float32 tensors that are either same-shaped or have exactly one rank-0 operand, and fuses subtraction and square into one native binary pass. `reduction="none"` returns the elementwise result; `reduction="sum"` reduces that result to a fresh rank-0 scalar. Scalar broadcasting emits PyTorch 2.13's size-mismatch warning. Scalar, empty, offset, row-major, noncontiguous, signed-zero, NaN, and infinity operands produce PyTorch-compatible bitwise values, shapes, strides or scalar metadata, and fresh independent storage without mutating either operand. Other broadcasting, `"mean"` reduction, weights, legacy reduction arguments, Tensor subclasses, active `TorchFunctionMode` contexts, active autograd recording, and `torch.nn.MSELoss` remain explicitly unsupported; gradient-requiring operands work under `torch.no_grad()`.
 
 Functional dropout, rank-3 dropout1d, rank-2/rank-3/rank-4 dropout2d, and
 rank-5 dropout3d return the exact input object, including its storage, layout,

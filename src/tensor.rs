@@ -17,6 +17,8 @@ const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
 // Keep latency-sized products on the smaller single-row loop.
 const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 4 * 1024;
+#[cfg(any(feature = "python-bindings", test))]
+const PYTORCH_2_13_FLOAT32_SUM_VECTOR_WIDTH: usize = 8;
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
@@ -3008,6 +3010,44 @@ impl Tensor {
         Ok(output)
     }
 
+    /// Computes MSE loss with `PyTorch` 2.13's CPU float32 `sum` reduction.
+    ///
+    /// The reduction runs over the same temporary layout as
+    /// [`Self::squared_difference`]. That layout is observable through
+    /// floating-point accumulation order, especially for dense non-contiguous
+    /// outputs and NaN payload propagation, so this remains separate from the
+    /// public [`Self::sum`] fold.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when squared-difference materialization or reduction
+    /// iterator metadata allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn squared_difference_sum(&self, other: &Self) -> Result<Self, TensorError> {
+        let output = self.squared_difference(other)?;
+        output.pytorch_2_13_cpu_float32_full_sum()
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn pytorch_2_13_cpu_float32_full_sum(&self) -> Result<Self, TensorError> {
+        if self.elements == 0 {
+            return Ok(Self::from_scalar(0.0, self.dtype(), self.device()));
+        }
+
+        let total = if let Some(values) = self.storage.owned_values() {
+            pytorch_2_13_reduce_cpu_float32(
+                values,
+                self.offset,
+                &self.shape,
+                &self.strides,
+                self.elements,
+            )?
+        } else {
+            self.sum().item()?
+        };
+        Ok(Self::from_scalar(total, self.dtype(), self.device()))
+    }
+
     /// Computes an absolute difference through subtraction followed by abs.
     ///
     /// # Errors
@@ -4489,6 +4529,613 @@ fn apply_binary_operation_scalar(
     right: f32,
 ) -> f32 {
     operation(left, right)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_reduce_cpu_float32(
+    values: &[f32],
+    base_offset: usize,
+    shape: &[usize],
+    strides: &[usize],
+    elements: usize,
+) -> Result<f32, TensorError> {
+    debug_assert_ne!(elements, 0);
+    let (shape, strides) = pytorch_2_13_reduction_layout(shape, strides, elements)?;
+    let mut total = 0.0_f32;
+
+    match shape.as_slice() {
+        [] => {
+            total += storage_value(values, base_offset)?;
+        }
+        [size0] => {
+            total += pytorch_2_13_reduce_block(values, base_offset, strides[0], 0, *size0, 1)?;
+        }
+        _ => {
+            let mut coordinates = try_result_vector(shape.len(), elements)?;
+            coordinates.resize(shape.len(), 0_usize);
+            let mut offset = 0_usize;
+            while offset < elements {
+                let step0 = (shape[0] - coordinates[0]).min(elements - offset);
+                let step1 = if step0 == shape[0] {
+                    (shape[1] - coordinates[1]).min((elements - offset) / shape[0])
+                } else {
+                    1
+                };
+                let block_base =
+                    pytorch_2_13_reduction_block_base(base_offset, &strides, &coordinates)?;
+                total += pytorch_2_13_reduce_block(
+                    values, block_base, strides[0], strides[1], step0, step1,
+                )?;
+
+                offset = offset
+                    .checked_add(
+                        step0
+                            .checked_mul(step1)
+                            .ok_or(TensorError::IndexCalculationOverflow)?,
+                    )
+                    .ok_or(TensorError::IndexCalculationOverflow)?;
+                pytorch_2_13_increment_reduction_counter(&shape, &mut coordinates, step0, step1);
+            }
+        }
+    }
+
+    Ok(total)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_reduction_layout(
+    shape: &[usize],
+    strides: &[usize],
+    elements: usize,
+) -> Result<(Vec<usize>, Vec<usize>), TensorError> {
+    debug_assert_eq!(shape.len(), strides.len());
+    let rank = shape.len();
+    let mut permutation = try_result_vector(rank, elements)?;
+    permutation.extend((0..rank).rev());
+
+    for index in 1..rank {
+        let mut dimension_1 = index;
+        for dimension_0 in (0..index).rev() {
+            let comparison = compare_pytorch_2_13_reduction_dimensions(
+                shape,
+                strides,
+                permutation[dimension_0],
+                permutation[dimension_1],
+            );
+            if comparison > 0 {
+                permutation.swap(dimension_0, dimension_1);
+                dimension_1 = dimension_0;
+            } else if comparison < 0 {
+                break;
+            }
+        }
+    }
+
+    let mut ordered_shape = try_result_vector(rank, elements)?;
+    let mut ordered_strides = try_result_vector(rank, elements)?;
+    for axis in permutation {
+        ordered_shape.push(shape[axis]);
+        ordered_strides.push(strides[axis]);
+    }
+
+    if rank <= 1 {
+        return Ok((ordered_shape, ordered_strides));
+    }
+
+    let mut previous = 0_usize;
+    for dimension in 1..rank {
+        if pytorch_2_13_can_coalesce_reduction_dimensions(
+            ordered_shape[previous],
+            ordered_strides[previous],
+            ordered_shape[dimension],
+            ordered_strides[dimension],
+        ) {
+            if ordered_shape[previous] == 1 {
+                ordered_strides[previous] = ordered_strides[dimension];
+            }
+            ordered_shape[previous] = ordered_shape[previous]
+                .checked_mul(ordered_shape[dimension])
+                .ok_or(TensorError::ElementCountOverflow)?;
+        } else {
+            previous += 1;
+            if previous != dimension {
+                ordered_shape[previous] = ordered_shape[dimension];
+                ordered_strides[previous] = ordered_strides[dimension];
+            }
+        }
+    }
+    ordered_shape.truncate(previous + 1);
+    ordered_strides.truncate(previous + 1);
+
+    Ok((ordered_shape, ordered_strides))
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn compare_pytorch_2_13_reduction_dimensions(
+    shape: &[usize],
+    strides: &[usize],
+    dimension_0: usize,
+    dimension_1: usize,
+) -> i8 {
+    let stride_0 = strides[dimension_0];
+    let stride_1 = strides[dimension_1];
+    if stride_0 == 0 || stride_1 == 0 {
+        return 0;
+    }
+    if stride_0 < stride_1 {
+        return -1;
+    }
+    if stride_0 > stride_1 || shape[dimension_0] > shape[dimension_1] {
+        return 1;
+    }
+    0
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_can_coalesce_reduction_dimensions(
+    shape_0: usize,
+    stride_0: usize,
+    shape_1: usize,
+    stride_1: usize,
+) -> bool {
+    shape_0 == 1 || shape_1 == 1 || shape_0.checked_mul(stride_0) == Some(stride_1)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_reduction_block_base(
+    base_offset: usize,
+    strides: &[usize],
+    coordinates: &[usize],
+) -> Result<usize, TensorError> {
+    strides
+        .iter()
+        .zip(coordinates)
+        .try_fold(base_offset, |offset, (&stride, &coordinate)| {
+            let contribution = coordinate
+                .checked_mul(stride)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            offset
+                .checked_add(contribution)
+                .ok_or(TensorError::IndexCalculationOverflow)
+        })
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_increment_reduction_counter(
+    shape: &[usize],
+    coordinates: &mut [usize],
+    step0: usize,
+    step1: usize,
+) {
+    let mut overflow = step0;
+    let mut axis = 0_usize;
+    if step1 != 1 {
+        debug_assert_eq!(step0, shape[0]);
+        debug_assert_eq!(coordinates[0], 0);
+        axis = 1;
+        overflow = step1;
+    }
+
+    while axis < shape.len() && overflow > 0 {
+        let previous = coordinates[axis];
+        let mut value = previous + overflow;
+        if value >= shape[axis] {
+            overflow = 1;
+            value -= shape[axis];
+            debug_assert!(value < shape[axis]);
+        } else {
+            overflow = 0;
+        }
+        coordinates[axis] = value;
+        axis += 1;
+    }
+    debug_assert!(overflow == 0 || overflow == 1);
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_reduce_block(
+    values: &[f32],
+    base_offset: usize,
+    stride0: usize,
+    stride1: usize,
+    size0: usize,
+    size1: usize,
+) -> Result<f32, TensorError> {
+    if stride0 == 1 && size0 >= PYTORCH_2_13_FLOAT32_SUM_VECTOR_WIDTH {
+        return pytorch_2_13_vectorized_inner_sum(values, base_offset, stride1, size0, size1);
+    }
+    if stride1 == 1 && size1 >= PYTORCH_2_13_FLOAT32_SUM_VECTOR_WIDTH {
+        return pytorch_2_13_vectorized_outer_sum(values, base_offset, stride0, size0, size1);
+    }
+    if stride0 < stride1 {
+        pytorch_2_13_scalar_inner_sum(values, base_offset, stride0, stride1, size0, size1)
+    } else {
+        pytorch_2_13_scalar_outer_sum(values, base_offset, stride0, stride1, size0, size1)
+    }
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_vectorized_inner_sum(
+    values: &[f32],
+    base_offset: usize,
+    outer_stride: usize,
+    size0: usize,
+    size1: usize,
+) -> Result<f32, TensorError> {
+    let mut total = 0.0_f32;
+    for column in 0..size1 {
+        let row_base = checked_strided_offset(base_offset, column, outer_stride)?;
+        total += pytorch_2_13_row_sum_vectorized_inner(values, row_base, size0)?;
+    }
+    Ok(total)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_scalar_inner_sum(
+    values: &[f32],
+    base_offset: usize,
+    stride0: usize,
+    stride1: usize,
+    size0: usize,
+    size1: usize,
+) -> Result<f32, TensorError> {
+    let mut total = 0.0_f32;
+    for column in 0..size1 {
+        let row_base = checked_strided_offset(base_offset, column, stride1)?;
+        total += pytorch_2_13_row_sum_scalar(values, row_base, stride0, size0)?;
+    }
+    Ok(total)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_vectorized_outer_sum(
+    values: &[f32],
+    base_offset: usize,
+    inner_stride: usize,
+    size0: usize,
+    size1: usize,
+) -> Result<f32, TensorError> {
+    const NROWS: usize = 4;
+    let vector_width = PYTORCH_2_13_FLOAT32_SUM_VECTOR_WIDTH;
+    let mut total = 0.0_f32;
+    let mut column = 0_usize;
+    while column + NROWS * vector_width <= size1 {
+        let row_base = checked_strided_offset(base_offset, column, 1)?;
+        let sums = pytorch_2_13_multi_row_sum_vector::<NROWS>(
+            values,
+            row_base,
+            inner_stride,
+            vector_width,
+            size0,
+        )?;
+        for row in sums {
+            for value in row {
+                total += value;
+            }
+        }
+        column += NROWS * vector_width;
+    }
+    while column + vector_width <= size1 {
+        let row_base = checked_strided_offset(base_offset, column, 1)?;
+        let sums = pytorch_2_13_row_sum_vector(values, row_base, inner_stride, size0)?;
+        for value in sums {
+            total += value;
+        }
+        column += vector_width;
+    }
+    while column < size1 {
+        let row_base = checked_strided_offset(base_offset, column, 1)?;
+        total += pytorch_2_13_row_sum_scalar(values, row_base, inner_stride, size0)?;
+        column += 1;
+    }
+    Ok(total)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_scalar_outer_sum(
+    values: &[f32],
+    base_offset: usize,
+    stride0: usize,
+    stride1: usize,
+    size0: usize,
+    size1: usize,
+) -> Result<f32, TensorError> {
+    const NROWS: usize = 4;
+    let mut total = 0.0_f32;
+    let mut column = 0_usize;
+    while column + (NROWS - 1) < size1 {
+        let row_base = checked_strided_offset(base_offset, column, stride1)?;
+        let sums =
+            pytorch_2_13_multi_row_sum_scalar::<NROWS>(values, row_base, stride0, stride1, size0)?;
+        for sum in sums {
+            total += sum;
+        }
+        column += NROWS;
+    }
+    while column < size1 {
+        let row_base = checked_strided_offset(base_offset, column, stride1)?;
+        total += pytorch_2_13_row_sum_scalar(values, row_base, stride0, size0)?;
+        column += 1;
+    }
+    Ok(total)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_row_sum_scalar(
+    values: &[f32],
+    base_offset: usize,
+    stride: usize,
+    size: usize,
+) -> Result<f32, TensorError> {
+    const ILP_FACTOR: usize = 4;
+    let size_ilp = size / ILP_FACTOR;
+    let row_stride = stride
+        .checked_mul(ILP_FACTOR)
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    let mut partial_sums = pytorch_2_13_multi_row_sum_scalar::<ILP_FACTOR>(
+        values,
+        base_offset,
+        row_stride,
+        stride,
+        size_ilp,
+    )?;
+
+    for index in size_ilp * ILP_FACTOR..size {
+        let offset = checked_strided_offset(base_offset, index, stride)?;
+        partial_sums[0] += storage_value(values, offset)?;
+    }
+
+    for lane in 1..ILP_FACTOR {
+        partial_sums[0] += partial_sums[lane];
+    }
+
+    Ok(partial_sums[0])
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_multi_row_sum_scalar<const NROWS: usize>(
+    values: &[f32],
+    base_offset: usize,
+    row_stride: usize,
+    col_stride: usize,
+    size: usize,
+) -> Result<[f32; NROWS], TensorError> {
+    const NUM_LEVELS: usize = 4;
+    let level_power = 4_usize.max(ceil_log2(size) / NUM_LEVELS);
+    let level_step = 1_usize << level_power;
+    let level_mask = level_step - 1;
+    let mut acc = [[0.0_f32; NROWS]; NUM_LEVELS];
+    let mut index = 0_usize;
+
+    while index + level_step <= size {
+        for _ in 0..level_step {
+            for (lane, accumulator) in acc[0].iter_mut().enumerate() {
+                let offset =
+                    checked_strided_2d_offset(base_offset, index, row_stride, lane, col_stride)?;
+                *accumulator += storage_value(values, offset)?;
+            }
+            index += 1;
+        }
+        for level in 1..NUM_LEVELS {
+            let previous = acc[level - 1];
+            for (accumulator, value) in acc[level].iter_mut().zip(previous) {
+                *accumulator += value;
+            }
+            acc[level - 1] = [0.0; NROWS];
+            let mask = level_mask << (level * level_power);
+            if index & mask != 0 {
+                break;
+            }
+        }
+    }
+
+    while index < size {
+        for (lane, accumulator) in acc[0].iter_mut().enumerate() {
+            let offset =
+                checked_strided_2d_offset(base_offset, index, row_stride, lane, col_stride)?;
+            *accumulator += storage_value(values, offset)?;
+        }
+        index += 1;
+    }
+
+    for level in 1..NUM_LEVELS {
+        let level_acc = acc[level];
+        for (accumulator, value) in acc[0].iter_mut().zip(level_acc) {
+            *accumulator += value;
+        }
+    }
+
+    Ok(acc[0])
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_row_sum_vectorized_inner(
+    values: &[f32],
+    base_offset: usize,
+    size: usize,
+) -> Result<f32, TensorError> {
+    let vector_width = PYTORCH_2_13_FLOAT32_SUM_VECTOR_WIDTH;
+    let vector_size = size / vector_width;
+    let vector_acc = pytorch_2_13_row_sum_vector(values, base_offset, vector_width, vector_size)?;
+    let mut final_acc = 0.0_f32;
+
+    for index in vector_size * vector_width..size {
+        let offset = checked_strided_offset(base_offset, index, 1)?;
+        final_acc += storage_value(values, offset)?;
+    }
+    for value in vector_acc {
+        final_acc += value;
+    }
+
+    Ok(final_acc)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_row_sum_vector(
+    values: &[f32],
+    base_offset: usize,
+    vector_stride: usize,
+    size: usize,
+) -> Result<[f32; PYTORCH_2_13_FLOAT32_SUM_VECTOR_WIDTH], TensorError> {
+    const ILP_FACTOR: usize = 4;
+    let row_stride = vector_stride
+        .checked_mul(ILP_FACTOR)
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    let size_ilp = size / ILP_FACTOR;
+    let mut partial_sums = pytorch_2_13_multi_row_sum_vector::<ILP_FACTOR>(
+        values,
+        base_offset,
+        row_stride,
+        vector_stride,
+        size_ilp,
+    )?;
+
+    for index in size_ilp * ILP_FACTOR..size {
+        let offset = checked_strided_offset(base_offset, index, vector_stride)?;
+        let vector = load_f32_vector(values, offset)?;
+        add_f32_vector(&mut partial_sums[0], vector);
+    }
+
+    for lane in 1..ILP_FACTOR {
+        let partial = partial_sums[lane];
+        add_f32_vector(&mut partial_sums[0], partial);
+    }
+
+    Ok(partial_sums[0])
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_multi_row_sum_vector<const NROWS: usize>(
+    values: &[f32],
+    base_offset: usize,
+    row_stride: usize,
+    col_stride: usize,
+    size: usize,
+) -> Result<[[f32; PYTORCH_2_13_FLOAT32_SUM_VECTOR_WIDTH]; NROWS], TensorError> {
+    const NUM_LEVELS: usize = 4;
+    let level_power = 4_usize.max(ceil_log2(size) / NUM_LEVELS);
+    let level_step = 1_usize << level_power;
+    let level_mask = level_step - 1;
+    let mut acc = [[[0.0_f32; PYTORCH_2_13_FLOAT32_SUM_VECTOR_WIDTH]; NROWS]; NUM_LEVELS];
+    let mut index = 0_usize;
+
+    while index + level_step <= size {
+        for _ in 0..level_step {
+            for (lane, accumulator) in acc[0].iter_mut().enumerate() {
+                let offset =
+                    checked_strided_2d_offset(base_offset, index, row_stride, lane, col_stride)?;
+                let value = load_f32_vector(values, offset)?;
+                add_f32_vector(accumulator, value);
+            }
+            index += 1;
+        }
+        for level in 1..NUM_LEVELS {
+            let previous = acc[level - 1];
+            for (accumulator, partial) in acc[level].iter_mut().zip(previous) {
+                add_f32_vector(accumulator, partial);
+            }
+            acc[level - 1] = [[0.0; PYTORCH_2_13_FLOAT32_SUM_VECTOR_WIDTH]; NROWS];
+            let mask = level_mask << (level * level_power);
+            if index & mask != 0 {
+                break;
+            }
+        }
+    }
+
+    while index < size {
+        for (lane, accumulator) in acc[0].iter_mut().enumerate() {
+            let offset =
+                checked_strided_2d_offset(base_offset, index, row_stride, lane, col_stride)?;
+            let value = load_f32_vector(values, offset)?;
+            add_f32_vector(accumulator, value);
+        }
+        index += 1;
+    }
+
+    for level in 1..NUM_LEVELS {
+        let level_acc = acc[level];
+        for (accumulator, partial) in acc[0].iter_mut().zip(level_acc) {
+            add_f32_vector(accumulator, partial);
+        }
+    }
+
+    Ok(acc[0])
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn add_f32_vector(
+    accumulator: &mut [f32; PYTORCH_2_13_FLOAT32_SUM_VECTOR_WIDTH],
+    value: [f32; PYTORCH_2_13_FLOAT32_SUM_VECTOR_WIDTH],
+) {
+    for (accumulator, value) in accumulator.iter_mut().zip(value) {
+        *accumulator += value;
+    }
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn load_f32_vector(
+    values: &[f32],
+    offset: usize,
+) -> Result<[f32; PYTORCH_2_13_FLOAT32_SUM_VECTOR_WIDTH], TensorError> {
+    let mut vector = [0.0_f32; PYTORCH_2_13_FLOAT32_SUM_VECTOR_WIDTH];
+    for (lane, slot) in vector.iter_mut().enumerate() {
+        let offset = offset
+            .checked_add(lane)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        *slot = storage_value(values, offset)?;
+    }
+    Ok(vector)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn storage_value(values: &[f32], offset: usize) -> Result<f32, TensorError> {
+    values
+        .get(offset)
+        .copied()
+        .ok_or(TensorError::IndexCalculationOverflow)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn checked_strided_offset(
+    base_offset: usize,
+    index: usize,
+    stride: usize,
+) -> Result<usize, TensorError> {
+    let offset = index
+        .checked_mul(stride)
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    base_offset
+        .checked_add(offset)
+        .ok_or(TensorError::IndexCalculationOverflow)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn checked_strided_2d_offset(
+    base_offset: usize,
+    row: usize,
+    row_stride: usize,
+    column: usize,
+    column_stride: usize,
+) -> Result<usize, TensorError> {
+    let row_offset = row
+        .checked_mul(row_stride)
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    let column_offset = column
+        .checked_mul(column_stride)
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    base_offset
+        .checked_add(row_offset)
+        .and_then(|offset| offset.checked_add(column_offset))
+        .ok_or(TensorError::IndexCalculationOverflow)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn ceil_log2(value: usize) -> usize {
+    if value <= 1 {
+        0
+    } else {
+        usize::BITS as usize - (value - 1).leading_zeros() as usize
+    }
 }
 
 #[inline(never)]
