@@ -2,6 +2,7 @@
 
 import copyreg as _copyreg
 
+from ..torch_rs import enable_grad as enable_grad
 from ..torch_rs import no_grad as no_grad
 
 
@@ -9,7 +10,11 @@ def _legacy_rebuild_no_grad(context_type):
     return no_grad.__new__(context_type)
 
 
-def _no_grad_state(context):
+def _legacy_rebuild_enable_grad(context_type):
+    return enable_grad.__new__(context_type)
+
+
+def _grad_mode_state(context):
     getstate = getattr(context, "__getstate__", None)
     if getstate is not None:
         return getstate()
@@ -26,7 +31,7 @@ def _no_grad_state(context):
     return instance_state
 
 
-def _no_grad_newobj(context):
+def _grad_mode_newobj(context):
     context_type = type(context)
     getnewargs_ex = getattr(context, "__getnewargs_ex__", None)
     if getnewargs_ex is not None:
@@ -72,10 +77,21 @@ def _reduce_no_grad(context, protocol):
         return (
             _legacy_rebuild_no_grad,
             (type(context),),
-            _no_grad_state(context),
+            _grad_mode_state(context),
         )
-    newobj, newargs = _no_grad_newobj(context)
-    return newobj, newargs, _no_grad_state(context)
+    newobj, newargs = _grad_mode_newobj(context)
+    return newobj, newargs, _grad_mode_state(context)
 
 
-__all__ = ["no_grad"]
+def _reduce_enable_grad(context, protocol):
+    if protocol < 2:
+        return (
+            _legacy_rebuild_enable_grad,
+            (type(context),),
+            _grad_mode_state(context),
+        )
+    newobj, newargs = _grad_mode_newobj(context)
+    return newobj, newargs, _grad_mode_state(context)
+
+
+__all__ = ["no_grad", "enable_grad"]

@@ -1,4 +1,4 @@
-use pytorch_rs::{MemoryFormat, Tensor, TensorError, is_grad_enabled, no_grad};
+use pytorch_rs::{MemoryFormat, Tensor, TensorError, enable_grad, is_grad_enabled, no_grad};
 use std::{
     sync::{Arc, Barrier},
     thread,
@@ -4291,6 +4291,62 @@ fn no_grad_guards_remain_disabled_until_every_guard_is_dropped() {
 
     drop(inner);
     assert!(leaf.mul_scalar(2.0).unwrap().requires_grad());
+}
+
+#[test]
+fn enable_grad_temporarily_restores_recording_inside_no_grad() {
+    let leaf = Tensor::from_vec(vec![2.0], [])
+        .unwrap()
+        .with_requires_grad(true);
+    assert!(is_grad_enabled());
+    {
+        let _outer = no_grad();
+        let _inner = no_grad();
+        assert!(!leaf.mul_scalar(2.0).unwrap().requires_grad());
+        {
+            let _enabled = enable_grad();
+            assert!(is_grad_enabled());
+            assert!(leaf.mul_scalar(2.0).unwrap().requires_grad());
+            {
+                let _nested_no_grad = no_grad();
+                assert!(!leaf.mul_scalar(2.0).unwrap().requires_grad());
+            }
+            assert!(leaf.mul_scalar(2.0).unwrap().requires_grad());
+        }
+        assert!(!is_grad_enabled());
+        assert!(!leaf.mul_scalar(2.0).unwrap().requires_grad());
+    }
+    assert!(leaf.mul_scalar(2.0).unwrap().requires_grad());
+
+    let unwind = std::panic::catch_unwind(|| {
+        let _disabled = no_grad();
+        let _enabled = enable_grad();
+        assert!(is_grad_enabled());
+        panic!("restore grad mode");
+    });
+    assert!(unwind.is_err());
+    assert!(is_grad_enabled());
+
+    let guard = no_grad();
+    assert!(!is_grad_enabled());
+    thread::spawn(|| {
+        assert!(is_grad_enabled());
+        {
+            let _disabled = no_grad();
+            assert!(!is_grad_enabled());
+            {
+                let _enabled = enable_grad();
+                assert!(is_grad_enabled());
+            }
+            assert!(!is_grad_enabled());
+        }
+        assert!(is_grad_enabled());
+    })
+    .join()
+    .unwrap();
+    assert!(!is_grad_enabled());
+    drop(guard);
+    assert!(is_grad_enabled());
 }
 
 #[test]

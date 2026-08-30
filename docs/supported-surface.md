@@ -401,6 +401,14 @@ operations, with PyTorch-compatible multi-output indices for grad-tracked
 `Tensor.unbind()`, `torch.unbind()`, and tensor iteration; `Tensor.chunk` and
 `torch.chunk` are not exposed).
 
+Gradient-mode controls include `torch.no_grad()` and `torch.enable_grad()` as
+thread-local no-argument context managers and decorators, also importable from
+`torch.autograd` and `torch.autograd.grad_mode`. They preserve PyTorch 2.13
+canonical metadata, copy/pickle behavior, generator-decoration behavior, and
+nested restoration with exceptions. `torch.set_grad_enabled`,
+`torch.inference_mode`, inference tensor metadata, `torch.autograd.grad`, and
+broader autograd controls remain unsupported.
+
 View and layout coverage includes stride-aware indexing, dimension-zero
 `Tensor.select()`/`torch.select()` single first-axis views and
 `Tensor.unbind()`/`torch.unbind()` first-axis views, `Tensor.view()` and
