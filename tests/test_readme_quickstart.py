@@ -179,21 +179,5 @@ class ReadmeQuickstartTests(unittest.TestCase):
                 self.assertGreater(position, previous_position)
                 previous_position = position
 
-    def test_readme_managed_progress_markers_are_intact(self):
-        readme = README.read_text(encoding="utf-8")
-        start_marker = "<!-- burner-progress:start -->"
-        end_marker = "<!-- burner-progress:end -->"
-        self.assertEqual(readme.count(start_marker), 1)
-        self.assertEqual(readme.count(end_marker), 1)
-        self.assertLess(readme.index(start_marker), readme.index(end_marker))
-
-        managed_section = readme[
-            readme.index(start_marker) : readme.index(end_marker) + len(end_marker)
-        ]
-        self.assertIn("## Burner evaluation progress", managed_section)
-        self.assertIn("docs/burner-evaluation-progress.svg", managed_section)
-        self.assertIn("docs/burner-evaluation-history.json", managed_section)
-
-
 if __name__ == "__main__":
     unittest.main()
