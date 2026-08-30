@@ -1737,6 +1737,21 @@ pub(crate) fn positive_variable_function(
     )
 }
 
+pub(crate) fn real_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_or_override_argument("real", args, kwargs)?;
+    dispatch_single_tensor_override(
+        SingleTensorOverrideOperation::REAL,
+        py,
+        &input,
+        args,
+        kwargs,
+    )
+}
+
 pub(crate) fn detach_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2258,6 +2273,12 @@ impl SingleTensorOverrideOperation {
         name: "positive",
         qualified_name: "torch.positive",
         apply_native: apply_top_level_positive,
+    };
+
+    const REAL: Self = Self {
+        name: "real",
+        qualified_name: "torch.real",
+        apply_native: apply_top_level_real,
     };
 
     const RAVEL: Self = Self {
@@ -3209,6 +3230,10 @@ fn dispatch_single_tensor_override(
 )]
 fn apply_top_level_positive(_py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
     Ok(tensor.clone().unbind().into_any())
+}
+
+fn apply_top_level_real(_py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    tensor.getattr("real").map(Bound::unbind)
 }
 
 fn apply_top_level_ravel(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {

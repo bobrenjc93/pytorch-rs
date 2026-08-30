@@ -441,9 +441,10 @@ Flatten preserves shared storage for stride-compatible ranges and eagerly
 creates an independent contiguous copy otherwise. `Tensor.ravel()` and
 top-level `torch.ravel()` share the native view-or-copy path: row-contiguous
 inputs alias storage through a new one-dimensional wrapper, while other layouts
-are materialized. Already-matching contiguous, `cpu()`, `type_as()`, `real`,
-`Tensor.conj()`, `torch.conj()`, `Tensor.positive()`, `torch.positive()`, and
-unary `+` calls preserve Python object identity and shared storage; CPU
+are materialized. Already-matching contiguous, `cpu()`, `type_as()`,
+`Tensor.real`, `torch.real(input)`, `Tensor.conj()`, `torch.conj()`,
+`Tensor.positive()`, `torch.positive()`, and unary `+` calls preserve Python
+object identity and shared storage; CPU
 channel-last requests that need a different layout use the same checked
 materialization and autograd path as `contiguous()`. `Tensor.squeeze()`,
 `Tensor.squeeze(dim)`, and
@@ -501,16 +502,22 @@ its implementation engine.
 #### Elementwise and reductions
 
 The eager math surface includes independent deep cloning, exact `Tensor.equal()`
-and `torch.equal()` comparison, identity `Tensor.positive()`/
-`torch.positive()` and unary `+`, unary `-`, `Tensor.neg()`, its
-`Tensor.negative()` alias, `torch.neg()`, and the distinct top-level
-`torch.negative()` builtin. It supports broadcast tensor and real-scalar
-addition, subtraction, multiplication through `*`, `Tensor.mul()`,
+and `torch.equal()` comparison, identity `Tensor.real`/`torch.real(input)`,
+`Tensor.positive()`/`torch.positive()` and unary `+`, unary `-`,
+`Tensor.neg()`, its `Tensor.negative()` alias, `torch.neg()`, and the distinct
+top-level `torch.negative()` builtin. It supports broadcast tensor and
+real-scalar addition, subtraction, multiplication through `*`, `Tensor.mul()`,
 `Tensor.multiply()`, `torch.mul()`, and the distinct top-level
 `torch.multiply()` builtin, plus true division, the listed unary kernels,
-`Tensor.sum(dim=None)`, `torch.sum(input, dim=None, *, dtype=None)`, `Tensor.relu()`,
-`torch.relu()`, and rank-2 matrix multiplication through `@`,
+`Tensor.sum(dim=None)`, `torch.sum(input, dim=None, *, dtype=None)`,
+`Tensor.relu()`, `torch.relu()`, and rank-2 matrix multiplication through `@`,
 `Tensor.matmul()`, and `torch.matmul()`.
+
+Top-level `torch.real(input)` delegates to `Tensor.real` for exact native CPU
+float32 tensors, preserving identity, layout metadata, storage offset, scalar
+and empty shapes, and autograd metadata. Complex tensor dtypes, mutation APIs,
+`out`, non-tensor inputs without `__torch_function__`, dtype/device extension
+keywords, and top-level `torch.imag` remain unsupported.
 
 Top-level `torch.neg()` and `torch.negative()` share the same layout-preserving
 float32 CPU negation and autograd path while remaining distinct builtins; their

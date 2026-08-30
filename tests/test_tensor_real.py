@@ -1,4 +1,6 @@
 import inspect
+import pickle
+import re
 import types
 import unittest
 
@@ -11,6 +13,21 @@ PROPERTY_DOC = (
     "for a complex-valued input tensor.\n"
     "The returned tensor and :attr:`self` share the same underlying storage.\n\n"
     "Returns :attr:`self` if :attr:`self` is a real-valued tensor.\n\n"
+    "Example::\n\n"
+    "    >>> x=torch.randn(4, dtype=torch.cfloat)\n"
+    "    >>> x\n"
+    "    tensor([(0.3100+0.3553j), (-0.5445-0.7896j), "
+    "(-1.6492-0.0633j), (-0.0638-0.8119j)])\n"
+    "    >>> x.real\n"
+    "    tensor([ 0.3100, -0.5445, -1.6492, -0.0638])\n\n"
+)
+
+FUNCTION_DOC = (
+    "\nreal(input) -> Tensor\n\n"
+    "Returns a new tensor containing real values of the :attr:`self` tensor.\n"
+    "The returned tensor and :attr:`self` share the same underlying storage.\n\n"
+    "Args:\n"
+    "    input (Tensor): the input tensor.\n\n"
     "Example::\n\n"
     "    >>> x=torch.randn(4, dtype=torch.cfloat)\n"
     "    >>> x\n"
@@ -261,6 +278,306 @@ class TensorRealTests(unittest.TestCase):
         self.assertGreater(upper.calls, 1)
         self.assertEqual(lower.calls, 0)
         self.assertIs(tensor.real, tensor)
+
+
+class TopLevelRealTests(unittest.TestCase):
+    def tensor_cases(self):
+        scalar_bits = np.asarray(
+            (
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x007F_FFFF,
+                0x0080_0000,
+                0x3F80_0000,
+                0x7F7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ),
+            dtype=np.uint32,
+        )
+        scalar_storage = torch.tensor(memoryview(scalar_bits.view(np.float32)))
+        base = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
+        )
+        strided = base.transpose(0, 2)
+        offset = strided[1]
+        empty = torch.zeros((2, 0, 3)).transpose(0, 2)[1]
+        leaf = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+        )
+        non_leaf = (leaf * 3.0).transpose(0, 1)[1]
+
+        self.assertFalse(strided.is_contiguous())
+        self.assertGreater(offset.storage_offset(), 0)
+        self.assertEqual(empty.shape, (0, 2))
+        self.assertGreater(empty.storage_offset(), 0)
+        self.assertTrue(leaf.is_leaf)
+        self.assertFalse(non_leaf.is_leaf)
+        return (
+            *(
+                (f"float32 bits 0x{bits:08x}", scalar_storage[index])
+                for index, bits in enumerate(scalar_bits)
+            ),
+            ("empty offset view", empty),
+            ("offset strided view", offset),
+            ("strided view", strided),
+            ("autograd leaf", leaf),
+            ("autograd non-leaf", non_leaf),
+        )
+
+    @staticmethod
+    def real_calls(source):
+        return (
+            ("positional", torch.real(source)),
+            ("input", torch.real(input=source)),
+            ("x", torch.real(x=source)),
+            ("a", torch.real(a=source)),
+            ("x1", torch.real(x1=source)),
+        )
+
+    def assert_identity_result(self, source, result):
+        detached = source.detach()
+        metadata = (
+            source.shape,
+            source.stride(),
+            source.storage_offset(),
+            source.dtype,
+            source.device,
+            source.layout,
+            source.requires_grad,
+            source.is_leaf,
+            source.data_ptr(),
+        )
+        bits = np.asarray(detached).reshape(-1).view(np.uint32).copy()
+
+        self.assertIs(result, source)
+        self.assertIs(result, source.real)
+        self.assertTrue(result.is_set_to(detached))
+        self.assertEqual(
+            (
+                result.shape,
+                result.stride(),
+                result.storage_offset(),
+                result.dtype,
+                result.device,
+                result.layout,
+                result.requires_grad,
+                result.is_leaf,
+                result.data_ptr(),
+            ),
+            metadata,
+        )
+        np.testing.assert_array_equal(
+            np.asarray(result.detach()).reshape(-1).view(np.uint32), bits
+        )
+
+    def test_supported_call_forms_delegate_to_tensor_real_identity(self):
+        for case, source in self.tensor_cases():
+            for form, result in self.real_calls(source):
+                with self.subTest(case=case, form=form):
+                    self.assert_identity_result(source, result)
+
+    def test_leaf_and_non_leaf_graphs_are_not_changed(self):
+        leaf = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+        )
+        non_leaf = (torch.real(leaf) * 3.0).transpose(0, 1)[1]
+
+        for case, source in (("leaf", leaf), ("non-leaf", non_leaf)):
+            with self.subTest(case=case):
+                for _, result in self.real_calls(source):
+                    self.assert_identity_result(source, result)
+
+        torch.real(a=non_leaf).sum().backward()
+        self.assertEqual(leaf.grad.tolist(), [[0.0, 3.0, 0.0], [0.0, 3.0, 0.0]])
+        gradient = leaf.grad
+        for _, result in self.real_calls(leaf):
+            self.assertIs(result.grad, gradient)
+
+    def test_callable_metadata_documentation_and_exports_match_pytorch(self):
+        function = torch.real
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "real")
+        self.assertEqual(function.__qualname__, "_VariableFunctionsClass.real")
+        self.assertEqual(function.__module__, "torch")
+        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertIsNone(function.__text_signature__)
+        self.assertRegex(
+            repr(function),
+            r"^<built-in method real of type object at 0x[0-9a-f]+>$",
+        )
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+
+        owner = function.__reduce__()[1][0]
+        self.assertEqual(owner.__name__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__qualname__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__module__, "torch_rs._C")
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner.real, function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(
+                    pickle.loads(pickle.dumps(function, protocol=protocol)), function
+                )
+
+        self.assertEqual(torch.__all__.count("real"), 1)
+        self.assertNotIn("_VariableFunctionsClass", torch.__all__)
+        self.assertFalse(hasattr(torch, "_VariableFunctionsClass"))
+        self.assertFalse(hasattr(torch, "imag"))
+        self.assertNotIn("imag", torch.__all__)
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+        self.assertIs(wildcard_namespace["real"], function)
+        self.assertNotIn("imag", wildcard_namespace)
+
+    def test_binding_errors_and_unsupported_forms_match_pytorch_2_13(self):
+        tensor = torch.tensor([1.0])
+        cases = (
+            (
+                lambda: torch.real(),
+                'real() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.real(tensor, tensor),
+                "real() takes 1 positional argument but 2 were given",
+            ),
+            (
+                lambda: torch.real(tensor, input=tensor),
+                "real() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.real(tensor, extra=True, input=tensor),
+                "real() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.real(tensor, input=tensor, extra=True),
+                "real() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.real(extra=tensor),
+                'real() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.real(tensor, out=None),
+                "real() got an unexpected keyword argument 'out'",
+            ),
+            (
+                lambda: torch.real(tensor, out=tensor),
+                "real() got an unexpected keyword argument 'out'",
+            ),
+            (
+                lambda: torch.real(tensor, dtype=torch.float32),
+                "real() got an unexpected keyword argument 'dtype'",
+            ),
+            (
+                lambda: torch.real(tensor, device='cpu'),
+                "real() got an unexpected keyword argument 'device'",
+            ),
+            (
+                lambda: torch.real(1, extra=True),
+                "real(): argument 'input' (position 1) must be Tensor, not int",
+            ),
+            (
+                lambda: torch.real(input=[]),
+                "real(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.real(a=1),
+                "real(): argument 'input' must be Tensor, not int",
+            ),
+            (
+                lambda: torch.real(x=[]),
+                "real(): argument 'input' must be Tensor, not list",
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    call()
+
+    def make_override(self, result):
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return result
+
+        return Override(), Override
+
+    def test_torch_function_object_override_receives_original_call_forms(self):
+        marker = object()
+        value, override_type = self.make_override(marker)
+        calls = (
+            ("positional", lambda: torch.real(value), (value,), None),
+            ("input", lambda: torch.real(input=value), (), {"input": value}),
+            ("x", lambda: torch.real(x=value), (), {"x": value}),
+            ("a", lambda: torch.real(a=value), (), {"a": value}),
+            ("x1", lambda: torch.real(x1=value), (), {"x1": value}),
+        )
+
+        for form, call, expected_args, expected_kwargs in calls:
+            with self.subTest(form=form):
+                override_type.calls.clear()
+                self.assertIs(call(), marker)
+                self.assertEqual(len(override_type.calls), 1)
+                function, dispatch_types, args, kwargs = override_type.calls[0]
+                self.assertIs(function, torch.real)
+                self.assertEqual(dispatch_types, (override_type,))
+                self.assertEqual(args, expected_args)
+                self.assertEqual(kwargs, expected_kwargs)
+
+    def test_torch_function_modes_receive_top_level_real_and_forward(self):
+        tensor = torch.tensor([1.0])
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        calls = (
+            ("positional", lambda: torch.real(tensor), (tensor,), None),
+            ("input", lambda: torch.real(input=tensor), (), {"input": tensor}),
+            ("x", lambda: torch.real(x=tensor), (), {"x": tensor}),
+            ("a", lambda: torch.real(a=tensor), (), {"a": tensor}),
+            ("x1", lambda: torch.real(x1=tensor), (), {"x1": tensor}),
+        )
+        for form, call, expected_args, expected_kwargs in calls:
+            with self.subTest(form=form):
+                mode = RecordingMode()
+                with mode:
+                    self.assertIs(call(), marker)
+                self.assertEqual(len(mode.calls), 1)
+                function, dispatch_types, args, kwargs = mode.calls[0]
+                self.assertIs(function, torch.real)
+                self.assertEqual(dispatch_types, ())
+                self.assertEqual(args, expected_args)
+                self.assertEqual(kwargs, expected_kwargs)
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                self.assertIs(torch.real(tensor), tensor)
+        self.assertEqual(order, ["upper", "lower"])
+        self.assertIs(torch.real(tensor), tensor)
 
 
 if __name__ == "__main__":
