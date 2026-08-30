@@ -3149,7 +3149,7 @@ impl Tensor {
         )))
     }
 
-    /// Computes an absolute difference through subtraction followed by abs.
+    /// Computes an absolute difference, fusing same-shape contiguous inputs.
     ///
     /// # Errors
     ///
@@ -3157,7 +3157,39 @@ impl Tensor {
     /// result metadata or storage allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn absolute_difference(&self, other: &Self) -> Result<Self, TensorError> {
+        if self.shape == other.shape
+            && let Some(output) = self.absolute_difference_same_shape_contiguous(other)?
+        {
+            return Ok(output);
+        }
+
         self.zip_map(other, l1_loss_difference_value)?.abs()
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn absolute_difference_same_shape_contiguous(
+        &self,
+        other: &Self,
+    ) -> Result<Option<Self>, TensorError> {
+        debug_assert_eq!(self.shape, other.shape);
+        if !self.is_contiguous() || !other.is_contiguous() {
+            return Ok(None);
+        }
+        let (Some(left), Some(right)) = (self.contiguous_slice(), other.contiguous_slice()) else {
+            return Ok(None);
+        };
+
+        let elements = self.elements;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = contiguous_strides(&shape, elements)?;
+        let data = materialize_contiguous_absolute_difference(left, right, elements)?;
+        Ok(Some(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        )))
     }
 
     /// Multiplies tensors element by element with trailing-dimension broadcasting.
@@ -5974,6 +6006,25 @@ fn materialize_contiguous_squared_difference(
     for ((output, &left), &right) in data.iter_mut().zip(left).zip(right) {
         *output = squared_difference_value(left, right);
     }
+    Ok(data)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn materialize_contiguous_absolute_difference(
+    left: &[f32],
+    right: &[f32],
+    elements: usize,
+) -> Result<Vec<f32>, TensorError> {
+    debug_assert_eq!(left.len(), elements);
+    debug_assert_eq!(right.len(), elements);
+
+    let mut data = try_result_vector(elements, elements)?;
+    data.extend(
+        left.iter()
+            .copied()
+            .zip(right.iter().copied())
+            .map(|(left, right)| absolute_value(l1_loss_difference_value(left, right))),
+    );
     Ok(data)
 }
 
@@ -9814,6 +9865,103 @@ mod tests {
         assert!(
             empty_left
                 .squared_difference_same_shape_matching_dense(&empty_right)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn absolute_difference_same_shape_contiguous_fast_path_matches_composition() {
+        let assert_fast_path_matches = |left: &Tensor, right: &Tensor| {
+            assert_eq!(left.shape(), right.shape());
+            assert!(left.is_contiguous());
+            assert!(right.is_contiguous());
+
+            let difference = left.zip_map(right, l1_loss_difference_value).unwrap();
+            let expected = difference.abs().unwrap();
+            let actual = left
+                .absolute_difference_same_shape_contiguous(right)
+                .unwrap()
+                .expect("same-shape contiguous tensors should use the L1 fast path");
+
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert_eq!(actual.storage_offset(), expected.storage_offset());
+            assert_eq!(actual.dtype(), expected.dtype());
+            assert_eq!(actual.device(), expected.device());
+            assert!(!actual.shares_storage_with(left));
+            assert!(!actual.shares_storage_with(right));
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        };
+
+        let left_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+            0xff85_4321,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+        ];
+        let right_bits = [
+            0x8000_0000,
+            0x0000_0000,
+            0x8000_0001,
+            0x0000_0001,
+            0xff80_0000,
+            0x7f80_0000,
+            0xffc6_789a,
+            0x7fc2_abcd,
+            0xff86_789a,
+            0x7f82_abcd,
+            0x0000_0000,
+            0x8000_0000,
+        ];
+        let contiguous_left = Tensor::from_vec(
+            left_bits.map(f32::from_bits).to_vec(),
+            [3, left_bits.len() / 3],
+        )
+        .unwrap();
+        let contiguous_right = Tensor::from_vec(
+            right_bits.map(f32::from_bits).to_vec(),
+            [3, right_bits.len() / 3],
+        )
+        .unwrap();
+        assert_fast_path_matches(&contiguous_left, &contiguous_right);
+
+        let scalar_left = Tensor::from_vec(vec![-0.0], [1])
+            .unwrap()
+            .index_integer(0)
+            .unwrap();
+        let scalar_right = Tensor::from_vec(vec![2.5], [1])
+            .unwrap()
+            .index_integer(0)
+            .unwrap();
+        assert_fast_path_matches(&scalar_left, &scalar_right);
+
+        let empty_left = Tensor::zeros([5, 0, 7]).unwrap();
+        let empty_right = Tensor::ones([5, 0, 7]).unwrap();
+        assert_fast_path_matches(&empty_left, &empty_right);
+
+        let offset_left = offset_contiguous_tensor(&left_bits, &[3, 4]);
+        let offset_right = offset_contiguous_tensor(&right_bits, &[3, 4]);
+        assert_fast_path_matches(&offset_left, &offset_right);
+
+        let transposed_left = contiguous_left.transpose(0, 1).unwrap();
+        let transposed_right = contiguous_right.transpose(0, 1).unwrap();
+        assert!(
+            transposed_left
+                .absolute_difference_same_shape_contiguous(&transposed_right)
                 .unwrap()
                 .is_none()
         );

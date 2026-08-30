@@ -198,7 +198,9 @@ class FunctionalL1LossTests(unittest.TestCase):
             "``size_average=None``",
             "``reduce=None``",
             "``weight=None``",
-            "composes subtraction and absolute value",
+            "fuses same-shape row-major contiguous operands",
+            "one native absolute-difference pass",
+            "subtraction and absolute-value behavior",
             "fresh, independent tensor",
             "size-mismatch warning",
             "Unbroadcastable shapes",
@@ -260,6 +262,37 @@ class FunctionalL1LossTests(unittest.TestCase):
                     np.testing.assert_array_equal(
                         self.tensor_state(target)[-1], target_state[-1]
                     )
+
+    def test_bandwidth_sized_same_shape_contiguous_matches_composition(self):
+        input_values = np.linspace(
+            -1024.0,
+            1024.0,
+            1024 * 1024,
+            dtype=np.float32,
+        ).reshape(1024, 1024)
+        target_values = np.linspace(
+            2048.0,
+            -2048.0,
+            1024 * 1024,
+            dtype=np.float32,
+        ).reshape(1024, 1024)
+        input = torch.tensor(memoryview(input_values.reshape(-1))).view(1024, 1024)
+        target = torch.tensor(memoryview(target_values.reshape(-1))).view(1024, 1024)
+
+        self.assertTrue(input.is_contiguous())
+        self.assertTrue(target.is_contiguous())
+        actual = functional.l1_loss(input, target, reduction="none")
+        expected = (input - target).abs()
+
+        self.assert_matches_composition(
+            actual,
+            expected,
+            case="bandwidth-sized contiguous",
+        )
+        self.assertFalse(actual.is_set_to(input))
+        self.assertFalse(actual.is_set_to(target))
+        self.assertNotEqual(actual.data_ptr(), input.data_ptr())
+        self.assertNotEqual(actual.data_ptr(), target.data_ptr())
 
     def test_broadcasted_inputs_match_composition_warning_and_storage(self):
         for case, input, target in self.broadcast_cases():

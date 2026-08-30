@@ -488,6 +488,42 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             )
             self.assert_matches(actual, expected, case=("float32 edges", case))
 
+    def test_bandwidth_sized_same_shape_contiguous_matches_pytorch_2_13(self):
+        input_values = np.linspace(
+            -1024.0,
+            1024.0,
+            1024 * 1024,
+            dtype=np.float32,
+        )
+        target_values = np.linspace(
+            2048.0,
+            -2048.0,
+            1024 * 1024,
+            dtype=np.float32,
+        )
+        actual_input = torch.tensor(memoryview(input_values)).view(1024, 1024)
+        actual_target = torch.tensor(memoryview(target_values)).view(1024, 1024)
+        expected_input = reference_torch.tensor(memoryview(input_values)).view(
+            1024,
+            1024,
+        )
+        expected_target = reference_torch.tensor(memoryview(target_values)).view(
+            1024,
+            1024,
+        )
+
+        actual = functional.l1_loss(
+            actual_input,
+            actual_target,
+            reduction="none",
+        )
+        expected = reference_functional.l1_loss(
+            expected_input,
+            expected_target,
+            reduction="none",
+        )
+        self.assert_matches(actual, expected, case="bandwidth-sized contiguous")
+
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (
             (True, False),
