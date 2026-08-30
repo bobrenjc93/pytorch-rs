@@ -32,6 +32,7 @@ SUPPORTED_SURFACE_INDEX_SUMMARIES = (
     "inference-only `torch.nn.functional.softsign`",
     "Functional linear, loss, and deterministic dropout paths",
     "autocast cache state helpers",
+    "grad/autograd state queries",
     "eager JIT helper decorators and state queries",
     "Explicit unsupported APIs",
 )
@@ -66,6 +67,18 @@ SUPPORTED_SURFACE_COMMON_CALL_ROWS = (
             "[tensor metadata](#metadata-and-views)",
             "[backend metadata](#backend-and-compiler-metadata)",
         ),
+    ),
+    (
+        "Autograd state",
+        (
+            "`torch.is_grad_enabled`",
+            "`torch.no_grad`",
+            "`torch.is_inference_mode_enabled`",
+            "`torch.is_anomaly_enabled`",
+            "`torch.is_anomaly_check_nan_enabled`",
+            "`torch.autograd.is_view_replay_enabled`",
+        ),
+        ("[Backend and compiler metadata](#backend-and-compiler-metadata)",),
     ),
     (
         "Compiler helpers",
