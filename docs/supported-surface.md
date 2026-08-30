@@ -399,6 +399,11 @@ dtype-backed `Tensor.is_signed()` and `torch.is_signed()` queries, read-only
 `torch.float32.abbr == "f32"` metadata, canonical `torch.float32.to_real()`
 identity, and float32-only `torch.finfo` metadata.
 
+Complex tensor dtypes are not exposed yet. For supported real native tensors,
+read-only `Tensor.imag` and top-level `torch.imag` provide the
+PyTorch-compatible non-complex dtype `RuntimeError` path, including fresh errors
+while preserving tensor metadata, aliasing, and autograd state.
+
 Autograd-facing tensor metadata includes leaf-only `Tensor.retain_grad()` as a
 no-op for tensors with `requires_grad=True`, read-only `Tensor.retains_grad`
 metadata that remains `False` because retained non-leaf gradients are
