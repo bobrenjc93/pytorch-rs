@@ -3023,6 +3023,9 @@ impl Tensor {
             }
             return self.zip_map_same_shape(other, squared_difference_value);
         }
+        if let Some(output) = self.squared_difference_scalar_contiguous_broadcast(other)? {
+            return Ok(output);
+        }
 
         let plan = BroadcastPlan::new_for_expanded_operands(self, other)?;
         let mut output = if let Some((data, fast_plan)) =
@@ -3065,6 +3068,45 @@ impl Tensor {
             data,
             shape,
             strides,
+            self.dtype(),
+            self.device(),
+        )))
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn squared_difference_scalar_contiguous_broadcast(
+        &self,
+        other: &Self,
+    ) -> Result<Option<Self>, TensorError> {
+        if self.shape.is_empty() == other.shape.is_empty()
+            || self.dtype() != DType::Float32
+            || other.dtype() != DType::Float32
+            || self.device() != Device::Cpu
+            || other.device() != Device::Cpu
+        {
+            return Ok(None);
+        }
+
+        let (scalar, tensor, scalar_on_left) = if self.shape.is_empty() {
+            (self.value_at_linear_index(0), other, true)
+        } else {
+            (other.value_at_linear_index(0), self, false)
+        };
+        if !tensor.is_contiguous() {
+            return Ok(None);
+        }
+        let Some(values) = tensor.contiguous_slice() else {
+            return Ok(None);
+        };
+
+        let plan = BroadcastPlan::new_for_expanded_operands(self, other)?;
+        debug_assert_eq!(plan.elements, tensor.elements);
+        let data =
+            materialize_contiguous_scalar_squared_difference(values, scalar, scalar_on_left)?;
+        Ok(Some(Self::from_owned_parts(
+            data,
+            plan.shape,
+            plan.strides,
             self.dtype(),
             self.device(),
         )))
@@ -5885,6 +5927,33 @@ fn materialize_contiguous_squared_difference(
     let mut data = filled_storage(elements, 0.0)?;
     for ((output, &left), &right) in data.iter_mut().zip(left).zip(right) {
         *output = squared_difference_value(left, right);
+    }
+    Ok(data)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn materialize_contiguous_scalar_squared_difference(
+    values: &[f32],
+    scalar: f32,
+    scalar_on_left: bool,
+) -> Result<Vec<f32>, TensorError> {
+    validate_storage_capacity(values.len())?;
+
+    let mut data = try_result_vector(values.len(), values.len())?;
+    if scalar_on_left {
+        data.extend(
+            values
+                .iter()
+                .copied()
+                .map(|value| squared_difference_value(scalar, value)),
+        );
+    } else {
+        data.extend(
+            values
+                .iter()
+                .copied()
+                .map(|value| squared_difference_value(value, scalar)),
+        );
     }
     Ok(data)
 }
@@ -9826,6 +9895,149 @@ mod tests {
                     .eq(expected.logical_values().map(f32::to_bits))
             );
         }
+    }
+
+    fn assert_scalar_contiguous_squared_difference_matches_fallback(left: &Tensor, right: &Tensor) {
+        let fallback_left = if left.shape().is_empty() {
+            left.try_clone().unwrap()
+        } else {
+            shared_gradient_copy(left)
+        };
+        let fallback_right = if right.shape().is_empty() {
+            right.try_clone().unwrap()
+        } else {
+            shared_gradient_copy(right)
+        };
+        assert!(
+            fallback_left
+                .squared_difference_scalar_contiguous_broadcast(&fallback_right)
+                .unwrap()
+                .is_none()
+        );
+
+        let expected = fallback_left.squared_difference(&fallback_right).unwrap();
+        let actual = left
+            .squared_difference_scalar_contiguous_broadcast(right)
+            .unwrap()
+            .expect("contiguous rank-zero broadcast should use the fast path");
+        let ordinary = left.squared_difference(right).unwrap();
+
+        assert_eq!(actual.shape(), expected.shape());
+        assert_eq!(actual.stride(), expected.stride());
+        assert_eq!(actual.storage_offset(), expected.storage_offset());
+        assert_eq!(actual.dtype(), expected.dtype());
+        assert_eq!(actual.device(), expected.device());
+        assert_eq!(ordinary.shape(), actual.shape());
+        assert_eq!(ordinary.stride(), actual.stride());
+        assert!(
+            actual
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(expected.logical_values().map(f32::to_bits))
+        );
+        assert!(
+            ordinary
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(actual.logical_values().map(f32::to_bits))
+        );
+        assert!(!actual.shares_storage_with(left));
+        assert!(!actual.shares_storage_with(right));
+    }
+
+    #[test]
+    fn squared_difference_scalar_contiguous_broadcast_uses_fast_path() {
+        let tensor_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+            0xff85_4321,
+        ];
+        let contiguous = offset_contiguous_tensor(&tensor_bits, &[3, 4]);
+        let shared_contiguous = shared_gradient_copy(&contiguous);
+        assert!(contiguous.is_contiguous());
+        assert!(shared_contiguous.is_contiguous());
+        assert_ne!(contiguous.storage_offset(), 0);
+        assert!(contiguous.contiguous_slice().is_some());
+        assert!(shared_contiguous.contiguous_slice().is_none());
+
+        let singleton_contiguous = Tensor::from_vec(vec![0.0, 1.0], [2, 1])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        assert_eq!(singleton_contiguous.shape(), &[1, 2]);
+        assert_eq!(singleton_contiguous.stride(), &[1, 1]);
+        assert!(singleton_contiguous.is_contiguous());
+
+        for scalar_bits in [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc6_789a,
+            0x7f86_789a,
+        ] {
+            let scalar = Tensor::from_vec([0_u32, scalar_bits].map(f32::from_bits).to_vec(), [2])
+                .unwrap()
+                .index_integer(1)
+                .unwrap();
+            assert_scalar_contiguous_squared_difference_matches_fallback(&scalar, &contiguous);
+            assert_scalar_contiguous_squared_difference_matches_fallback(&contiguous, &scalar);
+            assert_scalar_contiguous_squared_difference_matches_fallback(
+                &scalar,
+                &singleton_contiguous,
+            );
+            assert_scalar_contiguous_squared_difference_matches_fallback(
+                &singleton_contiguous,
+                &scalar,
+            );
+        }
+    }
+
+    #[test]
+    fn squared_difference_scalar_contiguous_broadcast_handles_empty_and_rejects_strided() {
+        let empty = Tensor::zeros([2, 0, 3]).unwrap();
+        let scalar = Tensor::from_vec(vec![-0.0], []).unwrap();
+        for (left, right) in [(&scalar, &empty), (&empty, &scalar)] {
+            let expected = left.sub(right).unwrap().square().unwrap();
+            let actual = left
+                .squared_difference_scalar_contiguous_broadcast(right)
+                .unwrap()
+                .expect("empty contiguous rank-zero broadcast should use the fast path");
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert_eq!(actual.storage_offset(), expected.storage_offset());
+            assert_eq!(actual.numel(), 0);
+            assert!(!actual.shares_storage_with(left));
+            assert!(!actual.shares_storage_with(right));
+        }
+
+        let noncontiguous = Tensor::from_vec((0_u8..6).map(f32::from).collect(), [3, 2])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        assert!(!noncontiguous.is_contiguous());
+        assert!(
+            scalar
+                .squared_difference_scalar_contiguous_broadcast(&noncontiguous)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            noncontiguous
+                .squared_difference_scalar_contiguous_broadcast(&scalar)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

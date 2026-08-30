@@ -145,6 +145,7 @@ class FunctionalMseLossTests(unittest.TestCase):
             .reshape(2, 3, 4)
             .tolist()
         )
+        singleton_contiguous = torch.tensor([[0.0], [1.0]]).transpose(0, 1)
         offset_strided = torch.tensor(
             np.arange(48, dtype=np.float32).reshape(2, 2, 4, 3).tolist()
         )[1].transpose(1, 2)
@@ -154,6 +155,7 @@ class FunctionalMseLossTests(unittest.TestCase):
         singleton_strided = torch.tensor(
             np.arange(6, dtype=np.float32).reshape(3, 1, 2).tolist()
         ).permute(2, 1, 0)
+        empty_contiguous = torch.zeros((2, 0, 3))
         empty_strided = torch.zeros((2, 0, 3)).transpose(0, 2)
 
         return (
@@ -163,12 +165,16 @@ class FunctionalMseLossTests(unittest.TestCase):
             ("noncontiguous vector target", noncontiguous_matrix, vector),
             ("contiguous scalar input", scalar, contiguous),
             ("contiguous scalar target", contiguous, scalar),
+            ("singleton contiguous scalar input", scalar, singleton_contiguous),
+            ("singleton contiguous scalar target", singleton_contiguous, scalar),
             ("offset strided scalar input", offset_scalar, offset_strided),
             ("offset strided scalar target", offset_strided, offset_scalar),
             ("channels last scalar input", scalar, channels_last),
             ("channels last scalar target", channels_last, scalar),
             ("singleton strided scalar input", scalar, singleton_strided),
             ("singleton strided scalar target", singleton_strided, scalar),
+            ("empty contiguous scalar input", scalar, empty_contiguous),
+            ("empty contiguous scalar target", empty_contiguous, scalar),
             ("empty strided scalar input", scalar, empty_strided),
             ("empty strided scalar target", empty_strided, scalar),
         )
@@ -315,7 +321,18 @@ class FunctionalMseLossTests(unittest.TestCase):
                 self.assertEqual(caught[0].filename, __file__)
                 self.assertEqual(caught[0].lineno, warning_line)
 
-            self.assert_matches_composition(actual, expected, case=case)
+            expected_stride = None
+            if case in {
+                "singleton contiguous scalar input",
+                "singleton contiguous scalar target",
+            }:
+                expected_stride = (1, 1)
+            self.assert_matches_composition(
+                actual,
+                expected,
+                case=case,
+                expected_stride=expected_stride,
+            )
             with self.subTest(case=case, storage=True):
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
@@ -591,35 +608,46 @@ class FunctionalMseLossTests(unittest.TestCase):
             ],
             dtype=np.uint32,
         )
-        tensor = torch.tensor(memoryview(tensor_bits.view(np.float32))).view(3, 4)
-        tensor = tensor.transpose(0, 1)
+        contiguous_tensor = torch.tensor(
+            memoryview(tensor_bits.view(np.float32))
+        ).view(3, 4)
 
-        for scalar_bits in (
-            0x0000_0000,
-            0x8000_0000,
-            0x0000_0001,
-            0x7F80_0000,
-            0xFF80_0000,
-            0x7FC6_789A,
-            0x7F86_789A,
+        for tensor_layout, tensor in (
+            ("contiguous", contiguous_tensor),
+            ("transposed fallback", contiguous_tensor.transpose(0, 1)),
         ):
-            scalar_values = np.asarray([scalar_bits], dtype=np.uint32).view(np.float32)
-            scalar = torch.tensor(memoryview(scalar_values))[0]
-            for scalar_on_left in (True, False):
-                input, target = (scalar, tensor) if scalar_on_left else (tensor, scalar)
-                difference = input - target
-                expected = difference.square()
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    actual = functional.mse_loss(input, target, reduction="none")
-                with self.subTest(
-                    scalar_bits=hex(scalar_bits), scalar_on_left=scalar_on_left
-                ):
-                    self.assertEqual(actual.stride(), expected.stride())
-                    np.testing.assert_array_equal(
-                        self.tensor_bits(actual),
-                        self.tensor_bits(expected),
+            for scalar_bits in (
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC6_789A,
+                0x7F86_789A,
+            ):
+                scalar_values = np.asarray([scalar_bits], dtype=np.uint32).view(
+                    np.float32
+                )
+                scalar = torch.tensor(memoryview(scalar_values))[0]
+                for scalar_on_left in (True, False):
+                    input, target = (
+                        (scalar, tensor) if scalar_on_left else (tensor, scalar)
                     )
+                    difference = input - target
+                    expected = difference.square()
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        actual = functional.mse_loss(input, target, reduction="none")
+                    with self.subTest(
+                        tensor_layout=tensor_layout,
+                        scalar_bits=hex(scalar_bits),
+                        scalar_on_left=scalar_on_left,
+                    ):
+                        self.assertEqual(actual.stride(), expected.stride())
+                        np.testing.assert_array_equal(
+                            self.tensor_bits(actual),
+                            self.tensor_bits(expected),
+                        )
 
     def test_requires_grad_operands_need_no_grad(self):
         for input_requires_grad, target_requires_grad in (
