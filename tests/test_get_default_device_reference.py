@@ -99,6 +99,7 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
         ):
             result = module.set_default_device(device)
             first = module.get_default_device()
+            second = module.get_default_device()
             factories = (
                 module.tensor([1.0, 2.0]),
                 module.zeros((2, 0, 3)),
@@ -107,8 +108,15 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
             outcomes.append(
                 (
                     result,
+                    str(first),
+                    repr(first),
                     first.type,
+                    first.index,
+                    first == second,
+                    first is second,
+                    first == module.device(device),
                     tuple(tensor.device.type for tensor in factories),
+                    tuple(tensor.device.index for tensor in factories),
                 )
             )
             module.set_default_device(None)

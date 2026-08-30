@@ -61,16 +61,27 @@ SET_FUNCTION_DOC = """Sets the default ``torch.Tensor`` to be allocated on ``dev
 
 
 class GetDefaultDeviceTests(unittest.TestCase):
-    def assert_default_device_and_factories_are_cpu(self):
+    def setUp(self):
+        torch.set_default_device(None)
+        self.addCleanup(torch.set_default_device, None)
+
+    def assert_default_device_and_factories_are_cpu(self, expected_default=None):
+        if expected_default is None:
+            expected_default = torch.device("cpu")
+        else:
+            expected_default = torch.device(expected_default)
         first = torch.get_default_device()
         second = torch.get_default_device()
 
         self.assertIsInstance(first, torch.device)
-        self.assertEqual(first, torch.device("cpu"))
+        self.assertEqual(first, expected_default)
         self.assertEqual(second, first)
-        self.assertIsNot(second, first)
+        if first.index is None:
+            self.assertIsNot(second, first)
+        else:
+            self.assertIs(second, first)
         self.assertEqual(first.type, "cpu")
-        self.assertIsNone(first.index)
+        self.assertEqual(first.index, expected_default.index)
 
         factories = (
             ("tensor", lambda: torch.tensor([1.0, 2.0])),
@@ -84,7 +95,7 @@ class GetDefaultDeviceTests(unittest.TestCase):
         for name, factory in factories:
             with self.subTest(factory=name):
                 tensor = factory()
-                self.assertEqual(tensor.device, first)
+                self.assertEqual(tensor.device, torch.device("cpu"))
                 self.assertEqual(tensor.device.type, "cpu")
                 self.assertIsNone(tensor.device.index)
         self.assertIs(torch.get_default_dtype(), torch.float32)
@@ -116,9 +127,13 @@ class GetDefaultDeviceTests(unittest.TestCase):
         for value in values:
             with self.subTest(value=repr(value)):
                 self.assertIs(torch.set_default_device(value), None)
-                self.assert_default_device_and_factories_are_cpu()
+                expected = torch.device("cpu") if value is None else torch.device(value)
+                self.assert_default_device_and_factories_are_cpu(expected)
 
         self.assertIs(torch.set_default_device(device="cpu"), None)
+        self.assert_default_device_and_factories_are_cpu()
+        self.assertIs(torch.set_default_device(device="cpu:7"), None)
+        self.assert_default_device_and_factories_are_cpu(torch.device("cpu", 7))
         self.assertIs(torch.set_default_device(device=None), None)
         self.assert_default_device_and_factories_are_cpu()
 
@@ -243,6 +258,21 @@ class GetDefaultDeviceTests(unittest.TestCase):
         self.assertIsNone(function(None))
         self.assertIsNone(torch.set_default_device(torch.device("cpu")))
         self.assertIsNone(torch.set_default_device(torch.device("cpu:7")))
+        self.assert_default_device_and_factories_are_cpu(torch.device("cpu", 7))
+        self.assertIsNone(torch.set_default_device(None))
+        self.assert_default_device_and_factories_are_cpu()
+
+    def test_set_default_device_state_survives_package_reload_and_old_functions(self):
+        old_getter = torch.get_default_device
+        old_setter = torch.set_default_device
+
+        self.assertIsNone(torch.set_default_device("cpu:7"))
+        self.assert_default_device_and_factories_are_cpu(torch.device("cpu", 7))
+        self.assertIs(importlib.reload(torch), torch)
+        self.assert_default_device_and_factories_are_cpu(torch.device("cpu", 7))
+        self.assertEqual(old_getter(), torch.device("cpu", 7))
+
+        self.assertIsNone(old_setter(None))
         self.assert_default_device_and_factories_are_cpu()
 
     def test_rejects_all_arguments_with_pytorch_2_13_errors(self):

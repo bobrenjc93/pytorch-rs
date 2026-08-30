@@ -29,6 +29,10 @@ torch = _sys.modules[__name__]
 # This remains a package-level alias; ``torch._C`` does not expose it.
 newaxis = None
 
+_DEFAULT_DEVICE_ATTRIBUTE = "_torch_rs_default_device"
+if not _builtins.hasattr(_C, _DEFAULT_DEVICE_ATTRIBUTE):
+    _builtins.setattr(_C, _DEFAULT_DEVICE_ATTRIBUTE, None)
+
 
 # PyTorch exposes this private build probe through its immutable variable-
 # function owner, but not through ``torch._C`` or wildcard imports.
@@ -131,7 +135,10 @@ def is_deterministic_algorithms_warn_only_enabled() -> _builtins.bool:
 
 def get_default_device() -> "torch.device":
     r"""Gets the default ``torch.Tensor`` to be allocated on ``device``"""
-    return torch.device("cpu")
+    default = _builtins.getattr(_C, _DEFAULT_DEVICE_ATTRIBUTE, None)
+    if default is None:
+        return torch.device("cpu")
+    return default
 
 
 def set_default_device(device: "Device") -> None:
@@ -181,9 +188,12 @@ def set_default_device(device: "Device") -> None:
 
     """
     if device is None:
+        _builtins.setattr(_C, _DEFAULT_DEVICE_ATTRIBUTE, None)
         return
     descriptor = torch.device(device)
     if descriptor.type == "cpu":
+        default = descriptor if descriptor.index is not None else None
+        _builtins.setattr(_C, _DEFAULT_DEVICE_ATTRIBUTE, default)
         return
     raise RuntimeError(
         "set_default_device(): only CPU device requests are supported by this "
