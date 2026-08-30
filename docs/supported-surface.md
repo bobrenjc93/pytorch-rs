@@ -465,9 +465,10 @@ Flatten preserves shared storage for stride-compatible ranges and eagerly
 creates an independent contiguous copy otherwise. `Tensor.ravel()` and
 top-level `torch.ravel()` share the native view-or-copy path: row-contiguous
 inputs alias storage through a new one-dimensional wrapper, while other layouts
-are materialized. Already-matching contiguous, `cpu()`, `type_as()`, `real`,
-`Tensor.conj()`, `torch.conj()`, `Tensor.positive()`, `torch.positive()`, and
-unary `+` calls preserve Python object identity and shared storage; CPU
+are materialized. Already-matching contiguous, `cpu()`, `type_as()`,
+`Tensor.real`, top-level `torch.real()`, `Tensor.conj()`, `torch.conj()`,
+`Tensor.positive()`, `torch.positive()`, and unary `+` calls preserve Python
+object identity and shared storage; CPU
 channel-last requests that need a different layout use the same checked
 materialization and autograd path as `contiguous()`. `Tensor.squeeze()`,
 `Tensor.squeeze(dim)`, and
