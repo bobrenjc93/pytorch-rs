@@ -1080,6 +1080,30 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\ndiv(value, *, rounding_mode=None) -> Tensor\n\nSee :func:`torch.div`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn div(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<PyTensor> {
+        tensorbase_division_method(DivisionOperation::Div, slf, args, kwargs)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\ndivide(value, *, rounding_mode=None) -> Tensor\n\nSee :func:`torch.divide`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn divide(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<PyTensor> {
+        tensorbase_division_method(DivisionOperation::Divide, slf, args, kwargs)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nmultiply(value) -> Tensor\n\nSee :func:`torch.multiply`.\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn multiply(
@@ -4437,6 +4461,12 @@ enum MultiplicationOperation {
     Multiply,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DivisionOperation {
+    Div,
+    Divide,
+}
+
 impl MultiplicationOperation {
     const fn name(self) -> &'static str {
         match self {
@@ -4456,6 +4486,15 @@ impl MultiplicationOperation {
         match self {
             Self::Mul => "unable to allocate mul dispatch operands",
             Self::Multiply => "unable to allocate multiply dispatch operands",
+        }
+    }
+}
+
+impl DivisionOperation {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Div => "div",
+            Self::Divide => "divide",
         }
     }
 }
@@ -4906,6 +4945,13 @@ impl PyTensor {
         self.binary_operation(py, other, BinaryOperation::Divide, true)
     }
 
+    #[allow(clippy::unused_self)]
+    fn __itruediv__(&mut self, _other: &Bound<'_, PyAny>) -> PyResult<()> {
+        Err(PyNotImplementedError::new_err(
+            "Tensor.__itruediv__(): in-place division is not supported",
+        ))
+    }
+
     fn __matmul__(&self, other: &Self) -> PyResult<Self> {
         self.matrix_multiply(other)
     }
@@ -4935,6 +4981,29 @@ impl PyTensor {
     }
 }
 
+fn tensorbase_division_method(
+    operation: DivisionOperation,
+    slf: &Bound<'_, PyTensorBase>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyTensor> {
+    if !torch_function_mode_stack::is_empty() {
+        return Err(PyTypeError::new_err(format!(
+            "{}() does not support an active TorchFunctionMode",
+            operation.name()
+        )));
+    }
+    if !slf.as_any().is_exact_instance_of::<PyTensor>() {
+        return Err(PyNotImplementedError::new_err(format!(
+            "{}(): only exact native Tensor receivers are supported",
+            operation.name()
+        )));
+    }
+
+    let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+    tensor.division_method(operation, args, kwargs)
+}
+
 impl PyTensor {
     fn matrix_multiply(&self, other: &Self) -> PyResult<Self> {
         self.inner
@@ -4948,6 +5017,71 @@ impl PyTensor {
             .negate()
             .map(Self::new)
             .map_err(|error| tensor_error(&error))
+    }
+
+    fn division_method(
+        &self,
+        operation: DivisionOperation,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        let arguments = bind_division_argument(operation, args, kwargs)?;
+        let other = arguments.other;
+        let rounding_mode_present = arguments.rounding_mode.is_some();
+        let other_tensor = if other.value.is_exact_instance_of::<Self>() {
+            Some(other.value.cast::<Self>()?)
+        } else {
+            None
+        };
+        let scalar = other_tensor
+            .is_none()
+            .then(|| parse_arithmetic_scalar(&other.value));
+
+        if scalar
+            .as_ref()
+            .is_some_and(|result| matches!(result, Ok(None)))
+        {
+            return match (operation, rounding_mode_present) {
+                (DivisionOperation::Div, false) => {
+                    let actual = python_type_name(&other.value)?;
+                    Err(div_argument_type_error(other.position, &actual))
+                }
+                _ => Err(division_binding_error(operation, args, kwargs)?),
+            };
+        }
+        if let Some(rounding_mode) = arguments.rounding_mode.as_ref()
+            && !rounding_mode.is_none()
+        {
+            return Err(PyNotImplementedError::new_err(format!(
+                "{}(): rounding_mode is not supported; only None is implemented",
+                operation.name()
+            )));
+        }
+
+        let result = if let Some(other_tensor) = other_tensor {
+            let other_tensor = other_tensor.try_borrow()?;
+            BinaryOperation::Divide.apply_tensors(&self.inner, &other_tensor.inner)
+        } else {
+            let scalar = match scalar.expect("a non-tensor div operand has a scalar parse result") {
+                Ok(Some(scalar)) => scalar,
+                Ok(None) => unreachable!("unsupported div operand types were rejected above"),
+                Err(_) if other.value.is_instance_of::<PyInt>() => {
+                    let message = if python_integer_is_negative(&other.value)? {
+                        "can't convert negative int to unsigned"
+                    } else {
+                        "int too big to convert"
+                    };
+                    return Err(PyOverflowError::new_err(message));
+                }
+                Err(error) => return Err(error),
+            };
+            if matches!(scalar, ParsedArithmeticScalar::WideNumpyUnsigned) {
+                return Err(PyTypeError::new_err("an integer is required"));
+            }
+            BinaryOperation::Divide.apply_scalar(&self.inner, scalar.into_f32(), false)
+        };
+
+        result.map(Self::new).map_err(|error| tensor_error(&error))
     }
 
     fn multiplication_method(
@@ -10889,6 +11023,74 @@ fn bind_matmul_argument<'py>(
     bind_other_argument_with_x2_fallback("matmul", positional, keywords)
 }
 
+struct DivisionMethodArguments<'py> {
+    other: ParsedCallArgument<'py>,
+    rounding_mode: Option<Bound<'py, PyAny>>,
+}
+
+fn bind_division_argument<'py>(
+    operation: DivisionOperation,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<DivisionMethodArguments<'py>> {
+    let mut invalid_combination = positional.len() > 1;
+    let mut other = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut rounding_mode = None;
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = pytorch_keyword_name(&key)?;
+            match key {
+                "other" | "x2" => {
+                    if other.is_some() {
+                        invalid_combination = true;
+                    } else {
+                        other = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                "rounding_mode" => {
+                    if rounding_mode.is_some() {
+                        invalid_combination = true;
+                    } else {
+                        rounding_mode = Some(value);
+                    }
+                }
+                _ => invalid_combination = true,
+            }
+        }
+    }
+
+    let Some(other) = other else {
+        return match operation {
+            DivisionOperation::Div if keywords.is_some_and(|keywords| !keywords.is_empty()) => Err(
+                PyTypeError::new_err("div() missing 1 required positional arguments: \"other\""),
+            ),
+            DivisionOperation::Divide => {
+                Err(division_binding_error(operation, positional, keywords)?)
+            }
+            DivisionOperation::Div => Err(division_binding_error(operation, positional, keywords)?),
+        };
+    };
+    if invalid_combination {
+        return Err(division_binding_error(operation, positional, keywords)?);
+    }
+
+    Ok(DivisionMethodArguments {
+        other,
+        rounding_mode,
+    })
+}
+
 fn bind_multiplication_argument<'py>(
     operation: MultiplicationOperation,
     positional: &Bound<'py, PyTuple>,
@@ -11007,6 +11209,13 @@ fn mul_argument_type_error(position: Option<usize>, actual: &str) -> PyErr {
     let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
     PyTypeError::new_err(format!(
         "mul(): argument 'other'{position} must be Tensor, not {actual}"
+    ))
+}
+
+fn div_argument_type_error(position: Option<usize>, actual: &str) -> PyErr {
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    PyTypeError::new_err(format!(
+        "div(): argument 'other'{position} must be Tensor, not {actual}"
     ))
 }
 
@@ -11279,6 +11488,96 @@ fn multiply_binding_error(
         .call1((message,))
         .map_err(|_| allocation.error())?;
     Ok(PyErr::from_value(exception))
+}
+
+fn division_binding_error(
+    operation: DivisionOperation,
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let allocation = PythonAllocationFallback::new(positional.py());
+    let summary = call_type_summary_with(
+        positional,
+        keywords,
+        CallKeywordOrder::PyTorchUnorderedMap,
+        &allocation,
+    )?;
+    let (tensor_mismatch, number_mismatch) =
+        division_single_argument_mismatches(positional, keywords, &allocation)?;
+
+    let mut message = try_string_from_str_with(operation.name(), &allocation)?;
+    try_push_string_with(
+        &mut message,
+        "() received an invalid combination of arguments - got (",
+        &allocation,
+    )?;
+    try_push_string_with(&mut message, &summary, &allocation)?;
+    try_push_string_with(&mut message, "), but expected one of:", &allocation)?;
+    try_push_string_with(&mut message, "\n * (Tensor other)", &allocation)?;
+    try_push_string_with(&mut message, &tensor_mismatch, &allocation)?;
+    try_push_string_with(
+        &mut message,
+        "\n * (Tensor other, *, str rounding_mode)",
+        &allocation,
+    )?;
+    if matches!(operation, DivisionOperation::Divide) {
+        try_push_string_with(&mut message, "\n * (Number other)", &allocation)?;
+        try_push_string_with(&mut message, &number_mismatch, &allocation)?;
+    }
+    try_push_string_with(
+        &mut message,
+        "\n * (Number other, *, str rounding_mode)\n",
+        &allocation,
+    )?;
+    if let Some(nul) = message.find('\0') {
+        message.truncate(nul);
+    }
+    let py = positional.py();
+    let message = PyString::from_bytes(py, message.as_bytes()).map_err(|_| allocation.error())?;
+    let exception = py
+        .get_type::<PyTypeError>()
+        .call1((message,))
+        .map_err(|_| allocation.error())?;
+    Ok(PyErr::from_value(exception))
+}
+
+fn division_single_argument_mismatches(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<(String, String)> {
+    let keyword_length = keywords.map_or(0, PyDictMethods::len);
+    if positional.len() + keyword_length != 1 {
+        return Ok((String::new(), String::new()));
+    }
+
+    if positional.len() == 1 {
+        let value = positional.get_item(0)?;
+        let actual_type = python_type_name_with(&value, allocation)?;
+        let detail = call_argument_type_description_with(&value, allocation)?;
+        return Ok((
+            multiply_invalid_type_mismatch(&detail, &actual_type, "Tensor", None, allocation)?,
+            multiply_invalid_type_mismatch(&detail, &actual_type, "Number", None, allocation)?,
+        ));
+    }
+
+    let keywords = keywords.expect("a single keyword argument is present");
+    let (key, value) = keywords
+        .iter()
+        .next()
+        .expect("a single keyword argument remains present");
+    let key = pytorch_keyword_name(&key)?;
+    if key != "other" {
+        let mismatch = multiply_invalid_keyword_mismatch(key, allocation)?;
+        return Ok((try_string_from_str_with(&mismatch, allocation)?, mismatch));
+    }
+
+    let actual_type = python_type_name_with(&value, allocation)?;
+    let detail = call_argument_type_description_with(&value, allocation)?;
+    Ok((
+        multiply_invalid_type_mismatch(&detail, &actual_type, "Tensor", Some("other"), allocation)?,
+        multiply_invalid_type_mismatch(&detail, &actual_type, "Number", Some("other"), allocation)?,
+    ))
 }
 
 fn multiply_invalid_type_mismatch(
