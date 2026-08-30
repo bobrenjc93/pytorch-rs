@@ -47,19 +47,12 @@ and limitation details, [FEATURES.md](FEATURES.md) for the weighted coverage
 contract, [ARCHITECTURE.md](ARCHITECTURE.md) for a source-oriented contributor
 map, and [BENCHMARKING.md](BENCHMARKING.md) for performance policy.
 
-## Non-negotiable evaluation rules
+## Evaluation
 
-- Correctness gates performance. A workload contributes no performance credit unless its outputs, shapes, dtypes, errors, aliasing, and edge cases pass differential checks.
-- Benchmarks compare equivalent Python calls through `torch_rs` and `torch`, with inputs created outside the timed region. Warmup, synchronization, sampling, and thread counts must be symmetric.
-- The suite covers multiple sizes, ranks, dtypes, layouts, broadcast patterns, and thread counts. Results use per-workload ratios and geometric aggregation so one favorable kernel cannot hide broad regressions.
-- Missing or unsupported capabilities score zero; they are never removed from the denominator.
-- Fixed seeds make failures reproducible, while generated and held-out shapes prevent implementations from specializing for a short public list.
-- Checksums or materialized outputs prevent dead-code elimination and lazy-work deferral.
-- Compile time and dependency installation are reported separately from steady-state execution.
-- Burner-authored feature branches may not weaken, delete, skip, special-case, or rewrite evaluation infrastructure. Benchmark changes are separate, human-reviewed campaign changes and never earn implementation impact in the same comparison.
-- Native platform libraries and explicit hardware backends are valid implementation techniques. Forwarding production tensor operations to Python or PyTorch is not.
-
-See [BENCHMARKING.md](BENCHMARKING.md) and [FEATURES.md](FEATURES.md) for the full campaign contract.
+Correctness gates performance, and missing or unsupported behavior stays in the
+denominator. See [BENCHMARKING.md](BENCHMARKING.md) for benchmark methodology
+and anti-gaming rules, and [FEATURES.md](FEATURES.md) for weighted feature
+coverage.
 
 ## Development
 

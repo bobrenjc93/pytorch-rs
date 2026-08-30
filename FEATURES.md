@@ -1,6 +1,9 @@
 # Feature coverage contract
 
-Feature completeness is measured against stable public PyTorch Python concepts, with supported claims backed by executable side-by-side semantic tests. Documentation, Rust-only capabilities, and stubs do not count.
+Feature completeness is measured against stable public PyTorch Python concepts,
+with supported claims backed by executable side-by-side semantic tests.
+Documentation, Rust-only capabilities, production tensor operations forwarded
+to Python or PyTorch, and stubs do not count.
 
 For API-level behavior and explicit limitations, see the
 [supported-surface contract](docs/supported-surface.md). Performance claims are
