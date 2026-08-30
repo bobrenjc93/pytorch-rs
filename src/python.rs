@@ -2428,7 +2428,7 @@ struct BoundUnaryOutCall<'py> {
 struct BoundZerosLikeCall<'py> {
     input: BoundTensorOrTorchFunction<'py>,
     dtype: DType,
-    device: Device,
+    device: Option<Bound<'py, PyAny>>,
     requires_grad: bool,
     memory_format: MemoryFormat,
 }
@@ -3372,7 +3372,8 @@ fn apply_top_level_zeros_like(
     let BoundTensorOrTorchFunction::Tensor(input) = &call.input else {
         unreachable!("zeros_like overrides were dispatched before the native path")
     };
-    if call.dtype != DType::Float32 || call.device != Device::Cpu {
+    let device = parse_device("zeros_like", call.device.as_ref())?;
+    if call.dtype != DType::Float32 || !device.is_cpu() {
         return Err(PyRuntimeError::new_err(
             "zeros_like(): only the default float32 CPU metadata is supported",
         ));
@@ -6373,7 +6374,6 @@ fn parse_zeros_like_arguments(
     if let Some(error) = keyword_error {
         return Err(error);
     }
-    let device = parse_device("zeros_like", device.as_ref())?;
     Ok(BoundZerosLikeCall {
         input,
         dtype,

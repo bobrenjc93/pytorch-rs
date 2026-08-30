@@ -179,9 +179,28 @@ class ZerosLikeReferenceTests(unittest.TestCase):
             dtype=module.float32,
             memory_format=module.preserve_format,
         )
+        device_override_results = []
+        for device in ("cuda", "definitely invalid device"):
+            device_override_results.append(
+                module.zeros_like(input=value, device=device) is marker
+            )
 
         tensor = module.tensor([1.0], dtype=module.float32)
         mode_calls = []
+
+        device_mode_calls = []
+
+        class HandlingMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                device_mode_calls.append((func, types, args, kwargs))
+                return marker
+
+        device_mode_results = []
+        for device in ("cuda", "definitely invalid device"):
+            with HandlingMode():
+                device_mode_results.append(
+                    module.zeros_like(tensor, device=device) is marker
+                )
 
         class Mode(module.overrides.TorchFunctionMode):
             def __init__(self, label):
@@ -206,7 +225,10 @@ class ZerosLikeReferenceTests(unittest.TestCase):
 
         return (
             override_result is marker,
+            tuple(device_override_results),
             tuple(normalize(call) for call in Override.calls),
+            tuple(device_mode_results),
+            tuple(normalize(call) for call in device_mode_calls),
             tuple(
                 (label, *normalize((func, types, args, kwargs)))
                 for label, func, types, args, kwargs in mode_calls

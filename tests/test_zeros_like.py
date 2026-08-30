@@ -169,9 +169,44 @@ class ZerosLikeTests(unittest.TestCase):
                 )
             ],
         )
+        for device in ("cuda", "definitely invalid device"):
+            with self.subTest(kind="override-device", device=device):
+                Override.calls.clear()
+                result = torch.zeros_like(input=value, device=device)
+                self.assertIs(result, marker)
+                self.assertEqual(
+                    Override.calls,
+                    [
+                        (
+                            torch.zeros_like,
+                            (Override,),
+                            (),
+                            {"input": value, "device": device},
+                        )
+                    ],
+                )
 
         tensor = torch.tensor([1.0])
         mode_calls = []
+
+        class HandlingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        for device in ("cuda", "definitely invalid device"):
+            with self.subTest(kind="mode-device", device=device):
+                mode = HandlingMode()
+                with mode:
+                    result = torch.zeros_like(tensor, device=device)
+                self.assertIs(result, marker)
+                self.assertEqual(
+                    mode.calls,
+                    [(torch.zeros_like, (), (tensor,), {"device": device})],
+                )
 
         class ForwardingMode(torch.overrides.TorchFunctionMode):
             def __init__(self, label):
