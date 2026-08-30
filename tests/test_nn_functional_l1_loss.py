@@ -32,6 +32,7 @@ class FunctionalL1LossTests(unittest.TestCase):
         *,
         case,
         expected_stride=None,
+        expected_bits=None,
     ):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, expected.shape)
@@ -48,8 +49,18 @@ class FunctionalL1LossTests(unittest.TestCase):
         with self.subTest(case=case, values=True):
             np.testing.assert_array_equal(
                 self.tensor_bits(actual),
-                self.tensor_bits(expected),
+                self.tensor_bits(expected) if expected_bits is None else expected_bits,
             )
+
+    @classmethod
+    def expected_l1_bits(cls, expected, target):
+        expected_bits = cls.tensor_bits(expected).copy()
+        target_bits = cls.tensor_bits(target)
+        target_nan = (target_bits & 0x7FFF_FFFF) > 0x7F80_0000
+        expected_bits[target_nan] = (
+            target_bits[target_nan] | 0x0040_0000
+        ) & 0x7FFF_FFFF
+        return expected_bits
 
     def layout_cases(self):
         offset_input_base = torch.tensor(
@@ -144,6 +155,84 @@ class FunctionalL1LossTests(unittest.TestCase):
             ),
         )
 
+    def same_stride_noncontiguous_cases(self):
+        edge_input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+                0x3F80_0000,
+                0xBF80_0000,
+            ],
+            dtype=np.uint32,
+        )
+        edge_target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0001,
+                0x0000_0001,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+                0xBF80_0000,
+                0x3F80_0000,
+            ],
+            dtype=np.uint32,
+        )
+        edge_input = torch.tensor(memoryview(edge_input_bits.view(np.float32))).view(
+            3, 4
+        )
+        edge_target = torch.tensor(memoryview(edge_target_bits.view(np.float32))).view(
+            3, 4
+        )
+        offset_input = torch.tensor(
+            np.linspace(-5.0, 5.0, 60, dtype=np.float32).reshape(3, 4, 5).tolist()
+        )[1].transpose(0, 1)
+        offset_target = torch.tensor(
+            np.linspace(7.0, -3.0, 60, dtype=np.float32).reshape(3, 4, 5).tolist()
+        )[2].transpose(0, 1)
+        channels_last_input = torch.tensor(
+            np.linspace(-3.0, 4.0, 2 * 3 * 5 * 7, dtype=np.float32)
+            .reshape(2, 3, 5, 7)
+            .tolist()
+        ).contiguous(memory_format=torch.channels_last)
+        channels_last_target = torch.tensor(
+            np.linspace(11.0, -13.0, 2 * 3 * 5 * 7, dtype=np.float32)
+            .reshape(2, 3, 5, 7)
+            .tolist()
+        ).contiguous(memory_format=torch.channels_last)
+        singleton_input = torch.tensor(
+            np.arange(6, dtype=np.float32).reshape(3, 1, 2).tolist()
+        ).permute(2, 1, 0)
+        singleton_target = torch.tensor(
+            np.linspace(3.5, -2.5, 6, dtype=np.float32).reshape(3, 1, 2).tolist()
+        ).permute(2, 1, 0)
+        empty_input = torch.zeros((2, 0, 3)).transpose(0, 2)
+        empty_target = torch.ones((2, 0, 3)).transpose(0, 2)
+
+        return (
+            (
+                "transposed edge bits",
+                edge_input.transpose(0, 1),
+                edge_target.transpose(0, 1),
+            ),
+            ("offset transposed", offset_input, offset_target),
+            ("channels last", channels_last_input, channels_last_target),
+            ("singleton strided", singleton_input, singleton_target),
+            ("empty transposed", empty_input, empty_target),
+        )
+
     @staticmethod
     def broadcast_warning(input, target):
         return (
@@ -199,6 +288,7 @@ class FunctionalL1LossTests(unittest.TestCase):
             "``reduce=None``",
             "``weight=None``",
             "fuses same-shape row-major contiguous operands",
+            "same-stride non-contiguous dense operands",
             "one native absolute-difference pass",
             "subtraction and absolute-value behavior",
             "fresh, independent tensor",
@@ -262,6 +352,46 @@ class FunctionalL1LossTests(unittest.TestCase):
                     np.testing.assert_array_equal(
                         self.tensor_state(target)[-1], target_state[-1]
                     )
+
+    def test_same_stride_noncontiguous_cases_match_composition(self):
+        for case, input, target in self.same_stride_noncontiguous_cases():
+            self.assertEqual(input.shape, target.shape)
+            self.assertEqual(input.stride(), target.stride())
+            if input.numel() != 0:
+                self.assertFalse(input.is_contiguous())
+                self.assertFalse(target.is_contiguous())
+            difference = input - target
+            expected = difference.abs()
+            expected_bits = self.expected_l1_bits(expected, target)
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+
+            actual = functional.l1_loss(input, target, reduction="none")
+            self.assert_matches_composition(
+                actual,
+                expected,
+                case=case,
+                expected_bits=expected_bits,
+            )
+            with self.subTest(case=case, storage=True):
+                repeated = functional.l1_loss(input, target, reduction="none")
+                self.assertFalse(actual.is_set_to(repeated))
+                self.assertFalse(actual.is_set_to(input))
+                self.assertFalse(actual.is_set_to(target))
+                if actual.numel() != 0:
+                    self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+                    self.assertNotEqual(actual.data_ptr(), input.data_ptr())
+                    self.assertNotEqual(actual.data_ptr(), target.data_ptr())
+
+            with self.subTest(case=case, nonmutation=True):
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1], input_state[-1]
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1], target_state[-1]
+                )
 
     def test_bandwidth_sized_same_shape_contiguous_matches_composition(self):
         input_values = np.linspace(
@@ -489,6 +619,49 @@ class FunctionalL1LossTests(unittest.TestCase):
                 self.assertTrue(actual.is_leaf)
                 self.assertIsNone(input.grad)
                 self.assertIsNone(target.grad)
+
+    def test_same_stride_noncontiguous_requires_grad_operands_need_no_grad(self):
+        for input_requires_grad, target_requires_grad in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            input_base = torch.tensor(
+                np.arange(12, dtype=np.float32).reshape(3, 4).tolist(),
+                requires_grad=input_requires_grad,
+            )
+            target_base = torch.tensor(
+                np.linspace(-2.0, 3.0, 12, dtype=np.float32).reshape(3, 4).tolist(),
+                requires_grad=target_requires_grad,
+            )
+            input = input_base.transpose(0, 1)
+            target = target_base.transpose(0, 1)
+            with self.subTest(
+                input_requires_grad=input_requires_grad,
+                target_requires_grad=target_requires_grad,
+            ):
+                self.assertEqual(input.stride(), target.stride())
+                self.assertFalse(input.is_contiguous())
+                self.assertFalse(target.is_contiguous())
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^l1_loss\(\): autograd recording is not supported$",
+                ):
+                    functional.l1_loss(input, target, reduction="none")
+
+                with torch.no_grad():
+                    actual = functional.l1_loss(input, target, reduction="none")
+                    difference = input - target
+                    expected = difference.abs()
+                self.assert_matches_composition(
+                    actual,
+                    expected,
+                    case="same-stride no_grad",
+                )
+                self.assertFalse(actual.requires_grad)
+                self.assertTrue(actual.is_leaf)
+                self.assertIsNone(input_base.grad)
+                self.assertIsNone(target_base.grad)
 
     def test_unsupported_options_shapes_and_operands_are_rejected(self):
         input = torch.ones((2, 3))

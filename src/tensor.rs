@@ -3149,7 +3149,7 @@ impl Tensor {
         )))
     }
 
-    /// Computes an absolute difference, fusing same-shape contiguous inputs.
+    /// Computes an absolute difference, fusing same-shape dense inputs.
     ///
     /// # Errors
     ///
@@ -3157,10 +3157,13 @@ impl Tensor {
     /// result metadata or storage allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn absolute_difference(&self, other: &Self) -> Result<Self, TensorError> {
-        if self.shape == other.shape
-            && let Some(output) = self.absolute_difference_same_shape_contiguous(other)?
-        {
-            return Ok(output);
+        if self.shape == other.shape {
+            if let Some(output) = self.absolute_difference_same_shape_contiguous(other)? {
+                return Ok(output);
+            }
+            if let Some(output) = self.absolute_difference_same_shape_matching_dense(other)? {
+                return Ok(output);
+            }
         }
 
         self.zip_map(other, l1_loss_difference_value)?.abs()
@@ -3182,6 +3185,42 @@ impl Tensor {
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
         let strides = contiguous_strides(&shape, elements)?;
+        let data = materialize_contiguous_absolute_difference(left, right, elements)?;
+        Ok(Some(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        )))
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn absolute_difference_same_shape_matching_dense(
+        &self,
+        other: &Self,
+    ) -> Result<Option<Self>, TensorError> {
+        debug_assert_eq!(self.shape, other.shape);
+        if self.is_contiguous()
+            || other.is_contiguous()
+            || self.strides != other.strides
+            || !self.is_non_overlapping_and_dense()
+            || !other.is_non_overlapping_and_dense()
+        {
+            return Ok(None);
+        }
+
+        let elements = self.elements;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = self.same_shape_elementwise_output_strides(other, &shape, elements)?;
+        if self.strides != strides || other.strides != strides {
+            return Ok(None);
+        }
+        let (Some(left), Some(right)) = (self.dense_physical_slice(), other.dense_physical_slice())
+        else {
+            return Ok(None);
+        };
+
         let data = materialize_contiguous_absolute_difference(left, right, elements)?;
         Ok(Some(Self::from_owned_parts(
             data,
@@ -9664,6 +9703,87 @@ mod tests {
         assert_eq!(left == right, expected);
     }
 
+    fn matching_dense_absolute_difference_cases() -> [(&'static str, Tensor, Tensor); 4] {
+        let edge_left = offset_strided_matrix([
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+        ]);
+        let edge_right = offset_strided_matrix([
+            0x8000_0000,
+            0x0000_0000,
+            0x8000_0001,
+            0x0000_0001,
+            0xff80_0000,
+            0x7f80_0000,
+            0xffc6_789a,
+            0x7fc2_abcd,
+            0xff86_789a,
+        ]);
+        let offset_left = Tensor::from_vec(
+            (0_u16..60).map(|value| f32::from(value) - 23.0).collect(),
+            [3, 4, 5],
+        )
+        .unwrap()
+        .index_integer(1)
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+        let offset_right = Tensor::from_vec(
+            (0_u16..60)
+                .map(|value| 17.0 - f32::from(value) * 0.25)
+                .collect(),
+            [3, 4, 5],
+        )
+        .unwrap()
+        .index_integer(2)
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+        let channels_last_left = Tensor::from_vec(
+            (0_u16..210)
+                .map(|value| f32::from(value) * 0.5 - 31.0)
+                .collect(),
+            [2, 3, 5, 7],
+        )
+        .unwrap()
+        .try_contiguous(MemoryFormat::ChannelsLast)
+        .unwrap();
+        let channels_last_right = Tensor::from_vec(
+            (0_u16..210)
+                .map(|value| 19.0 - f32::from(value) * 0.125)
+                .collect(),
+            [2, 3, 5, 7],
+        )
+        .unwrap()
+        .try_contiguous(MemoryFormat::ChannelsLast)
+        .unwrap();
+        let singleton_left = Tensor::from_vec((0_u8..6).map(f32::from).collect(), [3, 1, 2])
+            .unwrap()
+            .permute_axes([2, 1, 0])
+            .unwrap();
+        let singleton_right = Tensor::from_vec(
+            (0_u8..6).map(|value| 3.5 - f32::from(value)).collect(),
+            [3, 1, 2],
+        )
+        .unwrap()
+        .permute_axes([2, 1, 0])
+        .unwrap();
+
+        [
+            ("transposed edge bits", edge_left, edge_right),
+            ("offset transposed", offset_left, offset_right),
+            ("channels last", channels_last_left, channels_last_right),
+            ("singleton strided", singleton_left, singleton_right),
+        ]
+    }
+
     #[test]
     fn squared_difference_same_shape_matches_the_established_composition() {
         let assert_matches = |left: &Tensor, right: &Tensor| {
@@ -9965,6 +10085,80 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn absolute_difference_matching_dense_fast_path_matches_shared_fallback() {
+        for (case, left, right) in matching_dense_absolute_difference_cases() {
+            assert_eq!(left.shape(), right.shape(), "{case}");
+            assert_eq!(left.stride(), right.stride(), "{case}");
+            assert!(!left.is_contiguous(), "{case}");
+            assert!(!right.is_contiguous(), "{case}");
+            assert!(left.is_non_overlapping_and_dense(), "{case}");
+            assert!(right.is_non_overlapping_and_dense(), "{case}");
+            let left_bits_before = left.logical_values().map(f32::to_bits).collect::<Vec<_>>();
+            let right_bits_before = right.logical_values().map(f32::to_bits).collect::<Vec<_>>();
+
+            let shared_left = shared_gradient_copy(&left);
+            let shared_right = shared_gradient_copy(&right);
+            let expected = shared_left.absolute_difference(&shared_right).unwrap();
+            let actual = left
+                .absolute_difference_same_shape_matching_dense(&right)
+                .unwrap()
+                .expect("matching dense non-contiguous tensors should use the L1 fast path");
+
+            assert_eq!(actual.shape(), expected.shape(), "{case}");
+            assert_eq!(actual.stride(), expected.stride(), "{case}");
+            assert_eq!(actual.storage_offset(), expected.storage_offset(), "{case}");
+            assert_eq!(actual.dtype(), expected.dtype(), "{case}");
+            assert_eq!(actual.device(), expected.device(), "{case}");
+            assert!(!actual.shares_storage_with(&left), "{case}");
+            assert!(!actual.shares_storage_with(&right), "{case}");
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits)),
+                "{case}"
+            );
+            assert_eq!(
+                left.logical_values().map(f32::to_bits).collect::<Vec<_>>(),
+                left_bits_before,
+                "{case}"
+            );
+            assert_eq!(
+                right.logical_values().map(f32::to_bits).collect::<Vec<_>>(),
+                right_bits_before,
+                "{case}"
+            );
+            assert!(
+                shared_left
+                    .absolute_difference_same_shape_matching_dense(&shared_right)
+                    .unwrap()
+                    .is_none(),
+                "{case}"
+            );
+        }
+
+        let empty_left = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        let empty_right = Tensor::ones([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        assert!(
+            empty_left
+                .absolute_difference_same_shape_matching_dense(&empty_right)
+                .unwrap()
+                .is_none()
+        );
+        let expected = empty_left
+            .zip_map(&empty_right, l1_loss_difference_value)
+            .unwrap()
+            .abs()
+            .unwrap();
+        let actual = empty_left.absolute_difference(&empty_right).unwrap();
+        assert_eq!(actual.shape(), expected.shape());
+        assert_eq!(actual.stride(), expected.stride());
+        assert_eq!(actual.storage_offset(), expected.storage_offset());
+        assert!(!actual.shares_storage_with(&empty_left));
+        assert!(!actual.shares_storage_with(&empty_right));
     }
 
     #[test]
