@@ -330,6 +330,8 @@ assert torch.is_complex(x) is False
 assert x.is_complex() is False
 assert torch.is_floating_point(x) is True
 assert x.is_floating_point() is True
+assert x.real is x
+assert torch.real(x) is x
 assert x.dense_dim() == x.ndim
 assert x.sparse_dim() == 0
 assert x.is_pinned() is False
@@ -404,7 +406,9 @@ read-only `Tensor.is_cpu` and `Tensor.is_cuda` device introspection; read-only
 `Tensor.is_complex()`/`torch.is_complex()`,
 `Tensor.is_floating_point()`/`torch.is_floating_point()`, and
 `Tensor.is_signed()`/`torch.is_signed()` queries; `torch.is_nonzero()` and
-`Tensor.is_nonzero()` scalar truth queries; read-only
+`Tensor.is_nonzero()` scalar truth queries; real-valued `Tensor.real` and
+`torch.real()` identity views with PyTorch-compatible top-level binding,
+metadata, legacy input aliases, and `TorchFunctionMode` dispatch; read-only
 `torch.float32.abbr == "f32"` metadata; canonical `torch.float32.to_real()`
 identity; and float32-only `torch.finfo` metadata.
 
