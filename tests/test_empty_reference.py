@@ -74,6 +74,13 @@ class EmptyReferenceTests(unittest.TestCase):
             ("tuple zero", lambda module: module.empty((0,))),
             ("list zero", lambda module: module.empty([0])),
             ("size object", lambda module: module.empty(module.Size([0]))),
+            ("variadic zeros", lambda module: module.empty(0, 0)),
+            ("variadic middle zero", lambda module: module.empty(2, 0, 3)),
+            (
+                "variadic numpy and int subclasses",
+                lambda module: module.empty(np.uint32(2), IntSubclass(0), np.int64(3)),
+            ),
+            ("variadic bool after zero", lambda module: module.empty(0, True)),
             ("middle zero", lambda module: module.empty((2, 0, 3))),
             ("leading zero", lambda module: module.empty((0, 2))),
             ("sandwiched zero", lambda module: module.empty((1, 0, 1))),
@@ -91,6 +98,18 @@ class EmptyReferenceTests(unittest.TestCase):
             (
                 "indexed cpu device",
                 lambda module: module.empty((0,), device=module.device("cpu", 2)),
+            ),
+            ("layout none", lambda module: module.empty((0,), layout=None)),
+            ("layout strided", lambda module: module.empty((0,), layout=module.strided)),
+            ("pin memory none", lambda module: module.empty((0,), pin_memory=None)),
+            ("pin memory false", lambda module: module.empty((0,), pin_memory=False)),
+            ("memory format none", lambda module: module.empty((0,), memory_format=None)),
+            (
+                "memory format contiguous",
+                lambda module: module.empty(
+                    (0,),
+                    memory_format=module.contiguous_format,
+                ),
             ),
             ("requires grad none", lambda module: module.empty((0,), requires_grad=None)),
             ("requires grad false", lambda module: module.empty((0,), requires_grad=False)),
@@ -114,6 +133,10 @@ class EmptyReferenceTests(unittest.TestCase):
         expected_scalar = IndexDimension(0)
         actual_index = IndexDimension(0)
         expected_index = IndexDimension(0)
+        actual_variadic_first = IndexDimension(0)
+        expected_variadic_first = IndexDimension(0)
+        actual_variadic_second = IndexDimension(0)
+        expected_variadic_second = IndexDimension(0)
 
         actual = torch.empty(actual_scalar)
         expected = reference_torch.empty(expected_scalar)
@@ -130,6 +153,18 @@ class EmptyReferenceTests(unittest.TestCase):
             self.tensor_contract(reference_torch, expected),
         )
         self.assertEqual(actual_index.calls, expected_index.calls)
+
+        actual = torch.empty(actual_variadic_first, actual_variadic_second)
+        expected = reference_torch.empty(
+            expected_variadic_first,
+            expected_variadic_second,
+        )
+        self.assertEqual(
+            self.tensor_contract(torch, actual),
+            self.tensor_contract(reference_torch, expected),
+        )
+        self.assertEqual(actual_variadic_first.calls, expected_variadic_first.calls)
+        self.assertEqual(actual_variadic_second.calls, expected_variadic_second.calls)
 
     def test_zero_element_storage_freshness_matches_pytorch_2_13(self):
         actual_first = torch.empty((2, 0, 3))
@@ -150,6 +185,8 @@ class EmptyReferenceTests(unittest.TestCase):
             lambda module: module.empty(IndexDimension(-1)),
             lambda module: module.empty((-1,)),
             lambda module: module.empty((1, -2, 0)),
+            lambda module: module.empty(-1, 0),
+            lambda module: module.empty(1, -2, 0),
             lambda module: module.empty(True),
             lambda module: module.empty(False),
             lambda module: module.empty(np.bool_(True)),
@@ -170,6 +207,8 @@ class EmptyReferenceTests(unittest.TestCase):
             lambda module: module.empty((2**63,)),
             lambda module: module.empty((np.uint64(2**63),)),
             lambda module: module.empty(IndexDimension(2**63)),
+            lambda module: module.empty(2**63, 0),
+            lambda module: module.empty(0, 2**63),
         )
         for case in overflow_cases:
             with self.subTest(case=case):
@@ -178,7 +217,7 @@ class EmptyReferenceTests(unittest.TestCase):
                     lambda: case(reference_torch)
                 )
                 self.assertIs(actual_type, expected_type)
-                marker = "failed to unpack the object at pos 1 with error"
+                marker = "failed to unpack the object at pos"
                 self.assertIn(marker, actual_message)
                 self.assertIn(marker, expected_message)
                 self.assertIn("Overflow when unpacking long long", actual_message)
@@ -187,6 +226,10 @@ class EmptyReferenceTests(unittest.TestCase):
         self.assert_error_matches(
             lambda: torch.empty((0, 2**62, 4)),
             lambda: reference_torch.empty((0, 2**62, 4)),
+        )
+        self.assert_error_matches(
+            lambda: torch.empty(0, 2**62, 4),
+            lambda: reference_torch.empty(0, 2**62, 4),
         )
         self.assert_error_matches(
             lambda: torch.empty((sys.maxsize,)),
@@ -201,19 +244,17 @@ class EmptyReferenceTests(unittest.TestCase):
                     "nonzero-element uninitialized allocation is not supported",
                 ):
                     torch.empty(size)
-
-        for keyword, value in (
-            ("shape", (0,)),
-            ("layout", torch.strided),
-            ("pin_memory", False),
-            ("memory_format", torch.contiguous_format),
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            "nonzero-element uninitialized allocation is not supported",
         ):
-            with self.subTest(keyword=keyword):
-                with self.assertRaisesRegex(
-                    TypeError,
-                    rf"^empty\(\) got an unexpected keyword argument '{keyword}'$",
-                ):
-                    torch.empty((0,), **{keyword: value})
+            torch.empty(1, 1)
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^empty\(\) got an unexpected keyword argument 'shape'$",
+        ):
+            torch.empty((0,), shape=(0,))
 
         with self.assertRaisesRegex(
             RuntimeError,
@@ -225,11 +266,36 @@ class EmptyReferenceTests(unittest.TestCase):
             r"^empty\(\): device 'meta' is not supported; only 'cpu' is implemented$",
         ):
             torch.empty((0,), device="meta")
+
         with self.assertRaisesRegex(
             TypeError,
-            r"^empty\(\) takes 1 positional argument but 2 were given$",
+            r"^empty\(\): argument 'layout' must be torch\.layout, not object$",
         ):
-            torch.empty(2, 0)
+            torch.empty((0,), layout=object())
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"pin_memory=True is not supported",
+        ):
+            torch.empty((0,), pin_memory=True)
+
+        for memory_format in (
+            torch.preserve_format,
+            torch.channels_last,
+            torch.channels_last_3d,
+        ):
+            with self.subTest(memory_format=memory_format):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"only torch\.contiguous_format is implemented",
+                ):
+                    torch.empty((0,), memory_format=memory_format)
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^empty\(\): argument 'memory_format' must be torch\.memory_format, not object$",
+        ):
+            torch.empty((0,), memory_format=object())
         self.assertFalse(hasattr(torch, "empty_like"))
 
     def callable_contract(self, module):
@@ -336,6 +402,8 @@ class EmptyReferenceTests(unittest.TestCase):
         with mode:
             if case == "positional":
                 result = module.empty((0,), dtype=module.float32)
+            elif case == "variadic":
+                result = module.empty(0, 0, dtype=module.float32)
             else:
                 result = module.empty(size=(0,), dtype=module.float32)
             stack_after_call = module.overrides._get_current_function_mode_stack()
@@ -353,7 +421,7 @@ class EmptyReferenceTests(unittest.TestCase):
         }
 
     def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
-        for case in ("positional", "keyword"):
+        for case in ("positional", "variadic", "keyword"):
             with self.subTest(case=case):
                 self.assertEqual(
                     self.mode_dispatch_observation(torch, case),

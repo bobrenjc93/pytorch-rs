@@ -4347,12 +4347,20 @@ struct CreationCallArguments<'py> {
 }
 
 struct EmptyCallArguments<'py> {
-    size: Option<ParsedCallArgument<'py>>,
+    size: Option<EmptySizeArgument<'py>>,
     out: Option<Bound<'py, PyAny>>,
     dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
     device: Option<Bound<'py, PyAny>>,
+    pin_memory: Option<Bound<'py, PyAny>>,
     requires_grad: Option<Bound<'py, PyAny>>,
+    memory_format: Option<Bound<'py, PyAny>>,
     keyword_error: Option<PyErr>,
+}
+
+enum EmptySizeArgument<'py> {
+    Single(ParsedCallArgument<'py>),
+    Variadic(Vec<ParsedCallArgument<'py>>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -6123,29 +6131,16 @@ fn bind_empty_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<EmptyCallArguments<'py>> {
-    // This implementation intentionally keeps the existing one-size-argument
-    // factory surface instead of adding PyTorch's variadic size overload.
-    if positional.len() > 1 {
-        return Err(PyTypeError::new_err(format!(
-            "empty() takes 1 positional argument but {} were given",
-            positional.len()
-        )));
-    }
-
     let mut size_was_provided = !positional.is_empty();
     let mut arguments = EmptyCallArguments {
-        size: if positional.is_empty() {
-            None
-        } else {
-            Some(ParsedCallArgument {
-                value: positional.get_item(0)?,
-                position: Some(1),
-            })
-        },
+        size: bind_empty_positional_size(positional)?,
         out: None,
         dtype: None,
+        layout: None,
         device: None,
+        pin_memory: None,
         requires_grad: None,
+        memory_format: None,
         keyword_error: None,
     };
     let Some(keywords) = keywords else {
@@ -6161,16 +6156,19 @@ fn bind_empty_arguments<'py>(
                     });
                 } else {
                     size_was_provided = true;
-                    arguments.size = Some(ParsedCallArgument {
+                    arguments.size = Some(EmptySizeArgument::Single(ParsedCallArgument {
                         value,
                         position: None,
-                    });
+                    }));
                 }
             }
             "out" => arguments.out = optional_call_argument(value),
             "dtype" => arguments.dtype = optional_call_argument(value),
+            "layout" => arguments.layout = optional_call_argument(value),
             "device" => arguments.device = optional_call_argument(value),
+            "pin_memory" => arguments.pin_memory = optional_call_argument(value),
             "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            "memory_format" => arguments.memory_format = optional_call_argument(value),
             _ => {
                 arguments.keyword_error.get_or_insert_with(|| {
                     PyTypeError::new_err(format!(
@@ -6181,6 +6179,32 @@ fn bind_empty_arguments<'py>(
         }
     }
     Ok(arguments)
+}
+
+fn bind_empty_positional_size<'py>(
+    positional: &Bound<'py, PyTuple>,
+) -> PyResult<Option<EmptySizeArgument<'py>>> {
+    if positional.is_empty() {
+        return Ok(None);
+    }
+    if positional.len() == 1 {
+        return Ok(Some(EmptySizeArgument::Single(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })));
+    }
+
+    let mut dimensions = try_size_vector(positional.len())?;
+    for index in 0..positional.len() {
+        try_push_size(
+            &mut dimensions,
+            ParsedCallArgument {
+                value: positional.get_item(index)?,
+                position: Some(index + 1),
+            },
+        )?;
+    }
+    Ok(Some(EmptySizeArgument::Variadic(dimensions)))
 }
 
 fn optional_call_argument(value: Bound<'_, PyAny>) -> Option<Bound<'_, PyAny>> {
@@ -7063,8 +7087,11 @@ fn parse_empty_arguments(
         size,
         out,
         dtype,
+        layout,
         device,
+        pin_memory,
         requires_grad,
+        memory_format,
         keyword_error,
     } = arguments;
 
@@ -7080,8 +7107,11 @@ fn parse_empty_arguments(
     let size = parse_empty_size(&size)?;
     let has_out = validate_creation_out("empty", out.as_ref())?;
     let dtype = parse_dtype("empty", dtype.as_ref())?;
+    parse_empty_layout(layout.as_ref())?;
     validate_device_argument_type("empty", device.as_ref())?;
+    let pin_memory = parse_factory_bool("empty", "pin_memory", pin_memory.as_ref())?;
     let requires_grad = parse_factory_requires_grad("empty", requires_grad.as_ref())?;
+    let memory_format = parse_empty_memory_format(memory_format.as_ref())?;
     if let Some(error) = keyword_error {
         return Err(error);
     }
@@ -7091,6 +7121,16 @@ fn parse_empty_arguments(
         return Err(PyRuntimeError::new_err(
             "empty(): the 'out' argument is not supported",
         ));
+    }
+    if pin_memory {
+        return Err(PyRuntimeError::new_err(
+            "empty(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
+        ));
+    }
+    if memory_format != MemoryFormat::Contiguous {
+        return Err(PyRuntimeError::new_err(format!(
+            "empty(): memory_format=torch.{memory_format} is not supported; only torch.contiguous_format is implemented"
+        )));
     }
     Ok((size, dtype, device, requires_grad))
 }
@@ -7237,13 +7277,57 @@ fn parse_creation_size<'py>(
     bind_creation_positional_dimension(function, value, sequence_error)
 }
 
-fn parse_empty_size<'py>(size: &ParsedCallArgument<'py>) -> PyResult<PendingEmptySize<'py>> {
+fn parse_empty_layout(layout: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    let Some(layout) = layout else {
+        return Ok(());
+    };
+    let py = layout.py();
+    let layout_type = layout_objects(py)?.layout.bind(py);
+    if !layout.is_instance(layout_type)? {
+        let actual = python_type_name(layout)?;
+        return Err(PyTypeError::new_err(format!(
+            "empty(): argument 'layout' must be torch.layout, not {actual}"
+        )));
+    }
+    if layout.is(strided_object(py)?.bind(py)) {
+        return Ok(());
+    }
+    Err(PyRuntimeError::new_err(
+        "empty(): only torch.strided layout is supported",
+    ))
+}
+
+fn parse_empty_memory_format(memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<MemoryFormat> {
+    let Some(memory_format) = memory_format else {
+        return Ok(MemoryFormat::Contiguous);
+    };
+    if memory_format.is_none() {
+        return Ok(MemoryFormat::Contiguous);
+    }
+    if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
+        return Ok(memory_format.try_borrow()?.inner());
+    }
+
+    let type_name = memory_format.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "empty(): argument 'memory_format' must be torch.memory_format, not {type_name}"
+    )))
+}
+
+fn parse_empty_size<'py>(size: &EmptySizeArgument<'py>) -> PyResult<PendingEmptySize<'py>> {
+    match size {
+        EmptySizeArgument::Single(size) => parse_empty_single_size(size),
+        EmptySizeArgument::Variadic(dimensions) => parse_empty_variadic_size(dimensions),
+    }
+}
+
+fn parse_empty_single_size<'py>(size: &ParsedCallArgument<'py>) -> PyResult<PendingEmptySize<'py>> {
     if let Ok(sequence) = size.value.cast::<PyList>() {
-        return parse_empty_size_dimensions(size, sequence.len(), sequence.iter())
+        return parse_empty_sequence_size_dimensions(size, sequence.len(), sequence.iter())
             .map(PendingEmptySize::Dimensions);
     }
     if let Ok(sequence) = size.value.cast::<PyTuple>() {
-        return parse_empty_size_dimensions(size, sequence.len(), sequence.iter())
+        return parse_empty_sequence_size_dimensions(size, sequence.len(), sequence.iter())
             .map(PendingEmptySize::Dimensions);
     }
     if size.position != Some(1) {
@@ -7297,7 +7381,7 @@ fn bind_empty_positional_dimension<'py>(
     Ok(PendingEmptySize::PositionalScalar(indexed))
 }
 
-fn parse_empty_size_dimensions<'py>(
+fn parse_empty_sequence_size_dimensions<'py>(
     argument: &ParsedCallArgument<'_>,
     length: usize,
     dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
@@ -7328,6 +7412,65 @@ fn parse_empty_size_dimensions<'py>(
     }
 
     Ok(parsed)
+}
+
+fn parse_empty_variadic_size<'py>(
+    dimensions: &[ParsedCallArgument<'py>],
+) -> PyResult<PendingEmptySize<'py>> {
+    let mut parsed = try_size_vector(dimensions.len())?;
+
+    for (index, dimension) in dimensions.iter().enumerate() {
+        let dimension = parse_empty_variadic_dimension(dimension, index, dimensions.len())?;
+        try_push_size(&mut parsed, dimension)?;
+    }
+
+    Ok(PendingEmptySize::Dimensions(parsed))
+}
+
+fn parse_empty_variadic_dimension(
+    dimension: &ParsedCallArgument<'_>,
+    index: usize,
+    argument_count: usize,
+) -> PyResult<i64> {
+    if dimension.value.is_exact_instance_of::<PyBool>() {
+        if index == 0 {
+            return Err(empty_variadic_first_argument_type_error(argument_count));
+        }
+        return Ok(i64::from(dimension.value.is_truthy()?));
+    }
+    if is_numpy_bool_dimension(&dimension.value)? {
+        if index == 0 {
+            return Err(empty_variadic_first_argument_type_error(argument_count));
+        }
+        return Err(empty_variadic_dimension_type_error(
+            dimension,
+            &dimension.value,
+        )?);
+    }
+
+    let indexed = if dimension.value.is_instance_of::<PyInt>() {
+        dimension.value.clone()
+    } else {
+        let count = if index == 0 { 3 } else { 1 };
+        match call_empty_operator_index(&dimension.value, count) {
+            Ok(indexed) => indexed,
+            Err(_) if index == 0 => {
+                return Err(empty_variadic_first_argument_type_error(argument_count));
+            }
+            Err(_) => {
+                return Err(empty_variadic_dimension_type_error(
+                    dimension,
+                    &dimension.value,
+                )?);
+            }
+        }
+    };
+    if is_numpy_bool_dimension(&indexed)? {
+        return Err(empty_variadic_dimension_type_error(dimension, &indexed)?);
+    }
+    indexed
+        .extract::<i64>()
+        .map_err(|_| empty_size_element_unpack_error(dimension, index + 1))
 }
 
 fn call_empty_operator_index<'py>(
@@ -7415,6 +7558,10 @@ fn is_size_bool_dimension(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     if value.is_instance_of::<PyBool>() {
         return Ok(true);
     }
+    is_numpy_bool_dimension(value)
+}
+
+fn is_numpy_bool_dimension(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     Ok(python_type_name(value)? == "numpy.bool")
 }
 
@@ -7435,6 +7582,25 @@ fn empty_size_element_type_error(
     Ok(PyTypeError::new_err(format!(
         "empty(): argument 'size'{} must be tuple of ints, but found element of type {actual} at pos {index}",
         position_suffix(argument.position)
+    )))
+}
+
+fn empty_variadic_first_argument_type_error(argument_count: usize) -> PyErr {
+    PyTypeError::new_err(format!(
+        "empty() takes 1 positional argument but {argument_count} were given"
+    ))
+}
+
+fn empty_variadic_dimension_type_error(
+    argument: &ParsedCallArgument<'_>,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    let actual = python_type_name(value)?;
+    Ok(PyTypeError::new_err(format!(
+        "empty(): argument 'size' failed to unpack the object at pos {} with error \"type must be tuple of ints,but got {actual}\"",
+        argument
+            .position
+            .expect("variadic empty dimensions record their positions")
     )))
 }
 

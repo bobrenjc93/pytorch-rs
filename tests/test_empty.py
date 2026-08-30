@@ -71,6 +71,27 @@ class EmptyTests(unittest.TestCase):
                 self.assertEqual(tensor.nbytes, 0)
                 self.assertFalse(tensor.is_pinned())
 
+    def test_variadic_zero_element_shapes_use_row_major_metadata(self):
+        cases = (
+            (lambda: torch.empty(0, 0), (0, 0), (1, 1)),
+            (lambda: torch.empty(2, 0, 3), (2, 0, 3), (3, 3, 1)),
+            (
+                lambda: torch.empty(np.uint32(2), IntSubclass(0), np.int64(3)),
+                (2, 0, 3),
+                (3, 3, 1),
+            ),
+            (lambda: torch.empty(0, True), (0, 1), (1, 1)),
+        )
+        for create, expected_shape, expected_stride in cases:
+            with self.subTest(expected_shape=expected_shape):
+                tensor = create()
+                self.assertEqual(tuple(tensor.shape), expected_shape)
+                self.assertEqual(tensor.stride(), expected_stride)
+                self.assertEqual(tensor.numel(), 0)
+                self.assertIs(tensor.dtype, torch.float32)
+                self.assertEqual(tensor.device, torch.device("cpu"))
+                self.assertIs(tensor.layout, torch.strided)
+
     def test_supported_options_and_integer_protocol_dimensions(self):
         custom_scalar = IndexDimension(0)
         custom_sequence = IndexDimension(0)
@@ -83,6 +104,12 @@ class EmptyTests(unittest.TestCase):
             lambda: torch.empty((0,), device="cpu:0"),
             lambda: torch.empty((0,), device=torch.device("cpu")),
             lambda: torch.empty((0,), device=torch.device("cpu", 2)),
+            lambda: torch.empty((0,), layout=None),
+            lambda: torch.empty((0,), layout=torch.strided),
+            lambda: torch.empty((0,), pin_memory=None),
+            lambda: torch.empty((0,), pin_memory=False),
+            lambda: torch.empty((0,), memory_format=None),
+            lambda: torch.empty((0,), memory_format=torch.contiguous_format),
             lambda: torch.empty((0,), requires_grad=None),
             lambda: torch.empty((0,), requires_grad=False),
             lambda: torch.empty((0,), requires_grad=True),
@@ -118,12 +145,24 @@ class EmptyTests(unittest.TestCase):
                     "nonzero-element uninitialized allocation is not supported",
                 ):
                     torch.empty(size)
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            "nonzero-element uninitialized allocation is not supported",
+        ):
+            torch.empty(1, 1)
 
     def test_invalid_sizes_report_factory_errors(self):
         for size in (-1, IndexDimension(-1), (-1,), (1, -2, 0)):
             with self.subTest(size=size):
                 with self.assertRaises(RuntimeError):
                     torch.empty(size)
+        for create in (
+            lambda: torch.empty(-1, 0),
+            lambda: torch.empty(1, -2, 0),
+        ):
+            with self.subTest(create=create):
+                with self.assertRaises(RuntimeError):
+                    create()
 
         for size in (True, False, np.bool_(True), (True,), (np.bool_(True),), None):
             with self.subTest(size=size):
@@ -136,26 +175,28 @@ class EmptyTests(unittest.TestCase):
             with self.subTest(size=size):
                 with self.assertRaises(TypeError):
                     torch.empty(size)
+        for create in (
+            lambda: torch.empty(2**63, 0),
+            lambda: torch.empty(0, 2**63),
+        ):
+            with self.subTest(create=create):
+                with self.assertRaises(TypeError):
+                    create()
 
         with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             torch.empty((0, 2**62, 4))
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            torch.empty(0, 2**62, 4)
 
         with self.assertRaisesRegex(RuntimeError, "Storage size calculation overflowed"):
             torch.empty((sys.maxsize,))
 
     def test_unsupported_keywords_and_nondefault_metadata_are_rejected(self):
-        for keyword, value in (
-            ("shape", (0,)),
-            ("layout", torch.strided),
-            ("pin_memory", False),
-            ("memory_format", torch.contiguous_format),
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^empty\(\) got an unexpected keyword argument 'shape'$",
         ):
-            with self.subTest(keyword=keyword):
-                with self.assertRaisesRegex(
-                    TypeError,
-                    rf"^empty\(\) got an unexpected keyword argument '{keyword}'$",
-                ):
-                    torch.empty((0,), **{keyword: value})
+            torch.empty((0,), shape=(0,))
 
         with self.assertRaisesRegex(
             RuntimeError,
@@ -175,14 +216,31 @@ class EmptyTests(unittest.TestCase):
         ):
             torch.empty((0,), device="meta")
 
-        self.assertFalse(hasattr(torch, "empty_like"))
-
-    def test_extra_positional_dimensions_remain_unsupported(self):
         with self.assertRaisesRegex(
             TypeError,
-            r"^empty\(\) takes 1 positional argument but 2 were given$",
+            r"^empty\(\): argument 'layout' must be torch\.layout, not object$",
         ):
-            torch.empty(2, 0)
+            torch.empty((0,), layout=object())
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"pin_memory=True is not supported",
+        ):
+            torch.empty((0,), pin_memory=True)
+
+        for memory_format in (
+            torch.preserve_format,
+            torch.channels_last,
+            torch.channels_last_3d,
+        ):
+            with self.subTest(memory_format=memory_format):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"only torch\.contiguous_format is implemented",
+                ):
+                    torch.empty((0,), memory_format=memory_format)
+
+        self.assertFalse(hasattr(torch, "empty_like"))
 
     def test_callable_metadata_exports_copy_pickle_and_reload(self):
         function = torch.empty
