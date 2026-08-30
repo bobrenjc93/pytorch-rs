@@ -24,12 +24,10 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
             )
 
     def setUp(self):
-        torch.set_default_device("cpu")
-        reference_torch.set_default_device("cpu")
-
-    def tearDown(self):
-        torch.set_default_device("cpu")
-        reference_torch.set_default_device("cpu")
+        torch.set_default_device(None)
+        reference_torch.set_default_device(None)
+        self.addCleanup(torch.set_default_device, None)
+        self.addCleanup(reference_torch.set_default_device, None)
 
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
@@ -63,7 +61,7 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
 
     def set_default_device_outcome(self, module):
         outcomes = []
-        for device in ("cpu", module.device("cpu"), module.device("cpu", None)):
+        for device in (None, "cpu", module.device("cpu"), module.device("cpu", None)):
             result = module.set_default_device(device)
             first = module.get_default_device()
             factories = (
@@ -89,6 +87,31 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
                     ),
                 )
             )
+        return tuple(outcomes)
+
+    def indexed_cpu_set_default_device_outcome(self, module):
+        outcomes = []
+        for device in (
+            "cpu:0",
+            "cpu:7",
+            module.device("cpu", 0),
+            module.device("cpu", 7),
+        ):
+            result = module.set_default_device(device)
+            first = module.get_default_device()
+            factories = (
+                module.tensor([1.0, 2.0]),
+                module.zeros((2, 0, 3)),
+                module.ones((2, 3)),
+            )
+            outcomes.append(
+                (
+                    result,
+                    first.type,
+                    tuple(tensor.device.type for tensor in factories),
+                )
+            )
+            module.set_default_device(None)
         return tuple(outcomes)
 
     def threaded_outcome(self, module):
@@ -139,6 +162,17 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.set_default_device_outcome(torch),
             self.set_default_device_outcome(reference_torch),
+        )
+
+    def test_set_default_device_indexed_cpu_forms_are_accepted(self):
+        self.assertEqual(
+            self.indexed_cpu_set_default_device_outcome(torch),
+            self.indexed_cpu_set_default_device_outcome(reference_torch),
+        )
+        self.assertEqual(torch.get_default_device(), torch.device("cpu"))
+        self.assertEqual(
+            reference_torch.get_default_device(),
+            reference_torch.device("cpu"),
         )
 
     def test_cpu_default_matches_when_cuda_is_visible(self):

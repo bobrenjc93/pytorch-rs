@@ -94,15 +94,24 @@ class GetDefaultDeviceTests(unittest.TestCase):
     def test_returns_a_fresh_unindexed_cpu_device_used_by_every_factory(self):
         self.assert_default_device_and_factories_are_cpu()
 
-    def test_set_default_device_accepts_unindexed_cpu_noops(self):
+    def test_set_default_device_accepts_cpu_noops_and_reset(self):
         copied = copy.copy(torch.device("cpu"))
         pickled = pickle.loads(pickle.dumps(torch.device("cpu")))
+        indexed_copy = copy.copy(torch.device("cpu:7"))
+        indexed_pickle = pickle.loads(pickle.dumps(torch.device("cpu:127")))
         values = (
+            None,
             "cpu",
+            "cpu:0",
+            "cpu:127",
             torch.device("cpu"),
             torch.device("cpu", None),
+            torch.device("cpu:0"),
+            torch.device("cpu", 7),
             copied,
             pickled,
+            indexed_copy,
+            indexed_pickle,
         )
         for value in values:
             with self.subTest(value=repr(value)):
@@ -110,6 +119,7 @@ class GetDefaultDeviceTests(unittest.TestCase):
                 self.assert_default_device_and_factories_are_cpu()
 
         self.assertIs(torch.set_default_device(device="cpu"), None)
+        self.assertIs(torch.set_default_device(device=None), None)
         self.assert_default_device_and_factories_are_cpu()
 
     def test_result_is_stable_across_grad_contexts_and_threads(self):
@@ -230,7 +240,9 @@ class GetDefaultDeviceTests(unittest.TestCase):
         self.assertIsNone(function("cpu"))
         self.assertIs(importlib.reload(torch), torch)
         self.assertIsNone(function("cpu"))
+        self.assertIsNone(function(None))
         self.assertIsNone(torch.set_default_device(torch.device("cpu")))
+        self.assertIsNone(torch.set_default_device(torch.device("cpu:7")))
         self.assert_default_device_and_factories_are_cpu()
 
     def test_rejects_all_arguments_with_pytorch_2_13_errors(self):
@@ -263,9 +275,8 @@ class GetDefaultDeviceTests(unittest.TestCase):
                     call()
                 self.assertEqual(str(raised.exception), message)
 
-    def test_set_default_device_rejects_non_cpu_or_indexed_requests(self):
+    def test_set_default_device_rejects_non_cpu_requests(self):
         unsupported_values = (
-            None,
             False,
             0,
             object(),
@@ -275,9 +286,6 @@ class GetDefaultDeviceTests(unittest.TestCase):
             "cuda",
             "cuda:0",
             "meta",
-            "cpu:0",
-            torch.device("cpu:0"),
-            torch.device("cpu", 7),
         )
         for value in unsupported_values:
             with self.subTest(value=repr(value)):

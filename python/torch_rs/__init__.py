@@ -180,11 +180,13 @@ def set_default_device(device: "Device") -> None:
         device(type='cuda', index=1)
 
     """
+    if device is None:
+        return
     descriptor = torch.device(device)
-    if descriptor.type == "cpu" and descriptor.index is None:
+    if descriptor.type == "cpu":
         return
     raise RuntimeError(
-        "set_default_device(): only unindexed 'cpu' is supported by this "
+        "set_default_device(): only CPU device requests are supported by this "
         "CPU-only backend"
     )
 
