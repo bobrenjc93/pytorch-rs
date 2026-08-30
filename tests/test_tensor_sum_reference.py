@@ -335,21 +335,118 @@ class TensorSumReferenceTests(unittest.TestCase):
             actual_untracked, expected_untracked, case="rank-10 no_grad"
         )
 
-        rank_11_shape = (2, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2)
-        rank_11_values = (
-            (np.arange(2 * np.prod(rank_11_shape), dtype=np.float32) % 31) - 15
-        ).reshape((2, *rank_11_shape))
-        actual_rank_11 = torch.tensor(rank_11_values.tolist(), dtype=torch.float32)[
-            1
-        ].permute(10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
-        expected_rank_11 = reference_torch.tensor(
-            rank_11_values, dtype=reference_torch.float32
-        )[1].permute(10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
-        self.assertFalse(actual_rank_11.is_contiguous())
+    def test_rank_11_offset_permuted_sum_cases_match_pytorch_2_13(self):
+        shape = (2, 3, 2, 5, 2, 3, 2, 2, 2, 2, 2)
+        values = (
+            (np.arange(2 * np.prod(shape), dtype=np.float32) % 31) - 15
+        ).reshape((2, *shape))
+        actual_source = torch.tensor(values.tolist(), dtype=torch.float32)
+        expected_source = reference_torch.tensor(values, dtype=reference_torch.float32)
+        permutations = (
+            (10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0),
+            (2, 0, 4, 6, 8, 10, 1, 9, 3, 5, 7),
+            (1, 3, 5, 7, 9, 0, 2, 4, 6, 8, 10),
+            (4, 1, 10, 0, 6, 2, 8, 5, 9, 3, 7),
+        )
+
+        for permutation in permutations:
+            actual = actual_source[1].permute(permutation)
+            expected = expected_source[1].permute(permutation)
+            self.assertFalse(actual.is_contiguous())
+            self.assertEqual(actual.storage_offset(), expected.storage_offset())
+            self.assert_scalar_matches(
+                actual.sum(),
+                expected.sum(),
+                case=("rank-11 offset-permutation", permutation),
+            )
+
+        singleton_shape = (2, 1, 3, 2, 1, 2, 2, 2, 2, 2, 2)
+        singleton_values = (
+            (np.arange(2 * np.prod(singleton_shape), dtype=np.float32) % 19) - 9
+        ).reshape((2, *singleton_shape))
+        actual_singleton = torch.tensor(
+            singleton_values.tolist(), dtype=torch.float32
+        )[1].permute(2, 0, 3, 5, 4, 10, 9, 8, 7, 6, 1)
+        expected_singleton = reference_torch.tensor(
+            singleton_values, dtype=reference_torch.float32
+        )[1].permute(2, 0, 3, 5, 4, 10, 9, 8, 7, 6, 1)
+        self.assertFalse(actual_singleton.is_contiguous())
         self.assert_scalar_matches(
-            actual_rank_11.sum(),
-            expected_rank_11.sum(),
-            case="rank-11 fallback",
+            actual_singleton.sum(),
+            expected_singleton.sum(),
+            case="rank-11 singleton",
+        )
+        np.testing.assert_array_equal(
+            np.asarray(actual_singleton.contiguous()),
+            expected_singleton.contiguous().cpu().numpy(),
+        )
+        np.testing.assert_array_equal(
+            np.asarray(-actual_singleton),
+            (-expected_singleton).cpu().numpy(),
+        )
+
+        actual_empty = torch.zeros(
+            (2, 0, 3, 4, 5, 2, 2, 2, 2, 2, 2), requires_grad=True
+        )
+        expected_empty = reference_torch.zeros(
+            (2, 0, 3, 4, 5, 2, 2, 2, 2, 2, 2),
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        actual_empty_view = actual_empty.permute(4, 2, 0, 10, 9, 8, 7, 6, 5, 3, 1)
+        expected_empty_view = expected_empty.permute(
+            4, 2, 0, 10, 9, 8, 7, 6, 5, 3, 1
+        )
+        self.assert_scalar_matches(
+            actual_empty_view.sum(), expected_empty_view.sum(), case="rank-11 empty"
+        )
+        actual_empty_view.sum().backward()
+        expected_empty_view.sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_empty.grad), expected_empty.grad.cpu().numpy()
+        )
+
+        actual_leaf = torch.tensor(
+            values.tolist(), dtype=torch.float32, requires_grad=True
+        )
+        expected_leaf = reference_torch.tensor(
+            values, dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_view = actual_leaf[1].permute(3, 1, 6, 0, 4, 10, 9, 8, 7, 2, 5)
+        expected_view = expected_leaf[1].permute(3, 1, 6, 0, 4, 10, 9, 8, 7, 2, 5)
+        actual_loss = actual_view.sum()
+        expected_loss = expected_view.sum()
+        self.assert_scalar_matches(actual_loss, expected_loss, case="rank-11 tracked")
+        for _ in range(2):
+            actual_loss.backward()
+            expected_loss.backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_leaf.grad), expected_leaf.grad.cpu().numpy()
+        )
+
+        with torch.no_grad():
+            actual_untracked = actual_view.sum()
+        with reference_torch.no_grad():
+            expected_untracked = expected_view.sum()
+        self.assert_scalar_matches(
+            actual_untracked, expected_untracked, case="rank-11 no_grad"
+        )
+
+        rank_12_shape = (2, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2)
+        rank_12_values = (
+            (np.arange(2 * np.prod(rank_12_shape), dtype=np.float32) % 37) - 18
+        ).reshape((2, *rank_12_shape))
+        actual_rank_12 = torch.tensor(rank_12_values.tolist(), dtype=torch.float32)[
+            1
+        ].permute(11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
+        expected_rank_12 = reference_torch.tensor(
+            rank_12_values, dtype=reference_torch.float32
+        )[1].permute(11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
+        self.assertFalse(actual_rank_12.is_contiguous())
+        self.assert_scalar_matches(
+            actual_rank_12.sum(),
+            expected_rank_12.sum(),
+            case="rank-12 fallback",
         )
 
     def test_descriptor_shape_and_documentation_match_pytorch_2_13(self):
