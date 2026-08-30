@@ -26,6 +26,12 @@ const L1_LOSS_EXACT_TENSORS_ERROR: &str =
 const MSE_LOSS_EXACT_TENSORS_ERROR: &str =
     "mse_loss() only supports exact native Tensor input and target operands";
 
+#[derive(Clone, Copy)]
+enum MseLossReduction {
+    None,
+    Mean,
+}
+
 const DROPOUT_METADATA: [DropoutMetadata; 6] = [
     DropoutMetadata {
         public_function: "dropout",
@@ -254,6 +260,20 @@ fn exact_mse_loss_tensor<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, 
         .cast::<PyTensor>()
         .expect("an exact PyTensor instance must downcast")
         .clone())
+}
+
+fn parse_mse_loss_reduction(reduction: &Bound<'_, PyAny>) -> PyResult<MseLossReduction> {
+    match reduction
+        .cast::<PyString>()
+        .ok()
+        .and_then(|reduction| reduction.to_str().ok())
+    {
+        Some("none") => Ok(MseLossReduction::None),
+        Some("mean") => Ok(MseLossReduction::Mean),
+        _ => Err(PyNotImplementedError::new_err(
+            "torch_rs.nn.functional.mse_loss only supports reduction='none' or reduction='mean'",
+        )),
+    }
 }
 
 fn exact_l1_loss_tensor<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTensor>> {
@@ -604,16 +624,7 @@ fn _nn_functional_mse_loss(
             "torch_rs.nn.functional.mse_loss only supports size_average=None and reduce=None",
         ));
     }
-    let supports_reduction = reduction
-        .cast::<PyString>()
-        .ok()
-        .and_then(|reduction| reduction.to_str().ok())
-        .is_some_and(|reduction| reduction == "none");
-    if !supports_reduction {
-        return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.mse_loss only supports reduction='none'",
-        ));
-    }
+    let reduction = parse_mse_loss_reduction(reduction)?;
     if !weight.is_none() {
         return Err(PyNotImplementedError::new_err(
             "torch_rs.nn.functional.mse_loss only supports weight=None",
@@ -648,6 +659,12 @@ fn _nn_functional_mse_loss(
         .inner()
         .squared_difference(target.inner())
         .map_err(|error| tensor_error(&error))?;
+    let output = match reduction {
+        MseLossReduction::None => output,
+        MseLossReduction::Mean => output
+            .mse_loss_mean()
+            .map_err(|error| tensor_error(&error))?,
+    };
     PyTensor::new(output).into_py_any(py)
 }
 

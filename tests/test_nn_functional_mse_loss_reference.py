@@ -359,10 +359,36 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
         )
 
     @staticmethod
-    def call_with_warnings(module_functional, input, target):
+    def call_mean(module_functional, input, target, form):
+        if form == "default":
+            return module_functional.mse_loss(input, target)
+        if form == "reduction keyword":
+            return module_functional.mse_loss(input, target, reduction="mean")
+        if form == "legacy none keywords":
+            return module_functional.mse_loss(
+                input=input,
+                target=target,
+                size_average=None,
+                reduce=None,
+                reduction="mean",
+                weight=None,
+            )
+        if form == "five positional":
+            return module_functional.mse_loss(
+                input, target, None, None, "mean"
+            )
+        return module_functional.mse_loss(
+            input, target, None, None, "mean", None
+        )
+
+    @staticmethod
+    def call_with_warnings(module_functional, input, target, *, reduction="none"):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            output = module_functional.mse_loss(input, target, reduction="none")
+            if reduction == "mean":
+                output = module_functional.mse_loss(input, target, reduction="mean")
+            else:
+                output = module_functional.mse_loss(input, target, reduction="none")
         warning_state = [
             (warning.category.__name__, str(warning.message), warning.filename, warning.lineno)
             for warning in caught
@@ -486,6 +512,87 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 )
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
+                )
+
+    def test_mean_reduction_default_keyword_storage_and_nonmutation_match_pytorch_2_13(self):
+        actual_cases = self.make_cases(torch) + self.make_same_stride_noncontiguous_cases(torch)
+        expected_cases = self.make_cases(
+            reference_torch
+        ) + self.make_same_stride_noncontiguous_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            actual_input_before = np.asarray(actual_input).reshape(-1).view(np.uint32).copy()
+            actual_target_before = np.asarray(actual_target).reshape(-1).view(np.uint32).copy()
+            expected_input_before = (
+                expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            expected_target_before = (
+                expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            for form in (
+                "default",
+                "reduction keyword",
+                "legacy none keywords",
+                "five positional",
+                "six positional",
+            ):
+                actual = self.call_mean(
+                    functional,
+                    actual_input,
+                    actual_target,
+                    form,
+                )
+                expected = self.call_mean(
+                    reference_functional,
+                    expected_input,
+                    expected_target,
+                    form,
+                )
+                self.assert_matches(actual, expected, case=(case, form))
+                with self.subTest(case=(case, form), storage=True):
+                    actual_repeat = self.call_mean(
+                        functional,
+                        actual_input,
+                        actual_target,
+                        form,
+                    )
+                    expected_repeat = self.call_mean(
+                        reference_functional,
+                        expected_input,
+                        expected_target,
+                        form,
+                    )
+                    self.assertFalse(actual.is_set_to(actual_repeat))
+                    self.assertFalse(expected.is_set_to(expected_repeat))
+                    self.assertFalse(actual.is_set_to(actual_input))
+                    self.assertFalse(expected.is_set_to(expected_input))
+                    self.assertFalse(actual.is_set_to(actual_target))
+                    self.assertFalse(expected.is_set_to(expected_target))
+                    self.assertNotEqual(actual.data_ptr(), actual_repeat.data_ptr())
+                    self.assertNotEqual(expected.data_ptr(), expected_repeat.data_ptr())
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input).reshape(-1).view(np.uint32),
+                    actual_input_before,
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target).reshape(-1).view(np.uint32),
+                    actual_target_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_input_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_target_before,
                 )
 
     def test_same_shape_contiguous_cases_match_pytorch_2_13(self):
@@ -665,6 +772,83 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 )
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
+                )
+
+    def test_mean_reduction_broadcast_warnings_storage_and_nonmutation_match_pytorch_2_13(self):
+        actual_cases = self.make_broadcast_cases(torch)
+        expected_cases = self.make_broadcast_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            actual_input_before = np.asarray(actual_input).reshape(-1).view(np.uint32).copy()
+            actual_target_before = np.asarray(actual_target).reshape(-1).view(np.uint32).copy()
+            expected_input_before = (
+                expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            expected_target_before = (
+                expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+
+            actual, actual_warnings = self.call_with_warnings(
+                functional,
+                actual_input,
+                actual_target,
+                reduction="mean",
+            )
+            expected, expected_warnings = self.call_with_warnings(
+                reference_functional,
+                expected_input,
+                expected_target,
+                reduction="mean",
+            )
+            self.assert_matches(actual, expected, case=case)
+            with self.subTest(case=case, warnings=True):
+                self.assertEqual(actual_warnings, expected_warnings)
+                self.assertEqual(len(actual_warnings), 1)
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                actual_repeat = functional.mse_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="mean",
+                )
+                expected_repeat = reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="mean",
+                )
+            with self.subTest(case=case, storage=True):
+                self.assertFalse(actual.is_set_to(actual_repeat))
+                self.assertFalse(expected.is_set_to(expected_repeat))
+                self.assertFalse(actual.is_set_to(actual_input))
+                self.assertFalse(expected.is_set_to(expected_input))
+                self.assertFalse(actual.is_set_to(actual_target))
+                self.assertFalse(expected.is_set_to(expected_target))
+                self.assertNotEqual(actual.data_ptr(), actual_repeat.data_ptr())
+                self.assertNotEqual(expected.data_ptr(), expected_repeat.data_ptr())
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input).reshape(-1).view(np.uint32),
+                    actual_input_before,
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target).reshape(-1).view(np.uint32),
+                    actual_target_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_input_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_target_before,
                 )
 
     def test_mixed_layout_singleton_stride_matches_pytorch_2_13(self):
@@ -880,23 +1064,24 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 dtype=reference_torch.float32,
                 requires_grad=target_requires_grad,
             )
-            with torch.no_grad():
-                actual = functional.mse_loss(
-                    actual_input,
-                    actual_target,
-                    reduction="none",
+            for reduction in ("none", "mean"):
+                with torch.no_grad():
+                    actual = functional.mse_loss(
+                        actual_input,
+                        actual_target,
+                        reduction=reduction,
+                    )
+                with reference_torch.no_grad():
+                    expected = reference_functional.mse_loss(
+                        expected_input,
+                        expected_target,
+                        reduction=reduction,
+                    )
+                self.assert_matches(
+                    actual,
+                    expected,
+                    case=(input_requires_grad, target_requires_grad, reduction),
                 )
-            with reference_torch.no_grad():
-                expected = reference_functional.mse_loss(
-                    expected_input,
-                    expected_target,
-                    reduction="none",
-                )
-            self.assert_matches(
-                actual,
-                expected,
-                case=(input_requires_grad, target_requires_grad),
-            )
 
     def test_same_stride_noncontiguous_requires_grad_matches_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (
@@ -927,24 +1112,25 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             expected_input = expected_input_base.transpose(0, 1)
             expected_target = expected_target_base.transpose(0, 1)
 
-            with torch.no_grad():
-                actual = functional.mse_loss(
-                    actual_input,
-                    actual_target,
-                    reduction="none",
-                )
-            with reference_torch.no_grad():
-                expected = reference_functional.mse_loss(
-                    expected_input,
-                    expected_target,
-                    reduction="none",
-                )
+            for reduction in ("none", "mean"):
+                with torch.no_grad():
+                    actual = functional.mse_loss(
+                        actual_input,
+                        actual_target,
+                        reduction=reduction,
+                    )
+                with reference_torch.no_grad():
+                    expected = reference_functional.mse_loss(
+                        expected_input,
+                        expected_target,
+                        reduction=reduction,
+                    )
 
-            self.assert_matches(
-                actual,
-                expected,
-                case=(input_requires_grad, target_requires_grad),
-            )
+                self.assert_matches(
+                    actual,
+                    expected,
+                    case=(input_requires_grad, target_requires_grad, reduction),
+                )
             self.assertIsNone(actual_input_base.grad)
             self.assertIsNone(actual_target_base.grad)
             self.assertIsNone(expected_input_base.grad)
@@ -974,25 +1160,26 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 dtype=reference_torch.float32,
                 requires_grad=target_requires_grad,
             )
-            with warnings.catch_warnings(), torch.no_grad():
-                warnings.simplefilter("ignore")
-                actual = functional.mse_loss(
-                    actual_input,
-                    actual_target,
-                    reduction="none",
+            for reduction in ("none", "mean"):
+                with warnings.catch_warnings(), torch.no_grad():
+                    warnings.simplefilter("ignore")
+                    actual = functional.mse_loss(
+                        actual_input,
+                        actual_target,
+                        reduction=reduction,
+                    )
+                with warnings.catch_warnings(), reference_torch.no_grad():
+                    warnings.simplefilter("ignore")
+                    expected = reference_functional.mse_loss(
+                        expected_input,
+                        expected_target,
+                        reduction=reduction,
+                    )
+                self.assert_matches(
+                    actual,
+                    expected,
+                    case=(input_requires_grad, target_requires_grad, reduction),
                 )
-            with warnings.catch_warnings(), reference_torch.no_grad():
-                warnings.simplefilter("ignore")
-                expected = reference_functional.mse_loss(
-                    expected_input,
-                    expected_target,
-                    reduction="none",
-                )
-            self.assert_matches(
-                actual,
-                expected,
-                case=(input_requires_grad, target_requires_grad),
-            )
 
     def test_unbroadcastable_shape_warning_and_error_match_pytorch_2_13(self):
         actual_input = torch.ones((2, 3))
@@ -1000,30 +1187,35 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
         expected_input = reference_torch.ones((2, 3), dtype=reference_torch.float32)
         expected_target = reference_torch.zeros((2, 2), dtype=reference_torch.float32)
 
-        with warnings.catch_warnings(record=True) as actual_warnings:
-            warnings.simplefilter("always")
-            with self.assertRaises(RuntimeError) as actual_error:
-                functional.mse_loss(
-                    actual_input,
-                    actual_target,
-                    reduction="none",
-                )
-        with warnings.catch_warnings(record=True) as expected_warnings:
-            warnings.simplefilter("always")
-            with self.assertRaises(RuntimeError) as expected_error:
-                reference_functional.mse_loss(
-                    expected_input,
-                    expected_target,
-                    reduction="none",
-                )
+        for reduction in ("none", "mean"):
+            with self.subTest(reduction=reduction):
+                with warnings.catch_warnings(record=True) as actual_warnings:
+                    warnings.simplefilter("always")
+                    with self.assertRaises(RuntimeError) as actual_error:
+                        functional.mse_loss(
+                            actual_input,
+                            actual_target,
+                            reduction=reduction,
+                        )
+                with warnings.catch_warnings(record=True) as expected_warnings:
+                    warnings.simplefilter("always")
+                    with self.assertRaises(RuntimeError) as expected_error:
+                        reference_functional.mse_loss(
+                            expected_input,
+                            expected_target,
+                            reduction=reduction,
+                        )
 
-        self.assertEqual(str(actual_error.exception), str(expected_error.exception))
-        self.assertEqual(len(actual_warnings), len(expected_warnings))
-        self.assertEqual(len(actual_warnings), 1)
-        self.assertEqual(
-            str(actual_warnings[0].message),
-            str(expected_warnings[0].message),
-        )
+                self.assertEqual(
+                    str(actual_error.exception),
+                    str(expected_error.exception),
+                )
+                self.assertEqual(len(actual_warnings), len(expected_warnings))
+                self.assertEqual(len(actual_warnings), 1)
+                self.assertEqual(
+                    str(actual_warnings[0].message),
+                    str(expected_warnings[0].message),
+                )
 
 
 if __name__ == "__main__":

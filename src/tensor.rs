@@ -3494,6 +3494,34 @@ impl Tensor {
         output
     }
 
+    /// Reduces a native MSE result to `PyTorch`'s CPU float32 mean scalar.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when collecting reduction values fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn mse_loss_mean(&self) -> Result<Self, TensorError> {
+        const EMPTY_MEAN_NAN: u32 = 0xffc0_0000;
+
+        let mean = if self.elements == 0 {
+            f32::from_bits(EMPTY_MEAN_NAN)
+        } else {
+            let values = self.mse_loss_mean_values()?;
+            #[allow(clippy::cast_precision_loss)]
+            let divisor = self.elements as f32;
+            pytorch_cpu_float_sum(&values) / divisor
+        };
+        Ok(Self::from_scalar(mean, self.dtype(), self.device()))
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn mse_loss_mean_values(&self) -> Result<Vec<f32>, TensorError> {
+        if let Some(values) = self.dense_physical_slice() {
+            return copied_storage(values, self.elements);
+        }
+        self.try_to_vec()
+    }
+
     fn sum_contiguous_shared_gradient(&self) -> Option<f32> {
         if self.elements == 0 || !self.is_contiguous() {
             return None;
@@ -5959,6 +5987,74 @@ fn copied_storage(values: &[f32], elements: usize) -> Result<Vec<f32>, TensorErr
     let mut data = try_result_vector(elements, elements)?;
     data.extend_from_slice(values);
     Ok(data)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_cpu_float_sum(values: &[f32]) -> f32 {
+    match values.len() {
+        0 => 0.0,
+        1..=4 => values
+            .iter()
+            .copied()
+            .fold(0.0_f32, |total, value| total + value),
+        5..=7 => pytorch_cpu_float_small_sum(values),
+        _ => pytorch_cpu_float_vector_sum(values),
+    }
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_cpu_float_small_sum(values: &[f32]) -> f32 {
+    debug_assert!((5..=7).contains(&values.len()));
+    let mut total = values[0];
+    for value in &values[4..] {
+        total += *value;
+    }
+    for value in &values[1..4] {
+        total += *value;
+    }
+    total
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_cpu_float_vector_sum(values: &[f32]) -> f32 {
+    const VECTOR_WIDTH: usize = 8;
+    const VECTOR_GROUPS: usize = 4;
+    const GROUP_ELEMENTS: usize = VECTOR_WIDTH * VECTOR_GROUPS;
+
+    debug_assert!(values.len() >= VECTOR_WIDTH);
+
+    let mut accumulators = [[0.0_f32; VECTOR_WIDTH]; VECTOR_GROUPS];
+    let group_elements = values.len() / GROUP_ELEMENTS * GROUP_ELEMENTS;
+    for chunk in values[..group_elements].chunks_exact(GROUP_ELEMENTS) {
+        for lane in 0..VECTOR_WIDTH {
+            accumulators[0][lane] += chunk[lane];
+            accumulators[1][lane] += chunk[VECTOR_WIDTH + lane];
+            accumulators[2][lane] += chunk[2 * VECTOR_WIDTH + lane];
+            accumulators[3][lane] += chunk[3 * VECTOR_WIDTH + lane];
+        }
+    }
+
+    let vector_elements = values.len() / VECTOR_WIDTH * VECTOR_WIDTH;
+    for chunk in values[group_elements..vector_elements].chunks_exact(VECTOR_WIDTH) {
+        for lane in 0..VECTOR_WIDTH {
+            accumulators[0][lane] += chunk[lane];
+        }
+    }
+
+    let mut total = values[vector_elements..]
+        .iter()
+        .copied()
+        .fold(0.0_f32, |total, value| total + value);
+    for (((&first, &second), &third), &fourth) in accumulators[0]
+        .iter()
+        .zip(&accumulators[1])
+        .zip(&accumulators[2])
+        .zip(&accumulators[3])
+    {
+        let lane_total = ((first + second) + third) + fourth;
+        total += lane_total;
+    }
+    total
 }
 
 #[cfg(any(feature = "python-bindings", test))]
