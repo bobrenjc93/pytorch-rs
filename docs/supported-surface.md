@@ -546,10 +546,21 @@ and `torch.equal()` comparison, identity `Tensor.positive()`/
 `torch.negative()` builtin. It supports broadcast tensor and real-scalar
 addition, subtraction, multiplication through `*`, `Tensor.mul()`,
 `Tensor.multiply()`, `torch.mul()`, and the distinct top-level
-`torch.multiply()` builtin, plus true division, the listed unary kernels,
+`torch.multiply()` builtin, scalar-only top-level `torch.add()`, plus true
+division, the listed unary kernels,
 `Tensor.sum(dim=None)`, `torch.sum(input, dim=None, *, dtype=None)`, `Tensor.relu()`,
 `torch.relu()`, and rank-2 matrix multiplication through `@`,
 `Tensor.matmul()`, and `torch.matmul()`.
+
+Top-level `torch.add(input, other, *, alpha=1, out=None)` accepts exact native
+CPU float32 tensor plus real-scalar operands in either order and delegates to
+the existing scalar-addition path, preserving PyTorch-compatible values, shape,
+strides, storage offset, dtype, CPU device, fresh output storage, first-order
+autograd, `torch.no_grad()` behavior, and `TorchFunctionMode`/
+`__torch_function__` dispatch for supported argument forms. `Tensor/Tensor`
+operands, scalar-only operands, non-default `alpha`, concrete `out` tensors,
+complex or otherwise unsupported operands, dtype/device extension keywords, and
+a named `Tensor.add()` method remain unsupported.
 
 Top-level `torch.neg()` and `torch.negative()` share the same layout-preserving
 float32 CPU negation and autograd path while remaining distinct builtins; their
