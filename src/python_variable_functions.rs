@@ -16,26 +16,27 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
     abs_variable_function, absolute_variable_function, adjoint_variable_function,
-    arange_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
-    atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
-    ceil_variable_function, conj_variable_function, detach_variable_function,
-    exp_variable_function, fix_variable_function, floor_variable_function,
-    get_device_variable_function, is_conj_variable_function, is_inference_variable_function,
-    matmul_variable_function, moveaxis_variable_function, movedim_variable_function,
-    mul_variable_function, multiply_variable_function, neg_variable_function,
-    negative_variable_function, permute_variable_function, positive_variable_function,
-    promote_types_variable_function, ravel_variable_function, real_variable_function,
-    reciprocal_variable_function, reshape_variable_function, resolve_conj_variable_function,
-    resolve_neg_variable_function, rsqrt_variable_function, scalar_tensor_variable_function,
-    select_variable_function, sigmoid_variable_function, sin_variable_function,
-    sqrt_variable_function, square_variable_function, sum_variable_function,
+    arange_variable_function, as_tensor_variable_function, atleast_1d_variable_function,
+    atleast_2d_variable_function, atleast_3d_variable_function,
+    broadcast_tensors_variable_function, can_cast_variable_function, ceil_variable_function,
+    conj_variable_function, detach_variable_function, exp_variable_function, fix_variable_function,
+    floor_variable_function, get_device_variable_function, is_conj_variable_function,
+    is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
+    movedim_variable_function, mul_variable_function, multiply_variable_function,
+    neg_variable_function, negative_variable_function, permute_variable_function,
+    positive_variable_function, promote_types_variable_function, ravel_variable_function,
+    real_variable_function, reciprocal_variable_function, reshape_variable_function,
+    resolve_conj_variable_function, resolve_neg_variable_function, rsqrt_variable_function,
+    scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
+    sin_variable_function, sqrt_variable_function, square_variable_function, sum_variable_function,
     tanh_variable_function, trunc_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 46] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 47] = [
     "get_device",
+    "as_tensor",
     "scalar_tensor",
     "arange",
     "atleast_1d",
@@ -158,6 +159,58 @@ Example::
     >>> torch.arange(1, 2.5, 0.5)
     tensor([ 1.0000,  1.5000,  2.0000])
 ";
+
+const AS_TENSOR_DOC: &std::ffi::CStr = cr#"
+as_tensor(data: Any, *, dtype: Optional[dtype] = None, device: Optional[DeviceLikeType]) -> Tensor
+
+Converts :attr:`data` into a tensor, sharing data and preserving autograd
+history if possible.
+
+If :attr:`data` is already a tensor with the requested dtype and device
+then :attr:`data` itself is returned, but if :attr:`data` is a
+tensor with a different dtype or device then it's copied as if using
+`data.to(dtype=dtype, device=device)`.
+
+If :attr:`data` is a NumPy array (an ndarray) with the same dtype and device then a
+tensor is constructed using :func:`torch.from_numpy`.
+
+If :attr:`data` is a CuPy array, the returned tensor will be located on the same device as the CuPy array unless
+specifically overwritten by :attr:`device` or a default device. The device of the CuPy array is inferred from the
+pointer of the array using `cudaPointerGetAttributes` unless :attr:`device` is provided with an explicit device index.
+
+.. seealso::
+
+    :func:`torch.tensor` never shares its data and creates a new "leaf tensor" (see :doc:`/notes/autograd`).
+
+
+Args:
+    data (array_like): Initial data for the tensor. Can be a list, tuple,
+        NumPy ``ndarray``, scalar, and other types.
+    dtype (:class:`torch.dtype`, optional): the desired data type of returned tensor.
+        Default: if ``None``, infers data type from :attr:`data`.
+    device (:class:`torch.device`, optional): the device of the constructed tensor. If None and data is a tensor
+        then the device of data is used. If None and data is not a tensor then
+        the result tensor is constructed on the current device.
+
+
+Example::
+
+    >>> a = numpy.array([1, 2, 3])
+    >>> t = torch.as_tensor(a)
+    >>> t
+    tensor([ 1,  2,  3])
+    >>> t[0] = -1
+    >>> a
+    array([-1,  2,  3])
+
+    >>> a = numpy.array([1, 2, 3])
+    >>> t = torch.as_tensor(a, device=torch.device('cuda'))
+    >>> t
+    tensor([ 1,  2,  3])
+    >>> t[0] = -1
+    >>> a
+    array([1,  2,  3])
+"#;
 
 const POSITIVE_DOC: &std::ffi::CStr = c"\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n";
 
@@ -895,6 +948,7 @@ macro_rules! variable_function_callback {
 }
 
 variable_function_callback!(get_device_callback, get_device_variable_function);
+variable_function_callback!(as_tensor_callback, as_tensor_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
 variable_function_callback!(arange_callback, arange_variable_function);
 variable_function_callback!(atleast_1d_callback, atleast_1d_variable_function);
@@ -972,6 +1026,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
     // this tiny table deliberately so it remains valid for the type lifetime.
     let methods = Box::leak(Box::new([
         variable_function_method!(c"get_device", get_device_callback, c""),
+        variable_function_method!(c"as_tensor", as_tensor_callback, AS_TENSOR_DOC),
         variable_function_method!(c"scalar_tensor", scalar_tensor_callback, c""),
         variable_function_method!(c"arange", arange_callback, ARANGE_DOC),
         variable_function_method!(c"atleast_1d", atleast_1d_callback, c""),

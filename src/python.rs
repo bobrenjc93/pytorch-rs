@@ -1458,6 +1458,41 @@ pub(crate) fn get_device_variable_function(
     device_ordinal(tensor.inner.device())?.into_py_any(py)
 }
 
+pub(crate) fn as_tensor_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let arguments = bind_as_tensor_arguments(args, kwargs)?;
+    let Some(data) = arguments.data else {
+        return Err(PyTypeError::new_err(
+            "as_tensor() missing 1 required positional arguments: \"data\"",
+        ));
+    };
+
+    let dtype = parse_as_tensor_dtype(arguments.dtype.as_ref())?;
+    validate_as_tensor_device_type(arguments.device.as_ref())?;
+    if let Some(keyword_error) = arguments.keyword_error {
+        return Err(keyword_error);
+    }
+    if let Some(result) = dispatch_as_tensor_mode(py, args, kwargs)? {
+        return Ok(result);
+    }
+    let device = parse_as_tensor_device(arguments.device.as_ref())?;
+
+    if dtype != DType::Float32 || !device.is_cpu() {
+        return Err(PyNotImplementedError::new_err(
+            "as_tensor(): only identity conversion for CPU float32 tensors is supported",
+        ));
+    }
+    if !data.value.is_exact_instance_of::<PyTensor>() {
+        return Err(PyNotImplementedError::new_err(
+            "as_tensor(): only exact native CPU float32 Tensor inputs are supported; Python sequences, NumPy arrays, and scalar conversions are not implemented",
+        ));
+    }
+    Ok(data.value.unbind())
+}
+
 pub(crate) fn scalar_tensor_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -4201,6 +4236,13 @@ fn parse_top_level_mul_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
     }
 }
 
+struct AsTensorCallArguments<'py> {
+    data: Option<ParsedCallArgument<'py>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
 struct ScalarTensorCallArguments<'py> {
     scalar: Option<ParsedCallArgument<'py>>,
     dtype: Option<Bound<'py, PyAny>>,
@@ -6203,6 +6245,203 @@ fn arange_overload_unsupported() -> PyErr {
     PyTypeError::new_err(
         "arange(): start and step overloads are not supported; pass one exact Python float endpoint",
     )
+}
+
+fn bind_as_tensor_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<AsTensorCallArguments<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "as_tensor() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments = AsTensorCallArguments {
+        data: if positional.is_empty() {
+            None
+        } else {
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            })
+        },
+        dtype: None,
+        device: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "data" => {
+                if arguments.data.is_some() {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("as_tensor() got multiple values for argument 'data'")
+                    });
+                } else {
+                    arguments.data = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            }
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "as_tensor() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
+}
+
+fn parse_as_tensor_dtype(dtype: Option<&Bound<'_, PyAny>>) -> PyResult<DType> {
+    let dtype = parse_dtype("as_tensor", dtype)?;
+    if dtype == DType::Float32 {
+        return Ok(dtype);
+    }
+    Err(PyNotImplementedError::new_err(
+        "as_tensor(): dtype conversions are not supported; only torch.float32 identity is implemented",
+    ))
+}
+
+fn validate_as_tensor_device_type(device: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    let Some(device) = device else {
+        return Ok(());
+    };
+    if device.cast::<PyDevice>().is_ok() || device.cast::<PyString>().is_ok() {
+        return Ok(());
+    }
+    let type_name = device.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "as_tensor(): argument 'device' must be torch.device, not {type_name}"
+    )))
+}
+
+fn parse_as_tensor_device(device: Option<&Bound<'_, PyAny>>) -> PyResult<Device> {
+    let Some(device) = device else {
+        return Ok(Device::Cpu);
+    };
+    if let Ok(device) = device.cast::<PyDevice>() {
+        let device = device.try_borrow()?;
+        if device.inner().is_cpu() && !device.has_index() {
+            return Ok(Device::Cpu);
+        }
+        return Err(PyNotImplementedError::new_err(
+            "as_tensor(): indexed CPU devices require a copy and are not supported",
+        ));
+    }
+
+    let specification = device.cast::<PyString>()?.to_str()?;
+    if specification == "cpu" {
+        return Ok(Device::Cpu);
+    }
+    validate_as_tensor_device_string(specification)?;
+    parse_device_value("as_tensor", device)?;
+    Err(PyNotImplementedError::new_err(
+        "as_tensor(): explicit indexed CPU devices require a copy and are not supported",
+    ))
+}
+
+fn validate_as_tensor_device_string(specification: &str) -> PyResult<()> {
+    if specification.is_empty() {
+        return Err(PyRuntimeError::new_err("Device string must not be empty"));
+    }
+    let (device_type, index) = specification
+        .split_once(':')
+        .map_or((specification, None), |(device_type, index)| {
+            (device_type, Some(index))
+        });
+    let known_type = matches!(
+        device_type,
+        "cpu"
+            | "cuda"
+            | "ipu"
+            | "xpu"
+            | "mkldnn"
+            | "opengl"
+            | "opencl"
+            | "ideep"
+            | "hip"
+            | "ve"
+            | "fpga"
+            | "maia"
+            | "xla"
+            | "lazy"
+            | "vulkan"
+            | "mps"
+            | "meta"
+            | "hpu"
+            | "mtia"
+            | "privateuseone"
+    );
+    if !known_type {
+        if !device_type.is_empty()
+            && device_type
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+        {
+            return Err(PyRuntimeError::new_err(format!(
+                "Expected one of cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, ideep, hip, ve, fpga, maia, xla, lazy, vulkan, mps, meta, hpu, mtia, privateuseone device type at start of device string: {device_type}"
+            )));
+        }
+        return Err(PyRuntimeError::new_err(format!(
+            "Invalid device string: '{specification}'"
+        )));
+    }
+    if let Some(index) = index {
+        let valid_digits = !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit());
+        if !valid_digits || (index.len() > 1 && index.starts_with('0')) {
+            return Err(PyRuntimeError::new_err(format!(
+                "Invalid device string: '{specification}'"
+            )));
+        }
+        if index.parse::<i32>().is_err() {
+            return Err(PyRuntimeError::new_err(format!(
+                "Could not parse device index '{index}' in device string '{specification}'"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn dispatch_as_tensor_mode(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    if torch_function_mode_stack::is_empty() {
+        return Ok(None);
+    }
+
+    let function = variable_function(py, "as_tensor")?;
+    let types = PyTuple::empty(py);
+    let active_mode = torch_function_mode_stack::pop();
+    let Some(mode) = active_mode.get() else {
+        return Ok(None);
+    };
+    validate_torch_function_mode_handler(mode.bind(py))?;
+    let handler = mode.bind(py).getattr("__torch_function__")?;
+    let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+    if !is_not_implemented(py, &result) {
+        return Ok(Some(result));
+    }
+
+    Err(torch_function_dispatch_error(
+        py,
+        "torch.as_tensor",
+        Some(mode),
+        None,
+    )?)
 }
 
 fn bind_scalar_tensor_arguments<'py>(
