@@ -154,6 +154,59 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ("empty strided scalar target", empty_strided, scalar),
         )
 
+    def make_broadcast_cases(self, module):
+        matrix = self.tensor(
+            module,
+            np.arange(6, dtype=np.float32).reshape(2, 3).tolist(),
+        )
+        offset_matrix = self.tensor(
+            module,
+            np.arange(12, dtype=np.float32).reshape(2, 2, 3).tolist(),
+        )[1]
+        noncontiguous = self.tensor(
+            module,
+            np.arange(24, dtype=np.float32).reshape(2, 4, 3).tolist(),
+        ).transpose(1, 2)
+        singleton_target = self.tensor(
+            module,
+            np.linspace(-1.0, 1.0, 3, dtype=np.float32).reshape(1, 3, 1).tolist(),
+        )
+        channels_last = self.tensor(
+            module,
+            np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4).tolist(),
+        ).contiguous(memory_format=module.channels_last)
+        channel_target = self.tensor(
+            module,
+            np.linspace(-2.0, 2.0, 2, dtype=np.float32)
+            .reshape(1, 2, 1, 1)
+            .tolist(),
+        )
+        empty_strided = module.zeros(
+            (2, 0, 3), dtype=module.float32
+        ).transpose(0, 2)
+
+        return self.make_scalar_broadcast_cases(module) + (
+            ("vector target", matrix, self.tensor(module, [1.0, 2.0, 3.0])),
+            ("column target", matrix, self.tensor(module, [[1.0], [2.0]])),
+            (
+                "offset matrix vector target",
+                offset_matrix,
+                self.tensor(module, [0.5, -1.0, 2.0]),
+            ),
+            (
+                "noncontiguous vector target",
+                noncontiguous,
+                self.tensor(module, [1.0, 2.0, 3.0, 4.0]),
+            ),
+            ("noncontiguous singleton target", noncontiguous, singleton_target),
+            ("channels last channel target", channels_last, channel_target),
+            (
+                "empty singleton broadcast",
+                empty_strided,
+                module.ones((1, 0, 1), dtype=module.float32),
+            ),
+        )
+
     @staticmethod
     def call(module_functional, input, target, form):
         if form == "reduction keyword":
@@ -305,9 +358,9 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                     reference_torch.equal(expected_target, expected_target_before)
                 )
 
-    def test_scalar_broadcast_layouts_warnings_storage_and_nonmutation_match(self):
-        actual_cases = self.make_scalar_broadcast_cases(torch)
-        expected_cases = self.make_scalar_broadcast_cases(reference_torch)
+    def test_broadcast_layouts_warnings_storage_and_nonmutation_match(self):
+        actual_cases = self.make_broadcast_cases(torch)
+        expected_cases = self.make_broadcast_cases(reference_torch)
         for actual_case, expected_case in zip(
             actual_cases,
             expected_cases,
@@ -369,6 +422,37 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
                 )
+
+    def test_unbroadcastable_shape_warning_and_error_match_pytorch_2_13(self):
+        actual_input = torch.ones((2, 3))
+        actual_target = torch.zeros((2, 2))
+        expected_input = reference_torch.ones((2, 3), dtype=reference_torch.float32)
+        expected_target = reference_torch.zeros((2, 2), dtype=reference_torch.float32)
+
+        with warnings.catch_warnings(record=True) as actual_warnings:
+            warnings.simplefilter("always")
+            with self.assertRaises(RuntimeError) as actual_error:
+                functional.mse_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="none",
+                )
+        with warnings.catch_warnings(record=True) as expected_warnings:
+            warnings.simplefilter("always")
+            with self.assertRaises(RuntimeError) as expected_error:
+                reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="none",
+                )
+
+        self.assertEqual(str(actual_error.exception), str(expected_error.exception))
+        self.assertEqual(len(actual_warnings), len(expected_warnings))
+        self.assertEqual(len(actual_warnings), 1)
+        self.assertEqual(
+            str(actual_warnings[0].message),
+            str(expected_warnings[0].message),
+        )
 
     def test_mixed_layout_singleton_stride_matches_pytorch_2_13(self):
         actual_input = self.tensor(
@@ -578,6 +662,50 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                     reduction="none",
                 )
             with reference_torch.no_grad():
+                expected = reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="none",
+                )
+            self.assert_matches(
+                actual,
+                expected,
+                case=(input_requires_grad, target_requires_grad),
+            )
+
+    def test_broadcast_requires_grad_operands_match_inside_no_grad(self):
+        for input_requires_grad, target_requires_grad in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            actual_input = torch.tensor(
+                [[1.0, -2.0], [3.0, -4.0]],
+                requires_grad=input_requires_grad,
+            )
+            actual_target = torch.tensor(
+                [0.5, 2.0],
+                requires_grad=target_requires_grad,
+            )
+            expected_input = reference_torch.tensor(
+                [[1.0, -2.0], [3.0, -4.0]],
+                dtype=reference_torch.float32,
+                requires_grad=input_requires_grad,
+            )
+            expected_target = reference_torch.tensor(
+                [0.5, 2.0],
+                dtype=reference_torch.float32,
+                requires_grad=target_requires_grad,
+            )
+            with warnings.catch_warnings(), torch.no_grad():
+                warnings.simplefilter("ignore")
+                actual = functional.mse_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="none",
+                )
+            with warnings.catch_warnings(), reference_torch.no_grad():
+                warnings.simplefilter("ignore")
                 expected = reference_functional.mse_loss(
                     expected_input,
                     expected_target,
