@@ -10433,6 +10433,11 @@ fn bind_top_level_add_alpha(
     if let Some(probed) = probe_torch_function_override(&alpha.value) {
         return Ok(BoundTopLevelAddAlpha::Override(probed));
     }
+    if is_boolean_arithmetic_scalar(&alpha.value)? {
+        return Err(PyRuntimeError::new_err(
+            "Boolean alpha only supported for Boolean results.",
+        ));
+    }
     let Some(scalar) = parse_arithmetic_scalar(&alpha.value)? else {
         let actual = python_type_name(&alpha.value)?;
         return Err(PyTypeError::new_err(format!(
@@ -10689,6 +10694,18 @@ fn is_real_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     Ok(value.is_instance(&numpy.getattr("bool_")?)?
         || value.is_instance(&numpy.getattr("integer")?)?
         || value.is_instance(&numpy.getattr("floating")?)?)
+}
+
+fn is_boolean_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if value.is_exact_instance_of::<PyBool>() {
+        return Ok(true);
+    }
+
+    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
+        return Ok(false);
+    };
+    let numpy_bool = numpy.getattr("bool_")?;
+    value.is_instance(&numpy_bool)
 }
 
 fn parse_top_level_multiplication_operand<'py>(
@@ -13256,14 +13273,13 @@ impl ParsedArithmeticScalar {
 
     fn is_default_add_alpha(&self) -> bool {
         match self {
-            Self::PythonBool(value) => *value,
             Self::Number(value) => match value {
                 ParsedFillValue::Float(value) => value.to_bits() == 1.0_f64.to_bits(),
                 ParsedFillValue::SignedInteger(value) => *value == 1,
                 ParsedFillValue::UnsignedInteger(value) => *value == 1,
                 ParsedFillValue::TensorScalar(value) => value.to_bits() == 1.0_f32.to_bits(),
             },
-            Self::WideNumpyUnsigned => false,
+            Self::PythonBool(_) | Self::WideNumpyUnsigned => false,
         }
     }
 

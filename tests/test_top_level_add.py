@@ -431,6 +431,13 @@ class TopLevelAddTests(unittest.TestCase):
             NotImplementedError, r"^add\(\): alpha values other than 1 are not supported$"
         ):
             torch.add(tensor, 2.0, alpha=2)
+        for alpha in (True, False, np.bool_(True), np.bool_(False)):
+            with self.subTest(alpha=alpha):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^Boolean alpha only supported for Boolean results\.$",
+                ):
+                    torch.add(tensor, 2.0, alpha=alpha)
 
         destination = torch.tensor([17.0])
         with self.assertRaisesRegex(
