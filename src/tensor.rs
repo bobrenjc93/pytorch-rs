@@ -539,6 +539,36 @@ impl PartialEq for Tensor {
     }
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::float_cmp)]
+fn allclose_values(left: f32, right: f32, rtol: f64, atol: f64, equal_nan: bool) -> bool {
+    if left == right {
+        return true;
+    }
+
+    let left_nan = left.is_nan();
+    let right_nan = right.is_nan();
+    if left_nan || right_nan {
+        return equal_nan && left_nan && right_nan;
+    }
+
+    if left.is_infinite() || right.is_infinite() {
+        return false;
+    }
+
+    let difference = (left - right).abs();
+    if difference.is_infinite() {
+        return false;
+    }
+    difference <= (atol as f32) + (rtol as f32) * right.abs()
+}
+
+fn allclose_slices(left: &[f32], right: &[f32], rtol: f64, atol: f64, equal_nan: bool) -> bool {
+    left.iter()
+        .copied()
+        .zip(right.iter().copied())
+        .all(|(left, right)| allclose_values(left, right, rtol, atol, equal_nan))
+}
+
 #[allow(clippy::float_cmp)]
 fn contiguous_values_equal(left: &[f32], right: &[f32]) -> bool {
     if left.len() != right.len() {
@@ -3612,6 +3642,120 @@ impl Tensor {
 
     fn multiply_values(&self, other: &Self) -> Result<Self, TensorError> {
         self.zip_map(other, |left, right| left * right)
+    }
+
+    /// Returns whether two tensors are elementwise close after PyTorch-style
+    /// broadcasting.
+    ///
+    /// This is intentionally a scalar query, not a bool-tensor-producing
+    /// comparison operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the tensors cannot be broadcast together.
+    pub fn allclose(
+        &self,
+        other: &Self,
+        rtol: f64,
+        atol: f64,
+        equal_nan: bool,
+    ) -> Result<bool, TensorError> {
+        if self.shape == other.shape {
+            return Ok(self.allclose_same_shape(other, rtol, atol, equal_nan));
+        }
+        self.allclose_broadcast(other, rtol, atol, equal_nan)
+    }
+
+    fn allclose_same_shape(&self, other: &Self, rtol: f64, atol: f64, equal_nan: bool) -> bool {
+        if self.elements == 0 {
+            return true;
+        }
+        let left_contiguous = self.contiguous_slice();
+        let right_contiguous = other.contiguous_slice();
+        if let (Some(left), Some(right)) = (left_contiguous, right_contiguous) {
+            return allclose_slices(left, right, rtol, atol, equal_nan);
+        }
+        if self.strides == other.strides
+            && let (Some(left), Some(right)) =
+                (self.dense_physical_slice(), other.dense_physical_slice())
+        {
+            return allclose_slices(left, right, rtol, atol, equal_nan);
+        }
+
+        self.logical_values_from_contiguous_slice(left_contiguous)
+            .zip(other.logical_values_from_contiguous_slice(right_contiguous))
+            .all(|(left, right)| allclose_values(left, right, rtol, atol, equal_nan))
+    }
+
+    fn allclose_broadcast(
+        &self,
+        other: &Self,
+        rtol: f64,
+        atol: f64,
+        equal_nan: bool,
+    ) -> Result<bool, TensorError> {
+        let plan = BroadcastPlan::new(self, other)?;
+        if plan.elements == 0 {
+            return Ok(true);
+        }
+
+        let left_values = self.storage.owned_values();
+        let right_values = other.storage.owned_values();
+        let mut coordinates = try_result_vector(plan.shape.len(), plan.elements)?;
+        coordinates.resize(plan.shape.len(), 0_usize);
+        let mut left_offset = self.offset;
+        let mut right_offset = other.offset;
+
+        for output_index in 0..plan.elements {
+            let left = left_values.map_or_else(
+                || {
+                    self.storage
+                        .value(left_offset)
+                        .expect("validated broadcast offset must address left storage")
+                },
+                |values| values[left_offset],
+            );
+            let right = right_values.map_or_else(
+                || {
+                    other
+                        .storage
+                        .value(right_offset)
+                        .expect("validated broadcast offset must address right storage")
+                },
+                |values| values[right_offset],
+            );
+            if !allclose_values(left, right, rtol, atol, equal_nan) {
+                return Ok(false);
+            }
+            if output_index + 1 == plan.elements {
+                break;
+            }
+
+            for axis in (0..plan.shape.len()).rev() {
+                coordinates[axis] = coordinates[axis]
+                    .checked_add(1)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+                if coordinates[axis] < plan.shape[axis] {
+                    left_offset = left_offset
+                        .checked_add(plan.dimensions[axis].left_step)
+                        .ok_or(TensorError::StrideCalculationOverflow)?;
+                    right_offset = right_offset
+                        .checked_add(plan.dimensions[axis].right_step)
+                        .ok_or(TensorError::StrideCalculationOverflow)?;
+                    break;
+                }
+
+                coordinates[axis] = 0;
+                left_offset = left_offset
+                    .checked_sub(plan.dimensions[axis].left_rewind)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+                right_offset = right_offset
+                    .checked_sub(plan.dimensions[axis].right_rewind)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+            }
+        }
+
+        Ok(true)
     }
 
     fn zip_map_broadcast(
