@@ -1,5 +1,121 @@
 # `torch.nn.functional.l1_loss(reduction="none")` Release Timings
 
+## 2026-08-30 Scalar-Broadcast Fast Path
+
+Revision under test: uncommitted worktree based on
+`977ed0531ca513267ff1a5793207b3409d8e3b42`.
+
+Command shape: worktree-local `uv venv --clear --python 3.12`, locked
+`uv sync --locked --no-install-project --group dev --group reference`, then
+release wheel builds through `maturin build --release --locked` and
+installation with `uv pip install --force-reinstall --no-deps`. The clean base
+wheel was built from a `git archive HEAD` snapshot under
+`target/l1-scalar-benchmark.b5vSYN/base-src`; candidate wheels were built from
+this worktree. The final timing run pinned each process with `taskset -c 24`,
+used 15 warmup blocks and 101 measured blocks per implementation, and ran with
+`CUDA_VISIBLE_DEVICES=` plus one-thread BLAS/OpenMP environment settings.
+Inputs were created before timing as CPU `float32` tensors. Each `torch_rs`
+result was checked against PyTorch 2.13 for values, shape, strides, and
+broadcast warning text before timing. `UserWarning` was ignored symmetrically
+inside the measured region, and each block consumed the last output's metadata
+and representative values as a dead-code and deferred-work guard.
+
+Checks run before timing:
+
+```bash
+/home/bobren/.cargo/bin/cargo fmt --check
+git diff --check
+/home/bobren/.cargo/bin/cargo clippy --all-targets -- -D warnings
+/home/bobren/.cargo/bin/cargo test --all-targets
+PYO3_PYTHON="$PWD/.venv/bin/python" \
+  /home/bobren/.cargo/bin/cargo clippy --all-targets --features python-bindings -- -D warnings
+PYO3_PYTHON="$PWD/.venv/bin/python" \
+  /home/bobren/.cargo/bin/cargo test --all-targets --features python-bindings
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 \
+  .venv/bin/python -m unittest \
+  tests.test_nn_functional_l1_loss \
+  tests.test_nn_functional_l1_loss_reference
+PATH="/home/bobren/.cargo/bin:$PATH" \
+  UV_CACHE_DIR="$PWD/.uv-cache" \
+  ./scripts/test-python.sh
+```
+
+Results: focused L1 Python tests passed 22 tests. The wheel-installed full
+Python suite passed 4205 tests with 3 skips.
+
+Environment:
+
+- CPU: AMD EPYC 9654 96-Core Processor, 2 sockets, 96 cores/socket,
+  2 threads/core
+- OS: Linux 6.13.2-0_fbk12_0_g0b66b3635210 x86_64, glibc 2.34
+- Python: 3.12.12
+- NumPy: 2.5.1
+- Rust: `rustc 1.92.0 (ded5c06cf 2025-12-08)`,
+  `cargo 1.92.0 (344c4567c 2025-10-21)`
+- PyTorch: 2.13.0+cu130 from `.venv/lib/python3.12/site-packages/torch`
+- `torch_rs`: 0.1.0 from the wheel-installed
+  `.venv/lib/python3.12/site-packages/torch_rs`
+- Profile: release, Cargo `[profile.release]` with thin LTO and one codegen unit
+- Device/dtype: CPU float32; `CUDA_VISIBLE_DEVICES=` for the timing run
+- Threads: `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`,
+  `OPENBLAS_NUM_THREADS=1`, `NUMEXPR_NUM_THREADS=1`,
+  `torch.set_num_threads(1)`, `torch.set_num_interop_threads(1)`;
+  `torch_rs.get_num_threads()` and `torch_rs.get_num_interop_threads()` both
+  reported 1
+- Dependency installation: locked `uv sync` resolved in 27 ms, prepared
+  31 packages in 15.69s, and installed in 1.44s
+- Build time: clean `HEAD` base release wheel build completed in 30.85s; final
+  candidate release wheel build completed in 23.83s
+
+Times are median microseconds per call. MAD is median absolute deviation in
+microseconds, and variance is sample variance of per-call sample timings in
+microseconds squared. `torch_rs / PyTorch` is a slowdown ratio, so lower is
+better and 1.00x is parity. Capped geomeans clamp each per-cell ratio to
+`[0.10x, 10.00x]`.
+
+Relative to the clean `HEAD` base, the held-out scalar-broadcast L1 cells
+improved by a geometric mean of 32.0%. The largest single-cell improvement was
+`scalar_target_2d_heldout`, from 109.913 us to 59.028 us (-46.3%).
+
+Geometric mean `torch_rs / PyTorch` slowdown for scalar-broadcast held-out
+cells:
+
+- Uncapped: 0.57x
+- Capped to `[0.10x, 10.00x]` per cell: 0.57x
+
+Same-shape contiguous controls regressed by 0.8% geometric mean, with worst
+single-cell movement of +2.0%. Noncontiguous controls regressed by 0.3%
+geometric mean, with worst single-cell movement of +2.0%. No same-shape
+contiguous or noncontiguous control regressed by more than 5%.
+
+Geometric mean `torch_rs / PyTorch` slowdown for same-shape contiguous
+controls:
+
+- Uncapped: 0.65x
+- Capped to `[0.10x, 10.00x]` per cell: 0.65x
+
+Geometric mean `torch_rs / PyTorch` slowdown for noncontiguous controls:
+
+- Uncapped: 2.45x
+- Capped to `[0.10x, 10.00x]` per cell: 2.45x
+
+| Workload | Category | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Base median | Current vs base |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `scalar_input_2d_heldout` | scalar broadcast | `(640, 768)`, stride `(768, 1)` | 10 | 87.133 us +/- 1.298, var 60.545 | 95.442 us +/- 0.278, var 0.887 | 0.91x | 135.059 us | -35.5% |
+| `scalar_target_2d_heldout` | scalar broadcast | `(640, 768)`, stride `(768, 1)` | 10 | 59.028 us +/- 1.821, var 15.915 | 95.638 us +/- 0.402, var 3.345 | 0.62x | 109.913 us | -46.3% |
+| `scalar_input_3d_heldout` | scalar broadcast | `(17, 257, 263)`, stride `(67591, 263, 1)` | 1 | 299.543 us +/- 11.998, var 515.612 | 221.074 us +/- 5.208, var 65.747 | 1.35x | 546.476 us | -45.2% |
+| `scalar_target_3d_heldout` | scalar broadcast | `(17, 257, 263)`, stride `(67591, 263, 1)` | 1 | 287.235 us +/- 9.724, var 338.175 | 214.154 us +/- 3.515, var 36.552 | 1.34x | 527.749 us | -45.6% |
+| `scalar_input_empty_contiguous` | scalar broadcast | `(0, 4096)`, stride `(4096, 1)` | 5000 | 1.050 us +/- 0.004, var 0.005 | 5.814 us +/- 0.020, var 0.006 | 0.18x | 1.071 us | -2.0% |
+| `scalar_target_empty_contiguous` | scalar broadcast | `(0, 4096)`, stride `(4096, 1)` | 5000 | 1.043 us +/- 0.003, var 0.000 | 5.876 us +/- 0.063, var 0.033 | 0.18x | 1.067 us | -2.3% |
+| `same_contiguous_prime_control` | same-shape contiguous control | `(257, 263)`, stride `(263, 1)` | 16 | 12.160 us +/- 0.126, var 1.304 | 21.399 us +/- 0.519, var 0.412 | 0.57x | 11.927 us | +2.0% |
+| `same_contiguous_bandwidth_control` | same-shape contiguous control | `(2048, 2048)`, stride `(2048, 1)` | 1 | 1504.425 us +/- 19.138, var 1109.055 | 2000.556 us +/- 19.099, var 4956.900 | 0.75x | 1510.715 us | -0.4% |
+| `noncontig_transpose_control` | noncontiguous control | `(512, 1024)`, stride `(1, 512)` | 5 | 340.271 us +/- 8.865, var 276.822 | 124.322 us +/- 1.803, var 47.580 | 2.74x | 340.858 us | -0.2% |
+| `noncontig_offset_transposed_control` | noncontiguous control | `(509, 521)`, stride `(1, 509)` | 5 | 161.715 us +/- 4.018, var 45.787 | 64.301 us +/- 0.565, var 4.255 | 2.51x | 158.482 us | +2.0% |
+| `noncontig_channels_last_control` | noncontiguous control | `(8, 15, 31, 33)`, stride `(15345, 1, 495, 15)` | 8 | 71.425 us +/- 0.860, var 19.074 | 33.252 us +/- 0.198, var 2.082 | 2.15x | 72.055 us | -0.9% |
+
+## 2026-08-30 Same-Shape Contiguous Fast Path
+
 Date: 2026-08-30
 
 Revision under test: uncommitted worktree based on
