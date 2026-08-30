@@ -180,6 +180,9 @@ def set_default_device(device: "Device") -> None:
         device(type='cuda', index=1)
 
     """
+    if device is None:
+        return None
+
     if not _builtins.isinstance(device, (_builtins.str, _C.device)):
         type_name = _builtins.type(device).__name__
         raise TypeError(

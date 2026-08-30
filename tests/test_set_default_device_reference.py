@@ -79,6 +79,8 @@ class SetDefaultDeviceReferenceTests(unittest.TestCase):
 
     def test_unindexed_cpu_noops_match_pytorch_2_13(self):
         for actual, expected, keyword in (
+            (None, None, False),
+            (None, None, True),
             ("cpu", "cpu", False),
             ("cpu", "cpu", True),
             (torch.device("cpu"), reference_torch.device("cpu"), False),

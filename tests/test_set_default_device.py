@@ -82,6 +82,7 @@ class SetDefaultDeviceTests(unittest.TestCase):
 
     def test_unindexed_cpu_forms_are_stateless_noops(self):
         valid_devices = (
+            None,
             "cpu",
             torch.device("cpu"),
             torch.device(type="cpu"),
@@ -94,6 +95,8 @@ class SetDefaultDeviceTests(unittest.TestCase):
                 self.assert_default_factories_are_cpu_float32()
 
         self.assertIsNone(torch.set_default_device(device="cpu"))
+        self.assert_default_factories_are_cpu_float32()
+        self.assertIsNone(torch.set_default_device(device=None))
         self.assert_default_factories_are_cpu_float32()
 
     def test_rebinding_public_device_does_not_change_validation(self):
@@ -153,11 +156,6 @@ class SetDefaultDeviceTests(unittest.TestCase):
             ),
             ("", RuntimeError, "Device string must not be empty"),
             ("cpu:01", RuntimeError, "Invalid device string: 'cpu:01'"),
-            (
-                None,
-                TypeError,
-                "set_default_device(): argument 'device' must be torch.device or str, not NoneType",
-            ),
             (
                 object(),
                 TypeError,
