@@ -230,6 +230,27 @@ class TopLevelAddTests(unittest.TestCase):
             else:
                 self.assertEqual(tuple(kwargs), expected_keywords)
 
+        class NumericAlpha(float):
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        self.assert_tensor_matches(
+            torch.add(tensor, 2.0, alpha=NumericAlpha(1.0)),
+            tensor + 2.0,
+            case="numeric alpha subclass",
+        )
+        self.assertEqual(NumericAlpha.calls, [])
+
+        with self.assertRaisesRegex(
+            NotImplementedError, r"^add\(\): non-default alpha is not supported$"
+        ):
+            torch.add(tensor, 2.0, alpha=NumericAlpha(2.0))
+        self.assertEqual(NumericAlpha.calls, [])
+
         order = []
 
         class ForwardingMode(torch.overrides.TorchFunctionMode):

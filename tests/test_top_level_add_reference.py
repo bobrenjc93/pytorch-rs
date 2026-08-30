@@ -53,6 +53,14 @@ class TopLevelAddReferenceTests(unittest.TestCase):
         actual_offset = actual_source[1]
         expected_offset = expected_source[1]
 
+        class NumericAlpha(float):
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return NotImplemented
+
         calls = (
             (
                 "tensor/scalar",
@@ -93,9 +101,17 @@ class TopLevelAddReferenceTests(unittest.TestCase):
                     expected_offset, 2.0, alpha=reference_torch.tensor(1.0)
                 ),
             ),
+            (
+                "numeric alpha subclass",
+                lambda: torch.add(actual_offset, 2.0, alpha=NumericAlpha(1.0)),
+                lambda: reference_torch.add(
+                    expected_offset, 2.0, alpha=NumericAlpha(1.0)
+                ),
+            ),
         )
         for case, actual_call, expected_call in calls:
             self.assert_matches(actual_call(), expected_call(), case=case)
+        self.assertEqual(NumericAlpha.calls, [])
 
         actual_empty = torch.zeros((2, 0, 3)).transpose(0, 2)
         expected_empty = reference_torch.zeros((2, 0, 3)).transpose(0, 2)

@@ -11062,23 +11062,23 @@ fn parse_top_level_add_alpha<'py>(
         }
         return Err(top_level_add_alpha_type_error(&alpha.value));
     }
-    if let Some(probed) = probe_torch_function_override(&alpha.value) {
-        return Ok(BoundTopLevelAddAlpha::Override(probed));
-    }
     if alpha.value.is_exact_instance_of::<PyBool>() {
         return Err(PyRuntimeError::new_err(
             "Boolean alpha only supported for Boolean results.",
         ));
     }
 
-    let Some(scalar) = parse_arithmetic_scalar(&alpha.value)? else {
-        return Err(top_level_add_alpha_type_error(&alpha.value));
-    };
-    Ok(if parsed_arithmetic_scalar_is_one(&scalar) {
-        BoundTopLevelAddAlpha::Default
-    } else {
-        BoundTopLevelAddAlpha::NonDefault
-    })
+    if let Some(scalar) = parse_arithmetic_scalar(&alpha.value)? {
+        return Ok(if parsed_arithmetic_scalar_is_one(&scalar) {
+            BoundTopLevelAddAlpha::Default
+        } else {
+            BoundTopLevelAddAlpha::NonDefault
+        });
+    }
+    if let Some(probed) = probe_torch_function_override(&alpha.value) {
+        return Ok(BoundTopLevelAddAlpha::Override(probed));
+    }
+    Err(top_level_add_alpha_type_error(&alpha.value))
 }
 
 fn parsed_arithmetic_scalar_is_one(value: &ParsedArithmeticScalar) -> bool {
