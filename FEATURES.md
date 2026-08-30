@@ -30,6 +30,15 @@ The query helpers listed above are count, rank, byte-width, scalar-truth, and
 existing-dtype predicates. They do not expand the supported dtype, device,
 storage, mutation, subclass, or unsupported-boundary contracts.
 
+The autograd surface also includes reference-tested no-argument state queries:
+`torch.is_grad_enabled()`, `torch.is_inference_mode_enabled()`,
+`torch.is_anomaly_enabled()`, `torch.is_anomaly_check_nan_enabled()`, and
+explicit `torch.autograd.is_view_replay_enabled()`. These are query-only
+compatibility helpers, alongside the existing `torch.no_grad()` support; grad
+state mutation beyond `no_grad`, inference-mode contexts, anomaly
+mutation/context APIs, view-replay mutation, `autograd.grad`, and broader
+autograd APIs remain unsupported.
+
 Within an area, coverage includes ordinary use plus error behavior, empty tensors, numerical edge cases, non-contiguous layouts, and interactions with autograd and device/dtype dispatch. Newly supported cells are added to permanent regression and performance matrices; existing cells are not retired to improve a score.
 
 The compilation row's eager JIT helper coverage explicitly includes tested `torch.jit.annotate`, `torch.jit.export`, `torch.jit.ignore`, `torch.jit.unused`, `torch.jit.is_scripting`, `torch.jit.is_tracing`, and `torch.jit.script_if_tracing` behavior. In scope are eager pass-through/no-op/state-query semantics, decorator marker attributes without changing Python call behavior, import and wildcard boundaries, canonical copy/pickle ownership, ordinary stateless reload behavior, and the boundary that TorchScript modules, scripting, tracing, compilation/tracing execution, graph execution, and `torch.export` graph capture remain unsupported.
