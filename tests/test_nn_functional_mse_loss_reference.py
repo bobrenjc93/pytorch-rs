@@ -253,6 +253,90 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ("empty strided scalar target", empty_strided, scalar),
         )
 
+    def make_same_stride_noncontiguous_cases(self, module):
+        edge_input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+                0x3F80_0000,
+                0xBF80_0000,
+            ],
+            dtype=np.uint32,
+        )
+        edge_target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0001,
+                0x0000_0001,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+                0xBF80_0000,
+                0x3F80_0000,
+            ],
+            dtype=np.uint32,
+        )
+        edge_input = module.tensor(memoryview(edge_input_bits.view(np.float32))).view(
+            3, 4
+        )
+        edge_target = module.tensor(memoryview(edge_target_bits.view(np.float32))).view(
+            3, 4
+        )
+        offset_input = self.tensor(
+            module,
+            np.linspace(-5.0, 5.0, 60, dtype=np.float32).reshape(3, 4, 5).tolist(),
+        )[1].transpose(0, 1)
+        offset_target = self.tensor(
+            module,
+            np.linspace(7.0, -3.0, 60, dtype=np.float32).reshape(3, 4, 5).tolist(),
+        )[2].transpose(0, 1)
+        channels_last_input = self.tensor(
+            module,
+            np.linspace(-3.0, 4.0, 2 * 3 * 5 * 7, dtype=np.float32)
+            .reshape(2, 3, 5, 7)
+            .tolist(),
+        ).contiguous(memory_format=module.channels_last)
+        channels_last_target = self.tensor(
+            module,
+            np.linspace(11.0, -13.0, 2 * 3 * 5 * 7, dtype=np.float32)
+            .reshape(2, 3, 5, 7)
+            .tolist(),
+        ).contiguous(memory_format=module.channels_last)
+        singleton_input = self.tensor(
+            module,
+            np.arange(6, dtype=np.float32).reshape(3, 1, 2).tolist(),
+        ).permute(2, 1, 0)
+        singleton_target = self.tensor(
+            module,
+            np.linspace(3.5, -2.5, 6, dtype=np.float32).reshape(3, 1, 2).tolist(),
+        ).permute(2, 1, 0)
+        empty_input = module.zeros(
+            (2, 0, 3), dtype=module.float32
+        ).transpose(0, 2)
+        empty_target = module.ones(
+            (2, 0, 3), dtype=module.float32
+        ).transpose(0, 2)
+
+        return (
+            ("transposed edge bits", edge_input.transpose(0, 1), edge_target.transpose(0, 1)),
+            ("offset transposed", offset_input, offset_target),
+            ("channels-last-like", channels_last_input, channels_last_target),
+            ("singleton strided", singleton_input, singleton_target),
+            ("empty transposed", empty_input, empty_target),
+        )
+
     @staticmethod
     def call(module_functional, input, target, form):
         if form == "reduction keyword":
@@ -437,6 +521,86 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 self.assertFalse(actual.is_set_to(actual_target))
                 self.assertFalse(expected.is_set_to(expected_input))
                 self.assertFalse(expected.is_set_to(expected_target))
+
+    def test_same_stride_noncontiguous_cases_match_pytorch_2_13(self):
+        actual_cases = self.make_same_stride_noncontiguous_cases(torch)
+        expected_cases = self.make_same_stride_noncontiguous_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            self.assertEqual(actual_input.shape, tuple(expected_input.shape))
+            self.assertEqual(actual_target.shape, tuple(expected_target.shape))
+            self.assertEqual(actual_input.shape, actual_target.shape)
+            self.assertEqual(actual_input.stride(), expected_input.stride())
+            self.assertEqual(actual_target.stride(), expected_target.stride())
+            self.assertEqual(actual_input.stride(), actual_target.stride())
+            if actual_input.numel() != 0:
+                self.assertFalse(actual_input.is_contiguous())
+                self.assertFalse(actual_target.is_contiguous())
+                self.assertFalse(expected_input.is_contiguous())
+                self.assertFalse(expected_target.is_contiguous())
+
+            actual_input_bits_before = np.asarray(actual_input).reshape(-1).view(np.uint32).copy()
+            actual_target_bits_before = np.asarray(actual_target).reshape(-1).view(np.uint32).copy()
+            expected_input_bits_before = (
+                expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            expected_target_bits_before = (
+                expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+
+            actual = functional.mse_loss(
+                actual_input,
+                actual_target,
+                reduction="none",
+            )
+            expected = reference_functional.mse_loss(
+                expected_input,
+                expected_target,
+                reduction="none",
+            )
+
+            self.assert_matches(actual, expected, case=case)
+            with self.subTest(case=case, storage=True):
+                actual_repeat = functional.mse_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="none",
+                )
+                expected_repeat = reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="none",
+                )
+                self.assertFalse(actual.is_set_to(actual_repeat))
+                self.assertFalse(expected.is_set_to(expected_repeat))
+                self.assertFalse(actual.is_set_to(actual_input))
+                self.assertFalse(expected.is_set_to(expected_input))
+                self.assertFalse(actual.is_set_to(actual_target))
+                self.assertFalse(expected.is_set_to(expected_target))
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input).reshape(-1).view(np.uint32),
+                    actual_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target).reshape(-1).view(np.uint32),
+                    actual_target_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_target_bits_before,
+                )
 
     def test_broadcasted_outputs_strides_warnings_storage_and_nonmutation_match(self):
         actual_cases = self.make_broadcast_cases(torch)
@@ -733,6 +897,58 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 expected,
                 case=(input_requires_grad, target_requires_grad),
             )
+
+    def test_same_stride_noncontiguous_requires_grad_matches_inside_no_grad(self):
+        for input_requires_grad, target_requires_grad in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            actual_input_base = torch.tensor(
+                np.arange(12, dtype=np.float32).reshape(3, 4).tolist(),
+                requires_grad=input_requires_grad,
+            )
+            actual_target_base = torch.tensor(
+                np.linspace(-2.0, 3.0, 12, dtype=np.float32).reshape(3, 4).tolist(),
+                requires_grad=target_requires_grad,
+            )
+            expected_input_base = reference_torch.tensor(
+                np.arange(12, dtype=np.float32).reshape(3, 4).tolist(),
+                dtype=reference_torch.float32,
+                requires_grad=input_requires_grad,
+            )
+            expected_target_base = reference_torch.tensor(
+                np.linspace(-2.0, 3.0, 12, dtype=np.float32).reshape(3, 4).tolist(),
+                dtype=reference_torch.float32,
+                requires_grad=target_requires_grad,
+            )
+            actual_input = actual_input_base.transpose(0, 1)
+            actual_target = actual_target_base.transpose(0, 1)
+            expected_input = expected_input_base.transpose(0, 1)
+            expected_target = expected_target_base.transpose(0, 1)
+
+            with torch.no_grad():
+                actual = functional.mse_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="none",
+                )
+            with reference_torch.no_grad():
+                expected = reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="none",
+                )
+
+            self.assert_matches(
+                actual,
+                expected,
+                case=(input_requires_grad, target_requires_grad),
+            )
+            self.assertIsNone(actual_input_base.grad)
+            self.assertIsNone(actual_target_base.grad)
+            self.assertIsNone(expected_input_base.grad)
+            self.assertIsNone(expected_target_base.grad)
 
     def test_broadcast_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (

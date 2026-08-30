@@ -3,7 +3,7 @@
 Date: 2026-08-30
 
 Revision under test: uncommitted worktree based on
-`71c534a66a36f11d6f1636be668aa562563b0206`
+`2231dec5e208f3545c05484d497b32b3981f640d`
 
 Command shape: worktree-local `uv venv --clear --python 3.12`, locked
 `uv sync --locked --no-install-project --group dev --group reference`, then a
@@ -12,7 +12,7 @@ driver ran against that installed wheel after imports and input construction,
 with 9 warmup blocks and 51 measured blocks per implementation. Inputs were CPU
 `float32` tensors. Broadcast size-mismatch warning parity was checked before
 timing, then `UserWarning` was ignored symmetrically for both implementations
-inside the timing run.
+inside the measured region.
 
 The primary timings below measure eager `mse_loss(reduction="none")`
 construction and consume the last output after each measured block as a
@@ -26,9 +26,9 @@ Checks run before timing:
 ```bash
 /home/bobren/.cargo/bin/cargo fmt --check
 /home/bobren/.cargo/bin/cargo clippy --all-targets -- -D warnings
+/home/bobren/.cargo/bin/cargo test --all-targets
 PYO3_PYTHON="$PWD/.venv/bin/python" \
   /home/bobren/.cargo/bin/cargo clippy --all-targets --features python-bindings -- -D warnings
-/home/bobren/.cargo/bin/cargo test --all-targets
 PYO3_PYTHON="$PWD/.venv/bin/python" \
   /home/bobren/.cargo/bin/cargo test --all-targets --features python-bindings
 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
@@ -41,8 +41,8 @@ PATH="/home/bobren/.cargo/bin:$PATH" \
   ./scripts/test-python.sh
 ```
 
-Results: the focused MSE Python tests passed 25 tests. The wheel-installed full
-Python suite passed 4181 tests with 3 skips.
+Results: the focused MSE Python tests passed 29 tests. The wheel-installed full
+Python suite passed 4196 tests with 3 skips.
 
 Environment:
 
@@ -63,9 +63,10 @@ Environment:
   `torch.set_num_threads(1)`, `torch.set_num_interop_threads(1)`;
   `torch_rs.get_num_threads()` and `torch_rs.get_num_interop_threads()` both
   reported 1
-- Dependency installation: locked `uv sync` completed in 16.65s
-- Build time: first release extension build completed in 31.51s; the later
-  wheel-based test build reused cached artifacts and reported 0.01s
+- Dependency installation: locked `uv sync` resolved in 29 ms and installed in
+  887 ms
+- Build time: first successful release extension build completed in 31.93s; the
+  later wheel-based test build reused cached artifacts and reported 0.01s
 
 Times are median microseconds per call. MAD is median absolute deviation in
 microseconds, and variance is sample variance of per-call sample timings in
@@ -75,53 +76,73 @@ better and 1.00x is parity. Capped geomeans clamp each per-cell ratio to
 
 ## MSE Construction
 
+Relative to the prior 2026-08-30 MSE report, the optimized transposed control
+changed from 244.610 us to 97.753 us (-60.0%). Existing scalar-broadcast and
+contiguous controls did not regress by more than 5%; their worst construction
+movement was `scalar_target_2d_heldout`, from 45.603 us to 47.096 us (+3.3%).
+
 Geometric mean `torch_rs / PyTorch` slowdown for the scalar-broadcast held-out
 cells:
 
-- Uncapped: 0.69x
-- Capped to `[0.10x, 10.00x]` per cell: 0.69x
+- Uncapped: 0.67x
+- Capped to `[0.10x, 10.00x]` per cell: 0.67x
+
+Geometric mean `torch_rs / PyTorch` slowdown for the held-out same-stride
+non-contiguous cells:
+
+- Uncapped: 1.08x
+- Capped to `[0.10x, 10.00x]` per cell: 1.08x
 
 Geometric mean `torch_rs / PyTorch` slowdown for all construction cells:
 
-- Uncapped: 0.89x
-- Capped to `[0.10x, 10.00x]` per cell: 0.89x
+- Uncapped: 0.80x
+- Capped to `[0.10x, 10.00x]` per cell: 0.80x
 
 | Workload | Input / target | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| `scalar_input_2d_heldout` | `()` / `(640, 768)` | `(640, 768)`, stride `(768, 1)` | 2 | 46.685 us +/- 1.142, var 15.725 | 52.399 us +/- 0.446, var 5.195 | 0.89x |
-| `scalar_target_2d_heldout` | `(640, 768)` / `()` | `(640, 768)`, stride `(768, 1)` | 2 | 45.603 us +/- 0.721, var 1.213 | 53.806 us +/- 0.316, var 2.457 | 0.85x |
-| `scalar_input_3d_heldout` | `()` / `(17, 257, 263)` | `(17, 257, 263)`, stride `(67591, 263, 1)` | 1 | 113.952 us +/- 2.394, var 23428.370 | 114.332 us +/- 1.894, var 7629.680 | 1.00x |
-| `scalar_target_3d_heldout` | `(17, 257, 263)` / `()` | `(17, 257, 263)`, stride `(67591, 263, 1)` | 1 | 113.341 us +/- 4.446, var 552.479 | 114.824 us +/- 1.042, var 205.496 | 0.99x |
-| `scalar_target_empty_contiguous` | `(0, 4096)` / `()` | `(0, 4096)`, stride `(4096, 1)` | 5000 | 1.026 us +/- 0.005, var 0.000 | 4.840 us +/- 0.017, var 0.004 | 0.21x |
-| `same_contiguous_prime_control` | `(257, 263)` / `(257, 263)` | `(257, 263)`, stride `(263, 1)` | 16 | 11.647 us +/- 0.048, var 0.026 | 13.042 us +/- 0.113, var 0.558 | 0.89x |
-| `same_noncontiguous_transpose_control` | transposed `(512, 1024)` / `(512, 1024)`, stride `(1, 512)` | `(512, 1024)`, stride `(1, 512)` | 2 | 244.610 us +/- 3.099, var 45.961 | 80.431 us +/- 0.721, var 3.602 | 3.04x |
+| `scalar_input_2d_heldout` | `()` / `(640, 768)` | `(640, 768)`, stride `(768, 1)` | 2 | 46.500 us +/- 0.611, var 2.765 | 52.339 us +/- 0.290, var 1.773 | 0.89x |
+| `scalar_target_2d_heldout` | `(640, 768)` / `()` | `(640, 768)`, stride `(768, 1)` | 2 | 47.096 us +/- 0.245, var 1.822 | 53.105 us +/- 0.180, var 13.041 | 0.89x |
+| `scalar_input_3d_heldout` | `()` / `(17, 257, 263)` | `(17, 257, 263)`, stride `(67591, 263, 1)` | 1 | 101.494 us +/- 1.942, var 22.674 | 112.731 us +/- 1.003, var 11.102 | 0.90x |
+| `scalar_target_3d_heldout` | `(17, 257, 263)` / `()` | `(17, 257, 263)`, stride `(67591, 263, 1)` | 1 | 102.726 us +/- 1.311, var 43.991 | 116.145 us +/- 0.921, var 15.130 | 0.88x |
+| `scalar_target_empty_contiguous` | `(0, 4096)` / `()` | `(0, 4096)`, stride `(4096, 1)` | 5000 | 1.019 us +/- 0.003, var 0.004 | 4.896 us +/- 0.017, var 0.001 | 0.21x |
+| `same_contiguous_prime_control` | `(257, 263)` / `(257, 263)` | `(257, 263)`, stride `(263, 1)` | 16 | 11.794 us +/- 0.068, var 0.130 | 15.559 us +/- 0.205, var 1.045 | 0.76x |
+| `same_noncontiguous_transpose_control` | transposed `(512, 1024)` / `(512, 1024)`, stride `(1, 512)` | `(512, 1024)`, stride `(1, 512)` | 2 | 97.753 us +/- 2.969, var 21.541 | 81.474 us +/- 0.350, var 2.320 | 1.20x |
+| `heldout_offset_transposed_509x521` | offset transposed `(509, 521)` / `(509, 521)`, stride `(1, 509)` | `(509, 521)`, stride `(1, 509)` | 2 | 45.849 us +/- 0.236, var 2.314 | 42.609 us +/- 0.286, var 1.571 | 1.08x |
+| `heldout_channels_last_8x15x31x33` | channels-last `(8, 15, 31, 33)` / `(8, 15, 31, 33)` | `(8, 15, 31, 33)`, stride `(15345, 1, 495, 15)` | 4 | 23.866 us +/- 0.193, var 1.525 | 22.046 us +/- 0.128, var 0.398 | 1.08x |
 
 ## Full-Output Checksum Guard
 
-The same held-out cells were also timed while consuming every output with
-`output.sum().item()` inside the measured loop. Relative to the previous
-2026-08-30 report, the same-shape controls did not regress by more than 5%:
-`same_contiguous_prime_control` changed from 67.753 us to 65.968 us (-2.6%),
-and `same_noncontiguous_transpose_control` changed from 1255.974 us to
-1284.220 us (+2.2%).
+Relative to the prior 2026-08-30 report, the same-shape transposed checksum
+control changed from 1284.220 us to 1141.751 us (-11.1%). Existing
+scalar-broadcast and contiguous checksum controls did not regress by more than
+5%; the largest movement was `same_contiguous_prime_control`, from 65.968 us to
+68.391 us (+3.7%).
 
 Geometric mean `torch_rs / PyTorch` slowdown for the scalar-broadcast held-out
 cells:
 
-- Uncapped: 3.34x
-- Capped to `[0.10x, 10.00x]` per cell: 3.34x
+- Uncapped: 3.10x
+- Capped to `[0.10x, 10.00x]` per cell: 3.10x
+
+Geometric mean `torch_rs / PyTorch` slowdown for the held-out same-stride
+non-contiguous cells:
+
+- Uncapped: 4.40x
+- Capped to `[0.10x, 10.00x]` per cell: 4.40x
 
 Geometric mean `torch_rs / PyTorch` slowdown for all full-output checksum cells:
 
-- Uncapped: 4.09x
-- Capped to `[0.10x, 10.00x]` per cell: 3.96x
+- Uncapped: 3.86x
+- Capped to `[0.10x, 10.00x]` per cell: 3.83x
 
 | Workload | Input / target | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| `scalar_input_2d_heldout` | `()` / `(640, 768)` | `(640, 768)`, stride `(768, 1)` | 2 | 448.793 us +/- 1.317, var 15.159 | 74.152 us +/- 0.516, var 16.501 | 6.05x |
-| `scalar_target_2d_heldout` | `(640, 768)` / `()` | `(640, 768)`, stride `(768, 1)` | 2 | 448.082 us +/- 1.673, var 6.384 | 75.159 us +/- 0.195, var 3.789 | 5.96x |
-| `scalar_input_3d_heldout` | `()` / `(17, 257, 263)` | `(17, 257, 263)`, stride `(67591, 263, 1)` | 1 | 1042.686 us +/- 2.304, var 211.364 | 162.585 us +/- 1.684, var 11.779 | 6.41x |
-| `scalar_target_3d_heldout` | `(17, 257, 263)` / `()` | `(17, 257, 263)`, stride `(67591, 263, 1)` | 1 | 1042.635 us +/- 1.993, var 134.014 | 163.297 us +/- 1.973, var 7.323 | 6.39x |
-| `scalar_target_empty_contiguous` | `(0, 4096)` / `()` | `(0, 4096)`, stride `(4096, 1)` | 5000 | 1.528 us +/- 0.006, var 0.000 | 5.259 us +/- 0.033, var 0.021 | 0.29x |
-| `same_contiguous_prime_control` | `(257, 263)` / `(257, 263)` | `(257, 263)`, stride `(263, 1)` | 16 | 65.968 us +/- 0.117, var 0.142 | 18.678 us +/- 0.087, var 0.159 | 3.53x |
-| `same_noncontiguous_transpose_control` | transposed `(512, 1024)` / `(512, 1024)`, stride `(1, 512)` | `(512, 1024)`, stride `(1, 512)` | 2 | 1284.220 us +/- 2.644, var 272.436 | 101.313 us +/- 1.432, var 13.647 | 12.68x |
+| `scalar_input_2d_heldout` | `()` / `(640, 768)` | `(640, 768)`, stride `(768, 1)` | 2 | 449.063 us +/- 1.537, var 6.775 | 78.048 us +/- 0.506, var 2.426 | 5.75x |
+| `scalar_target_2d_heldout` | `(640, 768)` / `()` | `(640, 768)`, stride `(768, 1)` | 2 | 451.522 us +/- 1.137, var 6.549 | 77.537 us +/- 0.360, var 2.903 | 5.82x |
+| `scalar_input_3d_heldout` | `()` / `(17, 257, 263)` | `(17, 257, 263)`, stride `(67591, 263, 1)` | 1 | 1050.038 us +/- 2.914, var 43.913 | 169.917 us +/- 1.152, var 12.480 | 6.18x |
+| `scalar_target_3d_heldout` | `(17, 257, 263)` / `()` | `(17, 257, 263)`, stride `(67591, 263, 1)` | 1 | 1056.417 us +/- 5.278, var 1206.038 | 169.826 us +/- 1.233, var 14.846 | 6.22x |
+| `scalar_target_empty_contiguous` | `(0, 4096)` / `()` | `(0, 4096)`, stride `(4096, 1)` | 5000 | 1.119 us +/- 0.005, var 0.001 | 5.036 us +/- 0.013, var 0.003 | 0.22x |
+| `same_contiguous_prime_control` | `(257, 263)` / `(257, 263)` | `(257, 263)`, stride `(263, 1)` | 16 | 68.391 us +/- 0.199, var 0.276 | 21.310 us +/- 0.122, var 0.064 | 3.21x |
+| `same_noncontiguous_transpose_control` | transposed `(512, 1024)` / `(512, 1024)`, stride `(1, 512)` | `(512, 1024)`, stride `(1, 512)` | 2 | 1141.751 us +/- 3.811, var 39.105 | 107.392 us +/- 0.526, var 3.595 | 10.63x |
+| `heldout_offset_transposed_509x521` | offset transposed `(509, 521)` / `(509, 521)`, stride `(1, 509)` | `(509, 521)`, stride `(1, 509)` | 2 | 265.892 us +/- 1.918, var 10.517 | 56.826 us +/- 0.851, var 2.801 | 4.68x |
+| `heldout_channels_last_8x15x31x33` | channels-last `(8, 15, 31, 33)` / `(8, 15, 31, 33)` | `(8, 15, 31, 33)`, stride `(15345, 1, 495, 15)` | 4 | 124.728 us +/- 0.784, var 1.949 | 30.096 us +/- 0.128, var 0.469 | 4.14x |
