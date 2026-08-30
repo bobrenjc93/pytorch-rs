@@ -3328,8 +3328,15 @@ fn apply_top_level_lazy_bit_identity(
     Ok(tensor.clone().unbind().into_any())
 }
 
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "single-tensor native callbacks share a fallible signature"
+)]
 fn apply_top_level_real(_py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
-    Ok(tensor.getattr("real")?.unbind())
+    // Float32 is the only supported dtype, so every native Tensor is already
+    // real. Return the wrapper directly instead of consulting Python-visible
+    // Tensor.real, which users may shadow on the class.
+    Ok(tensor.clone().unbind().into_any())
 }
 
 fn ordered_unary_out_overrides<'py>(

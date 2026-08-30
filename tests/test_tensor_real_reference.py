@@ -342,6 +342,28 @@ print(json.dumps({
                     )
                     self.assertEqual(actual_contract, expected_contract)
 
+    def class_shadowing_contract(self, module):
+        tensor = module.tensor([1.0], dtype=module.float32)
+        original = module.Tensor.real
+        marker = object()
+
+        try:
+            module.Tensor.real = property(lambda _self: marker)
+            return {
+                "property_is_shadowed": tensor.real is marker,
+                "top_level_positional_identity": module.real(tensor) is tensor,
+                "top_level_keyword_identity": module.real(input=tensor) is tensor,
+                "top_level_ignores_shadow": module.real(tensor) is not marker,
+            }
+        finally:
+            module.Tensor.real = original
+
+    def test_top_level_real_ignores_tensor_class_shadowing_like_pytorch(self):
+        self.assertEqual(
+            self.class_shadowing_contract(torch),
+            self.class_shadowing_contract(reference_torch),
+        )
+
     def test_top_level_leaf_and_non_leaf_autograd_identity_matches(self):
         outcomes = []
         for module in (torch, reference_torch):

@@ -330,6 +330,23 @@ class TensorRealTests(unittest.TestCase):
                         bits,
                     )
 
+    def test_top_level_real_ignores_tensor_class_shadowing(self):
+        tensor = torch.tensor([1.0])
+        original = torch.Tensor.real
+        marker = object()
+
+        try:
+            torch.Tensor.real = property(lambda _self: marker)
+
+            self.assertIs(tensor.real, marker)
+            self.assertIs(torch.real(tensor), tensor)
+            self.assertIs(torch.real(input=tensor), tensor)
+        finally:
+            torch.Tensor.real = original
+
+        self.assertIs(tensor.real, tensor)
+        self.assertIs(torch.real(tensor), tensor)
+
     def test_top_level_leaf_and_non_leaf_graphs_are_not_changed(self):
         leaf = torch.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
