@@ -15,6 +15,19 @@ and the weighted coverage areas in [FEATURES.md](FEATURES.md).
 
 Every report includes median, dispersion, samples, warmups, compiler profile, Rust/Python/PyTorch versions, OS, CPU/GPU, and thread settings. No result may silently fall back to a different device or dtype.
 
+Operation-specific timing reports that live in this repository must be backed
+by a tracked driver or by a named external evaluator. The report must identify
+that driver, include a stable workload-matrix digest, and expose a
+non-publishing artifact check that verifies the report still matches the
+tracked benchmark definition. For the MSE loss timing report, run:
+
+```bash
+python scripts/benchmark-mse-loss.py --check-report docs/mse-loss-release-timings.md
+```
+
+This check validates benchmark-report provenance only; it does not generate or
+stamp Burner evaluation progress artifacts.
+
 ## Workload matrix
 
 The durable full suite grows toward all of these categories while keeping prior cells:
