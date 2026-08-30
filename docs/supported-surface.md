@@ -559,6 +559,17 @@ accelerator or meta devices, indexed CPU devices that would require a copy,
 pinned-memory options, concrete or `None` `out` arguments, and explicit copy
 requests remain unsupported.
 
+`torch.asarray(obj, *, dtype=None, device=None, copy=None, requires_grad=None)`
+is exposed as the matching identity-only array conversion sibling. Exact native
+CPU `float32` tensors are returned unchanged when `dtype` and `device` are
+omitted, `None`, or default-equivalent, `copy` is omitted, `None`, or `False`,
+and `requires_grad` is omitted or `None`. The call preserves the source
+tensor's storage aliasing, shape, stride, storage offset, layout, leaf/output
+metadata, and existing autograd history. Python sequences, NumPy arrays,
+scalars, tensor subclasses, dtype conversions, accelerator or meta devices,
+indexed CPU devices that would require a copy, pinned-memory options, `out`,
+`copy=True`, and explicit `requires_grad` mutation requests remain unsupported.
+
 `torch.zeros(size, *, out=None, dtype=None, device=None, requires_grad=False)` and `torch.ones(size, *, out=None, dtype=None, device=None, requires_grad=False)` create fresh CPU float32 tensors for scalar, empty, and multidimensional sizes. A single positional integer or integer-protocol value is accepted as a one-dimensional size, while tuple/list-like sizes retain their existing PyTorch-compatible shape, stride, dtype, device, and `requires_grad` metadata. `out=None` is accepted and behaves like the omitted default without reusing storage. Concrete `out` tensors, extra positional dimensions, non-float32 dtype or non-CPU device allocation, `layout`, `pin_memory`, sparse layouts, and like-factory variants remain unsupported.
 
 `torch.eye(n, m=None, *, dtype=None, device=None, requires_grad=False)` creates CPU float32 identity tensors for square, rectangular, and zero-size shapes. It accepts exact and integer-protocol dimensions, including NumPy integer scalars, while rejecting booleans; omitted `m` mirrors `n`, and explicit `m=None` remains invalid. Supported dtype forms are omitted, `None`, `torch.float32`, and `torch.float`; supported device forms are omitted, `None`, CPU strings, and `torch.device("cpu")` values, all normalized to the CPU device. `requires_grad=True` creates a leaf tensor even under `torch.no_grad()`, while omitted, `None`, and `False` leave gradient tracking disabled. Negative dimensions, Python integer overflows, and checked storage-size overflows report PyTorch-compatible errors before allocation. Other dtypes, accelerator or meta devices, `out`, `layout`, `pin_memory`, sparse layouts, and backend-specific allocation behavior remain unsupported.
