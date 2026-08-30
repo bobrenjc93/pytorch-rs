@@ -2308,7 +2308,7 @@ impl SingleTensorOverrideOperation {
     const REAL: Self = Self {
         name: "real",
         qualified_name: "torch.real",
-        apply_native: apply_top_level_real,
+        apply_native: apply_top_level_lazy_bit_identity,
     };
 }
 
@@ -3323,13 +3323,9 @@ fn apply_top_level_lazy_bit_identity(
     tensor: &Bound<'_, PyTensor>,
 ) -> PyResult<Py<PyAny>> {
     // Native tensors expose neither complex storage nor lazy view bits. Real
-    // conjugation and resolving clear lazy bits are exact identities, without
-    // touching storage, metadata, or autograd state.
+    // projection, real conjugation, and resolving clear lazy bits are exact
+    // identities, without touching storage, metadata, or autograd state.
     Ok(tensor.clone().unbind().into_any())
-}
-
-fn apply_top_level_real(_py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
-    tensor.as_any().getattr("real").map(Bound::unbind)
 }
 
 fn ordered_unary_out_overrides<'py>(

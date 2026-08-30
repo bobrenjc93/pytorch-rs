@@ -400,6 +400,30 @@ class TopLevelRealTests(unittest.TestCase):
         self.assertIs(torch.real(x1=leaf), leaf)
         self.assertIs(leaf.grad, gradient)
 
+    def test_top_level_real_ignores_tensor_real_monkey_patch(self):
+        tensor = torch.tensor([1.0], requires_grad=True)
+        metadata = self.metadata(tensor)
+        original = inspect.getattr_static(torch.Tensor, "real")
+        had_own_real = "real" in torch.Tensor.__dict__
+        patched = False
+
+        try:
+            torch.Tensor.real = property(lambda self: "patched")
+            patched = True
+
+            self.assertEqual(tensor.real, "patched")
+            for form, call in self.real_calls(tensor):
+                with self.subTest(form=form):
+                    result = call()
+                    self.assertIs(result, tensor)
+                    self.assertEqual(self.metadata(result), metadata)
+        finally:
+            if patched:
+                if had_own_real:
+                    torch.Tensor.real = original
+                else:
+                    delattr(torch.Tensor, "real")
+
     def test_torch_function_modes_and_overrides_receive_original_calls(self):
         tensor = torch.tensor([1.0], requires_grad=True)
         marker = object()

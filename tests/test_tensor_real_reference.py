@@ -341,6 +341,59 @@ print(json.dumps({
                     np.testing.assert_array_equal(actual_bits, expected_bits)
                     self.assertEqual(actual_contract[:-1], expected_contract[:-1])
 
+    def patched_tensor_real_contract(self, module):
+        tensor = module.tensor([1.0], dtype=module.float32, requires_grad=True)
+        metadata = (
+            tuple(tensor.shape),
+            tensor.stride(),
+            tensor.storage_offset(),
+            str(tensor.dtype),
+            str(tensor.device),
+            tensor.requires_grad,
+            tensor.is_leaf,
+        )
+        pointer = tensor.data_ptr()
+        original = inspect.getattr_static(module.Tensor, "real")
+        had_own_real = "real" in module.Tensor.__dict__
+        patched = False
+
+        try:
+            module.Tensor.real = property(lambda self: "patched")
+            patched = True
+            result = module.real(tensor)
+            keyword_result = module.real(input=tensor)
+            return {
+                "patched_property": tensor.real,
+                "identity": result is tensor,
+                "keyword_identity": keyword_result is tensor,
+                "metadata_unchanged": metadata
+                == (
+                    tuple(result.shape),
+                    result.stride(),
+                    result.storage_offset(),
+                    str(result.dtype),
+                    str(result.device),
+                    result.requires_grad,
+                    result.is_leaf,
+                ),
+                "pointer_unchanged": result.data_ptr() == pointer,
+                "bits": np.asarray(result.detach()).reshape(-1).view(np.uint32).copy(),
+            }
+        finally:
+            if patched:
+                if had_own_real:
+                    module.Tensor.real = original
+                else:
+                    delattr(module.Tensor, "real")
+
+    def test_top_level_real_ignores_tensor_real_monkey_patch_like_pytorch_2_13(self):
+        actual_contract = self.patched_tensor_real_contract(torch)
+        expected_contract = self.patched_tensor_real_contract(reference_torch)
+        np.testing.assert_array_equal(
+            actual_contract.pop("bits"), expected_contract.pop("bits")
+        )
+        self.assertEqual(actual_contract, expected_contract)
+
     def top_level_callable_contract(self, module):
         function = module.real
         owner = function.__reduce__()[1][0]
