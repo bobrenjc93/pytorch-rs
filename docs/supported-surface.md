@@ -381,7 +381,14 @@ assert cpu_nhwc.is_contiguous(memory_format=torch.channels_last)
 
 The CPU core provides `float32` tensors, checked construction including copied
 one-dimensional numeric PEP 3118 buffers, constant-filled creation, and layout
-queries. Tensor metadata coverage includes `Tensor.dense_dim()` and
+queries. Reference-tested tensor query coverage includes rank, element-count,
+and byte-size metadata through `Tensor.ndim`, `Tensor.dim()`,
+`Tensor.ndimension()`, `Tensor.numel()`, `Tensor.nelement()`, `torch.numel()`,
+`Tensor.element_size()`, and `Tensor.nbytes`; scalar truth queries through
+`Tensor.is_nonzero()` and `torch.is_nonzero()`; and dtype-category tensor
+predicates through `Tensor.is_complex()`/`torch.is_complex()` and
+`Tensor.is_floating_point()`/`torch.is_floating_point()` for supported native
+float32 tensors. Tensor metadata coverage also includes `Tensor.dense_dim()` and
 `Tensor.sparse_dim()` strided-layout dimension metadata, no-argument
 `Tensor.is_pinned()` metadata for the exclusively pageable CPU storage model,
 no-argument `Tensor.is_distributed()` metadata for supported local tensors,
