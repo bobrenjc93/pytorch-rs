@@ -131,6 +131,14 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             module,
             np.arange(6, dtype=np.float32).reshape(3, 2).tolist(),
         ).transpose(0, 1)
+        leading_singleton_input = self.tensor(
+            module,
+            [[0.0, 1.0, 2.0]],
+        ).transpose(0, 1)
+        leading_singleton_target = self.tensor(
+            module,
+            np.arange(6, dtype=np.float32).reshape(2, 3, 1).tolist(),
+        ).permute(2, 1, 0)
         vector = self.tensor(module, [1.0, 2.0, 3.0])
         column = self.tensor(module, [[1.0], [2.0]])
         contiguous = self.tensor(
@@ -160,6 +168,11 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ("column target", matrix, column),
             ("offset vector target", offset_matrix, vector),
             ("noncontiguous vector target", noncontiguous_matrix, vector),
+            (
+                "leading singleton broadcast",
+                leading_singleton_input,
+                leading_singleton_target,
+            ),
             ("contiguous scalar input", scalar, contiguous),
             ("contiguous scalar target", contiguous, scalar),
             ("offset strided scalar input", offset_scalar, offset_strided),
