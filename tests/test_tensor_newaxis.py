@@ -424,7 +424,9 @@ class TensorNewAxisIndexTests(unittest.TestCase):
                     source, result, shape, stride, offset
                 )
 
-    def test_other_newaxis_and_public_unsqueeze_forms_remain_unsupported(self):
+    def test_other_newaxis_forms_remain_unsupported_and_public_unsqueeze_is_separate(
+        self,
+    ):
         tensor = torch.ones((2, 3))
         leading_mixed = (
             (None,),
@@ -449,10 +451,11 @@ class TensorNewAxisIndexTests(unittest.TestCase):
                 with self.assertRaises(IndexError):
                     tensor[index]
 
-        self.assertFalse(hasattr(torch, "unsqueeze"))
-        self.assertFalse(hasattr(torch.Tensor, "unsqueeze"))
-        with self.assertRaises(AttributeError):
-            tensor.unsqueeze(0)
+        self.assertTrue(hasattr(torch, "unsqueeze"))
+        self.assertIn("unsqueeze", torch.__all__)
+        self.assertTrue(hasattr(torch.Tensor, "unsqueeze"))
+        self.assertTrue(tensor.unsqueeze(0).is_set_to(tensor[None]))
+        self.assertTrue(torch.unsqueeze(tensor, -1).is_set_to(tensor[..., torch.newaxis]))
 
 
 if __name__ == "__main__":

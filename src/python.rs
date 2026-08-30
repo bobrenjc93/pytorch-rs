@@ -382,6 +382,30 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nunsqueeze(dim) -> Tensor\n\nSee :func:`torch.unsqueeze`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn unsqueeze(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let dimension = bind_method_unsqueeze_argument(args, kwargs)?;
+        let tensor = slf.as_any();
+        if !tensor.is_exact_instance_of::<PyTensor>() {
+            let actual = python_type_name(tensor)?;
+            return Err(PyTypeError::new_err(format!(
+                "Tensor.unsqueeze only supports exact native Tensor inputs, not {actual}"
+            )));
+        }
+        reject_unsqueeze_torch_function_mode("Tensor.unsqueeze")?;
+        let tensor = tensor.cast::<PyTensor>()?.try_borrow()?;
+        let dimension = extract_dimension_swap_dimension(&dimension.value)?;
+        let inner = apply_edge_unsqueeze(&tensor.inner, dimension, "Tensor.unsqueeze")?;
+        Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nunbind(dim=0) -> seq\n\nSee :func:`torch.unbind`\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn unbind(
@@ -2056,6 +2080,24 @@ pub(crate) fn resolve_neg_variable_function(
     )
 }
 
+pub(crate) fn unsqueeze_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let ([input, dimension], keyword_error) = bind_top_level_unsqueeze_arguments(args, kwargs)?;
+    let input = parse_exact_tensor_argument("unsqueeze", "input", &input)?;
+    validate_dimension_swap_dimension("unsqueeze", "dim", dimension.position, &dimension.value)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    reject_unsqueeze_torch_function_mode("torch.unsqueeze")?;
+    let dimension = extract_dimension_swap_dimension(&dimension.value)?;
+    let input = input.try_borrow()?;
+    let inner = apply_edge_unsqueeze(&input.inner, dimension, "torch.unsqueeze")?;
+    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+}
+
 pub(crate) fn unbind_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2864,6 +2906,35 @@ fn unbind_first_dimension(
     Ok(PyTuple::new(py, outputs.into_iter().map(PyTensor::new))?
         .into_any()
         .unbind())
+}
+
+fn apply_edge_unsqueeze(
+    input: &CoreTensor,
+    dimension: i64,
+    operation: &str,
+) -> PyResult<CoreTensor> {
+    let rank = input.shape().len();
+    let axis = normalize_unsqueeze_dimension(dimension, rank)?;
+    if axis == 0 {
+        return input
+            .unsqueeze_front()
+            .map_err(|error| tensor_error(&error));
+    }
+    if axis == rank {
+        return input.unsqueeze_back().map_err(|error| tensor_error(&error));
+    }
+    Err(PyRuntimeError::new_err(format!(
+        "{operation} only supports leading and trailing dimensions"
+    )))
+}
+
+fn reject_unsqueeze_torch_function_mode(operation: &str) -> PyResult<()> {
+    if torch_function_mode_stack::is_empty() {
+        return Ok(());
+    }
+    Err(PyNotImplementedError::new_err(format!(
+        "{operation} does not support TorchFunctionMode"
+    )))
 }
 
 fn select_first_dimension(
@@ -7336,6 +7407,198 @@ fn bind_unbind_dimension<'py>(
     Ok(dimension)
 }
 
+fn bind_method_unsqueeze_argument<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ParsedCallArgument<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "unsqueeze() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut dimension = positional.get_item(0).ok().map(|value| ParsedCallArgument {
+        value,
+        position: Some(1),
+    });
+    let mut consumed_keyword = None;
+    if positional.is_empty()
+        && let Some(keywords) = keywords
+    {
+        if let Some(value) = keywords.get_item("dim")? {
+            dimension = Some(ParsedCallArgument {
+                value,
+                position: None,
+            });
+            consumed_keyword = Some("dim");
+        } else if let Some(value) = keywords.get_item("axis")? {
+            dimension = Some(ParsedCallArgument {
+                value,
+                position: None,
+            });
+            consumed_keyword = Some("axis");
+        }
+    }
+
+    let Some(dimension) = dimension else {
+        return Err(PyTypeError::new_err(
+            "unsqueeze() missing 1 required positional arguments: \"dim\"",
+        ));
+    };
+
+    validate_dimension_swap_dimension("unsqueeze", "dim", dimension.position, &dimension.value)?;
+
+    if let Some(keywords) = keywords {
+        for key in keywords.keys() {
+            let key = key.extract::<String>()?;
+            if consumed_keyword == Some(key.as_str()) {
+                continue;
+            }
+            if key == "dim" && !positional.is_empty() {
+                return Err(PyTypeError::new_err(
+                    "unsqueeze() got multiple values for argument 'dim'",
+                ));
+            }
+            return Err(PyTypeError::new_err(format!(
+                "unsqueeze() got an unexpected keyword argument '{key}'"
+            )));
+        }
+    }
+
+    Ok(dimension)
+}
+
+fn bind_top_level_unsqueeze_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<([ParsedCallArgument<'py>; 2], Option<PyErr>)> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "unsqueeze() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let keyword_argument =
+        |names: &[&'static str]| -> PyResult<Option<(Bound<'py, PyAny>, &'static str)>> {
+            let Some(keywords) = keywords else {
+                return Ok(None);
+            };
+            for name in names {
+                if let Some(value) = keywords.get_item(*name)? {
+                    return Ok(Some((value, *name)));
+                }
+            }
+            Ok(None)
+        };
+    let input_keyword_argument = || -> PyResult<Option<(Bound<'py, PyAny>, &'static str)>> {
+        let Some(keywords) = keywords else {
+            return Ok(None);
+        };
+        if let Some(value) = keywords.get_item("input")? {
+            return Ok(Some((value, "input")));
+        }
+
+        let mut selected = None;
+        for (key, value) in keywords {
+            let keyword = match key.extract::<String>()?.as_str() {
+                "x" => "x",
+                "a" => "a",
+                "x1" => "x1",
+                _ => continue,
+            };
+            selected = Some((value, keyword));
+        }
+        Ok(selected)
+    };
+
+    let (input, input_keyword) = if positional.is_empty() {
+        match input_keyword_argument()? {
+            Some((value, keyword)) => (
+                Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                }),
+                Some(keyword),
+            ),
+            None => (None, None),
+        }
+    } else {
+        (
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            }),
+            None,
+        )
+    };
+
+    let (dimension, dimension_keyword) = if positional.len() < 2 {
+        match keyword_argument(&["dim", "axis"])? {
+            Some((value, keyword)) => (
+                Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                }),
+                Some(keyword),
+            ),
+            None => (None, None),
+        }
+    } else {
+        (
+            Some(ParsedCallArgument {
+                value: positional.get_item(1)?,
+                position: Some(2),
+            }),
+            None,
+        )
+    };
+
+    let Some(input) = input else {
+        return Err(PyTypeError::new_err(
+            "unsqueeze() missing 2 required positional argument: \"input\", \"dim\"",
+        ));
+    };
+    let Some(dimension) = dimension else {
+        parse_exact_tensor_argument("unsqueeze", "input", &input)?;
+        return Err(PyTypeError::new_err(
+            "unsqueeze() missing 1 required positional arguments: \"dim\"",
+        ));
+    };
+
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for key in keywords.keys() {
+            let key = key.extract::<String>()?;
+            if input_keyword == Some(key.as_str()) || dimension_keyword == Some(key.as_str()) {
+                continue;
+            }
+            match key.as_str() {
+                "input" if input.position.is_some() => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("unsqueeze() got multiple values for argument 'input'")
+                    });
+                }
+                "dim" if dimension.position.is_some() => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("unsqueeze() got multiple values for argument 'dim'")
+                    });
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "unsqueeze() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(([input, dimension], keyword_error))
+}
+
 fn bind_top_level_unbind_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
@@ -10592,6 +10855,23 @@ fn parse_tensor_argument<'a, 'py>(
     Ok(tensor)
 }
 
+fn parse_exact_tensor_argument<'a, 'py>(
+    function: &str,
+    argument: &str,
+    value: &'a ParsedCallArgument<'py>,
+) -> PyResult<&'a Bound<'py, PyTensor>> {
+    if !value.value.is_exact_instance_of::<PyTensor>() {
+        let position = value
+            .position
+            .map_or_else(String::new, |position| format!(" (position {position})"));
+        let actual = python_type_name(&value.value)?;
+        return Err(PyTypeError::new_err(format!(
+            "{function}(): argument '{argument}'{position} must be Tensor, not {actual}"
+        )));
+    }
+    Ok(value.value.cast::<PyTensor>()?)
+}
+
 fn parse_tensor_or_torch_function_argument<'py>(
     function: &str,
     argument: &str,
@@ -12525,6 +12805,23 @@ pub(crate) fn normalize_dimension(dimension: i64, rank: usize) -> PyResult<usize
     }
     usize::try_from(if dimension < 0 {
         dimension + rank
+    } else {
+        dimension
+    })
+    .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds the platform limit"))
+}
+
+fn normalize_unsqueeze_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
+    let rank = i64::try_from(rank)
+        .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+    let lower = -rank - 1;
+    if dimension < lower || dimension > rank {
+        return Err(PyIndexError::new_err(format!(
+            "Dimension out of range (expected to be in range of [{lower}, {rank}], but got {dimension})"
+        )));
+    }
+    usize::try_from(if dimension < 0 {
+        dimension + rank + 1
     } else {
         dimension
     })

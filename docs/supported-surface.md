@@ -367,6 +367,10 @@ assert torch.select(batched_matrices, dim=-3, index=1).is_set_to(matrix_view)
 batched = torch.zeros((1, 2, 1, 3))
 matrix = torch.squeeze(batched, dim=(0, 2))
 assert matrix.shape == (2, 3)
+leading = batched.unsqueeze(0)
+trailing = torch.unsqueeze(batched, -1)
+assert leading.is_set_to(batched[None])
+assert trailing.is_set_to(batched[..., torch.newaxis])
 
 # Flatten compatible ranges as views and materialize non-contiguous ranges.
 features = torch.flatten(matrix, start_dim=0, end_dim=1)
@@ -427,8 +431,10 @@ operations, with PyTorch-compatible multi-output indices for grad-tracked
 
 View and layout coverage includes stride-aware indexing, dimension-zero
 `Tensor.select()`/`torch.select()` single first-axis views and
-`Tensor.unbind()`/`torch.unbind()` first-axis views, `Tensor.view()` and
-`Tensor.view_as()` shared-storage views, arbitrary metadata-only
+`Tensor.unbind()`/`torch.unbind()` first-axis views,
+`Tensor.unsqueeze(dim)`/`torch.unsqueeze(input, dim)` leading and trailing
+singleton-dimension views, `Tensor.view()` and `Tensor.view_as()`
+shared-storage views, arbitrary metadata-only
 `Tensor.permute()` and `torch.permute()` views, integer-axis
 `Tensor.movedim()`/`Tensor.moveaxis()`, `torch.movedim()`, and top-level
 `torch.moveaxis()` views, metadata-only transpose, `Tensor.swapdims()`/
@@ -447,6 +453,16 @@ device.
 negative first dimension and delegate values, strides, offsets, aliasing, empty
 views, and autograd to the native leading integer-index engine; other
 dimensions remain unsupported.
+
+`Tensor.unsqueeze(dim)` and `torch.unsqueeze(input, dim)` normalize the
+PyTorch-compatible integer dimension range `[-input.dim() - 1, input.dim()]`
+but only materialize the existing leading and trailing native view cases. These
+edge insertions preserve shared storage, storage offsets, dtype, device,
+scalar and empty tensor behavior, non-contiguous strides, and first-order
+autograd/no-grad metadata. Middle dimensions, tuple/list dimensions, `out`,
+Tensor subclasses, active `TorchFunctionMode`, and non-Tensor operands remain
+unsupported for this public API; `None` and `torch.newaxis` indexing keep their
+existing behavior.
 
 `Tensor.view(shape)` accepts one positional integer or `__index__` value, one
 tuple, list, or `torch.Size` (including the sequence `size=` form), or exactly
