@@ -130,13 +130,26 @@ class FunctionalL1LossTests(unittest.TestCase):
         offset_matrix = torch.tensor(
             np.arange(12, dtype=np.float32).reshape(2, 2, 3).tolist()
         )[1]
+        noncontiguous_matrix = matrix.transpose(0, 1)
         empty_strided = torch.zeros((2, 0, 3)).transpose(0, 2)
 
         return (
             ("scalar target", matrix, torch.tensor(2.0)),
+            (
+                "scalar target noncontiguous",
+                noncontiguous_matrix,
+                torch.tensor(2.0),
+            ),
+            ("scalar target empty", empty_strided, torch.tensor(2.0)),
             ("vector target", matrix, torch.tensor([1.0, 2.0, 3.0])),
             ("column target", matrix, torch.tensor([[1.0], [2.0]])),
             ("scalar input", torch.tensor(-0.0), offset_matrix),
+            (
+                "scalar input noncontiguous",
+                torch.tensor(-0.0),
+                noncontiguous_matrix,
+            ),
+            ("scalar input empty", torch.tensor(-0.0), empty_strided),
             (
                 "empty singleton broadcast",
                 empty_strided,
@@ -199,6 +212,7 @@ class FunctionalL1LossTests(unittest.TestCase):
             "``reduce=None``",
             "``weight=None``",
             "fuses same-shape row-major contiguous operands",
+            "scalar-broadcast row-major contiguous operands",
             "one native absolute-difference pass",
             "subtraction and absolute-value behavior",
             "fresh, independent tensor",
@@ -452,6 +466,76 @@ class FunctionalL1LossTests(unittest.TestCase):
                     expected_bits,
                 )
 
+    def test_scalar_broadcast_float32_edges_match_kernel_composition_bits(self):
+        tensor_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        contiguous_tensor = torch.tensor(
+            memoryview(tensor_bits.view(np.float32))
+        ).view(2, 7)
+
+        for scalar_bits in (
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7F80_0000,
+            0xFF80_0000,
+            0x7FC6_789A,
+            0xFF86_789A,
+        ):
+            scalar_values = np.asarray([scalar_bits], dtype=np.uint32).view(np.float32)
+            scalar = torch.tensor(memoryview(scalar_values))[0]
+            for layout, tensor in (
+                ("contiguous", contiguous_tensor),
+                ("noncontiguous", contiguous_tensor.transpose(0, 1)),
+            ):
+                for scalar_on_left in (True, False):
+                    input, target = (
+                        (scalar, tensor) if scalar_on_left else (tensor, scalar)
+                    )
+                    expected = (input - target).abs()
+                    expected_bits = self.tensor_bits(expected).copy()
+                    target_bits = (
+                        self.tensor_bits(tensor).copy()
+                        if scalar_on_left
+                        else np.full(expected_bits.shape, scalar_bits, dtype=np.uint32)
+                    )
+                    target_nan = (target_bits & 0x7FFF_FFFF) > 0x7F80_0000
+                    expected_bits[target_nan] = (
+                        target_bits[target_nan] | 0x0040_0000
+                    ) & 0x7FFF_FFFF
+
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        actual = functional.l1_loss(input, target, reduction="none")
+                    with self.subTest(
+                        layout=layout,
+                        scalar_bits=hex(scalar_bits),
+                        scalar_on_left=scalar_on_left,
+                    ):
+                        self.assertEqual(actual.stride(), expected.stride())
+                        np.testing.assert_array_equal(
+                            self.tensor_bits(actual),
+                            expected_bits,
+                        )
+
     def test_requires_grad_operands_need_no_grad(self):
         for input_requires_grad, target_requires_grad in (
             (True, False),
@@ -489,6 +573,57 @@ class FunctionalL1LossTests(unittest.TestCase):
                 self.assertTrue(actual.is_leaf)
                 self.assertIsNone(input.grad)
                 self.assertIsNone(target.grad)
+
+    def test_broadcast_requires_grad_operands_need_no_grad(self):
+        def scalar_input(input_requires_grad, target_requires_grad):
+            return (
+                torch.tensor(0.5, requires_grad=input_requires_grad),
+                torch.tensor(
+                    [[1.0, -2.0], [3.0, -4.0]],
+                    requires_grad=target_requires_grad,
+                ),
+            )
+
+        def scalar_target(input_requires_grad, target_requires_grad):
+            return (
+                torch.tensor(
+                    [[1.0, -2.0], [3.0, -4.0]],
+                    requires_grad=input_requires_grad,
+                ),
+                torch.tensor(0.5, requires_grad=target_requires_grad),
+            )
+
+        for case, factory in (
+            ("scalar input", scalar_input),
+            ("scalar target", scalar_target),
+        ):
+            for input_requires_grad, target_requires_grad in (
+                (True, False),
+                (False, True),
+                (True, True),
+            ):
+                input, target = factory(input_requires_grad, target_requires_grad)
+                with self.subTest(
+                    case=case,
+                    input_requires_grad=input_requires_grad,
+                    target_requires_grad=target_requires_grad,
+                ):
+                    with self.assertWarnsRegex(UserWarning, "Using a target size"):
+                        with self.assertRaisesRegex(
+                            RuntimeError,
+                            r"^l1_loss\(\): autograd recording is not supported$",
+                        ):
+                            functional.l1_loss(input, target, reduction="none")
+
+                    with warnings.catch_warnings(), torch.no_grad():
+                        warnings.simplefilter("ignore")
+                        actual = functional.l1_loss(input, target, reduction="none")
+                        expected = (input - target).abs()
+                    self.assert_matches_composition(actual, expected, case="no_grad")
+                    self.assertFalse(actual.requires_grad)
+                    self.assertTrue(actual.is_leaf)
+                    self.assertIsNone(input.grad)
+                    self.assertIsNone(target.grad)
 
     def test_unsupported_options_shapes_and_operands_are_rejected(self):
         input = torch.ones((2, 3))

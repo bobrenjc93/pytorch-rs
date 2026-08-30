@@ -3157,9 +3157,11 @@ impl Tensor {
     /// result metadata or storage allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn absolute_difference(&self, other: &Self) -> Result<Self, TensorError> {
-        if self.shape == other.shape
-            && let Some(output) = self.absolute_difference_same_shape_contiguous(other)?
-        {
+        if self.shape == other.shape {
+            if let Some(output) = self.absolute_difference_same_shape_contiguous(other)? {
+                return Ok(output);
+            }
+        } else if let Some(output) = self.absolute_difference_rank_zero_contiguous(other)? {
             return Ok(output);
         }
 
@@ -3187,6 +3189,44 @@ impl Tensor {
             data,
             shape,
             strides,
+            self.dtype(),
+            self.device(),
+        )))
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    #[inline(never)]
+    fn absolute_difference_rank_zero_contiguous(
+        &self,
+        other: &Self,
+    ) -> Result<Option<Self>, TensorError> {
+        let (scalar, tensor, scalar_on_left) = if self.shape.is_empty() && !other.shape.is_empty() {
+            (self.value_at_linear_index(0), other, true)
+        } else if other.shape.is_empty() && !self.shape.is_empty() {
+            (other.value_at_linear_index(0), self, false)
+        } else {
+            return Ok(None);
+        };
+        let plan = BroadcastPlan::new_for_expanded_operands(self, other)?;
+        if plan.shape.as_slice() != tensor.shape.as_slice()
+            || !layout_is_contiguous(&plan.shape, &plan.strides, plan.elements)
+        {
+            return Ok(None);
+        }
+        let Some(values) = tensor.contiguous_slice() else {
+            return Ok(None);
+        };
+
+        let data = materialize_contiguous_scalar_absolute_difference(
+            values,
+            scalar,
+            scalar_on_left,
+            plan.elements,
+        )?;
+        Ok(Some(Self::from_owned_parts(
+            data,
+            try_clone_result_shape(&plan.shape, plan.elements)?,
+            try_clone_result_shape(&plan.strides, plan.elements)?,
             self.dtype(),
             self.device(),
         )))
@@ -6029,6 +6069,35 @@ fn materialize_contiguous_absolute_difference(
 }
 
 #[cfg(any(feature = "python-bindings", test))]
+fn materialize_contiguous_scalar_absolute_difference(
+    values: &[f32],
+    scalar: f32,
+    scalar_on_left: bool,
+    elements: usize,
+) -> Result<Vec<f32>, TensorError> {
+    debug_assert_eq!(values.len(), elements);
+
+    let mut data = try_result_vector(elements, elements)?;
+    if scalar_on_left {
+        data.extend(
+            values
+                .iter()
+                .copied()
+                .map(|value| absolute_value(l1_loss_difference_value(scalar, value))),
+        );
+    } else {
+        data.extend(
+            values
+                .iter()
+                .copied()
+                .map(|value| absolute_value(l1_loss_difference_value(value, scalar))),
+        );
+    }
+    debug_assert_eq!(data.len(), elements);
+    Ok(data)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
 fn materialize_contiguous_scalar_squared_difference(
     values: &[f32],
     scalar: f32,
@@ -6108,6 +6177,54 @@ mod tests {
             view_requires_grad: false,
             autograd: None,
         }
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn assert_rank_zero_absolute_difference_fast_path_matches_fallback(
+        tensor: &Tensor,
+        scalar_bits: u32,
+        scalar_on_left: bool,
+        case: &str,
+    ) {
+        let scalar = Tensor::from_vec([0_u32, scalar_bits].map(f32::from_bits).to_vec(), [2])
+            .unwrap()
+            .index_integer(1)
+            .unwrap();
+        let (left, right) = if scalar_on_left {
+            (&scalar, tensor)
+        } else {
+            (tensor, &scalar)
+        };
+        let shared_tensor = shared_gradient_copy(tensor);
+        let (fallback_left, fallback_right) = if scalar_on_left {
+            (&scalar, &shared_tensor)
+        } else {
+            (&shared_tensor, &scalar)
+        };
+        let expected = fallback_left
+            .zip_map(fallback_right, l1_loss_difference_value)
+            .unwrap()
+            .abs()
+            .unwrap();
+        let actual = left
+            .absolute_difference_rank_zero_contiguous(right)
+            .unwrap()
+            .expect("rank-zero plus contiguous tensor should use the fast path");
+
+        assert_eq!(actual.shape(), expected.shape(), "{case}");
+        assert_eq!(actual.stride(), expected.stride(), "{case}");
+        assert_eq!(actual.storage_offset(), expected.storage_offset(), "{case}");
+        assert_eq!(actual.dtype(), expected.dtype(), "{case}");
+        assert_eq!(actual.device(), expected.device(), "{case}");
+        assert!(!actual.shares_storage_with(left), "{case}");
+        assert!(!actual.shares_storage_with(right), "{case}");
+        assert!(
+            actual
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(expected.logical_values().map(f32::to_bits)),
+            "{case}",
+        );
     }
 
     #[test]
@@ -10107,6 +10224,92 @@ mod tests {
         let empty = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
         let singleton_empty = Tensor::ones([1, 0, 1]).unwrap();
         assert_matches(&empty, &singleton_empty);
+    }
+
+    #[test]
+    fn absolute_difference_rank_zero_contiguous_fast_path_matches_fallback() {
+        let tensor_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+            0xff85_4321,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+        ];
+        let contiguous = offset_contiguous_tensor(&tensor_bits, &[3, 4]);
+        assert!(contiguous.is_contiguous());
+        assert_ne!(contiguous.storage_offset(), 0);
+
+        for scalar_bits in [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc6_789a,
+            0x7f86_789a,
+        ] {
+            for scalar_on_left in [true, false] {
+                assert_rank_zero_absolute_difference_fast_path_matches_fallback(
+                    &contiguous,
+                    scalar_bits,
+                    scalar_on_left,
+                    "contiguous",
+                );
+            }
+        }
+
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        assert!(empty.is_contiguous());
+        for scalar_on_left in [true, false] {
+            assert_rank_zero_absolute_difference_fast_path_matches_fallback(
+                &empty,
+                0x8000_0000,
+                scalar_on_left,
+                "empty",
+            );
+        }
+
+        let scalar = Tensor::from_vec(vec![13.0, -0.0], [2])
+            .unwrap()
+            .index_integer(1)
+            .unwrap();
+        let strided = contiguous.transpose(0, 1).unwrap();
+        assert!(!strided.is_contiguous());
+        for (left, right) in [(&scalar, &strided), (&strided, &scalar)] {
+            assert!(
+                left.absolute_difference_rank_zero_contiguous(right)
+                    .unwrap()
+                    .is_none()
+            );
+            let expected = left
+                .zip_map(right, l1_loss_difference_value)
+                .unwrap()
+                .abs()
+                .unwrap();
+            let actual = left.absolute_difference(right).unwrap();
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+
+        assert!(
+            scalar
+                .absolute_difference_rank_zero_contiguous(&scalar)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

@@ -125,12 +125,19 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             module,
             np.arange(12, dtype=np.float32).reshape(2, 2, 3).tolist(),
         )[1]
+        noncontiguous_matrix = matrix.transpose(0, 1)
         empty_strided = module.zeros(
             (2, 0, 3), dtype=module.float32
         ).transpose(0, 2)
 
         return (
             ("scalar target", matrix, self.tensor(module, 2.0)),
+            (
+                "scalar target noncontiguous",
+                noncontiguous_matrix,
+                self.tensor(module, 2.0),
+            ),
+            ("scalar target empty", empty_strided, self.tensor(module, 2.0)),
             (
                 "vector target",
                 matrix,
@@ -142,6 +149,12 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 self.tensor(module, [[1.0], [2.0]]),
             ),
             ("scalar input", self.tensor(module, -0.0), offset_matrix),
+            (
+                "scalar input noncontiguous",
+                self.tensor(module, -0.0),
+                noncontiguous_matrix,
+            ),
+            ("scalar input empty", self.tensor(module, -0.0), empty_strided),
             (
                 "empty singleton broadcast",
                 empty_strided,
@@ -523,6 +536,83 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             reduction="none",
         )
         self.assert_matches(actual, expected, case="bandwidth-sized contiguous")
+
+    def test_scalar_broadcast_float32_edges_match_pytorch_2_13(self):
+        tensor_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        actual_tensor = torch.tensor(
+            memoryview(tensor_bits.view(np.float32))
+        ).view(2, 7)
+        expected_tensor = reference_torch.tensor(
+            memoryview(tensor_bits.view(np.float32))
+        ).view(2, 7)
+
+        for scalar_bits in (
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7F80_0000,
+            0xFF80_0000,
+            0x7FC6_789A,
+            0xFF86_789A,
+        ):
+            scalar_values = np.asarray([scalar_bits], dtype=np.uint32).view(np.float32)
+            actual_scalar = torch.tensor(memoryview(scalar_values))[0]
+            expected_scalar = reference_torch.tensor(memoryview(scalar_values))[0]
+            for layout, actual_layout, expected_layout in (
+                ("contiguous", actual_tensor, expected_tensor),
+                (
+                    "noncontiguous",
+                    actual_tensor.transpose(0, 1),
+                    expected_tensor.transpose(0, 1),
+                ),
+            ):
+                for scalar_on_left in (True, False):
+                    actual_operands = (
+                        (actual_scalar, actual_layout)
+                        if scalar_on_left
+                        else (actual_layout, actual_scalar)
+                    )
+                    expected_operands = (
+                        (expected_scalar, expected_layout)
+                        if scalar_on_left
+                        else (expected_layout, expected_scalar)
+                    )
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        actual = functional.l1_loss(*actual_operands, reduction="none")
+                        expected = reference_functional.l1_loss(
+                            *expected_operands,
+                            reduction="none",
+                        )
+                    self.assert_matches(
+                        actual,
+                        expected,
+                        case=(
+                            "scalar broadcast float32 edges",
+                            layout,
+                            hex(scalar_bits),
+                            scalar_on_left,
+                        ),
+                    )
 
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (
