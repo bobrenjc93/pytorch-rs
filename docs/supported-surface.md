@@ -59,6 +59,8 @@ assert torch.__future__.get_swap_module_params_on_conversion() is swap_policy
 torch.__future__.set_swap_module_params_on_conversion(False)
 scaled = torch.multiply(input=2.0, other=x)
 assert scaled.tolist() == [[-2.0, 4.0], [6.0, -8.0]]
+shifted = torch.add(input=x, other=2.0)
+assert shifted.tolist() == [[1.0, 4.0], [5.0, -2.0]]
 exponential = torch.exp(input=x)
 assert exponential.shape == x.shape
 sine = torch.sin(input=x)
@@ -532,9 +534,9 @@ and `torch.equal()` comparison, identity `Tensor.positive()`/
 `torch.positive()` and unary `+`, unary `-`, `Tensor.neg()`, its
 `Tensor.negative()` alias, `torch.neg()`, and the distinct top-level
 `torch.negative()` builtin. It supports broadcast tensor and real-scalar
-addition, subtraction, multiplication through `*`, `Tensor.mul()`,
-`Tensor.multiply()`, `torch.mul()`, and the distinct top-level
-`torch.multiply()` builtin, plus true division, the listed unary kernels,
+addition through `+` and top-level scalar-only `torch.add()`, subtraction,
+multiplication through `*`, `Tensor.mul()`, `Tensor.multiply()`, `torch.mul()`,
+and the distinct top-level `torch.multiply()` builtin, plus true division, the listed unary kernels,
 `Tensor.sum(dim=None)`, `torch.sum(input, dim=None, *, dtype=None)`, `Tensor.relu()`,
 `torch.relu()`, and rank-2 matrix multiplication through `@`,
 `Tensor.matmul()`, and `torch.matmul()`.
@@ -543,6 +545,16 @@ Top-level `torch.neg()` and `torch.negative()` share the same layout-preserving
 float32 CPU negation and autograd path while remaining distinct builtins; their
 concrete `out` forms and the in-place `neg_`/`negative_` variants remain
 unsupported.
+
+Top-level `torch.add(input, other, *, alpha=1, out=None)` accepts an exact
+native CPU float32 tensor plus a real Python or NumPy scalar in either operand
+order and delegates to the same scalar-addition path as `tensor + scalar`.
+Supported calls preserve values, output shape and strides, dtype, CPU-device
+metadata, empty tensor behavior, IEEE edge values, `torch.no_grad()` behavior,
+first-order scalar-addition autograd, callable metadata, wildcard imports, and
+`TorchFunctionMode`/`__torch_function__` dispatch. Tensor/tensor operands,
+scalar-only operands, non-default `alpha`, concrete `out`, dtype/device
+extension keywords, and `Tensor.add()` remain unsupported.
 
 Top-level `torch.mul()` and `torch.multiply()` accept tensor/tensor or
 tensor/real-scalar operands in either order and reuse the same broadcast and
