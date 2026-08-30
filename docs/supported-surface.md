@@ -13,6 +13,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 | Math | arithmetic operators, `torch.matmul`, `torch.sum`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` | [Elementwise and reductions](#elementwise-and-reductions) |
 | NN functional | `torch.nn.functional.linear`, `l1_loss`, `mse_loss`, `dropout*`, `sigmoid`, `silu`, `softsign`, `tanh` | [NN/data helpers](#nn-and-data-helpers), [math activations](#elementwise-and-reductions) |
 | Dtype/device metadata | `torch.float32`, `torch.finfo`, `torch.can_cast`, `torch.promote_types`, `Tensor.is_cuda`, `torch.get_device`, `Tensor.cpu` | [tensor metadata](#metadata-and-views), [backend metadata](#backend-and-compiler-metadata) |
+| Autograd state | `torch.is_grad_enabled`, `torch.no_grad`, `torch.is_inference_mode_enabled`, `torch.is_anomaly_enabled`, `torch.is_anomaly_check_nan_enabled`, `torch.autograd.is_view_replay_enabled` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
 | Compiler helpers | `torch.compiler.disable`, `assume_constant_result`, guard filters, eager JIT decorators/state | [Backend and compiler metadata](#backend-and-compiler-metadata) |
 | Backend capabilities | `torch.cpu`, `torch.accelerator`, `torch.backends.*`, `torch.version.*`, distributed availability queries | [Backend and compiler metadata](#backend-and-compiler-metadata) |
 
@@ -23,7 +24,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 | Tensors | CPU `float32` tensors with storage, shape, stride, view, layout, indexing, formatting, and autograd metadata coverage. | [Tensors](#tensors) |
 | Factories and math | Tensor factories, unary and binary math, reductions, matmul, dtype helpers, and inference-only `torch.nn.functional.softsign`. | [Creation and math](#creation-and-math) |
 | NN and data utilities | Functional linear, loss, and deterministic dropout paths, initialization helpers, state-dict prefix utilities, serialization settings, and dataset helpers. | [NN and data](#nn-and-data) |
-| Backend, compiler, and distributed state | CPU and accelerator metadata, autocast cache state helpers, backend flags, compiler state helpers, eager JIT helper decorators and state queries, and uninitialized distributed queries. | [Backends, compiler, and distributed](#backends-compiler-and-distributed) |
+| Backend, compiler, and distributed state | CPU and accelerator metadata, autocast cache state helpers, grad/autograd state queries, backend flags, compiler state helpers, eager JIT helper decorators and state queries, and uninitialized distributed queries. | [Backends, compiler, and distributed](#backends-compiler-and-distributed) |
 | Unsupported boundary | Explicit unsupported APIs and behavioral limits that remain outside the baseline contract. | [Unsupported boundaries](#unsupported-boundaries) |
 
 ## Current baseline
@@ -184,7 +185,14 @@ assert torch.version.cuda is None
 assert torch.version.hip is None
 assert torch.version.rocm is None
 assert torch.version.xpu is None
+assert torch.is_grad_enabled() is True
+with torch.no_grad():
+    assert torch.is_grad_enabled() is False
+assert torch.is_inference_mode_enabled() is False
+assert torch.is_anomaly_enabled() is False
+assert torch.is_anomaly_check_nan_enabled() is True
 assert torch.autograd.is_multithreading_enabled() is True
+assert torch.autograd.is_view_replay_enabled() is False
 assert torch.compiler.is_compiling() is False
 assert torch.compiler.is_dynamo_compiling() is False
 assert torch.compiler.is_exporting() is False
@@ -687,6 +695,8 @@ API is added.
 `torch.set_deterministic_debug_mode(debug_mode)` accepts the default-equivalent `0`, `False`, and `"default"` forms as idempotent no-ops. `torch.get_deterministic_debug_mode()`, `torch.are_deterministic_algorithms_enabled()`, and `torch.is_deterministic_algorithms_warn_only_enabled()` remain coherently fixed at `0`, `False`, and `False` across threads, package reloads, and grad modes. Warn and error modes remain explicitly unsupported and are rejected before any state can change; `torch.use_deterministic_algorithms` is not exposed.
 
 `torch.is_autocast_cache_enabled()`, `torch.set_autocast_cache_enabled(enabled)`, and `torch.clear_autocast_cache()` expose PyTorch-compatible autocast cache state helpers without adding autocast execution. Each thread starts with the exact `True` singleton, `set_autocast_cache_enabled` accepts exactly one exact boolean and returns `None`, and `clear_autocast_cache` returns `None` while preserving both cache-enabled and gradient-mode state. Invalid setter arguments are rejected without truth conversion or state mutation. The helpers are exported from both `torch` and `torch._C`; copy, deepcopy, pickle, wildcard import, and explicit native imports all preserve the canonical builtin identity. Reloading the native or package module preserves same-thread state and callable identity, while mutations remain thread-local and newly started threads observe the default enabled state. `torch.autocast`, `torch.amp`, `torch.cpu.amp`, mixed precision execution, device autocast state, and dtype promotion beyond the explicit float32-only helpers remain unsupported.
+
+`torch.is_grad_enabled()` reports the thread-local gradient recording state, including the supported `torch.no_grad()` context, decorator, generator, nesting, subclass, copy, pickle, and thread behavior. `torch.is_inference_mode_enabled()` reports the default exact `False` state without enabling inference-mode contexts. `torch.is_anomaly_enabled()` and `torch.is_anomaly_check_nan_enabled()` report the default exact `False` and `True` states, respectively. `torch.autograd.is_view_replay_enabled()` is an explicit-import/attribute-only alias of the native `torch._C._is_view_replay_enabled()` query and reports exact `False`; it is intentionally omitted from wildcard exports and the top-level namespace. These no-argument queries preserve gradient mode and do not import PyTorch. Grad-mode mutation beyond `torch.no_grad()` (`torch.enable_grad`, `torch.set_grad_enabled`, and their autograd namespace variants), `torch.inference_mode`, anomaly mutation/context APIs (`torch.set_anomaly_enabled`, `torch.autograd.anomaly_mode`, `torch.autograd.detect_anomaly`, and `torch.autograd.set_detect_anomaly`), view-replay mutation, and broader autograd APIs remain unsupported.
 
 `torch.set_warn_always(b)` and `torch.is_warn_always_enabled()` expose PyTorch's process-global native warning policy. The default once-only mode consumes each native warning site's marker on its first attempted emission, always mode emits from native warn-once sites on every call without consuming unused markers, and returning to once-only mode preserves markers consumed earlier. The state is shared across threads and package reloads, while ordinary Python `warnings.warn` sites retain Python's standard filtering behavior.
 
