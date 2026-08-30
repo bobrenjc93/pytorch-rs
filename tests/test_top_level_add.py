@@ -203,6 +203,16 @@ class TopLevelAddTests(unittest.TestCase):
                 (tensor, 4.0),
                 ("alpha", "out"),
             ),
+            (
+                lambda: torch.add(tensor, 4.0, alpha=True),
+                (tensor, 4.0),
+                ("alpha",),
+            ),
+            (
+                lambda: torch.add(tensor, 4.0, alpha=np.bool_(False)),
+                (tensor, 4.0),
+                ("alpha",),
+            ),
         )
         for call, expected_args, expected_keywords in calls:
             mode = RecordingMode()
@@ -271,12 +281,14 @@ class TopLevelAddTests(unittest.TestCase):
             self.assertIsNone(kwargs)
 
         events.clear()
-        self.assertIs(torch.add(input=native, other=RightOverride()), marker)
+        self.assertIs(
+            torch.add(input=native, other=RightOverride(), alpha=True), marker
+        )
         _, function, dispatch_types, args, kwargs = events[0]
         self.assertIs(function, torch.add)
         self.assertEqual(dispatch_types, (RightOverride,))
         self.assertEqual(args, ())
-        self.assertEqual(tuple(kwargs), ("input", "other"))
+        self.assertEqual(tuple(kwargs), ("input", "other", "alpha"))
 
         scalar_events = []
 

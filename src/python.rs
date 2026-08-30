@@ -2493,6 +2493,7 @@ enum BoundAddOperand<'py> {
 
 enum BoundTopLevelAddAlpha<'py> {
     Default,
+    Boolean,
     NonDefault,
     Override(ProbedTorchFunctionOverride<'py>),
 }
@@ -4244,6 +4245,11 @@ fn dispatch_top_level_add(
 }
 
 fn apply_top_level_add(py: Python<'_>, call: &BoundTopLevelAddCall<'_>) -> PyResult<Py<PyAny>> {
+    if matches!(call.alpha, BoundTopLevelAddAlpha::Boolean) {
+        return Err(PyRuntimeError::new_err(
+            "Boolean alpha only supported for Boolean results.",
+        ));
+    }
     if matches!(call.alpha, BoundTopLevelAddAlpha::NonDefault) {
         return Err(PyNotImplementedError::new_err(
             "add(): alpha values other than 1 are not supported",
@@ -10434,9 +10440,7 @@ fn bind_top_level_add_alpha(
         return Ok(BoundTopLevelAddAlpha::Override(probed));
     }
     if is_boolean_arithmetic_scalar(&alpha.value)? {
-        return Err(PyRuntimeError::new_err(
-            "Boolean alpha only supported for Boolean results.",
-        ));
+        return Ok(BoundTopLevelAddAlpha::Boolean);
     }
     let Some(scalar) = parse_arithmetic_scalar(&alpha.value)? else {
         let actual = python_type_name(&alpha.value)?;
