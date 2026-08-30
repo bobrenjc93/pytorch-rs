@@ -20,21 +20,21 @@ use crate::python::{
     atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
     ceil_variable_function, conj_variable_function, detach_variable_function,
     exp_variable_function, fix_variable_function, floor_variable_function,
-    get_device_variable_function, is_conj_variable_function, is_inference_variable_function,
-    matmul_variable_function, moveaxis_variable_function, movedim_variable_function,
-    mul_variable_function, multiply_variable_function, neg_variable_function,
-    negative_variable_function, permute_variable_function, positive_variable_function,
-    promote_types_variable_function, ravel_variable_function, reciprocal_variable_function,
-    reshape_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
-    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
-    square_variable_function, sum_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function,
+    get_device_variable_function, imag_variable_function, is_conj_variable_function,
+    is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
+    movedim_variable_function, mul_variable_function, multiply_variable_function,
+    neg_variable_function, negative_variable_function, permute_variable_function,
+    positive_variable_function, promote_types_variable_function, ravel_variable_function,
+    reciprocal_variable_function, reshape_variable_function, resolve_conj_variable_function,
+    resolve_neg_variable_function, rsqrt_variable_function, scalar_tensor_variable_function,
+    select_variable_function, sigmoid_variable_function, sin_variable_function,
+    sqrt_variable_function, square_variable_function, sum_variable_function,
+    tanh_variable_function, trunc_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 45] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 46] = [
     "get_device",
     "scalar_tensor",
     "arange",
@@ -70,6 +70,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 45] = [
     "is_inference",
     "resolve_conj",
     "resolve_neg",
+    "imag",
     "unbind",
     "select",
     "permute",
@@ -661,6 +662,8 @@ const RESOLVE_CONJ_DOC: &std::ffi::CStr = c"\nresolve_conj(input) -> Tensor\n\nR
 
 const RESOLVE_NEG_DOC: &std::ffi::CStr = c"\nresolve_neg(input) -> Tensor\n\nReturns a new tensor with materialized negation if :attr:`input`'s negative bit is set to `True`,\nelse returns :attr:`input`. The output tensor will always have its negative bit set to `False`.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> x = torch.tensor([-1 + 1j, -2 + 2j, 3 - 3j])\n    >>> y = x.conj()\n    >>> z = y.imag\n    >>> z.is_neg()\n    True\n    >>> out = z.resolve_neg()\n    >>> out\n    tensor([-1., -2., 3.])\n    >>> out.is_neg()\n    False\n";
 
+const IMAG_DOC: &std::ffi::CStr = c"\nimag(input) -> Tensor\n\nReturns a new tensor containing imaginary values of the :attr:`self` tensor.\nThe returned tensor and :attr:`self` share the same underlying storage.\n\n.. warning::\n    :func:`imag` is only supported for tensors with complex dtypes.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> x=torch.randn(4, dtype=torch.cfloat)\n    >>> x\n    tensor([(0.3100+0.3553j), (-0.5445-0.7896j), (-1.6492-0.0633j), (-0.0638-0.8119j)])\n    >>> x.imag\n    tensor([ 0.3553, -0.7896, -0.0633, -0.8119])\n\n";
+
 const UNBIND_DOC: &std::ffi::CStr = c"\nunbind(input, dim=0) -> seq\n\nRemoves a tensor dimension.\n\nReturns a tuple of all slices along a given dimension, already without it.\n\nArguments:\n    input (Tensor): the tensor to unbind\n    dim (int): dimension to remove\n\nExample::\n\n    >>> torch.unbind(torch.tensor([[1, 2, 3],\n    >>>                            [4, 5, 6],\n    >>>                            [7, 8, 9]]))\n    (tensor([1, 2, 3]), tensor([4, 5, 6]), tensor([7, 8, 9]))\n";
 
 const SELECT_DOC: &std::ffi::CStr = c"\nselect(input, dim, index) -> Tensor\n\nSlices the :attr:`input` tensor along the selected dimension at the given index.\nThis function returns a view of the original tensor with the given dimension removed.\n\n.. note:: If :attr:`input` is a sparse tensor and returning a view of\n          the tensor is not possible, a RuntimeError exception is\n          raised. In this is the case, consider using\n          :func:`torch.select_copy` function.\n\nArgs:\n    input (Tensor): the input tensor.\n    dim (int): the dimension to slice\n    index (int): the index to select with\n\n.. note::\n\n    :meth:`select` is equivalent to slicing. For example,\n    ``tensor.select(0, index)`` is equivalent to ``tensor[index]`` and\n    ``tensor.select(2, index)`` is equivalent to ``tensor[:,:,index]``.\n";
@@ -936,6 +939,7 @@ variable_function_callback!(
 variable_function_callback!(is_conj_callback, is_conj_variable_function);
 variable_function_callback!(is_inference_callback, is_inference_variable_function);
 variable_function_callback!(conj_callback, conj_variable_function);
+variable_function_callback!(imag_callback, imag_variable_function);
 variable_function_callback!(resolve_conj_callback, resolve_conj_variable_function);
 variable_function_callback!(resolve_neg_callback, resolve_neg_variable_function);
 variable_function_callback!(unbind_callback, unbind_variable_function);
@@ -1005,6 +1009,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"conj", conj_callback, CONJ_DOC),
         variable_function_method!(c"resolve_conj", resolve_conj_callback, RESOLVE_CONJ_DOC),
         variable_function_method!(c"resolve_neg", resolve_neg_callback, RESOLVE_NEG_DOC),
+        variable_function_method!(c"imag", imag_callback, IMAG_DOC),
         variable_function_method!(c"unbind", unbind_callback, UNBIND_DOC),
         variable_function_method!(c"select", select_callback, SELECT_DOC),
         variable_function_method!(c"permute", permute_callback, PERMUTE_DOC),

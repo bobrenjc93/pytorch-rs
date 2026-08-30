@@ -1961,6 +1961,21 @@ pub(crate) fn conj_variable_function(
     )
 }
 
+pub(crate) fn imag_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_or_override_argument("imag", args, kwargs)?;
+    dispatch_single_tensor_override(
+        SingleTensorOverrideOperation::IMAG,
+        py,
+        &input,
+        args,
+        kwargs,
+    )
+}
+
 pub(crate) fn resolve_conj_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2288,6 +2303,12 @@ impl SingleTensorOverrideOperation {
         name: "conj",
         qualified_name: "torch.conj",
         apply_native: apply_top_level_lazy_bit_identity,
+    };
+
+    const IMAG: Self = Self {
+        name: "imag",
+        qualified_name: "torch.imag",
+        apply_native: apply_top_level_imag,
     };
 }
 
@@ -3305,6 +3326,14 @@ fn apply_top_level_lazy_bit_identity(
     // conjugation and resolving clear lazy bits are exact identities, without
     // touching storage, metadata, or autograd state.
     Ok(tensor.clone().unbind().into_any())
+}
+
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "single-tensor native callbacks share a fallible signature"
+)]
+fn apply_top_level_imag(_py: Python<'_>, _tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    Err(imag_non_complex_error())
 }
 
 fn ordered_unary_out_overrides<'py>(

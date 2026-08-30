@@ -1,5 +1,8 @@
+import copy
 import inspect
 import json
+import pickle
+import re
 import subprocess
 import sys
 import types
@@ -53,6 +56,8 @@ class TensorImagReferenceTests(unittest.TestCase):
             dtype=module.float32,
             requires_grad=True,
         )
+        with module.no_grad():
+            no_grad_view = leaf.transpose(0, 1)
         return (
             *(scalar_storage[index] for index in range(len(scalar_bits))),
             base,
@@ -65,6 +70,7 @@ class TensorImagReferenceTests(unittest.TestCase):
             ),
             leaf,
             (leaf * 3.0).transpose(0, 1)[1],
+            no_grad_view,
             module.zeros((1, 0, 1, 1, 1, 1), dtype=module.float32),
         )
 
@@ -75,7 +81,7 @@ class TensorImagReferenceTests(unittest.TestCase):
             return error
         self.fail("Tensor.imag unexpectedly accepted the operation")
 
-    def error_read_contract(self, tensor):
+    def error_read_contract(self, tensor, action):
         metadata = (
             tuple(tensor.shape),
             tensor.stride(),
@@ -90,7 +96,7 @@ class TensorImagReferenceTests(unittest.TestCase):
         pointer = tensor.data_ptr()
         alias = tensor.detach()
         bits = np.asarray(alias).reshape(-1).view(np.uint32).copy()
-        errors = [self.error(lambda: tensor.imag) for _ in range(3)]
+        errors = [self.error(lambda: action(tensor)) for _ in range(3)]
         return {
             "errors": tuple((type(error).__name__, str(error)) for error in errors),
             "fresh_errors": len({id(error) for error in errors}) == len(errors),
@@ -120,10 +126,35 @@ class TensorImagReferenceTests(unittest.TestCase):
             zip(actual_cases, expected_cases, strict=True)
         ):
             with self.subTest(case=case, shape=actual.shape, stride=actual.stride()):
-                self.assertEqual(
-                    self.error_read_contract(actual),
-                    self.error_read_contract(expected),
-                )
+                for access, actual_action, expected_action in (
+                    ("property", lambda tensor: tensor.imag, lambda tensor: tensor.imag),
+                    ("top-level", torch.imag, reference_torch.imag),
+                    (
+                        "top-level input",
+                        lambda tensor: torch.imag(input=tensor),
+                        lambda tensor: reference_torch.imag(input=tensor),
+                    ),
+                    (
+                        "top-level x",
+                        lambda tensor: torch.imag(x=tensor),
+                        lambda tensor: reference_torch.imag(x=tensor),
+                    ),
+                    (
+                        "top-level a",
+                        lambda tensor: torch.imag(a=tensor),
+                        lambda tensor: reference_torch.imag(a=tensor),
+                    ),
+                    (
+                        "top-level x1",
+                        lambda tensor: torch.imag(x1=tensor),
+                        lambda tensor: reference_torch.imag(x1=tensor),
+                    ),
+                ):
+                    with self.subTest(access=access):
+                        self.assertEqual(
+                            self.error_read_contract(actual, actual_action),
+                            self.error_read_contract(expected, expected_action),
+                        )
 
     def autograd_contract(self, module):
         leaf = module.tensor(
@@ -143,7 +174,9 @@ class TensorImagReferenceTests(unittest.TestCase):
         )
         errors = (
             self.error(lambda: leaf.imag),
+            self.error(lambda: module.imag(leaf)),
             self.error(lambda: non_leaf.imag),
+            self.error(lambda: module.imag(non_leaf)),
         )
         after = (
             leaf.requires_grad,
@@ -156,14 +189,19 @@ class TensorImagReferenceTests(unittest.TestCase):
         )
         non_leaf.sum().backward()
         gradient = leaf.grad
-        final_error = self.error(lambda: leaf.imag)
+        final_errors = (
+            self.error(lambda: leaf.imag),
+            self.error(lambda: module.imag(leaf)),
+        )
         return {
             "before": before,
             "after": after,
             "errors": tuple((type(error).__name__, str(error)) for error in errors),
             "gradient": np.asarray(gradient).copy(),
             "gradient_identity_preserved": leaf.grad is gradient,
-            "final_error": (type(final_error).__name__, str(final_error)),
+            "final_errors": tuple(
+                (type(error).__name__, str(error)) for error in final_errors
+            ),
         }
 
     def test_autograd_graph_preservation_matches_pytorch_2_13(self):
@@ -242,6 +280,218 @@ class TensorImagReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.descriptor_contract(torch),
             self.descriptor_contract(reference_torch),
+        )
+
+    def top_level_callable_contract(self, module):
+        function = module.imag
+        owner = function.__reduce__()[1][0]
+        wildcard_namespace = {}
+        exec(f"from {module.__name__} import *", wildcard_namespace)
+        try:
+            inspect.signature(function)
+        except Exception as error:
+            signature_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+            )
+        else:
+            signature_error = None
+        return {
+            "type": type(function).__name__,
+            "is_builtin": type(function) is types.BuiltinFunctionType,
+            "name": function.__name__,
+            "qualname": function.__qualname__,
+            "module": function.__module__,
+            "doc": function.__doc__,
+            "text_signature": function.__text_signature__,
+            "repr": re.sub(r"0x[0-9a-f]+", "0x...", repr(function)),
+            "signature_error": signature_error,
+            "owner_name": owner.__name__,
+            "owner_qualname": owner.__qualname__,
+            "owner_module": owner.__module__.replace("torch_rs._C", "torch._C"),
+            "owner_path_identity": owner is module._C._VariableFunctionsClass,
+            "owner_callable_identity": owner.imag is function,
+            "copy_identity": copy.copy(function) is function,
+            "deepcopy_identity": copy.deepcopy(function) is function,
+            "pickle_identities": tuple(
+                pickle.loads(pickle.dumps(function, protocol=protocol)) is function
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+            ),
+            "all_count": module.__all__.count("imag"),
+            "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
+            "owner_not_top_level": not hasattr(module, "_VariableFunctionsClass"),
+            "wildcard_identity": wildcard_namespace["imag"] is function,
+        }
+
+    def test_top_level_callable_contract_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.top_level_callable_contract(torch),
+            self.top_level_callable_contract(reference_torch),
+        )
+
+    def top_level_binding_error_contract(self, module):
+        tensor = module.tensor([1.0], dtype=module.float32)
+        cases = (
+            lambda: module.imag(),
+            lambda: module.imag(tensor, tensor),
+            lambda: module.imag(tensor, input=tensor),
+            lambda: module.imag(tensor, out=tensor),
+            lambda: module.imag(tensor, dtype=module.float32),
+            lambda: module.imag(tensor, device="cpu"),
+            lambda: module.imag(input=tensor),
+            lambda: module.imag(x=tensor),
+            lambda: module.imag(a=tensor),
+            lambda: module.imag(x1=tensor),
+            lambda: module.imag(extra=tensor),
+            lambda: module.imag(1, extra=True),
+            lambda: module.imag(input=[]),
+            lambda: module.imag(a=1),
+            lambda: module.imag(x=[]),
+            lambda: module.imag(x1=None),
+            lambda: module.imag(a=tensor, x=tensor),
+            lambda: module.imag(x=tensor, a=tensor),
+            lambda: module.imag(input=tensor, x1=tensor),
+        )
+        return tuple(
+            (type(error).__name__, str(error)) for error in map(self.error, cases)
+        )
+
+    def test_top_level_binding_error_precedence_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.top_level_binding_error_contract(torch),
+            self.top_level_binding_error_contract(reference_torch),
+        )
+
+    def top_level_mode_dispatch_observation(self, module_name):
+        source = r'''
+import importlib
+import json
+import re
+import sys
+
+module = importlib.import_module(MODULE)
+tensor = module.tensor([1.0], dtype=module.float32)
+marker = object()
+
+class RecordingMode(module.overrides.TorchFunctionMode):
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        self.calls.append((func, types, args, kwargs))
+        return self.result
+
+records = []
+for keyword in (None, "input", "x", "a", "x1"):
+    mode = RecordingMode(marker)
+    with mode:
+        if keyword is None:
+            intercepted = module.imag(tensor)
+        else:
+            intercepted = module.imag(**{keyword: tensor})
+    function, dispatch_types, args, kwargs = mode.calls[0]
+    records.append({
+        "keyword": keyword,
+        "intercepted": intercepted is marker,
+        "call_count": len(mode.calls),
+        "function_identity": function is module.imag,
+        "types": dispatch_types == (),
+        "args": args == ((tensor,) if keyword is None else ()),
+        "kwargs_is_none": kwargs is None,
+        "kwargs_value": None if kwargs is None else list(kwargs.keys()),
+        "kwargs_tensor": kwargs is None or kwargs[keyword] is tensor,
+    })
+
+order = []
+class ForwardingMode(module.overrides.TorchFunctionMode):
+    def __init__(self, label):
+        self.label = label
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        order.append(self.label)
+        return func(*args, **(kwargs or {}))
+
+try:
+    with ForwardingMode("lower"):
+        with ForwardingMode("upper"):
+            module.imag(a=tensor)
+except Exception as error:
+    forwarding_error = [type(error).__name__, str(error)]
+else:
+    forwarding_error = None
+
+sys.setrecursionlimit(80)
+class DecliningMode(module.overrides.TorchFunctionMode):
+    def __init__(self):
+        self.calls = 0
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        self.calls += 1
+        return NotImplemented
+
+lower = RecordingMode(marker)
+upper = DecliningMode()
+try:
+    with lower:
+        with upper:
+            module.imag(tensor)
+except Exception as error:
+    declining_error = [
+        type(error).__name__,
+        re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+    ]
+else:
+    declining_error = None
+
+override_calls = []
+class Override:
+    @classmethod
+    def __torch_function__(cls, func, types, args=(), kwargs=None):
+        override_calls.append((func, types, args, kwargs))
+        return marker
+
+value = Override()
+override_results = []
+for keyword in (None, "input", "x", "a", "x1"):
+    if keyword is None:
+        result = module.imag(value)
+    else:
+        result = module.imag(**{keyword: value})
+    function, dispatch_types, args, kwargs = override_calls[-1]
+    override_results.append({
+        "keyword": keyword,
+        "result": result is marker,
+        "function_identity": function is module.imag,
+        "types": dispatch_types == (Override,),
+        "args": args == ((value,) if keyword is None else ()),
+        "kwargs_value": None if kwargs is None else list(kwargs.keys()),
+        "kwargs_override": kwargs is None or kwargs[keyword] is value,
+    })
+
+print(json.dumps({
+    "records": records,
+    "forwarding_order": order,
+    "forwarding_error": forwarding_error,
+    "declining_error": declining_error,
+    "declining_calls_once": upper.calls == 1,
+    "lower_skipped": len(lower.calls) == 0,
+    "override_results": override_results,
+    "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+}))
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", f"MODULE = {module_name!r}\n" + source],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_top_level_torch_function_mode_semantics_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.top_level_mode_dispatch_observation("torch_rs"),
+            self.top_level_mode_dispatch_observation("torch"),
         )
 
     def mode_dispatch_observation(self, module_name):
@@ -347,7 +597,7 @@ print(json.dumps({
     "forwarding_order": order,
     "forwarding_error": forwarding_error,
     "declining_error": declining_error,
-    "declining_calls": upper.calls,
+    "declining_calls_gt_one": upper.calls > 1,
     "lower_skipped": len(lower.calls) == 0,
     "mutation_calls": mutation_calls,
     "fresh_errors": len({id(error) for error in errors}) == len(errors),
@@ -369,12 +619,14 @@ print(json.dumps({
             self.mode_dispatch_observation("torch"),
         )
 
-    def test_scope_keeps_complex_dtypes_and_top_level_imag_unsupported(self):
+    def test_scope_keeps_complex_dtypes_and_imaginary_views_unsupported(self):
         self.assertTrue(hasattr(torch.Tensor, "imag"))
         self.assertTrue(hasattr(reference_torch.Tensor, "imag"))
-        self.assertFalse(hasattr(torch, "imag"))
+        self.assertTrue(hasattr(torch, "imag"))
         self.assertTrue(hasattr(reference_torch, "imag"))
-        self.assertNotIn("imag", torch.__all__)
+        self.assertEqual(
+            torch.__all__.count("imag"), reference_torch.__all__.count("imag")
+        )
         for name in (
             "complex32",
             "complex64",
