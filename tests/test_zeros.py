@@ -21,10 +21,12 @@ class ZerosTests(unittest.TestCase):
     def test_one_positional_integer_matches_singleton_size(self):
         metadata = (
             {},
+            {"out": None},
             {"dtype": torch.float32},
             {"device": "cpu"},
             {"device": torch.device("cpu")},
             {
+                "out": None,
                 "dtype": torch.float32,
                 "device": torch.device("cpu"),
                 "requires_grad": True,
@@ -36,6 +38,29 @@ class ZerosTests(unittest.TestCase):
                     torch.zeros(2, **keywords),
                     torch.zeros((2,), **keywords),
                 )
+
+    def test_out_none_uses_default_fresh_allocation(self):
+        cases = (
+            ("scalar", lambda keywords: torch.zeros(2, **keywords)),
+            ("tuple", lambda keywords: torch.zeros((2, 3), **keywords)),
+            ("size keyword", lambda keywords: torch.zeros(size=(2,), **keywords)),
+            (
+                "shape alias",
+                lambda keywords: torch.zeros(None, shape=(2,), **keywords),
+            ),
+            (
+                "requires grad",
+                lambda keywords: torch.zeros((2,), requires_grad=True, **keywords),
+            ),
+            ("empty", lambda keywords: torch.zeros((0,), **keywords)),
+        )
+
+        for case, factory in cases:
+            with self.subTest(case=case):
+                baseline = factory({})
+                with_out_none = factory({"out": None})
+                self.assert_tensor_matches(with_out_none, baseline)
+                self.assertFalse(with_out_none.is_set_to(baseline))
 
     def test_one_positional_dimension_uses_the_index_protocol(self):
         class IntSubclass(int):
@@ -164,6 +189,27 @@ class ZerosTests(unittest.TestCase):
         ):
             with self.subTest(call=call):
                 with self.assertRaises(TypeError):
+                    call()
+
+    def test_out_tensor_layout_and_pin_memory_remain_unsupported(self):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            re.escape("zeros(): the 'out' argument is not supported"),
+        ):
+            torch.zeros(2, out=torch.zeros(2))
+
+        for call, message in (
+            (
+                lambda: torch.zeros(2, layout=torch.strided, out=None),
+                "zeros() got an unexpected keyword argument 'layout'",
+            ),
+            (
+                lambda: torch.zeros(2, pin_memory=False, out=None),
+                "zeros() got an unexpected keyword argument 'pin_memory'",
+            ),
+        ):
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
                     call()
 
 

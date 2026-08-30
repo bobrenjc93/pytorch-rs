@@ -4195,6 +4195,7 @@ struct CreationCallArguments<'py> {
     size: Option<Bound<'py, PyAny>>,
     size_origin: Option<CreationSizeOrigin>,
     shape: Option<Bound<'py, PyAny>>,
+    out: Option<Bound<'py, PyAny>>,
     dtype: Option<Bound<'py, PyAny>>,
     device: Option<Bound<'py, PyAny>>,
     requires_grad: Option<Bound<'py, PyAny>>,
@@ -5241,7 +5242,7 @@ fn flatten(
 
 #[pyfunction(
     signature = (*args, **kwargs),
-    text_signature = "(size=None, *, shape=None, dtype=None, device=None, requires_grad=False)"
+    text_signature = "(size=None, *, shape=None, out=None, dtype=None, device=None, requires_grad=False)"
 )]
 fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("zeros", args, kwargs)?;
@@ -5257,7 +5258,7 @@ fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
 
 #[pyfunction(
     signature = (*args, **kwargs),
-    text_signature = "(size=None, *, shape=None, dtype=None, device=None, requires_grad=False)"
+    text_signature = "(size=None, *, shape=None, out=None, dtype=None, device=None, requires_grad=False)"
 )]
 fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("ones", args, kwargs)?;
@@ -5903,6 +5904,7 @@ fn bind_creation_arguments<'py>(
         size_origin: size.as_ref().map(|_| CreationSizeOrigin::Positional),
         size,
         shape: None,
+        out: None,
         dtype: None,
         device: None,
         requires_grad: None,
@@ -5931,6 +5933,7 @@ fn bind_creation_arguments<'py>(
                 }
             }
             "shape" => arguments.shape = optional_call_argument(value),
+            "out" => arguments.out = optional_call_argument(value),
             "dtype" => arguments.dtype = optional_call_argument(value),
             "device" => arguments.device = optional_call_argument(value),
             "requires_grad" => arguments.requires_grad = optional_call_argument(value),
@@ -5948,6 +5951,20 @@ fn bind_creation_arguments<'py>(
 
 fn optional_call_argument(value: Bound<'_, PyAny>) -> Option<Bound<'_, PyAny>> {
     if value.is_none() { None } else { Some(value) }
+}
+
+fn validate_creation_out(function: &str, out: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+    let Some(out) = out else {
+        return Ok(false);
+    };
+    if out.cast::<PyTensor>().is_ok() {
+        return Ok(true);
+    }
+
+    let actual = python_type_name(out)?;
+    Err(PyTypeError::new_err(format!(
+        "{function}(): argument 'out' must be Tensor, not {actual}"
+    )))
 }
 
 fn bind_arange_arguments<'py>(
@@ -6580,6 +6597,7 @@ fn parse_creation_arguments(
         size,
         size_origin,
         shape,
+        out,
         dtype,
         device,
         requires_grad,
@@ -6590,6 +6608,7 @@ fn parse_creation_arguments(
     // duplicate or unknown keywords, converts an accepted scalar dimension,
     // and only then resolves a valid device specification.
     let size = parse_creation_size(function, size.as_ref(), size_origin, shape.as_ref())?;
+    let has_out = validate_creation_out(function, out.as_ref())?;
     let dtype = parse_dtype(function, dtype.as_ref())?;
     validate_device_argument_type(function, device.as_ref())?;
     let requires_grad = parse_factory_requires_grad(function, requires_grad.as_ref())?;
@@ -6598,6 +6617,11 @@ fn parse_creation_arguments(
     }
     let size = finish_creation_size(function, size)?;
     let device = parse_device(function, device.as_ref())?;
+    if has_out {
+        return Err(PyRuntimeError::new_err(format!(
+            "{function}(): the 'out' argument is not supported"
+        )));
+    }
     Ok((size, dtype, device, requires_grad))
 }
 
@@ -6727,7 +6751,7 @@ fn parse_creation_size<'py>(
         (None, Some(value)) => (value, CreationSizeOrigin::ShapeKeyword),
         (None, None) => {
             return Err(PyTypeError::new_err(format!(
-                "{function}() missing required argument 'size'"
+                "{function}() missing 1 required positional arguments: \"size\""
             )));
         }
     };
