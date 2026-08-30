@@ -35,6 +35,49 @@ SUPPORTED_SURFACE_INDEX_SUMMARIES = (
     "eager JIT helper decorators and state queries",
     "Explicit unsupported APIs",
 )
+SUPPORTED_SURFACE_COMMON_CALL_ROWS = (
+    (
+        "Construction",
+        ("`torch.tensor`", "`torch.as_tensor`", "`torch.zeros`"),
+        ("[Creation](#creation)",),
+    ),
+    (
+        "Views and layout",
+        ("`view`", "`reshape`", "`permute`", "`contiguous`"),
+        ("[Metadata and views](#metadata-and-views)",),
+    ),
+    (
+        "Math",
+        ("arithmetic operators", "`torch.matmul`", "`torch.sum`"),
+        ("[Elementwise and reductions](#elementwise-and-reductions)",),
+    ),
+    (
+        "NN functional",
+        ("`torch.nn.functional.linear`", "`dropout*`", "`softsign`"),
+        (
+            "[NN/data helpers](#nn-and-data-helpers)",
+            "[math activations](#elementwise-and-reductions)",
+        ),
+    ),
+    (
+        "Dtype/device metadata",
+        ("`torch.float32`", "`torch.finfo`", "`torch.get_device`"),
+        (
+            "[tensor metadata](#metadata-and-views)",
+            "[backend metadata](#backend-and-compiler-metadata)",
+        ),
+    ),
+    (
+        "Compiler helpers",
+        ("`torch.compiler.disable`", "guard filters", "eager JIT decorators/state"),
+        ("[Backend and compiler metadata](#backend-and-compiler-metadata)",),
+    ),
+    (
+        "Backend capabilities",
+        ("`torch.cpu`", "`torch.accelerator`", "`torch.backends.*`"),
+        ("[Backend and compiler metadata](#backend-and-compiler-metadata)",),
+    ),
+)
 
 
 class ReadmeQuickstartTests(unittest.TestCase):
@@ -134,15 +177,49 @@ class ReadmeQuickstartTests(unittest.TestCase):
         readme = README.read_text(encoding="utf-8")
         route = "docs/supported-surface.md"
         self.assertRegex(readme, rf"\[[^\]]+\]\({re.escape(route)}\)")
+        scope_match = re.search(
+            r"^## Scope\n(?P<section>.*?)^## Evaluation$",
+            readme,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(scope_match, "README scope section is missing")
+        scope = scope_match.group("section")
+        self.assertIn(
+            "[exhaustive supported surface](docs/supported-surface.md)", scope
+        )
+        self.assertNotRegex(scope, r"docs/supported-surface\.md#")
         self.assertTrue(SUPPORTED_SURFACE.is_file())
 
         supported = SUPPORTED_SURFACE.read_text(encoding="utf-8")
+        self.assertIn("## Common calls quick index", supported)
         self.assertIn("## Category index", supported)
         self.assertIn("## Current baseline", supported)
+        self.assertLess(
+            supported.index("## Common calls quick index"),
+            supported.index("## Category index"),
+        )
         self.assertLess(
             supported.index("## Category index"),
             supported.index("## Current baseline"),
         )
+
+        common_calls_index = supported[
+            supported.index("## Common calls quick index") : supported.index(
+                "## Category index"
+            )
+        ]
+        self.assertIn(
+            "| Need | Common calls | Contract section |",
+            common_calls_index,
+        )
+        self.assertIn("| --- | --- | --- |", common_calls_index)
+        for label, calls, links in SUPPORTED_SURFACE_COMMON_CALL_ROWS:
+            with self.subTest(common_call_row=label):
+                self.assertIn(f"| {label} |", common_calls_index)
+                for call in calls:
+                    self.assertIn(call, common_calls_index)
+                for link in links:
+                    self.assertIn(link, common_calls_index)
 
         category_index = supported[
             supported.index("## Category index") : supported.index(
