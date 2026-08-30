@@ -1946,6 +1946,21 @@ pub(crate) fn is_inference_variable_function(
     dispatch_is_inference(py, &input, args, kwargs)
 }
 
+pub(crate) fn conj_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_or_override_argument("conj", args, kwargs)?;
+    dispatch_single_tensor_override(
+        SingleTensorOverrideOperation::CONJ,
+        py,
+        &input,
+        args,
+        kwargs,
+    )
+}
+
 pub(crate) fn resolve_conj_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2260,13 +2275,19 @@ impl SingleTensorOverrideOperation {
     const RESOLVE_CONJ: Self = Self {
         name: "resolve_conj",
         qualified_name: "torch.resolve_conj",
-        apply_native: apply_top_level_resolve_identity,
+        apply_native: apply_top_level_lazy_bit_identity,
     };
 
     const RESOLVE_NEG: Self = Self {
         name: "resolve_neg",
         qualified_name: "torch.resolve_neg",
-        apply_native: apply_top_level_resolve_identity,
+        apply_native: apply_top_level_lazy_bit_identity,
+    };
+
+    const CONJ: Self = Self {
+        name: "conj",
+        qualified_name: "torch.conj",
+        apply_native: apply_top_level_lazy_bit_identity,
     };
 }
 
@@ -3276,12 +3297,12 @@ fn apply_top_level_detach(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyRes
     clippy::unnecessary_wraps,
     reason = "single-tensor native callbacks share a fallible signature"
 )]
-fn apply_top_level_resolve_identity(
+fn apply_top_level_lazy_bit_identity(
     _py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
 ) -> PyResult<Py<PyAny>> {
-    // Native tensors expose neither conjugate nor lazy-negative views, so both
-    // resolver bits are always clear. Return the exact receiver without
+    // Native tensors expose neither complex storage nor lazy view bits. Real
+    // conjugation and resolving clear lazy bits are exact identities, without
     // touching storage, metadata, or autograd state.
     Ok(tensor.clone().unbind().into_any())
 }
