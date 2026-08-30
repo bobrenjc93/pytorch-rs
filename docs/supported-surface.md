@@ -587,10 +587,10 @@ addition, subtraction, multiplication through `*`, `Tensor.mul()`,
 exact Python `bool` results for exact native CPU float32 tensor operands after
 PyTorch-compatible broadcasting. Supported coverage includes scalar, empty,
 same-shape, broadcasted, offset, and non-contiguous operands, signed-zero,
-NaN/`equal_nan`, infinity, tolerance edge cases, import, wildcard, copy,
-pickle, reload, and no-mutation behavior. Unsupported operands, tensor
-subclasses, non-float32 or non-CPU tensor metadata, `out`, `torch.isclose`, and
-bool tensor dtype remain outside the exposed surface.
+NaN/`equal_nan`, infinity, float32 tolerance rounding edge cases, import,
+wildcard, copy, pickle, reload, and no-mutation behavior. Unsupported operands,
+tensor subclasses, non-float32 or non-CPU tensor metadata, `out`,
+`torch.isclose`, and bool tensor dtype remain outside the exposed surface.
 
 Top-level `torch.neg()` and `torch.negative()` share the same layout-preserving
 float32 CPU negation and autograd path while remaining distinct builtins; their

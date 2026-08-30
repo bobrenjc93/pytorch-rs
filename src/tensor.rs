@@ -572,7 +572,7 @@ fn contiguous_values_equal(left: &[f32], right: &[f32]) -> bool {
         .all(|(left, right)| left == right)
 }
 
-#[allow(clippy::float_cmp)]
+#[allow(clippy::cast_possible_truncation, clippy::float_cmp)]
 fn allclose_values(left: f32, right: f32, rtol: f64, atol: f64, equal_nan: bool) -> bool {
     if left == right {
         return true;
@@ -584,7 +584,9 @@ fn allclose_values(left: f32, right: f32, rtol: f64, atol: f64, equal_nan: bool)
         return false;
     }
 
-    (f64::from(left) - f64::from(right)).abs() <= atol + rtol * f64::from(right).abs()
+    let rtol = rtol as f32;
+    let atol = atol as f32;
+    (left - right).abs() <= atol + rtol * right.abs()
 }
 
 impl Tensor {

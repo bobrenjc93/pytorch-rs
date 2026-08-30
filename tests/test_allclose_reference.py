@@ -173,6 +173,16 @@ class AllCloseReferenceTests(unittest.TestCase):
                 [1.11],
                 {"rtol": 0.2, "atol": 0},
             ),
+            (
+                [float(np.float32(0.001))],
+                [0.0],
+                {"rtol": 0.0, "atol": 0.001},
+            ),
+            (
+                [float(np.float32(1.0e-45))],
+                [0.0],
+                {"rtol": 0.0, "atol": 1.0e-45},
+            ),
         )
         for case, (left_values, right_values, kwargs) in enumerate(cases):
             with self.subTest(case=case):

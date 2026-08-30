@@ -189,6 +189,20 @@ class AllCloseTests(unittest.TestCase):
                 {"rtol": 0.2, "atol": 0},
                 True,
             ),
+            (
+                "float32 absolute tolerance boundary",
+                torch.tensor([float(np.float32(0.001))]),
+                torch.tensor([0.0]),
+                {"rtol": 0.0, "atol": 0.001},
+                True,
+            ),
+            (
+                "float32 subnormal tolerance boundary",
+                torch.tensor([float(np.float32(1.0e-45))]),
+                torch.tensor([0.0]),
+                {"rtol": 0.0, "atol": 1.0e-45},
+                True,
+            ),
         )
         for case, left, right, kwargs, expected in cases:
             with self.subTest(case=case):
