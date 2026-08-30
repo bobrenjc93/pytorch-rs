@@ -321,6 +321,8 @@ assert limits.dtype == "float32" and limits.bits == 32
 assert torch.can_cast(from_=torch.float, to=torch.float32) is True
 assert torch.promote_types(type1=torch.float, type2=torch.float32) is torch.float32
 assert torch.broadcast_shapes((2,), [3, 1]) == torch.Size([3, 2])
+assert torch.allclose(x, x + 1.0e-6) is True
+assert x.allclose(x + 1.0e-4) is False
 assert x.dense_dim() == x.ndim
 assert torch.numel(x) == x.numel() == x.nelement() == 4
 assert x.dim() == x.ndimension() == 2
@@ -568,7 +570,8 @@ requests remain unsupported.
 #### Elementwise and reductions
 
 The eager math surface includes independent deep cloning, exact `Tensor.equal()`
-and `torch.equal()` comparison, identity `Tensor.positive()`/
+and `torch.equal()` comparison, approximate `Tensor.allclose()` and
+`torch.allclose()` comparison, identity `Tensor.positive()`/
 `torch.positive()` and unary `+`, unary `-`, `Tensor.neg()`, its
 `Tensor.negative()` alias, `torch.neg()`, and the distinct top-level
 `torch.negative()` builtin. It supports broadcast tensor and real-scalar
@@ -578,6 +581,16 @@ addition, subtraction, multiplication through `*`, `Tensor.mul()`,
 `Tensor.sum(dim=None)`, `torch.sum(input, dim=None, *, dtype=None)`, `Tensor.relu()`,
 `torch.relu()`, and rank-2 matrix multiplication through `@`,
 `Tensor.matmul()`, and `torch.matmul()`.
+
+`Tensor.allclose(other, rtol=1e-05, atol=1e-08, equal_nan=False)` and top-level
+`torch.allclose(input, other, rtol=1e-05, atol=1e-08, equal_nan=False)` return
+exact Python `bool` results for exact native CPU float32 tensor operands after
+PyTorch-compatible broadcasting. Supported coverage includes scalar, empty,
+same-shape, broadcasted, offset, and non-contiguous operands, signed-zero,
+NaN/`equal_nan`, infinity, tolerance edge cases, import, wildcard, copy,
+pickle, reload, and no-mutation behavior. Unsupported operands, tensor
+subclasses, non-float32 or non-CPU tensor metadata, `out`, `torch.isclose`, and
+bool tensor dtype remain outside the exposed surface.
 
 Top-level `torch.neg()` and `torch.negative()` share the same layout-preserving
 float32 CPU negation and autograd path while remaining distinct builtins; their

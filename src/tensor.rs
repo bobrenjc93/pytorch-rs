@@ -572,6 +572,21 @@ fn contiguous_values_equal(left: &[f32], right: &[f32]) -> bool {
         .all(|(left, right)| left == right)
 }
 
+#[allow(clippy::float_cmp)]
+fn allclose_values(left: f32, right: f32, rtol: f64, atol: f64, equal_nan: bool) -> bool {
+    if left == right {
+        return true;
+    }
+    if left.is_nan() || right.is_nan() {
+        return equal_nan && left.is_nan() && right.is_nan();
+    }
+    if left.is_infinite() || right.is_infinite() {
+        return false;
+    }
+
+    (f64::from(left) - f64::from(right)).abs() <= atol + rtol * f64::from(right).abs()
+}
+
 impl Tensor {
     /// Creates a tensor after validating that `shape` describes `data`.
     ///
@@ -849,6 +864,85 @@ impl Tensor {
             && self.shape() == other.shape()
             && self.stride() == other.stride()
             && self.shares_storage_with(other)
+    }
+
+    /// Reports whether two CPU `float32` tensors are elementwise close after broadcasting.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the input shapes are not broadcastable or when
+    /// broadcast metadata overflows native tensor limits.
+    pub fn allclose(
+        &self,
+        other: &Self,
+        rtol: f64,
+        atol: f64,
+        equal_nan: bool,
+    ) -> Result<bool, TensorError> {
+        let plan = BroadcastPlan::new(self, other)?;
+        if plan.elements == 0 {
+            return Ok(true);
+        }
+
+        let left_values = self.storage.owned_values();
+        let right_values = other.storage.owned_values();
+        let mut left_offset = self.offset;
+        let mut right_offset = other.offset;
+        let mut coordinates = try_result_vector(plan.shape.len(), plan.elements)?;
+        coordinates.resize(plan.shape.len(), 0_usize);
+        for output_index in 0..plan.elements {
+            let left = if let Some(values) = left_values {
+                values
+                    .get(left_offset)
+                    .copied()
+                    .ok_or(TensorError::IndexCalculationOverflow)?
+            } else {
+                self.storage
+                    .value(left_offset)
+                    .ok_or(TensorError::IndexCalculationOverflow)?
+            };
+            let right = if let Some(values) = right_values {
+                values
+                    .get(right_offset)
+                    .copied()
+                    .ok_or(TensorError::IndexCalculationOverflow)?
+            } else {
+                other
+                    .storage
+                    .value(right_offset)
+                    .ok_or(TensorError::IndexCalculationOverflow)?
+            };
+            if !allclose_values(left, right, rtol, atol, equal_nan) {
+                return Ok(false);
+            }
+            if output_index + 1 == plan.elements {
+                break;
+            }
+
+            for axis in (0..plan.shape.len()).rev() {
+                coordinates[axis] = coordinates[axis]
+                    .checked_add(1)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+                if coordinates[axis] < plan.shape[axis] {
+                    left_offset = left_offset
+                        .checked_add(plan.dimensions[axis].left_step)
+                        .ok_or(TensorError::StrideCalculationOverflow)?;
+                    right_offset = right_offset
+                        .checked_add(plan.dimensions[axis].right_step)
+                        .ok_or(TensorError::StrideCalculationOverflow)?;
+                    break;
+                }
+
+                coordinates[axis] = 0;
+                left_offset = left_offset
+                    .checked_sub(plan.dimensions[axis].left_rewind)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+                right_offset = right_offset
+                    .checked_sub(plan.dimensions[axis].right_rewind)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+            }
+        }
+        Ok(true)
     }
 
     /// Returns the scalar type physically represented by this tensor's storage.

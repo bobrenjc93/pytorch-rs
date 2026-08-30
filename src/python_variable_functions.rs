@@ -16,8 +16,8 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
     abs_variable_function, absolute_variable_function, adjoint_variable_function,
-    arange_variable_function, as_tensor_variable_function, atleast_1d_variable_function,
-    atleast_2d_variable_function, atleast_3d_variable_function,
+    allclose_variable_function, arange_variable_function, as_tensor_variable_function,
+    atleast_1d_variable_function, atleast_2d_variable_function, atleast_3d_variable_function,
     broadcast_tensors_variable_function, can_cast_variable_function, ceil_variable_function,
     conj_variable_function, detach_variable_function, exp_variable_function, fix_variable_function,
     floor_variable_function, get_device_variable_function, imag_variable_function,
@@ -35,7 +35,7 @@ use crate::python::{
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 48] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 49] = [
     "get_device",
     "as_tensor",
     "scalar_tensor",
@@ -44,6 +44,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 48] = [
     "atleast_2d",
     "atleast_3d",
     "broadcast_tensors",
+    "allclose",
     "abs",
     "absolute",
     "adjoint",
@@ -85,6 +86,38 @@ const VARIABLE_FUNCTION_NAMES: [&str; 48] = [
     "can_cast",
     "promote_types",
 ];
+
+const ALLCLOSE_DOC: &std::ffi::CStr = cr"
+allclose(input: Tensor, other: Tensor, rtol: float = 1e-05, atol: float = 1e-08, equal_nan: bool = False) -> bool
+
+This function checks if all :attr:`input` and :attr:`other` satisfy the
+condition:
+
+.. math::
+    \lvert \text{input}_i - \text{other}_i \rvert \leq \text{atol} + \text{rtol} \times \lvert \text{other}_i \rvert
+
+elementwise, for all elements of :attr:`input` and :attr:`other`. The behaviour
+of this function is analogous to :func:`numpy.allclose`
+
+Args:
+    input (Tensor): first tensor to compare
+    other (Tensor): second tensor to compare
+    atol (float, optional): absolute tolerance. Default: 1e-08
+    rtol (float, optional): relative tolerance. Default: 1e-05
+    equal_nan (bool, optional): if ``True``, then two ``NaN`` s will be
+        considered equal. Default: ``False``
+
+Example::
+
+    >>> torch.allclose(torch.tensor([10000., 1e-07]), torch.tensor([10000.1, 1e-08]))
+    False
+    >>> torch.allclose(torch.tensor([10000., 1e-08]), torch.tensor([10000.1, 1e-09]))
+    True
+    >>> torch.allclose(torch.tensor([1.0, float('nan')]), torch.tensor([1.0, float('nan')]))
+    False
+    >>> torch.allclose(torch.tensor([1.0, float('nan')]), torch.tensor([1.0, float('nan')]), equal_nan=True)
+    True
+";
 
 const ADJOINT_DOC: &std::ffi::CStr = cr"
 adjoint(input: Tensor) -> Tensor
@@ -962,6 +995,7 @@ variable_function_callback!(
     broadcast_tensors_callback,
     broadcast_tensors_variable_function
 );
+variable_function_callback!(allclose_callback, allclose_variable_function);
 variable_function_callback!(abs_callback, abs_variable_function);
 variable_function_callback!(absolute_callback, absolute_variable_function);
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
@@ -1038,6 +1072,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"atleast_2d", atleast_2d_callback, c""),
         variable_function_method!(c"atleast_3d", atleast_3d_callback, c""),
         variable_function_method!(c"broadcast_tensors", broadcast_tensors_callback, c""),
+        variable_function_method!(c"allclose", allclose_callback, ALLCLOSE_DOC),
         variable_function_method!(c"abs", abs_callback, ABS_DOC),
         variable_function_method!(c"absolute", absolute_callback, ABSOLUTE_DOC),
         variable_function_method!(c"adjoint", adjoint_callback, ADJOINT_DOC),
