@@ -116,6 +116,64 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ("same operand", same, same),
         )
 
+    def make_same_shape_contiguous_cases(self, module):
+        edge_input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        edge_target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+            ],
+            dtype=np.uint32,
+        )
+        bandwidth_input = np.linspace(-3.0, 5.0, 1 << 20, dtype=np.float32)
+        bandwidth_target = np.linspace(4.0, -2.0, 1 << 20, dtype=np.float32)
+
+        return (
+            (
+                "scalar",
+                self.tensor(module, -0.0),
+                self.tensor(module, 2.5),
+            ),
+            (
+                "empty",
+                module.zeros((0, 1024), dtype=module.float32),
+                module.ones((0, 1024), dtype=module.float32),
+            ),
+            (
+                "small",
+                self.tensor(module, [[1.0, -2.0, 3.5], [-0.0, 5.0, -6.5]]),
+                self.tensor(module, [[0.25, 4.0, -3.5], [0.0, -7.0, 8.5]]),
+            ),
+            (
+                "signed-zero-nan-infinity",
+                module.tensor(memoryview(edge_input_bits.view(np.float32))).view(2, 4),
+                module.tensor(memoryview(edge_target_bits.view(np.float32))).view(2, 4),
+            ),
+            (
+                "bandwidth-sized",
+                module.tensor(memoryview(bandwidth_input)),
+                module.tensor(memoryview(bandwidth_target)),
+            ),
+        )
+
     def make_broadcast_cases(self, module):
         scalar = self.tensor(module, -0.0)
         offset_scalar = self.tensor(module, [17.0, 0.5])[1]
@@ -342,6 +400,40 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
                 )
+
+    def test_same_shape_contiguous_cases_match_pytorch_2_13(self):
+        actual_cases = self.make_same_shape_contiguous_cases(torch)
+        expected_cases = self.make_same_shape_contiguous_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            self.assertTrue(actual_input.is_contiguous())
+            self.assertTrue(actual_target.is_contiguous())
+            self.assertTrue(expected_input.is_contiguous())
+            self.assertTrue(expected_target.is_contiguous())
+
+            actual = functional.mse_loss(
+                actual_input,
+                actual_target,
+                reduction="none",
+            )
+            expected = reference_functional.mse_loss(
+                expected_input,
+                expected_target,
+                reduction="none",
+            )
+
+            self.assert_matches(actual, expected, case=case)
+            with self.subTest(case=case, storage=True):
+                self.assertFalse(actual.is_set_to(actual_input))
+                self.assertFalse(actual.is_set_to(actual_target))
+                self.assertFalse(expected.is_set_to(expected_input))
+                self.assertFalse(expected.is_set_to(expected_target))
 
     def test_broadcasted_outputs_strides_warnings_storage_and_nonmutation_match(self):
         actual_cases = self.make_broadcast_cases(torch)
