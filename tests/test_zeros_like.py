@@ -16,8 +16,8 @@ FUNCTION_DOC_PREFIX = (
 )
 
 UNSUPPORTED_INPUT = (
-    "zeros_like(): only exact native CPU float32 row-major contiguous Tensor "
-    "inputs are supported"
+    "zeros_like(): only exact native CPU float32 contiguous Tensor inputs are "
+    "supported"
 )
 
 
@@ -43,10 +43,18 @@ class ZerosLikeTests(unittest.TestCase):
         base = torch.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=torch.float32
         )
+        singleton_strided_contiguous = torch.ones(
+            (1, 3), dtype=torch.float32
+        ).transpose(0, 1)
+        empty_strided_contiguous = torch.zeros(
+            (2, 0, 3), dtype=torch.float32
+        ).transpose(0, 1)
         return (
             ("scalar", torch.tensor(-3.5, dtype=torch.float32)),
             ("empty vector", torch.zeros((0,), dtype=torch.float32)),
             ("empty multidimensional", torch.zeros((2, 0, 3), dtype=torch.float32)),
+            ("singleton strided contiguous", singleton_strided_contiguous),
+            ("empty strided contiguous", empty_strided_contiguous),
             ("matrix", base),
             ("offset row", base[1]),
             (
@@ -86,12 +94,55 @@ class ZerosLikeTests(unittest.TestCase):
                         device=torch.device("cpu"),
                         requires_grad=options.get("requires_grad") is True,
                     )
+                    expected_contract = list(self.tensor_contract(expected))
+                    if options.get("memory_format") != torch.contiguous_format:
+                        expected_contract[2] = source.stride()
                     self.assertEqual(
-                        self.tensor_contract(output), self.tensor_contract(expected)
+                        self.tensor_contract(output), tuple(expected_contract)
                     )
                     self.assertFalse(output.is_set_to(source))
                     if source.numel() != 0:
                         self.assertNotEqual(output.data_ptr(), source.data_ptr())
+
+    def test_preserve_and_contiguous_memory_formats_handle_strided_inputs(self):
+        singleton = torch.ones((1, 3), dtype=torch.float32).transpose(0, 1)
+        empty = torch.zeros((2, 0, 3), dtype=torch.float32).transpose(0, 1)
+        noncontiguous = torch.ones((2, 3), dtype=torch.float32).transpose(0, 1)
+
+        self.assertEqual(singleton.shape, (3, 1))
+        self.assertEqual(singleton.stride(), (1, 3))
+        self.assertTrue(singleton.is_contiguous())
+        self.assertEqual(empty.shape, (0, 2, 3))
+        self.assertEqual(empty.stride(), (3, 3, 1))
+        self.assertTrue(empty.is_contiguous())
+        self.assertEqual(noncontiguous.shape, (3, 2))
+        self.assertEqual(noncontiguous.stride(), (1, 3))
+        self.assertFalse(noncontiguous.is_contiguous())
+
+        for source in (singleton, empty):
+            with self.subTest(source=source.shape, memory_format="preserve"):
+                output = torch.zeros_like(source)
+                self.assertEqual(output.shape, source.shape)
+                self.assertEqual(output.stride(), source.stride())
+                self.assertTrue(output.is_contiguous())
+                self.assertEqual(output.tolist(), torch.zeros(source.shape).tolist())
+                self.assertFalse(output.is_set_to(source))
+
+            with self.subTest(source=source.shape, memory_format="contiguous"):
+                output = torch.zeros_like(
+                    source, memory_format=torch.contiguous_format
+                )
+                expected = torch.zeros(source.shape)
+                self.assertEqual(
+                    self.tensor_contract(output), self.tensor_contract(expected)
+                )
+                self.assertFalse(output.is_set_to(source))
+
+        packed = torch.zeros_like(noncontiguous, memory_format=torch.contiguous_format)
+        expected = torch.zeros(noncontiguous.shape)
+        self.assertEqual(self.tensor_contract(packed), self.tensor_contract(expected))
+        self.assertFalse(packed.is_set_to(noncontiguous))
+        self.assertNotEqual(packed.data_ptr(), noncontiguous.data_ptr())
 
     def test_fresh_storage_and_no_input_autograd_edge(self):
         leaf = torch.ones((2, 3), dtype=torch.float32, requires_grad=True)
@@ -190,6 +241,13 @@ class ZerosLikeTests(unittest.TestCase):
             ),
             (
                 lambda: torch.zeros_like(source.transpose(0, 1)),
+                NotImplementedError,
+                UNSUPPORTED_INPUT,
+            ),
+            (
+                lambda: torch.zeros_like(
+                    source.transpose(0, 1), memory_format=torch.preserve_format
+                ),
                 NotImplementedError,
                 UNSUPPORTED_INPUT,
             ),

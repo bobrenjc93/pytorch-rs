@@ -621,6 +621,24 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn zeros_with_strides(
+        shape: impl Into<Vec<usize>>,
+        strides: impl Into<Vec<usize>>,
+        dtype: DType,
+        device: Device,
+    ) -> Result<Self, TensorError> {
+        let shape = shape.into();
+        let strides = strides.into();
+        if strides.len() != shape.len() {
+            return Err(TensorError::StrideCalculationOverflow);
+        }
+        let elements = element_count(&shape)?;
+        validate_view_bounds(&shape, &strides, 0, elements, elements)?;
+        let data = filled_storage(elements, 0.0)?;
+        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+    }
+
     /// Creates a one-filled tensor.
     ///
     /// # Errors
@@ -1464,11 +1482,6 @@ impl Tensor {
                 layout_is_channels_last_3d_contiguous(&self.shape, &self.strides)
             }
         }
-    }
-
-    #[cfg(feature = "python-bindings")]
-    pub(crate) fn has_canonical_contiguous_strides(&self) -> Result<bool, TensorError> {
-        contiguous_strides(&self.shape, self.elements).map(|strides| self.strides == strides)
     }
 
     /// Returns whether every logical value occupies a distinct element in one

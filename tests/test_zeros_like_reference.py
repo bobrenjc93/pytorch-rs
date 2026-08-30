@@ -44,6 +44,12 @@ class ZerosLikeReferenceTests(unittest.TestCase):
         base = module.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=module.float32
         )
+        singleton_strided_contiguous = module.ones(
+            (1, 3), dtype=module.float32
+        ).transpose(0, 1)
+        empty_strided_contiguous = module.zeros(
+            (2, 0, 3), dtype=module.float32
+        ).transpose(0, 1)
         return (
             ("scalar", module.tensor(-3.5, dtype=module.float32)),
             ("empty vector", module.zeros((0,), dtype=module.float32)),
@@ -51,6 +57,8 @@ class ZerosLikeReferenceTests(unittest.TestCase):
                 "empty multidimensional",
                 module.zeros((2, 0, 3), dtype=module.float32),
             ),
+            ("singleton strided contiguous", singleton_strided_contiguous),
+            ("empty strided contiguous", empty_strided_contiguous),
             ("matrix", base),
             ("offset row", base[1]),
             (
@@ -108,6 +116,29 @@ class ZerosLikeReferenceTests(unittest.TestCase):
                             expected.data_ptr() == expected_input.data_ptr(),
                         )
                         self.assertNotEqual(actual.data_ptr(), actual_input.data_ptr())
+
+    def test_contiguous_format_on_noncontiguous_input_matches_pytorch_2_13(self):
+        actual_input = torch.ones((2, 3), dtype=torch.float32).transpose(0, 1)
+        expected_input = reference_torch.ones(
+            (2, 3), dtype=reference_torch.float32
+        ).transpose(0, 1)
+
+        self.assertFalse(actual_input.is_contiguous())
+        self.assertFalse(expected_input.is_contiguous())
+
+        actual = torch.zeros_like(
+            actual_input, memory_format=torch.contiguous_format
+        )
+        expected = reference_torch.zeros_like(
+            expected_input, memory_format=reference_torch.contiguous_format
+        )
+        self.assertEqual(
+            self.tensor_contract(torch, actual),
+            self.tensor_contract(reference_torch, expected),
+        )
+        self.assertEqual(actual.is_set_to(actual_input), expected.is_set_to(expected_input))
+        self.assertFalse(actual.is_set_to(actual_input))
+        self.assertNotEqual(actual.data_ptr(), actual_input.data_ptr())
 
     def test_no_grad_and_fresh_storage_match_pytorch_2_13(self):
         def observe(module):

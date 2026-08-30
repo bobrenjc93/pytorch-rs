@@ -1639,23 +1639,31 @@ pub(crate) fn zeros_like_variable_function(
     }
 
     let input_tensor = input.value.cast::<PyTensor>()?.try_borrow()?;
-    if input_tensor.inner.dtype() != DType::Float32
-        || input_tensor.inner.device() != Device::Cpu
-        || !input_tensor
-            .inner
-            .has_canonical_contiguous_strides()
-            .map_err(|error| tensor_error(&error))?
-    {
+    if input_tensor.inner.dtype() != DType::Float32 || input_tensor.inner.device() != Device::Cpu {
+        return Err(zeros_like_unsupported_input_error());
+    }
+    if memory_format == MemoryFormat::Preserve && !input_tensor.inner.is_contiguous() {
         return Err(zeros_like_unsupported_input_error());
     }
 
-    let output = CoreTensor::zeros_with_metadata(
-        input_tensor.inner.shape().to_vec(),
-        DType::Float32,
-        Device::Cpu,
-    )
-    .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-    .map_err(|error| tensor_error(&error))?;
+    let shape = input_tensor.inner.shape().to_vec();
+    let inner = match memory_format {
+        MemoryFormat::Preserve => CoreTensor::zeros_with_strides(
+            shape,
+            input_tensor.inner.stride().to_vec(),
+            DType::Float32,
+            Device::Cpu,
+        ),
+        MemoryFormat::Contiguous => {
+            CoreTensor::zeros_with_metadata(shape, DType::Float32, Device::Cpu)
+        }
+        MemoryFormat::ChannelsLast | MemoryFormat::ChannelsLast3d => {
+            unreachable!("unsupported zeros_like memory formats are rejected before allocation")
+        }
+    };
+    let output = inner
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
+        .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, output)?.into_any())
 }
 
@@ -7073,7 +7081,7 @@ fn parse_zeros_like_memory_format(
 
 fn zeros_like_unsupported_input_error() -> PyErr {
     PyNotImplementedError::new_err(
-        "zeros_like(): only exact native CPU float32 row-major contiguous Tensor inputs are supported",
+        "zeros_like(): only exact native CPU float32 contiguous Tensor inputs are supported",
     )
 }
 
