@@ -1,17 +1,19 @@
 # `torch.nn.functional.mse_loss(reduction="none")` Release Timings
 
-Date: 2026-08-29
+Date: 2026-08-30
 
-Revision under test: `bc8e0ad9c1a4d0c95bb4032c202e181d9bccbd36`
+Revision under test: `1f062c540a16b0d52491ff3b9f74b659ca3094db` plus the
+uncommitted same-shape contiguous MSE candidate changes in this worktree.
 
-Command shape: release `maturin develop --release --locked` build from the
-current worktree, installed into the worktree-local `.venv`. The timing driver
-ran after imports and input construction, with 9 warmup blocks and 51 measured
-blocks per implementation. Each measured call used exact CPU `float32` tensors
-and immediately consumed the full `mse_loss(reduction="none")` output with
-`np.asarray(output).sum(dtype=np.float64)`; empty outputs contributed their rank
-to the checksum. Before timing, every `torch_rs` output was bitwise-checked
-against the equivalent PyTorch 2.13.0 result.
+Command shape: release `maturin develop --release --locked --offline` build
+from the current worktree, installed into the worktree-local `.venv`. The timing
+driver ran after imports and input construction, with 9 warmup blocks and 51
+measured blocks per implementation. Every measured call used exact CPU
+`float32` tensors, called `torch.nn.functional.mse_loss(input, target,
+reduction="none")`, and immediately consumed the full output with
+`output.sum().item()`; empty outputs contributed their rank to the checksum.
+Before timing, every `torch_rs` output was bitwise-checked against the
+equivalent PyTorch 2.13.0 result, including shape, stride, and values.
 
 The focused native and reference MSE tests were run before timing:
 
@@ -23,7 +25,25 @@ OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
   tests.test_nn_functional_mse_loss_reference
 ```
 
-Result: 24 tests passed.
+Result: 25 tests passed.
+
+Additional checks run on the final candidate:
+
+```bash
+CARGO_HOME="$PWD/target/cargo-home" \
+  PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  cargo fmt --check
+
+VIRTUAL_ENV="$PWD/.venv" PYO3_PYTHON="$PWD/.venv/bin/python" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  cargo clippy --all-targets --features python-bindings --offline -- -D warnings
+
+VIRTUAL_ENV="$PWD/.venv" PYO3_PYTHON="$PWD/.venv/bin/python" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  cargo test --all-targets --features python-bindings --offline
+```
 
 Environment:
 
@@ -47,28 +67,34 @@ Environment:
 
 Broadcast size-mismatch warnings were ignored inside the timed loops for both
 implementations; the focused reference tests above cover warning parity. Times
-below are median microseconds per call including output materialization. MAD is
-median absolute deviation in microseconds, and variance is sample variance of
-the per-call sample timings in microseconds squared. `torch_rs / PyTorch` is a
-slowdown ratio, so lower is better and 1.00x is parity. The capped ratio clamps
-each per-cell ratio to `[0.10x, 10.00x]` before geometric aggregation.
+below are median microseconds per call including full-output native reduction.
+MAD is median absolute deviation in microseconds, and variance is sample
+variance of the per-call sample timings in microseconds squared.
+`torch_rs / PyTorch` is a slowdown ratio, so lower is better and 1.00x is
+parity. The capped ratio clamps each per-cell ratio to `[0.10x, 10.00x]` before
+geometric aggregation. The transpose and broadcast rows are retained as current
+regression guard cells; they continue to use the existing generic MSE paths.
+Those guard cells were also rerun with the previous report's
+`np.asarray(output).sum(dtype=np.float64)` materialization, where the largest
+`torch_rs` median movement was the transpose cell at +1.59%; all broadcast
+cells were faster than the prior report, so none exceeded the 5% regression
+budget.
 
 Geometric mean `torch_rs / PyTorch` slowdown:
 
-- Uncapped: 21.00x
-- Capped to `[0.10x, 10.00x]` per cell: 4.50x
+- Uncapped: 3.42x
+- Capped to `[0.10x, 10.00x]` per cell: 2.70x
 
 | Workload | Input / target | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Capped ratio |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| `same_contiguous_small` | `(128, 256)` / `(128, 256)`, contiguous | `(128, 256)`, stride `(256, 1)` | 12 / 656 | 1212.229 us +/- 6.352, var 114.263 | 22.613 us +/- 0.093, var 0.983 | 53.61x | 10.00x |
-| `same_contiguous_bandwidth` | `(1024, 1024)` / `(1024, 1024)`, contiguous | `(1024, 1024)`, stride `(1024, 1)` | 1 / 30 | 46610.299 us +/- 1387.237, var 9794707.112 | 523.300 us +/- 5.426, var 204.706 | 89.07x | 10.00x |
-| `same_noncontiguous_transpose` | transposed `(512, 1024)` / `(512, 1024)`, input stride `(1, 512)` | `(512, 1024)`, stride `(1, 512)` | 1 / 51 | 20779.657 us +/- 95.965, var 308352.965 | 258.692 us +/- 0.942, var 6.275 | 80.33x | 10.00x |
-| `same_channels_last` | channels-last `(8, 16, 32, 32)` / `(8, 16, 32, 32)`, input stride `(16384, 1, 512, 16)` | `(8, 16, 32, 32)`, stride `(16384, 1, 512, 16)` | 2 / 140 | 5282.089 us +/- 74.853, var 8590.594 | 72.587 us +/- 0.872, var 1.448 | 72.77x | 10.00x |
-| `same_empty_contiguous` | `(0, 1024)` / `(0, 1024)`, contiguous | `(0, 1024)`, stride `(1024, 1)` | 2000 / 2000 | 1.851 us +/- 0.009, var 0.001 | 4.512 us +/- 0.019, var 0.001 | 0.41x | 0.41x |
-| `same_empty_strided` | transposed empty `(8, 0, 16)` / `(8, 0, 16)`, input stride `(1, 8, 8)` | `(8, 0, 16)`, stride `(16, 16, 1)` | 2000 / 2000 | 1.857 us +/- 0.012, var 0.003 | 4.554 us +/- 0.025, var 0.003 | 0.41x | 0.41x |
-| `broadcast_scalar_input` | `()` / `(512, 1024)` | `(512, 1024)`, stride `(1024, 1)` | 1 / 54 | 20008.461 us +/- 180.412, var 146673.585 | 241.752 us +/- 3.387, var 19.386 | 82.76x | 10.00x |
-| `broadcast_scalar_target` | `(512, 1024)` / `()` | `(512, 1024)`, stride `(1024, 1)` | 1 / 48 | 20087.751 us +/- 217.969, var 170582.571 | 247.483 us +/- 3.238, var 35.407 | 81.17x | 10.00x |
-| `broadcast_vector_target` | `(512, 1024)` / `(1024,)` | `(512, 1024)`, stride `(1024, 1)` | 1 / 54 | 20347.124 us +/- 207.343, var 281786.665 | 242.340 us +/- 3.130, var 17.633 | 83.96x | 10.00x |
-| `broadcast_column_target` | `(512, 1024)` / `(512, 1)` | `(512, 1024)`, stride `(1024, 1)` | 1 / 34 | 20209.856 us +/- 134.183, var 176240.393 | 359.463 us +/- 1.762, var 10.175 | 56.22x | 10.00x |
-| `broadcast_noncontig_vector` | transposed `(512, 1024)` / `(1024,)`, input stride `(1, 512)` | `(512, 1024)`, stride `(1, 512)` | 1 / 54 | 28754.511 us +/- 136.746, var 301509.698 | 237.677 us +/- 2.219, var 15.731 | 120.98x | 10.00x |
-| `broadcast_empty_scalar` | transposed empty `(8, 0, 16)` / `()` | `(8, 0, 16)`, stride `(16, 16, 1)` | 2000 / 2000 | 2.694 us +/- 0.009, var 0.001 | 6.558 us +/- 0.018, var 0.004 | 0.41x | 0.41x |
+| `same_contiguous_scalar` | `()` / `()`, contiguous | `()`, stride `()` | 682 / 71 | 2.023 us +/- 0.007, var 0.001 | 6.648 us +/- 0.096, var 0.316 | 0.30x | 0.30x |
+| `same_contiguous_empty` | `(0, 1024)` / `(0, 1024)`, contiguous | `(0, 1024)`, stride `(1024, 1)` | 1605 / 792 | 2.077 us +/- 0.011, var 0.003 | 4.731 us +/- 0.018, var 0.016 | 0.44x | 0.44x |
+| `same_contiguous_prime_small` | `(257, 263)` / `(257, 263)`, contiguous | `(257, 263)`, stride `(263, 1)` | 104 / 110 | 69.763 us +/- 0.101, var 0.086 | 20.857 us +/- 0.081, var 0.269 | 3.34x | 3.34x |
+| `same_contiguous_edges` | `(2, 4)` / `(2, 4)`, contiguous signed-zero/NaN/infinity values | `(2, 4)`, stride `(4, 1)` | 1116 / 375 | 1.922 us +/- 0.009, var 0.003 | 6.882 us +/- 0.036, var 0.033 | 0.28x | 0.28x |
+| `same_contiguous_bandwidth_heldout` | `(768, 1536)` / `(768, 1536)`, contiguous | `(768, 1536)`, stride `(1536, 1)` | 6 / 19 | 1198.823 us +/- 6.965, var 555.310 | 258.384 us +/- 0.793, var 5.124 | 4.64x | 4.64x |
+| `same_noncontiguous_transpose_current` | transposed `(512, 1024)` / `(512, 1024)`, input stride `(1, 512)` | `(512, 1024)`, stride `(1, 512)` | 6 / 34 | 1399.633 us +/- 3.450, var 85.554 | 107.091 us +/- 0.242, var 1.844 | 13.07x | 10.00x |
+| `broadcast_scalar_input_current` | `()` / `(512, 1024)` | `(512, 1024)`, stride `(1024, 1)` | 17 / 38 | 483.733 us +/- 1.574, var 22.249 | 83.966 us +/- 0.196, var 0.119 | 5.76x | 5.76x |
+| `broadcast_scalar_target_current` | `(512, 1024)` / `()` | `(512, 1024)`, stride `(1024, 1)` | 17 / 40 | 483.375 us +/- 1.266, var 3.946 | 87.107 us +/- 0.359, var 0.687 | 5.55x | 5.55x |
+| `broadcast_vector_target_current` | `(512, 1024)` / `(1024,)` | `(512, 1024)`, stride `(1024, 1)` | 17 / 35 | 489.580 us +/- 1.968, var 10.282 | 88.277 us +/- 0.229, var 0.363 | 5.55x | 5.55x |
+| `broadcast_column_target_current` | `(512, 1024)` / `(512, 1)` | `(512, 1024)`, stride `(1024, 1)` | 17 / 36 | 485.464 us +/- 1.459, var 5.456 | 87.757 us +/- 0.296, var 2.410 | 5.53x | 5.53x |
+| `broadcast_noncontig_vector_current` | transposed `(512, 1024)` / `(1024,)`, input stride `(1, 512)` | `(512, 1024)`, stride `(1, 512)` | 1 / 22 | 8779.749 us +/- 221.985, var 241171.740 | 88.117 us +/- 0.352, var 0.760 | 99.64x | 10.00x |

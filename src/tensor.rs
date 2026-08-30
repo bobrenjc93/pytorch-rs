@@ -3017,12 +3017,12 @@ impl Tensor {
     /// result metadata or storage allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn squared_difference(&self, other: &Self) -> Result<Self, TensorError> {
-        let operation = |left: f32, right: f32| {
-            let difference = left - right;
-            difference * difference
-        };
+        let operation = |left: f32, right: f32| squared_difference_value(left, right);
         if self.shape == other.shape {
-            return self.zip_map(other, operation);
+            if let Some(output) = self.squared_difference_same_shape_contiguous(other)? {
+                return Ok(output);
+            }
+            return self.zip_map_same_shape(other, operation);
         }
 
         let plan = BroadcastPlan::new_for_expanded_operands(self, other)?;
@@ -3043,6 +3043,34 @@ impl Tensor {
             output.strides = output.unary_output_strides(&output.shape, output.elements)?;
         }
         Ok(output)
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn squared_difference_same_shape_contiguous(
+        &self,
+        other: &Self,
+    ) -> Result<Option<Self>, TensorError> {
+        debug_assert_eq!(self.shape, other.shape);
+        if !layout_has_row_major_strides(&self.shape, &self.strides)
+            || !layout_has_row_major_strides(&other.shape, &other.strides)
+        {
+            return Ok(None);
+        }
+        let (Some(left), Some(right)) = (self.contiguous_slice(), other.contiguous_slice()) else {
+            return Ok(None);
+        };
+
+        let elements = self.elements;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = try_clone_result_shape(&self.strides, elements)?;
+        let data = materialize_contiguous_squared_difference(left, right, elements)?;
+        Ok(Some(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        )))
     }
 
     /// Computes an absolute difference through subtraction followed by abs.
@@ -4970,6 +4998,28 @@ fn layout_is_contiguous(shape: &[usize], strides: &[usize], elements: usize) -> 
     true
 }
 
+#[cfg(any(feature = "python-bindings", test))]
+fn layout_has_row_major_strides(shape: &[usize], strides: &[usize]) -> bool {
+    if shape.len() != strides.len() {
+        return false;
+    }
+
+    let mut expected_stride = 1_usize;
+    for axis in (0..shape.len()).rev() {
+        if strides[axis] != expected_stride {
+            return false;
+        }
+        let Some(next_stride) = expected_stride.checked_mul(shape[axis].max(1)) else {
+            return false;
+        };
+        if next_stride > isize::MAX.unsigned_abs() {
+            return false;
+        }
+        expected_stride = next_stride;
+    }
+    true
+}
+
 fn layout_is_non_overlapping_and_dense(
     shape: &[usize],
     strides: &[usize],
@@ -5692,6 +5742,28 @@ fn l1_loss_difference_value(left: f32, right: f32) -> f32 {
         return f32::from_bits(right_bits | QUIET_NAN_MASK);
     }
     left - right
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn squared_difference_value(left: f32, right: f32) -> f32 {
+    let difference = left - right;
+    difference * difference
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn materialize_contiguous_squared_difference(
+    left: &[f32],
+    right: &[f32],
+    elements: usize,
+) -> Result<Vec<f32>, TensorError> {
+    debug_assert_eq!(left.len(), elements);
+    debug_assert_eq!(right.len(), elements);
+    let mut data = copied_storage(left, elements)?;
+    for (value, &right) in data.iter_mut().zip(right) {
+        let difference = *value - right;
+        *value = difference * difference;
+    }
+    Ok(data)
 }
 
 fn relu_value(value: f32) -> f32 {
