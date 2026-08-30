@@ -409,21 +409,26 @@ fn linear_rank_two(
     )
 }
 
+fn rank_three_folds_to_matrix(input: &Tensor, weight: &Tensor) -> bool {
+    let input_shape = input.shape();
+    weight.requires_grad()
+        || input.numel() == 0
+        || input.stride()[1].checked_mul(input_shape[1]) == Some(input.stride()[0])
+}
+
 fn linear_rank_three(
     input: &Tensor,
     weight: &Tensor,
     transposed_weight: &Tensor,
     bias: Option<&PyTensor>,
-) -> PyResult<Result<Tensor, TensorError>> {
+) -> PyResult<(Result<Tensor, TensorError>, bool)> {
     let input_shape = input.shape();
     let weight_shape = weight.shape();
     // PyTorch's rank-3 by rank-2 matmul folds the leading dimensions
     // when they are stride-compatible, the input is empty, or the
     // matrix operand requires gradients. Otherwise its batched path
     // reports this layout-dependent inner-dimension error.
-    let folds_to_matrix = weight.requires_grad()
-        || input.numel() == 0
-        || input.stride()[1].checked_mul(input_shape[1]) == Some(input.stride()[0]);
+    let folds_to_matrix = rank_three_folds_to_matrix(input, weight);
     if !folds_to_matrix && input_shape[2] != weight_shape[1] {
         return Err(PyRuntimeError::new_err(format!(
             "Expected size for first two dimensions of batch2 tensor to be: [{}, {}] but got: [{}, {}].",
@@ -438,15 +443,30 @@ fn linear_rank_three(
         i64::try_from(weight_shape[0])
             .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
     ];
-    Ok(input
+    let output = input
         .flatten(0, 1)
         .and_then(|input| {
-            bias.map_or_else(
-                || input.matmul(transposed_weight),
-                |bias| input.matmul_with_row_bias(transposed_weight, bias.inner()),
-            )
+            if folds_to_matrix {
+                bias.map_or_else(
+                    || input.matmul(transposed_weight),
+                    |bias| input.matmul_with_row_bias(transposed_weight, bias.inner()),
+                )
+            } else {
+                input.matmul(transposed_weight)
+            }
         })
-        .and_then(|output| output.reshape(output_shape)))
+        .and_then(|output| output.reshape(output_shape))
+        .and_then(|output| {
+            if folds_to_matrix {
+                Ok(output)
+            } else {
+                match bias {
+                    Some(bias) => output.add(bias.inner()),
+                    None => Ok(output),
+                }
+            }
+        });
+    Ok((output, folds_to_matrix))
 }
 
 fn resolve_linear_output(
@@ -455,10 +475,13 @@ fn resolve_linear_output(
     input: &Tensor,
     weight: &Tensor,
     bias: Option<&PyTensor>,
+    bias_reports_flattened_target: bool,
 ) -> PyResult<Tensor> {
     match output {
         Ok(output) => Ok(output),
-        Err(TensorError::ShapeMismatch { .. }) if bias.is_some() => {
+        Err(TensorError::ShapeMismatch { .. })
+            if bias.is_some() && bias_reports_flattened_target =>
+        {
             let bias_features = bias
                 .expect("only biased linear can report a bias shape mismatch")
                 .inner()
@@ -519,9 +542,15 @@ fn _nn_functional_linear(
         .inner()
         .transpose(0, 1)
         .map_err(|error| tensor_error(&error))?;
-    let output = match input_rank {
-        1 => linear_rank_one(input.inner(), &transposed_weight, bias.as_deref()),
-        2 => linear_rank_two(input.inner(), &transposed_weight, bias.as_deref()),
+    let (output, bias_reports_flattened_target) = match input_rank {
+        1 => (
+            linear_rank_one(input.inner(), &transposed_weight, bias.as_deref()),
+            true,
+        ),
+        2 => (
+            linear_rank_two(input.inner(), &transposed_weight, bias.as_deref()),
+            true,
+        ),
         3 => linear_rank_three(
             input.inner(),
             weight.inner(),
@@ -536,6 +565,7 @@ fn _nn_functional_linear(
         input.inner(),
         weight.inner(),
         bias.as_deref(),
+        bias_reports_flattened_target,
     )?;
     PyTensor::new(output).into_py_any(py)
 }

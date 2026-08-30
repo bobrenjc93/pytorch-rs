@@ -632,6 +632,35 @@ class FunctionalLinearTests(unittest.TestCase):
                     np.asarray(expected_bits, dtype=np.uint32),
                 )
 
+    def test_nonfoldable_rank_three_bias_is_added_after_matmul(self):
+        signed_zero_input = torch.zeros((3, 2, 1)).transpose(0, 1)
+        signed_zero_output = functional.linear(
+            signed_zero_input,
+            torch.tensor([[-0.0]]),
+            torch.tensor([-0.0]),
+        )
+        with self.subTest(case="signed zero"):
+            self.assertEqual(signed_zero_output.shape, (2, 3, 1))
+            np.testing.assert_array_equal(
+                np.asarray(signed_zero_output).reshape(-1).view(np.uint32),
+                np.zeros((6,), dtype=np.uint32),
+            )
+
+        finite_input = torch.tensor(
+            [[[-1.0e20, 3.25]], [[0.0, 0.0]]]
+        ).transpose(0, 1)
+        finite_output = functional.linear(
+            finite_input,
+            torch.tensor([[1.0, 1.0]]),
+            torch.tensor([1.0e20]),
+        )
+        with self.subTest(case="finite rounding"):
+            self.assertEqual(finite_output.shape, (1, 2, 1))
+            self.assertEqual(
+                np.asarray(finite_output).reshape(-1).view(np.uint32)[0],
+                np.asarray([0.0], dtype=np.float32).view(np.uint32)[0],
+            )
+
     def test_rank_three_singleton_bias_values_and_empty_outputs(self):
         cases = (
             (
@@ -841,6 +870,18 @@ class FunctionalLinearTests(unittest.TestCase):
                             weight,
                             torch.zeros((bias_features,)),
                         )
+
+    def test_nonfoldable_rank_three_bias_length_mismatch_uses_broadcast_error(self):
+        input = torch.zeros((3, 2, 4)).transpose(0, 1)
+        weight = torch.zeros((5, 4))
+        for bias_features in (0, 2, 4, 6):
+            message = (
+                f"The size of tensor a (5) must match the size of tensor b "
+                f"({bias_features}) at non-singleton dimension 2"
+            )
+            with self.subTest(bias_features=bias_features):
+                with self.assertRaisesRegex(RuntimeError, f"^{re.escape(message)}$"):
+                    functional.linear(input, weight, torch.zeros((bias_features,)))
 
     def test_requires_grad_operands_need_no_grad(self):
         for rank, input_values in (
