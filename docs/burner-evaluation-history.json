@@ -8417,6 +8417,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 88
       }
+    },
+    {
+      "key": "pr:1436",
+      "recordedAt": "2026-08-30T18:24:18.151Z",
+      "label": "PR #1436",
+      "kind": "leaf",
+      "prNumber": 1436,
+      "title": "Fuse same-shape contiguous l1_loss",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 85,
+        "eval_39340456": 89.4,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 88
+      }
     }
   ]
 }
