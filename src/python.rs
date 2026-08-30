@@ -1499,6 +1499,15 @@ pub(crate) fn arange_variable_function(
         .unbind())
 }
 
+pub(crate) fn zeros_like_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let call = parse_zeros_like_arguments(bind_zeros_like_arguments(args, kwargs)?)?;
+    dispatch_top_level_zeros_like(py, &call, args, kwargs)
+}
+
 fn dispatch_empty_variadic_tensor_input(
     py: Python<'_>,
     name: &str,
@@ -2416,6 +2425,14 @@ struct BoundUnaryOutCall<'py> {
     out: Option<BoundTensorOrTorchFunction<'py>>,
 }
 
+struct BoundZerosLikeCall<'py> {
+    input: BoundTensorOrTorchFunction<'py>,
+    dtype: DType,
+    device: Device,
+    requires_grad: bool,
+    memory_format: MemoryFormat,
+}
+
 enum BoundTopLevelSumDType<'py> {
     Native,
     Override(ProbedTorchFunctionOverride<'py>),
@@ -3284,6 +3301,108 @@ fn apply_top_level_resolve_identity(
     // resolver bits are always clear. Return the exact receiver without
     // touching storage, metadata, or autograd state.
     Ok(tensor.clone().unbind().into_any())
+}
+
+fn dispatch_top_level_zeros_like(
+    py: Python<'_>,
+    call: &BoundZerosLikeCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = match &call.input {
+        BoundTensorOrTorchFunction::Tensor(_) => Vec::new(),
+        BoundTensorOrTorchFunction::Override(probed) => {
+            let mut overrides = Vec::new();
+            overrides.try_reserve_exact(1).map_err(|_| {
+                PyMemoryError::new_err("unable to allocate zeros_like dispatch operands")
+            })?;
+            insert_ordered_torch_function_override(&mut overrides, probed)?;
+            overrides
+        }
+    };
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_zeros_like(py, call);
+    }
+
+    let function = variable_function(py, "zeros_like")?;
+    let dispatch_types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Generated factory bindings validate their schema before dispatch and
+    // disable the top mode for the complete attempt. Forwarding from a mode
+    // therefore reaches the next mode, then operand overrides, then native.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &dispatch_types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &dispatch_types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_top_level_zeros_like(py, call);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.zeros_like",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_zeros_like(
+    py: Python<'_>,
+    call: &BoundZerosLikeCall<'_>,
+) -> PyResult<Py<PyAny>> {
+    let BoundTensorOrTorchFunction::Tensor(input) = &call.input else {
+        unreachable!("zeros_like overrides were dispatched before the native path")
+    };
+    if call.dtype != DType::Float32 || call.device != Device::Cpu {
+        return Err(PyRuntimeError::new_err(
+            "zeros_like(): only the default float32 CPU metadata is supported",
+        ));
+    }
+    if call.memory_format != MemoryFormat::Preserve {
+        return Err(PyRuntimeError::new_err(
+            "zeros_like(): only memory_format=torch.preserve_format is supported",
+        ));
+    }
+
+    let input = input.try_borrow()?;
+    if input.inner.dtype() != DType::Float32 || input.inner.device() != Device::Cpu {
+        return Err(PyRuntimeError::new_err(
+            "zeros_like(): only exact native CPU float32 tensors are supported",
+        ));
+    }
+    if !input.inner.has_row_major_contiguous_strides() {
+        return Err(PyNotImplementedError::new_err(
+            "zeros_like(): preserve_format is only supported for row-major contiguous tensors",
+        ));
+    }
+
+    let mut shape = try_size_vector(input.inner.shape().len())?;
+    for &dimension in input.inner.shape() {
+        try_push_size(&mut shape, dimension)?;
+    }
+    let output = CoreTensor::zeros_with_metadata(shape, DType::Float32, Device::Cpu)
+        .map(|inner| PyTensor::new(inner.with_requires_grad(call.requires_grad)))
+        .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, output)?.into_any())
 }
 
 fn ordered_unary_out_overrides<'py>(
@@ -4167,6 +4286,16 @@ struct ArangeCallArguments<'py> {
     device: Option<Bound<'py, PyAny>>,
     pin_memory: Option<Bound<'py, PyAny>>,
     requires_grad: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
+struct ZerosLikeCallArguments<'py> {
+    input: Option<ParsedCallArgument<'py>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    requires_grad: Option<Bound<'py, PyAny>>,
+    memory_format: Option<Bound<'py, PyAny>>,
     keyword_error: Option<PyErr>,
 }
 
@@ -5859,6 +5988,25 @@ fn parse_cpu_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<MemoryF
     )))
 }
 
+fn parse_zeros_like_memory_format(
+    memory_format: Option<&Bound<'_, PyAny>>,
+) -> PyResult<MemoryFormat> {
+    let Some(memory_format) = memory_format else {
+        return Ok(MemoryFormat::Preserve);
+    };
+    if memory_format.is_none() {
+        return Ok(MemoryFormat::Preserve);
+    }
+    if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
+        return Ok(memory_format.try_borrow()?.inner());
+    }
+
+    let type_name = memory_format.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "zeros_like(): argument 'memory_format' must be torch.memory_format, not {type_name}"
+    )))
+}
+
 fn bind_creation_arguments<'py>(
     function: &str,
     positional: &Bound<'py, PyTuple>,
@@ -6133,6 +6281,108 @@ fn arange_overload_unsupported() -> PyErr {
     PyTypeError::new_err(
         "arange(): start and step overloads are not supported; pass one exact Python float endpoint",
     )
+}
+
+fn bind_zeros_like_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ZerosLikeCallArguments<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "zeros_like() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments = ZerosLikeCallArguments {
+        input: if positional.is_empty() {
+            None
+        } else {
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            })
+        },
+        dtype: None,
+        layout: None,
+        device: None,
+        requires_grad: None,
+        memory_format: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "input" => {
+                if arguments.input.is_some() {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(
+                            "zeros_like() got multiple values for argument 'input'",
+                        )
+                    });
+                } else {
+                    arguments.input = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            }
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "layout" => arguments.layout = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            "memory_format" => arguments.memory_format = optional_call_argument(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "zeros_like() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
+}
+
+fn parse_zeros_like_arguments(
+    arguments: ZerosLikeCallArguments<'_>,
+) -> PyResult<BoundZerosLikeCall<'_>> {
+    let ZerosLikeCallArguments {
+        input,
+        dtype,
+        layout,
+        device,
+        requires_grad,
+        memory_format,
+        keyword_error,
+    } = arguments;
+    let Some(input) = input else {
+        return Err(PyTypeError::new_err(
+            "zeros_like() missing 1 required positional arguments: \"input\"",
+        ));
+    };
+
+    let input = parse_exact_tensor_or_torch_function_argument("zeros_like", "input", &input)?;
+    let dtype = parse_dtype("zeros_like", dtype.as_ref())?;
+    parse_factory_layout("zeros_like", layout.as_ref())?;
+    validate_device_argument_type("zeros_like", device.as_ref())?;
+    let requires_grad = parse_factory_requires_grad("zeros_like", requires_grad.as_ref())?;
+    let memory_format = parse_zeros_like_memory_format(memory_format.as_ref())?;
+    if let Some(error) = keyword_error {
+        return Err(error);
+    }
+    let device = parse_device("zeros_like", device.as_ref())?;
+    Ok(BoundZerosLikeCall {
+        input,
+        dtype,
+        device,
+        requires_grad,
+        memory_format,
+    })
 }
 
 fn bind_scalar_tensor_arguments<'py>(
@@ -10235,6 +10485,32 @@ fn parse_tensor_argument<'a, 'py>(
         )));
     };
     Ok(tensor)
+}
+
+fn parse_exact_tensor_or_torch_function_argument<'py>(
+    function: &str,
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+) -> PyResult<BoundTensorOrTorchFunction<'py>> {
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundTensorOrTorchFunction::Tensor(
+            value
+                .value
+                .cast::<PyTensor>()
+                .expect("the exact Tensor input was checked above")
+                .clone(),
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundTensorOrTorchFunction::Override(probed));
+    }
+    let position = value
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(&value.value)?;
+    Err(PyTypeError::new_err(format!(
+        "{function}(): argument '{argument}'{position} must be Tensor, not {actual}"
+    )))
 }
 
 fn parse_tensor_or_torch_function_argument<'py>(

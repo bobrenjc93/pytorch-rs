@@ -1447,6 +1447,11 @@ impl Tensor {
         layout_is_contiguous(&self.shape, &self.strides, self.elements)
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn has_row_major_contiguous_strides(&self) -> bool {
+        contiguous_strides(&self.shape, self.elements).is_ok_and(|strides| strides == self.strides)
+    }
+
     /// Returns whether this tensor is contiguous in the requested memory
     /// format.
     ///
