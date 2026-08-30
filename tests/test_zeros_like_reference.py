@@ -44,6 +44,8 @@ class ZerosLikeReferenceTests(unittest.TestCase):
         return (
             module.tensor(-3.5, dtype=module.float32),
             module.zeros((2, 0, 3), dtype=module.float32),
+            module.ones((1, 3), dtype=module.float32).transpose(0, 1),
+            module.zeros((2, 0, 3), dtype=module.float32).transpose(0, 2),
             module.tensor(
                 [[1.0, -2.0, 3.0], [4.0, 5.0, -6.0]],
                 dtype=module.float32,

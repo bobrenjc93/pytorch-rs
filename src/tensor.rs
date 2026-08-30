@@ -621,6 +621,20 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn zeros_like_preserve_contiguous_format(&self) -> Result<Self, TensorError> {
+        let shape = try_clone_result_shape(&self.shape, self.elements)?;
+        let strides = try_clone_result_shape(&self.strides, self.elements)?;
+        let data = filled_storage(self.elements, 0.0)?;
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        ))
+    }
+
     /// Creates a one-filled tensor.
     ///
     /// # Errors
@@ -1445,11 +1459,6 @@ impl Tensor {
     #[must_use]
     pub fn is_contiguous(&self) -> bool {
         layout_is_contiguous(&self.shape, &self.strides, self.elements)
-    }
-
-    #[cfg(feature = "python-bindings")]
-    pub(crate) fn has_row_major_contiguous_strides(&self) -> bool {
-        contiguous_strides(&self.shape, self.elements).is_ok_and(|strides| strides == self.strides)
     }
 
     /// Returns whether this tensor is contiguous in the requested memory

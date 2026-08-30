@@ -3389,17 +3389,15 @@ fn apply_top_level_zeros_like(
             "zeros_like(): only exact native CPU float32 tensors are supported",
         ));
     }
-    if !input.inner.has_row_major_contiguous_strides() {
+    if !input.inner.is_contiguous() {
         return Err(PyNotImplementedError::new_err(
-            "zeros_like(): preserve_format is only supported for row-major contiguous tensors",
+            "zeros_like(): preserve_format is only supported for contiguous tensors",
         ));
     }
 
-    let mut shape = try_size_vector(input.inner.shape().len())?;
-    for &dimension in input.inner.shape() {
-        try_push_size(&mut shape, dimension)?;
-    }
-    let output = CoreTensor::zeros_with_metadata(shape, DType::Float32, Device::Cpu)
+    let output = input
+        .inner
+        .zeros_like_preserve_contiguous_format()
         .map(|inner| PyTensor::new(inner.with_requires_grad(call.requires_grad)))
         .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, output)?.into_any())

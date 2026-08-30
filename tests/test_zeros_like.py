@@ -50,6 +50,8 @@ class ZerosLikeTests(unittest.TestCase):
         cases = (
             (torch.tensor(-3.5), 0.0),
             (torch.zeros((2, 0, 3)), [[], []]),
+            (torch.ones((1, 3)).transpose(0, 1), [[0.0], [0.0], [0.0]]),
+            (torch.zeros((2, 0, 3)).transpose(0, 2), [[], [], []]),
             (
                 torch.tensor([[1.0, -2.0, 3.0], [4.0, 5.0, -6.0]]),
                 [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
@@ -57,6 +59,7 @@ class ZerosLikeTests(unittest.TestCase):
         )
         for source, expected_values in cases:
             with self.subTest(shape=tuple(source.shape)):
+                self.assertTrue(source.is_contiguous())
                 self.assert_zero_like(
                     source, torch.zeros_like(source), expected_values
                 )
@@ -250,7 +253,7 @@ class ZerosLikeTests(unittest.TestCase):
             (
                 lambda: torch.zeros_like(noncontiguous),
                 NotImplementedError,
-                "row-major contiguous",
+                "contiguous",
             ),
         )
         for call, error_type, message in invalid_calls:
