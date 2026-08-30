@@ -126,9 +126,20 @@ class FunctionalMseLossTests(unittest.TestCase):
             ("same operand", same, same),
         )
 
-    def scalar_broadcast_cases(self):
+    def broadcast_cases(self):
         scalar = torch.tensor(-0.0)
         offset_scalar = torch.tensor([17.0, 0.5])[1]
+        matrix = torch.tensor(
+            np.arange(6, dtype=np.float32).reshape(2, 3).tolist()
+        )
+        offset_matrix = torch.tensor(
+            np.arange(12, dtype=np.float32).reshape(2, 2, 3).tolist()
+        )[1]
+        noncontiguous_matrix = torch.tensor(
+            np.arange(6, dtype=np.float32).reshape(3, 2).tolist()
+        ).transpose(0, 1)
+        vector = torch.tensor([1.0, 2.0, 3.0])
+        column = torch.tensor([[1.0], [2.0]])
         contiguous = torch.tensor(
             np.linspace(-3.0, 4.0, 24, dtype=np.float32)
             .reshape(2, 3, 4)
@@ -146,6 +157,10 @@ class FunctionalMseLossTests(unittest.TestCase):
         empty_strided = torch.zeros((2, 0, 3)).transpose(0, 2)
 
         return (
+            ("vector target", matrix, vector),
+            ("column target", matrix, column),
+            ("offset vector target", offset_matrix, vector),
+            ("noncontiguous vector target", noncontiguous_matrix, vector),
             ("contiguous scalar input", scalar, contiguous),
             ("contiguous scalar target", contiguous, scalar),
             ("offset strided scalar input", offset_scalar, offset_strided),
@@ -207,15 +222,15 @@ class FunctionalMseLossTests(unittest.TestCase):
         for documented_limit in (
             "exact ``torch_rs.Tensor`` operands",
             "CPU ``float32`` storage",
+            "broadcastable shapes",
             "``reduction='none'``",
             "``size_average=None``",
             "``reduce=None``",
             "``weight=None``",
-            "exactly one operand may be rank zero",
             "fuses subtraction and square into one native pass",
             "fresh, independent tensor",
-            "scalar-broadcast warning",
-            "Other broadcasting",
+            "size-mismatch warning",
+            "Unbroadcastable shapes",
             "Tensor subclasses",
             "active ``TorchFunctionMode`` contexts",
             "active autograd recording",
@@ -281,8 +296,8 @@ class FunctionalMseLossTests(unittest.TestCase):
                         self.tensor_state(target)[-1], target_state[-1]
                     )
 
-    def test_scalar_broadcast_matches_composition_warning_and_storage(self):
-        for case, input, target in self.scalar_broadcast_cases():
+    def test_broadcasted_inputs_match_composition_warning_and_storage(self):
+        for case, input, target in self.broadcast_cases():
             difference = input - target
             expected = difference.square()
             input_state = self.tensor_state(input)
@@ -406,6 +421,75 @@ class FunctionalMseLossTests(unittest.TestCase):
             self.tensor_bits(actual),
             self.tensor_bits(difference.square()),
         )
+
+    def test_broadcasted_leading_singleton_stride_matches_pytorch_mse_loss(self):
+        input = torch.tensor([[0.0, 1.0, 2.0]]).transpose(0, 1)
+        target = torch.tensor(
+            np.arange(6, dtype=np.float32).reshape(2, 3, 1).tolist()
+        ).permute(2, 1, 0)
+        difference = input - target
+        expected = difference.square()
+
+        self.assertEqual(input.shape, (3, 1))
+        self.assertEqual(input.stride(), (1, 3))
+        self.assertEqual(target.shape, (1, 3, 2))
+        self.assertEqual(target.stride(), (1, 1, 3))
+        self.assertEqual(difference.stride(), (1, 1, 3))
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            actual = functional.mse_loss(input, target, reduction="none")
+
+        with self.subTest(warning=True):
+            self.assertEqual(len(caught), 1)
+            self.assertIs(caught[0].category, UserWarning)
+            self.assertEqual(str(caught[0].message), self.broadcast_warning(input, target))
+
+        self.assert_matches_composition(
+            actual,
+            expected,
+            case="leading singleton broadcast",
+            expected_stride=(3, 1, 3),
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            repeated = functional.mse_loss(input, target, reduction="none")
+        self.assertFalse(actual.is_set_to(repeated))
+        self.assertFalse(actual.is_set_to(input))
+        self.assertFalse(actual.is_set_to(target))
+
+    def test_broadcasted_singleton_output_stride_matches_pytorch_mse_loss(self):
+        input = torch.tensor([[0.0], [1.0]]).transpose(0, 1)
+        target = torch.tensor([0.0, 1.0])
+        expected = (input - target).square()
+
+        self.assertEqual(input.shape, (1, 2))
+        self.assertEqual(input.stride(), (1, 1))
+        self.assertEqual(target.shape, (2,))
+        self.assertEqual(target.stride(), (1,))
+        self.assertEqual((input - target).stride(), (1, 1))
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            actual = functional.mse_loss(input, target, reduction="none")
+
+        with self.subTest(warning=True):
+            self.assertEqual(len(caught), 1)
+            self.assertIs(caught[0].category, UserWarning)
+            self.assertEqual(str(caught[0].message), self.broadcast_warning(input, target))
+
+        self.assert_matches_composition(
+            actual,
+            expected,
+            case="singleton output broadcast",
+            expected_stride=(2, 1),
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            repeated = functional.mse_loss(input, target, reduction="none")
+        self.assertFalse(actual.is_set_to(repeated))
+        self.assertFalse(actual.is_set_to(input))
+        self.assertFalse(actual.is_set_to(target))
 
     def test_every_call_returns_fresh_independent_storage(self):
         for case, input, target in self.layout_cases():
@@ -576,40 +660,66 @@ class FunctionalMseLossTests(unittest.TestCase):
                 self.assertIsNone(input.grad)
                 self.assertIsNone(target.grad)
 
-    def test_scalar_broadcast_requires_grad_operands_need_no_grad(self):
-        for scalar_on_left, scalar_requires_grad, tensor_requires_grad in (
-            (True, True, False),
-            (True, False, True),
-            (False, True, False),
-            (False, False, True),
-        ):
-            scalar = torch.tensor(0.5, requires_grad=scalar_requires_grad)
-            tensor = torch.tensor(
-                [[1.0, -2.0], [3.0, -4.0]],
-                requires_grad=tensor_requires_grad,
+    def test_broadcast_requires_grad_operands_need_no_grad(self):
+        def scalar_input(input_requires_grad, target_requires_grad):
+            return (
+                torch.tensor(0.5, requires_grad=input_requires_grad),
+                torch.tensor(
+                    [[1.0, -2.0], [3.0, -4.0]],
+                    requires_grad=target_requires_grad,
+                ),
             )
-            input, target = (scalar, tensor) if scalar_on_left else (tensor, scalar)
-            with self.subTest(
-                scalar_on_left=scalar_on_left,
-                scalar_requires_grad=scalar_requires_grad,
-                tensor_requires_grad=tensor_requires_grad,
-            ):
-                with self.assertWarnsRegex(UserWarning, "Using a target size"):
-                    with self.assertRaisesRegex(
-                        RuntimeError,
-                        r"^mse_loss\(\): autograd recording is not supported$",
-                    ):
-                        functional.mse_loss(input, target, reduction="none")
 
-                with warnings.catch_warnings(), torch.no_grad():
-                    warnings.simplefilter("ignore")
-                    actual = functional.mse_loss(input, target, reduction="none")
-                    expected = (input - target).square()
-                self.assert_matches_composition(actual, expected, case="scalar no_grad")
-                self.assertFalse(actual.requires_grad)
-                self.assertTrue(actual.is_leaf)
-                self.assertIsNone(input.grad)
-                self.assertIsNone(target.grad)
+        def scalar_target(input_requires_grad, target_requires_grad):
+            return (
+                torch.tensor(
+                    [[1.0, -2.0], [3.0, -4.0]],
+                    requires_grad=input_requires_grad,
+                ),
+                torch.tensor(0.5, requires_grad=target_requires_grad),
+            )
+
+        def vector_target(input_requires_grad, target_requires_grad):
+            return (
+                torch.tensor(
+                    [[1.0, -2.0], [3.0, -4.0]],
+                    requires_grad=input_requires_grad,
+                ),
+                torch.tensor([0.5, -1.5], requires_grad=target_requires_grad),
+            )
+
+        for case, factory in (
+            ("scalar input", scalar_input),
+            ("scalar target", scalar_target),
+            ("vector target", vector_target),
+        ):
+            for input_requires_grad, target_requires_grad in (
+                (True, False),
+                (False, True),
+                (True, True),
+            ):
+                input, target = factory(input_requires_grad, target_requires_grad)
+                with self.subTest(
+                    case=case,
+                    input_requires_grad=input_requires_grad,
+                    target_requires_grad=target_requires_grad,
+                ):
+                    with self.assertWarnsRegex(UserWarning, "Using a target size"):
+                        with self.assertRaisesRegex(
+                            RuntimeError,
+                            r"^mse_loss\(\): autograd recording is not supported$",
+                        ):
+                            functional.mse_loss(input, target, reduction="none")
+
+                    with warnings.catch_warnings(), torch.no_grad():
+                        warnings.simplefilter("ignore")
+                        actual = functional.mse_loss(input, target, reduction="none")
+                        expected = (input - target).square()
+                    self.assert_matches_composition(actual, expected, case="no_grad")
+                    self.assertFalse(actual.requires_grad)
+                    self.assertTrue(actual.is_leaf)
+                    self.assertIsNone(input.grad)
+                    self.assertIsNone(target.grad)
 
     def test_unsupported_options_shapes_and_operands_are_rejected(self):
         input = torch.ones((2, 3))
@@ -663,20 +773,25 @@ class FunctionalMseLossTests(unittest.TestCase):
                         weight=weight,
                     )
 
-        broadcast_error = (
-            "torch_rs.nn.functional.mse_loss does not support broadcasting"
+        unbroadcastable_target = torch.zeros((2, 2))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"^The size of tensor a \(3\) must match the size of tensor b "
+                r"\(2\) at non-singleton dimension 1$",
+            ):
+                functional.mse_loss(
+                    input,
+                    unbroadcastable_target,
+                    reduction="none",
+                )
+        self.assertEqual(len(caught), 1)
+        self.assertIs(caught[0].category, UserWarning)
+        self.assertEqual(
+            str(caught[0].message),
+            self.broadcast_warning(input, unbroadcastable_target),
         )
-        for other in (
-            torch.zeros((3,)),
-            torch.zeros((2, 1)),
-            torch.zeros((2, 2)),
-        ):
-            with self.subTest(target_shape=other.shape):
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    f"^{re.escape(broadcast_error)}$",
-                ):
-                    functional.mse_loss(input, other, reduction="none")
 
         class Override:
             calls = 0

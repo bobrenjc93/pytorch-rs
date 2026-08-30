@@ -1470,39 +1470,7 @@ impl Tensor {
     /// dense storage interval, independent of dimension order.
     #[must_use]
     pub fn is_non_overlapping_and_dense(&self) -> bool {
-        if self.elements == 0 {
-            return true;
-        }
-
-        let dimensions = self
-            .shape
-            .iter()
-            .filter(|dimension| **dimension > 1)
-            .count();
-        let mut matched = 0_usize;
-        let mut expected_stride = 1_usize;
-        while matched < dimensions {
-            let mut matching_dimension = None;
-            for (axis, (&dimension, &stride)) in
-                self.shape.iter().zip(self.strides.iter()).enumerate()
-            {
-                if dimension > 1 && stride == expected_stride {
-                    if matching_dimension.is_some() {
-                        return false;
-                    }
-                    matching_dimension = Some((axis, dimension));
-                }
-            }
-            let Some((_, dimension)) = matching_dimension else {
-                return false;
-            };
-            let Some(next_stride) = expected_stride.checked_mul(dimension) else {
-                return false;
-            };
-            expected_stride = next_stride;
-            matched += 1;
-        }
-        true
+        layout_is_non_overlapping_and_dense(&self.shape, &self.strides, self.elements)
     }
 
     /// Returns logical values in row-major index order.
@@ -3031,12 +2999,25 @@ impl Tensor {
     /// result metadata or storage allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn squared_difference(&self, other: &Self) -> Result<Self, TensorError> {
-        let shapes_match = self.shape == other.shape;
-        let mut output = self.zip_map(other, |left, right| {
+        let operation = |left: f32, right: f32| {
             let difference = left - right;
             difference * difference
-        })?;
-        if !shapes_match && output.elements == 0 {
+        };
+        if self.shape == other.shape {
+            return self.zip_map(other, operation);
+        }
+
+        let plan = BroadcastPlan::new_for_expanded_operands(self, other)?;
+        let mut output = if let Some((data, fast_plan)) =
+            materialize_contiguous_trailing_broadcast(self, other, &operation)?
+            && fast_plan.shape == plan.shape
+            && fast_plan.strides == plan.strides
+        {
+            Self::from_owned_parts(data, plan.shape, plan.strides, self.dtype(), self.device())
+        } else {
+            self.zip_map_broadcast_with_plan(other, plan, operation)?
+        };
+        if output.elements == 0 {
             // The native MSE kernel receives already-expanded operands. For an
             // empty broadcast, its output is restrided like the final square
             // in `(input - target).square()`, even though no intermediate
@@ -3596,6 +3577,15 @@ impl Tensor {
         operation: impl Fn(f32, f32) -> f32,
     ) -> Result<Self, TensorError> {
         let plan = BroadcastPlan::new(self, other)?;
+        self.zip_map_broadcast_with_plan(other, plan, operation)
+    }
+
+    fn zip_map_broadcast_with_plan(
+        &self,
+        other: &Self,
+        plan: BroadcastPlan,
+        operation: impl Fn(f32, f32) -> f32,
+    ) -> Result<Self, TensorError> {
         if plan.elements == 0 {
             let data = try_result_vector(plan.elements, plan.elements)?;
             return Ok(Self::from_owned_parts(
@@ -4750,6 +4740,45 @@ fn materialize_broadcast(
 
 impl BroadcastPlan {
     fn new(left: &Tensor, right: &Tensor) -> Result<Self, TensorError> {
+        Self::new_with_strides(left, right, |shape, elements| {
+            elementwise_output_strides(
+                shape,
+                &[
+                    ElementwiseLayout::from_tensor(left),
+                    ElementwiseLayout::from_tensor(right),
+                ],
+                elements,
+            )
+        })
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn new_for_expanded_operands(left: &Tensor, right: &Tensor) -> Result<Self, TensorError> {
+        Self::new_with_strides(left, right, |shape, elements| {
+            let left_strides = expanded_broadcast_strides(left, shape, elements)?;
+            let right_strides = expanded_broadcast_strides(right, shape, elements)?;
+            elementwise_output_strides_with_fast_setup(
+                shape,
+                &[
+                    ElementwiseLayout {
+                        shape,
+                        strides: &left_strides,
+                    },
+                    ElementwiseLayout {
+                        shape,
+                        strides: &right_strides,
+                    },
+                ],
+                elements,
+            )
+        })
+    }
+
+    fn new_with_strides(
+        left: &Tensor,
+        right: &Tensor,
+        output_strides: impl FnOnce(&[usize], usize) -> Result<Vec<usize>, TensorError>,
+    ) -> Result<Self, TensorError> {
         let rank = left.shape.len().max(right.shape.len());
         for axis in 0..rank {
             let left_dimension = aligned_dimension(&left.shape, rank, axis);
@@ -4785,14 +4814,7 @@ impl BroadcastPlan {
                 .expect("broadcast compatibility was checked above"),
             );
         }
-        let strides = elementwise_output_strides(
-            &shape,
-            &[
-                ElementwiseLayout::from_tensor(left),
-                ElementwiseLayout::from_tensor(right),
-            ],
-            elements,
-        )?;
+        let strides = output_strides(&shape, elements)?;
 
         let mut dimensions = try_result_vector(rank, elements)?;
         if elements == 0 {
@@ -4842,6 +4864,72 @@ impl BroadcastPlan {
     }
 }
 
+#[cfg(any(feature = "python-bindings", test))]
+fn expanded_broadcast_strides(
+    tensor: &Tensor,
+    output_shape: &[usize],
+    elements: usize,
+) -> Result<Vec<usize>, TensorError> {
+    let rank = output_shape.len();
+    let mut strides = try_result_vector(rank, elements)?;
+    strides.resize(rank, 0);
+    if tensor.shape.is_empty() {
+        return Ok(strides);
+    }
+
+    let leading_dimensions = rank - tensor.shape.len();
+    for axis in (0..rank).rev() {
+        if axis >= leading_dimensions {
+            let input_axis = axis - leading_dimensions;
+            let input_dimension = tensor.shape[input_axis];
+            let output_dimension = output_shape[axis];
+            strides[axis] = if input_dimension == 1 && output_dimension != 1 {
+                0
+            } else {
+                tensor.strides[input_axis]
+            };
+        } else if output_shape[axis] == 1 {
+            strides[axis] = checked_stride_product(strides[axis + 1], output_shape[axis + 1])?;
+        }
+    }
+    Ok(strides)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn elementwise_output_strides_with_fast_setup(
+    shape: &[usize],
+    operands: &[ElementwiseLayout<'_>],
+    elements: usize,
+) -> Result<Vec<usize>, TensorError> {
+    if operands
+        .iter()
+        .all(|layout| layout_is_contiguous(shape, layout.strides, elements))
+    {
+        return contiguous_strides(shape, elements);
+    }
+    if operands
+        .iter()
+        .all(|layout| layout_is_channels_last_contiguous(shape, layout.strides))
+    {
+        return channels_last_strides(shape, elements);
+    }
+    if operands
+        .iter()
+        .all(|layout| layout_is_channels_last_3d_contiguous(shape, layout.strides))
+    {
+        return channels_last_3d_strides(shape, elements);
+    }
+    if let Some(first) = operands.first()
+        && operands.iter().all(|layout| {
+            layout.strides == first.strides
+                && layout_is_non_overlapping_and_dense(shape, layout.strides, elements)
+        })
+    {
+        return try_clone_result_shape(first.strides, elements);
+    }
+    elementwise_output_strides(shape, operands, elements)
+}
+
 fn layout_is_contiguous(shape: &[usize], strides: &[usize], elements: usize) -> bool {
     if elements == 0 {
         return true;
@@ -4860,6 +4948,40 @@ fn layout_is_contiguous(shape: &[usize], strides: &[usize], elements: usize) -> 
             return false;
         };
         expected_stride = next_stride;
+    }
+    true
+}
+
+fn layout_is_non_overlapping_and_dense(
+    shape: &[usize],
+    strides: &[usize],
+    elements: usize,
+) -> bool {
+    if elements == 0 {
+        return true;
+    }
+
+    let dimensions = shape.iter().filter(|dimension| **dimension > 1).count();
+    let mut matched = 0_usize;
+    let mut expected_stride = 1_usize;
+    while matched < dimensions {
+        let mut matching_dimension = None;
+        for (axis, (&dimension, &stride)) in shape.iter().zip(strides.iter()).enumerate() {
+            if dimension > 1 && stride == expected_stride {
+                if matching_dimension.is_some() {
+                    return false;
+                }
+                matching_dimension = Some((axis, dimension));
+            }
+        }
+        let Some((_, dimension)) = matching_dimension else {
+            return false;
+        };
+        let Some(next_stride) = expected_stride.checked_mul(dimension) else {
+            return false;
+        };
+        expected_stride = next_stride;
+        matched += 1;
     }
     true
 }
@@ -8354,6 +8476,63 @@ mod tests {
         assert!(!fused.shares_storage_with(&input));
         assert!(!fused.shares_storage_with(&target));
         assert!(!fused.shares_storage_with(&difference));
+    }
+
+    #[test]
+    fn squared_difference_uses_expanded_operand_strides_for_broadcast_layout() {
+        let input = Tensor::from_vec(vec![0.0, 1.0, 2.0], [1, 3])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let target = Tensor::from_vec((0_u8..6).map(f32::from).collect(), [2, 3, 1])
+            .unwrap()
+            .permute_axes([2, 1, 0])
+            .unwrap();
+
+        assert_eq!(input.shape(), &[3, 1]);
+        assert_eq!(input.stride(), &[1, 3]);
+        assert_eq!(target.shape(), &[1, 3, 2]);
+        assert_eq!(target.stride(), &[1, 1, 3]);
+
+        let actual = input.squared_difference(&target).unwrap();
+        assert_eq!(actual.shape(), &[1, 3, 2]);
+        assert_eq!(actual.stride(), &[3, 1, 3]);
+        assert_eq!(actual.storage_offset(), 0);
+        assert!(
+            actual
+                .logical_values()
+                .map(f32::to_bits)
+                .eq([0.0_f32, 9.0, 0.0, 9.0, 0.0, 9.0].map(f32::to_bits))
+        );
+        assert!(!actual.shares_storage_with(&input));
+        assert!(!actual.shares_storage_with(&target));
+    }
+
+    #[test]
+    fn squared_difference_canonicalizes_singleton_output_broadcast_strides() {
+        let input = Tensor::from_vec(vec![0.0, 1.0], [2, 1])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let target = Tensor::from_vec(vec![0.0, 1.0], [2]).unwrap();
+
+        assert_eq!(input.shape(), &[1, 2]);
+        assert_eq!(input.stride(), &[1, 1]);
+        assert_eq!(target.shape(), &[2]);
+        assert_eq!(target.stride(), &[1]);
+
+        let actual = input.squared_difference(&target).unwrap();
+        assert_eq!(actual.shape(), &[1, 2]);
+        assert_eq!(actual.stride(), &[2, 1]);
+        assert_eq!(actual.storage_offset(), 0);
+        assert!(
+            actual
+                .logical_values()
+                .map(f32::to_bits)
+                .eq([0.0_f32, 0.0].map(f32::to_bits))
+        );
+        assert!(!actual.shares_storage_with(&input));
+        assert!(!actual.shares_storage_with(&target));
     }
 
     #[test]
