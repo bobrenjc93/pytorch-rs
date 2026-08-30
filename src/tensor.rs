@@ -3025,7 +3025,11 @@ impl Tensor {
         }
 
         let plan = BroadcastPlan::new_for_expanded_operands(self, other)?;
-        let mut output = if let Some((data, fast_plan)) =
+        let mut output = if let Some(data) =
+            materialize_contiguous_scalar_squared_difference(self, other, &plan)?
+        {
+            Self::from_owned_parts(data, plan.shape, plan.strides, self.dtype(), self.device())
+        } else if let Some((data, fast_plan)) =
             materialize_contiguous_trailing_broadcast(self, other, &squared_difference_value)?
             && fast_plan.shape == plan.shape
             && fast_plan.strides == plan.strides
@@ -4553,6 +4557,58 @@ fn apply_binary_operation_scalar(
     right: f32,
 ) -> f32 {
     operation(left, right)
+}
+
+#[inline(never)]
+#[cfg(any(feature = "python-bindings", test))]
+fn materialize_contiguous_scalar_squared_difference(
+    left: &Tensor,
+    right: &Tensor,
+    plan: &BroadcastPlan,
+) -> Result<Option<Vec<f32>>, TensorError> {
+    let (scalar, tensor, scalar_on_left) = if left.shape.is_empty() && !right.shape.is_empty() {
+        (left.value_at_linear_index(0), right, true)
+    } else if right.shape.is_empty() && !left.shape.is_empty() {
+        (right.value_at_linear_index(0), left, false)
+    } else {
+        return Ok(None);
+    };
+
+    if !layout_is_contiguous(&plan.shape, &plan.strides, plan.elements) {
+        return Ok(None);
+    }
+
+    let Some(values) = tensor.contiguous_slice() else {
+        return Ok(None);
+    };
+    debug_assert_eq!(values.len(), plan.elements);
+
+    let mut data = filled_storage(plan.elements, 0.0)?;
+    if scalar_on_left {
+        for (output, &value) in data.iter_mut().zip(values) {
+            *output = squared_difference_value(scalar, value);
+        }
+    } else {
+        for (output, &value) in data.iter_mut().zip(values) {
+            *output = squared_difference_value(value, scalar);
+        }
+    }
+
+    if scalar.is_nan() {
+        for (output, &value) in data.iter_mut().zip(values) {
+            if value.is_nan() {
+                let (left, right) = if scalar_on_left {
+                    (scalar, value)
+                } else {
+                    (value, scalar)
+                };
+                *output = apply_binary_operation_scalar(&squared_difference_value, left, right);
+            }
+        }
+    }
+
+    debug_assert_eq!(data.len(), plan.elements);
+    Ok(Some(data))
 }
 
 #[inline(never)]
@@ -9817,6 +9873,89 @@ mod tests {
             assert_eq!(actual.shape(), expected.shape());
             assert_eq!(actual.stride(), expected.stride());
             assert_eq!(actual.storage_offset(), 0);
+            assert!(!actual.shares_storage_with(left));
+            assert!(!actual.shares_storage_with(right));
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+
+    #[test]
+    fn squared_difference_broadcasts_contiguous_rank_zero_in_both_operand_orders() {
+        let tensor_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+            0xff85_4321,
+        ];
+        let tensor = offset_contiguous_tensor(&tensor_bits, &[3, 4]);
+        assert!(tensor.is_contiguous());
+        assert_ne!(tensor.storage_offset(), 0);
+
+        for scalar_bits in [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc6_789a,
+            0x7f86_789a,
+        ] {
+            let scalar = Tensor::from_vec(vec![17.0, f32::from_bits(scalar_bits)], [2])
+                .unwrap()
+                .index_integer(1)
+                .unwrap();
+            assert!(scalar.shape().is_empty());
+            assert_ne!(scalar.storage_offset(), 0);
+
+            for (left, right) in [(&scalar, &tensor), (&tensor, &scalar)] {
+                let expected = left.sub(right).unwrap().square().unwrap();
+                let actual = left.squared_difference(right).unwrap();
+
+                assert_eq!(actual.shape(), &[3, 4]);
+                assert_eq!(actual.stride(), &[4, 1]);
+                assert_eq!(actual.storage_offset(), 0);
+                assert!(actual.is_contiguous());
+                assert!(!actual.shares_storage_with(left));
+                assert!(!actual.shares_storage_with(right));
+                assert!(
+                    actual
+                        .logical_values()
+                        .map(f32::to_bits)
+                        .eq(expected.logical_values().map(f32::to_bits))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn squared_difference_contiguous_rank_zero_empty_broadcast_keeps_layout() {
+        let scalar = Tensor::from_vec(vec![17.0, -0.0], [2])
+            .unwrap()
+            .index_integer(1)
+            .unwrap();
+        let empty = Tensor::zeros([2, 0, 3]).unwrap();
+
+        for (left, right) in [(&scalar, &empty), (&empty, &scalar)] {
+            let expected = left.sub(right).unwrap().square().unwrap();
+            let actual = left.squared_difference(right).unwrap();
+
+            assert_eq!(actual.shape(), &[2, 0, 3]);
+            assert_eq!(actual.stride(), &[3, 3, 1]);
+            assert_eq!(actual.storage_offset(), 0);
+            assert!(actual.is_contiguous());
             assert!(!actual.shares_storage_with(left));
             assert!(!actual.shares_storage_with(right));
             assert!(
