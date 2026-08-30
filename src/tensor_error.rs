@@ -82,6 +82,9 @@ pub enum TensorError {
     NegativeStrides {
         strides: Vec<i64>,
     },
+    NonEmptyUninitializedAllocation {
+        elements: usize,
+    },
     StorageCapacityOverflow {
         elements: usize,
     },
@@ -192,9 +195,9 @@ impl Display for TensorError {
             | Self::ElementCountOverflow
             | Self::StrideCalculationOverflow
             | Self::NegativeStrides { .. }) => format_stride_error(formatter, error),
-            error @ (Self::StorageCapacityOverflow { .. } | Self::AllocationFailed { .. }) => {
-                format_storage_error(formatter, error)
-            }
+            error @ (Self::NonEmptyUninitializedAllocation { .. }
+            | Self::StorageCapacityOverflow { .. }
+            | Self::AllocationFailed { .. }) => format_storage_error(formatter, error),
             error @ (Self::UnsupportedMemoryFormat { .. }
             | Self::ContiguousPreserveFormatUnsupported
             | Self::ContiguousMemoryFormatRankMismatch { .. }) => {
@@ -331,6 +334,10 @@ fn format_stride_error(formatter: &mut Formatter<'_>, error: &TensorError) -> st
 
 fn format_storage_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
     match error {
+        TensorError::NonEmptyUninitializedAllocation { elements } => write!(
+            formatter,
+            "empty tensor construction only supports zero elements, got {elements}"
+        ),
         TensorError::StorageCapacityOverflow { elements } => write!(
             formatter,
             "storage for a tensor with {elements} elements exceeds the platform capacity"

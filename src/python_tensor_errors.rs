@@ -21,6 +21,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::ViewIncompatibleLayout
         | TensorError::StrideCalculationOverflow
         | TensorError::NegativeStrides { .. }
+        | TensorError::NonEmptyUninitializedAllocation { .. }
         | TensorError::StorageCapacityOverflow { .. }
         | TensorError::AllocationFailed { .. }
         | TensorError::UnsupportedMemoryFormat { .. }
