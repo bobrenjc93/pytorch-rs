@@ -1592,6 +1592,73 @@ pub(crate) fn arange_variable_function(
         .unbind())
 }
 
+pub(crate) fn zeros_like_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let arguments = bind_zeros_like_arguments(args, kwargs)?;
+    let Some(input) = arguments.input else {
+        return Err(PyTypeError::new_err(
+            "zeros_like() missing 1 required positional arguments: \"input\"",
+        ));
+    };
+
+    validate_identity_dtype_type("zeros_like", arguments.dtype.as_ref())?;
+    parse_zeros_like_layout(arguments.layout.as_ref())?;
+    validate_device_argument_type("zeros_like", arguments.device.as_ref())?;
+    let requires_grad =
+        parse_factory_requires_grad("zeros_like", arguments.requires_grad.as_ref())?;
+    let memory_format = parse_zeros_like_memory_format(arguments.memory_format.as_ref())?;
+    if let Some(keyword_error) = arguments.keyword_error {
+        return Err(keyword_error);
+    }
+    if !torch_function_mode_stack::is_empty() {
+        return Err(PyNotImplementedError::new_err(
+            "zeros_like(): TorchFunctionMode dispatch is not supported",
+        ));
+    }
+    if !input.value.is_exact_instance_of::<PyTensor>() {
+        return Err(zeros_like_unsupported_input_error());
+    }
+
+    let dtype = parse_identity_dtype("zeros_like", arguments.dtype.as_ref())?;
+    let device = parse_device("zeros_like", arguments.device.as_ref())?;
+    if dtype != DType::Float32 || device != Device::Cpu {
+        return Err(PyNotImplementedError::new_err(
+            "zeros_like(): only default CPU float32 metadata is supported",
+        ));
+    }
+    if !matches!(
+        memory_format,
+        MemoryFormat::Preserve | MemoryFormat::Contiguous
+    ) {
+        return Err(PyNotImplementedError::new_err(
+            "zeros_like(): only preserve_format and contiguous_format memory formats are supported",
+        ));
+    }
+
+    let input_tensor = input.value.cast::<PyTensor>()?.try_borrow()?;
+    if input_tensor.inner.dtype() != DType::Float32
+        || input_tensor.inner.device() != Device::Cpu
+        || !input_tensor
+            .inner
+            .has_canonical_contiguous_strides()
+            .map_err(|error| tensor_error(&error))?
+    {
+        return Err(zeros_like_unsupported_input_error());
+    }
+
+    let output = CoreTensor::zeros_with_metadata(
+        input_tensor.inner.shape().to_vec(),
+        DType::Float32,
+        Device::Cpu,
+    )
+    .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
+    .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, output)?.into_any())
+}
+
 fn dispatch_empty_variadic_tensor_input(
     py: Python<'_>,
     name: &str,
@@ -4382,6 +4449,16 @@ struct CreationCallArguments<'py> {
     keyword_error: Option<PyErr>,
 }
 
+struct ZerosLikeCallArguments<'py> {
+    input: Option<ParsedCallArgument<'py>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    requires_grad: Option<Bound<'py, PyAny>>,
+    memory_format: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CreationSizeOrigin {
     Positional,
@@ -6136,6 +6213,71 @@ fn bind_creation_arguments<'py>(
     Ok(arguments)
 }
 
+fn bind_zeros_like_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ZerosLikeCallArguments<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "zeros_like() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments = ZerosLikeCallArguments {
+        input: if positional.is_empty() {
+            None
+        } else {
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            })
+        },
+        dtype: None,
+        layout: None,
+        device: None,
+        requires_grad: None,
+        memory_format: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "input" => {
+                if arguments.input.is_some() {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(
+                            "zeros_like() got multiple values for argument 'input'",
+                        )
+                    });
+                } else {
+                    arguments.input = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            }
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "layout" => arguments.layout = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            "memory_format" => arguments.memory_format = optional_call_argument(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "zeros_like() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
+}
+
 fn optional_call_argument(value: Bound<'_, PyAny>) -> Option<Bound<'_, PyAny>> {
     if value.is_none() { None } else { Some(value) }
 }
@@ -6907,6 +7049,32 @@ fn parse_factory_layout(function: &str, layout: Option<&Bound<'_, PyAny>>) -> Py
     Err(PyTypeError::new_err(format!(
         "{function}(): argument 'layout' must be torch.layout, not {actual}"
     )))
+}
+
+fn parse_zeros_like_layout(layout: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    parse_factory_layout("zeros_like", layout)
+}
+
+fn parse_zeros_like_memory_format(
+    memory_format: Option<&Bound<'_, PyAny>>,
+) -> PyResult<MemoryFormat> {
+    let Some(memory_format) = memory_format else {
+        return Ok(MemoryFormat::Preserve);
+    };
+    if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
+        return Ok(memory_format.try_borrow()?.inner());
+    }
+
+    let type_name = memory_format.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "zeros_like(): argument 'memory_format' must be torch.memory_format, not {type_name}"
+    )))
+}
+
+fn zeros_like_unsupported_input_error() -> PyErr {
+    PyNotImplementedError::new_err(
+        "zeros_like(): only exact native CPU float32 row-major contiguous Tensor inputs are supported",
+    )
 }
 
 fn validate_scalar_tensor_device_type(device: Option<&Bound<'_, PyAny>>) -> PyResult<()> {

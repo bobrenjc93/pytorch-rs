@@ -1466,6 +1466,11 @@ impl Tensor {
         }
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn has_canonical_contiguous_strides(&self) -> Result<bool, TensorError> {
+        contiguous_strides(&self.shape, self.elements).map(|strides| self.strides == strides)
+    }
+
     /// Returns whether every logical value occupies a distinct element in one
     /// dense storage interval, independent of dimension order.
     #[must_use]
