@@ -16,8 +16,8 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
     abs_variable_function, absolute_variable_function, adjoint_variable_function,
-    arange_variable_function, as_tensor_variable_function, atleast_1d_variable_function,
-    atleast_2d_variable_function, atleast_3d_variable_function,
+    arange_variable_function, as_tensor_variable_function, asarray_variable_function,
+    atleast_1d_variable_function, atleast_2d_variable_function, atleast_3d_variable_function,
     broadcast_tensors_variable_function, can_cast_variable_function, ceil_variable_function,
     conj_variable_function, detach_variable_function, exp_variable_function, fix_variable_function,
     floor_variable_function, get_device_variable_function, imag_variable_function,
@@ -85,6 +85,8 @@ const VARIABLE_FUNCTION_NAMES: [&str; 48] = [
     "can_cast",
     "promote_types",
 ];
+
+const PACKAGE_ONLY_VARIABLE_FUNCTION_NAMES: [&str; 1] = ["asarray"];
 
 const ADJOINT_DOC: &std::ffi::CStr = cr"
 adjoint(input: Tensor) -> Tensor
@@ -213,6 +215,121 @@ Example::
     >>> a
     array([1,  2,  3])
 "#;
+
+const ASARRAY_DOC: &std::ffi::CStr = cr"
+asarray(obj: Any, *, dtype: Optional[dtype], device: Optional[DeviceLikeType], copy: Optional[bool] = None, requires_grad: Optional[bool] = None) -> Tensor # noqa: B950
+
+Converts :attr:`obj` to a tensor.
+
+:attr:`obj` can be one of:
+
+1. a tensor
+2. a NumPy array or a NumPy scalar
+3. a DLPack capsule
+4. an object that implements Python's buffer protocol
+5. a scalar
+6. a sequence of scalars
+
+When :attr:`obj` is a tensor, NumPy array, or DLPack capsule the returned tensor will,
+by default, have the same requires_grad as :attr:`obj` (defaulting to False), have the
+same datatype, be on the same device, and share memory with it. These properties can be
+controlled with the :attr:`dtype`, :attr:`device`, :attr:`copy`, and
+:attr:`requires_grad` keyword arguments. If the returned tensor is of a different
+datatype, on a different device, or a copy is requested then it will not share its
+memory with :attr:`obj`. If :attr:`requires_grad` is ``True`` (or ``None``, and
+:attr:`obj` was a tensor with requires_grad set), then the returned tensor will require
+a gradient, and if :attr:`obj` is also a tensor with an autograd history then the
+returned tensor will have the same history.
+
+When :attr:`obj` is not a tensor, NumPy array, or DLPack capsule but implements Python's
+buffer protocol then the buffer is interpreted as an array of bytes grouped according to
+the size of the datatype passed to the :attr:`dtype` keyword argument. (If no datatype is
+passed then the default floating point datatype is used, instead.) The returned tensor
+will have the specified datatype (or default floating point datatype if none is specified)
+and, by default, be on the CPU device and share memory with the buffer.
+
+When :attr:`obj` is a NumPy scalar, the returned tensor will be a 0-dimensional tensor on
+the CPU and that doesn't share its memory (i.e. ``copy=True``). By default datatype will
+be the PyTorch datatype corresponding to the NumPy's scalar's datatype.
+
+When :attr:`obj` is none of the above but a scalar, or a sequence of scalars then the
+returned tensor will, by default, infer its datatype from the scalar values, be on the
+current default device, and not share its memory.
+
+.. seealso::
+
+    :func:`torch.tensor` creates a tensor that always copies the data from the input object.
+    :func:`torch.from_numpy` creates a tensor that always shares memory from NumPy arrays.
+    :func:`torch.frombuffer` creates a tensor that always shares memory from objects that
+    implement the buffer protocol.
+    :func:`torch.from_dlpack` creates a tensor that always shares memory from
+    DLPack capsules.
+
+Args:
+    obj (object): a tensor, NumPy array, DLPack Capsule, object that implements Python's
+           buffer protocol, scalar, or sequence of scalars.
+
+Keyword args:
+    dtype (:class:`torch.dtype`, optional): the datatype of the returned tensor.
+           Default: ``None``, which causes the datatype of the returned tensor to be
+           inferred from :attr:`obj`.
+    copy (bool, optional): controls whether the returned tensor shares memory with :attr:`obj`.
+           Default: ``None``, which causes the returned tensor to share memory with :attr:`obj`
+           whenever possible. If ``True`` then the returned tensor does not share its memory.
+           If ``False`` then the returned tensor shares its memory with :attr:`obj` and an
+           error is thrown if it cannot.
+    device (:class:`torch.device`, optional): the device of the returned tensor.
+           Default: ``None``, which causes the device of :attr:`obj` to be used. Or, if
+           :attr:`obj` is a Python sequence, the current default device will be used.
+    requires_grad (bool, optional): whether the returned tensor requires grad.
+           Default: ``None``, which causes requires_grad for the returned tensor to be
+           inferred from :attr:`obj`. If ``True``, then the returned tensor will require
+           a gradient, and if :attr:`obj` is also a tensor with an autograd history then
+           the returned tensor will have the same history.
+
+Example::
+
+    >>> a = torch.tensor([1, 2, 3])
+    >>> # Shares memory with tensor 'a'
+    >>> b = torch.asarray(a)
+    >>> a.data_ptr() == b.data_ptr()
+    True
+    >>> # Forces memory copy
+    >>> c = torch.asarray(a, copy=True)
+    >>> a.data_ptr() == c.data_ptr()
+    False
+
+    >>> a = torch.tensor([1., 2., 3.], requires_grad=True)
+    >>> b = a + 2
+    >>> b
+    tensor([3., 4., 5.], grad_fn=<AddBackward0>)
+    >>> # Shares memory with tensor 'b', with no grad
+    >>> c = torch.asarray(b, requires_grad=False)
+    >>> c
+    tensor([3., 4., 5.])
+    >>> # Shares memory with tensor 'b', retaining autograd history
+    >>> d = torch.asarray(b, requires_grad=True)
+    >>> d
+    tensor([3., 4., 5.], grad_fn=<AddBackward0>)
+    >>> # Shares memory with tensor 'b', retaining autograd history
+    >>> e = torch.asarray(b)
+    >>> e
+    tensor([3., 4., 5.], grad_fn=<AddBackward0>)
+
+    >>> array = numpy.array([1, 2, 3])
+    >>> # Shares memory with array 'array'
+    >>> t1 = torch.asarray(array)
+    >>> array.__array_interface__['data'][0] == t1.data_ptr()
+    True
+    >>> # Copies memory due to dtype mismatch
+    >>> t2 = torch.asarray(array, dtype=torch.float32)
+    >>> array.__array_interface__['data'][0] == t2.data_ptr()
+    False
+
+    >>> scalar = numpy.float64(0.5)
+    >>> torch.asarray(scalar)
+    tensor(0.5000, dtype=torch.float64)
+";
 
 const POSITIVE_DOC: &std::ffi::CStr = c"\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n";
 
@@ -953,6 +1070,7 @@ macro_rules! variable_function_callback {
 
 variable_function_callback!(get_device_callback, get_device_variable_function);
 variable_function_callback!(as_tensor_callback, as_tensor_variable_function);
+variable_function_callback!(asarray_callback, asarray_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
 variable_function_callback!(arange_callback, arange_variable_function);
 variable_function_callback!(atleast_1d_callback, atleast_1d_variable_function);
@@ -1032,6 +1150,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
     let methods = Box::leak(Box::new([
         variable_function_method!(c"get_device", get_device_callback, c""),
         variable_function_method!(c"as_tensor", as_tensor_callback, AS_TENSOR_DOC),
+        variable_function_method!(c"asarray", asarray_callback, ASARRAY_DOC),
         variable_function_method!(c"scalar_tensor", scalar_tensor_callback, c""),
         variable_function_method!(c"arange", arange_callback, ARANGE_DOC),
         variable_function_method!(c"atleast_1d", atleast_1d_callback, c""),
@@ -1128,6 +1247,11 @@ pub(crate) fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<(
         let function = variable_functions.getattr(name)?;
         function.setattr("__module__", "torch")?;
         module.add(name, function)?;
+    }
+    for name in PACKAGE_ONLY_VARIABLE_FUNCTION_NAMES {
+        variable_functions
+            .getattr(name)?
+            .setattr("__module__", "torch")?;
     }
     variable_functions
         .getattr("_nnpack_available")?

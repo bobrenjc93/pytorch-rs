@@ -42,6 +42,7 @@ static H_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MH_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static ADJOINT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+static ASARRAY_REQUIRES_GRAD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static WARN_ALWAYS_ENABLED: AtomicBool = AtomicBool::new(false);
 static CUDNN_ENABLED: AtomicBool = AtomicBool::new(true);
@@ -160,6 +161,8 @@ const MH_SCALAR_WARNING: &CStr = c"Tensor.mH is deprecated on 0-D tensors. Consi
 #[cfg(target_os = "macos")]
 const ADJOINT_SCALAR_WARNING: &CStr = c"adjoint() is deprecated on 0-D tensors. Consider using x.conj(). (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4391.)";
 #[cfg(target_os = "macos")]
+const ASARRAY_REQUIRES_GRAD_WARNING: &CStr = c"torch.asarray: unspecified requires_grad now defaults to obj.requires_grad instead of False. Pass requires_grad=False explicitly to get the old behavior and silence this warning. (Triggered internally at /Users/runner/work/pytorch/pytorch/torch/csrc/utils/tensor_new.cpp:1737.)";
+#[cfg(target_os = "macos")]
 const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod. (Triggered internally at /Users/runner/work/pytorch/pytorch/torch/csrc/utils/python_arg_parser.cpp:359.)";
 
 #[cfg(target_os = "linux")]
@@ -175,6 +178,8 @@ const MH_SCALAR_WARNING: &CStr = c"Tensor.mH is deprecated on 0-D tensors. Consi
 #[cfg(target_os = "linux")]
 const ADJOINT_SCALAR_WARNING: &CStr = c"adjoint() is deprecated on 0-D tensors. Consider using x.conj(). (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4390.)";
 #[cfg(target_os = "linux")]
+const ASARRAY_REQUIRES_GRAD_WARNING: &CStr = c"torch.asarray: unspecified requires_grad now defaults to obj.requires_grad instead of False. Pass requires_grad=False explicitly to get the old behavior and silence this warning. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_new.cpp:1737.)";
+#[cfg(target_os = "linux")]
 const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/python_arg_parser.cpp:359.)";
 
 #[cfg(target_os = "windows")]
@@ -189,6 +194,8 @@ const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This 
 const MH_SCALAR_WARNING: &CStr = c"Tensor.mH is deprecated on 0-D tensors. Consider using x.conj(). (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4383.)";
 #[cfg(target_os = "windows")]
 const ADJOINT_SCALAR_WARNING: &CStr = c"adjoint() is deprecated on 0-D tensors. Consider using x.conj(). (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4391.)";
+#[cfg(target_os = "windows")]
+const ASARRAY_REQUIRES_GRAD_WARNING: &CStr = c"torch.asarray: unspecified requires_grad now defaults to obj.requires_grad instead of False. Pass requires_grad=False explicitly to get the old behavior and silence this warning. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\torch\\csrc\\utils\\tensor_new.cpp:1737.)";
 #[cfg(target_os = "windows")]
 const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\torch\\csrc\\utils\\python_arg_parser.cpp:359.)";
 
@@ -208,6 +215,8 @@ const MH_SCALAR_WARNING: &CStr =
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 const ADJOINT_SCALAR_WARNING: &CStr =
     c"adjoint() is deprecated on 0-D tensors. Consider using x.conj().";
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+const ASARRAY_REQUIRES_GRAD_WARNING: &CStr = c"torch.asarray: unspecified requires_grad now defaults to obj.requires_grad instead of False. Pass requires_grad=False explicitly to get the old behavior and silence this warning.";
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod.";
 
@@ -1475,7 +1484,9 @@ pub(crate) fn as_tensor_variable_function(
     if let Some(keyword_error) = arguments.keyword_error {
         return Err(keyword_error);
     }
-    if let Some(result) = dispatch_as_tensor_mode(py, args, kwargs)? {
+    if let Some(result) =
+        dispatch_variable_function_mode(py, "as_tensor", "torch.as_tensor", args, kwargs)?
+    {
         return Ok(result);
     }
     let device = parse_as_tensor_device(arguments.device.as_ref())?;
@@ -1491,6 +1502,70 @@ pub(crate) fn as_tensor_variable_function(
         ));
     }
     Ok(data.value.unbind())
+}
+
+pub(crate) fn asarray_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let arguments = bind_asarray_arguments(args, kwargs)?;
+    let Some(obj) = arguments.obj else {
+        return Err(PyTypeError::new_err(
+            "asarray() missing 1 required positional arguments: \"obj\"",
+        ));
+    };
+
+    let dtype = parse_dtype("asarray", arguments.dtype.as_ref())?;
+    validate_identity_tensor_device_type("asarray", arguments.device.as_ref())?;
+    let copy = parse_optional_bool("asarray", "copy", arguments.copy.as_ref())?;
+    let requires_grad =
+        parse_optional_bool("asarray", "requires_grad", arguments.requires_grad.as_ref())?;
+    if let Some(keyword_error) = arguments.keyword_error {
+        return Err(keyword_error);
+    }
+    if let Some(result) =
+        dispatch_variable_function_mode(py, "asarray", "torch.asarray", args, kwargs)?
+    {
+        return Ok(result);
+    }
+    if copy == Some(true) {
+        return Err(PyNotImplementedError::new_err(
+            "asarray(): copy=True is not supported; only identity aliasing with copy=None or copy=False is implemented",
+        ));
+    }
+    if requires_grad.is_some() {
+        return Err(PyNotImplementedError::new_err(
+            "asarray(): explicit requires_grad changes are not supported; omit requires_grad or pass None to preserve existing autograd state",
+        ));
+    }
+    let device = parse_identity_tensor_device("asarray", arguments.device.as_ref())?;
+
+    if dtype != DType::Float32 || !device.is_cpu() {
+        return Err(PyNotImplementedError::new_err(
+            "asarray(): only identity conversion for CPU float32 tensors is supported",
+        ));
+    }
+    if !obj.value.is_exact_instance_of::<PyTensor>() {
+        return Err(PyNotImplementedError::new_err(
+            "asarray(): only exact native CPU float32 Tensor inputs are supported; Python sequences, NumPy arrays, scalar, and buffer conversions are not implemented",
+        ));
+    }
+    {
+        let tensor = obj
+            .value
+            .cast::<PyTensor>()
+            .expect("the asarray input type was checked above")
+            .try_borrow()?;
+        if tensor.inner.requires_grad() {
+            warn_once(
+                py,
+                &ASARRAY_REQUIRES_GRAD_WARNING_EMITTED,
+                ASARRAY_REQUIRES_GRAD_WARNING,
+            )?;
+        }
+    }
+    Ok(obj.value.unbind())
 }
 
 pub(crate) fn scalar_tensor_variable_function(
@@ -4282,6 +4357,15 @@ struct AsTensorCallArguments<'py> {
     keyword_error: Option<PyErr>,
 }
 
+struct AsarrayCallArguments<'py> {
+    obj: Option<ParsedCallArgument<'py>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    copy: Option<Bound<'py, PyAny>>,
+    requires_grad: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
 struct ScalarTensorCallArguments<'py> {
     scalar: Option<ParsedCallArgument<'py>>,
     dtype: Option<Bound<'py, PyAny>>,
@@ -5167,6 +5251,24 @@ fn parse_requires_grad(function: &str, requires_grad: &Bound<'_, PyAny>) -> PyRe
     Err(PyTypeError::new_err(format!(
         "{function}(): argument 'requires_grad' must be bool, not {type_name}"
     )))
+}
+
+fn parse_optional_bool(
+    function: &str,
+    argument: &str,
+    value: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Option<bool>> {
+    value
+        .map(|value| {
+            if value.is_exact_instance_of::<PyBool>() {
+                return value.is_truthy();
+            }
+            let actual = python_type_name(value)?;
+            Err(PyTypeError::new_err(format!(
+                "{function}(): argument '{argument}' must be bool, not {actual}"
+            )))
+        })
+        .transpose()
 }
 
 fn parse_factory_requires_grad(
@@ -6343,6 +6445,67 @@ fn bind_as_tensor_arguments<'py>(
     Ok(arguments)
 }
 
+fn bind_asarray_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<AsarrayCallArguments<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "asarray() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments = AsarrayCallArguments {
+        obj: if positional.is_empty() {
+            None
+        } else {
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            })
+        },
+        dtype: None,
+        device: None,
+        copy: None,
+        requires_grad: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "obj" => {
+                if arguments.obj.is_some() {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("asarray() got multiple values for argument 'obj'")
+                    });
+                } else {
+                    arguments.obj = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            }
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            "copy" => arguments.copy = optional_call_argument(value),
+            "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "asarray() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
+}
+
 fn parse_as_tensor_dtype(dtype: Option<&Bound<'_, PyAny>>) -> PyResult<DType> {
     let dtype = parse_dtype("as_tensor", dtype)?;
     if dtype == DType::Float32 {
@@ -6354,6 +6517,13 @@ fn parse_as_tensor_dtype(dtype: Option<&Bound<'_, PyAny>>) -> PyResult<DType> {
 }
 
 fn validate_as_tensor_device_type(device: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    validate_identity_tensor_device_type("as_tensor", device)
+}
+
+fn validate_identity_tensor_device_type(
+    function: &str,
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
     let Some(device) = device else {
         return Ok(());
     };
@@ -6362,11 +6532,18 @@ fn validate_as_tensor_device_type(device: Option<&Bound<'_, PyAny>>) -> PyResult
     }
     let type_name = device.get_type().name()?;
     Err(PyTypeError::new_err(format!(
-        "as_tensor(): argument 'device' must be torch.device, not {type_name}"
+        "{function}(): argument 'device' must be torch.device, not {type_name}"
     )))
 }
 
 fn parse_as_tensor_device(device: Option<&Bound<'_, PyAny>>) -> PyResult<Device> {
+    parse_identity_tensor_device("as_tensor", device)
+}
+
+fn parse_identity_tensor_device(
+    function: &str,
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Device> {
     let Some(device) = device else {
         return Ok(Device::Cpu);
     };
@@ -6375,9 +6552,9 @@ fn parse_as_tensor_device(device: Option<&Bound<'_, PyAny>>) -> PyResult<Device>
         if device.inner().is_cpu() && !device.has_index() {
             return Ok(Device::Cpu);
         }
-        return Err(PyNotImplementedError::new_err(
-            "as_tensor(): indexed CPU devices require a copy and are not supported",
-        ));
+        return Err(PyNotImplementedError::new_err(format!(
+            "{function}(): indexed CPU devices require a copy and are not supported"
+        )));
     }
 
     let specification = device.cast::<PyString>()?.to_str()?;
@@ -6385,10 +6562,10 @@ fn parse_as_tensor_device(device: Option<&Bound<'_, PyAny>>) -> PyResult<Device>
         return Ok(Device::Cpu);
     }
     validate_as_tensor_device_string(specification)?;
-    parse_device_value("as_tensor", device)?;
-    Err(PyNotImplementedError::new_err(
-        "as_tensor(): explicit indexed CPU devices require a copy and are not supported",
-    ))
+    parse_device_value(function, device)?;
+    Err(PyNotImplementedError::new_err(format!(
+        "{function}(): explicit indexed CPU devices require a copy and are not supported"
+    )))
 }
 
 fn validate_as_tensor_device_string(specification: &str) -> PyResult<()> {
@@ -6453,8 +6630,10 @@ fn validate_as_tensor_device_string(specification: &str) -> PyResult<()> {
     Ok(())
 }
 
-fn dispatch_as_tensor_mode(
+fn dispatch_variable_function_mode(
     py: Python<'_>,
+    name: &str,
+    qualified_name: &str,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Option<Py<PyAny>>> {
@@ -6462,7 +6641,7 @@ fn dispatch_as_tensor_mode(
         return Ok(None);
     }
 
-    let function = variable_function(py, "as_tensor")?;
+    let function = variable_function(py, name)?;
     let types = PyTuple::empty(py);
     let active_mode = torch_function_mode_stack::pop();
     let Some(mode) = active_mode.get() else {
@@ -6477,7 +6656,7 @@ fn dispatch_as_tensor_mode(
 
     Err(torch_function_dispatch_error(
         py,
-        "torch.as_tensor",
+        qualified_name,
         Some(mode),
         None,
     )?)

@@ -34,6 +34,10 @@ newaxis = None
 # function owner, but not through ``torch._C`` or wildcard imports.
 _nnpack_available = _native._VariableFunctionsClass._nnpack_available
 
+# PyTorch exposes ``asarray`` as a top-level variable function whose immutable
+# owner lives in ``torch._C`` while ``torch._C.asarray`` itself is absent.
+asarray = _native._VariableFunctionsClass.asarray
+
 
 # Keep the public answer as the immutable build-time fact. Like PyTorch's
 # generated package function, it must not observe reassignment or deletion of
@@ -431,6 +435,7 @@ __all__ = [
     "nan",
     "inf",
     "newaxis",
+    "asarray",
 ]
 # PyTorch lists ``matmul`` once among its hand-written package exports and once
 # among generated variable functions. Preserve that observable duplicate while

@@ -548,16 +548,22 @@ its implementation engine.
 
 #### Creation
 
-`torch.as_tensor(data, dtype=None, device=None)` is exposed as a
-PyTorch-style top-level builtin for identity conversion only. When `data` is an
-exact native CPU `float32` tensor and `dtype` and `device` are omitted, `None`,
-or the unindexed CPU/`torch.float32` defaults, the exact same Python Tensor
-object is returned with unchanged storage, shape, stride, storage offset, dtype,
-device, layout, autograd history, leaf state, and output number. Python
-sequences, NumPy arrays, scalars, tensor subclasses, dtype conversions,
+`torch.as_tensor(data, dtype=None, device=None)` and
+`torch.asarray(obj, *, dtype=None, device=None, copy=None,
+requires_grad=None)` are exposed as PyTorch-style top-level builtins for
+identity conversion only. When the input is an exact native CPU `float32` tensor
+and `dtype` and `device` are omitted, `None`, or the unindexed
+CPU/`torch.float32` defaults, the exact same Python Tensor object is returned
+with unchanged storage, shape, stride, storage offset, dtype, device, layout,
+autograd history, leaf state, and output number. `torch.asarray` additionally
+accepts omitted, `None`, or `False` `copy`, and omitted or `None`
+`requires_grad`, preserving the existing autograd state and PyTorch 2.13's
+one-time warning for unspecified `requires_grad` on grad-requiring tensors.
+Python sequences, NumPy arrays, scalars, tensor subclasses, dtype conversions,
 accelerator or meta devices, indexed CPU devices that would require a copy,
-pinned-memory options, concrete or `None` `out` arguments, and explicit copy
-requests remain unsupported.
+pinned-memory options, concrete or `None` `out` arguments, `torch.asarray`
+`copy=True`, and explicit `torch.asarray` `requires_grad` booleans remain
+unsupported.
 
 `torch.zeros(size, *, out=None, dtype=None, device=None, requires_grad=False)` and `torch.ones(size, *, out=None, dtype=None, device=None, requires_grad=False)` create fresh CPU float32 tensors for scalar, empty, and multidimensional sizes. A single positional integer or integer-protocol value is accepted as a one-dimensional size, while tuple/list-like sizes retain their existing PyTorch-compatible shape, stride, dtype, device, and `requires_grad` metadata. `out=None` is accepted and behaves like the omitted default without reusing storage. Concrete `out` tensors, extra positional dimensions, non-float32 dtype or non-CPU device allocation, `layout`, `pin_memory`, sparse layouts, and like-factory variants remain unsupported.
 

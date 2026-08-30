@@ -1,0 +1,457 @@
+import copy
+import importlib
+import inspect
+import json
+import pickle
+import re
+import subprocess
+import sys
+import textwrap
+import types
+import unittest
+import warnings
+
+import numpy as np
+import torch_rs as torch
+
+
+FUNCTION_DOC_PREFIX = (
+    "\nasarray(obj: Any, *, dtype: Optional[dtype], "
+    "device: Optional[DeviceLikeType], copy: Optional[bool] = None, "
+    "requires_grad: Optional[bool] = None) -> Tensor # noqa: B950\n\n"
+    "Converts :attr:`obj` to a tensor."
+)
+
+
+class AsarrayTests(unittest.TestCase):
+    def assert_error(self, call, error_type, message):
+        with self.assertRaisesRegex(error_type, f"^{re.escape(message)}$"):
+            call()
+
+    def tensor_cases(self):
+        leaf = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32, requires_grad=True
+        )
+        produced = leaf * 2.0
+        tracked = produced.transpose(0, 1)
+        source = torch.tensor(
+            [
+                [0.0, 1.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0, 7.0],
+                [8.0, 9.0, 10.0, 11.0],
+            ],
+            dtype=torch.float32,
+        )
+        strided = source.transpose(0, 1)
+        special_bits = np.asarray(
+            (0x00000000, 0x80000000, 0x7F800000, 0xFF800000, 0x7FC12345),
+            dtype=np.uint32,
+        )
+        return (
+            ("scalar", torch.tensor(-0.0, dtype=torch.float32)),
+            ("empty view", torch.zeros((2, 0, 3), dtype=torch.float32)[1]),
+            ("strided view", strided[1]),
+            ("leaf", leaf),
+            ("tracked view", tracked),
+            ("special bits", torch.tensor(memoryview(special_bits.view(np.float32)))),
+        )
+
+    def tensor_state(self, tensor):
+        return (
+            np.asarray(tensor).reshape(-1).view(np.uint32).tolist(),
+            tensor.shape,
+            tensor.stride(),
+            tensor.storage_offset(),
+            tensor.data_ptr(),
+            tensor.dtype,
+            tensor.device,
+            tensor.layout,
+            tensor.requires_grad,
+            tensor.is_leaf,
+            tensor.output_nr,
+        )
+
+    def test_exact_native_cpu_float32_tensors_return_identical_object(self):
+        option_cases = (
+            {},
+            {"dtype": None},
+            {"dtype": torch.float32},
+            {"dtype": torch.float},
+            {"device": None},
+            {"device": "cpu"},
+            {"device": torch.device("cpu")},
+            {"copy": None},
+            {"copy": False},
+            {"requires_grad": None},
+            {
+                "dtype": torch.float32,
+                "device": torch.device("cpu"),
+                "copy": False,
+                "requires_grad": None,
+            },
+        )
+        for case, tensor in self.tensor_cases():
+            before = self.tensor_state(tensor)
+            for options in option_cases:
+                with self.subTest(case=case, options=options):
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        result = torch.asarray(tensor, **options)
+                    self.assertIs(result, tensor)
+                    self.assertEqual(result.data_ptr(), before[4])
+                    self.assertEqual(self.tensor_state(tensor), before)
+
+    def test_identity_preserves_autograd_graph_and_gradient_object(self):
+        leaf = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        source = (leaf * 3.0).transpose(0, 1)[1]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = torch.asarray(
+                source,
+                dtype=torch.float32,
+                device="cpu",
+                copy=False,
+                requires_grad=None,
+            )
+
+        self.assertIs(result, source)
+        self.assertFalse(result.is_leaf)
+        self.assertEqual(result.output_nr, source.output_nr)
+
+        result.sum().backward()
+        self.assertEqual(leaf.grad.tolist(), [[0.0, 3.0, 0.0], [0.0, 3.0, 0.0]])
+        gradient = leaf.grad
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self.assertIs(torch.asarray(leaf.grad), gradient)
+
+    def test_requires_grad_preservation_warning_is_emitted_once(self):
+        script = textwrap.dedent(
+            """
+            import json
+            import warnings
+
+            import torch_rs as torch
+
+            first = torch.tensor([1.0], dtype=torch.float32, requires_grad=True)
+            second = torch.tensor([2.0], dtype=torch.float32, requires_grad=True)
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                first_result = torch.asarray(first)
+                second_result = torch.asarray(second, requires_grad=None)
+            print(json.dumps({
+                "first_identity": first_result is first,
+                "second_identity": second_result is second,
+                "first_requires_grad": first_result.requires_grad,
+                "second_requires_grad": second_result.requires_grad,
+                "warnings": [
+                    [warning.category.__name__, str(warning.message)]
+                    for warning in caught
+                ],
+            }))
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=True,
+            cwd=".",
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        observation = json.loads(completed.stdout)
+        self.assertTrue(observation["first_identity"])
+        self.assertTrue(observation["second_identity"])
+        self.assertTrue(observation["first_requires_grad"])
+        self.assertTrue(observation["second_requires_grad"])
+        self.assertEqual(len(observation["warnings"]), 1)
+        self.assertEqual(observation["warnings"][0][0], "UserWarning")
+        self.assertTrue(
+            observation["warnings"][0][1].startswith(
+                "torch.asarray: unspecified requires_grad now defaults to "
+                "obj.requires_grad instead of False."
+            )
+        )
+
+    def test_callable_metadata_exports_copy_pickle_and_reload(self):
+        package = importlib.import_module("torch_rs")
+        native = package._C
+        function = package.asarray
+
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "asarray")
+        self.assertEqual(function.__qualname__, "_VariableFunctionsClass.asarray")
+        self.assertEqual(function.__module__, "torch")
+        self.assertTrue(function.__doc__.startswith(FUNCTION_DOC_PREFIX))
+        self.assertIsNone(function.__text_signature__)
+        self.assertRegex(
+            repr(function),
+            r"^<built-in method asarray of type object at 0x[0-9a-f]+>$",
+        )
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+
+        owner = function.__reduce__()[1][0]
+        self.assertEqual(owner.__name__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__qualname__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__module__, "torch_rs._C")
+        self.assertIs(owner, package._C._VariableFunctionsClass)
+        self.assertIs(owner.asarray, function)
+        self.assertFalse(hasattr(native, "asarray"))
+        self.assertIs(copy.copy(function), function)
+        self.assertIs(copy.deepcopy(function), function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(
+                    pickle.loads(pickle.dumps(function, protocol=protocol)), function
+                )
+
+        self.assertEqual(package.__all__.count("asarray"), 1)
+        self.assertNotIn("_VariableFunctionsClass", package.__all__)
+        self.assertFalse(hasattr(package, "_VariableFunctionsClass"))
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+        self.assertIs(wildcard_namespace["asarray"], function)
+
+        self.assertIs(importlib.reload(native), native)
+        self.assertFalse(hasattr(native, "asarray"))
+        self.assertIs(package.asarray, function)
+        self.assertIs(importlib.reload(package), package)
+        self.assertIs(package.asarray, function)
+        self.assertEqual(package.__all__.count("asarray"), 1)
+
+    def test_torch_function_mode_dispatches_before_native_conversion(self):
+        tensor = torch.tensor([1.0], dtype=torch.float32)
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        cases = (
+            ("positional tensor", lambda: torch.asarray(tensor), (tensor,), None),
+            (
+                "keyword tensor",
+                lambda: torch.asarray(obj=tensor, dtype=torch.float32),
+                (),
+                {"obj": tensor, "dtype": torch.float32},
+            ),
+            (
+                "unsupported sequence",
+                lambda: torch.asarray([1.0, 2.0]),
+                ([1.0, 2.0],),
+                None,
+            ),
+            (
+                "unsupported device string",
+                lambda: torch.asarray([1.0], device="cuda"),
+                ([1.0],),
+                {"device": "cuda"},
+            ),
+            (
+                "unsupported copy request",
+                lambda: torch.asarray(tensor, copy=True),
+                (tensor,),
+                {"copy": True},
+            ),
+            (
+                "unsupported requires_grad request",
+                lambda: torch.asarray(tensor, requires_grad=True),
+                (tensor,),
+                {"requires_grad": True},
+            ),
+        )
+        for case, call, expected_args, expected_kwargs in cases:
+            mode = RecordingMode()
+            with mode:
+                result = call()
+            with self.subTest(case=case):
+                self.assertIs(result, marker)
+                self.assertEqual(len(mode.calls), 1)
+                function, dispatch_types, args, kwargs = mode.calls[0]
+                self.assertIs(function, torch.asarray)
+                self.assertEqual(dispatch_types, ())
+                self.assertEqual(args, expected_args)
+                self.assertEqual(kwargs, expected_kwargs)
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = torch.asarray(
+                    obj=tensor,
+                    dtype=torch.float32,
+                    copy=False,
+                    requires_grad=None,
+                )
+        self.assertEqual(order, ["upper", "lower"])
+        self.assertIs(forwarded, tensor)
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        with self.assertRaisesRegex(
+            TypeError, r"^Multiple dispatch failed for 'torch\.asarray'"
+        ):
+            with DecliningMode():
+                torch.asarray(tensor)
+        self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 0)
+
+    def test_binding_errors_and_unsupported_scope_are_explicit(self):
+        tensor = torch.tensor([1.0], dtype=torch.float32)
+        unsupported_conversion = (
+            "asarray(): only exact native CPU float32 Tensor inputs are supported; "
+            "Python sequences, NumPy arrays, scalar, and buffer conversions are not "
+            "implemented"
+        )
+        cases = (
+            (
+                lambda: torch.asarray(),
+                TypeError,
+                'asarray() missing 1 required positional arguments: "obj"',
+            ),
+            (
+                lambda: torch.asarray(tensor, tensor),
+                TypeError,
+                "asarray() takes 1 positional argument but 2 were given",
+            ),
+            (
+                lambda: torch.asarray(tensor, obj=tensor),
+                TypeError,
+                "asarray() got multiple values for argument 'obj'",
+            ),
+            (
+                lambda: torch.asarray(data=tensor),
+                TypeError,
+                'asarray() missing 1 required positional arguments: "obj"',
+            ),
+            (
+                lambda: torch.asarray(tensor, data=tensor),
+                TypeError,
+                "asarray() got an unexpected keyword argument 'data'",
+            ),
+            (
+                lambda: torch.asarray(tensor, out=None),
+                TypeError,
+                "asarray() got an unexpected keyword argument 'out'",
+            ),
+            (
+                lambda: torch.asarray(tensor, pin_memory=False),
+                TypeError,
+                "asarray() got an unexpected keyword argument 'pin_memory'",
+            ),
+            (
+                lambda: torch.asarray(tensor, copy=1),
+                TypeError,
+                "asarray(): argument 'copy' must be bool, not int",
+            ),
+            (
+                lambda: torch.asarray(tensor, requires_grad=1),
+                TypeError,
+                "asarray(): argument 'requires_grad' must be bool, not int",
+            ),
+            (
+                lambda: torch.asarray(tensor, copy=True),
+                NotImplementedError,
+                "asarray(): copy=True is not supported; only identity aliasing with copy=None or copy=False is implemented",
+            ),
+            (
+                lambda: torch.asarray(tensor, requires_grad=False),
+                NotImplementedError,
+                "asarray(): explicit requires_grad changes are not supported; omit requires_grad or pass None to preserve existing autograd state",
+            ),
+            (
+                lambda: torch.asarray(tensor, requires_grad=True),
+                NotImplementedError,
+                "asarray(): explicit requires_grad changes are not supported; omit requires_grad or pass None to preserve existing autograd state",
+            ),
+            (
+                lambda: torch.asarray(tensor, dtype=1),
+                TypeError,
+                "asarray(): argument 'dtype' must be torch.dtype, not int",
+            ),
+            (
+                lambda: torch.asarray(tensor, device=1.5),
+                TypeError,
+                "asarray(): argument 'device' must be torch.device, not float",
+            ),
+            (
+                lambda: torch.asarray(tensor, device=""),
+                RuntimeError,
+                "Device string must not be empty",
+            ),
+            (
+                lambda: torch.asarray(tensor, device="banana"),
+                RuntimeError,
+                "Expected one of cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, "
+                "ideep, hip, ve, fpga, maia, xla, lazy, vulkan, mps, meta, hpu, "
+                "mtia, privateuseone device type at start of device string: banana",
+            ),
+            (
+                lambda: torch.asarray(tensor, device="cuda"),
+                RuntimeError,
+                "asarray(): device 'cuda' is not supported; only 'cpu' is implemented",
+            ),
+            (
+                lambda: torch.asarray(tensor, device="cpu:0"),
+                NotImplementedError,
+                "asarray(): explicit indexed CPU devices require a copy and are not supported",
+            ),
+            (
+                lambda: torch.asarray(tensor, device=torch.device("cpu", 1)),
+                NotImplementedError,
+                "asarray(): indexed CPU devices require a copy and are not supported",
+            ),
+            (lambda: torch.asarray([1.0]), NotImplementedError, unsupported_conversion),
+            (lambda: torch.asarray((1.0,)), NotImplementedError, unsupported_conversion),
+            (
+                lambda: torch.asarray(np.asarray([1.0], dtype=np.float32)),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
+            (lambda: torch.asarray(1.0), NotImplementedError, unsupported_conversion),
+            (
+                lambda: torch.asarray(memoryview(np.asarray([1.0], dtype=np.float32))),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
+        )
+        for call, error_type, message in cases:
+            with self.subTest(message=message):
+                self.assert_error(call, error_type, message)
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return object()
+
+        self.assert_error(
+            lambda: torch.asarray(Override()),
+            NotImplementedError,
+            unsupported_conversion,
+        )
+        self.assertEqual(Override.calls, [])
+        self.assertFalse(hasattr(torch, "float64"))
+
+
+if __name__ == "__main__":
+    unittest.main()
