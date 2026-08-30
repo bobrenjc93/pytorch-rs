@@ -309,6 +309,10 @@ class TensorAddTests(unittest.TestCase):
                 self.calls.append((func, types, args, kwargs))
                 return self.result
 
+        wide_uint_alpha = np.uint64(2**63)
+        positive_overflow_alpha = 2**100
+        negative_overflow_alpha = -(2**63) - 1
+
         for label, call in (
             ("tensor", lambda: tensor.add(tensor)),
             ("scalar", lambda: tensor.add(2.0)),
@@ -336,6 +340,32 @@ class TensorAddTests(unittest.TestCase):
                 else:
                     self.assertEqual(len(args), 2)
                     self.assertIsNone(kwargs)
+
+        for label, alpha_value in (
+            ("wide uint alpha", wide_uint_alpha),
+            ("positive overflow alpha", positive_overflow_alpha),
+            ("negative overflow alpha", negative_overflow_alpha),
+        ):
+            recording = RecordingMode(marker)
+            with self.subTest(label=label):
+                with recording:
+                    self.assertIs(tensor.add(tensor, alpha=alpha_value), marker)
+                self.assertEqual(len(recording.calls), 1)
+                function, dispatch_types, args, kwargs = recording.calls[0]
+                self.assertIs(function, descriptor)
+                self.assertEqual(dispatch_types, ())
+                self.assertEqual(len(args), 2)
+                self.assertIs(args[0], tensor)
+                self.assertIs(args[1], tensor)
+                self.assertIs(kwargs["alpha"], alpha_value)
+
+        non_number_recording = RecordingMode(marker)
+        with self.assertRaisesRegex(
+            TypeError, r"^add\(\): argument 'alpha' must be Number, not list$"
+        ):
+            with non_number_recording:
+                tensor.add(tensor, alpha=[])
+        self.assertEqual(non_number_recording.calls, [])
 
         order = []
 
@@ -393,6 +423,22 @@ class TensorAddTests(unittest.TestCase):
         self.assertIs(args[0], tensor)
         self.assertIs(args[1], value)
         self.assertEqual(kwargs, {"alpha": True})
+
+        for label, alpha_value in (
+            ("wide uint alpha", wide_uint_alpha),
+            ("positive overflow alpha", positive_overflow_alpha),
+            ("negative overflow alpha", negative_overflow_alpha),
+        ):
+            Override.calls.clear()
+            with self.subTest(override_alpha=label):
+                self.assertIs(tensor.add(value, alpha=alpha_value), marker)
+                function, dispatch_types, args, kwargs = Override.calls[0]
+                self.assertIs(function, descriptor)
+                self.assertEqual(dispatch_types, (Override,))
+                self.assertEqual(len(args), 2)
+                self.assertIs(args[0], tensor)
+                self.assertIs(args[1], value)
+                self.assertIs(kwargs["alpha"], alpha_value)
 
         alpha = Override()
         Override.calls.clear()

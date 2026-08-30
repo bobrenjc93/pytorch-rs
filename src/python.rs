@@ -2490,6 +2490,8 @@ enum BoundAddOperand<'py> {
 enum BoundAddAlpha<'py> {
     Default,
     Boolean,
+    WideNumpyUnsigned,
+    IntegerOverflow { negative: bool },
     NonDefault,
     Override(ProbedTorchFunctionOverride<'py>),
 }
@@ -3947,7 +3949,11 @@ fn ordered_add_method_overrides<'py>(
     };
     let alpha = match alpha {
         BoundAddAlpha::Override(probed) => Some(probed),
-        BoundAddAlpha::Default | BoundAddAlpha::Boolean | BoundAddAlpha::NonDefault => None,
+        BoundAddAlpha::Default
+        | BoundAddAlpha::Boolean
+        | BoundAddAlpha::WideNumpyUnsigned
+        | BoundAddAlpha::IntegerOverflow { .. }
+        | BoundAddAlpha::NonDefault => None,
     };
     ordered_binary_overrides(other, alpha, "unable to allocate add dispatch operands")
 }
@@ -4029,6 +4035,23 @@ fn apply_add_method(
         return Err(PyRuntimeError::new_err(
             "Boolean alpha only supported for Boolean results.",
         ));
+    }
+    match alpha {
+        BoundAddAlpha::WideNumpyUnsigned => {
+            return Err(PyTypeError::new_err("an integer is required"));
+        }
+        BoundAddAlpha::IntegerOverflow { negative } => {
+            let message = if *negative {
+                "can't convert negative int to unsigned"
+            } else {
+                "int too big to convert"
+            };
+            return Err(PyOverflowError::new_err(message));
+        }
+        BoundAddAlpha::Default
+        | BoundAddAlpha::Boolean
+        | BoundAddAlpha::NonDefault
+        | BoundAddAlpha::Override(_) => {}
     }
     let result = match other {
         BoundAddOperand::Tensor(other) => {
@@ -10585,15 +10608,31 @@ fn parse_add_alpha<'py>(value: Option<&Bound<'py, PyAny>>) -> PyResult<BoundAddA
         return Ok(BoundAddAlpha::Override(probed));
     }
 
-    let scalar = parse_named_arithmetic_scalar_kind("add", "alpha", value)?;
-    if scalar.is_python_bool() {
-        return Ok(BoundAddAlpha::Boolean);
-    }
-    if scalar.is_one() {
-        Ok(BoundAddAlpha::Default)
+    let scalar = match parse_arithmetic_scalar(value) {
+        Ok(Some(ParsedArithmeticScalar::WideNumpyUnsigned)) => {
+            return Ok(BoundAddAlpha::WideNumpyUnsigned);
+        }
+        Ok(Some(scalar)) => scalar,
+        Ok(None) => {
+            let actual = python_type_name(value)?;
+            return Err(PyTypeError::new_err(format!(
+                "add(): argument 'alpha' must be Number, not {actual}"
+            )));
+        }
+        Err(_) if value.is_instance_of::<PyInt>() => {
+            return Ok(BoundAddAlpha::IntegerOverflow {
+                negative: python_integer_is_negative(value)?,
+            });
+        }
+        Err(error) => return Err(error),
+    };
+    Ok(if scalar.is_python_bool() {
+        BoundAddAlpha::Boolean
+    } else if scalar.is_one() {
+        BoundAddAlpha::Default
     } else {
-        Ok(BoundAddAlpha::NonDefault)
-    }
+        BoundAddAlpha::NonDefault
+    })
 }
 
 fn parse_named_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
