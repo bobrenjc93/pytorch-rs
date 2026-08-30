@@ -8322,6 +8322,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 86
       }
+    },
+    {
+      "key": "pr:1417",
+      "recordedAt": "2026-08-30T14:07:06.896Z",
+      "label": "PR #1417",
+      "kind": "leaf",
+      "prNumber": 1417,
+      "title": "Add scalar-broadcast contiguous mse_loss fast path",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 82,
+        "eval_39340456": 88.5,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 86
+      }
     }
   ]
 }

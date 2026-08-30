@@ -207,6 +207,7 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             .reshape(2, 3, 4)
             .tolist(),
         )
+        empty_contiguous = module.zeros((0, 4), dtype=module.float32)
         offset_strided = self.tensor(
             module,
             np.arange(48, dtype=np.float32).reshape(2, 2, 4, 3).tolist(),
@@ -240,6 +241,8 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ),
             ("contiguous scalar input", scalar, contiguous),
             ("contiguous scalar target", contiguous, scalar),
+            ("contiguous empty scalar input", scalar, empty_contiguous),
+            ("contiguous empty scalar target", empty_contiguous, scalar),
             ("offset strided scalar input", offset_scalar, offset_strided),
             ("offset strided scalar target", offset_strided, offset_scalar),
             ("channels last scalar input", scalar, channels_last),
@@ -631,12 +634,12 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ],
             dtype=np.uint32,
         )
-        actual_tensor = torch.tensor(
+        actual_contiguous_tensor = torch.tensor(
             memoryview(tensor_bits.view(np.float32))
-        ).view(3, 4).transpose(0, 1)
-        expected_tensor = reference_torch.tensor(
+        ).view(3, 4)
+        expected_contiguous_tensor = reference_torch.tensor(
             memoryview(tensor_bits.view(np.float32))
-        ).view(3, 4).transpose(0, 1)
+        ).view(3, 4)
 
         for scalar_bits in (
             0x0000_0000,
@@ -650,32 +653,44 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             scalar_values = np.asarray([scalar_bits], dtype=np.uint32).view(np.float32)
             actual_scalar = torch.tensor(memoryview(scalar_values))[0]
             expected_scalar = reference_torch.tensor(memoryview(scalar_values))[0]
-            for scalar_on_left in (True, False):
-                actual_operands = (
-                    (actual_scalar, actual_tensor)
-                    if scalar_on_left
-                    else (actual_tensor, actual_scalar)
-                )
-                expected_operands = (
-                    (expected_scalar, expected_tensor)
-                    if scalar_on_left
-                    else (expected_tensor, expected_scalar)
-                )
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    actual = functional.mse_loss(
-                        *actual_operands,
-                        reduction="none",
+            for layout, actual_tensor, expected_tensor in (
+                (
+                    "contiguous",
+                    actual_contiguous_tensor,
+                    expected_contiguous_tensor,
+                ),
+                (
+                    "noncontiguous",
+                    actual_contiguous_tensor.transpose(0, 1),
+                    expected_contiguous_tensor.transpose(0, 1),
+                ),
+            ):
+                for scalar_on_left in (True, False):
+                    actual_operands = (
+                        (actual_scalar, actual_tensor)
+                        if scalar_on_left
+                        else (actual_tensor, actual_scalar)
                     )
-                    expected = reference_functional.mse_loss(
-                        *expected_operands,
-                        reduction="none",
+                    expected_operands = (
+                        (expected_scalar, expected_tensor)
+                        if scalar_on_left
+                        else (expected_tensor, expected_scalar)
                     )
-                self.assert_matches(
-                    actual,
-                    expected,
-                    case=(hex(scalar_bits), scalar_on_left),
-                )
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        actual = functional.mse_loss(
+                            *actual_operands,
+                            reduction="none",
+                        )
+                        expected = reference_functional.mse_loss(
+                            *expected_operands,
+                            reduction="none",
+                        )
+                    self.assert_matches(
+                        actual,
+                        expected,
+                        case=(layout, hex(scalar_bits), scalar_on_left),
+                    )
 
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (

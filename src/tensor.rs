@@ -3025,15 +3025,18 @@ impl Tensor {
         }
 
         let plan = BroadcastPlan::new_for_expanded_operands(self, other)?;
-        let mut output = if let Some((data, fast_plan)) =
-            materialize_contiguous_trailing_broadcast(self, other, &squared_difference_value)?
-            && fast_plan.shape == plan.shape
-            && fast_plan.strides == plan.strides
-        {
-            Self::from_owned_parts(data, plan.shape, plan.strides, self.dtype(), self.device())
-        } else {
-            self.zip_map_broadcast_with_plan(other, plan, squared_difference_value)?
-        };
+        let mut output =
+            if let Some(output) = self.squared_difference_rank_zero_contiguous(other, &plan)? {
+                output
+            } else if let Some((data, fast_plan)) =
+                materialize_contiguous_trailing_broadcast(self, other, &squared_difference_value)?
+                && fast_plan.shape == plan.shape
+                && fast_plan.strides == plan.strides
+            {
+                Self::from_owned_parts(data, plan.shape, plan.strides, self.dtype(), self.device())
+            } else {
+                self.zip_map_broadcast_with_plan(other, plan, squared_difference_value)?
+            };
         if output.elements == 0 {
             // The native MSE kernel receives already-expanded operands. For an
             // empty broadcast, its output is restrided like the final square
@@ -3065,6 +3068,43 @@ impl Tensor {
             data,
             shape,
             strides,
+            self.dtype(),
+            self.device(),
+        )))
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn squared_difference_rank_zero_contiguous(
+        &self,
+        other: &Self,
+        plan: &BroadcastPlan,
+    ) -> Result<Option<Self>, TensorError> {
+        let (scalar, tensor, scalar_on_left) = if self.shape.is_empty() && !other.shape.is_empty() {
+            (self.value_at_linear_index(0), other, true)
+        } else if other.shape.is_empty() && !self.shape.is_empty() {
+            (other.value_at_linear_index(0), self, false)
+        } else {
+            return Ok(None);
+        };
+        if plan.shape.as_slice() != tensor.shape.as_slice()
+            || !layout_is_contiguous(&plan.shape, &plan.strides, plan.elements)
+        {
+            return Ok(None);
+        }
+        let Some(values) = tensor.contiguous_slice() else {
+            return Ok(None);
+        };
+
+        let data = materialize_contiguous_scalar_squared_difference(
+            values,
+            scalar,
+            scalar_on_left,
+            plan.elements,
+        )?;
+        Ok(Some(Self::from_owned_parts(
+            data,
+            try_clone_result_shape(&plan.shape, plan.elements)?,
+            try_clone_result_shape(&plan.strides, plan.elements)?,
             self.dtype(),
             self.device(),
         )))
@@ -5889,6 +5929,47 @@ fn materialize_contiguous_squared_difference(
     Ok(data)
 }
 
+#[cfg(any(feature = "python-bindings", test))]
+fn materialize_contiguous_scalar_squared_difference(
+    values: &[f32],
+    scalar: f32,
+    scalar_on_left: bool,
+    elements: usize,
+) -> Result<Vec<f32>, TensorError> {
+    debug_assert_eq!(values.len(), elements);
+
+    let mut data = try_result_vector(elements, elements)?;
+    if scalar_on_left {
+        if scalar.is_nan() {
+            data.extend(values.iter().copied().map(|value| {
+                apply_binary_operation_scalar(&squared_difference_value, scalar, value)
+            }));
+        } else {
+            data.extend(
+                values
+                    .iter()
+                    .copied()
+                    .map(|value| squared_difference_value(scalar, value)),
+            );
+        }
+    } else if scalar.is_nan() {
+        data.extend(
+            values.iter().copied().map(|value| {
+                apply_binary_operation_scalar(&squared_difference_value, value, scalar)
+            }),
+        );
+    } else {
+        data.extend(
+            values
+                .iter()
+                .copied()
+                .map(|value| squared_difference_value(value, scalar)),
+        );
+    }
+    debug_assert_eq!(data.len(), elements);
+    Ok(data)
+}
+
 fn validate_storage_capacity(elements: usize) -> Result<(), TensorError> {
     let maximum_elements = isize::MAX.unsigned_abs() / DType::Float32.element_size();
     if elements > maximum_elements {
@@ -5905,12 +5986,12 @@ mod tests {
     use crate::storage::Storage;
 
     use super::{
-        AutogradKind, CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType,
-        Device, F32_SIGN_MASK, GradFn, LogicalValuesInner, MemoryFormat,
-        OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor, TensorError,
-        contiguous_values_equal, l1_loss_difference_value, logical_offset_for_linear_index,
-        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
-        validate_view_bounds,
+        AutogradKind, BroadcastPlan, CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS,
+        CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device, F32_SIGN_MASK, GradFn, LogicalValuesInner,
+        MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor,
+        TensorError, contiguous_values_equal, l1_loss_difference_value,
+        logical_offset_for_linear_index, materialize_contiguous_trailing_broadcast, rsqrt_value,
+        sqrt_value, try_result_vector, validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -9824,6 +9905,79 @@ mod tests {
                     .logical_values()
                     .map(f32::to_bits)
                     .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+
+    #[test]
+    fn squared_difference_rank_zero_contiguous_fast_path_matches_fallback() {
+        let tensor_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+            0xff85_4321,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+        ];
+        let contiguous = offset_contiguous_tensor(&tensor_bits, &[3, 4]);
+        assert!(contiguous.is_contiguous());
+        assert_ne!(contiguous.storage_offset(), 0);
+
+        for scalar_bits in [0x8000_0000, 0xff81_2345] {
+            let scalar = Tensor::from_vec([0_u32, scalar_bits].map(f32::from_bits).to_vec(), [2])
+                .unwrap()
+                .index_integer(1)
+                .unwrap();
+            for scalar_on_left in [true, false] {
+                let (left, right) = if scalar_on_left {
+                    (&scalar, &contiguous)
+                } else {
+                    (&contiguous, &scalar)
+                };
+                let shared_contiguous = shared_gradient_copy(&contiguous);
+                let (fallback_left, fallback_right) = if scalar_on_left {
+                    (&scalar, &shared_contiguous)
+                } else {
+                    (&shared_contiguous, &scalar)
+                };
+                let expected = fallback_left.squared_difference(fallback_right).unwrap();
+                let plan = BroadcastPlan::new_for_expanded_operands(left, right).unwrap();
+                let actual = left
+                    .squared_difference_rank_zero_contiguous(right, &plan)
+                    .unwrap()
+                    .expect("rank-zero plus contiguous tensor should use the fast path");
+
+                assert_eq!(actual.shape(), expected.shape());
+                assert_eq!(actual.stride(), expected.stride());
+                assert_eq!(actual.storage_offset(), expected.storage_offset());
+                assert!(!actual.shares_storage_with(left));
+                assert!(!actual.shares_storage_with(right));
+                assert!(
+                    actual
+                        .logical_values()
+                        .map(f32::to_bits)
+                        .eq(expected.logical_values().map(f32::to_bits))
+                );
+            }
+        }
+
+        let scalar = Tensor::from_vec(vec![13.0, -0.0], [2])
+            .unwrap()
+            .index_integer(1)
+            .unwrap();
+        let strided = contiguous.transpose(0, 1).unwrap();
+        for (left, right) in [(&scalar, &strided), (&strided, &scalar)] {
+            let plan = BroadcastPlan::new_for_expanded_operands(left, right).unwrap();
+            assert!(
+                left.squared_difference_rank_zero_contiguous(right, &plan)
+                    .unwrap()
+                    .is_none()
             );
         }
     }
