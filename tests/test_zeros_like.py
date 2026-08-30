@@ -11,9 +11,14 @@ import torch_rs as torch
 
 
 class ZerosLikeTests(unittest.TestCase):
-    def assert_tensor_matches(self, actual, source, *, requires_grad):
+    def expected_stride(self, source, kwargs):
+        if kwargs.get("memory_format") is torch.contiguous_format:
+            return torch.zeros(tuple(source.shape)).stride()
+        return source.stride()
+
+    def assert_tensor_matches(self, actual, source, *, requires_grad, expected_stride):
         self.assertEqual(actual.shape, source.shape)
-        self.assertEqual(actual.stride(), source.stride())
+        self.assertEqual(actual.stride(), expected_stride)
         self.assertEqual(actual.storage_offset(), 0)
         np.testing.assert_array_equal(
             np.asarray(actual),
@@ -39,6 +44,8 @@ class ZerosLikeTests(unittest.TestCase):
                 torch.tensor([[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]]),
             ),
             ("offset contiguous view", torch.ones((3, 2))[1]),
+            ("singleton transpose", torch.ones((2, 1)).transpose(0, 1)),
+            ("empty transpose", torch.zeros((2, 0, 3)).transpose(0, 2)),
         )
         option_cases = (
             ({}, False),
@@ -75,12 +82,18 @@ class ZerosLikeTests(unittest.TestCase):
                         torch.zeros_like(source, **kwargs),
                         source,
                         requires_grad=expected_requires_grad,
+                        expected_stride=self.expected_stride(source, kwargs),
                     )
 
     def test_input_keyword_and_no_grad_metadata(self):
         source = torch.ones((2, 3), requires_grad=True)
         keyword = torch.zeros_like(input=source)
-        self.assert_tensor_matches(keyword, source, requires_grad=False)
+        self.assert_tensor_matches(
+            keyword,
+            source,
+            requires_grad=False,
+            expected_stride=source.stride(),
+        )
 
         with torch.no_grad():
             default = torch.zeros_like(source)
@@ -102,10 +115,13 @@ class ZerosLikeTests(unittest.TestCase):
     def test_rejects_noncontiguous_channels_last_and_unsupported_metadata(self):
         source = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
         noncontiguous = source.transpose(0, 1)
-        empty_noncontiguous = torch.zeros((2, 0, 3)).transpose(0, 2)
         channels_last = torch.clone(
             torch.ones((2, 3, 4, 5)),
             memory_format=torch.channels_last,
+        )
+        channels_last_3d = torch.clone(
+            torch.ones((2, 3, 4, 5, 6)),
+            memory_format=torch.channels_last_3d,
         )
         ambiguous_channels_last = torch.clone(
             torch.ones((1, 1, 2, 2)),
@@ -114,8 +130,8 @@ class ZerosLikeTests(unittest.TestCase):
 
         for tensor in (
             noncontiguous,
-            empty_noncontiguous,
             channels_last,
+            channels_last_3d,
             ambiguous_channels_last,
         ):
             with self.subTest(stride=tensor.stride()):

@@ -625,16 +625,37 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when this tensor is not in canonical row-major
-    /// contiguous layout, or when allocating the result fails.
+    /// [`MemoryFormat::Preserve`] retains this tensor's row-contiguous strides,
+    /// including singleton and empty-dimension stride metadata.
+    /// [`MemoryFormat::Contiguous`] recalculates canonical row-major strides.
+    ///
+    /// Returns an error when this tensor is not row-major contiguous, when its
+    /// strides describe a channel-last layout, or when allocating the result
+    /// fails.
     #[cfg(feature = "python-bindings")]
-    pub(crate) fn zeros_like(&self) -> Result<Self, TensorError> {
-        let expected_strides = contiguous_strides(&self.shape, self.elements)?;
-        if self.strides != expected_strides {
+    pub(crate) fn zeros_like(&self, memory_format: MemoryFormat) -> Result<Self, TensorError> {
+        if !self.is_contiguous()
+            || layout_is_strides_like_channels_last(&self.shape, &self.strides)
+            || layout_is_strides_like_channels_last_3d(&self.shape, &self.strides)
+        {
             return Err(TensorError::ZerosLikeRequiresContiguous);
         }
         let shape = try_clone_result_shape(&self.shape, self.elements)?;
-        Self::zeros_with_metadata(shape, self.dtype(), self.device())
+        let strides = match memory_format {
+            MemoryFormat::Preserve => try_clone_result_shape(&self.strides, self.elements)?,
+            MemoryFormat::Contiguous => contiguous_strides(&shape, self.elements)?,
+            MemoryFormat::ChannelsLast | MemoryFormat::ChannelsLast3d => {
+                return Err(TensorError::UnsupportedMemoryFormat { memory_format });
+            }
+        };
+        let data = filled_storage(self.elements, 0.0)?;
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        ))
     }
 
     /// Creates a one-filled tensor.

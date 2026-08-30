@@ -1645,7 +1645,7 @@ pub(crate) fn zeros_like_variable_function(
     }
     let output = input
         .inner
-        .zeros_like()
+        .zeros_like(memory_format)
         .map(|inner| inner.with_requires_grad(requires_grad))
         .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(output))?.into_any())

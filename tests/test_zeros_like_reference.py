@@ -38,6 +38,14 @@ class ZerosLikeReferenceTests(unittest.TestCase):
                 ),
             ),
             ("offset contiguous view", module.ones((3, 2), dtype=module.float32)[1]),
+            (
+                "singleton transpose",
+                module.ones((2, 1), dtype=module.float32).transpose(0, 1),
+            ),
+            (
+                "empty transpose",
+                module.zeros((2, 0, 3), dtype=module.float32).transpose(0, 2),
+            ),
         )
 
     def option_cases(self, module):
