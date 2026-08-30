@@ -596,6 +596,201 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                         case=(layout, hex(scalar_bits), scalar_on_left),
                     )
 
+    def test_rank2_transposed_offset_edge_values_match_pytorch_2_13(self):
+        input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x0080_0000,
+                0x8080_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0001,
+                0x0000_0001,
+                0x807F_FFFF,
+                0x007F_FFFF,
+                0x8080_0000,
+                0x0080_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xFF7F_FFFF,
+                0x7F7F_FFFF,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+            ],
+            dtype=np.uint32,
+        )
+        actual_input_storage = np.concatenate([np.zeros_like(input_bits), input_bits])
+        actual_target_storage = np.concatenate([np.ones_like(target_bits), target_bits])
+        expected_input_storage = actual_input_storage.copy()
+        expected_target_storage = actual_target_storage.copy()
+        actual_input = (
+            torch.tensor(memoryview(actual_input_storage.view(np.float32)))
+            .view(2, 3, 6)[1]
+            .transpose(0, 1)
+        )
+        actual_target = (
+            torch.tensor(memoryview(actual_target_storage.view(np.float32)))
+            .view(2, 3, 6)[1]
+            .transpose(0, 1)
+        )
+        expected_input = (
+            reference_torch.tensor(
+                memoryview(expected_input_storage.view(np.float32))
+            )
+            .view(2, 3, 6)[1]
+            .transpose(0, 1)
+        )
+        expected_target = (
+            reference_torch.tensor(
+                memoryview(expected_target_storage.view(np.float32))
+            )
+            .view(2, 3, 6)[1]
+            .transpose(0, 1)
+        )
+
+        self.assertNotEqual(actual_input.storage_offset(), 0)
+        self.assertEqual(actual_input.stride(), expected_input.stride())
+        self.assertEqual(actual_target.stride(), expected_target.stride())
+        self.assertFalse(actual_input.is_contiguous())
+        self.assertFalse(expected_input.is_contiguous())
+
+        actual = functional.l1_loss(
+            actual_input,
+            actual_target,
+            reduction="none",
+        )
+        expected = reference_functional.l1_loss(
+            expected_input,
+            expected_target,
+            reduction="none",
+        )
+        self.assert_matches(actual, expected, case="offset transposed edges")
+        self.assertEqual(actual.storage_offset(), 0)
+        self.assertFalse(actual.is_set_to(actual_input))
+        self.assertFalse(actual.is_set_to(actual_target))
+
+    def test_rank2_transposed_empty_matches_pytorch_2_13(self):
+        actual_input = torch.zeros((3, 0)).transpose(0, 1)
+        actual_target = torch.ones((3, 0)).transpose(0, 1)
+        expected_input = reference_torch.zeros(
+            (3, 0),
+            dtype=reference_torch.float32,
+        ).transpose(0, 1)
+        expected_target = reference_torch.ones(
+            (3, 0),
+            dtype=reference_torch.float32,
+        ).transpose(0, 1)
+
+        actual = functional.l1_loss(
+            actual_input,
+            actual_target,
+            reduction="none",
+        )
+        expected = reference_functional.l1_loss(
+            expected_input,
+            expected_target,
+            reduction="none",
+        )
+        self.assert_matches(actual, expected, case="empty rank-2 transpose")
+        self.assertEqual(actual.numel(), 0)
+
+    def test_rank2_transposed_no_mutation_and_no_grad_match_pytorch_2_13(self):
+        for input_requires_grad, target_requires_grad in (
+            (False, False),
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            actual_input = torch.tensor(
+                np.arange(12, dtype=np.float32).reshape(3, 4).tolist(),
+                requires_grad=input_requires_grad,
+            ).transpose(0, 1)
+            actual_target = torch.tensor(
+                np.linspace(3.0, -3.0, 12, dtype=np.float32)
+                .reshape(3, 4)
+                .tolist(),
+                requires_grad=target_requires_grad,
+            ).transpose(0, 1)
+            expected_input = reference_torch.tensor(
+                np.arange(12, dtype=np.float32).reshape(3, 4).tolist(),
+                dtype=reference_torch.float32,
+                requires_grad=input_requires_grad,
+            ).transpose(0, 1)
+            expected_target = reference_torch.tensor(
+                np.linspace(3.0, -3.0, 12, dtype=np.float32)
+                .reshape(3, 4)
+                .tolist(),
+                dtype=reference_torch.float32,
+                requires_grad=target_requires_grad,
+            ).transpose(0, 1)
+            actual_input_before = np.asarray(actual_input).copy()
+            actual_target_before = np.asarray(actual_target).copy()
+            expected_input_before = expected_input.clone()
+            expected_target_before = expected_target.clone()
+
+            if input_requires_grad or target_requires_grad:
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^l1_loss\(\): autograd recording is not supported$",
+                ):
+                    functional.l1_loss(
+                        actual_input,
+                        actual_target,
+                        reduction="none",
+                    )
+                expected_active = reference_functional.l1_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="none",
+                )
+                self.assertTrue(expected_active.requires_grad)
+
+            with torch.no_grad():
+                actual = functional.l1_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="none",
+                )
+            with reference_torch.no_grad():
+                expected = reference_functional.l1_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="none",
+                )
+            self.assert_matches(
+                actual,
+                expected,
+                case=(input_requires_grad, target_requires_grad),
+            )
+            np.testing.assert_array_equal(np.asarray(actual_input), actual_input_before)
+            np.testing.assert_array_equal(np.asarray(actual_target), actual_target_before)
+            self.assertTrue(reference_torch.equal(expected_input, expected_input_before))
+            self.assertTrue(reference_torch.equal(expected_target, expected_target_before))
+
     def test_bandwidth_sized_same_shape_contiguous_matches_pytorch_2_13(self):
         input_values = np.linspace(
             -1024.0,

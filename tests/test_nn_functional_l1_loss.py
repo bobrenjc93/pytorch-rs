@@ -463,6 +463,181 @@ class FunctionalL1LossTests(unittest.TestCase):
                     expected_bits,
                 )
 
+    def test_rank2_transposed_offset_edge_values_match_kernel_composition_bits(self):
+        input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x0080_0000,
+                0x8080_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0001,
+                0x0000_0001,
+                0x807F_FFFF,
+                0x007F_FFFF,
+                0x8080_0000,
+                0x0080_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xFF7F_FFFF,
+                0x7F7F_FFFF,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+            ],
+            dtype=np.uint32,
+        )
+        input_storage = np.concatenate([np.zeros_like(input_bits), input_bits])
+        target_storage = np.concatenate([np.ones_like(target_bits), target_bits])
+        input = (
+            torch.tensor(memoryview(input_storage.view(np.float32)))
+            .view(2, 3, 6)[1]
+            .transpose(0, 1)
+        )
+        target = (
+            torch.tensor(memoryview(target_storage.view(np.float32)))
+            .view(2, 3, 6)[1]
+            .transpose(0, 1)
+        )
+
+        self.assertEqual(input.shape, (6, 3))
+        self.assertEqual(input.stride(), (1, 6))
+        self.assertEqual(target.stride(), input.stride())
+        self.assertNotEqual(input.storage_offset(), 0)
+        self.assertNotEqual(target.storage_offset(), 0)
+        self.assertFalse(input.is_contiguous())
+        self.assertFalse(target.is_contiguous())
+
+        expected = (input - target).abs()
+        expected_bits = self.tensor_bits(expected).copy()
+        target_bits_for_case = self.tensor_bits(target)
+        target_nan = (target_bits_for_case & 0x7FFF_FFFF) > 0x7F80_0000
+        expected_bits[target_nan] = (
+            target_bits_for_case[target_nan] | 0x0040_0000
+        ) & 0x7FFF_FFFF
+        actual = functional.l1_loss(input, target, reduction="none")
+
+        self.assertEqual(actual.shape, expected.shape)
+        self.assertEqual(actual.stride(), expected.stride())
+        self.assertEqual(actual.storage_offset(), expected.storage_offset())
+        self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+        self.assertEqual(actual.requires_grad, expected.requires_grad)
+        self.assertEqual(actual.is_leaf, expected.is_leaf)
+        self.assertIs(actual.dtype, torch.float32)
+        self.assertEqual(actual.device, torch.device("cpu"))
+        np.testing.assert_array_equal(self.tensor_bits(actual), expected_bits)
+        self.assertEqual(actual.storage_offset(), 0)
+        self.assertFalse(actual.is_set_to(input))
+        self.assertFalse(actual.is_set_to(target))
+
+    def test_rank2_transposed_empty_matches_composition(self):
+        input = torch.zeros((3, 0)).transpose(0, 1)
+        target = torch.ones((3, 0)).transpose(0, 1)
+
+        actual = functional.l1_loss(input, target, reduction="none")
+        expected = (input - target).abs()
+
+        self.assert_matches_composition(
+            actual,
+            expected,
+            case="empty rank-2 transpose",
+        )
+        self.assertEqual(actual.numel(), 0)
+        self.assertEqual(actual.storage_offset(), 0)
+
+    def test_rank2_transposed_fast_path_does_not_mutate_inputs(self):
+        input = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
+        )[1].transpose(0, 1)
+        target = torch.tensor(
+            np.linspace(6.0, -6.0, 24, dtype=np.float32)
+            .reshape(2, 3, 4)
+            .tolist()
+        )[1].transpose(0, 1)
+        input_state = self.tensor_state(input)
+        target_state = self.tensor_state(target)
+
+        first = functional.l1_loss(input, target, reduction="none")
+        second = functional.l1_loss(input, target, reduction="none")
+        expected = (input - target).abs()
+
+        self.assert_matches_composition(first, expected, case="offset transpose")
+        self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+        self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+        np.testing.assert_array_equal(self.tensor_state(input)[-1], input_state[-1])
+        np.testing.assert_array_equal(
+            self.tensor_state(target)[-1],
+            target_state[-1],
+        )
+        self.assertFalse(first.is_set_to(input))
+        self.assertFalse(first.is_set_to(target))
+        self.assertFalse(first.is_set_to(second))
+        self.assertNotEqual(first.data_ptr(), input.data_ptr())
+        self.assertNotEqual(first.data_ptr(), target.data_ptr())
+        self.assertNotEqual(first.data_ptr(), second.data_ptr())
+
+    def test_rank2_transposed_requires_grad_operands_need_no_grad(self):
+        for input_requires_grad, target_requires_grad in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            input = torch.tensor(
+                np.arange(12, dtype=np.float32).reshape(3, 4).tolist(),
+                requires_grad=input_requires_grad,
+            ).transpose(0, 1)
+            target = torch.tensor(
+                np.linspace(3.0, -3.0, 12, dtype=np.float32)
+                .reshape(3, 4)
+                .tolist(),
+                requires_grad=target_requires_grad,
+            ).transpose(0, 1)
+            with self.subTest(
+                input_requires_grad=input_requires_grad,
+                target_requires_grad=target_requires_grad,
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^l1_loss\(\): autograd recording is not supported$",
+                ):
+                    functional.l1_loss(input, target, reduction="none")
+
+                with torch.no_grad():
+                    actual = functional.l1_loss(input, target, reduction="none")
+                    expected = (input - target).abs()
+                self.assert_matches_composition(
+                    actual,
+                    expected,
+                    case="transposed no_grad",
+                )
+                self.assertFalse(actual.requires_grad)
+                self.assertTrue(actual.is_leaf)
+                self.assertIsNone(input.grad)
+                self.assertIsNone(target.grad)
+
     def test_scalar_broadcast_float32_edges_match_kernel_composition_bits(self):
         tensor_bits = np.asarray(
             [

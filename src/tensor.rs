@@ -3167,8 +3167,9 @@ impl Tensor {
         )))
     }
 
-    /// Computes an absolute difference, fusing same-shape contiguous inputs
-    /// and rank-zero scalar broadcasts over contiguous material operands.
+    /// Computes an absolute difference, fusing same-shape contiguous inputs,
+    /// rank-2 transposed dense inputs, and rank-zero scalar broadcasts over
+    /// contiguous material operands.
     ///
     /// # Errors
     ///
@@ -3179,6 +3180,12 @@ impl Tensor {
         if self.shape == other.shape {
             if let Some(output) = self.absolute_difference_same_shape_contiguous(other)? {
                 return Ok(output);
+            }
+            #[allow(clippy::collapsible_if)]
+            if self.shape.len() == 2 {
+                if let Some(output) = self.absolute_difference_same_shape_transposed_dense(other)? {
+                    return Ok(output);
+                }
             }
             return self
                 .zip_map_same_shape(other, l1_loss_difference_value)?
@@ -3207,6 +3214,51 @@ impl Tensor {
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
         let strides = contiguous_strides(&shape, elements)?;
+        let data = materialize_contiguous_absolute_difference(left, right, elements)?;
+        Ok(Some(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        )))
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    #[cold]
+    #[inline(never)]
+    fn absolute_difference_same_shape_transposed_dense(
+        &self,
+        other: &Self,
+    ) -> Result<Option<Self>, TensorError> {
+        debug_assert_eq!(self.shape, other.shape);
+        if self.dtype() != DType::Float32
+            || other.dtype() != DType::Float32
+            || self.device() != Device::Cpu
+            || other.device() != Device::Cpu
+            || self.shape.len() != 2
+            || self.is_contiguous()
+            || other.is_contiguous()
+            || self.strides != other.strides
+            || !self.is_non_overlapping_and_dense()
+            || !other.is_non_overlapping_and_dense()
+            || self.strides[0] != 1
+            || self.strides[1] != self.shape[0]
+        {
+            return Ok(None);
+        }
+
+        let elements = self.elements;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = self.same_shape_elementwise_output_strides(other, &shape, elements)?;
+        if self.strides != strides || other.strides != strides {
+            return Ok(None);
+        }
+        let (Some(left), Some(right)) = (self.dense_physical_slice(), other.dense_physical_slice())
+        else {
+            return Ok(None);
+        };
+
         let data = materialize_contiguous_absolute_difference(left, right, elements)?;
         Ok(Some(Self::from_owned_parts(
             data,
@@ -5885,11 +5937,13 @@ fn negate_value(value: f32) -> f32 {
     f32::from_bits(value.to_bits() ^ F32_SIGN_MASK)
 }
 
+#[inline]
 fn absolute_value(value: f32) -> f32 {
     f32::from_bits(value.to_bits() & !F32_SIGN_MASK)
 }
 
 #[cfg(any(feature = "python-bindings", test))]
+#[inline]
 fn l1_loss_difference_value(left: f32, right: f32) -> f32 {
     const QUIET_NAN_MASK: u32 = 0x0040_0000;
 
@@ -10425,6 +10479,254 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn absolute_difference_rank_two_transposed_dense_fast_path_matches_composition() {
+        let assert_fast_path_matches = |left: &Tensor, right: &Tensor, case: &str| {
+            assert_eq!(left.shape(), right.shape(), "{case}");
+            assert_eq!(left.shape().len(), 2, "{case}");
+            assert_eq!(left.stride(), right.stride(), "{case}");
+            assert!(!left.is_contiguous(), "{case}");
+            assert!(!right.is_contiguous(), "{case}");
+            assert!(left.is_non_overlapping_and_dense(), "{case}");
+            assert!(right.is_non_overlapping_and_dense(), "{case}");
+
+            let difference = left.zip_map(right, l1_loss_difference_value).unwrap();
+            let expected = difference.abs().unwrap();
+            let actual = left
+                .absolute_difference_same_shape_transposed_dense(right)
+                .unwrap()
+                .expect("rank-2 transposed dense tensors should use the L1 fast path");
+            let public = left.absolute_difference(right).unwrap();
+
+            assert_eq!(actual.shape(), expected.shape(), "{case}");
+            assert_eq!(actual.stride(), expected.stride(), "{case}");
+            assert_eq!(actual.storage_offset(), 0, "{case}");
+            assert_eq!(actual.storage_offset(), expected.storage_offset(), "{case}");
+            assert_eq!(actual.dtype(), expected.dtype(), "{case}");
+            assert_eq!(actual.device(), expected.device(), "{case}");
+            assert!(!actual.shares_storage_with(left), "{case}");
+            assert!(!actual.shares_storage_with(right), "{case}");
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits)),
+                "{case}"
+            );
+            assert!(
+                public
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(actual.logical_values().map(f32::to_bits)),
+                "{case}"
+            );
+            assert_eq!(public.stride(), actual.stride(), "{case}");
+            assert_eq!(public.storage_offset(), 0, "{case}");
+        };
+
+        let left_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x007f_ffff,
+            0x807f_ffff,
+            0x0080_0000,
+            0x8080_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+            0xff85_4321,
+        ];
+        let right_bits = [
+            0x8000_0000,
+            0x0000_0000,
+            0x8000_0001,
+            0x0000_0001,
+            0x807f_ffff,
+            0x007f_ffff,
+            0x8080_0000,
+            0x0080_0000,
+            0xbf80_0000,
+            0x3f80_0000,
+            0xff7f_ffff,
+            0x7f7f_ffff,
+            0xff80_0000,
+            0x7f80_0000,
+            0xffc6_789a,
+            0x7fc2_abcd,
+            0xff86_789a,
+            0x7f82_abcd,
+        ];
+
+        let plain_left = Tensor::from_vec(left_bits.map(f32::from_bits).to_vec(), [3, 6])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let plain_right = Tensor::from_vec(right_bits.map(f32::from_bits).to_vec(), [3, 6])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        assert_fast_path_matches(&plain_left, &plain_right, "plain transpose");
+
+        let offset_left = offset_contiguous_tensor(&left_bits, &[3, 6])
+            .transpose(0, 1)
+            .unwrap();
+        let offset_right = offset_contiguous_tensor(&right_bits, &[3, 6])
+            .transpose(0, 1)
+            .unwrap();
+        assert_ne!(offset_left.storage_offset(), 0);
+        assert_ne!(offset_right.storage_offset(), 0);
+        assert_fast_path_matches(&offset_left, &offset_right, "offset transpose");
+    }
+
+    #[test]
+    fn absolute_difference_rank_two_transposed_dense_fast_path_stays_narrow() {
+        let left = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 4, 3])
+            .unwrap()
+            .transpose(1, 2)
+            .unwrap();
+        let right = Tensor::from_vec(
+            (0_u8..24).map(|value| 7.0 - f32::from(value)).collect(),
+            [2, 4, 3],
+        )
+        .unwrap()
+        .transpose(1, 2)
+        .unwrap();
+        assert_eq!(left.shape(), right.shape());
+        assert_eq!(left.stride(), right.stride());
+        assert!(!left.is_contiguous());
+        assert!(left.is_non_overlapping_and_dense());
+        assert!(
+            left.absolute_difference_same_shape_transposed_dense(&right)
+                .unwrap()
+                .is_none()
+        );
+
+        let contiguous_left = Tensor::from_vec((0_u8..6).map(f32::from).collect(), [2, 3]).unwrap();
+        let contiguous_right = Tensor::from_vec(
+            (0_u8..6).map(|value| 1.0 + f32::from(value)).collect(),
+            [2, 3],
+        )
+        .unwrap();
+        assert!(
+            contiguous_left
+                .absolute_difference_same_shape_transposed_dense(&contiguous_right)
+                .unwrap()
+                .is_none()
+        );
+
+        let mixed_stride_left = contiguous_left.transpose(0, 1).unwrap();
+        let mixed_stride_right = Tensor::from_vec(
+            (0_u8..6).map(|value| f32::from(value) - 3.0).collect(),
+            [3, 2],
+        )
+        .unwrap();
+        assert_eq!(mixed_stride_left.shape(), mixed_stride_right.shape());
+        assert_ne!(mixed_stride_left.stride(), mixed_stride_right.stride());
+        assert!(
+            mixed_stride_left
+                .absolute_difference_same_shape_transposed_dense(&mixed_stride_right)
+                .unwrap()
+                .is_none()
+        );
+
+        let channels_last_left =
+            Tensor::from_vec((0_u8..48).map(f32::from).collect(), [2, 3, 2, 4])
+                .unwrap()
+                .try_contiguous(MemoryFormat::ChannelsLast)
+                .unwrap();
+        let channels_last_right = Tensor::from_vec(
+            (0_u8..48).map(|value| 10.0 - f32::from(value)).collect(),
+            [2, 3, 2, 4],
+        )
+        .unwrap()
+        .try_contiguous(MemoryFormat::ChannelsLast)
+        .unwrap();
+        assert!(
+            channels_last_left
+                .absolute_difference_same_shape_transposed_dense(&channels_last_right)
+                .unwrap()
+                .is_none()
+        );
+
+        let empty_left = Tensor::zeros([3, 0]).unwrap().transpose(0, 1).unwrap();
+        let empty_right = Tensor::ones([3, 0]).unwrap().transpose(0, 1).unwrap();
+        assert_eq!(empty_left.shape(), &[0, 3]);
+        assert!(empty_left.is_contiguous());
+        assert!(
+            empty_left
+                .absolute_difference_same_shape_transposed_dense(&empty_right)
+                .unwrap()
+                .is_none()
+        );
+        let expected = empty_left
+            .zip_map(&empty_right, l1_loss_difference_value)
+            .unwrap()
+            .abs()
+            .unwrap();
+        let actual = empty_left.absolute_difference(&empty_right).unwrap();
+        assert_eq!(actual.shape(), expected.shape());
+        assert_eq!(actual.stride(), expected.stride());
+        assert_eq!(actual.storage_offset(), expected.storage_offset());
+        assert_eq!(actual.try_to_vec().unwrap(), expected.try_to_vec().unwrap());
+    }
+
+    #[test]
+    fn absolute_difference_rank_two_transposed_dense_uses_target_nan_payload_order() {
+        let left = Tensor::from_vec(
+            [
+                0x7fc1_2345,
+                0xffc5_4321,
+                0x7f81_2345,
+                0xff85_4321,
+                0x3f80_0000,
+                0xbf80_0000,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            [2, 3],
+        )
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+        let right = Tensor::from_vec(
+            [
+                0xffc6_789a,
+                0x7fc2_abcd,
+                0xff86_789a,
+                0x7f82_abcd,
+                0x7f82_abcd,
+                0xff86_789a,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            [2, 3],
+        )
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+
+        let actual = left
+            .absolute_difference_same_shape_transposed_dense(&right)
+            .unwrap()
+            .expect("rank-2 transposed dense tensors should use the L1 fast path");
+        assert!(actual.logical_values().map(f32::to_bits).eq([
+            0x7fc6_789a,
+            0x7fc2_abcd,
+            0x7fc2_abcd,
+            0x7fc2_abcd,
+            0x7fc6_789a,
+            0x7fc6_789a,
+        ]));
     }
 
     #[test]
