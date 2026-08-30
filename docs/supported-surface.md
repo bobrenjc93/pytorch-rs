@@ -322,6 +322,14 @@ assert torch.can_cast(from_=torch.float, to=torch.float32) is True
 assert torch.promote_types(type1=torch.float, type2=torch.float32) is torch.float32
 assert torch.broadcast_shapes((2,), [3, 1]) == torch.Size([3, 2])
 assert x.dense_dim() == x.ndim
+assert torch.numel(x) == x.numel() == x.nelement() == 4
+assert x.dim() == x.ndimension() == 2
+assert x.element_size() == 4
+assert x.nbytes == torch.numel(x) * x.element_size()
+assert torch.is_nonzero(torch.tensor([1.0])) is True
+assert torch.tensor([0.0]).is_nonzero() is False
+assert torch.is_complex(x) is False and x.is_complex() is False
+assert torch.is_floating_point(x) is True and x.is_floating_point() is True
 assert x.sparse_dim() == 0
 assert x.is_pinned() is False
 assert x.is_shared() is False
@@ -392,6 +400,22 @@ introspection, read-only `Tensor.is_quantized` dtype introspection,
 dtype-backed `Tensor.is_signed()` and `torch.is_signed()` queries, read-only
 `torch.float32.abbr == "f32"` metadata, canonical `torch.float32.to_real()`
 identity, and float32-only `torch.finfo` metadata.
+
+Rank, element-count, byte-width, scalar-truth, and dtype-predicate query
+coverage explicitly includes `Tensor.dim()`, `Tensor.ndimension()`,
+`Tensor.numel()`, `Tensor.nelement()`, top-level `torch.numel(input)`,
+`Tensor.element_size()`, read-only `Tensor.nbytes`, `torch.is_nonzero(input)`,
+`Tensor.is_nonzero()`, `torch.is_complex(input)`, `Tensor.is_complex()`,
+`torch.is_floating_point(input)`, and `Tensor.is_floating_point()` for exact
+native CPU float32 tensors. The count and width helpers return exact Python
+`int` values for scalars, empty tensors, metadata-only views, autograd leaves,
+non-leaves, and accumulated gradients; `Tensor.nbytes` is
+`Tensor.numel() * Tensor.element_size()` and remains read-only. The scalar
+truth helpers use PyTorch's one-element truth semantics and keep empty or
+multi-element tensors ambiguous. The complex and floating-point predicates read
+the existing dtype metadata only: supported float32 tensors are floating point
+and not complex, without adding complex, non-float32, device, storage,
+mutation, or subclass support.
 
 Autograd-facing tensor metadata includes leaf-only `Tensor.retain_grad()` as a
 no-op for tensors with `requires_grad=True`, read-only `Tensor.retains_grad`
