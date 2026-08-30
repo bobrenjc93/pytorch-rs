@@ -8455,6 +8455,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 88
       }
+    },
+    {
+      "key": "pr:1442",
+      "recordedAt": "2026-08-30T21:23:11.106Z",
+      "label": "PR #1442",
+      "kind": "leaf",
+      "prNumber": 1442,
+      "title": "Fast-path owned rank-11 sum",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 86,
+        "eval_39340456": 89.5,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 88
+      }
     }
   ]
 }
