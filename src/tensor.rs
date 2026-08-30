@@ -4873,7 +4873,8 @@ fn allclose_values(left: f32, right: f32, rtol: f32, atol: f32, equal_nan: bool)
     if !left.is_finite() || !right.is_finite() {
         return false;
     }
-    (left - right).abs() <= atol + rtol * right.abs()
+    let difference = (left - right).abs();
+    difference.is_finite() && difference <= atol + rtol * right.abs()
 }
 
 impl BroadcastPlan {
@@ -8955,6 +8956,24 @@ mod tests {
                     0.0,
                     false
                 )
+                .unwrap()
+        );
+
+        let finite_extreme = Tensor::from_vec(vec![f32::MAX], [1]).unwrap();
+        let finite_opposite_extreme = Tensor::from_vec(vec![-1.0e38], [1]).unwrap();
+        assert!(
+            !finite_extreme
+                .allclose(&finite_opposite_extreme, f32::INFINITY, 0.0, false)
+                .unwrap()
+        );
+        assert!(
+            !finite_extreme
+                .allclose(&finite_opposite_extreme, 1.0e38, 0.0, false)
+                .unwrap()
+        );
+        assert!(
+            !finite_extreme
+                .allclose(&finite_opposite_extreme, 0.0, f32::INFINITY, false)
                 .unwrap()
         );
 

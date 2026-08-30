@@ -54,6 +54,16 @@ class AllCloseReferenceTests(unittest.TestCase):
             [[1.0], [4.0], [7.0]],
             dtype=reference_torch.float32,
         )
+        actual_extreme = torch.tensor([3.4028235e38])
+        actual_opposite_extreme = torch.tensor([-1.0e38])
+        expected_extreme = reference_torch.tensor(
+            [3.4028235e38],
+            dtype=reference_torch.float32,
+        )
+        expected_opposite_extreme = reference_torch.tensor(
+            [-1.0e38],
+            dtype=reference_torch.float32,
+        )
 
         cases = (
             (
@@ -142,6 +152,51 @@ class AllCloseReferenceTests(unittest.TestCase):
                     reference_torch.tensor([1.0]),
                     reference_torch.tensor([float("inf")]),
                     rtol=float("inf"),
+                ),
+            ),
+            (
+                "finite difference overflow stays false under infinite rtol",
+                lambda: torch.allclose(
+                    actual_extreme,
+                    actual_opposite_extreme,
+                    rtol=float("inf"),
+                    atol=0.0,
+                ),
+                lambda: reference_torch.allclose(
+                    expected_extreme,
+                    expected_opposite_extreme,
+                    rtol=float("inf"),
+                    atol=0.0,
+                ),
+            ),
+            (
+                "finite difference overflow stays false under overflowed rtol",
+                lambda: torch.allclose(
+                    actual_extreme,
+                    actual_opposite_extreme,
+                    rtol=1.0e38,
+                    atol=0.0,
+                ),
+                lambda: reference_torch.allclose(
+                    expected_extreme,
+                    expected_opposite_extreme,
+                    rtol=1.0e38,
+                    atol=0.0,
+                ),
+            ),
+            (
+                "finite difference overflow stays false under infinite atol",
+                lambda: torch.allclose(
+                    actual_extreme,
+                    actual_opposite_extreme,
+                    rtol=0.0,
+                    atol=float("inf"),
+                ),
+                lambda: reference_torch.allclose(
+                    expected_extreme,
+                    expected_opposite_extreme,
+                    rtol=0.0,
+                    atol=float("inf"),
                 ),
             ),
         )

@@ -117,6 +117,20 @@ class AllCloseTests(unittest.TestCase):
             ),
             False,
         )
+        extreme = torch.tensor([3.4028235e38])
+        opposite_extreme = torch.tensor([-1.0e38])
+        self.assert_python_bool(
+            torch.allclose(extreme, opposite_extreme, rtol=float("inf"), atol=0.0),
+            False,
+        )
+        self.assert_python_bool(
+            torch.allclose(extreme, opposite_extreme, rtol=1.0e38, atol=0.0),
+            False,
+        )
+        self.assert_python_bool(
+            torch.allclose(extreme, opposite_extreme, rtol=0.0, atol=float("inf")),
+            False,
+        )
 
         nan_left = torch.tensor([1.0, float("nan")])
         nan_right = torch.tensor([1.0, float("nan")])
