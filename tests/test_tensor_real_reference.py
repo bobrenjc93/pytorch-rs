@@ -1,5 +1,7 @@
 import inspect
 import json
+import pickle
+import re
 import subprocess
 import sys
 import types
@@ -60,18 +62,19 @@ class TensorRealReferenceTests(unittest.TestCase):
             (leaf * 3.0).transpose(0, 1)[1],
         )
 
-    def identity_contract(self, tensor):
+    def identity_contract(self, tensor, caller):
         metadata = (
             tuple(tensor.shape),
             tensor.stride(),
             tensor.storage_offset(),
             str(tensor.dtype),
             str(tensor.device),
+            str(tensor.layout),
             tensor.requires_grad,
             tensor.is_leaf,
         )
         pointer = tensor.data_ptr()
-        result = tensor.real
+        result = caller(tensor)
         return {
             "identity": result is tensor,
             "metadata": metadata,
@@ -82,12 +85,19 @@ class TensorRealReferenceTests(unittest.TestCase):
                 result.storage_offset(),
                 str(result.dtype),
                 str(result.device),
+                str(result.layout),
                 result.requires_grad,
                 result.is_leaf,
             ),
             "pointer_unchanged": result.data_ptr() == pointer,
             "bits": np.asarray(result.detach()).reshape(-1).view(np.uint32).copy(),
         }
+
+    @staticmethod
+    def call_top_level(module, tensor, keyword):
+        if keyword is None:
+            return module.real(tensor)
+        return module.real(**{keyword: tensor})
 
     def test_scalar_empty_offset_strided_leaf_and_non_leaf_tensors_match(self):
         actual_cases = self.tensor_cases(torch)
@@ -97,12 +107,33 @@ class TensorRealReferenceTests(unittest.TestCase):
             zip(actual_cases, expected_cases, strict=True)
         ):
             with self.subTest(case=case, shape=actual.shape):
-                actual_contract = self.identity_contract(actual)
-                expected_contract = self.identity_contract(expected)
+                actual_contract = self.identity_contract(actual, lambda value: value.real)
+                expected_contract = self.identity_contract(
+                    expected, lambda value: value.real
+                )
                 np.testing.assert_array_equal(
                     actual_contract.pop("bits"), expected_contract.pop("bits")
                 )
                 self.assertEqual(actual_contract, expected_contract)
+
+            for keyword in (None, "input", "x", "a", "x1"):
+                with self.subTest(case=case, keyword=keyword):
+                    actual_contract = self.identity_contract(
+                        actual,
+                        lambda value, keyword=keyword: self.call_top_level(
+                            torch, value, keyword
+                        ),
+                    )
+                    expected_contract = self.identity_contract(
+                        expected,
+                        lambda value, keyword=keyword: self.call_top_level(
+                            reference_torch, value, keyword
+                        ),
+                    )
+                    np.testing.assert_array_equal(
+                        actual_contract.pop("bits"), expected_contract.pop("bits")
+                    )
+                    self.assertEqual(actual_contract, expected_contract)
 
     def test_leaf_and_non_leaf_autograd_identity_matches(self):
         outcomes = []
@@ -181,6 +212,227 @@ class TensorRealReferenceTests(unittest.TestCase):
             self.descriptor_contract(torch),
             self.descriptor_contract(reference_torch),
         )
+
+    @staticmethod
+    def signature_outcome(callable_object):
+        try:
+            return "signature", str(inspect.signature(callable_object))
+        except Exception as error:
+            return "error", type(error).__name__, re.sub(
+                r"0x[0-9a-f]+", "0x...", str(error)
+            )
+
+    def top_level_callable_contract(self, module):
+        function = module.real
+        owner = function.__reduce__()[1][0]
+        wildcard_namespace = {}
+        exec(f"from {module.__name__} import *", wildcard_namespace)
+        return {
+            "type": type(function).__name__,
+            "is_builtin": type(function) is types.BuiltinFunctionType,
+            "name": function.__name__,
+            "qualname": function.__qualname__,
+            "module": function.__module__,
+            "owner_name": owner.__name__,
+            "owner_qualname": owner.__qualname__,
+            "owner_module": owner.__module__.replace("torch_rs._C", "torch._C"),
+            "owner_path_identity": owner is module._C._VariableFunctionsClass,
+            "owner_callable_identity": owner.real is function,
+            "doc": function.__doc__,
+            "text_signature": function.__text_signature__,
+            "repr": re.sub(r"0x[0-9a-f]+", "0x...", repr(function)),
+            "signature": self.signature_outcome(function),
+            "all_count": module.__all__.count("real"),
+            "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
+            "owner_not_top_level": not hasattr(module, "_VariableFunctionsClass"),
+            "wildcard_identity": wildcard_namespace["real"] is function,
+            "pickle_identities": tuple(
+                pickle.loads(pickle.dumps(function, protocol=protocol)) is function
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+            ),
+        }
+
+    def test_top_level_callable_metadata_and_wildcard_import_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.top_level_callable_contract(torch),
+            self.top_level_callable_contract(reference_torch),
+        )
+
+    def test_top_level_binding_error_precedence_matches_pytorch_2_13(self):
+        actual = torch.tensor([1.0])
+        expected = reference_torch.tensor([1.0], dtype=reference_torch.float32)
+        cases = (
+            (lambda: torch.real(), lambda: reference_torch.real()),
+            (
+                lambda: torch.real(actual, actual),
+                lambda: reference_torch.real(expected, expected),
+            ),
+            (
+                lambda: torch.real(actual, input=actual),
+                lambda: reference_torch.real(expected, input=expected),
+            ),
+            (
+                lambda: torch.real(actual, extra=True, input=actual),
+                lambda: reference_torch.real(expected, extra=True, input=expected),
+            ),
+            (
+                lambda: torch.real(actual, input=actual, extra=True),
+                lambda: reference_torch.real(expected, input=expected, extra=True),
+            ),
+            (
+                lambda: torch.real(extra=actual),
+                lambda: reference_torch.real(extra=expected),
+            ),
+            (
+                lambda: torch.real(1, extra=True),
+                lambda: reference_torch.real(1, extra=True),
+            ),
+            (
+                lambda: torch.real(input=[]),
+                lambda: reference_torch.real(input=[]),
+            ),
+            (lambda: torch.real(a=1), lambda: reference_torch.real(a=1)),
+            (lambda: torch.real(x=[]), lambda: reference_torch.real(x=[])),
+            (
+                lambda: torch.real(x1=None),
+                lambda: reference_torch.real(x1=None),
+            ),
+            (
+                lambda: torch.real(actual, out=None),
+                lambda: reference_torch.real(expected, out=None),
+            ),
+            (
+                lambda: torch.real(actual, out=actual),
+                lambda: reference_torch.real(expected, out=expected),
+            ),
+            (
+                lambda: torch.real(actual, dtype=torch.float32),
+                lambda: reference_torch.real(expected, dtype=reference_torch.float32),
+            ),
+            (
+                lambda: torch.real(actual, device="cpu"),
+                lambda: reference_torch.real(expected, device="cpu"),
+            ),
+            (
+                lambda: torch.real(a=actual, x=actual),
+                lambda: reference_torch.real(a=expected, x=expected),
+            ),
+            (
+                lambda: torch.real(x=actual, a=actual),
+                lambda: reference_torch.real(x=expected, a=expected),
+            ),
+            (
+                lambda: torch.real(input=actual, x1=actual),
+                lambda: reference_torch.real(input=expected, x1=expected),
+            ),
+            (
+                lambda: torch.real(x=actual, x1=actual),
+                lambda: reference_torch.real(x=expected, x1=expected),
+            ),
+            (
+                lambda: torch.real(x1=actual, x=actual),
+                lambda: reference_torch.real(x1=expected, x=expected),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assertEqual(self.error(actual_call), self.error(expected_call))
+
+    def top_level_dispatch_observation(self, module, keyword):
+        tensor = module.tensor([1.0], dtype=module.float32)
+        marker = object()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        mode = RecordingMode()
+        with mode:
+            intercepted = (
+                module.real(tensor)
+                if keyword is None
+                else module.real(**{keyword: tensor})
+            )
+        function, dispatch_types, args, kwargs = mode.calls[0]
+
+        order = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = module.real(a=tensor)
+
+        override_calls = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                override_calls.append((func, types, args, kwargs))
+                return marker
+
+        value = Override()
+        override_result = module.real(x=value)
+        override_function, override_types, override_args, override_kwargs = (
+            override_calls[0]
+        )
+
+        return {
+            "intercepted": intercepted is marker,
+            "call_count": len(mode.calls),
+            "function_type": type(function).__name__,
+            "function_name": function.__name__,
+            "function_qualname": function.__qualname__,
+            "function_identity": function is module.real,
+            "types_empty": dispatch_types == (),
+            "args_original": (
+                (len(args) == 1 and args[0] is tensor)
+                if keyword is None
+                else args == ()
+            ),
+            "kwargs_original": (
+                kwargs is None
+                if keyword is None
+                else len(kwargs) == 1 and kwargs.get(keyword) is tensor
+            ),
+            "forwarding_order": order,
+            "forwarded_identity": forwarded is tensor,
+            "override_result": override_result is marker,
+            "override_function": override_function is module.real,
+            "override_types": override_types == (Override,),
+            "override_args": override_args == (),
+            "override_kwargs": len(override_kwargs) == 1
+            and override_kwargs.get("x") is value,
+            "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+        }
+
+    def test_top_level_torch_function_dispatch_matches_pytorch_2_13(self):
+        for keyword in (None, "input", "x", "a", "x1"):
+            with self.subTest(keyword=keyword):
+                self.assertEqual(
+                    self.top_level_dispatch_observation(torch, keyword),
+                    self.top_level_dispatch_observation(reference_torch, keyword),
+                )
+
+    def test_unsupported_imag_complex_and_mutation_boundaries(self):
+        self.assertFalse(hasattr(torch, "imag"))
+        self.assertTrue(hasattr(reference_torch, "imag"))
+        self.assertFalse(hasattr(torch.Tensor, "real_"))
+        self.assertFalse(hasattr(reference_torch.Tensor, "real_"))
+        for name in ("complex32", "complex64", "complex128", "chalf", "cfloat", "cdouble"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(torch, name))
+                self.assertTrue(hasattr(reference_torch, name))
 
     def mode_dispatch_observation(self, module_name):
         source = r'''

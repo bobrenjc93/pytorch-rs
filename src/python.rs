@@ -696,9 +696,7 @@ impl PyTensorBase {
             return Ok(result);
         }
 
-        // Float32 is the only supported dtype, so every Tensor is already real.
-        // Preserve the wrapper itself without inspecting storage or autograd state.
-        Ok(tensor.clone().unbind().into_any())
+        Ok(real_tensor_identity(tensor))
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1767,6 +1765,21 @@ pub(crate) fn ravel_variable_function(
     )
 }
 
+pub(crate) fn real_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_or_override_argument("real", args, kwargs)?;
+    dispatch_single_tensor_override(
+        SingleTensorOverrideOperation::REAL,
+        py,
+        &input,
+        args,
+        kwargs,
+    )
+}
+
 pub(crate) fn reshape_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2254,6 +2267,12 @@ struct SingleTensorOverrideOperation {
 }
 
 impl SingleTensorOverrideOperation {
+    const REAL: Self = Self {
+        name: "real",
+        qualified_name: "torch.real",
+        apply_native: apply_top_level_real,
+    };
+
     const POSITIVE: Self = Self {
         name: "positive",
         qualified_name: "torch.positive",
@@ -3208,7 +3227,25 @@ fn dispatch_single_tensor_override(
     reason = "single-tensor native callbacks share a fallible signature"
 )]
 fn apply_top_level_positive(_py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
-    Ok(tensor.clone().unbind().into_any())
+    Ok(tensor_identity(tensor))
+}
+
+fn tensor_identity(tensor: &Bound<'_, PyTensor>) -> Py<PyAny> {
+    tensor.clone().unbind().into_any()
+}
+
+fn real_tensor_identity(tensor: &Bound<'_, PyTensor>) -> Py<PyAny> {
+    // Float32 is the only supported dtype, so every Tensor is already real.
+    // Preserve the wrapper itself without inspecting storage or autograd state.
+    tensor_identity(tensor)
+}
+
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "single-tensor native callbacks share a fallible signature"
+)]
+fn apply_top_level_real(_py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    Ok(real_tensor_identity(tensor))
 }
 
 fn apply_top_level_ravel(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
@@ -3301,10 +3338,9 @@ fn apply_top_level_lazy_bit_identity(
     _py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
 ) -> PyResult<Py<PyAny>> {
-    // Native tensors expose neither complex storage nor lazy view bits. Real
-    // conjugation and resolving clear lazy bits are exact identities, without
-    // touching storage, metadata, or autograd state.
-    Ok(tensor.clone().unbind().into_any())
+    // Native tensors expose neither complex storage nor lazy view bits, so
+    // conjugation and resolving clear lazy bits are exact identities.
+    Ok(tensor_identity(tensor))
 }
 
 fn ordered_unary_out_overrides<'py>(
