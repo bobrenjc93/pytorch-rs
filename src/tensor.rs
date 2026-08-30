@@ -3025,7 +3025,11 @@ impl Tensor {
         }
 
         let plan = BroadcastPlan::new_for_expanded_operands(self, other)?;
-        let mut output = if let Some((data, fast_plan)) =
+        let mut output = if let Some(data) =
+            materialize_contiguous_scalar_squared_difference_broadcast(self, other, &plan)?
+        {
+            Self::from_owned_parts(data, plan.shape, plan.strides, self.dtype(), self.device())
+        } else if let Some((data, fast_plan)) =
             materialize_contiguous_trailing_broadcast(self, other, &squared_difference_value)?
             && fast_plan.shape == plan.shape
             && fast_plan.strides == plan.strides
@@ -4556,6 +4560,141 @@ fn apply_binary_operation_scalar(
 }
 
 #[inline(never)]
+#[cfg(any(feature = "python-bindings", test))]
+#[allow(unsafe_code)]
+fn materialize_contiguous_scalar_squared_difference_broadcast(
+    left: &Tensor,
+    right: &Tensor,
+    plan: &BroadcastPlan,
+) -> Result<Option<Vec<f32>>, TensorError> {
+    let (scalar, values, scalar_on_left) = if left.shape.is_empty() && !right.shape.is_empty() {
+        let Some(values) = right.contiguous_slice() else {
+            return Ok(None);
+        };
+        (left.value_at_linear_index(0), values, true)
+    } else if right.shape.is_empty() && !left.shape.is_empty() {
+        let Some(values) = left.contiguous_slice() else {
+            return Ok(None);
+        };
+        (right.value_at_linear_index(0), values, false)
+    } else {
+        return Ok(None);
+    };
+
+    debug_assert_eq!(values.len(), plan.elements);
+    if values.len() != plan.elements {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    if !scalar.is_nan() && std::is_x86_feature_detected!("avx2") {
+        return Ok(Some(unsafe {
+            materialize_contiguous_scalar_squared_difference_avx2(
+                values,
+                scalar,
+                scalar_on_left,
+                plan.elements,
+            )?
+        }));
+    }
+
+    let mut data = filled_storage(plan.elements, 0.0)?;
+    if scalar_on_left {
+        for (output, &value) in data.iter_mut().zip(values) {
+            *output = squared_difference_value(scalar, value);
+        }
+    } else {
+        for (output, &value) in data.iter_mut().zip(values) {
+            *output = squared_difference_value(value, scalar);
+        }
+    }
+    debug_assert_eq!(data.len(), plan.elements);
+    Ok(Some(data))
+}
+
+#[cfg(all(
+    any(feature = "python-bindings", test),
+    any(target_arch = "x86", target_arch = "x86_64")
+))]
+#[target_feature(enable = "avx2")]
+#[allow(unsafe_code)]
+unsafe fn materialize_contiguous_scalar_squared_difference_avx2(
+    values: &[f32],
+    scalar: f32,
+    scalar_on_left: bool,
+    elements: usize,
+) -> Result<Vec<f32>, TensorError> {
+    #[cfg(target_arch = "x86")]
+    use std::arch::x86::{
+        _mm256_loadu_ps, _mm256_mul_ps, _mm256_set1_ps, _mm256_storeu_ps, _mm256_sub_ps,
+    };
+    #[cfg(target_arch = "x86_64")]
+    use std::arch::x86_64::{
+        _mm256_loadu_ps, _mm256_mul_ps, _mm256_set1_ps, _mm256_storeu_ps, _mm256_sub_ps,
+    };
+
+    debug_assert!(!scalar.is_nan());
+    debug_assert_eq!(values.len(), elements);
+
+    let mut data: Vec<f32> = try_result_vector(elements, elements)?;
+    let scalar_value = scalar;
+    let scalar = _mm256_set1_ps(scalar_value);
+    let mut index = 0_usize;
+    if scalar_on_left {
+        while index + 8 <= elements {
+            // SAFETY: AVX2 was checked before this function was called, `data`
+            // has reserved at least `elements` slots, and the loop maintains
+            // an in-bounds 8-lane source and destination range.
+            unsafe {
+                let vector = _mm256_loadu_ps(values.as_ptr().add(index));
+                let difference = _mm256_sub_ps(scalar, vector);
+                let squared = _mm256_mul_ps(difference, difference);
+                _mm256_storeu_ps(data.as_mut_ptr().add(index), squared);
+            }
+            index += 8;
+        }
+        while index < elements {
+            let difference = scalar_value - values[index];
+            // SAFETY: `index < elements`, and `data` reserved `elements`
+            // slots. The element is initialized before `set_len` exposes it.
+            unsafe {
+                data.as_mut_ptr().add(index).write(difference * difference);
+            }
+            index += 1;
+        }
+    } else {
+        while index + 8 <= elements {
+            // SAFETY: AVX2 was checked before this function was called, `data`
+            // has reserved at least `elements` slots, and the loop maintains
+            // an in-bounds 8-lane source and destination range.
+            unsafe {
+                let vector = _mm256_loadu_ps(values.as_ptr().add(index));
+                let difference = _mm256_sub_ps(vector, scalar);
+                let squared = _mm256_mul_ps(difference, difference);
+                _mm256_storeu_ps(data.as_mut_ptr().add(index), squared);
+            }
+            index += 8;
+        }
+        while index < elements {
+            let difference = values[index] - scalar_value;
+            // SAFETY: `index < elements`, and `data` reserved `elements`
+            // slots. The element is initialized before `set_len` exposes it.
+            unsafe {
+                data.as_mut_ptr().add(index).write(difference * difference);
+            }
+            index += 1;
+        }
+    }
+
+    // SAFETY: every element in `0..elements` was initialized by the vector
+    // and scalar loops above.
+    unsafe {
+        data.set_len(elements);
+    }
+    Ok(data)
+}
+
+#[inline(never)]
 fn materialize_contiguous_trailing_singleton_broadcast(
     left: &Tensor,
     right: &Tensor,
@@ -5905,10 +6044,12 @@ mod tests {
     use crate::storage::Storage;
 
     use super::{
-        AutogradKind, CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType,
-        Device, F32_SIGN_MASK, GradFn, LogicalValuesInner, MemoryFormat,
-        OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor, TensorError,
-        contiguous_values_equal, l1_loss_difference_value, logical_offset_for_linear_index,
+        AutogradKind, BroadcastPlan, CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS,
+        CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device, F32_SIGN_MASK, GradFn, LogicalValuesInner,
+        MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor,
+        TensorError, contiguous_values_equal, l1_loss_difference_value,
+        logical_offset_for_linear_index,
+        materialize_contiguous_scalar_squared_difference_broadcast,
         materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
         validate_view_bounds,
     };
@@ -9819,6 +9960,106 @@ mod tests {
             assert_eq!(actual.storage_offset(), 0);
             assert!(!actual.shares_storage_with(left));
             assert!(!actual.shares_storage_with(right));
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+
+    #[test]
+    fn scalar_contiguous_squared_difference_broadcast_fast_path_matches_fallback() {
+        let scalar = offset_contiguous_tensor(&[0x7f86_789a], &[1])
+            .index_integer(0)
+            .unwrap();
+        let contiguous = offset_contiguous_tensor(
+            &[
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x7f80_0000,
+                0xff80_0000,
+                0x7fc1_2345,
+                0xffc5_4321,
+                0x7f81_2345,
+                0xff85_4321,
+                0x7f7f_ffff,
+                0xff7f_ffff,
+            ],
+            &[3, 4],
+        );
+        let empty = Tensor::zeros([2, 0, 3]).unwrap();
+        assert!(contiguous.is_contiguous());
+        assert_ne!(contiguous.storage_offset(), 0);
+
+        for (left, right) in [
+            (&scalar, &contiguous),
+            (&contiguous, &scalar),
+            (&scalar, &empty),
+            (&empty, &scalar),
+        ] {
+            let plan = BroadcastPlan::new_for_expanded_operands(left, right).unwrap();
+            let data =
+                materialize_contiguous_scalar_squared_difference_broadcast(left, right, &plan)
+                    .unwrap()
+                    .expect("rank-zero contiguous broadcast should use the fast path");
+            assert_eq!(data.len(), plan.elements);
+
+            let shared_left = shared_gradient_copy(left);
+            let shared_right = shared_gradient_copy(right);
+            let expected = shared_left.squared_difference(&shared_right).unwrap();
+            let actual = left.squared_difference(right).unwrap();
+
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert_eq!(actual.storage_offset(), expected.storage_offset());
+            assert_eq!(actual.dtype(), expected.dtype());
+            assert_eq!(actual.device(), expected.device());
+            assert!(!actual.shares_storage_with(left));
+            assert!(!actual.shares_storage_with(right));
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+
+    #[test]
+    fn scalar_squared_difference_broadcast_keeps_noncontiguous_fallback() {
+        let scalar = Tensor::from_vec(vec![13.0, 0.5], [2])
+            .unwrap()
+            .index_integer(1)
+            .unwrap();
+        let strided = offset_strided_matrix([
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+        ]);
+        assert!(!strided.is_contiguous());
+
+        for (left, right) in [(&scalar, &strided), (&strided, &scalar)] {
+            let plan = BroadcastPlan::new_for_expanded_operands(left, right).unwrap();
+            assert!(
+                materialize_contiguous_scalar_squared_difference_broadcast(left, right, &plan)
+                    .unwrap()
+                    .is_none()
+            );
+
+            let expected = left.sub(right).unwrap().square().unwrap();
+            let actual = left.squared_difference(right).unwrap();
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
             assert!(
                 actual
                     .logical_values()

@@ -591,8 +591,7 @@ class FunctionalMseLossTests(unittest.TestCase):
             ],
             dtype=np.uint32,
         )
-        tensor = torch.tensor(memoryview(tensor_bits.view(np.float32))).view(3, 4)
-        tensor = tensor.transpose(0, 1)
+        contiguous_tensor = torch.tensor(memoryview(tensor_bits.view(np.float32))).view(3, 4)
 
         for scalar_bits in (
             0x0000_0000,
@@ -605,21 +604,29 @@ class FunctionalMseLossTests(unittest.TestCase):
         ):
             scalar_values = np.asarray([scalar_bits], dtype=np.uint32).view(np.float32)
             scalar = torch.tensor(memoryview(scalar_values))[0]
-            for scalar_on_left in (True, False):
-                input, target = (scalar, tensor) if scalar_on_left else (tensor, scalar)
-                difference = input - target
-                expected = difference.square()
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    actual = functional.mse_loss(input, target, reduction="none")
-                with self.subTest(
-                    scalar_bits=hex(scalar_bits), scalar_on_left=scalar_on_left
-                ):
-                    self.assertEqual(actual.stride(), expected.stride())
-                    np.testing.assert_array_equal(
-                        self.tensor_bits(actual),
-                        self.tensor_bits(expected),
+            for tensor_case, tensor in (
+                ("contiguous", contiguous_tensor),
+                ("transposed", contiguous_tensor.transpose(0, 1)),
+            ):
+                for scalar_on_left in (True, False):
+                    input, target = (
+                        (scalar, tensor) if scalar_on_left else (tensor, scalar)
                     )
+                    difference = input - target
+                    expected = difference.square()
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        actual = functional.mse_loss(input, target, reduction="none")
+                    with self.subTest(
+                        scalar_bits=hex(scalar_bits),
+                        tensor_case=tensor_case,
+                        scalar_on_left=scalar_on_left,
+                    ):
+                        self.assertEqual(actual.stride(), expected.stride())
+                        np.testing.assert_array_equal(
+                            self.tensor_bits(actual),
+                            self.tensor_bits(expected),
+                        )
 
     def test_requires_grad_operands_need_no_grad(self):
         for input_requires_grad, target_requires_grad in (

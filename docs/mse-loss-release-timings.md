@@ -3,23 +3,25 @@
 Date: 2026-08-30
 
 Revision under test: uncommitted worktree based on
-`28be6899a04fc71637fbbfa1c7368dcb2d2e2e69`
+`e3af6e66c9ec0b6c0d1f70455ec7b4d8dfe94bd7`
 
 Command shape: release `maturin develop --release --locked` build from the
 current worktree, installed into the worktree-local `.venv`. The timing driver
 ran after imports and input construction, with 9 warmup blocks and 51 measured
 blocks per implementation. Each measured call constructed a fresh
-`mse_loss(reduction="none")` output from exact CPU `float32` tensors and
-immediately consumed the full output with `output.sum().item()`; empty outputs
-contributed their rank to the checksum. Before timing every workload, the
-`torch_rs` output was bitwise-checked against the equivalent PyTorch 2.13.0
-result, including shape and stride metadata.
+`mse_loss(reduction="none")` output from exact CPU `float32` tensors. The MSE
+call table observes the returned tensor metadata and data pointer after every
+call; CPU eager execution materializes the full output before the call returns.
+The full-checksum guard table additionally consumes each non-empty output with
+`output.sum().item()`; empty outputs contribute their rank to the checksum.
+Before timing every workload, the `torch_rs` output was bitwise-checked against
+the equivalent PyTorch 2.13.0 result, including shape and stride metadata.
 
 The focused native and reference MSE tests were run before timing:
 
 ```bash
 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
-  NUMEXPR_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
   .venv/bin/python -m unittest \
   tests.test_nn_functional_mse_loss \
   tests.test_nn_functional_mse_loss_reference
@@ -37,22 +39,26 @@ PYO3_PYTHON="$PWD/.venv/bin/python" \
 cargo test --all-targets
 PYO3_PYTHON="$PWD/.venv/bin/python" \
   cargo test --all-targets --features python-bindings
+cargo test --doc
 ```
 
 Environment:
 
 - CPU: AMD EPYC 9654 96-Core Processor, 2 sockets, 96 cores/socket,
-  2 threads/core
+  2 threads/core; CPU flags observed for this run included `avx2`, `avx512f`,
+  `fma`, and `sse4_2`
 - OS: Linux 6.13.2-0_fbk12_0_g0b66b3635210 x86_64, glibc 2.34
 - Python: 3.12.12
 - NumPy: 2.5.1
 - Rust: `rustc 1.92.0 (ded5c06cf 2025-12-08)`,
   `cargo 1.92.0 (344c4567c 2025-10-21)`
-- PyTorch: 2.13.0+cu130 from `.venv/lib/python3.12/site-packages/torch`
+- PyTorch: 2.13.0+cu130 from the worktree-local `.venv`; CUDA runtime 13.0,
+  `torch.cuda.is_available()` reported `False` because `CUDA_VISIBLE_DEVICES=`
+  was set for the CPU timing run
 - `torch_rs`: 0.1.0 from `python/torch_rs`, native extension
   `python/torch_rs/torch_rs.abi3.so`
 - Profile: release, Cargo `[profile.release]` with thin LTO and one codegen unit
-- Device/dtype: CPU float32; `CUDA_VISIBLE_DEVICES=` for the timing run
+- Device/dtype: CPU float32
 - Threads: `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`,
   `OPENBLAS_NUM_THREADS=1`, `NUMEXPR_NUM_THREADS=1`,
   `torch.set_num_threads(1)`, `torch.set_num_interop_threads(1)`;
@@ -67,51 +73,63 @@ microseconds squared. `torch_rs / PyTorch` is a slowdown ratio, so lower is
 better and 1.00x is parity. The capped ratio clamps each per-cell ratio to
 `[0.10x, 10.00x]` before geometric aggregation.
 
-Geometric mean `torch_rs / PyTorch` slowdown for the held-out same-shape
-contiguous cells:
+Geometric mean `torch_rs / PyTorch` slowdown for the held-out scalar-broadcast
+MSE-call cells:
 
-- Uncapped: 0.67x
-- Capped to `[0.10x, 10.00x]` per cell: 0.68x
+- Uncapped: 0.74x
+- Capped to `[0.10x, 10.00x]` per cell: 0.74x
 
-Geometric mean `torch_rs / PyTorch` slowdown for all cells in the native
-checksum table:
+Geometric mean `torch_rs / PyTorch` slowdown for the MSE-call controls:
 
-- Uncapped: 2.74x
-- Capped to `[0.10x, 10.00x]` per cell: 2.17x
+- Uncapped: 1.50x
+- Capped to `[0.10x, 10.00x]` per cell: 1.50x
 
-## Native Checksum
+## MSE Call
 
 | Workload | Input / target | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Capped ratio |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| `same_contiguous_scalar_heldout` | `()` / `()`, contiguous | `()`, stride `()` | 5000 | 0.597 us +/- 0.004, var 0.000 | 4.989 us +/- 0.024, var 0.006 | 0.12x | 0.12x |
-| `same_contiguous_empty_heldout` | `(0, 1024)` / `(0, 1024)`, contiguous | `(0, 1024)`, stride `(1024, 1)` | 5000 | 0.306 us +/- 0.002, var 0.000 | 3.114 us +/- 0.016, var 0.038 | 0.10x | 0.10x |
-| `same_contiguous_prime_heldout` | `(257, 263)` / `(257, 263)`, contiguous | `(257, 263)`, stride `(263, 1)` | 16 | 67.753 us +/- 0.200, var 0.293 | 17.969 us +/- 0.122, var 1.949 | 3.77x | 3.77x |
-| `same_contiguous_bandwidth_heldout` | `(1536, 1536)` / `(1536, 1536)`, contiguous | `(1536, 1536)`, stride `(1536, 1)` | 2 | 2626.825 us +/- 36.425, var 2973.074 | 564.473 us +/- 13.535, var 3225.375 | 4.65x | 4.65x |
-| `same_noncontiguous_transpose` | transposed `(512, 1024)` / `(512, 1024)`, input stride `(1, 512)` | `(512, 1024)`, stride `(1, 512)` | 2 | 1255.974 us +/- 3.596, var 56.628 | 104.353 us +/- 1.688, var 9.363 | 12.04x | 10.00x |
-| `broadcast_scalar_input` | `()` / `(512, 1024)` | `(512, 1024)`, stride `(1024, 1)` | 2 | 477.807 us +/- 1.733, var 13.392 | 85.394 us +/- 0.435, var 7.676 | 5.60x | 5.60x |
-| `broadcast_scalar_target` | `(512, 1024)` / `()` | `(512, 1024)`, stride `(1024, 1)` | 2 | 479.159 us +/- 1.752, var 16.074 | 79.159 us +/- 0.300, var 1.886 | 6.05x | 6.05x |
-| `broadcast_vector_target` | `(512, 1024)` / `(1024,)` | `(512, 1024)`, stride `(1024, 1)` | 2 | 483.265 us +/- 0.916, var 3.525 | 88.784 us +/- 0.431, var 2.753 | 5.44x | 5.44x |
-| `broadcast_column_target` | `(512, 1024)` / `(512, 1)` | `(512, 1024)`, stride `(1024, 1)` | 2 | 481.462 us +/- 0.616, var 4.172 | 81.994 us +/- 0.331, var 5.746 | 5.87x | 5.87x |
-| `broadcast_noncontig_vector` | transposed `(512, 1024)` / `(1024,)`, input stride `(1, 512)` | `(512, 1024)`, stride `(1, 512)` | 2 | 9400.924 us +/- 57.457, var 37066.076 | 84.558 us +/- 0.761, var 8.767 | 111.18x | 10.00x |
-| `broadcast_empty_scalar` | transposed empty `(3, 0, 2)` / `()` | `(3, 0, 2)`, stride `(2, 2, 1)` | 5000 | 1.096 us +/- 0.005, var 0.000 | 5.066 us +/- 0.058, var 0.229 | 0.22x | 0.22x |
+| `broadcast_scalar_input_prime_heldout` | `()` stride `()` / `(257, 263)` stride `(263, 1)` | `(257, 263)`, stride `(263, 1)` | 16 | 9.221 us +/- 0.026, var 0.027 | 14.891 us +/- 0.081, var 0.086 | 0.62x | 0.62x |
+| `broadcast_scalar_target_prime_heldout` | `(257, 263)` stride `(263, 1)` / `()` stride `()` | `(257, 263)`, stride `(263, 1)` | 16 | 8.852 us +/- 0.034, var 0.101 | 15.050 us +/- 0.058, var 0.272 | 0.59x | 0.59x |
+| `broadcast_scalar_input_bandwidth_heldout` | `()` stride `()` / `(1536, 1536)` stride `(1536, 1)` | `(1536, 1536)`, stride `(1536, 1)` | 2 | 232.231 us +/- 1.678, var 8.366 | 252.316 us +/- 3.852, var 185.490 | 0.92x | 0.92x |
+| `broadcast_scalar_target_bandwidth_heldout` | `(1536, 1536)` stride `(1536, 1)` / `()` stride `()` | `(1536, 1536)`, stride `(1536, 1)` | 2 | 230.869 us +/- 2.258, var 20.367 | 252.536 us +/- 2.649, var 18.861 | 0.91x | 0.91x |
+| `broadcast_empty_scalar_heldout` | `(5, 0, 257)` stride `(257, 257, 1)` / `()` stride `()` | `(5, 0, 257)`, stride `(257, 257, 1)` | 5000 | 3.132 us +/- 0.012, var 0.001 | 7.175 us +/- 0.029, var 0.007 | 0.44x | 0.44x |
+| `same_contiguous_prime_control` | `(257, 263)` stride `(263, 1)` / `(257, 263)` stride `(263, 1)` | `(257, 263)`, stride `(263, 1)` | 16 | 13.681 us +/- 0.091, var 3.933 | 15.751 us +/- 0.078, var 0.319 | 0.87x | 0.87x |
+| `same_contiguous_bandwidth_control` | `(1536, 1536)` stride `(1536, 1)` / `(1536, 1536)` stride `(1536, 1)` | `(1536, 1536)`, stride `(1536, 1)` | 2 | 630.608 us +/- 24.227, var 2343.317 | 512.720 us +/- 21.713, var 1789.669 | 1.23x | 1.23x |
+| `same_noncontiguous_transpose_control` | `(512, 1024)` stride `(1, 512)` / `(512, 1024)` stride `(1, 512)` | `(512, 1024)`, stride `(1, 512)` | 2 | 245.681 us +/- 1.923, var 23.737 | 77.998 us +/- 0.306, var 7.500 | 3.15x | 3.15x |
 
-## Prior Materialized-Checksum Guard
+## Full-Output Checksum Guard
 
-The 2026-08-29 report consumed each output with
-`np.asarray(output).sum(dtype=np.float64)`. That path is dominated by
-`torch_rs`'s Python-list based `Tensor.__array__` conversion for non-empty
-outputs, so it is reported separately from the native checksum timings above.
-To guard against regressions in the already-supported broadcast and transpose
-cells, the same full-NumPy-consumption timing was rerun after an extra allocator
-warmup pass. Every measured `torch_rs` median below is within 5% of the
-2026-08-29 `torch_rs` median for the same cell.
+This guard preserves the prior report's full-output consumption pattern. Its
+large non-empty cells include `torch_rs.sum()` time, which is intentionally
+reported separately from the MSE-call timings above.
 
-| Workload | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Change vs 2026-08-29 `torch_rs` |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `same_noncontiguous_transpose` | 1 | 20846.387 us +/- 271.911, var 2236323.724 | 249.286 us +/- 3.084, var 39.447 | 83.62x | +0.3% |
-| `broadcast_scalar_input` | 1 | 19899.205 us +/- 164.098, var 1053329.956 | 223.938 us +/- 1.742, var 174.712 | 88.86x | -0.5% |
-| `broadcast_scalar_target` | 1 | 19695.176 us +/- 120.722, var 986424.253 | 228.115 us +/- 2.634, var 68.939 | 86.34x | -2.0% |
-| `broadcast_vector_target` | 1 | 19871.613 us +/- 198.140, var 994311.411 | 224.730 us +/- 1.231, var 22.774 | 88.42x | -2.3% |
-| `broadcast_column_target` | 1 | 19660.785 us +/- 121.174, var 1170532.562 | 224.789 us +/- 1.862, var 52.642 | 87.46x | -2.7% |
-| `broadcast_noncontig_vector` | 1 | 28236.236 us +/- 394.897, var 1425982.293 | 236.758 us +/- 9.615, var 171.838 | 119.26x | -1.8% |
-| `broadcast_empty_scalar` | 2000 | 2.642 us +/- 0.024, var 0.074 | 6.501 us +/- 0.033, var 0.812 | 0.41x | -1.9% |
+Geometric mean `torch_rs / PyTorch` slowdown for the held-out scalar-broadcast
+checksum cells:
+
+- Uncapped: 4.43x
+- Capped to `[0.10x, 10.00x]` per cell: 4.43x
+
+Geometric mean `torch_rs / PyTorch` slowdown for the checksum controls:
+
+- Uncapped: 5.60x
+- Capped to `[0.10x, 10.00x]` per cell: 5.22x
+
+| Workload | Input / target | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Capped ratio |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `broadcast_scalar_input_prime_heldout` | `()` stride `()` / `(257, 263)` stride `(263, 1)` | `(257, 263)`, stride `(263, 1)` | 16 | 63.649 us +/- 0.096, var 0.174 | 18.722 us +/- 0.105, var 0.214 | 3.40x | 3.40x |
+| `broadcast_scalar_target_prime_heldout` | `(257, 263)` stride `(263, 1)` / `()` stride `()` | `(257, 263)`, stride `(263, 1)` | 16 | 63.650 us +/- 0.183, var 0.106 | 19.508 us +/- 0.129, var 0.264 | 3.26x | 3.26x |
+| `broadcast_scalar_input_bandwidth_heldout` | `()` stride `()` / `(1536, 1536)` stride `(1536, 1)` | `(1536, 1536)`, stride `(1536, 1)` | 2 | 2217.470 us +/- 26.801, var 6412.733 | 382.733 us +/- 22.274, var 1215.485 | 5.79x | 5.79x |
+| `broadcast_scalar_target_bandwidth_heldout` | `(1536, 1536)` stride `(1536, 1)` / `()` stride `()` | `(1536, 1536)`, stride `(1536, 1)` | 2 | 2222.573 us +/- 21.222, var 1895.537 | 372.498 us +/- 7.597, var 876.391 | 5.97x | 5.97x |
+| `broadcast_empty_scalar_heldout` | `(5, 0, 257)` stride `(257, 257, 1)` / `()` stride `()` | `(5, 0, 257)`, stride `(257, 257, 1)` | 5000 | 2.905 us +/- 0.011, var 0.046 | 6.894 us +/- 0.113, var 0.059 | 0.42x | 0.42x |
+| `same_contiguous_prime_control` | `(257, 263)` stride `(263, 1)` / `(257, 263)` stride `(263, 1)` | `(257, 263)`, stride `(263, 1)` | 16 | 69.936 us +/- 0.496, var 0.962 | 20.251 us +/- 0.087, var 0.688 | 3.45x | 3.45x |
+| `same_contiguous_bandwidth_control` | `(1536, 1536)` stride `(1536, 1)` / `(1536, 1536)` stride `(1536, 1)` | `(1536, 1536)`, stride `(1536, 1)` | 2 | 2728.909 us +/- 37.391, var 5350.825 | 663.727 us +/- 20.290, var 1077.439 | 4.11x | 4.11x |
+| `same_noncontiguous_transpose_control` | `(512, 1024)` stride `(1, 512)` / `(512, 1024)` stride `(1, 512)` | `(512, 1024)`, stride `(1, 512)` | 2 | 1270.100 us +/- 16.639, var 2328.326 | 102.796 us +/- 0.356, var 12.119 | 12.36x | 10.00x |
+
+Compared with the 2026-08-30 prior full-checksum report, the unchanged control
+cells stayed inside the 5% regression guard:
+
+| Control | Prior `torch_rs` median | Current `torch_rs` median | Change |
+| --- | ---: | ---: | ---: |
+| `same_contiguous_prime_control` | 67.753 us | 69.936 us | +3.2% |
+| `same_contiguous_bandwidth_control` | 2626.825 us | 2728.909 us | +3.9% |
+| `same_noncontiguous_transpose_control` | 1255.974 us | 1270.100 us | +1.1% |
