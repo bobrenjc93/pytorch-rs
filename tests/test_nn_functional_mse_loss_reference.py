@@ -253,6 +253,100 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ("empty strided scalar target", empty_strided, scalar),
         )
 
+    def make_same_stride_dense_cases(self, module):
+        edge_input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+                0x0080_0000,
+                0x8080_0000,
+                0x007F_FFFF,
+                0x807F_FFFF,
+            ],
+            dtype=np.uint32,
+        )
+        edge_target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0001,
+                0x0000_0001,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xFF7F_FFFF,
+                0x7F7F_FFFF,
+                0x8080_0000,
+                0x0080_0000,
+                0x807F_FFFF,
+                0x007F_FFFF,
+            ],
+            dtype=np.uint32,
+        )
+        input_padding = np.full(18, 0x3F80_0000, dtype=np.uint32)
+        target_padding = np.full(18, 0x4000_0000, dtype=np.uint32)
+        offset_edge_input = module.tensor(
+            memoryview(np.concatenate([input_padding, edge_input_bits]).view(np.float32))
+        ).view(2, 3, 6)[1].transpose(0, 1)
+        offset_edge_target = module.tensor(
+            memoryview(np.concatenate([target_padding, edge_target_bits]).view(np.float32))
+        ).view(2, 3, 6)[1].transpose(0, 1)
+        transposed_input = self.tensor(
+            module,
+            np.linspace(-2.0, 3.0, 96, dtype=np.float32).reshape(12, 8).tolist(),
+        ).transpose(0, 1)
+        transposed_target = self.tensor(
+            module,
+            np.linspace(4.0, -5.0, 96, dtype=np.float32).reshape(12, 8).tolist(),
+        ).transpose(0, 1)
+        channels_last_input = self.tensor(
+            module,
+            np.arange(48, dtype=np.float32).reshape(2, 3, 2, 4).tolist(),
+        ).contiguous(memory_format=module.channels_last)
+        channels_last_target = self.tensor(
+            module,
+            np.linspace(5.0, -6.0, 48, dtype=np.float32)
+            .reshape(2, 3, 2, 4)
+            .tolist(),
+        ).contiguous(memory_format=module.channels_last)
+        singleton_input = self.tensor(
+            module,
+            np.arange(12, dtype=np.float32).reshape(3, 4, 1).tolist(),
+        ).transpose(0, 1)
+        singleton_target = self.tensor(
+            module,
+            np.linspace(-1.5, 2.5, 12, dtype=np.float32)
+            .reshape(3, 4, 1)
+            .tolist(),
+        ).transpose(0, 1)
+        empty_input = module.zeros((2, 0, 3), dtype=module.float32).transpose(0, 2)
+        empty_target = module.ones((2, 0, 3), dtype=module.float32).transpose(0, 2)
+
+        return (
+            ("transposed", transposed_input, transposed_target),
+            ("offset edge transposed", offset_edge_input, offset_edge_target),
+            ("channels last", channels_last_input, channels_last_target),
+            ("singleton transposed", singleton_input, singleton_target),
+            ("empty transposed", empty_input, empty_target),
+        )
+
     @staticmethod
     def call(module_functional, input, target, form):
         if form == "reduction keyword":
@@ -402,6 +496,74 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 )
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
+                )
+
+    def test_same_stride_dense_cases_match_pytorch_2_13(self):
+        actual_cases = self.make_same_stride_dense_cases(torch)
+        expected_cases = self.make_same_stride_dense_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            self.assertEqual(actual_input.shape, tuple(expected_input.shape))
+            self.assertEqual(actual_input.stride(), expected_input.stride())
+            self.assertEqual(actual_target.stride(), expected_target.stride())
+            self.assertEqual(actual_input.stride(), actual_target.stride())
+            if actual_input.numel() != 0:
+                self.assertFalse(actual_input.is_contiguous())
+                self.assertFalse(actual_target.is_contiguous())
+
+            actual_input_before = np.asarray(actual_input).copy()
+            actual_target_before = np.asarray(actual_target).copy()
+            expected_input_before = expected_input.clone()
+            expected_target_before = expected_target.clone()
+            actual = functional.mse_loss(
+                actual_input,
+                actual_target,
+                reduction="none",
+            )
+            expected = reference_functional.mse_loss(
+                expected_input,
+                expected_target,
+                reduction="none",
+            )
+            actual_repeat = functional.mse_loss(
+                actual_input,
+                actual_target,
+                reduction="none",
+            )
+            expected_repeat = reference_functional.mse_loss(
+                expected_input,
+                expected_target,
+                reduction="none",
+            )
+
+            self.assert_matches(actual, expected, case=case)
+            with self.subTest(case=case, storage=True):
+                self.assertFalse(actual.is_set_to(actual_repeat))
+                self.assertFalse(expected.is_set_to(expected_repeat))
+                self.assertFalse(actual.is_set_to(actual_input))
+                self.assertFalse(expected.is_set_to(expected_input))
+                self.assertFalse(actual.is_set_to(actual_target))
+                self.assertFalse(expected.is_set_to(expected_target))
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input), actual_input_before
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target), actual_target_before
+                )
+                np.testing.assert_array_equal(
+                    expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_input_before.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                )
+                np.testing.assert_array_equal(
+                    expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_target_before.detach().cpu().numpy().reshape(-1).view(np.uint32),
                 )
 
     def test_same_shape_contiguous_cases_match_pytorch_2_13(self):
@@ -733,6 +895,45 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 expected,
                 case=(input_requires_grad, target_requires_grad),
             )
+
+    def test_same_stride_dense_requires_grad_operands_match_inside_no_grad(self):
+        actual_input = torch.tensor(
+            np.linspace(-2.0, 3.0, 24, dtype=np.float32).reshape(4, 6).tolist(),
+            requires_grad=True,
+        ).transpose(0, 1)
+        actual_target = torch.tensor(
+            np.linspace(4.0, -5.0, 24, dtype=np.float32).reshape(4, 6).tolist(),
+            requires_grad=True,
+        ).transpose(0, 1)
+        expected_input = reference_torch.tensor(
+            np.linspace(-2.0, 3.0, 24, dtype=np.float32).reshape(4, 6).tolist(),
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        ).transpose(0, 1)
+        expected_target = reference_torch.tensor(
+            np.linspace(4.0, -5.0, 24, dtype=np.float32).reshape(4, 6).tolist(),
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        ).transpose(0, 1)
+
+        self.assertEqual(actual_input.stride(), expected_input.stride())
+        self.assertEqual(actual_target.stride(), expected_target.stride())
+        self.assertEqual(actual_input.stride(), actual_target.stride())
+        self.assertFalse(actual_input.is_contiguous())
+        self.assertFalse(actual_target.is_contiguous())
+        with torch.no_grad():
+            actual = functional.mse_loss(
+                actual_input,
+                actual_target,
+                reduction="none",
+            )
+        with reference_torch.no_grad():
+            expected = reference_functional.mse_loss(
+                expected_input,
+                expected_target,
+                reduction="none",
+            )
+        self.assert_matches(actual, expected, case="same-stride no_grad")
 
     def test_broadcast_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (

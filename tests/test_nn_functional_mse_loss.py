@@ -176,6 +176,94 @@ class FunctionalMseLossTests(unittest.TestCase):
             ("empty strided scalar target", empty_strided, scalar),
         )
 
+    def same_stride_dense_cases(self):
+        edge_input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+                0x0080_0000,
+                0x8080_0000,
+                0x007F_FFFF,
+                0x807F_FFFF,
+            ],
+            dtype=np.uint32,
+        )
+        edge_target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0001,
+                0x0000_0001,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xFF7F_FFFF,
+                0x7F7F_FFFF,
+                0x8080_0000,
+                0x0080_0000,
+                0x807F_FFFF,
+                0x007F_FFFF,
+            ],
+            dtype=np.uint32,
+        )
+        input_padding = np.full(18, 0x3F80_0000, dtype=np.uint32)
+        target_padding = np.full(18, 0x4000_0000, dtype=np.uint32)
+        offset_edge_input = torch.tensor(
+            memoryview(np.concatenate([input_padding, edge_input_bits]).view(np.float32))
+        ).view(2, 3, 6)[1].transpose(0, 1)
+        offset_edge_target = torch.tensor(
+            memoryview(np.concatenate([target_padding, edge_target_bits]).view(np.float32))
+        ).view(2, 3, 6)[1].transpose(0, 1)
+        transposed_input = torch.tensor(
+            np.linspace(-2.0, 3.0, 96, dtype=np.float32).reshape(12, 8).tolist()
+        ).transpose(0, 1)
+        transposed_target = torch.tensor(
+            np.linspace(4.0, -5.0, 96, dtype=np.float32).reshape(12, 8).tolist()
+        ).transpose(0, 1)
+        channels_last_input = torch.tensor(
+            np.arange(48, dtype=np.float32).reshape(2, 3, 2, 4).tolist()
+        ).contiguous(memory_format=torch.channels_last)
+        channels_last_target = torch.tensor(
+            np.linspace(5.0, -6.0, 48, dtype=np.float32)
+            .reshape(2, 3, 2, 4)
+            .tolist()
+        ).contiguous(memory_format=torch.channels_last)
+        singleton_input = torch.tensor(
+            np.arange(12, dtype=np.float32).reshape(3, 4, 1).tolist()
+        ).transpose(0, 1)
+        singleton_target = torch.tensor(
+            np.linspace(-1.5, 2.5, 12, dtype=np.float32)
+            .reshape(3, 4, 1)
+            .tolist()
+        ).transpose(0, 1)
+        empty_input = torch.zeros((2, 0, 3)).transpose(0, 2)
+        empty_target = torch.ones((2, 0, 3)).transpose(0, 2)
+
+        return (
+            ("transposed", transposed_input, transposed_target),
+            ("offset edge transposed", offset_edge_input, offset_edge_target),
+            ("channels last", channels_last_input, channels_last_target),
+            ("singleton transposed", singleton_input, singleton_target),
+            ("empty transposed", empty_input, empty_target),
+        )
+
     @staticmethod
     def broadcast_warning(input, target):
         return (
@@ -571,9 +659,48 @@ class FunctionalMseLossTests(unittest.TestCase):
             expected = difference.square()
             with self.subTest(case=case):
                 self.assertEqual(actual.stride(), difference.stride())
+            np.testing.assert_array_equal(
+                self.tensor_bits(actual),
+                self.tensor_bits(expected),
+            )
+
+    def test_same_stride_dense_inputs_match_composition_and_keep_storage_fresh(self):
+        for case, input, target in self.same_stride_dense_cases():
+            self.assertEqual(input.shape, target.shape)
+            self.assertEqual(input.stride(), target.stride())
+            if input.numel() != 0:
+                self.assertFalse(input.is_contiguous())
+                self.assertFalse(target.is_contiguous())
+
+            difference = input - target
+            expected = difference.square()
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+            actual = functional.mse_loss(input, target, reduction="none")
+            repeated = functional.mse_loss(input, target, reduction="none")
+
+            self.assert_matches_composition(
+                actual,
+                expected,
+                case=case,
+                expected_stride=difference.stride(),
+            )
+            with self.subTest(case=case, storage=True):
+                self.assertFalse(actual.is_set_to(repeated))
+                self.assertFalse(actual.is_set_to(input))
+                self.assertFalse(actual.is_set_to(target))
+                if actual.numel() != 0:
+                    self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+                    self.assertNotEqual(actual.data_ptr(), input.data_ptr())
+                    self.assertNotEqual(actual.data_ptr(), target.data_ptr())
+            with self.subTest(case=case, nonmutation=True):
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
                 np.testing.assert_array_equal(
-                    self.tensor_bits(actual),
-                    self.tensor_bits(expected),
+                    self.tensor_state(input)[-1], input_state[-1]
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1], target_state[-1]
                 )
 
     def test_scalar_broadcast_float32_edges_match_kernel_composition_bits(self):
@@ -671,6 +798,41 @@ class FunctionalMseLossTests(unittest.TestCase):
                 self.assertTrue(actual.is_leaf)
                 self.assertIsNone(input.grad)
                 self.assertIsNone(target.grad)
+
+    def test_same_stride_dense_requires_grad_operands_work_inside_no_grad(self):
+        input = torch.tensor(
+            np.linspace(-2.0, 3.0, 24, dtype=np.float32).reshape(4, 6).tolist(),
+            requires_grad=True,
+        ).transpose(0, 1)
+        target = torch.tensor(
+            np.linspace(4.0, -5.0, 24, dtype=np.float32).reshape(4, 6).tolist(),
+            requires_grad=True,
+        ).transpose(0, 1)
+
+        self.assertEqual(input.shape, target.shape)
+        self.assertEqual(input.stride(), target.stride())
+        self.assertFalse(input.is_contiguous())
+        self.assertFalse(target.is_contiguous())
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^mse_loss\(\): autograd recording is not supported$",
+        ):
+            functional.mse_loss(input, target, reduction="none")
+
+        with torch.no_grad():
+            actual = functional.mse_loss(input, target, reduction="none")
+            difference = input - target
+            expected = difference.square()
+        self.assert_matches_composition(
+            actual,
+            expected,
+            case="same-stride no_grad",
+            expected_stride=difference.stride(),
+        )
+        self.assertFalse(actual.requires_grad)
+        self.assertTrue(actual.is_leaf)
+        self.assertIsNone(input.grad)
+        self.assertIsNone(target.grad)
 
     def test_broadcast_requires_grad_operands_need_no_grad(self):
         def scalar_input(input_requires_grad, target_requires_grad):
