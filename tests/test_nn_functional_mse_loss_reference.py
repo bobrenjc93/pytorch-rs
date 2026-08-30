@@ -207,6 +207,7 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             .reshape(2, 3, 4)
             .tolist(),
         )
+        singleton_contiguous = self.tensor(module, [[0.0], [1.0]]).transpose(0, 1)
         offset_strided = self.tensor(
             module,
             np.arange(48, dtype=np.float32).reshape(2, 2, 4, 3).tolist(),
@@ -243,6 +244,8 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ),
             ("contiguous scalar input", scalar, contiguous),
             ("contiguous scalar target", contiguous, scalar),
+            ("singleton contiguous scalar input", scalar, singleton_contiguous),
+            ("singleton contiguous scalar target", singleton_contiguous, scalar),
             ("offset strided scalar input", offset_scalar, offset_strided),
             ("offset strided scalar target", offset_strided, offset_scalar),
             ("channels last scalar input", scalar, channels_last),

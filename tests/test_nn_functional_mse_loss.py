@@ -145,6 +145,7 @@ class FunctionalMseLossTests(unittest.TestCase):
             .reshape(2, 3, 4)
             .tolist()
         )
+        singleton_contiguous = torch.tensor([[0.0], [1.0]]).transpose(0, 1)
         offset_strided = torch.tensor(
             np.arange(48, dtype=np.float32).reshape(2, 2, 4, 3).tolist()
         )[1].transpose(1, 2)
@@ -164,6 +165,8 @@ class FunctionalMseLossTests(unittest.TestCase):
             ("noncontiguous vector target", noncontiguous_matrix, vector),
             ("contiguous scalar input", scalar, contiguous),
             ("contiguous scalar target", contiguous, scalar),
+            ("singleton contiguous scalar input", scalar, singleton_contiguous),
+            ("singleton contiguous scalar target", singleton_contiguous, scalar),
             ("offset strided scalar input", offset_scalar, offset_strided),
             ("offset strided scalar target", offset_strided, offset_scalar),
             ("channels last scalar input", scalar, channels_last),
@@ -318,7 +321,18 @@ class FunctionalMseLossTests(unittest.TestCase):
                 self.assertEqual(caught[0].filename, __file__)
                 self.assertEqual(caught[0].lineno, warning_line)
 
-            self.assert_matches_composition(actual, expected, case=case)
+            expected_stride = None
+            if case in {
+                "singleton contiguous scalar input",
+                "singleton contiguous scalar target",
+            }:
+                expected_stride = (1, 1)
+            self.assert_matches_composition(
+                actual,
+                expected,
+                case=case,
+                expected_stride=expected_stride,
+            )
             with self.subTest(case=case, storage=True):
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")

@@ -3099,16 +3099,14 @@ impl Tensor {
             return Ok(None);
         };
 
-        let elements = tensor.elements;
-        validate_storage_capacity(elements)?;
-        let shape = try_clone_result_shape(&tensor.shape, elements)?;
-        let strides = contiguous_strides(&shape, elements)?;
+        let plan = BroadcastPlan::new_for_expanded_operands(self, other)?;
+        debug_assert_eq!(plan.elements, tensor.elements);
         let data =
             materialize_contiguous_scalar_squared_difference(values, scalar, scalar_on_left)?;
         Ok(Some(Self::from_owned_parts(
             data,
-            shape,
-            strides,
+            plan.shape,
+            plan.strides,
             self.dtype(),
             self.device(),
         )))
@@ -9971,6 +9969,14 @@ mod tests {
         assert!(contiguous.contiguous_slice().is_some());
         assert!(shared_contiguous.contiguous_slice().is_none());
 
+        let singleton_contiguous = Tensor::from_vec(vec![0.0, 1.0], [2, 1])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        assert_eq!(singleton_contiguous.shape(), &[1, 2]);
+        assert_eq!(singleton_contiguous.stride(), &[1, 1]);
+        assert!(singleton_contiguous.is_contiguous());
+
         for scalar_bits in [
             0x0000_0000,
             0x8000_0000,
@@ -9986,6 +9992,14 @@ mod tests {
                 .unwrap();
             assert_scalar_contiguous_squared_difference_matches_fallback(&scalar, &contiguous);
             assert_scalar_contiguous_squared_difference_matches_fallback(&contiguous, &scalar);
+            assert_scalar_contiguous_squared_difference_matches_fallback(
+                &scalar,
+                &singleton_contiguous,
+            );
+            assert_scalar_contiguous_squared_difference_matches_fallback(
+                &singleton_contiguous,
+                &scalar,
+            );
         }
     }
 
