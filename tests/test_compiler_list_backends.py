@@ -26,6 +26,7 @@ COMPILER_EXPORTS = [
     "set_default_backend",
     "get_default_backend",
     "set_enable_guard_collectives",
+    "cudagraph_mark_step_begin",
     "is_compiling",
     "is_dynamo_compiling",
     "is_exporting",
@@ -248,7 +249,6 @@ class CompilerListBackendsTests(unittest.TestCase):
         unsupported_compiler_names = (
             "allow_in_graph",
             "substitute_in_graph",
-            "cudagraph_mark_step_begin",
             "load_compiled_function",
             "wrap_numpy",
             "nested_compile_region",
