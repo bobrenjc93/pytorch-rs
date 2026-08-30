@@ -713,7 +713,7 @@ impl PyTensorBase {
             return Ok(result);
         }
 
-        Err(imag_non_complex_error())
+        apply_tensor_imag(tensor)
     }
 
     #[setter(imag)]
@@ -2011,6 +2011,21 @@ pub(crate) fn real_variable_function(
     )
 }
 
+pub(crate) fn imag_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_or_override_argument("imag", args, kwargs)?;
+    dispatch_single_tensor_override(
+        SingleTensorOverrideOperation::IMAG,
+        py,
+        &input,
+        args,
+        kwargs,
+    )
+}
+
 pub(crate) fn resolve_conj_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2344,6 +2359,12 @@ impl SingleTensorOverrideOperation {
         name: "real",
         qualified_name: "torch.real",
         apply_native: apply_top_level_real,
+    };
+
+    const IMAG: Self = Self {
+        name: "imag",
+        qualified_name: "torch.imag",
+        apply_native: apply_top_level_imag,
     };
 }
 
@@ -3372,6 +3393,24 @@ fn apply_top_level_real(_py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResu
     // real. Return the wrapper directly instead of consulting Python-visible
     // Tensor.real, which users may shadow on the class.
     Ok(tensor.clone().unbind().into_any())
+}
+
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "Tensor.imag and top-level torch.imag share this fallible error path"
+)]
+fn apply_tensor_imag(_tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    Err(imag_non_complex_error())
+}
+
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "single-tensor native callbacks share a fallible signature"
+)]
+fn apply_top_level_imag(_py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    // Native float32 tensors have no imaginary view. Share Tensor.imag's
+    // real-dtype error path after top-level __torch_function__ dispatch.
+    apply_tensor_imag(tensor)
 }
 
 fn ordered_unary_out_overrides<'py>(
