@@ -357,16 +357,26 @@ assert cpu_nhwc.is_contiguous(memory_format=torch.channels_last)
 
 The CPU core provides `float32` tensors, checked construction including copied
 one-dimensional numeric PEP 3118 buffers, constant-filled creation, and layout
-queries. Tensor metadata coverage includes `Tensor.dense_dim()` and
-`Tensor.sparse_dim()` strided-layout dimension metadata, no-argument
-`Tensor.is_pinned()` metadata for the exclusively pageable CPU storage model,
-no-argument `Tensor.is_distributed()` metadata for supported local tensors,
-read-only `Tensor.is_sparse` and `Tensor.is_sparse_csr` strided-layout
-introspection, read-only `Tensor.is_cpu` and `Tensor.is_cuda` device
-introspection, read-only `Tensor.is_quantized` dtype introspection,
-dtype-backed `Tensor.is_signed()` and `torch.is_signed()` queries, read-only
-`torch.float32.abbr == "f32"` metadata, canonical `torch.float32.to_real()`
-identity, and float32-only `torch.finfo` metadata.
+queries. Tensor metadata coverage includes rank queries through `Tensor.ndim`,
+`Tensor.dim()`, and `Tensor.ndimension()`; element-count queries through
+`torch.numel()`, `Tensor.numel()`, and `Tensor.nelement()`; byte-width and
+payload-size queries through `Tensor.element_size()`, `Tensor.itemsize`, and
+`Tensor.nbytes`; `Tensor.dense_dim()` and `Tensor.sparse_dim()` strided-layout
+dimension metadata; no-argument `Tensor.is_pinned()` metadata for the
+exclusively pageable CPU storage model; no-argument `Tensor.is_distributed()`
+metadata for supported local tensors; read-only `Tensor.is_sparse` and
+`Tensor.is_sparse_csr` strided-layout introspection; read-only `Tensor.is_cpu`
+and `Tensor.is_cuda` device introspection; read-only `Tensor.is_quantized`
+dtype introspection; dtype-backed `Tensor.is_signed()` and `torch.is_signed()`,
+`Tensor.is_complex()` and `torch.is_complex()`, and
+`Tensor.is_floating_point()` and `torch.is_floating_point()` queries; read-only
+`torch.float32.abbr == "f32"` metadata; canonical `torch.float32.to_real()`
+identity; and float32-only `torch.finfo` metadata.
+
+Scalar truth metadata is covered through `Tensor.is_nonzero()` and
+`torch.is_nonzero()`, which read one-element tensors, including strided views,
+and report PyTorch-compatible ambiguous-boolean errors for empty and
+multi-element tensors.
 
 Autograd-facing tensor metadata includes leaf-only `Tensor.retain_grad()` as a
 no-op for tensors with `requires_grad=True`, read-only `Tensor.retains_grad`
