@@ -47,7 +47,7 @@ impl PyDevice {
         self.inner
     }
 
-    const fn has_index(&self) -> bool {
+    pub(crate) const fn has_index(&self) -> bool {
         self.index != UNINDEXED_DEVICE
     }
 }
