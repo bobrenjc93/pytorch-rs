@@ -18,22 +18,23 @@ use crate::python::{
     abs_variable_function, absolute_variable_function, adjoint_variable_function,
     arange_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
     atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
-    ceil_variable_function, detach_variable_function, exp_variable_function, fix_variable_function,
-    floor_variable_function, get_device_variable_function, is_conj_variable_function,
-    is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
-    movedim_variable_function, mul_variable_function, multiply_variable_function,
-    neg_variable_function, negative_variable_function, permute_variable_function,
-    positive_variable_function, promote_types_variable_function, ravel_variable_function,
-    reciprocal_variable_function, reshape_variable_function, resolve_conj_variable_function,
-    resolve_neg_variable_function, rsqrt_variable_function, scalar_tensor_variable_function,
-    select_variable_function, sigmoid_variable_function, sin_variable_function,
-    sqrt_variable_function, square_variable_function, sum_variable_function,
-    tanh_variable_function, trunc_variable_function, unbind_variable_function,
+    ceil_variable_function, conj_variable_function, detach_variable_function,
+    exp_variable_function, fix_variable_function, floor_variable_function,
+    get_device_variable_function, is_conj_variable_function, is_inference_variable_function,
+    matmul_variable_function, moveaxis_variable_function, movedim_variable_function,
+    mul_variable_function, multiply_variable_function, neg_variable_function,
+    negative_variable_function, permute_variable_function, positive_variable_function,
+    promote_types_variable_function, ravel_variable_function, reciprocal_variable_function,
+    reshape_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
+    rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
+    square_variable_function, sum_variable_function, tanh_variable_function,
+    trunc_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 44] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 45] = [
     "get_device",
     "scalar_tensor",
     "arange",
@@ -44,6 +45,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 44] = [
     "abs",
     "absolute",
     "adjoint",
+    "conj",
     "positive",
     "detach",
     "ravel",
@@ -653,6 +655,8 @@ const IS_CONJ_DOC: &std::ffi::CStr = c"\nis_conj(input) -> (bool)\n\nReturns Tru
 
 const IS_INFERENCE_DOC: &std::ffi::CStr = c"\nis_inference(input) -> (bool)\n\nReturns True if :attr:`input` is an inference tensor.\n\nA non-view tensor is an inference tensor if and only if it was\nallocated during inference mode. A view tensor is an inference\ntensor if and only if the tensor it is a view of is an inference tensor.\n\nFor details on inference mode please see\n`Inference Mode <https://pytorch.org/cppdocs/notes/inference_mode.html>`_.\n\nArgs:\n    input (Tensor): the input tensor.\n";
 
+const CONJ_DOC: &std::ffi::CStr = c"\nconj(input) -> Tensor\n\nReturns a view of :attr:`input` with a flipped conjugate bit. If :attr:`input` has a non-complex dtype,\nthis function just returns :attr:`input`.\n\n.. note::\n    :func:`torch.conj` performs a lazy conjugation, but the actual conjugated tensor can be materialized\n    at any time using :func:`torch.resolve_conj`.\n\n.. warning:: In the future, :func:`torch.conj` may return a non-writeable view for an :attr:`input` of\n             non-complex dtype. It's recommended that programs not modify the tensor returned by :func:`torch.conj_physical`\n             when :attr:`input` is of non-complex dtype to be compatible with this change.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> x = torch.tensor([-1 + 1j, -2 + 2j, 3 - 3j])\n    >>> x.is_conj()\n    False\n    >>> y = torch.conj(x)\n    >>> y.is_conj()\n    True\n";
+
 const RESOLVE_CONJ_DOC: &std::ffi::CStr = c"\nresolve_conj(input) -> Tensor\n\nReturns a new tensor with materialized conjugation if :attr:`input`'s conjugate bit is set to `True`,\nelse returns :attr:`input`. The output tensor will always have its conjugate bit set to `False`.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> x = torch.tensor([-1 + 1j, -2 + 2j, 3 - 3j])\n    >>> y = x.conj()\n    >>> y.is_conj()\n    True\n    >>> z = y.resolve_conj()\n    >>> z\n    tensor([-1 - 1j, -2 - 2j, 3 + 3j])\n    >>> z.is_conj()\n    False\n";
 
 const RESOLVE_NEG_DOC: &std::ffi::CStr = c"\nresolve_neg(input) -> Tensor\n\nReturns a new tensor with materialized negation if :attr:`input`'s negative bit is set to `True`,\nelse returns :attr:`input`. The output tensor will always have its negative bit set to `False`.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> x = torch.tensor([-1 + 1j, -2 + 2j, 3 - 3j])\n    >>> y = x.conj()\n    >>> z = y.imag\n    >>> z.is_neg()\n    True\n    >>> out = z.resolve_neg()\n    >>> out\n    tensor([-1., -2., 3.])\n    >>> out.is_neg()\n    False\n";
@@ -931,6 +935,7 @@ variable_function_callback!(
 );
 variable_function_callback!(is_conj_callback, is_conj_variable_function);
 variable_function_callback!(is_inference_callback, is_inference_variable_function);
+variable_function_callback!(conj_callback, conj_variable_function);
 variable_function_callback!(resolve_conj_callback, resolve_conj_variable_function);
 variable_function_callback!(resolve_neg_callback, resolve_neg_variable_function);
 variable_function_callback!(unbind_callback, unbind_variable_function);
@@ -997,6 +1002,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"_nnpack_available", nnpack_available_callback, c""),
         variable_function_method!(c"is_conj", is_conj_callback, IS_CONJ_DOC),
         variable_function_method!(c"is_inference", is_inference_callback, IS_INFERENCE_DOC),
+        variable_function_method!(c"conj", conj_callback, CONJ_DOC),
         variable_function_method!(c"resolve_conj", resolve_conj_callback, RESOLVE_CONJ_DOC),
         variable_function_method!(c"resolve_neg", resolve_neg_callback, RESOLVE_NEG_DOC),
         variable_function_method!(c"unbind", unbind_callback, UNBIND_DOC),
