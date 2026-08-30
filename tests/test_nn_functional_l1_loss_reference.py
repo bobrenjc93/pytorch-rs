@@ -87,12 +87,24 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             .tolist(),
         ).permute(2, 1, 0)
         same = self.tensor(module, [[1.0, -2.0], [3.0, -4.0]])
+        bandwidth_input = np.linspace(-3.0, 5.0, 1 << 20, dtype=np.float32)
+        bandwidth_target = np.linspace(4.0, -2.0, 1 << 20, dtype=np.float32)
 
         return (
             (
                 "scalar",
                 self.tensor(module, -0.0),
                 self.tensor(module, 2.5),
+            ),
+            (
+                "small",
+                self.tensor(module, [[1.0, -2.0, 3.5], [-0.0, 5.0, -6.5]]),
+                self.tensor(module, [[0.25, 4.0, -3.5], [0.0, -7.0, 8.5]]),
+            ),
+            (
+                "bandwidth-sized",
+                module.tensor(memoryview(bandwidth_input)),
+                module.tensor(memoryview(bandwidth_target)),
             ),
             ("empty", empty_input, empty_target),
             ("offset", offset_input_base[1], offset_target_base[0]),
