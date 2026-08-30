@@ -333,6 +333,15 @@ assert torch.is_complex(x) is False
 assert x.is_complex() is False
 assert torch.is_floating_point(x) is True
 assert x.is_floating_point() is True
+try:
+    torch.imag(input=x)
+except RuntimeError as error:
+    assert (
+        str(error)
+        == "imag is not implemented for tensors with non-complex dtypes."
+    )
+else:
+    raise AssertionError("torch.imag() unexpectedly returned for a real tensor")
 assert torch.broadcast_shapes((2,), [3, 1]) == torch.Size([3, 2])
 assert x.dense_dim() == x.ndim
 assert x.sparse_dim() == 0
