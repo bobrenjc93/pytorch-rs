@@ -627,10 +627,10 @@ print(json.dumps({
             with self.subTest(case=case):
                 self.assertEqual(self.error(actual_call), self.error(expected_call))
 
-    def test_scope_adds_real_without_complex_or_imag_support(self):
+    def test_scope_adds_real_without_complex_support(self):
         self.assertTrue(hasattr(torch, "real"))
         self.assertTrue(hasattr(reference_torch, "real"))
-        self.assertFalse(hasattr(torch, "imag"))
+        self.assertTrue(hasattr(torch, "imag"))
         self.assertTrue(hasattr(reference_torch, "imag"))
         self.assertFalse(hasattr(torch, "real_"))
         self.assertFalse(hasattr(torch.Tensor, "real_"))
