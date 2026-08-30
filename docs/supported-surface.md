@@ -48,6 +48,8 @@ assert torch.set_deterministic_debug_mode("default") is None
 assert torch.get_deterministic_debug_mode() == 0
 assert torch.are_deterministic_algorithms_enabled() is False
 assert torch.is_deterministic_algorithms_warn_only_enabled() is False
+assert torch.set_default_device("cpu") is None
+assert torch.get_default_device() == torch.device("cpu")
 assert torch.__future__.get_overwrite_module_params_on_conversion() is False
 overwrite_policy = object()
 assert torch.__future__.set_overwrite_module_params_on_conversion(overwrite_policy) is None
@@ -575,6 +577,8 @@ indexed CPU devices that would require a copy, pinned-memory options, `out`,
 `torch.eye(n, m=None, *, dtype=None, device=None, requires_grad=False)` creates CPU float32 identity tensors for square, rectangular, and zero-size shapes. It accepts exact and integer-protocol dimensions, including NumPy integer scalars, while rejecting booleans; omitted `m` mirrors `n`, and explicit `m=None` remains invalid. Supported dtype forms are omitted, `None`, `torch.float32`, and `torch.float`; supported device forms are omitted, `None`, CPU strings, and `torch.device("cpu")` values, all normalized to the CPU device. `requires_grad=True` creates a leaf tensor even under `torch.no_grad()`, while omitted, `None`, and `False` leave gradient tracking disabled. Negative dimensions, Python integer overflows, and checked storage-size overflows report PyTorch-compatible errors before allocation. Other dtypes, accelerator or meta devices, `out`, `layout`, `pin_memory`, sparse layouts, and backend-specific allocation behavior remain unsupported.
 
 `torch.full(size, fill_value, *, dtype=None, device=None, requires_grad=False)` creates fresh CPU float32 tensors for scalar, empty, and multidimensional sizes. Tuple and list sizes may contain integer-protocol dimensions, including NumPy integer scalars; booleans, negative dimensions, Python integer overflows, stride overflows for empty tensors, storage-size overflows, unsupported devices, and non-representable finite float fill values are rejected before allocation. Supported dtype forms are omitted, `None`, `torch.float32`, and `torch.float`; supported device forms are omitted, `None`, CPU strings, and `torch.device("cpu")` values, all normalized to the CPU device. Float fill values preserve NaNs, infinities, and signed zero under PyTorch 2.13-compatible float32 conversion. Integer and boolean fill values are accepted only as values for the existing float32 storage contract; PyTorch's non-float32 dtype inference remains outside the supported surface. `requires_grad=True` creates a leaf tensor even under `torch.no_grad()`, while omitted, `None`, and `False` leave gradient tracking disabled. Other dtype descriptors, accelerator or meta devices, `out`, `layout`, `pin_memory`, sparse layouts, and backend-specific allocation behavior remain unsupported.
+
+`torch.get_default_device()` returns a fresh unindexed CPU `torch.device` descriptor. `torch.set_default_device(device)` exposes PyTorch 2.13's package-level callable metadata, direct import, wildcard export, copy, pickle, and reload behavior while remaining a CPU-only no-op: unindexed CPU strings and `torch.device("cpu")` descriptors return `None`, leave `get_default_device()` as `cpu`, and keep supported factories allocating CPU float32 tensors. CUDA, meta, indexed CPU descriptors, missing arguments, and non-device objects are rejected before any default device, default dtype, or factory allocation behavior can change.
 
 #### Elementwise and reductions
 
