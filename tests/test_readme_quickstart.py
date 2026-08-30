@@ -82,7 +82,12 @@ SUPPORTED_SURFACE_COMMON_CALL_ROWS = (
     ),
     (
         "Compiler helpers",
-        ("`torch.compiler.disable`", "guard filters", "eager JIT decorators/state"),
+        (
+            "`torch.compiler.disable`",
+            "`torch.compiler.cudagraph_mark_step_begin`",
+            "guard filters",
+            "eager JIT decorators/state",
+        ),
         ("[Backend and compiler metadata](#backend-and-compiler-metadata)",),
     ),
     (
