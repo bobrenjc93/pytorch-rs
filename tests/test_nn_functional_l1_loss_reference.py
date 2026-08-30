@@ -149,6 +149,65 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             ),
         )
 
+    def make_sum_accumulation_cases(self, module):
+        reviewer_values = np.asarray(
+            [
+                -12.318584442138672,
+                6.836726188659668,
+                1.907369613647461,
+                -21.116069793701172,
+                9.859417915344238,
+            ],
+            dtype=np.float32,
+        )
+        vectorized_values = ((np.arange(40, dtype=np.float32) % 13) + np.float32(0.25))
+        vectorized_values *= np.float32(1.2345)
+        vectorized_values[0] = np.float32(1.0e8)
+
+        rng = np.random.default_rng(20260829)
+        left_values = (rng.standard_normal((4, 5, 7)).astype(np.float32) * 1000.0)
+        right_values = (rng.standard_normal((4, 5, 7)).astype(np.float32) * 1000.0)
+        padded_left = np.stack(
+            [np.zeros_like(left_values), left_values, np.zeros_like(left_values)]
+        )
+        padded_right = np.stack(
+            [np.zeros_like(right_values), right_values, np.zeros_like(right_values)]
+        )
+        broadcast_left = (
+            rng.standard_normal((4, 1, 7)).astype(np.float32) * 10.0
+        )
+        broadcast_right = (
+            rng.standard_normal((1, 5, 7)).astype(np.float32) * 10.0
+        )
+
+        return (
+            (
+                "reviewer finite contiguous",
+                self.tensor(module, reviewer_values.tolist()),
+                module.zeros((5,), dtype=module.float32),
+            ),
+            (
+                "vectorized finite contiguous",
+                self.tensor(module, vectorized_values.tolist()),
+                module.zeros((40,), dtype=module.float32),
+            ),
+            (
+                "permuted finite",
+                self.tensor(module, left_values.tolist()).transpose(1, 2),
+                self.tensor(module, right_values.tolist()).transpose(1, 2),
+            ),
+            (
+                "offset permuted finite",
+                self.tensor(module, padded_left.tolist())[1].transpose(0, 2),
+                self.tensor(module, padded_right.tolist())[1].transpose(0, 2),
+            ),
+            (
+                "row broadcast finite",
+                self.tensor(module, broadcast_left.tolist()),
+                self.tensor(module, broadcast_right.tolist()),
+            ),
+        )
+
     @staticmethod
     def call(module_functional, input, target, form, reduction="none"):
         if form == "reduction keyword":
@@ -357,6 +416,32 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
                 )
+
+    def test_sum_reduction_accumulation_order_matches_pytorch_2_13(self):
+        actual_cases = self.make_sum_accumulation_cases(torch)
+        expected_cases = self.make_sum_accumulation_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                actual = functional.l1_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="sum",
+                )
+                expected = reference_functional.l1_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="sum",
+                )
+            self.assert_matches(actual, expected, case=case)
 
     def test_broadcasted_outputs_strides_warnings_and_storage_match_pytorch_2_13(self):
         actual_cases = self.make_broadcast_cases(torch)

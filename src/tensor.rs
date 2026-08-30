@@ -12,6 +12,12 @@ use crate::storage::Storage;
 use crate::tensor_error::TensorError;
 
 const F32_SIGN_MASK: u32 = 0x8000_0000;
+#[cfg(any(feature = "python-bindings", test))]
+const LOSS_SUM_VECTOR_WIDTH: usize = 8;
+#[cfg(any(feature = "python-bindings", test))]
+const LOSS_SUM_SEGMENTS: usize = 4;
+#[cfg(any(feature = "python-bindings", test))]
+const LOSS_SUM_BLOCK_WIDTH: usize = LOSS_SUM_VECTOR_WIDTH * LOSS_SUM_SEGMENTS;
 #[cfg(feature = "python-bindings")]
 const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
@@ -3364,13 +3370,9 @@ impl Tensor {
     #[must_use]
     pub(crate) fn sum_loss_reduction(&self) -> Self {
         let total = if let Some(values) = self.dense_physical_slice() {
-            values
-                .iter()
-                .copied()
-                .fold(0.0_f32, l1_loss_sum_accumulate_value)
+            l1_loss_sum_values(values.iter().copied())
         } else {
-            self.logical_values()
-                .fold(0.0_f32, l1_loss_sum_accumulate_value)
+            l1_loss_sum_values(self.logical_values())
         };
         Self::from_scalar(total, self.dtype(), self.device())
     }
@@ -5542,14 +5544,184 @@ fn l1_loss_difference_value(left: f32, right: f32) -> f32 {
 fn l1_loss_sum_accumulate_value(total: f32, value: f32) -> f32 {
     const QUIET_NAN_MASK: u32 = 0x0040_0000;
 
+    let total_bits = total.to_bits();
+    if total_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        return f32::from_bits(total_bits | QUIET_NAN_MASK);
+    }
     let value_bits = value.to_bits();
     if value_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
-        return f32::from_bits((value_bits | QUIET_NAN_MASK) & !F32_SIGN_MASK);
-    }
-    if total.to_bits() & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
-        return total;
+        return f32::from_bits(value_bits | QUIET_NAN_MASK);
     }
     total + value
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_values<I>(mut values: I) -> f32
+where
+    I: Iterator<Item = f32> + ExactSizeIterator,
+{
+    let count = values.len();
+    if count == 0 {
+        return 0.0;
+    }
+    if count < LOSS_SUM_VECTOR_WIDTH {
+        return l1_loss_sum_small_values(&mut values, count);
+    }
+    l1_loss_sum_vectorized_values(&mut values, count)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_small_values<I>(values: &mut I, count: usize) -> f32
+where
+    I: Iterator<Item = f32>,
+{
+    let full_rows = count / LOSS_SUM_SEGMENTS;
+    let mut lanes = [0.0_f32; LOSS_SUM_SEGMENTS];
+    for _ in 0..full_rows {
+        for lane in &mut lanes {
+            *lane = l1_loss_sum_accumulate_value(
+                *lane,
+                values.next().expect("sum reduction length is exact"),
+            );
+        }
+    }
+
+    let mut total = lanes[0];
+    for _ in full_rows * LOSS_SUM_SEGMENTS..count {
+        total = l1_loss_sum_accumulate_value(
+            total,
+            values.next().expect("sum reduction length is exact"),
+        );
+    }
+    for lane in lanes.iter().skip(1) {
+        total = l1_loss_sum_accumulate_value(total, *lane);
+    }
+    total
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_vectorized_values<I>(values: &mut I, count: usize) -> f32
+where
+    I: Iterator<Item = f32>,
+{
+    let full_blocks = count / LOSS_SUM_BLOCK_WIDTH;
+    let full_vectors = count / LOSS_SUM_VECTOR_WIDTH;
+    let mut level_zero = l1_loss_sum_zero_vectors();
+    let mut level_one = l1_loss_sum_zero_vectors();
+    let mut level_two = l1_loss_sum_zero_vectors();
+    let mut consumed_blocks = 0_usize;
+
+    if count > 95 {
+        let bit_width = usize::BITS as usize - (full_blocks - 1).leading_zeros() as usize;
+        let (group_blocks, level_zero_mask, level_one_mask) = if bit_width <= 19 {
+            (16_usize, 15_usize << 4, 15_usize << 8)
+        } else {
+            let shift = bit_width / 4;
+            let group_blocks = 1_usize << shift;
+            (
+                group_blocks,
+                (group_blocks - 1) << shift,
+                (group_blocks - 1) << (2 * shift),
+            )
+        };
+
+        while consumed_blocks + group_blocks <= full_blocks {
+            let local = l1_loss_sum_read_blocks(values, group_blocks);
+            l1_loss_sum_accumulate_vectors(&mut level_zero, &local);
+            consumed_blocks += group_blocks;
+
+            if consumed_blocks & level_zero_mask == 0 {
+                l1_loss_sum_accumulate_vectors(&mut level_one, &level_zero);
+                level_zero = l1_loss_sum_zero_vectors();
+
+                if consumed_blocks & level_one_mask == 0 {
+                    l1_loss_sum_accumulate_vectors(&mut level_two, &level_one);
+                    level_one = l1_loss_sum_zero_vectors();
+                }
+            }
+        }
+    }
+
+    let mut segments = l1_loss_sum_read_blocks(values, full_blocks - consumed_blocks);
+    for segment in 0..LOSS_SUM_SEGMENTS {
+        l1_loss_sum_accumulate_vector(&mut segments[segment], &level_zero[segment]);
+        l1_loss_sum_accumulate_vector(&mut segments[segment], &level_one[segment]);
+        l1_loss_sum_accumulate_vector(&mut segments[segment], &level_two[segment]);
+    }
+    for _ in full_blocks * LOSS_SUM_SEGMENTS..full_vectors {
+        for lane in &mut segments[0] {
+            *lane = l1_loss_sum_accumulate_value(
+                *lane,
+                values.next().expect("sum reduction length is exact"),
+            );
+        }
+    }
+
+    let mut lanes = segments[0];
+    l1_loss_sum_accumulate_vector(&mut lanes, &segments[1]);
+    l1_loss_sum_accumulate_vector(&mut lanes, &segments[2]);
+    l1_loss_sum_accumulate_vector(&mut lanes, &segments[3]);
+
+    let mut tail = 0.0_f32;
+    for _ in full_vectors * LOSS_SUM_VECTOR_WIDTH..count {
+        tail = l1_loss_sum_accumulate_value(
+            tail,
+            values.next().expect("sum reduction length is exact"),
+        );
+    }
+
+    let mut total = l1_loss_sum_accumulate_value(lanes[0], tail);
+    for lane in lanes.iter().skip(1) {
+        total = l1_loss_sum_accumulate_value(*lane, total);
+    }
+    total
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_zero_vectors() -> [[f32; LOSS_SUM_VECTOR_WIDTH]; LOSS_SUM_SEGMENTS] {
+    [[0.0_f32; LOSS_SUM_VECTOR_WIDTH]; LOSS_SUM_SEGMENTS]
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_read_blocks<I>(
+    values: &mut I,
+    blocks: usize,
+) -> [[f32; LOSS_SUM_VECTOR_WIDTH]; LOSS_SUM_SEGMENTS]
+where
+    I: Iterator<Item = f32>,
+{
+    let mut segments = l1_loss_sum_zero_vectors();
+    for _ in 0..blocks {
+        for segment in &mut segments {
+            for lane in segment {
+                *lane = l1_loss_sum_accumulate_value(
+                    *lane,
+                    values.next().expect("sum reduction length is exact"),
+                );
+            }
+        }
+    }
+    segments
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_accumulate_vector(
+    total: &mut [f32; LOSS_SUM_VECTOR_WIDTH],
+    values: &[f32; LOSS_SUM_VECTOR_WIDTH],
+) {
+    for (total, value) in total.iter_mut().zip(values.iter()) {
+        *total = l1_loss_sum_accumulate_value(*total, *value);
+    }
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_accumulate_vectors(
+    total: &mut [[f32; LOSS_SUM_VECTOR_WIDTH]; LOSS_SUM_SEGMENTS],
+    values: &[[f32; LOSS_SUM_VECTOR_WIDTH]; LOSS_SUM_SEGMENTS],
+) {
+    for (total, values) in total.iter_mut().zip(values.iter()) {
+        l1_loss_sum_accumulate_vector(total, values);
+    }
 }
 
 fn relu_value(value: f32) -> f32 {
@@ -8850,6 +9022,45 @@ mod tests {
                     0x7fc2_abcd,
                     0x7fc6_789a,
                 ])
+        );
+    }
+
+    #[test]
+    fn l1_loss_sum_reduction_matches_pytorch_accumulation_order() {
+        let reviewer_values = Tensor::from_vec(
+            [
+                0x4145_18ec,
+                0x40da_c676,
+                0x3ff4_24b0,
+                0x41a8_edb6,
+                0x411d_c02d,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            [5],
+        )
+        .unwrap();
+        assert_eq!(
+            reviewer_values
+                .sum_loss_reduction()
+                .item()
+                .unwrap()
+                .to_bits(),
+            0x4250_2716
+        );
+
+        let mut vectorized_values = (0_u16..40)
+            .map(|value| (f32::from(value % 13) + 0.25) * 1.2345)
+            .collect::<Vec<_>>();
+        vectorized_values[0] = 1.0e8;
+        let vectorized_tensor = Tensor::from_vec(vectorized_values, [40]).unwrap();
+        assert_eq!(
+            vectorized_tensor
+                .sum_loss_reduction()
+                .item()
+                .unwrap()
+                .to_bits(),
+            0x4cbe_bc46
         );
     }
 

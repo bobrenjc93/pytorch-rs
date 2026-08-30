@@ -322,6 +322,37 @@ class FunctionalL1LossTests(unittest.TestCase):
                         self.tensor_state(target)[-1], target_state[-1]
                     )
 
+    def test_sum_reduction_matches_pytorch_accumulation_order_bits(self):
+        input = torch.tensor(
+            [
+                -12.318584442138672,
+                6.836726188659668,
+                1.907369613647461,
+                -21.116069793701172,
+                9.859417915344238,
+            ]
+        )
+        actual = functional.l1_loss(input, torch.zeros((5,)), reduction="sum")
+        self.assert_sum_scalar(
+            actual,
+            0x4250_2716,
+            case="reviewer finite five-element input",
+        )
+
+        values = ((np.arange(40, dtype=np.float32) % 13) + np.float32(0.25))
+        values *= np.float32(1.2345)
+        values[0] = np.float32(1.0e8)
+        actual = functional.l1_loss(
+            torch.tensor(values.tolist()),
+            torch.zeros((40,)),
+            reduction="sum",
+        )
+        self.assert_sum_scalar(
+            actual,
+            0x4CBE_BC46,
+            case="vectorized finite forty-element input",
+        )
+
     def test_broadcasted_inputs_match_composition_warning_and_storage(self):
         for case, input, target in self.broadcast_cases():
             difference = input - target
