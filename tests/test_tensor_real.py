@@ -582,10 +582,10 @@ class TensorRealTests(unittest.TestCase):
             "cfloat",
             "cdouble",
             "real_",
-            "imag",
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch, name))
+        self.assertTrue(hasattr(torch, "imag"))
         self.assertFalse(hasattr(torch.Tensor, "real_"))
 
 

@@ -476,6 +476,10 @@ materialization and autograd path as `contiguous()`. `Tensor.squeeze()`,
 `torch.squeeze(input, dim)` retain shared storage, strides, and offsets just
 like PyTorch.
 
+For real-valued tensors, `Tensor.imag` and top-level `torch.imag()` share
+PyTorch's non-complex `RuntimeError` path without mutating storage, metadata, or
+autograd state. Complex dtypes and imaginary views remain unsupported.
+
 `Tensor.type()` returns the exact string `"torch.FloatTensor"` when its dtype is
 omitted or explicitly `None`; `torch.float32`, its `torch.float` alias, and
 `"torch.FloatTensor"` return the exact tensor wrapper through positional or
