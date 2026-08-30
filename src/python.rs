@@ -1961,6 +1961,21 @@ pub(crate) fn conj_variable_function(
     )
 }
 
+pub(crate) fn real_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_or_override_argument("real", args, kwargs)?;
+    dispatch_single_tensor_override(
+        SingleTensorOverrideOperation::REAL,
+        py,
+        &input,
+        args,
+        kwargs,
+    )
+}
+
 pub(crate) fn resolve_conj_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2288,6 +2303,12 @@ impl SingleTensorOverrideOperation {
         name: "conj",
         qualified_name: "torch.conj",
         apply_native: apply_top_level_lazy_bit_identity,
+    };
+
+    const REAL: Self = Self {
+        name: "real",
+        qualified_name: "torch.real",
+        apply_native: apply_top_level_real,
     };
 }
 
@@ -3305,6 +3326,10 @@ fn apply_top_level_lazy_bit_identity(
     // conjugation and resolving clear lazy bits are exact identities, without
     // touching storage, metadata, or autograd state.
     Ok(tensor.clone().unbind().into_any())
+}
+
+fn apply_top_level_real(_py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    tensor.as_any().getattr("real").map(Bound::unbind)
 }
 
 fn ordered_unary_out_overrides<'py>(
