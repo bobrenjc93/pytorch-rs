@@ -30,6 +30,7 @@ SUPPORTED_SURFACE_INDEX_SUMMARIES = (
     "inference-only `torch.nn.functional.softsign`",
     "Functional linear, loss, and deterministic dropout paths",
     "autocast cache state helpers",
+    "eager JIT helper decorators and state queries",
     "Explicit unsupported APIs",
 )
 
