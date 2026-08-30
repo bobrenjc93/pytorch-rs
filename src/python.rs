@@ -2540,9 +2540,22 @@ struct BoundTopLevelSumCall<'py> {
 struct BoundAllcloseCall<'py> {
     input: BoundTensorOrTorchFunction<'py>,
     other: BoundTensorOrTorchFunction<'py>,
-    rtol: f64,
-    atol: f64,
-    equal_nan: bool,
+    rtol: BoundAllcloseTolerance<'py>,
+    atol: BoundAllcloseTolerance<'py>,
+    equal_nan: BoundAllcloseEqualNan<'py>,
+}
+
+enum BoundAllcloseTolerance<'py> {
+    Native {
+        value: f64,
+        source: Option<ParsedCallArgument<'py>>,
+    },
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+enum BoundAllcloseEqualNan<'py> {
+    Native(bool),
+    Override(ProbedTorchFunctionOverride<'py>),
 }
 
 enum BoundMulOperand<'py> {
@@ -4143,22 +4156,28 @@ fn ordered_multiplication_overrides<'py>(
 }
 
 fn ordered_allclose_overrides<'py>(
-    input: &BoundTensorOrTorchFunction<'py>,
-    other: &BoundTensorOrTorchFunction<'py>,
+    call: &BoundAllcloseCall<'py>,
 ) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
-    let input = match input {
-        BoundTensorOrTorchFunction::Tensor(_) => None,
-        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
-    };
-    let other = match other {
-        BoundTensorOrTorchFunction::Tensor(_) => None,
-        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
-    };
-    ordered_binary_overrides(
-        input,
-        other,
-        "unable to allocate allclose dispatch operands",
-    )
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(5)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate allclose dispatch operands"))?;
+    if let BoundTensorOrTorchFunction::Override(probed) = &call.input {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let BoundTensorOrTorchFunction::Override(probed) = &call.other {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let BoundAllcloseTolerance::Override(probed) = &call.rtol {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let BoundAllcloseTolerance::Override(probed) = &call.atol {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let BoundAllcloseEqualNan::Override(probed) = &call.equal_nan {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
 }
 
 fn dispatch_allclose(
@@ -4167,7 +4186,7 @@ fn dispatch_allclose(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let overrides = ordered_allclose_overrides(&call.input, &call.other)?;
+    let overrides = ordered_allclose_overrides(call)?;
     if torch_function_mode_stack::is_empty() && overrides.is_empty() {
         return apply_allclose(py, call);
     }
@@ -4214,11 +4233,14 @@ fn apply_allclose(py: Python<'_>, call: &BoundAllcloseCall<'_>) -> PyResult<Py<P
     else {
         unreachable!("allclose overrides were dispatched before the native path")
     };
+    let rtol = native_allclose_tolerance("rtol", &call.rtol)?;
+    let atol = native_allclose_tolerance("atol", &call.atol)?;
+    let equal_nan = native_allclose_equal_nan(&call.equal_nan);
     let other = other.try_borrow()?;
     input
         .try_borrow()?
         .inner
-        .allclose(&other.inner, call.rtol, call.atol, call.equal_nan)
+        .allclose(&other.inner, rtol, atol, equal_nan)
         .map_err(|error| tensor_error(&error))?
         .into_py_any(py)
 }
@@ -10535,9 +10557,9 @@ fn bind_allclose_arguments<'py>(
 
     let input = parse_allclose_tensor_operand("input", &input)?;
     let other = parse_allclose_tensor_operand("other", &other)?;
-    let rtol = parse_allclose_tolerance("rtol", arguments.rtol.as_ref(), ALLCLOSE_DEFAULT_RTOL)?;
-    let atol = parse_allclose_tolerance("atol", arguments.atol.as_ref(), ALLCLOSE_DEFAULT_ATOL)?;
-    let equal_nan = parse_allclose_equal_nan(arguments.equal_nan.as_ref())?;
+    let rtol = bind_allclose_tolerance("rtol", arguments.rtol, ALLCLOSE_DEFAULT_RTOL)?;
+    let atol = bind_allclose_tolerance("atol", arguments.atol, ALLCLOSE_DEFAULT_ATOL)?;
+    let equal_nan = bind_allclose_equal_nan(arguments.equal_nan)?;
     if let Some(keyword_error) = arguments.keyword_error {
         return Err(keyword_error);
     }
@@ -10751,22 +10773,42 @@ fn parse_allclose_tensor_operand<'py>(
     )))
 }
 
-fn parse_allclose_tolerance(
+fn bind_allclose_tolerance<'py>(
     name: &str,
-    argument: Option<&ParsedCallArgument<'_>>,
+    argument: Option<ParsedCallArgument<'py>>,
     default: f64,
-) -> PyResult<f64> {
+) -> PyResult<BoundAllcloseTolerance<'py>> {
     let Some(argument) = argument else {
-        return Ok(default);
+        return Ok(BoundAllcloseTolerance::Native {
+            value: default,
+            source: None,
+        });
     };
-    let value = parse_allclose_float_argument(name, argument)?;
-    if value.is_nan() || value < 0.0 {
-        let display = argument.value.str()?.to_str()?.to_owned();
+    if let Some(probed) = probe_torch_function_override(&argument.value) {
+        return Ok(BoundAllcloseTolerance::Override(probed));
+    }
+    let value = parse_allclose_float_argument(name, &argument)?;
+    Ok(BoundAllcloseTolerance::Native {
+        value,
+        source: Some(argument),
+    })
+}
+
+fn native_allclose_tolerance(name: &str, argument: &BoundAllcloseTolerance<'_>) -> PyResult<f64> {
+    let BoundAllcloseTolerance::Native { value, source } = argument else {
+        unreachable!("allclose overrides were dispatched before the native path")
+    };
+    if value.is_nan() || *value < 0.0 {
+        let display = if let Some(source) = source {
+            source.value.str()?.to_str()?.to_owned()
+        } else {
+            value.to_string()
+        };
         return Err(PyRuntimeError::new_err(format!(
             "{name} must be greater than or equal to zero, but got {display}"
         )));
     }
-    Ok(value)
+    Ok(*value)
 }
 
 fn parse_allclose_float_argument(name: &str, argument: &ParsedCallArgument<'_>) -> PyResult<f64> {
@@ -10797,14 +10839,33 @@ fn parse_allclose_float_argument(name: &str, argument: &ParsedCallArgument<'_>) 
     Err(allclose_argument_type_error(name, argument, "float")?)
 }
 
-fn parse_allclose_equal_nan(argument: Option<&ParsedCallArgument<'_>>) -> PyResult<bool> {
+fn bind_allclose_equal_nan(
+    argument: Option<ParsedCallArgument<'_>>,
+) -> PyResult<BoundAllcloseEqualNan<'_>> {
     let Some(argument) = argument else {
-        return Ok(false);
+        return Ok(BoundAllcloseEqualNan::Native(false));
     };
-    if !argument.value.is_exact_instance_of::<PyBool>() {
-        return Err(allclose_argument_type_error("equal_nan", argument, "bool")?);
+    if let Some(probed) = probe_torch_function_override(&argument.value) {
+        return Ok(BoundAllcloseEqualNan::Override(probed));
     }
-    argument.value.is_truthy()
+    if !argument.value.is_exact_instance_of::<PyBool>() {
+        return Err(allclose_argument_type_error(
+            "equal_nan",
+            &argument,
+            "bool",
+        )?);
+    }
+    argument
+        .value
+        .is_truthy()
+        .map(BoundAllcloseEqualNan::Native)
+}
+
+fn native_allclose_equal_nan(argument: &BoundAllcloseEqualNan<'_>) -> bool {
+    let BoundAllcloseEqualNan::Native(value) = argument else {
+        unreachable!("allclose overrides were dispatched before the native path")
+    };
+    *value
 }
 
 fn allclose_argument_type_error(

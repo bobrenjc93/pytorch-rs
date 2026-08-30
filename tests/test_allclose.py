@@ -363,6 +363,15 @@ class AllcloseTests(unittest.TestCase):
             self.assertIs(torch.allclose(left, right, rtol=0.0), marker)
         self.assertEqual(mode.calls, [(torch.allclose, (), (left, right), {"rtol": 0.0})])
 
+        bad_mode = RecordingMode()
+        with bad_mode:
+            with self.assertRaisesRegex(
+                TypeError,
+                r"^allclose\(\): argument 'rtol' must be float, not NoneType$",
+            ):
+                torch.allclose(left, right, rtol=None)
+        self.assertEqual(bad_mode.calls, [])
+
         calls = []
 
         class ForwardingMode(torch.overrides.TorchFunctionMode):
@@ -394,6 +403,64 @@ class AllcloseTests(unittest.TestCase):
         self.assertEqual(len(override_calls), 1)
         self.assertIs(override_calls[0][0], torch.allclose)
         self.assertEqual(override_calls[0][1], (Override,))
+        self.assertIs(torch.allclose(Override(), right, rtol=-1e-5), marker)
+
+        class OptionalOverride:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        optional = OptionalOverride()
+        optional_mode = RecordingMode()
+        with optional_mode:
+            self.assertIs(torch.allclose(left, right, rtol=optional), marker)
+        self.assertEqual(
+            optional_mode.calls,
+            [(torch.allclose, (OptionalOverride,), (left, right), {"rtol": optional})],
+        )
+        self.assertEqual(OptionalOverride.calls, [])
+
+        for name in ("rtol", "atol", "equal_nan"):
+            with self.subTest(keyword=name):
+                OptionalOverride.calls.clear()
+                optional = OptionalOverride()
+                self.assertIs(torch.allclose(left, right, **{name: optional}), marker)
+                self.assertEqual(len(OptionalOverride.calls), 1)
+                func, types, args, kwargs = OptionalOverride.calls[0]
+                self.assertIs(func, torch.allclose)
+                self.assertEqual(types, (OptionalOverride,))
+                self.assertEqual(args, (left, right))
+                self.assertEqual(kwargs, {name: optional})
+
+        positional_cases = (
+            ((), lambda optional: torch.allclose(left, right, optional)),
+            ((0.0,), lambda optional: torch.allclose(left, right, 0.0, optional)),
+            (
+                (0.0, 0.0),
+                lambda optional: torch.allclose(left, right, 0.0, 0.0, optional),
+            ),
+        )
+        for preceding, call in positional_cases:
+            with self.subTest(position=len(preceding) + 3):
+                OptionalOverride.calls.clear()
+                optional = OptionalOverride()
+                self.assertIs(call(optional), marker)
+                self.assertEqual(len(OptionalOverride.calls), 1)
+                func, types, args, kwargs = OptionalOverride.calls[0]
+                self.assertIs(func, torch.allclose)
+                self.assertEqual(types, (OptionalOverride,))
+                self.assertEqual(args, (left, right, *preceding, optional))
+                self.assertIsNone(kwargs)
+
+        OptionalOverride.calls.clear()
+        with self.assertRaisesRegex(
+            TypeError, r"^allclose\(\) got an unexpected keyword argument 'out'$"
+        ):
+            torch.allclose(left, right, rtol=OptionalOverride(), out=None)
+        self.assertEqual(OptionalOverride.calls, [])
 
     def test_callable_metadata_pickling_wildcard_and_reload(self):
         function = torch.allclose
