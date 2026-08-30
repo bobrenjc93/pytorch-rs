@@ -2489,6 +2489,7 @@ enum BoundAddOperand<'py> {
 
 enum BoundAddAlpha<'py> {
     Default,
+    Boolean,
     NonDefault,
     Override(ProbedTorchFunctionOverride<'py>),
 }
@@ -3946,7 +3947,7 @@ fn ordered_add_method_overrides<'py>(
     };
     let alpha = match alpha {
         BoundAddAlpha::Override(probed) => Some(probed),
-        BoundAddAlpha::Default | BoundAddAlpha::NonDefault => None,
+        BoundAddAlpha::Default | BoundAddAlpha::Boolean | BoundAddAlpha::NonDefault => None,
     };
     ordered_binary_overrides(other, alpha, "unable to allocate add dispatch operands")
 }
@@ -4022,6 +4023,11 @@ fn apply_add_method(
     if matches!(alpha, BoundAddAlpha::NonDefault) {
         return Err(PyNotImplementedError::new_err(
             "Tensor.add() only supports alpha=1",
+        ));
+    }
+    if matches!(alpha, BoundAddAlpha::Boolean) {
+        return Err(PyRuntimeError::new_err(
+            "Boolean alpha only supported for Boolean results.",
         ));
     }
     let result = match other {
@@ -10581,9 +10587,7 @@ fn parse_add_alpha<'py>(value: Option<&Bound<'py, PyAny>>) -> PyResult<BoundAddA
 
     let scalar = parse_named_arithmetic_scalar_kind("add", "alpha", value)?;
     if scalar.is_python_bool() {
-        return Err(PyRuntimeError::new_err(
-            "Boolean alpha only supported for Boolean results.",
-        ));
+        return Ok(BoundAddAlpha::Boolean);
     }
     if scalar.is_one() {
         Ok(BoundAddAlpha::Default)

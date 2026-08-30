@@ -313,6 +313,7 @@ class TensorAddTests(unittest.TestCase):
             ("tensor", lambda: tensor.add(tensor)),
             ("scalar", lambda: tensor.add(2.0)),
             ("keyword", lambda: tensor.add(other=tensor, alpha=1)),
+            ("bool alpha", lambda: tensor.add(tensor, alpha=True)),
         ):
             recording = RecordingMode(marker)
             with self.subTest(label=label):
@@ -328,6 +329,10 @@ class TensorAddTests(unittest.TestCase):
                     self.assertEqual(set(kwargs), {"other", "alpha"})
                     self.assertIs(kwargs["other"], tensor)
                     self.assertEqual(kwargs["alpha"], 1)
+                elif label == "bool alpha":
+                    self.assertEqual(len(args), 2)
+                    self.assertIs(args[1], tensor)
+                    self.assertEqual(kwargs, {"alpha": True})
                 else:
                     self.assertEqual(len(args), 2)
                     self.assertIsNone(kwargs)
@@ -378,6 +383,16 @@ class TensorAddTests(unittest.TestCase):
         self.assertIs(args[0], tensor)
         self.assertIs(args[1], value)
         self.assertIsNone(kwargs)
+
+        Override.calls.clear()
+        self.assertIs(tensor.add(value, alpha=True), marker)
+        function, dispatch_types, args, kwargs = Override.calls[0]
+        self.assertIs(function, descriptor)
+        self.assertEqual(dispatch_types, (Override,))
+        self.assertEqual(len(args), 2)
+        self.assertIs(args[0], tensor)
+        self.assertIs(args[1], value)
+        self.assertEqual(kwargs, {"alpha": True})
 
         alpha = Override()
         Override.calls.clear()
