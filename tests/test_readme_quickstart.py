@@ -27,6 +27,40 @@ SUPPORTED_SURFACE_SUBSECTION_ANCHORS = (
     ("Backend and compiler metadata", "backend-and-compiler-metadata", "####"),
     ("Unsupported boundaries", "unsupported-boundaries", "###"),
 )
+SUPPORTED_SURFACE_COMMON_CALLS = (
+    ("Construction", "`torch.tensor`", "Creation", "creation"),
+    ("Views and layout", "`Tensor.view`", "Metadata and views", "metadata-and-views"),
+    (
+        "Math and reductions",
+        "`torch.sum`",
+        "Elementwise and reductions",
+        "elementwise-and-reductions",
+    ),
+    (
+        "NN functional",
+        "`torch.nn.functional.linear`",
+        "NN and data helpers",
+        "nn-and-data-helpers",
+    ),
+    (
+        "Dtype and device checks",
+        "`torch.finfo`",
+        "Metadata and views",
+        "metadata-and-views",
+    ),
+    (
+        "Compiler helpers",
+        "`torch.compiler.disable`",
+        "Backend and compiler metadata",
+        "backend-and-compiler-metadata",
+    ),
+    (
+        "Backend capabilities",
+        "`torch.backends.*.is_available`",
+        "Backend and compiler metadata",
+        "backend-and-compiler-metadata",
+    ),
+)
 SUPPORTED_SURFACE_INDEX_SUMMARIES = (
     "CPU `float32` tensors",
     "inference-only `torch.nn.functional.softsign`",
@@ -134,15 +168,44 @@ class ReadmeQuickstartTests(unittest.TestCase):
         readme = README.read_text(encoding="utf-8")
         route = "docs/supported-surface.md"
         self.assertRegex(readme, rf"\[[^\]]+\]\({re.escape(route)}\)")
+        scope_match = re.search(
+            r"^## Scope\n(?P<section>.*?)^## Evaluation$",
+            readme,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(scope_match, "README scope section is missing")
+        self.assertIn(
+            "[exhaustive supported surface](docs/supported-surface.md)",
+            scope_match.group("section"),
+        )
         self.assertTrue(SUPPORTED_SURFACE.is_file())
 
         supported = SUPPORTED_SURFACE.read_text(encoding="utf-8")
+        self.assertIn("## Common calls", supported)
         self.assertIn("## Category index", supported)
         self.assertIn("## Current baseline", supported)
+        self.assertLess(
+            supported.index("## Common calls"),
+            supported.index("## Category index"),
+        )
         self.assertLess(
             supported.index("## Category index"),
             supported.index("## Current baseline"),
         )
+
+        common_index = supported[
+            supported.index("## Common calls") : supported.index("## Category index")
+        ]
+        self.assertIn(
+            "| Looking for | Common APIs | Contract section |",
+            common_index,
+        )
+        self.assertIn("| --- | --- | --- |", common_index)
+        for label, example, title, anchor in SUPPORTED_SURFACE_COMMON_CALLS:
+            with self.subTest(common_call=label):
+                self.assertIn(f"| {label} |", common_index)
+                self.assertIn(example, common_index)
+                self.assertIn(f"[{title}](#{anchor})", common_index)
 
         category_index = supported[
             supported.index("## Category index") : supported.index(
@@ -178,6 +241,7 @@ class ReadmeQuickstartTests(unittest.TestCase):
                 position = supported.index(heading)
                 self.assertGreater(position, previous_position)
                 previous_position = position
+
 
 if __name__ == "__main__":
     unittest.main()

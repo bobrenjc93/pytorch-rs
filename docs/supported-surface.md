@@ -4,6 +4,18 @@ This is the exhaustive feature tour and observable Python API contract for the
 current baseline. See [FEATURES.md](../FEATURES.md) for the weighted coverage
 contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 
+## Common calls
+
+| Looking for | Common APIs | Contract section |
+| --- | --- | --- |
+| Construction | `torch.tensor`, `torch.zeros`, `torch.ones`, `torch.eye`, `torch.full`, `torch.as_tensor`, `torch.asarray` | [Creation](#creation) |
+| Views and layout | `Tensor.view`, `torch.reshape`, `torch.permute`, `torch.movedim`, `Tensor.T`, `Tensor.contiguous`, `Tensor.cpu` | [Metadata and views](#metadata-and-views) |
+| Math and reductions | `+`, `*`, `torch.relu`, `torch.sum`, `torch.matmul`, `torch.nn.functional.softsign`, `torch.broadcast_shapes` | [Elementwise and reductions](#elementwise-and-reductions) |
+| NN functional | `torch.nn.functional.linear`, `torch.nn.functional.l1_loss`, `torch.nn.functional.mse_loss`, `torch.nn.functional.dropout` | [NN and data helpers](#nn-and-data-helpers) |
+| Dtype and device checks | `torch.finfo`, `torch.can_cast`, `Tensor.is_cpu`, `Tensor.is_cuda`, `torch.get_device` | [Metadata and views](#metadata-and-views) |
+| Compiler helpers | `torch.compiler.disable`, guard filters, `torch.jit.export`, `torch.jit.ignore` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
+| Backend capabilities | `torch.backends.*.is_available`, SDP preferences, `torch.version.cuda`, `torch.distributed.is_available` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
+
 ## Category index
 
 | Surface area | Supported summary | Contract section |
