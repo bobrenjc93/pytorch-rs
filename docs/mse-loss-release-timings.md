@@ -2,17 +2,17 @@
 
 Date: 2026-08-30
 
-Revision under test: uncommitted worktree based on
+Candidate provenance: source snapshot based on
 `2231dec5e208f3545c05484d497b32b3981f640d`
 
-Command shape: worktree-local `uv venv --clear --python 3.12`, locked
-`uv sync --locked --no-install-project --group dev --group reference`, then a
-release wheel build and install through `./scripts/test-python.sh`. The timing
-driver ran against that installed wheel after imports and input construction,
-with 9 warmup blocks and 51 measured blocks per implementation. Inputs were CPU
-`float32` tensors. Broadcast size-mismatch warning parity was checked before
-timing, then `UserWarning` was ignored symmetrically for both implementations
-inside the measured region.
+Command shape: from the repository root, `uv venv --clear --python 3.12`,
+locked `uv sync --locked --no-install-project --group dev --group reference`,
+then a release wheel build and install through `./scripts/test-python.sh`. The
+timing driver ran against that installed wheel after imports and input
+construction, with 9 warmup blocks and 51 measured blocks per implementation.
+Inputs were CPU `float32` tensors. Broadcast size-mismatch warning parity was
+checked before timing, then `UserWarning` was ignored symmetrically for both
+implementations inside the measured region.
 
 The primary timings below measure eager `mse_loss(reduction="none")`
 construction and consume the last output after each measured block as a
@@ -24,20 +24,19 @@ kept as a conservative end-to-end guard and are dominated by the current
 Checks run before timing:
 
 ```bash
-/home/bobren/.cargo/bin/cargo fmt --check
-/home/bobren/.cargo/bin/cargo clippy --all-targets -- -D warnings
-/home/bobren/.cargo/bin/cargo test --all-targets
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test --all-targets
 PYO3_PYTHON="$PWD/.venv/bin/python" \
-  /home/bobren/.cargo/bin/cargo clippy --all-targets --features python-bindings -- -D warnings
+  cargo clippy --all-targets --features python-bindings -- -D warnings
 PYO3_PYTHON="$PWD/.venv/bin/python" \
-  /home/bobren/.cargo/bin/cargo test --all-targets --features python-bindings
+  cargo test --all-targets --features python-bindings
 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
   NUMEXPR_NUM_THREADS=1 \
   .venv/bin/python -m unittest \
   tests.test_nn_functional_mse_loss \
   tests.test_nn_functional_mse_loss_reference
-PATH="/home/bobren/.cargo/bin:$PATH" \
-  UV_CACHE_DIR="$PWD/.uv-cache" \
+UV_CACHE_DIR="$PWD/.uv-cache" \
   ./scripts/test-python.sh
 ```
 
