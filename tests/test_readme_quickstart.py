@@ -9,6 +9,24 @@ BENCHMARKING = REPOSITORY_ROOT / "BENCHMARKING.md"
 CONTRIBUTING = REPOSITORY_ROOT / "CONTRIBUTING.md"
 FEATURES = REPOSITORY_ROOT / "FEATURES.md"
 SUPPORTED_SURFACE = REPOSITORY_ROOT / "docs" / "supported-surface.md"
+HISTORICAL_TIMING_REPORTS = (
+    (
+        "Rank-9 `Tensor.sum` release timings",
+        "docs/rank9-sum-release-timings.md",
+    ),
+    (
+        "Rank-10 `Tensor.sum` release timings",
+        "docs/rank10-sum-release-timings.md",
+    ),
+    (
+        '`torch.nn.functional.mse_loss(reduction="none")` release timings',
+        "docs/mse-loss-release-timings.md",
+    ),
+    (
+        '`torch.nn.functional.l1_loss(reduction="none")` release timings',
+        "docs/l1-loss-release-timings.md",
+    ),
+)
 SUPPORTED_SURFACE_ANCHORS = (
     ("Tensors", "tensors"),
     ("Creation and math", "creation-and-math"),
@@ -177,6 +195,31 @@ class ReadmeQuickstartTests(unittest.TestCase):
             "production tensor operations forwarded to Python or PyTorch",
             normalized_features,
         )
+
+    def test_benchmarking_indexes_historical_release_timing_reports(self):
+        benchmarking = BENCHMARKING.read_text(encoding="utf-8")
+        match = re.search(
+            r"^## Historical release timing reports\n(?P<section>.*?)^## ",
+            benchmarking,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(
+            match, "benchmarking historical timing report section is missing"
+        )
+
+        section = match.group("section")
+        normalized_section = re.sub(r"\s+", " ", section).lower()
+        self.assertIn("historical release evidence snapshots", normalized_section)
+        self.assertIn("not live gates", normalized_section)
+        self.assertIn("burner-managed evaluation progress", normalized_section)
+
+        links = dict(re.findall(r"\[([^\]]+)\]\(([^)]+)\)", section))
+        for label, target in HISTORICAL_TIMING_REPORTS:
+            with self.subTest(report=target):
+                self.assertEqual(links.get(label), target)
+                path = (REPOSITORY_ROOT / target).resolve()
+                self.assertTrue(path.is_relative_to(REPOSITORY_ROOT))
+                self.assertTrue(path.is_file())
 
     def test_readme_links_contributing_guide(self):
         readme = README.read_text(encoding="utf-8")

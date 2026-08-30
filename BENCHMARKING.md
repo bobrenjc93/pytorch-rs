@@ -32,6 +32,17 @@ Rust/Python/PyTorch versions, OS, CPU/GPU, thread settings, compile time, and
 dependency-installation time. No result may silently fall back to a different
 device or dtype.
 
+## Historical release timing reports
+
+These reports are historical release evidence snapshots: they record the code,
+environment, checks, and timings from specific runs. They are not live gates and
+do not replace the benchmark policy or Burner-managed evaluation progress.
+
+- [Rank-9 `Tensor.sum` release timings](docs/rank9-sum-release-timings.md)
+- [Rank-10 `Tensor.sum` release timings](docs/rank10-sum-release-timings.md)
+- [`torch.nn.functional.mse_loss(reduction="none")` release timings](docs/mse-loss-release-timings.md)
+- [`torch.nn.functional.l1_loss(reduction="none")` release timings](docs/l1-loss-release-timings.md)
+
 ## Workload matrix
 
 The durable full suite grows toward all of these categories while keeping prior
