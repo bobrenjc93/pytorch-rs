@@ -221,6 +221,10 @@ fn imag_non_complex_error() -> PyErr {
     PyRuntimeError::new_err("imag is not implemented for tensors with non-complex dtypes.")
 }
 
+fn real_dtype_imag_result() -> PyResult<Py<PyAny>> {
+    Err(imag_non_complex_error())
+}
+
 // Internal descriptor owner matching PyTorch's native tensor base class.
 #[pyclass(
     name = "TensorBase",
@@ -713,7 +717,7 @@ impl PyTensorBase {
             return Ok(result);
         }
 
-        Err(imag_non_complex_error())
+        real_dtype_imag_result()
     }
 
     #[setter(imag)]
@@ -1767,6 +1771,21 @@ pub(crate) fn ravel_variable_function(
     )
 }
 
+pub(crate) fn imag_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_or_override_argument("imag", args, kwargs)?;
+    dispatch_single_tensor_override(
+        SingleTensorOverrideOperation::IMAG,
+        py,
+        &input,
+        args,
+        kwargs,
+    )
+}
+
 pub(crate) fn reshape_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2264,6 +2283,12 @@ impl SingleTensorOverrideOperation {
         name: "ravel",
         qualified_name: "torch.ravel",
         apply_native: apply_top_level_ravel,
+    };
+
+    const IMAG: Self = Self {
+        name: "imag",
+        qualified_name: "torch.imag",
+        apply_native: apply_top_level_imag,
     };
 
     const DETACH: Self = Self {
@@ -3218,6 +3243,14 @@ fn apply_top_level_ravel(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResu
         .ravel()
         .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+}
+
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "single-tensor native callbacks share a fallible signature"
+)]
+fn apply_top_level_imag(_py: Python<'_>, _tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    real_dtype_imag_result()
 }
 
 fn dispatch_top_level_reshape(

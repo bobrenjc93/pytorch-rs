@@ -369,12 +369,9 @@ print(json.dumps({
             self.mode_dispatch_observation("torch"),
         )
 
-    def test_scope_keeps_complex_dtypes_and_top_level_imag_unsupported(self):
+    def test_scope_keeps_complex_dtypes_unsupported(self):
         self.assertTrue(hasattr(torch.Tensor, "imag"))
         self.assertTrue(hasattr(reference_torch.Tensor, "imag"))
-        self.assertFalse(hasattr(torch, "imag"))
-        self.assertTrue(hasattr(reference_torch, "imag"))
-        self.assertNotIn("imag", torch.__all__)
         for name in (
             "complex32",
             "complex64",

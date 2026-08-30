@@ -270,7 +270,7 @@ class TensorImagTests(unittest.TestCase):
 
         self.assert_imag_error(lambda: tensor.imag)
 
-    def test_complex_dtypes_and_top_level_imag_remain_unsupported(self):
+    def test_complex_dtypes_remain_unsupported(self):
         self.assertTrue(hasattr(torch.Tensor, "imag"))
         for name in (
             "complex32",
@@ -282,10 +282,6 @@ class TensorImagTests(unittest.TestCase):
         ):
             with self.subTest(dtype=name):
                 self.assertFalse(hasattr(torch, name))
-
-        self.assertFalse(hasattr(torch, "imag"))
-        self.assertFalse(hasattr(torch._C, "imag"))
-        self.assertNotIn("imag", torch.__all__)
 
 
 if __name__ == "__main__":
