@@ -4,6 +4,18 @@ This is the exhaustive feature tour and observable Python API contract for the
 current baseline. See [FEATURES.md](../FEATURES.md) for the weighted coverage
 contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 
+## Common calls quick index
+
+| Need | Common calls | Contract section |
+| --- | --- | --- |
+| Construction | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.full`, `torch.eye` | [Creation](#creation) |
+| Views and layout | `view`, `reshape`, `permute`, `movedim`, `transpose`, `flatten`, `contiguous`, `cpu` | [Metadata and views](#metadata-and-views) |
+| Math | arithmetic operators, `torch.matmul`, `torch.sum`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` | [Elementwise and reductions](#elementwise-and-reductions) |
+| NN functional | `torch.nn.functional.linear`, `l1_loss`, `mse_loss`, `dropout*`, `sigmoid`, `silu`, `softsign`, `tanh` | [NN/data helpers](#nn-and-data-helpers), [math activations](#elementwise-and-reductions) |
+| Dtype/device metadata | `torch.float32`, `torch.finfo`, `torch.can_cast`, `torch.promote_types`, `Tensor.is_cuda`, `torch.get_device`, `Tensor.cpu` | [tensor metadata](#metadata-and-views), [backend metadata](#backend-and-compiler-metadata) |
+| Compiler helpers | `torch.compiler.disable`, `assume_constant_result`, guard filters, eager JIT decorators/state | [Backend and compiler metadata](#backend-and-compiler-metadata) |
+| Backend capabilities | `torch.cpu`, `torch.accelerator`, `torch.backends.*`, `torch.version.*`, distributed availability queries | [Backend and compiler metadata](#backend-and-compiler-metadata) |
+
 ## Category index
 
 | Surface area | Supported summary | Contract section |
