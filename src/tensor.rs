@@ -3017,23 +3017,22 @@ impl Tensor {
     /// result metadata or storage allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn squared_difference(&self, other: &Self) -> Result<Self, TensorError> {
-        let operation = |left: f32, right: f32| {
-            let difference = left - right;
-            difference * difference
-        };
         if self.shape == other.shape {
-            return self.zip_map(other, operation);
+            if let Some(output) = self.squared_difference_same_shape_contiguous(other)? {
+                return Ok(output);
+            }
+            return self.zip_map_same_shape(other, squared_difference_value);
         }
 
         let plan = BroadcastPlan::new_for_expanded_operands(self, other)?;
         let mut output = if let Some((data, fast_plan)) =
-            materialize_contiguous_trailing_broadcast(self, other, &operation)?
+            materialize_contiguous_trailing_broadcast(self, other, &squared_difference_value)?
             && fast_plan.shape == plan.shape
             && fast_plan.strides == plan.strides
         {
             Self::from_owned_parts(data, plan.shape, plan.strides, self.dtype(), self.device())
         } else {
-            self.zip_map_broadcast_with_plan(other, plan, operation)?
+            self.zip_map_broadcast_with_plan(other, plan, squared_difference_value)?
         };
         if output.elements == 0 {
             // The native MSE kernel receives already-expanded operands. For an
@@ -3043,6 +3042,32 @@ impl Tensor {
             output.strides = output.unary_output_strides(&output.shape, output.elements)?;
         }
         Ok(output)
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn squared_difference_same_shape_contiguous(
+        &self,
+        other: &Self,
+    ) -> Result<Option<Self>, TensorError> {
+        debug_assert_eq!(self.shape, other.shape);
+        if !self.is_contiguous() || !other.is_contiguous() {
+            return Ok(None);
+        }
+        let (Some(left), Some(right)) = (self.contiguous_slice(), other.contiguous_slice()) else {
+            return Ok(None);
+        };
+
+        let elements = self.elements;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = contiguous_strides(&shape, elements)?;
+        let data = materialize_contiguous_squared_difference(left, right, elements)?;
+        Ok(Some(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        )))
     }
 
     /// Computes an absolute difference through subtraction followed by abs.
@@ -5694,6 +5719,13 @@ fn l1_loss_difference_value(left: f32, right: f32) -> f32 {
     left - right
 }
 
+#[inline]
+#[cfg(any(feature = "python-bindings", test))]
+fn squared_difference_value(left: f32, right: f32) -> f32 {
+    let difference = left - right;
+    difference * difference
+}
+
 fn relu_value(value: f32) -> f32 {
     // Only exact zeros bypass the established max path, so FTZ/DAZ cannot
     // classify a subnormal as zero and NaN behavior remains unchanged.
@@ -5838,6 +5870,22 @@ fn copied_storage(values: &[f32], elements: usize) -> Result<Vec<f32>, TensorErr
 
     let mut data = try_result_vector(elements, elements)?;
     data.extend_from_slice(values);
+    Ok(data)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn materialize_contiguous_squared_difference(
+    left: &[f32],
+    right: &[f32],
+    elements: usize,
+) -> Result<Vec<f32>, TensorError> {
+    debug_assert_eq!(left.len(), elements);
+    debug_assert_eq!(right.len(), elements);
+
+    let mut data = filled_storage(elements, 0.0)?;
+    for ((output, &left), &right) in data.iter_mut().zip(left).zip(right) {
+        *output = squared_difference_value(left, right);
+    }
     Ok(data)
 }
 
