@@ -116,9 +116,23 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ("same operand", same, same),
         )
 
-    def make_scalar_broadcast_cases(self, module):
+    def make_broadcast_cases(self, module):
         scalar = self.tensor(module, -0.0)
         offset_scalar = self.tensor(module, [17.0, 0.5])[1]
+        matrix = self.tensor(
+            module,
+            np.arange(6, dtype=np.float32).reshape(2, 3).tolist(),
+        )
+        offset_matrix = self.tensor(
+            module,
+            np.arange(12, dtype=np.float32).reshape(2, 2, 3).tolist(),
+        )[1]
+        noncontiguous_matrix = self.tensor(
+            module,
+            np.arange(6, dtype=np.float32).reshape(3, 2).tolist(),
+        ).transpose(0, 1)
+        vector = self.tensor(module, [1.0, 2.0, 3.0])
+        column = self.tensor(module, [[1.0], [2.0]])
         contiguous = self.tensor(
             module,
             np.linspace(-3.0, 4.0, 24, dtype=np.float32)
@@ -142,6 +156,10 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
         ).transpose(0, 2)
 
         return (
+            ("vector target", matrix, vector),
+            ("column target", matrix, column),
+            ("offset vector target", offset_matrix, vector),
+            ("noncontiguous vector target", noncontiguous_matrix, vector),
             ("contiguous scalar input", scalar, contiguous),
             ("contiguous scalar target", contiguous, scalar),
             ("offset strided scalar input", offset_scalar, offset_strided),
@@ -305,9 +323,9 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                     reference_torch.equal(expected_target, expected_target_before)
                 )
 
-    def test_scalar_broadcast_layouts_warnings_storage_and_nonmutation_match(self):
-        actual_cases = self.make_scalar_broadcast_cases(torch)
-        expected_cases = self.make_scalar_broadcast_cases(reference_torch)
+    def test_broadcasted_outputs_strides_warnings_storage_and_nonmutation_match(self):
+        actual_cases = self.make_broadcast_cases(torch)
+        expected_cases = self.make_broadcast_cases(reference_torch)
         for actual_case, expected_case in zip(
             actual_cases,
             expected_cases,
@@ -588,6 +606,81 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 expected,
                 case=(input_requires_grad, target_requires_grad),
             )
+
+    def test_broadcast_requires_grad_operands_match_inside_no_grad(self):
+        for input_requires_grad, target_requires_grad in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            actual_input = torch.tensor(
+                [[1.0, -2.0], [3.0, -4.0]],
+                requires_grad=input_requires_grad,
+            )
+            actual_target = torch.tensor(
+                [0.5, -1.5],
+                requires_grad=target_requires_grad,
+            )
+            expected_input = reference_torch.tensor(
+                [[1.0, -2.0], [3.0, -4.0]],
+                dtype=reference_torch.float32,
+                requires_grad=input_requires_grad,
+            )
+            expected_target = reference_torch.tensor(
+                [0.5, -1.5],
+                dtype=reference_torch.float32,
+                requires_grad=target_requires_grad,
+            )
+            with warnings.catch_warnings(), torch.no_grad():
+                warnings.simplefilter("ignore")
+                actual = functional.mse_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="none",
+                )
+            with warnings.catch_warnings(), reference_torch.no_grad():
+                warnings.simplefilter("ignore")
+                expected = reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="none",
+                )
+            self.assert_matches(
+                actual,
+                expected,
+                case=(input_requires_grad, target_requires_grad),
+            )
+
+    def test_unbroadcastable_shape_warning_and_error_match_pytorch_2_13(self):
+        actual_input = torch.ones((2, 3))
+        actual_target = torch.zeros((2, 2))
+        expected_input = reference_torch.ones((2, 3), dtype=reference_torch.float32)
+        expected_target = reference_torch.zeros((2, 2), dtype=reference_torch.float32)
+
+        with warnings.catch_warnings(record=True) as actual_warnings:
+            warnings.simplefilter("always")
+            with self.assertRaises(RuntimeError) as actual_error:
+                functional.mse_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="none",
+                )
+        with warnings.catch_warnings(record=True) as expected_warnings:
+            warnings.simplefilter("always")
+            with self.assertRaises(RuntimeError) as expected_error:
+                reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="none",
+                )
+
+        self.assertEqual(str(actual_error.exception), str(expected_error.exception))
+        self.assertEqual(len(actual_warnings), len(expected_warnings))
+        self.assertEqual(len(actual_warnings), 1)
+        self.assertEqual(
+            str(actual_warnings[0].message),
+            str(expected_warnings[0].message),
+        )
 
 
 if __name__ == "__main__":
