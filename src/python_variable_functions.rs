@@ -24,17 +24,17 @@ use crate::python::{
     matmul_variable_function, moveaxis_variable_function, movedim_variable_function,
     mul_variable_function, multiply_variable_function, neg_variable_function,
     negative_variable_function, permute_variable_function, positive_variable_function,
-    promote_types_variable_function, ravel_variable_function, reciprocal_variable_function,
-    reshape_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
-    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
-    square_variable_function, sum_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function,
+    promote_types_variable_function, ravel_variable_function, real_variable_function,
+    reciprocal_variable_function, reshape_variable_function, resolve_conj_variable_function,
+    resolve_neg_variable_function, rsqrt_variable_function, scalar_tensor_variable_function,
+    select_variable_function, sigmoid_variable_function, sin_variable_function,
+    sqrt_variable_function, square_variable_function, sum_variable_function,
+    tanh_variable_function, trunc_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 45] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 46] = [
     "get_device",
     "scalar_tensor",
     "arange",
@@ -49,6 +49,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 45] = [
     "positive",
     "detach",
     "ravel",
+    "real",
     "reshape",
     "reciprocal",
     "rsqrt",
@@ -187,6 +188,8 @@ Alias for :func:`torch.abs`
 ";
 
 const RAVEL_DOC: &std::ffi::CStr = c"\nravel(input) -> Tensor\n\nReturn a contiguous flattened tensor. A copy is made only if needed.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.tensor([[[1, 2],\n    ...                    [3, 4]],\n    ...                   [[5, 6],\n    ...                    [7, 8]]])\n    >>> torch.ravel(t)\n    tensor([1, 2, 3, 4, 5, 6, 7, 8])\n";
+
+const REAL_DOC: &std::ffi::CStr = c"\nreal(input) -> Tensor\n\nReturns a new tensor containing real values of the :attr:`self` tensor.\nThe returned tensor and :attr:`self` share the same underlying storage.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> x=torch.randn(4, dtype=torch.cfloat)\n    >>> x\n    tensor([(0.3100+0.3553j), (-0.5445-0.7896j), (-1.6492-0.0633j), (-0.0638-0.8119j)])\n    >>> x.real\n    tensor([ 0.3100, -0.5445, -1.6492, -0.0638])\n\n";
 
 const RESHAPE_DOC: &std::ffi::CStr = cr"
 reshape(input, shape) -> Tensor
@@ -907,6 +910,7 @@ variable_function_callback!(adjoint_callback, adjoint_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
 variable_function_callback!(detach_callback, detach_variable_function);
 variable_function_callback!(ravel_callback, ravel_variable_function);
+variable_function_callback!(real_callback, real_variable_function);
 variable_function_callback!(reshape_callback, reshape_variable_function);
 variable_function_callback!(reciprocal_callback, reciprocal_variable_function);
 variable_function_callback!(rsqrt_callback, rsqrt_variable_function);
@@ -980,6 +984,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"positive", positive_callback, POSITIVE_DOC),
         variable_function_method!(c"detach", detach_callback, c""),
         variable_function_method!(c"ravel", ravel_callback, RAVEL_DOC),
+        variable_function_method!(c"real", real_callback, REAL_DOC),
         variable_function_method!(c"reshape", reshape_callback, RESHAPE_DOC),
         variable_function_method!(c"reciprocal", reciprocal_callback, RECIPROCAL_DOC),
         variable_function_method!(c"rsqrt", rsqrt_callback, RSQRT_DOC),
