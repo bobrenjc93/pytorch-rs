@@ -132,9 +132,24 @@ class FunctionalL1LossTests(unittest.TestCase):
         )[1]
         noncontiguous_matrix = matrix.transpose(0, 1)
         empty_strided = torch.zeros((2, 0, 3)).transpose(0, 2)
+        trailing_singleton = torch.tensor([[0.0, 1.0, 2.0]]).transpose(0, 1)
+        leading_singleton = torch.tensor([[0.0], [1.0]]).transpose(0, 1)
+        higher_rank_singletons = torch.tensor(
+            np.arange(6, dtype=np.float32).reshape(3, 2, 1, 1).tolist()
+        ).permute(2, 0, 3, 1)
 
         return (
             ("scalar target", matrix, torch.tensor(2.0)),
+            (
+                "scalar target trailing singleton",
+                trailing_singleton,
+                torch.tensor(0.0),
+            ),
+            (
+                "scalar target leading singleton",
+                leading_singleton,
+                torch.tensor(0.0),
+            ),
             (
                 "scalar target noncontiguous",
                 noncontiguous_matrix,
@@ -148,6 +163,11 @@ class FunctionalL1LossTests(unittest.TestCase):
                 "scalar input noncontiguous",
                 torch.tensor(-0.0),
                 noncontiguous_matrix,
+            ),
+            (
+                "scalar input higher-rank singletons",
+                torch.tensor(-1.0),
+                higher_rank_singletons,
             ),
             ("scalar input empty", torch.tensor(-0.0), empty_strided),
             (
@@ -504,6 +524,18 @@ class FunctionalL1LossTests(unittest.TestCase):
             scalar = torch.tensor(memoryview(scalar_values))[0]
             for layout, tensor in (
                 ("contiguous", contiguous_tensor),
+                (
+                    "trailing singleton contiguous",
+                    contiguous_tensor.view(1, 14).transpose(0, 1),
+                ),
+                (
+                    "leading singleton contiguous",
+                    contiguous_tensor.view(14, 1).transpose(0, 1),
+                ),
+                (
+                    "higher-rank singleton contiguous",
+                    contiguous_tensor.view(7, 2, 1, 1).permute(2, 0, 3, 1),
+                ),
                 ("noncontiguous", contiguous_tensor.transpose(0, 1)),
             ):
                 for scalar_on_left in (True, False):

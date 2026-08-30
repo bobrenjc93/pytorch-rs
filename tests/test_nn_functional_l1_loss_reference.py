@@ -129,9 +129,25 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
         empty_strided = module.zeros(
             (2, 0, 3), dtype=module.float32
         ).transpose(0, 2)
+        trailing_singleton = self.tensor(module, [[0.0, 1.0, 2.0]]).transpose(0, 1)
+        leading_singleton = self.tensor(module, [[0.0], [1.0]]).transpose(0, 1)
+        higher_rank_singletons = self.tensor(
+            module,
+            np.arange(6, dtype=np.float32).reshape(3, 2, 1, 1).tolist(),
+        ).permute(2, 0, 3, 1)
 
         return (
             ("scalar target", matrix, self.tensor(module, 2.0)),
+            (
+                "scalar target trailing singleton",
+                trailing_singleton,
+                self.tensor(module, 0.0),
+            ),
+            (
+                "scalar target leading singleton",
+                leading_singleton,
+                self.tensor(module, 0.0),
+            ),
             (
                 "scalar target noncontiguous",
                 noncontiguous_matrix,
@@ -153,6 +169,11 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 "scalar input noncontiguous",
                 self.tensor(module, -0.0),
                 noncontiguous_matrix,
+            ),
+            (
+                "scalar input higher-rank singletons",
+                self.tensor(module, -1.0),
+                higher_rank_singletons,
             ),
             ("scalar input empty", self.tensor(module, -0.0), empty_strided),
             (

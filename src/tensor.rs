@@ -3242,10 +3242,11 @@ impl Tensor {
             scalar_on_left,
             plan.elements,
         )?;
+        let strides = contiguous_strides(&plan.shape, plan.elements)?;
         Ok(Some(Self::from_owned_parts(
             data,
             try_clone_result_shape(&plan.shape, plan.elements)?,
-            try_clone_result_shape(&plan.strides, plan.elements)?,
+            strides,
             self.dtype(),
             self.device(),
         )))
@@ -10685,6 +10686,58 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn absolute_difference_rank_zero_contiguous_canonicalizes_singleton_strides() {
+        let trailing_singleton = Tensor::from_vec(
+            [0x0000_0000, 0x3f80_0000, 0xc000_0000, 0x7fc1_2345]
+                .map(f32::from_bits)
+                .to_vec(),
+            [1, 4],
+        )
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+        assert_eq!(trailing_singleton.shape(), [4, 1]);
+        assert_eq!(trailing_singleton.stride(), [1, 4]);
+        assert!(trailing_singleton.is_contiguous());
+
+        let leading_singleton = Tensor::from_vec(vec![0.0, 1.0], [2, 1])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        assert_eq!(leading_singleton.shape(), [1, 2]);
+        assert_eq!(leading_singleton.stride(), [1, 1]);
+        assert!(leading_singleton.is_contiguous());
+
+        let higher_rank_singletons =
+            Tensor::from_vec((0_u8..6).map(f32::from).collect(), [3, 2, 1, 1])
+                .unwrap()
+                .permute_axes([2, 0, 3, 1])
+                .unwrap();
+        assert_eq!(higher_rank_singletons.shape(), [1, 3, 1, 2]);
+        assert_eq!(higher_rank_singletons.stride(), [1, 2, 1, 1]);
+        assert!(higher_rank_singletons.is_contiguous());
+
+        for (case, tensor, scalar_bits) in [
+            ("trailing singleton", trailing_singleton, 0x8000_0000),
+            ("leading singleton", leading_singleton, 0x3f80_0000),
+            (
+                "higher-rank singletons",
+                higher_rank_singletons,
+                0xc040_0000,
+            ),
+        ] {
+            for scalar_on_left in [true, false] {
+                assert_rank_zero_absolute_difference_fast_path_matches_fallback(
+                    &tensor,
+                    scalar_bits,
+                    scalar_on_left,
+                    case,
+                );
+            }
+        }
     }
 
     #[test]
