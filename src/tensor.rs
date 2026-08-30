@@ -2590,6 +2590,7 @@ impl Tensor {
             8 => self.fold_owned_rank_8(initial, function),
             9 => self.fold_owned_rank_9(initial, function),
             10 => self.fold_owned_rank_10(initial, function),
+            11 => self.fold_owned_rank_11(initial, function),
             _ => None,
         }
     }
@@ -3565,8 +3566,6 @@ impl Tensor {
             total
         } else if let Some(total) = self.fold_owned_sum_rank(0.0_f32, |total, value| total + value)
         {
-            total
-        } else if let Some(total) = self.fold_owned_rank_11(0.0_f32, |total, value| total + value) {
             total
         } else {
             (0..self.elements).fold(0.0_f32, |total, index| {
