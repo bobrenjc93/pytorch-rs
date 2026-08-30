@@ -10439,7 +10439,7 @@ fn bind_top_level_add_alpha(
     if let Some(probed) = probe_torch_function_override(&alpha.value) {
         return Ok(BoundTopLevelAddAlpha::Override(probed));
     }
-    if is_boolean_arithmetic_scalar(&alpha.value)? {
+    if alpha.value.is_exact_instance_of::<PyBool>() {
         return Ok(BoundTopLevelAddAlpha::Boolean);
     }
     let Some(scalar) = parse_arithmetic_scalar(&alpha.value)? else {
@@ -10698,18 +10698,6 @@ fn is_real_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     Ok(value.is_instance(&numpy.getattr("bool_")?)?
         || value.is_instance(&numpy.getattr("integer")?)?
         || value.is_instance(&numpy.getattr("floating")?)?)
-}
-
-fn is_boolean_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
-    if value.is_exact_instance_of::<PyBool>() {
-        return Ok(true);
-    }
-
-    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
-        return Ok(false);
-    };
-    let numpy_bool = numpy.getattr("bool_")?;
-    value.is_instance(&numpy_bool)
 }
 
 fn parse_top_level_multiplication_operand<'py>(

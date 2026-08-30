@@ -7,6 +7,11 @@ import unittest
 import numpy as np
 import torch_rs as torch
 
+try:
+    import torch as reference_torch
+except ImportError:
+    reference_torch = None
+
 
 FUNCTION_DOC = """
 add(input, other, *, alpha=1, out=None) -> Tensor
@@ -440,16 +445,28 @@ class TopLevelAddTests(unittest.TestCase):
         ):
             torch.add(2, 3)
         with self.assertRaisesRegex(
-            NotImplementedError, r"^add\(\): alpha values other than 1 are not supported$"
+            NotImplementedError,
+            r"^add\(\): alpha values other than 1 are not supported$",
         ):
             torch.add(tensor, 2.0, alpha=2)
-        for alpha in (True, False, np.bool_(True), np.bool_(False)):
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^add\(\): alpha values other than 1 are not supported$",
+        ):
+            torch.add(tensor, 2.0, alpha=np.bool_(False))
+        for alpha in (True, False):
             with self.subTest(alpha=alpha):
                 with self.assertRaisesRegex(
                     RuntimeError,
                     r"^Boolean alpha only supported for Boolean results\.$",
                 ):
                     torch.add(tensor, 2.0, alpha=alpha)
+
+        self.assert_tensor_matches(
+            torch.add(tensor, 1.0, alpha=np.bool_(True)),
+            tensor + 1.0,
+            case="numpy bool true alpha is default",
+        )
 
         destination = torch.tensor([17.0])
         with self.assertRaisesRegex(
@@ -506,6 +523,31 @@ class TopLevelAddTests(unittest.TestCase):
         wildcard_namespace = {}
         exec("from torch_rs import *", wildcard_namespace)
         self.assertIs(wildcard_namespace["add"], function)
+
+
+@unittest.skipIf(reference_torch is None, "install the reference dependency group")
+class TopLevelAddReferenceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if reference_torch.__version__.split("+")[0] != "2.13.0":
+            raise AssertionError(
+                "torch.add differentials require pinned PyTorch 2.13.0"
+            )
+
+    def test_numpy_bool_true_alpha_matches_pytorch_2_13_default_alpha(self):
+        actual = torch.add(torch.tensor([1.0]), 1.0, alpha=np.bool_(True))
+        expected = reference_torch.add(
+            reference_torch.tensor([1.0]), 1.0, alpha=np.bool_(True)
+        )
+
+        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+        self.assertEqual(actual.stride(), expected.stride())
+        self.assertEqual(str(actual.dtype), str(expected.dtype))
+        self.assertEqual(str(actual.device), str(expected.device))
+        np.testing.assert_array_equal(
+            np.asarray(actual, dtype=np.float32).reshape(-1).view(np.uint32),
+            expected.detach().cpu().numpy().reshape(-1).view(np.uint32),
+        )
 
 
 if __name__ == "__main__":
