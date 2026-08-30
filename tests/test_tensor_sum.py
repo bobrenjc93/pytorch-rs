@@ -97,6 +97,87 @@ class TensorSumTests(unittest.TestCase):
         self.assertTrue(untracked.is_leaf)
         self.assertTrue(leaf.sum(None, dtype=torch.float32).requires_grad)
 
+    def test_rank_10_offset_permuted_sum_boundaries_and_autograd(self):
+        shape = (2, 3, 2, 2, 2, 2, 2, 2, 2, 2)
+        values = (
+            (np.arange(2 * np.prod(shape), dtype=np.float32) % 23) - 11
+        ).reshape((2, *shape))
+        source = torch.tensor(values.tolist(), dtype=torch.float32)
+        permutations = (
+            (9, 8, 7, 6, 5, 4, 3, 2, 1, 0),
+            (2, 0, 4, 6, 8, 1, 3, 5, 7, 9),
+            (1, 3, 5, 7, 9, 0, 2, 4, 6, 8),
+            (4, 1, 8, 0, 6, 2, 9, 5, 3, 7),
+        )
+
+        for permutation in permutations:
+            tensor = source[1].permute(permutation)
+            expected = np.float32(values[1].transpose(permutation).sum())
+            self.assertFalse(tensor.is_contiguous())
+            self.assert_scalar(tensor.sum(), expected, case=("rank-10", permutation))
+
+        singleton_shape = (2, 1, 3, 2, 1, 2, 2, 2, 2, 2)
+        singleton_values = (
+            (np.arange(2 * np.prod(singleton_shape), dtype=np.float32) % 19) - 9
+        ).reshape((2, *singleton_shape))
+        singleton = torch.tensor(singleton_values.tolist(), dtype=torch.float32)[1].permute(
+            2, 0, 3, 5, 4, 9, 8, 7, 6, 1
+        )
+        expected_singleton = singleton_values[1].transpose(
+            2, 0, 3, 5, 4, 9, 8, 7, 6, 1
+        )
+        self.assert_scalar(
+            singleton.sum(),
+            np.float32(expected_singleton.sum()),
+            case="rank-10-singleton",
+        )
+        np.testing.assert_array_equal(np.asarray(singleton.contiguous()), expected_singleton)
+        np.testing.assert_array_equal(np.asarray(-singleton), -expected_singleton)
+
+        empty = torch.zeros((2, 0, 3, 4, 5, 2, 2, 2, 2, 2), requires_grad=True)
+        empty_view = empty.permute(4, 2, 0, 9, 8, 7, 6, 5, 3, 1)
+        self.assert_scalar(empty_view.sum(), np.float32(0.0), case="rank-10-empty")
+        empty_view.sum().backward()
+        self.assertEqual(empty.grad.shape, empty.shape)
+        self.assertEqual(empty.grad.tolist(), [[], []])
+
+        leaf = torch.tensor(values.tolist(), dtype=torch.float32, requires_grad=True)
+        view = leaf[1].permute(3, 1, 6, 0, 4, 9, 8, 7, 2, 5)
+        loss = view.sum()
+        self.assert_scalar(
+            loss,
+            np.float32(values[1].transpose(3, 1, 6, 0, 4, 9, 8, 7, 2, 5).sum()),
+            case="rank-10-tracked",
+        )
+        loss.backward()
+        loss.backward()
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad)[0], np.zeros(shape, dtype=np.float32)
+        )
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad)[1], np.ones(shape, dtype=np.float32) * 2.0
+        )
+
+        with torch.no_grad():
+            untracked = view.sum()
+        self.assertFalse(untracked.requires_grad)
+        self.assertTrue(untracked.is_leaf)
+
+        boundary_shape = (2, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2)
+        boundary_values = (
+            (np.arange(2 * np.prod(boundary_shape), dtype=np.float32) % 29) - 14
+        ).reshape((2, *boundary_shape))
+        boundary = torch.tensor(boundary_values.tolist(), dtype=torch.float32)[1].permute(
+            10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0
+        )
+        self.assert_scalar(
+            boundary.sum(),
+            np.float32(
+                boundary_values[1].transpose(10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0).sum()
+            ),
+            case="rank-11-fallback",
+        )
+
     def test_descriptor_documentation_and_unbound_dtype_calls(self):
         tensor = torch.tensor([1.0, 2.0])
         descriptor = inspect.getattr_static(torch.Tensor, "sum")
