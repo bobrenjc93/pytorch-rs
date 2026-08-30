@@ -117,6 +117,8 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
         )
 
     def make_broadcast_cases(self, module):
+        scalar = self.tensor(module, -0.0)
+        offset_scalar = self.tensor(module, [17.0, 0.5])[1]
         matrix = self.tensor(
             module,
             np.arange(6, dtype=np.float32).reshape(2, 3).tolist(),
@@ -125,12 +127,17 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             module,
             np.arange(12, dtype=np.float32).reshape(2, 2, 3).tolist(),
         )[1]
+        noncontiguous_matrix = self.tensor(
+            module,
+            np.arange(6, dtype=np.float32).reshape(3, 2).tolist(),
+        ).transpose(0, 1)
+        empty_contiguous = module.zeros((0, 4), dtype=module.float32)
         empty_strided = module.zeros(
             (2, 0, 3), dtype=module.float32
         ).transpose(0, 2)
 
         return (
-            ("scalar target", matrix, self.tensor(module, 2.0)),
+            ("scalar target", matrix, scalar),
             (
                 "vector target",
                 matrix,
@@ -141,7 +148,11 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 matrix,
                 self.tensor(module, [[1.0], [2.0]]),
             ),
-            ("scalar input", self.tensor(module, -0.0), offset_matrix),
+            ("scalar input", scalar, offset_matrix),
+            ("empty scalar input", scalar, empty_contiguous),
+            ("empty scalar target", empty_contiguous, scalar),
+            ("noncontiguous scalar input", offset_scalar, noncontiguous_matrix),
+            ("noncontiguous scalar target", noncontiguous_matrix, offset_scalar),
             (
                 "empty singleton broadcast",
                 empty_strided,
@@ -488,6 +499,103 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             )
             self.assert_matches(actual, expected, case=("float32 edges", case))
 
+    def test_scalar_broadcast_float32_edges_match_pytorch_2_13(self):
+        tensor_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x0080_0000,
+                0x8080_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        actual_contiguous = torch.tensor(
+            memoryview(tensor_bits.view(np.float32))
+        ).view(2, 7)
+        expected_contiguous = reference_torch.tensor(
+            memoryview(tensor_bits.view(np.float32))
+        ).view(2, 7)
+        actual_empty = torch.zeros((0, 7), dtype=torch.float32)
+        expected_empty = reference_torch.zeros(
+            (0, 7),
+            dtype=reference_torch.float32,
+        )
+
+        for scalar_bits in (
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7F80_0000,
+            0xFF80_0000,
+            0x7FC6_789A,
+            0x7F86_789A,
+        ):
+            scalar_values = np.asarray([scalar_bits], dtype=np.uint32).view(np.float32)
+            actual_scalar = torch.tensor(memoryview(scalar_values))[0]
+            expected_scalar = reference_torch.tensor(memoryview(scalar_values))[0]
+            for layout, actual_tensor, expected_tensor in (
+                ("contiguous", actual_contiguous, expected_contiguous),
+                ("empty", actual_empty, expected_empty),
+                (
+                    "noncontiguous fallback",
+                    actual_contiguous.transpose(0, 1),
+                    expected_contiguous.transpose(0, 1),
+                ),
+            ):
+                for scalar_on_left in (True, False):
+                    actual_operands = (
+                        (actual_scalar, actual_tensor)
+                        if scalar_on_left
+                        else (actual_tensor, actual_scalar)
+                    )
+                    expected_operands = (
+                        (expected_scalar, expected_tensor)
+                        if scalar_on_left
+                        else (expected_tensor, expected_scalar)
+                    )
+                    with warnings.catch_warnings(record=True) as actual_warnings:
+                        warnings.simplefilter("always")
+                        actual = functional.l1_loss(
+                            *actual_operands,
+                            reduction="none",
+                        )
+                    with warnings.catch_warnings(record=True) as expected_warnings:
+                        warnings.simplefilter("always")
+                        expected = reference_functional.l1_loss(
+                            *expected_operands,
+                            reduction="none",
+                        )
+
+                    with self.subTest(
+                        layout=layout,
+                        scalar_bits=hex(scalar_bits),
+                        scalar_on_left=scalar_on_left,
+                        warning=True,
+                    ):
+                        self.assertEqual(len(actual_warnings), len(expected_warnings))
+                        self.assertEqual(len(actual_warnings), 1)
+                        self.assertEqual(
+                            str(actual_warnings[0].message),
+                            str(expected_warnings[0].message),
+                        )
+
+                    self.assert_matches(
+                        actual,
+                        expected,
+                        case=(layout, hex(scalar_bits), scalar_on_left),
+                    )
+
     def test_bandwidth_sized_same_shape_contiguous_matches_pytorch_2_13(self):
         input_values = np.linspace(
             -1024.0,
@@ -565,6 +673,90 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 expected,
                 case=(input_requires_grad, target_requires_grad),
             )
+
+    def test_scalar_broadcast_requires_grad_operands_match_inside_no_grad(self):
+        def actual_scalar_input(input_requires_grad, target_requires_grad):
+            return (
+                torch.tensor(-0.5, requires_grad=input_requires_grad),
+                torch.tensor(
+                    [[1.0, -2.0], [3.0, -4.0]],
+                    requires_grad=target_requires_grad,
+                ),
+            )
+
+        def expected_scalar_input(input_requires_grad, target_requires_grad):
+            return (
+                reference_torch.tensor(
+                    -0.5,
+                    dtype=reference_torch.float32,
+                    requires_grad=input_requires_grad,
+                ),
+                reference_torch.tensor(
+                    [[1.0, -2.0], [3.0, -4.0]],
+                    dtype=reference_torch.float32,
+                    requires_grad=target_requires_grad,
+                ),
+            )
+
+        def actual_scalar_target(input_requires_grad, target_requires_grad):
+            return (
+                torch.tensor(
+                    [[1.0, -2.0], [3.0, -4.0]],
+                    requires_grad=input_requires_grad,
+                ),
+                torch.tensor(-0.5, requires_grad=target_requires_grad),
+            )
+
+        def expected_scalar_target(input_requires_grad, target_requires_grad):
+            return (
+                reference_torch.tensor(
+                    [[1.0, -2.0], [3.0, -4.0]],
+                    dtype=reference_torch.float32,
+                    requires_grad=input_requires_grad,
+                ),
+                reference_torch.tensor(
+                    -0.5,
+                    dtype=reference_torch.float32,
+                    requires_grad=target_requires_grad,
+                ),
+            )
+
+        for case, actual_factory, expected_factory in (
+            ("scalar input", actual_scalar_input, expected_scalar_input),
+            ("scalar target", actual_scalar_target, expected_scalar_target),
+        ):
+            for input_requires_grad, target_requires_grad in (
+                (True, False),
+                (False, True),
+                (True, True),
+            ):
+                actual_input, actual_target = actual_factory(
+                    input_requires_grad,
+                    target_requires_grad,
+                )
+                expected_input, expected_target = expected_factory(
+                    input_requires_grad,
+                    target_requires_grad,
+                )
+                with warnings.catch_warnings(), torch.no_grad():
+                    warnings.simplefilter("ignore")
+                    actual = functional.l1_loss(
+                        actual_input,
+                        actual_target,
+                        reduction="none",
+                    )
+                with warnings.catch_warnings(), reference_torch.no_grad():
+                    warnings.simplefilter("ignore")
+                    expected = reference_functional.l1_loss(
+                        expected_input,
+                        expected_target,
+                        reduction="none",
+                    )
+                self.assert_matches(
+                    actual,
+                    expected,
+                    case=(case, input_requires_grad, target_requires_grad),
+                )
 
 
 if __name__ == "__main__":
