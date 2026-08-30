@@ -690,15 +690,7 @@ impl PyTensorBase {
     #[getter]
     fn real(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
         let tensor = slf.as_any().cast::<PyTensor>()?;
-        if let Some(result) =
-            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::GetSet("real"))?
-        {
-            return Ok(result);
-        }
-
-        // Float32 is the only supported dtype, so every Tensor is already real.
-        // Preserve the wrapper itself without inspecting storage or autograd state.
-        Ok(tensor.clone().unbind().into_any())
+        tensor_real(tensor)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1722,6 +1714,21 @@ pub(crate) fn adjoint_variable_function(
     dispatch_adjoint(py, &input, args, kwargs)
 }
 
+pub(crate) fn real_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_or_override_argument("real", args, kwargs)?;
+    dispatch_single_tensor_override(
+        SingleTensorOverrideOperation::REAL,
+        py,
+        &input,
+        args,
+        kwargs,
+    )
+}
+
 pub(crate) fn positive_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2254,6 +2261,12 @@ struct SingleTensorOverrideOperation {
 }
 
 impl SingleTensorOverrideOperation {
+    const REAL: Self = Self {
+        name: "real",
+        qualified_name: "torch.real",
+        apply_native: apply_top_level_real,
+    };
+
     const POSITIVE: Self = Self {
         name: "positive",
         qualified_name: "torch.positive",
@@ -2521,6 +2534,18 @@ fn matrix_adjoint(
             Ok(Py::new(py, PyTensor::new(inner))?.into_any())
         }
     }
+}
+
+fn tensor_real(tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    if let Some(result) =
+        dispatch_tensorbase_mode(tensor.py(), tensor, TensorBaseModeTarget::GetSet("real"))?
+    {
+        return Ok(result);
+    }
+
+    // Float32 is the only supported dtype, so every Tensor is already real.
+    // Preserve the wrapper itself without inspecting storage or autograd state.
+    Ok(tensor.clone().unbind().into_any())
 }
 
 #[derive(Clone, Copy)]
@@ -3209,6 +3234,10 @@ fn dispatch_single_tensor_override(
 )]
 fn apply_top_level_positive(_py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
     Ok(tensor.clone().unbind().into_any())
+}
+
+fn apply_top_level_real(_py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    tensor_real(tensor)
 }
 
 fn apply_top_level_ravel(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {

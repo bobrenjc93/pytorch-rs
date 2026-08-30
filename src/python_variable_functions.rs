@@ -24,17 +24,17 @@ use crate::python::{
     matmul_variable_function, moveaxis_variable_function, movedim_variable_function,
     mul_variable_function, multiply_variable_function, neg_variable_function,
     negative_variable_function, permute_variable_function, positive_variable_function,
-    promote_types_variable_function, ravel_variable_function, reciprocal_variable_function,
-    reshape_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
-    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
-    square_variable_function, sum_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function,
+    promote_types_variable_function, ravel_variable_function, real_variable_function,
+    reciprocal_variable_function, reshape_variable_function, resolve_conj_variable_function,
+    resolve_neg_variable_function, rsqrt_variable_function, scalar_tensor_variable_function,
+    select_variable_function, sigmoid_variable_function, sin_variable_function,
+    sqrt_variable_function, square_variable_function, sum_variable_function,
+    tanh_variable_function, trunc_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 45] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 46] = [
     "get_device",
     "scalar_tensor",
     "arange",
@@ -45,6 +45,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 45] = [
     "abs",
     "absolute",
     "adjoint",
+    "real",
     "conj",
     "positive",
     "detach",
@@ -104,6 +105,25 @@ Example::
             [1.-1.j, 3.-3.j]])
     >>> (A.adjoint() == A.mH).all()
     tensor(True)
+";
+
+const REAL_DOC: &std::ffi::CStr = c"
+real(input) -> Tensor
+
+Returns a new tensor containing real values of the :attr:`self` tensor.
+The returned tensor and :attr:`self` share the same underlying storage.
+
+Args:
+    input (Tensor): the input tensor.
+
+Example::
+
+    >>> x=torch.randn(4, dtype=torch.cfloat)
+    >>> x
+    tensor([(0.3100+0.3553j), (-0.5445-0.7896j), (-1.6492-0.0633j), (-0.0638-0.8119j)])
+    >>> x.real
+    tensor([ 0.3100, -0.5445, -1.6492, -0.0638])
+
 ";
 
 const ARANGE_DOC: &std::ffi::CStr = cr"
@@ -904,6 +924,7 @@ variable_function_callback!(
 variable_function_callback!(abs_callback, abs_variable_function);
 variable_function_callback!(absolute_callback, absolute_variable_function);
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
+variable_function_callback!(real_callback, real_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
 variable_function_callback!(detach_callback, detach_variable_function);
 variable_function_callback!(ravel_callback, ravel_variable_function);
@@ -977,6 +998,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"abs", abs_callback, ABS_DOC),
         variable_function_method!(c"absolute", absolute_callback, ABSOLUTE_DOC),
         variable_function_method!(c"adjoint", adjoint_callback, ADJOINT_DOC),
+        variable_function_method!(c"real", real_callback, REAL_DOC),
         variable_function_method!(c"positive", positive_callback, POSITIVE_DOC),
         variable_function_method!(c"detach", detach_callback, c""),
         variable_function_method!(c"ravel", ravel_callback, RAVEL_DOC),
