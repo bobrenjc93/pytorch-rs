@@ -149,6 +149,79 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             ),
         )
 
+    def make_same_shape_contiguous_fast_path_cases(self, module):
+        input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0001,
+                0x0000_0001,
+                0x807F_FFFF,
+                0x007F_FFFF,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+            ],
+            dtype=np.uint32,
+        )
+        bandwidth_elements = 1_048_576
+        bandwidth_input = np.linspace(
+            -1024.0,
+            1024.0,
+            bandwidth_elements,
+            dtype=np.float32,
+        )
+        bandwidth_target = np.linspace(
+            17.0,
+            -23.0,
+            bandwidth_elements,
+            dtype=np.float32,
+        )
+
+        return (
+            ("scalar", self.tensor(module, -0.0), self.tensor(module, 2.5)),
+            (
+                "empty",
+                module.zeros((0, 257), dtype=module.float32),
+                module.ones((0, 257), dtype=module.float32),
+            ),
+            (
+                "small",
+                self.tensor(module, [[1.0, -2.0, 3.5], [-4.0, 0.25, -0.5]]),
+                self.tensor(module, [[0.5, 2.0, -3.5], [4.0, -0.75, -0.5]]),
+            ),
+            (
+                "edge bits",
+                module.tensor(memoryview(input_bits.view(np.float32))).view(3, 4),
+                module.tensor(memoryview(target_bits.view(np.float32))).view(3, 4),
+            ),
+            (
+                "bandwidth sized",
+                module.tensor(memoryview(bandwidth_input)).view(1024, 1024),
+                module.tensor(memoryview(bandwidth_target)).view(1024, 1024),
+            ),
+        )
+
     @staticmethod
     def call(module_functional, input, target, form):
         if form == "reduction keyword":
@@ -284,6 +357,56 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
                 )
+
+    def test_same_shape_contiguous_fast_path_matches_pytorch_2_13(self):
+        actual_cases = self.make_same_shape_contiguous_fast_path_cases(torch)
+        expected_cases = self.make_same_shape_contiguous_fast_path_cases(
+            reference_torch
+        )
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            self.assertEqual(actual_input.shape, actual_target.shape)
+            self.assertTrue(actual_input.is_contiguous())
+            self.assertTrue(actual_target.is_contiguous())
+            self.assertEqual(tuple(expected_input.shape), tuple(expected_target.shape))
+            self.assertTrue(expected_input.is_contiguous())
+            self.assertTrue(expected_target.is_contiguous())
+
+            actual = functional.l1_loss(
+                actual_input,
+                actual_target,
+                reduction="none",
+            )
+            expected = reference_functional.l1_loss(
+                expected_input,
+                expected_target,
+                reduction="none",
+            )
+            self.assert_matches(actual, expected, case=case)
+
+            actual_repeat = functional.l1_loss(
+                actual_input,
+                actual_target,
+                reduction="none",
+            )
+            expected_repeat = reference_functional.l1_loss(
+                expected_input,
+                expected_target,
+                reduction="none",
+            )
+            with self.subTest(case=case, storage=True):
+                self.assertFalse(actual.is_set_to(actual_repeat))
+                self.assertFalse(expected.is_set_to(expected_repeat))
+                self.assertFalse(actual.is_set_to(actual_input))
+                self.assertFalse(expected.is_set_to(expected_input))
+                self.assertFalse(actual.is_set_to(actual_target))
+                self.assertFalse(expected.is_set_to(expected_target))
 
     def test_broadcasted_outputs_strides_warnings_and_storage_match_pytorch_2_13(self):
         actual_cases = self.make_broadcast_cases(torch)
@@ -529,6 +652,87 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 expected,
                 case=(input_requires_grad, target_requires_grad),
             )
+
+    def test_same_shape_contiguous_no_grad_matches_pytorch_2_13(self):
+        def scalar(module, input_requires_grad, target_requires_grad):
+            return (
+                module.tensor(
+                    1.0,
+                    dtype=module.float32,
+                    requires_grad=input_requires_grad,
+                ),
+                module.tensor(
+                    -2.0,
+                    dtype=module.float32,
+                    requires_grad=target_requires_grad,
+                ),
+            )
+
+        def empty(module, input_requires_grad, target_requires_grad):
+            return (
+                module.zeros(
+                    (0, 17),
+                    dtype=module.float32,
+                    requires_grad=input_requires_grad,
+                ),
+                module.ones(
+                    (0, 17),
+                    dtype=module.float32,
+                    requires_grad=target_requires_grad,
+                ),
+            )
+
+        def matrix(module, input_requires_grad, target_requires_grad):
+            return (
+                module.tensor(
+                    [[1.0, -2.0], [3.0, -4.0]],
+                    dtype=module.float32,
+                    requires_grad=input_requires_grad,
+                ),
+                module.tensor(
+                    [[0.5, 2.0], [-3.0, 4.5]],
+                    dtype=module.float32,
+                    requires_grad=target_requires_grad,
+                ),
+            )
+
+        for case, factory in (
+            ("scalar", scalar),
+            ("empty", empty),
+            ("matrix", matrix),
+        ):
+            for input_requires_grad, target_requires_grad in (
+                (True, False),
+                (False, True),
+                (True, True),
+            ):
+                actual_input, actual_target = factory(
+                    torch,
+                    input_requires_grad,
+                    target_requires_grad,
+                )
+                expected_input, expected_target = factory(
+                    reference_torch,
+                    input_requires_grad,
+                    target_requires_grad,
+                )
+                with torch.no_grad():
+                    actual = functional.l1_loss(
+                        actual_input,
+                        actual_target,
+                        reduction="none",
+                    )
+                with reference_torch.no_grad():
+                    expected = reference_functional.l1_loss(
+                        expected_input,
+                        expected_target,
+                        reduction="none",
+                    )
+                self.assert_matches(
+                    actual,
+                    expected,
+                    case=(case, input_requires_grad, target_requires_grad),
+                )
 
 
 if __name__ == "__main__":

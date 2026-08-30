@@ -3149,7 +3149,10 @@ impl Tensor {
         )))
     }
 
-    /// Computes an absolute difference through subtraction followed by abs.
+    /// Computes an absolute difference.
+    ///
+    /// Same-shaped contiguous inputs use a dedicated binary fast path. Other
+    /// layouts preserve the existing subtraction-then-abs composition.
     ///
     /// # Errors
     ///
@@ -3157,7 +3160,38 @@ impl Tensor {
     /// result metadata or storage allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn absolute_difference(&self, other: &Self) -> Result<Self, TensorError> {
+        if self.shape == other.shape
+            && let Some(output) = self.absolute_difference_same_shape_contiguous(other)?
+        {
+            return Ok(output);
+        }
         self.zip_map(other, l1_loss_difference_value)?.abs()
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn absolute_difference_same_shape_contiguous(
+        &self,
+        other: &Self,
+    ) -> Result<Option<Self>, TensorError> {
+        debug_assert_eq!(self.shape, other.shape);
+        if !self.is_contiguous() || !other.is_contiguous() {
+            return Ok(None);
+        }
+        let (Some(left), Some(right)) = (self.contiguous_slice(), other.contiguous_slice()) else {
+            return Ok(None);
+        };
+
+        let elements = self.elements;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = contiguous_strides(&shape, elements)?;
+        let data = materialize_contiguous_absolute_difference(left, right, elements)?;
+        Ok(Some(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        )))
     }
 
     /// Multiplies tensors element by element with trailing-dimension broadcasting.
@@ -5974,6 +6008,25 @@ fn materialize_contiguous_squared_difference(
     for ((output, &left), &right) in data.iter_mut().zip(left).zip(right) {
         *output = squared_difference_value(left, right);
     }
+    Ok(data)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn materialize_contiguous_absolute_difference(
+    left: &[f32],
+    right: &[f32],
+    elements: usize,
+) -> Result<Vec<f32>, TensorError> {
+    debug_assert_eq!(left.len(), elements);
+    debug_assert_eq!(right.len(), elements);
+
+    let mut data = try_result_vector(elements, elements)?;
+    data.extend(
+        left.iter()
+            .copied()
+            .zip(right.iter().copied())
+            .map(|(left, right)| absolute_value(l1_loss_difference_value(left, right))),
+    );
     Ok(data)
 }
 
