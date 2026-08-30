@@ -1,5 +1,7 @@
 import contextlib
+import copy
 import inspect
+import pickle
 import threading
 import types
 import unittest
@@ -20,6 +22,14 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
             raise AssertionError(
                 "get_default_device differentials require pinned PyTorch 2.13.0"
             )
+
+    def setUp(self):
+        torch.set_default_device("cpu")
+        reference_torch.set_default_device("cpu")
+
+    def tearDown(self):
+        torch.set_default_device("cpu")
+        reference_torch.set_default_device("cpu")
 
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
@@ -50,6 +60,36 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
             tuple(tensor.device == first for tensor in factories),
             tuple((tensor.device.type, tensor.device.index) for tensor in factories),
         )
+
+    def set_default_device_outcome(self, module):
+        outcomes = []
+        for device in ("cpu", module.device("cpu"), module.device("cpu", None)):
+            result = module.set_default_device(device)
+            first = module.get_default_device()
+            factories = (
+                module.tensor([1.0, 2.0]),
+                module.scalar_tensor(1.0),
+                module.zeros((2, 0, 3)),
+                module.ones((2, 3)),
+                module.eye(2, 3),
+                module.full((2,), 3.0),
+                module.arange(3.0),
+            )
+            outcomes.append(
+                (
+                    result,
+                    str(first),
+                    repr(first),
+                    first.type,
+                    first.index,
+                    tuple(tensor.device == first for tensor in factories),
+                    tuple(
+                        (tensor.device.type, tensor.device.index)
+                        for tensor in factories
+                    ),
+                )
+            )
+        return tuple(outcomes)
 
     def threaded_outcome(self, module):
         worker_count = 8
@@ -93,6 +133,12 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.default_device_outcome(torch),
             self.default_device_outcome(reference_torch),
+        )
+
+    def test_set_default_device_cpu_noops_and_factories_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.set_default_device_outcome(torch),
+            self.set_default_device_outcome(reference_torch),
         )
 
     def test_cpu_default_matches_when_cuda_is_visible(self):
@@ -147,6 +193,48 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
         )
         self.assertEqual(torch.__all__.count("get_default_device"), 1)
 
+    def test_set_default_device_callable_metadata_matches_pytorch_2_13(self):
+        actual = torch.set_default_device
+        expected = reference_torch.set_default_device
+        self.assertIs(type(actual), types.FunctionType)
+        self.assertIs(type(expected), types.FunctionType)
+        self.assertEqual(actual.__name__, expected.__name__)
+        self.assertEqual(actual.__qualname__, expected.__qualname__)
+        self.assertEqual(actual.__doc__, expected.__doc__)
+        self.assertEqual(actual.__annotations__, expected.__annotations__)
+        self.assertEqual(
+            actual.__module__.replace("torch_rs", "torch"),
+            expected.__module__,
+        )
+        self.assertEqual(
+            hasattr(actual, "__text_signature__"),
+            hasattr(expected, "__text_signature__"),
+        )
+        self.assertEqual(str(inspect.signature(actual)), str(inspect.signature(expected)))
+        self.assertEqual(
+            "set_default_device" in torch.__all__,
+            "set_default_device" in reference_torch.__all__,
+        )
+        self.assertEqual(torch.__all__.count("set_default_device"), 1)
+        self.assertEqual(
+            hasattr(torch._C, "set_default_device"),
+            hasattr(reference_torch._C, "set_default_device"),
+        )
+        self.assertEqual(
+            "set_default_device" in getattr(torch._C, "__all__", ()),
+            "set_default_device" in getattr(reference_torch._C, "__all__", ()),
+        )
+
+        self.assertEqual(copy.copy(actual) is actual, copy.copy(expected) is expected)
+        self.assertEqual(
+            copy.deepcopy(actual) is actual,
+            copy.deepcopy(expected) is expected,
+        )
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(pickle.loads(pickle.dumps(actual, protocol)), actual)
+                self.assertIs(pickle.loads(pickle.dumps(expected, protocol)), expected)
+
     def test_no_argument_errors_match_pytorch_2_13(self):
         cases = (
             (
@@ -168,6 +256,29 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
             (
                 lambda: torch.get_default_device(None, device=None),
                 lambda: reference_torch.get_default_device(None, device=None),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assert_error_matches(actual_call, expected_call)
+
+    def test_set_default_device_binding_errors_match_pytorch_2_13(self):
+        cases = (
+            (
+                lambda: torch.set_default_device(),
+                lambda: reference_torch.set_default_device(),
+            ),
+            (
+                lambda: torch.set_default_device("cpu", "cpu"),
+                lambda: reference_torch.set_default_device("cpu", "cpu"),
+            ),
+            (
+                lambda: torch.set_default_device(foo="cpu"),
+                lambda: reference_torch.set_default_device(foo="cpu"),
+            ),
+            (
+                lambda: torch.set_default_device("cpu", device="cpu"),
+                lambda: reference_torch.set_default_device("cpu", device="cpu"),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):

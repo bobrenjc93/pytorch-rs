@@ -102,6 +102,8 @@ volumes = torch.zeros((1, 2, 3, 4, 5))
 assert torch.nn.functional.dropout3d(volumes, p=0, training=True) is volumes
 assert torch.is_signed(input=x)
 assert torch.get_device(input=x) == -1
+assert torch.get_default_device() == torch.device("cpu")
+assert torch.set_default_device("cpu") is None
 assert torch.cpu.is_available() is True
 assert torch.cpu.current_device() == "cpu"
 assert torch.cpu.device_count() == 1
@@ -665,6 +667,8 @@ API is added.
 ### Backends, compiler, and distributed
 
 #### Backend and compiler metadata
+
+`torch.get_default_device()` returns a fresh unindexed CPU `torch.device` descriptor. `torch.set_default_device(device)` is exposed as the matching PyTorch 2.13-compatible top-level function object and accepts only default-equivalent CPU forms, including `"cpu"` and unindexed `torch.device("cpu")`, as a stateless no-op returning exact `None`. It rejects CUDA, meta, indexed CPU devices, missing arguments, and unsupported objects before changing device allocation, default dtype, or legacy tensor type behavior. Supported factories continue to allocate ordinary CPU float32 tensors after successful and rejected calls.
 
 `torch.cpu.is_available()` is the canonical device-agnostic CPU availability query and returns the exact `True` singleton. `torch.cpu.is_initialized()` likewise returns exact `True`, reflecting that the eager CPU backend is always initialized. `torch.cpu.current_device()` returns the invariant string `"cpu"`, and `torch.cpu.device_count()` reports the single logical CPU device as the exact integer `1`. Because native CPU execution is eager, `torch.cpu.synchronize(device=None)` ignores any device value and returns the exact `None` singleton. `torch.cpu.set_device(device)` likewise accepts one required device token, ignores arbitrary objects, preserves CPU state, and returns exact `None`. `torch.cpu.Event()` is likewise stateless: `query()` returns exact `True`, while `record(stream=None)`, `wait(stream=None)`, and `synchronize()` are no-ops returning exact `None`. These APIs do not probe hardware, environment variables, or PyTorch. CPU device mutation beyond the compatibility no-op, capabilities, AMP, and the rest of the `torch.cpu` namespace remain unsupported.
 

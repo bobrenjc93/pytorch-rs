@@ -1,5 +1,10 @@
 import contextlib
+import copy
+import importlib
 import inspect
+import pickle
+import subprocess
+import sys
 import threading
 import types
 import unittest
@@ -8,10 +13,55 @@ import torch_rs as torch
 
 
 FUNCTION_DOC = "Gets the default ``torch.Tensor`` to be allocated on ``device``"
+SET_FUNCTION_DOC = """Sets the default ``torch.Tensor`` to be allocated on ``device``.  This
+    does not affect factory function calls which are called with an explicit
+    ``device`` argument.  Factory calls will be performed as if they
+    were passed ``device`` as an argument.
+
+    To only temporarily change the default device instead of setting it
+    globally, use ``with torch.device(device):`` instead.
+
+    The default device is initially ``cpu``.  If you set the default tensor
+    device to another device (e.g., ``cuda``) without a device index, tensors
+    will be allocated on whatever the current device for the device type,
+    even after :func:`torch.cuda.set_device` is called.
+
+    .. warning::
+
+        This function imposes a slight performance cost on every Python
+        call to the torch API (not just factory functions).  If this
+        is causing problems for you, please comment on
+        https://github.com/pytorch/pytorch/issues/92701
+
+    .. note::
+
+        This doesn't affect functions that create tensors that share the same memory as the input, like:
+        :func:`torch.from_numpy` and :func:`torch.frombuffer`
+
+    Args:
+        device (device or string): the device to set as default
+
+    Example::
+
+        >>> # xdoctest: +SKIP("requires cuda, changes global state")
+        >>> torch.get_default_device()
+        device(type='cpu')
+        >>> torch.set_default_device('cuda')  # current device is 0
+        >>> torch.get_default_device()
+        device(type='cuda', index=0)
+        >>> torch.set_default_device('cuda')
+        >>> torch.cuda.set_device('cuda:1')  # current device is 1
+        >>> torch.get_default_device()
+        device(type='cuda', index=1)
+        >>> torch.set_default_device('cuda:1')
+        >>> torch.get_default_device()
+        device(type='cuda', index=1)
+
+    """
 
 
 class GetDefaultDeviceTests(unittest.TestCase):
-    def test_returns_a_fresh_unindexed_cpu_device_used_by_every_factory(self):
+    def assert_default_device_and_factories_are_cpu(self):
         first = torch.get_default_device()
         second = torch.get_default_device()
 
@@ -29,6 +79,7 @@ class GetDefaultDeviceTests(unittest.TestCase):
             ("ones", lambda: torch.ones((2, 3))),
             ("eye", lambda: torch.eye(2, 3)),
             ("full", lambda: torch.full((2,), 3.0)),
+            ("arange", lambda: torch.arange(3.0)),
         )
         for name, factory in factories:
             with self.subTest(factory=name):
@@ -36,6 +87,30 @@ class GetDefaultDeviceTests(unittest.TestCase):
                 self.assertEqual(tensor.device, first)
                 self.assertEqual(tensor.device.type, "cpu")
                 self.assertIsNone(tensor.device.index)
+        self.assertIs(torch.get_default_dtype(), torch.float32)
+        self.assertIs(torch.tensor([1.0]).dtype, torch.float32)
+        self.assertEqual(torch.tensor([1.0]).type(), "torch.FloatTensor")
+
+    def test_returns_a_fresh_unindexed_cpu_device_used_by_every_factory(self):
+        self.assert_default_device_and_factories_are_cpu()
+
+    def test_set_default_device_accepts_unindexed_cpu_noops(self):
+        copied = copy.copy(torch.device("cpu"))
+        pickled = pickle.loads(pickle.dumps(torch.device("cpu")))
+        values = (
+            "cpu",
+            torch.device("cpu"),
+            torch.device("cpu", None),
+            copied,
+            pickled,
+        )
+        for value in values:
+            with self.subTest(value=repr(value)):
+                self.assertIs(torch.set_default_device(value), None)
+                self.assert_default_device_and_factories_are_cpu()
+
+        self.assertIs(torch.set_default_device(device="cpu"), None)
+        self.assert_default_device_and_factories_are_cpu()
 
     def test_result_is_stable_across_grad_contexts_and_threads(self):
         expected = torch.device("cpu")
@@ -103,8 +178,60 @@ class GetDefaultDeviceTests(unittest.TestCase):
             "torch.device",
         )
         self.assertEqual(torch.__all__.count("get_default_device"), 1)
-        self.assertFalse(hasattr(torch, "set_default_device"))
-        self.assertNotIn("set_default_device", torch.__all__)
+
+    def test_set_default_device_metadata_imports_copy_pickle_and_reload(self):
+        function = torch.set_default_device
+        self.assertIs(type(function), types.FunctionType)
+        self.assertEqual(function.__name__, "set_default_device")
+        self.assertEqual(function.__qualname__, "set_default_device")
+        self.assertEqual(function.__module__, torch.__name__)
+        self.assertEqual(
+            inspect.cleandoc(function.__doc__),
+            inspect.cleandoc(SET_FUNCTION_DOC),
+        )
+        self.assertEqual(
+            function.__annotations__,
+            {"device": "Device", "return": None},
+        )
+        self.assertFalse(hasattr(function, "__text_signature__"))
+        self.assertIsNone(function.__defaults__)
+        self.assertIsNone(function.__kwdefaults__)
+        self.assertEqual(function.__dict__, {})
+
+        signature = inspect.signature(function)
+        self.assertEqual(str(signature), "(device: 'Device') -> None")
+        self.assertEqual(
+            signature.parameters["device"].kind,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        )
+        self.assertEqual(signature.parameters["device"].annotation, "Device")
+        self.assertIsNone(signature.return_annotation)
+
+        self.assertEqual(torch.__all__.count("set_default_device"), 1)
+        self.assertFalse(hasattr(torch._C, "set_default_device"))
+        self.assertNotIn("set_default_device", torch._C.__all__)
+
+        direct_import = {}
+        wildcard_import = {}
+        exec("from torch_rs import set_default_device", direct_import)
+        exec("from torch_rs import *", wildcard_import)
+        self.assertIs(direct_import["set_default_device"], function)
+        self.assertIs(wildcard_import["set_default_device"], function)
+
+        self.assertIs(copy.copy(function), function)
+        self.assertIs(copy.deepcopy(function), function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                payload = pickle.dumps(function, protocol=protocol)
+                self.assertIn(b"torch_rs", payload)
+                self.assertIn(b"set_default_device", payload)
+                self.assertIs(pickle.loads(payload), function)
+
+        self.assertIsNone(function("cpu"))
+        self.assertIs(importlib.reload(torch), torch)
+        self.assertIsNone(function("cpu"))
+        self.assertIsNone(torch.set_default_device(torch.device("cpu")))
+        self.assert_default_device_and_factories_are_cpu()
 
     def test_rejects_all_arguments_with_pytorch_2_13_errors(self):
         function = torch.get_default_device
@@ -135,6 +262,91 @@ class GetDefaultDeviceTests(unittest.TestCase):
                 with self.assertRaises(TypeError) as raised:
                     call()
                 self.assertEqual(str(raised.exception), message)
+
+    def test_set_default_device_rejects_non_cpu_or_indexed_requests(self):
+        unsupported_values = (
+            None,
+            False,
+            0,
+            object(),
+            [],
+            {},
+            torch.tensor(1.0),
+            "cuda",
+            "cuda:0",
+            "meta",
+            "cpu:0",
+            torch.device("cpu:0"),
+            torch.device("cpu", 7),
+        )
+        for value in unsupported_values:
+            with self.subTest(value=repr(value)):
+                with self.assertRaises((TypeError, RuntimeError)):
+                    torch.set_default_device(value)
+                self.assert_default_device_and_factories_are_cpu()
+
+        binding_errors = (
+            (
+                lambda: torch.set_default_device(),
+                "set_default_device() missing 1 required positional argument: 'device'",
+            ),
+            (
+                lambda: torch.set_default_device("cpu", "cpu"),
+                "set_default_device() takes 1 positional argument but 2 were given",
+            ),
+            (
+                lambda: torch.set_default_device(foo="cpu"),
+                "set_default_device() got an unexpected keyword argument 'foo'",
+            ),
+            (
+                lambda: torch.set_default_device("cpu", device="cpu"),
+                "set_default_device() got multiple values for argument 'device'",
+            ),
+        )
+        for call, message in binding_errors:
+            with self.subTest(message=message):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), message)
+                self.assert_default_device_and_factories_are_cpu()
+
+    def test_set_default_device_does_not_import_or_enable_accelerators(self):
+        script = r"""
+import os
+import sys
+
+class RejectPytorchImport:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "torch" or fullname.startswith("torch."):
+            raise RuntimeError(f"PyTorch import was attempted: {fullname}")
+        return None
+
+sys.meta_path.insert(0, RejectPytorchImport())
+os.environ.update(
+    CUDA_VISIBLE_DEVICES="0",
+    PYTORCH_NVML_BASED_CUDA_CHECK="1",
+)
+import torch_rs
+
+assert torch_rs.set_default_device("cpu") is None
+assert torch_rs.get_default_device() == torch_rs.device("cpu")
+assert torch_rs.ones(1).device == torch_rs.device("cpu")
+assert torch_rs.tensor([1.0]).type() == "torch.FloatTensor"
+assert not hasattr(torch_rs, "cuda")
+assert "torch_rs.cuda" not in sys.modules
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
 
 
 if __name__ == "__main__":
