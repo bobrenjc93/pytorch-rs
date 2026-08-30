@@ -291,6 +291,48 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
             ),
         )
 
+    def make_rank_three_bias_cases(self, module):
+        bias_values = np.asarray([0.5, -1.25, 2.0, -3.5, 4.25], dtype=np.float32)
+        contiguous_bias = module.tensor(
+            bias_values.tolist(),
+            dtype=module.float32,
+        )
+        strided_bias = module.tensor(
+            np.stack(
+                (bias_values, np.full(5, 99.0, dtype=np.float32)), axis=1
+            ).tolist(),
+            dtype=module.float32,
+        ).transpose(0, 1)[0]
+        offset_bias = module.tensor(
+            np.stack((np.full(5, 99.0, dtype=np.float32), bias_values)).tolist(),
+            dtype=module.float32,
+        )[1]
+        offset_strided_bias = module.tensor(
+            np.arange(20, dtype=np.float32).reshape(2, 5, 2).tolist(),
+            dtype=module.float32,
+        )[1].transpose(0, 1)[0]
+        empty_bias = module.zeros((0,), dtype=module.float32)
+        biases = (
+            contiguous_bias,
+            strided_bias,
+            offset_bias,
+            offset_strided_bias,
+            strided_bias,
+            offset_bias,
+            contiguous_bias,
+            empty_bias,
+            contiguous_bias,
+            empty_bias,
+        )
+        return tuple(
+            (*case, bias)
+            for case, bias in zip(
+                self.make_rank_three_cases(module),
+                biases,
+                strict=True,
+            )
+        )
+
     def assert_matches(self, actual, expected, *, case):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, tuple(expected.shape))
@@ -557,6 +599,58 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                     expected.detach().cpu().numpy().reshape(-1).view(np.uint32),
                 )
 
+    def test_rank_three_bias_signed_zero_bits_match(self):
+        cases = (
+            (
+                "negative zero product",
+                [[[0.0], [0.0]], [[0.0], [0.0]]],
+                [[-0.0]],
+            ),
+            (
+                "negative zero input",
+                [[[-0.0], [-0.0]], [[-0.0], [-0.0]]],
+                [[1.0]],
+            ),
+            (
+                "positive zero product",
+                [[[0.0], [0.0]], [[0.0], [0.0]]],
+                [[1.0]],
+            ),
+            (
+                "opposite zero signs",
+                [[[-0.0], [-0.0]], [[-0.0], [-0.0]]],
+                [[-1.0]],
+            ),
+            (
+                "zero features",
+                [[[], []], [[], []]],
+                [[]],
+            ),
+        )
+        for case, input_values, weight_values in cases:
+            actual = functional.linear(
+                torch.tensor(input_values),
+                torch.tensor(weight_values),
+                torch.tensor([-0.0]),
+            )
+            expected = reference_functional.linear(
+                reference_torch.tensor(
+                    input_values,
+                    dtype=reference_torch.float32,
+                ),
+                reference_torch.tensor(
+                    weight_values,
+                    dtype=reference_torch.float32,
+                ),
+                reference_torch.tensor([-0.0], dtype=reference_torch.float32),
+            )
+            self.assert_matches(actual, expected, case=case)
+            with self.subTest(case=case, sign_bits=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual).reshape(-1).view(np.uint32),
+                    expected.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                )
+
     def test_rank_one_and_rank_two_singleton_bias_values_and_empty_outputs_match(self):
         actual_cases = (
             (
@@ -676,6 +770,103 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
             )
             self.assert_matches(actual, expected, case=case)
 
+    def test_rank_three_singleton_bias_values_and_empty_outputs_match(self):
+        actual_cases = (
+            (
+                "batch",
+                torch.tensor(
+                    [
+                        [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                        [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
+                    ]
+                ),
+                torch.tensor([[1.0, 0.0, -1.0], [2.0, 3.0, 4.0]]),
+                torch.tensor([0.5]),
+            ),
+            (
+                "zero batch",
+                torch.zeros((0, 2, 3)),
+                torch.zeros((4, 3)),
+                torch.tensor([99.0]),
+            ),
+            (
+                "zero sequence",
+                torch.zeros((2, 0, 3)),
+                torch.zeros((4, 3)),
+                torch.tensor([99.0]),
+            ),
+            (
+                "zero outputs",
+                torch.zeros((2, 3, 4)),
+                torch.zeros((0, 4)),
+                torch.tensor([99.0]),
+            ),
+            (
+                "all zero",
+                torch.zeros((0, 0, 0)),
+                torch.zeros((0, 0)),
+                torch.tensor([99.0]),
+            ),
+        )
+        expected_cases = (
+            (
+                "batch",
+                reference_torch.tensor(
+                    [
+                        [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                        [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
+                    ],
+                    dtype=reference_torch.float32,
+                ),
+                reference_torch.tensor(
+                    [[1.0, 0.0, -1.0], [2.0, 3.0, 4.0]],
+                    dtype=reference_torch.float32,
+                ),
+                reference_torch.tensor([0.5], dtype=reference_torch.float32),
+            ),
+            (
+                "zero batch",
+                reference_torch.zeros((0, 2, 3), dtype=reference_torch.float32),
+                reference_torch.zeros((4, 3), dtype=reference_torch.float32),
+                reference_torch.tensor([99.0], dtype=reference_torch.float32),
+            ),
+            (
+                "zero sequence",
+                reference_torch.zeros((2, 0, 3), dtype=reference_torch.float32),
+                reference_torch.zeros((4, 3), dtype=reference_torch.float32),
+                reference_torch.tensor([99.0], dtype=reference_torch.float32),
+            ),
+            (
+                "zero outputs",
+                reference_torch.zeros((2, 3, 4), dtype=reference_torch.float32),
+                reference_torch.zeros((0, 4), dtype=reference_torch.float32),
+                reference_torch.tensor([99.0], dtype=reference_torch.float32),
+            ),
+            (
+                "all zero",
+                reference_torch.zeros((0, 0, 0), dtype=reference_torch.float32),
+                reference_torch.zeros((0, 0), dtype=reference_torch.float32),
+                reference_torch.tensor([99.0], dtype=reference_torch.float32),
+            ),
+        )
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_weight, actual_bias = actual_case
+            expected_name, expected_input, expected_weight, expected_bias = (
+                expected_case
+            )
+            self.assertEqual(case, expected_name)
+            actual = functional.linear(actual_input, actual_weight, actual_bias)
+            expected = reference_functional.linear(
+                expected_input,
+                expected_weight,
+                expected_bias,
+            )
+            self.assert_matches(actual, expected, case=case)
+
     def test_vector_layouts_values_metadata_and_storage_match(self):
         actual_cases = self.make_vector_cases(torch)
         expected_cases = self.make_vector_cases(reference_torch)
@@ -735,6 +926,61 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                     self.assertFalse(expected.is_set_to(expected_input))
                     self.assertFalse(actual.is_set_to(actual_weight))
                     self.assertFalse(expected.is_set_to(expected_weight))
+
+    def test_rank_three_bias_layouts_values_metadata_and_storage_match(self):
+        actual_cases = self.make_rank_three_bias_cases(torch)
+        expected_cases = self.make_rank_three_bias_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_weight, actual_bias = actual_case
+            expected_name, expected_input, expected_weight, expected_bias = (
+                expected_case
+            )
+            self.assertEqual(case, expected_name)
+            for form in ("positional", "bias keyword", "keywords"):
+                actual = self.call_with_bias(
+                    functional,
+                    actual_input,
+                    actual_weight,
+                    actual_bias,
+                    form,
+                )
+                expected = self.call_with_bias(
+                    reference_functional,
+                    expected_input,
+                    expected_weight,
+                    expected_bias,
+                    form,
+                )
+                self.assert_matches(actual, expected, case=(case, form))
+
+                actual_repeat = self.call_with_bias(
+                    functional,
+                    actual_input,
+                    actual_weight,
+                    actual_bias,
+                    form,
+                )
+                expected_repeat = self.call_with_bias(
+                    reference_functional,
+                    expected_input,
+                    expected_weight,
+                    expected_bias,
+                    form,
+                )
+                with self.subTest(case=(case, form), storage=True):
+                    self.assertFalse(actual.is_set_to(actual_repeat))
+                    self.assertFalse(expected.is_set_to(expected_repeat))
+                    for actual_operand, expected_operand in (
+                        (actual_input, expected_input),
+                        (actual_weight, expected_weight),
+                        (actual_bias, expected_bias),
+                    ):
+                        self.assertFalse(actual.is_set_to(actual_operand))
+                        self.assertFalse(expected.is_set_to(expected_operand))
 
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, weight_requires_grad in (
@@ -980,6 +1226,68 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                 case=(input_requires_grad, weight_requires_grad),
             )
 
+    def test_rank_three_bias_requires_grad_operands_match_inside_no_grad(self):
+        input_values = np.arange(12, dtype=np.float32).reshape(2, 2, 3).tolist()
+        weight_values = [[1.0, 0.0, -1.0], [2.0, 3.0, 4.0]]
+        bias_values = [0.5, -1.5]
+        for input_requires_grad, weight_requires_grad, bias_requires_grad in (
+            (True, False, False),
+            (False, True, False),
+            (False, False, True),
+            (True, True, False),
+            (True, False, True),
+            (False, True, True),
+            (True, True, True),
+        ):
+            actual_input = torch.tensor(
+                input_values,
+                requires_grad=input_requires_grad,
+            )
+            actual_weight = torch.tensor(
+                weight_values,
+                requires_grad=weight_requires_grad,
+            )
+            actual_bias = torch.tensor(
+                bias_values,
+                requires_grad=bias_requires_grad,
+            )
+            expected_input = reference_torch.tensor(
+                input_values,
+                dtype=reference_torch.float32,
+                requires_grad=input_requires_grad,
+            )
+            expected_weight = reference_torch.tensor(
+                weight_values,
+                dtype=reference_torch.float32,
+                requires_grad=weight_requires_grad,
+            )
+            expected_bias = reference_torch.tensor(
+                bias_values,
+                dtype=reference_torch.float32,
+                requires_grad=bias_requires_grad,
+            )
+            with torch.no_grad():
+                actual = functional.linear(
+                    actual_input,
+                    actual_weight,
+                    actual_bias,
+                )
+            with reference_torch.no_grad():
+                expected = reference_functional.linear(
+                    expected_input,
+                    expected_weight,
+                    expected_bias,
+                )
+            self.assert_matches(
+                actual,
+                expected,
+                case=(
+                    input_requires_grad,
+                    weight_requires_grad,
+                    bias_requires_grad,
+                ),
+            )
+
     def test_incompatible_inner_dimension_error_matches(self):
         for shape in ((2, 3), (3,), (2, 3, 4)):
             actual_input = torch.zeros(shape)
@@ -1012,7 +1320,15 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                 "matrix",
                 torch.zeros((2, 3)),
                 reference_torch.zeros((2, 3), dtype=reference_torch.float32),
-            )
+            ),
+            (
+                "rank three",
+                torch.zeros((2, 3, 4)),
+                reference_torch.zeros(
+                    (2, 3, 4),
+                    dtype=reference_torch.float32,
+                ),
+            ),
         )
         for case, actual_input, expected_input in cases:
             actual_weight = torch.zeros((4, 5))
@@ -1044,13 +1360,17 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                         str(expected_raised.exception),
                     )
 
-    def test_rank_one_and_rank_two_bias_length_errors_match(self):
+    def test_rank_one_rank_two_and_rank_three_bias_length_errors_match(self):
         cases = (
             ("vector", (3,), (4, 3), (0, 2, 3, 5)),
             ("vector zero outputs", (3,), (0, 3), (2,)),
             ("matrix", (2, 3), (4, 3), (0, 2, 3, 5)),
             ("matrix zero outputs", (2, 3), (0, 3), (2,)),
             ("matrix zero rows", (0, 3), (4, 3), (0, 2, 3, 5)),
+            ("rank three", (2, 3, 4), (5, 4), (0, 2, 4, 6)),
+            ("rank three zero batch", (0, 3, 4), (5, 4), (0, 2, 4, 6)),
+            ("rank three zero sequence", (2, 0, 4), (5, 4), (0, 2, 4, 6)),
+            ("rank three zero outputs", (2, 3, 4), (0, 4), (2,)),
         )
         for case, input_shape, weight_shape, bias_feature_cases in cases:
             actual_input = torch.zeros(input_shape)
