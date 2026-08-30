@@ -3302,10 +3302,10 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error when gradient recording is enabled for an input other
-    /// than a finite, owned CPU float32 leaf with rank at most three, or when
+    /// than a finite, owned CPU float32 leaf with rank at most four, or when
     /// result metadata or storage allocation fails.
     pub fn tanh(&self) -> Result<Self, TensorError> {
-        if self.records_grad() && !self.is_finite_owned_leaf_with_max_rank(3) {
+        if self.records_grad() && !self.is_finite_owned_leaf_with_max_rank(4) {
             return Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" });
         }
         let output = self.unary_map(tanh_value)?;
@@ -4271,7 +4271,7 @@ fn apply_sigmoid_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<
 }
 
 fn apply_tanh_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
-    // Supported tanh leaves save contiguous outputs through rank three. Keep the
+    // Supported tanh leaves save contiguous outputs through rank four. Keep the
     // generic fallback because the saved-output node itself is layout-agnostic.
     if let Some(saved_values) = output.contiguous_slice() {
         debug_assert_eq!(saved_values.len(), upstream.len());
@@ -5690,8 +5690,8 @@ mod tests {
         Device, F32_SIGN_MASK, GradFn, LogicalValuesInner, MemoryFormat,
         OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor, TensorError,
         contiguous_values_equal, l1_loss_difference_value, logical_offset_for_linear_index,
-        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
-        validate_view_bounds,
+        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, tanh_backward_value,
+        tanh_value, try_result_vector, validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -8176,6 +8176,62 @@ mod tests {
             Some("PowBackward0")
         );
         assert_eq!(source.sqrt().unwrap().grad_fn_name(), Some("SqrtBackward0"));
+    }
+
+    #[test]
+    fn tanh_autograd_accepts_rank_four_leaves_and_rejects_rank_five_leaves() {
+        let input_values = vec![0.5, -0.5, 4.511_328, -4.511_328];
+        let weight_values = vec![1.0, -2.0, 3.0, -4.0];
+        let leaf = Tensor::from_vec(input_values.clone(), [1, 2, 1, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let weights = Tensor::from_vec(weight_values.clone(), [1, 2, 1, 2]).unwrap();
+        let output = leaf.tanh().unwrap();
+
+        assert!(output.requires_grad());
+        assert!(!output.is_leaf());
+        assert_eq!(output.shape(), [1, 2, 1, 2]);
+        assert_eq!(output.stride(), [4, 2, 2, 1]);
+
+        let loss = output.mul(&weights).unwrap().sum();
+        loss.backward().unwrap();
+        let expected_gradient_bits = input_values
+            .iter()
+            .zip(&weight_values)
+            .map(|(&input, &weight)| tanh_backward_value(tanh_value(input), weight).to_bits())
+            .collect::<Vec<_>>();
+        assert!(
+            leaf.grad()
+                .unwrap()
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(expected_gradient_bits)
+        );
+        assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+
+        let empty = Tensor::zeros([2, 0, 1, 4])
+            .unwrap()
+            .with_requires_grad(true);
+        let empty_loss = empty.tanh().unwrap().sum();
+        empty_loss.backward().unwrap();
+        let empty_gradient = empty.grad().unwrap().unwrap();
+        assert_eq!(empty_gradient.shape(), [2, 0, 1, 4]);
+        assert_eq!(empty_gradient.stride(), [4, 4, 4, 1]);
+
+        let rank_five = Tensor::ones([1, 1, 1, 1, 1])
+            .unwrap()
+            .with_requires_grad(true);
+        assert!(matches!(
+            rank_five.tanh(),
+            Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" })
+        ));
+
+        let no_grad_rank_five = {
+            let _guard = crate::no_grad();
+            rank_five.tanh().unwrap()
+        };
+        assert!(!no_grad_rank_five.requires_grad());
     }
 
     fn binary_outputs(left: &Tensor, right: &Tensor) -> [Tensor; 4] {

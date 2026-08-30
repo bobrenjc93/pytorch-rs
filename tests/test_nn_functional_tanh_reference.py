@@ -451,6 +451,85 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
             AUTOGRAD_ACCUMULATED_GRADIENT_BITS,
         )
 
+        rank_four_values = (
+            AUTOGRAD_INPUT_BITS.view(np.float32).reshape(1, 2, 1, 4).tolist()
+        )
+        rank_four_weight_values = AUTOGRAD_WEIGHTS.reshape(1, 2, 1, 4).tolist()
+        actual_rank_four = torch.tensor(rank_four_values, requires_grad=True)
+        expected_rank_four = reference_torch.tensor(
+            rank_four_values,
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        actual_rank_four_weights = torch.tensor(rank_four_weight_values)
+        expected_rank_four_weights = reference_torch.tensor(
+            rank_four_weight_values, dtype=reference_torch.float32
+        )
+        actual_rank_four_output = functional.tanh(actual_rank_four)
+        expected_rank_four_output = reference_functional.tanh(expected_rank_four)
+        self.assert_tensor_matches(
+            actual_rank_four_output,
+            expected_rank_four_output,
+            case="rank-four forward",
+        )
+        np.testing.assert_array_equal(
+            self.tensor_bits(actual_rank_four_output), AUTOGRAD_OUTPUT_BITS
+        )
+        self.assertEqual(type(expected_rank_four_output.grad_fn).__name__, "TanhBackward0")
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                actual_rank_four_output
+            ),
+            ", grad_fn=<TanhBackward0>",
+        )
+        actual_rank_four_loss = (
+            actual_rank_four_output * actual_rank_four_weights
+        ).sum()
+        expected_rank_four_loss = (
+            expected_rank_four_output * expected_rank_four_weights
+        ).sum()
+        actual_rank_four_loss.backward()
+        expected_rank_four_loss.backward()
+        self.assert_tensor_matches(
+            actual_rank_four.grad,
+            expected_rank_four.grad,
+            case="rank-four gradient",
+        )
+        np.testing.assert_array_equal(
+            self.tensor_bits(actual_rank_four.grad), AUTOGRAD_GRADIENT_BITS
+        )
+        self.assertEqual(
+            self.error(actual_rank_four_loss.backward),
+            self.error(expected_rank_four_loss.backward),
+        )
+
+        actual_rank_four_accumulated = torch.tensor(
+            rank_four_values, requires_grad=True
+        )
+        expected_rank_four_accumulated = reference_torch.tensor(
+            rank_four_values,
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        for _ in range(2):
+            (
+                functional.tanh(actual_rank_four_accumulated)
+                * actual_rank_four_weights
+            ).sum().backward()
+            (
+                reference_functional.tanh(expected_rank_four_accumulated)
+                * expected_rank_four_weights
+            ).sum().backward()
+        self.assert_tensor_matches(
+            actual_rank_four_accumulated.grad,
+            expected_rank_four_accumulated.grad,
+            case="rank-four accumulated gradient",
+        )
+        np.testing.assert_array_equal(
+            self.tensor_bits(actual_rank_four_accumulated.grad),
+            AUTOGRAD_ACCUMULATED_GRADIENT_BITS,
+        )
+
         actual_empty = torch.tensor([], requires_grad=True)
         expected_empty = reference_torch.tensor(
             [], dtype=reference_torch.float32, requires_grad=True
@@ -474,6 +553,11 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
             (2, 0, 4),
             (2, 1, 0),
             (1, 0, 1),
+            (0, 1, 1, 4),
+            (2, 0, 1, 4),
+            (2, 1, 0, 4),
+            (2, 1, 1, 0),
+            (1, 0, 1, 1),
         ):
             with self.subTest(empty_shape=shape):
                 actual_empty_tensor = torch.zeros(shape, requires_grad=True)
@@ -516,15 +600,26 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
         higher_order_loss.backward()
         self.assertIsNotNone(higher_order.grad)
 
-        actual_rank_four = torch.tensor([[[[0.5, -1.0]]]], requires_grad=True)
+        higher_order_rank_four = torch.tensor([[[[0.25, -0.25]]]], requires_grad=True)
+        higher_order_rank_four_loss = functional.tanh(higher_order_rank_four).sum()
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^torch_rs\.Tensor\.backward does not support create_graph=True$",
+        ):
+            higher_order_rank_four_loss.backward(create_graph=True)
+        self.assertIsNone(higher_order_rank_four.grad)
+        higher_order_rank_four_loss.backward()
+        self.assertIsNotNone(higher_order_rank_four.grad)
+
+        actual_rank_five = torch.tensor([[[[[0.5, -1.0]]]]], requires_grad=True)
         with self.assertRaisesRegex(
             RuntimeError,
             r"^tanh\(\): autograd recording is not supported$",
         ):
-            functional.tanh(actual_rank_four)
-        self.assertIsNone(actual_rank_four.grad)
-        actual_rank_four.sum().backward()
-        self.assertEqual(actual_rank_four.grad.tolist(), [[[[1.0, 1.0]]]])
+            functional.tanh(actual_rank_five)
+        self.assertIsNone(actual_rank_five.grad)
+        actual_rank_five.sum().backward()
+        self.assertEqual(actual_rank_five.grad.tolist(), [[[[[1.0, 1.0]]]]])
 
         actual_view_base = torch.tensor(
             [[[[0.5, -1.0]]], [[[2.0, -3.0]]]], requires_grad=True
@@ -543,6 +638,23 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
             [[[[1.0, 1.0]]], [[[0.0, 0.0]]]],
         )
 
+        actual_rank_four_view_base = torch.tensor(
+            [[[[[0.5, -1.0]]]], [[[[2.0, -3.0]]]]], requires_grad=True
+        )
+        actual_rank_four_view = actual_rank_four_view_base[0]
+        self.assertEqual(actual_rank_four_view.shape, (1, 1, 1, 2))
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^tanh\(\): autograd recording is not supported$",
+        ):
+            functional.tanh(actual_rank_four_view)
+        self.assertIsNone(actual_rank_four_view_base.grad)
+        actual_rank_four_view.sum().backward()
+        self.assertEqual(
+            actual_rank_four_view_base.grad.tolist(),
+            [[[[[1.0, 1.0]]]], [[[[0.0, 0.0]]]]],
+        )
+
         actual_nonfinite = torch.tensor(
             [[[0.5, float("inf")]]], requires_grad=True
         )
@@ -554,6 +666,18 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
         self.assertIsNone(actual_nonfinite.grad)
         actual_nonfinite.sum().backward()
         self.assertEqual(actual_nonfinite.grad.tolist(), [[[1.0, 1.0]]])
+
+        actual_rank_four_nonfinite = torch.tensor(
+            [[[[0.5, float("inf")]]]], requires_grad=True
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^tanh\(\): autograd recording is not supported$",
+        ):
+            functional.tanh(actual_rank_four_nonfinite)
+        self.assertIsNone(actual_rank_four_nonfinite.grad)
+        actual_rank_four_nonfinite.sum().backward()
+        self.assertEqual(actual_rank_four_nonfinite.grad.tolist(), [[[[1.0, 1.0]]]])
 
         actual_nonleaf_base = torch.tensor(
             [[[0.5, -1.0]]], requires_grad=True
@@ -573,6 +697,28 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
             expected_no_grad = reference_functional.tanh(expected_leaf)
         self.assert_tensor_matches(
             actual_no_grad, expected_no_grad, case="no_grad"
+        )
+
+        actual_rank_four_detached = functional.tanh(actual_rank_four.detach())
+        expected_rank_four_detached = reference_functional.tanh(
+            expected_rank_four.detach()
+        )
+        self.assert_tensor_matches(
+            actual_rank_four_detached,
+            expected_rank_four_detached,
+            case="rank-four detached",
+        )
+
+        with torch.no_grad():
+            actual_rank_four_no_grad = functional.tanh(actual_rank_four)
+        with reference_torch.no_grad():
+            expected_rank_four_no_grad = reference_functional.tanh(
+                expected_rank_four
+            )
+        self.assert_tensor_matches(
+            actual_rank_four_no_grad,
+            expected_rank_four_no_grad,
+            case="rank-four no_grad",
         )
 
         self.assertTrue(hasattr(torch.nn.functional, "tanh"))
