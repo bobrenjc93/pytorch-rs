@@ -1,13 +1,14 @@
 //! Python bindings for gradient-mode context managers.
 
-use std::cell::{Cell, RefCell};
 use std::ffi::CStr;
+use std::sync::Mutex;
+use std::thread::{self, ThreadId};
 
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBool, PyModule};
 
-use crate::{enter_no_grad, exit_no_grad, grad_mode_depth, restore_grad_mode};
+use crate::{enter_enable_grad, enter_no_grad, exit_enable_grad, exit_no_grad, is_grad_enabled};
 
 const GRAD_MODE_WRAPPER_SOURCE: &CStr = cr#"
 import functools
@@ -170,9 +171,37 @@ def _make_enable_grad(context_base):
     return enable_grad
 "#;
 
-thread_local! {
-    static NO_GRAD_CONTEXT_DEPTH: Cell<usize> = const { Cell::new(0) };
-    static ENABLE_GRAD_CONTEXT_STACK: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+#[derive(Clone, Copy)]
+struct ContextToken {
+    thread_id: ThreadId,
+    token: usize,
+}
+
+impl ContextToken {
+    fn new(token: usize) -> Self {
+        Self {
+            thread_id: thread::current().id(),
+            token,
+        }
+    }
+}
+
+fn push_context_token(tokens: &Mutex<Vec<ContextToken>>, token: usize) {
+    tokens
+        .lock()
+        .expect("Python grad-mode token stack lock poisoned")
+        .push(ContextToken::new(token));
+}
+
+fn pop_context_token(tokens: &Mutex<Vec<ContextToken>>) -> Option<usize> {
+    let thread_id = thread::current().id();
+    let mut tokens = tokens
+        .lock()
+        .expect("Python grad-mode token stack lock poisoned");
+    let position = tokens
+        .iter()
+        .rposition(|context_token| context_token.thread_id == thread_id)?;
+    Some(tokens.remove(position).token)
 }
 
 /// Thread-local autograd recording guard underlying the Python `torch.no_grad` class.
@@ -182,36 +211,31 @@ thread_local! {
     subclass,
     skip_from_py_object
 )]
-struct PyNoGrad;
+struct PyNoGrad {
+    tokens: Mutex<Vec<ContextToken>>,
+}
 
 #[pymethods]
 impl PyNoGrad {
     #[new]
     fn new() -> Self {
-        Self
+        Self {
+            tokens: Mutex::new(Vec::new()),
+        }
     }
 
-    #[allow(clippy::unused_self)] // Python's context-manager protocol requires an instance method.
     fn __enter__(&self) {
-        enter_no_grad();
-        NO_GRAD_CONTEXT_DEPTH.set(
-            NO_GRAD_CONTEXT_DEPTH
-                .get()
-                .checked_add(1)
-                .expect("Python no-grad nesting depth overflowed usize"),
-        );
+        push_context_token(&self.tokens, enter_no_grad());
     }
 
-    #[allow(clippy::unused_self)] // Python's context-manager protocol requires an instance method.
     fn __exit__(
         &self,
         _exception_type: &Bound<'_, PyAny>,
         _exception_value: &Bound<'_, PyAny>,
         _traceback: &Bound<'_, PyAny>,
     ) {
-        if let Some(depth) = NO_GRAD_CONTEXT_DEPTH.get().checked_sub(1) {
-            NO_GRAD_CONTEXT_DEPTH.set(depth);
-            exit_no_grad();
+        if let Some(token) = pop_context_token(&self.tokens) {
+            exit_no_grad(token);
         }
     }
 }
@@ -223,22 +247,23 @@ impl PyNoGrad {
     subclass,
     skip_from_py_object
 )]
-struct PyEnableGrad;
+struct PyEnableGrad {
+    tokens: Mutex<Vec<ContextToken>>,
+}
 
 #[pymethods]
 impl PyEnableGrad {
     #[new]
     fn new() -> Self {
-        Self
+        Self {
+            tokens: Mutex::new(Vec::new()),
+        }
     }
 
     fn __enter__(slf: &Bound<'_, Self>) -> PyResult<()> {
-        let previous_no_grad_depth = grad_mode_depth();
-        slf.as_any().setattr("prev", previous_no_grad_depth == 0)?;
-        ENABLE_GRAD_CONTEXT_STACK.with(|stack| {
-            stack.borrow_mut().push(previous_no_grad_depth);
-        });
-        restore_grad_mode(0);
+        slf.as_any().setattr("prev", is_grad_enabled())?;
+        let token = enter_enable_grad();
+        push_context_token(&slf.borrow().tokens, token);
         Ok(())
     }
 
@@ -248,10 +273,8 @@ impl PyEnableGrad {
         _exception_value: &Bound<'_, PyAny>,
         _traceback: &Bound<'_, PyAny>,
     ) -> PyResult<()> {
-        let previous_no_grad_depth =
-            ENABLE_GRAD_CONTEXT_STACK.with(|stack| stack.borrow_mut().pop());
-        if let Some(depth) = previous_no_grad_depth {
-            restore_grad_mode(depth);
+        if let Some(token) = pop_context_token(&slf.borrow().tokens) {
+            exit_enable_grad(token);
             return Ok(());
         }
 
@@ -265,7 +288,7 @@ impl PyEnableGrad {
                 "set_grad_enabled(): argument 'enabled' (position 1) must be bool, not {type_name}"
             )));
         }
-        restore_grad_mode(usize::from(!previous_enabled.extract::<bool>()?));
+        let _ = previous_enabled.extract::<bool>()?;
         Ok(())
     }
 }

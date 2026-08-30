@@ -4318,6 +4318,26 @@ fn enable_grad_temporarily_restores_recording_inside_no_grad() {
     }
     assert!(leaf.mul_scalar(2.0).unwrap().requires_grad());
 
+    let disabled = no_grad();
+    assert!(!is_grad_enabled());
+    let enabled = enable_grad();
+    assert!(is_grad_enabled());
+    drop(disabled);
+    assert!(is_grad_enabled());
+    drop(enabled);
+    assert!(is_grad_enabled());
+
+    let disabled = no_grad();
+    let enabled = enable_grad();
+    let nested_disabled = no_grad();
+    assert!(!is_grad_enabled());
+    drop(disabled);
+    assert!(!is_grad_enabled());
+    drop(nested_disabled);
+    assert!(is_grad_enabled());
+    drop(enabled);
+    assert!(is_grad_enabled());
+
     let unwind = std::panic::catch_unwind(|| {
         let _disabled = no_grad();
         let _enabled = enable_grad();

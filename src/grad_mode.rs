@@ -1,23 +1,63 @@
-use std::cell::Cell;
+use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
 thread_local! {
-    static NO_GRAD_DEPTH: Cell<usize> = const { Cell::new(0) };
+    static GRAD_MODE_STATE: RefCell<GradModeState> = const { RefCell::new(GradModeState {
+        next_token: 0,
+        entries: Vec::new(),
+    }) };
+}
+
+#[derive(Clone, Copy)]
+struct GradModeEntry {
+    token: usize,
+    enabled: bool,
+}
+
+struct GradModeState {
+    next_token: usize,
+    entries: Vec<GradModeEntry>,
+}
+
+impl GradModeState {
+    fn push(&mut self, enabled: bool) -> usize {
+        let token = self.next_token;
+        self.next_token = self
+            .next_token
+            .checked_add(1)
+            .expect("grad-mode guard token overflowed usize");
+        self.entries.push(GradModeEntry { token, enabled });
+        token
+    }
+
+    fn remove(&mut self, token: usize) {
+        let position = self
+            .entries
+            .iter()
+            .position(|entry| entry.token == token)
+            .expect("grad-mode guard exited without a matching entry");
+        self.entries.remove(position);
+    }
+
+    fn is_grad_enabled(&self) -> bool {
+        self.entries.last().is_none_or(|entry| entry.enabled)
+    }
 }
 
 /// A thread-local guard which disables eager graph recording until dropped.
 ///
-/// Every live guard contributes one level of suppression, so guards may be
-/// dropped in any order without enabling recording prematurely. They are
+/// Every live guard owns its own mode entry, so guards may be dropped in any
+/// order without disturbing entries owned by other guards. They are
 /// intentionally confined to their creating thread.
 pub struct NoGradGuard {
+    token: usize,
     _not_send: PhantomData<Rc<()>>,
 }
 
 impl Drop for NoGradGuard {
     fn drop(&mut self) {
-        exit_no_grad();
+        exit_no_grad(self.token);
     }
 }
 
@@ -25,24 +65,25 @@ impl Drop for NoGradGuard {
 /// lifetime.
 #[must_use]
 pub fn no_grad() -> NoGradGuard {
-    enter_no_grad();
+    let token = enter_no_grad();
     NoGradGuard {
+        token,
         _not_send: PhantomData,
     }
 }
 
 /// A thread-local guard which enables eager graph recording until dropped.
 ///
-/// Dropping the guard restores the exact no-grad nesting depth that was active
-/// when it was created, so nested no-grad guards surrounding it remain intact.
+/// Dropping the guard removes only this guard's enable entry, so outstanding
+/// no-grad guards remain responsible for their own entries.
 pub struct EnableGradGuard {
-    previous_no_grad_depth: usize,
+    token: usize,
     _not_send: PhantomData<Rc<()>>,
 }
 
 impl Drop for EnableGradGuard {
     fn drop(&mut self) {
-        restore_grad_mode(self.previous_no_grad_depth);
+        exit_enable_grad(self.token);
     }
 }
 
@@ -51,7 +92,7 @@ impl Drop for EnableGradGuard {
 #[must_use]
 pub fn enable_grad() -> EnableGradGuard {
     EnableGradGuard {
-        previous_no_grad_depth: enter_enable_grad(),
+        token: enter_enable_grad(),
         _not_send: PhantomData,
     }
 }
@@ -59,37 +100,21 @@ pub fn enable_grad() -> EnableGradGuard {
 /// Returns whether eager graph recording is enabled on the current thread.
 #[must_use]
 pub fn is_grad_enabled() -> bool {
-    NO_GRAD_DEPTH.get() == 0
+    GRAD_MODE_STATE.with(|state| state.borrow().is_grad_enabled())
 }
 
-pub(crate) fn enter_no_grad() {
-    NO_GRAD_DEPTH.set(
-        NO_GRAD_DEPTH
-            .get()
-            .checked_add(1)
-            .expect("no-grad nesting depth overflowed usize"),
-    );
+pub(crate) fn enter_no_grad() -> usize {
+    GRAD_MODE_STATE.with(|state| state.borrow_mut().push(false))
 }
 
-pub(crate) fn exit_no_grad() {
-    NO_GRAD_DEPTH.set(
-        NO_GRAD_DEPTH
-            .get()
-            .checked_sub(1)
-            .expect("no-grad guard exited without a matching entry"),
-    );
-}
-
-pub(crate) fn grad_mode_depth() -> usize {
-    NO_GRAD_DEPTH.get()
+pub(crate) fn exit_no_grad(token: usize) {
+    GRAD_MODE_STATE.with(|state| state.borrow_mut().remove(token));
 }
 
 pub(crate) fn enter_enable_grad() -> usize {
-    let previous_no_grad_depth = grad_mode_depth();
-    NO_GRAD_DEPTH.set(0);
-    previous_no_grad_depth
+    GRAD_MODE_STATE.with(|state| state.borrow_mut().push(true))
 }
 
-pub(crate) fn restore_grad_mode(previous_no_grad_depth: usize) {
-    NO_GRAD_DEPTH.set(previous_no_grad_depth);
+pub(crate) fn exit_enable_grad(token: usize) {
+    GRAD_MODE_STATE.with(|state| state.borrow_mut().remove(token));
 }

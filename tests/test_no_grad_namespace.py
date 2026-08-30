@@ -555,6 +555,53 @@ class NoGradNamespaceTests(unittest.TestCase):
         self.assertEqual(worker_states, [True, False, True, False, True])
         self.assertTrue(torch.is_grad_enabled())
 
+    def test_enable_grad_does_not_corrupt_outstanding_no_grad_lifecycle(self):
+        entered = []
+
+        def enter(context):
+            self.assertIsNone(context.__enter__())
+            entered.append(context)
+
+        def exit_context(context):
+            self.assertIsNone(context.__exit__(None, None, None))
+            entered.remove(context)
+
+        no_grad_context = torch.no_grad()
+        enable_grad_context = torch.enable_grad()
+        try:
+            enter(no_grad_context)
+            self.assertFalse(torch.is_grad_enabled())
+            enter(enable_grad_context)
+            self.assertTrue(torch.is_grad_enabled())
+            exit_context(no_grad_context)
+            self.assertTrue(torch.is_grad_enabled())
+            exit_context(enable_grad_context)
+            self.assertTrue(torch.is_grad_enabled())
+        finally:
+            for context in reversed(entered):
+                context.__exit__(None, None, None)
+        self.assertTrue(torch.is_grad_enabled())
+
+        outer_no_grad = torch.no_grad()
+        enable_grad_context = torch.enable_grad()
+        inner_no_grad = torch.no_grad()
+        try:
+            enter(outer_no_grad)
+            enter(enable_grad_context)
+            self.assertTrue(torch.is_grad_enabled())
+            enter(inner_no_grad)
+            self.assertFalse(torch.is_grad_enabled())
+            exit_context(outer_no_grad)
+            self.assertFalse(torch.is_grad_enabled())
+            exit_context(inner_no_grad)
+            self.assertTrue(torch.is_grad_enabled())
+            exit_context(enable_grad_context)
+            self.assertTrue(torch.is_grad_enabled())
+        finally:
+            for context in reversed(entered):
+                context.__exit__(None, None, None)
+        self.assertTrue(torch.is_grad_enabled())
+
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class NoGradNamespaceReferenceTests(unittest.TestCase):
