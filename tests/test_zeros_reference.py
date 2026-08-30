@@ -57,10 +57,12 @@ class ZerosReferenceTests(unittest.TestCase):
         )
         metadata_factories = (
             lambda module: {},
+            lambda module: {"out": None},
             lambda module: {"dtype": module.float32},
             lambda module: {"device": "cpu"},
             lambda module: {"device": module.device("cpu")},
             lambda module: {
+                "out": None,
                 "dtype": module.float32,
                 "device": module.device("cpu"),
                 "requires_grad": True,
@@ -85,6 +87,38 @@ class ZerosReferenceTests(unittest.TestCase):
                         self.tensor_observation(torch, actual),
                         self.tensor_observation(reference_torch, expected),
                     )
+
+    def test_out_none_results_and_storage_freshness_match_pytorch_2_13(self):
+        cases = (
+            ("scalar", lambda module: module.zeros(2, out=None)),
+            ("tuple", lambda module: module.zeros((2, 3), out=None)),
+            ("size keyword", lambda module: module.zeros(size=(2,), out=None)),
+            (
+                "requires grad",
+                lambda module: module.zeros((2,), out=None, requires_grad=True),
+            ),
+            ("empty", lambda module: module.zeros((0,), out=None)),
+            ("scalar tensor", lambda module: module.zeros((), out=None)),
+        )
+
+        for case, factory in cases:
+            with self.subTest(case=case):
+                actual = factory(torch)
+                actual_peer = factory(torch)
+                expected = factory(reference_torch)
+                expected_peer = factory(reference_torch)
+                self.assertEqual(
+                    self.tensor_observation(torch, actual),
+                    self.tensor_observation(reference_torch, expected),
+                )
+                self.assertEqual(
+                    actual.is_set_to(actual_peer),
+                    expected.is_set_to(expected_peer),
+                )
+                self.assertEqual(
+                    actual.data_ptr() == actual_peer.data_ptr(),
+                    expected.data_ptr() == expected_peer.data_ptr(),
+                )
 
     def test_dimension_errors_match_pytorch_2_13(self):
         exact_cases = (
@@ -190,6 +224,24 @@ class ZerosReferenceTests(unittest.TestCase):
                     actual_message.replace("torch.device or str", "torch.device"),
                     expected_message,
                 )
+
+    def test_out_type_error_order_matches_pytorch_2_13(self):
+        cases = (
+            ("missing size", lambda module: module.zeros(out=[])),
+            ("negative size", lambda module: module.zeros(-1, out=[])),
+            ("invalid dtype", lambda module: module.zeros(2, dtype=object(), out=[])),
+            ("unknown keyword", lambda module: module.zeros(2, unexpected=True, out=[])),
+            ("duplicate size", lambda module: module.zeros(2, size=(2,), out=[])),
+            ("bool dimension", lambda module: module.zeros(True, out=[])),
+        )
+        for case, call in cases:
+            with self.subTest(case=case):
+                actual_type, actual_message = self.capture_error(lambda: call(torch))
+                expected_type, expected_message = self.capture_error(
+                    lambda: call(reference_torch)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(actual_message, expected_message)
 
     @unittest.skipUnless(
         reference_torch is not None and reference_torch.cuda.is_available(),
