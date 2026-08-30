@@ -213,30 +213,8 @@ class CompilerCudagraphMarkStepBeginReferenceTests(unittest.TestCase):
                     self.pickle_shape(expected, protocol),
                 )
 
-        for package, compiler_module_name in (
-            (torch, "torch_rs.compiler"),
-            (reference_torch, "torch.compiler"),
-        ):
-            with self.subTest(package=package.__name__):
-                compiler = importlib.import_module(compiler_module_name)
-                old_function = compiler.cudagraph_mark_step_begin
-                old_exports = compiler.__all__
-                reloaded = importlib.reload(compiler)
-                new_function = reloaded.cudagraph_mark_step_begin
-
-                self.assertIs(reloaded, compiler)
-                self.assertIs(package.compiler, compiler)
-                self.assertIs(sys.modules[compiler_module_name], compiler)
-                self.assertIsNot(new_function, old_function)
-                self.assertIsNot(compiler.__all__, old_exports)
-                self.assertIs(new_function(), None)
-                with self.assertRaises(pickle.PicklingError):
-                    pickle.dumps(old_function)
-                for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
-                    self.assertIs(
-                        pickle.loads(pickle.dumps(new_function, protocol)),
-                        new_function,
-                    )
+        self.assert_reload_behavior(torch, "torch_rs.compiler")
+        self.assert_reference_reload_behavior_isolated()
 
     def test_argument_errors_match_pytorch_2_13(self):
         actual = torch.compiler.cudagraph_mark_step_begin
@@ -253,6 +231,70 @@ class CompilerCudagraphMarkStepBeginReferenceTests(unittest.TestCase):
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
+
+    def assert_reload_behavior(self, package, compiler_module_name):
+        compiler = importlib.import_module(compiler_module_name)
+        old_function = compiler.cudagraph_mark_step_begin
+        old_exports = compiler.__all__
+        reloaded = importlib.reload(compiler)
+        new_function = reloaded.cudagraph_mark_step_begin
+
+        self.assertIs(reloaded, compiler)
+        self.assertIs(package.compiler, compiler)
+        self.assertIs(sys.modules[compiler_module_name], compiler)
+        self.assertIsNot(new_function, old_function)
+        self.assertIsNot(compiler.__all__, old_exports)
+        self.assertIs(new_function(), None)
+        with self.assertRaises(pickle.PicklingError):
+            pickle.dumps(old_function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            self.assertIs(
+                pickle.loads(pickle.dumps(new_function, protocol)),
+                new_function,
+            )
+
+    def assert_reference_reload_behavior_isolated(self):
+        script = r"""
+import importlib
+import pickle
+import sys
+import torch
+
+if torch.__version__.split("+")[0] != "2.13.0":
+    raise AssertionError(torch.__version__)
+
+compiler = importlib.import_module("torch.compiler")
+old_function = compiler.cudagraph_mark_step_begin
+old_exports = compiler.__all__
+reloaded = importlib.reload(compiler)
+new_function = reloaded.cudagraph_mark_step_begin
+
+assert reloaded is compiler
+assert torch.compiler is compiler
+assert sys.modules["torch.compiler"] is compiler
+assert new_function is not old_function
+assert compiler.__all__ is not old_exports
+assert new_function() is None
+try:
+    pickle.dumps(old_function)
+except pickle.PicklingError:
+    pass
+else:
+    raise AssertionError("old cudagraph_mark_step_begin pickled after reload")
+for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+    assert pickle.loads(pickle.dumps(new_function, protocol)) is new_function
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
 
     def test_cuda_graph_compile_backend_and_cuda_tensor_boundaries_stay_unsupported(self):
         self.assertTrue(callable(reference_torch.compile))
