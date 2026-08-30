@@ -5,7 +5,9 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 README = REPOSITORY_ROOT / "README.md"
+BENCHMARKING = REPOSITORY_ROOT / "BENCHMARKING.md"
 CONTRIBUTING = REPOSITORY_ROOT / "CONTRIBUTING.md"
+FEATURES = REPOSITORY_ROOT / "FEATURES.md"
 SUPPORTED_SURFACE = REPOSITORY_ROOT / "docs" / "supported-surface.md"
 SUPPORTED_SURFACE_ANCHORS = (
     ("Tensors", "tensors"),
@@ -36,6 +38,25 @@ SUPPORTED_SURFACE_INDEX_SUMMARIES = (
 
 
 class ReadmeQuickstartTests(unittest.TestCase):
+    def test_readme_keeps_quickstart_scope_and_evaluation_route(self):
+        readme = README.read_text(encoding="utf-8")
+        route_headings = (
+            "# pytorch-rs",
+            "## Quickstart",
+            "### First success",
+            "## Scope",
+            "## Evaluation",
+            "## Development",
+        )
+
+        previous_position = -1
+        for heading in route_headings:
+            with self.subTest(heading=heading):
+                self.assertEqual(readme.count(heading), 1)
+                position = readme.index(heading)
+                self.assertGreater(position, previous_position)
+                previous_position = position
+
     def test_source_install_commands_are_locked(self):
         readme = README.read_text(encoding="utf-8")
         match = re.search(
@@ -63,6 +84,43 @@ class ReadmeQuickstartTests(unittest.TestCase):
         source = matches[0].group("source").rstrip()
         self.assertLessEqual(len(source.splitlines()), 15)
         exec(compile(source, f"{README}#first-success", "exec"), {})
+
+    def test_readme_routes_benchmark_policy_to_focused_docs(self):
+        readme = README.read_text(encoding="utf-8")
+        match = re.search(
+            r"^## Evaluation\n(?P<section>.*?)^## Development$",
+            readme,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(match, "README evaluation section is missing")
+
+        section = match.group("section")
+        self.assertLessEqual(len(section.strip().splitlines()), 5)
+        self.assertIn("[BENCHMARKING.md](BENCHMARKING.md)", section)
+        self.assertIn("[FEATURES.md](FEATURES.md)", section)
+        self.assertTrue(BENCHMARKING.is_file())
+        self.assertTrue(FEATURES.is_file())
+
+        benchmarking = BENCHMARKING.read_text(encoding="utf-8")
+        normalized_benchmarking = re.sub(r"\s+", " ", benchmarking)
+        for policy_text in (
+            "outputs, shapes, dtypes, errors, aliasing, and edge cases",
+            "never removed from the denominator",
+            "fixed seeds",
+            "generated or held-out shapes",
+            "compile time, and dependency-installation time",
+            "may not weaken, delete, skip, special-case, or rewrite evaluation infrastructure",
+            "Benchmark changes are separate, human-reviewed campaign changes",
+        ):
+            with self.subTest(policy_text=policy_text):
+                self.assertIn(policy_text, normalized_benchmarking)
+
+        features = FEATURES.read_text(encoding="utf-8")
+        normalized_features = re.sub(r"\s+", " ", features)
+        self.assertIn(
+            "production tensor operations forwarded to Python or PyTorch",
+            normalized_features,
+        )
 
     def test_readme_links_contributing_guide(self):
         readme = README.read_text(encoding="utf-8")
@@ -120,7 +178,6 @@ class ReadmeQuickstartTests(unittest.TestCase):
                 position = supported.index(heading)
                 self.assertGreater(position, previous_position)
                 previous_position = position
-
 
 if __name__ == "__main__":
     unittest.main()
