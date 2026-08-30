@@ -4171,8 +4171,7 @@ struct ArangeCallArguments<'py> {
 }
 
 struct CreationCallArguments<'py> {
-    size: Option<Bound<'py, PyAny>>,
-    size_origin: Option<CreationSizeOrigin>,
+    size: Option<CreationSizeArgument<'py>>,
     shape: Option<Bound<'py, PyAny>>,
     dtype: Option<Bound<'py, PyAny>>,
     device: Option<Bound<'py, PyAny>>,
@@ -4180,21 +4179,31 @@ struct CreationCallArguments<'py> {
     keyword_error: Option<PyErr>,
 }
 
+enum CreationSizeArgument<'py> {
+    Single {
+        value: Bound<'py, PyAny>,
+        origin: CreationSizeOrigin,
+    },
+    PositionalPair {
+        first: Bound<'py, PyAny>,
+        second: Bound<'py, PyAny>,
+    },
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CreationSizeOrigin {
     Positional,
     SizeKeyword,
-    ShapeKeyword,
 }
 
 enum PendingCreationSize<'py> {
     Dimensions(Vec<usize>),
-    PositionalScalar(Bound<'py, PyAny>),
+    PositionalScalars(Vec<Bound<'py, PyAny>>),
 }
 
 struct ParsedCreationSize {
     dimensions: Vec<usize>,
-    scalar_dimension: Option<usize>,
+    scalar_dimensions: Option<Vec<usize>>,
 }
 
 struct FullCallArguments<'py> {
@@ -5227,11 +5236,11 @@ fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
     let (size, dtype, device, requires_grad) = parse_creation_arguments("zeros", arguments)?;
     let ParsedCreationSize {
         dimensions,
-        scalar_dimension,
+        scalar_dimensions,
     } = size;
     CoreTensor::zeros_with_metadata(dimensions, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-        .map_err(|error| scalar_creation_error(&error, scalar_dimension))
+        .map_err(|error| positional_creation_error(&error, scalar_dimensions.as_deref()))
 }
 
 #[pyfunction(
@@ -5243,11 +5252,11 @@ fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
     let (size, dtype, device, requires_grad) = parse_creation_arguments("ones", arguments)?;
     let ParsedCreationSize {
         dimensions,
-        scalar_dimension,
+        scalar_dimensions,
     } = size;
     CoreTensor::ones_with_metadata(dimensions, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-        .map_err(|error| scalar_creation_error(&error, scalar_dimension))
+        .map_err(|error| positional_creation_error(&error, scalar_dimensions.as_deref()))
 }
 
 #[pyfunction(
@@ -5865,21 +5874,32 @@ fn bind_creation_arguments<'py>(
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<CreationCallArguments<'py>> {
     // PyTorch rejects excess positional arguments before inspecting keywords.
-    if positional.len() > 1 {
+    if positional.len() > 2 {
         return Err(PyTypeError::new_err(format!(
-            "{function}() takes 1 positional argument but {} were given",
+            "{function}() takes from 1 to 2 positional arguments but {} were given",
             positional.len()
         )));
     }
 
     let mut size_was_provided = !positional.is_empty();
-    let size = if positional.is_empty() {
-        None
-    } else {
-        optional_call_argument(positional.get_item(0)?)
+    let size = match positional.len() {
+        0 => None,
+        1 => optional_call_argument(positional.get_item(0)?).map(|value| {
+            CreationSizeArgument::Single {
+                value,
+                origin: CreationSizeOrigin::Positional,
+            }
+        }),
+        2 => Some(CreationSizeArgument::PositionalPair {
+            first: bind_creation_positional_pair_first_dimension(
+                function,
+                &positional.get_item(0)?,
+            )?,
+            second: positional.get_item(1)?,
+        }),
+        _ => unreachable!("excess positional arguments were rejected above"),
     };
     let mut arguments = CreationCallArguments {
-        size_origin: size.as_ref().map(|_| CreationSizeOrigin::Positional),
         size,
         shape: None,
         dtype: None,
@@ -5902,11 +5922,11 @@ fn bind_creation_arguments<'py>(
                     });
                 } else {
                     size_was_provided = true;
-                    arguments.size = optional_call_argument(value);
-                    arguments.size_origin = arguments
-                        .size
-                        .as_ref()
-                        .map(|_| CreationSizeOrigin::SizeKeyword);
+                    arguments.size =
+                        optional_call_argument(value).map(|value| CreationSizeArgument::Single {
+                            value,
+                            origin: CreationSizeOrigin::SizeKeyword,
+                        });
                 }
             }
             "shape" => arguments.shape = optional_call_argument(value),
@@ -6557,7 +6577,6 @@ fn parse_creation_arguments(
 ) -> PyResult<(ParsedCreationSize, DType, Device, bool)> {
     let CreationCallArguments {
         size,
-        size_origin,
         shape,
         dtype,
         device,
@@ -6568,7 +6587,7 @@ fn parse_creation_arguments(
     // PyTorch validates declared argument types in signature order, reports
     // duplicate or unknown keywords, converts an accepted scalar dimension,
     // and only then resolves a valid device specification.
-    let size = parse_creation_size(function, size.as_ref(), size_origin, shape.as_ref())?;
+    let size = parse_creation_size(function, size.as_ref(), shape.as_ref())?;
     let dtype = parse_dtype(function, dtype.as_ref())?;
     validate_device_argument_type(function, device.as_ref())?;
     let requires_grad = parse_factory_requires_grad(function, requires_grad.as_ref())?;
@@ -6689,8 +6708,7 @@ fn parse_full_arguments(
 
 fn parse_creation_size<'py>(
     function: &str,
-    size: Option<&Bound<'py, PyAny>>,
-    size_origin: Option<CreationSizeOrigin>,
+    size: Option<&CreationSizeArgument<'py>>,
     shape: Option<&Bound<'py, PyAny>>,
 ) -> PyResult<PendingCreationSize<'py>> {
     let (value, origin) = match (size, shape) {
@@ -6699,11 +6717,26 @@ fn parse_creation_size<'py>(
                 "{function}() received both 'size' and its compatibility alias 'shape'"
             )));
         }
-        (Some(value), None) => (
-            value,
-            size_origin.expect("a selected size value records its origin"),
-        ),
-        (None, Some(value)) => (value, CreationSizeOrigin::ShapeKeyword),
+        (Some(CreationSizeArgument::PositionalPair { first, second }), None) => {
+            let mut dimensions = try_size_vector(2)?;
+            try_push_size(
+                &mut dimensions,
+                bind_creation_positional_dimension(function, first, 1, None, false)?,
+            )?;
+            try_push_size(
+                &mut dimensions,
+                bind_creation_positional_dimension(function, second, 2, None, true)?,
+            )?;
+            return Ok(PendingCreationSize::PositionalScalars(dimensions));
+        }
+        (Some(CreationSizeArgument::Single { value, origin }), None) => (value, *origin),
+        (None, Some(value)) => {
+            let sequence_error = match value.extract::<Vec<usize>>() {
+                Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
+                Err(error) => error,
+            };
+            return Err(sequence_error);
+        }
         (None, None) => {
             return Err(PyTypeError::new_err(format!(
                 "{function}() missing required argument 'size'"
@@ -6719,88 +6752,155 @@ fn parse_creation_size<'py>(
         return Err(sequence_error);
     }
 
-    bind_creation_positional_dimension(function, value, sequence_error)
+    bind_creation_positional_dimension(function, value, 1, Some(sequence_error), false).and_then(
+        |dimension| {
+            let mut dimensions = try_size_vector(1)?;
+            try_push_size(&mut dimensions, dimension)?;
+            Ok(PendingCreationSize::PositionalScalars(dimensions))
+        },
+    )
 }
 
 fn bind_creation_positional_dimension<'py>(
     function: &str,
     dimension: &Bound<'py, PyAny>,
-    sequence_error: PyErr,
-) -> PyResult<PendingCreationSize<'py>> {
-    if dimension.is_instance_of::<PyBool>() {
-        return Err(creation_dimension_type_error(function, dimension)?);
+    position: usize,
+    sequence_error: Option<PyErr>,
+    allow_python_bool: bool,
+) -> PyResult<Bound<'py, PyAny>> {
+    if !allow_python_bool && dimension.is_instance_of::<PyBool>() {
+        return Err(creation_dimension_type_error(
+            function, dimension, position,
+        )?);
     }
 
-    let indexed = if dimension.is_instance_of::<PyInt>() {
-        dimension.clone()
+    if dimension.is_instance_of::<PyInt>() {
+        Ok(dimension.clone())
     } else {
         let indexed = PyModule::import(dimension.py(), "operator")
             .and_then(|operator| operator.getattr("index"))
             .and_then(|index| index.call1((dimension,)));
         let Ok(indexed) = indexed else {
-            if dimension.cast::<PySequence>().is_ok() {
+            if let Some(sequence_error) = sequence_error
+                && dimension.cast::<PySequence>().is_ok()
+            {
                 return Err(sequence_error);
             }
-            return Err(creation_dimension_type_error(function, dimension)?);
+            return Err(creation_dimension_type_error(
+                function, dimension, position,
+            )?);
         };
-        indexed
-    };
-    Ok(PendingCreationSize::PositionalScalar(indexed))
+        Ok(indexed)
+    }
+}
+
+fn bind_creation_positional_pair_first_dimension<'py>(
+    function: &str,
+    dimension: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    if dimension.is_instance_of::<PyBool>() {
+        return Err(PyTypeError::new_err(format!(
+            "{function}() takes 1 positional argument but 2 were given"
+        )));
+    }
+    if dimension.is_instance_of::<PyInt>() {
+        return Ok(dimension.clone());
+    }
+
+    let indexed = PyModule::import(dimension.py(), "operator")
+        .and_then(|operator| operator.getattr("index"))
+        .and_then(|index| index.call1((dimension,)));
+    indexed.map_err(|_| {
+        PyTypeError::new_err(format!(
+            "{function}() takes 1 positional argument but 2 were given"
+        ))
+    })
 }
 
 fn finish_creation_size(
     function: &str,
     size: PendingCreationSize<'_>,
 ) -> PyResult<ParsedCreationSize> {
-    let dimension = match size {
+    let dimensions = match size {
         PendingCreationSize::Dimensions(dimensions) => {
             return Ok(ParsedCreationSize {
                 dimensions,
-                scalar_dimension: None,
+                scalar_dimensions: None,
             });
         }
-        PendingCreationSize::PositionalScalar(dimension) => dimension,
+        PendingCreationSize::PositionalScalars(dimensions) => dimensions,
     };
-    let dimension = extract_creation_dimension(function, &dimension)?;
-    if dimension < 0 {
-        return Err(creation_negative_dimension_error(function, dimension));
+    let mut signed_dimensions = try_size_vector(dimensions.len())?;
+    for (index, dimension) in dimensions.iter().enumerate() {
+        let dimension = extract_creation_dimension(function, dimension, index + 1)?;
+        try_push_size(&mut signed_dimensions, dimension)?;
     }
-    let dimension =
-        usize::try_from(dimension).map_err(|_| creation_dimension_overflow(function))?;
-    let mut dimensions = try_size_vector(1)?;
-    try_push_size(&mut dimensions, dimension)?;
+    if let Some(dimension) = signed_dimensions
+        .iter()
+        .copied()
+        .find(|dimension| *dimension < 0)
+    {
+        return Err(creation_negative_dimension_error(
+            function,
+            dimension,
+            &signed_dimensions,
+        ));
+    }
+
+    let mut dimensions = try_size_vector(signed_dimensions.len())?;
+    for (index, dimension) in signed_dimensions.into_iter().enumerate() {
+        try_push_size(
+            &mut dimensions,
+            usize::try_from(dimension)
+                .map_err(|_| creation_dimension_overflow(function, index + 1))?,
+        )?;
+    }
+    let scalar_dimensions = dimensions.clone();
     Ok(ParsedCreationSize {
         dimensions,
-        scalar_dimension: Some(dimension),
+        scalar_dimensions: Some(scalar_dimensions),
     })
 }
 
-fn extract_creation_dimension(function: &str, dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
+fn extract_creation_dimension(
+    function: &str,
+    dimension: &Bound<'_, PyAny>,
+    position: usize,
+) -> PyResult<i64> {
     dimension
         .extract::<i64>()
-        .map_err(|_| creation_dimension_overflow(function))
+        .map_err(|_| creation_dimension_overflow(function, position))
 }
 
-fn creation_dimension_type_error(function: &str, dimension: &Bound<'_, PyAny>) -> PyResult<PyErr> {
+fn creation_dimension_type_error(
+    function: &str,
+    dimension: &Bound<'_, PyAny>,
+    position: usize,
+) -> PyResult<PyErr> {
     let type_name = python_type_name(dimension)?;
+    if position > 1 {
+        return Ok(PyTypeError::new_err(format!(
+            "{function}(): argument 'size' failed to unpack the object at pos {position} with error \"type must be tuple of ints,but got {type_name}\""
+        )));
+    }
     Ok(PyTypeError::new_err(format!(
-        "{function}(): argument 'size' (position 1) must be tuple of ints, not {type_name}"
+        "{function}(): argument 'size' (position {position}) must be tuple of ints, not {type_name}"
     )))
 }
 
-fn creation_dimension_overflow(function: &str) -> PyErr {
+fn creation_dimension_overflow(function: &str, position: usize) -> PyErr {
     PyTypeError::new_err(format!(
-        "{function}(): argument 'size' failed to unpack the object at pos 1 with error \"Overflow when unpacking long long\""
+        "{function}(): argument 'size' failed to unpack the object at pos {position} with error \"Overflow when unpacking long long\""
     ))
 }
 
-fn creation_negative_dimension_error(function: &str, dimension: i64) -> PyErr {
+fn creation_negative_dimension_error(function: &str, dimension: i64, dimensions: &[i64]) -> PyErr {
     if function == "zeros" {
         PyRuntimeError::new_err("zeros: Dimension size must be non-negative.")
     } else {
         debug_assert_eq!(function, "ones");
         PyRuntimeError::new_err(format!(
-            "Trying to create tensor with negative dimension {dimension}: [{dimension}]"
+            "Trying to create tensor with negative dimension {dimension}: {dimensions:?}"
         ))
     }
 }
@@ -12626,6 +12726,21 @@ fn eye_numel_exceeds_signed_limit(shape: &[usize]) -> bool {
             elements.checked_mul(*dimension)
         })
         .is_none_or(|elements| elements > isize::MAX.unsigned_abs())
+}
+
+fn positional_creation_error(error: &TensorError, scalar_dimensions: Option<&[usize]>) -> PyErr {
+    if let Some(dimensions) = scalar_dimensions
+        && matches!(
+            error,
+            TensorError::ElementCountOverflow | TensorError::StorageCapacityOverflow { .. }
+        )
+    {
+        PyRuntimeError::new_err(format!(
+            "Storage size calculation overflowed with sizes={dimensions:?}"
+        ))
+    } else {
+        tensor_error(error)
+    }
 }
 
 fn scalar_creation_error(error: &TensorError, scalar_dimension: Option<usize>) -> PyErr {

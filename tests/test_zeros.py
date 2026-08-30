@@ -21,6 +21,7 @@ class ZerosTests(unittest.TestCase):
     def test_one_positional_integer_matches_singleton_size(self):
         metadata = (
             {},
+            {"dtype": None, "device": None, "requires_grad": False},
             {"dtype": torch.float32},
             {"device": "cpu"},
             {"device": torch.device("cpu")},
@@ -36,6 +37,57 @@ class ZerosTests(unittest.TestCase):
                     torch.zeros(2, **keywords),
                     torch.zeros((2,), **keywords),
                 )
+
+    def test_two_positional_integers_match_pair_size(self):
+        class IntSubclass(int):
+            pass
+
+        class IndexDimension:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        custom = IndexDimension(3)
+        dimension_pairs = (
+            (2, 3),
+            (2, 0),
+            (0, 3),
+            (IntSubclass(2), np.int64(3)),
+            (np.uint32(2), custom),
+            (2, True),
+            (2, False),
+        )
+        metadata = (
+            {},
+            {"dtype": torch.float32},
+            {"device": "cpu"},
+            {"device": torch.device("cpu")},
+            {
+                "dtype": torch.float32,
+                "device": torch.device("cpu"),
+                "requires_grad": True,
+            },
+        )
+
+        for dimensions in dimension_pairs:
+            for keywords in metadata:
+                with self.subTest(dimensions=dimensions, keywords=keywords):
+                    self.assert_tensor_matches(
+                        torch.zeros(*dimensions, **keywords),
+                        torch.zeros(tuple(map(int, dimensions)), **keywords),
+                    )
+        self.assertGreater(custom.calls, 0)
+
+    def test_two_positional_calls_return_fresh_storage(self):
+        first = torch.zeros(2, 3)
+        second = torch.zeros(2, 3)
+
+        self.assertFalse(first.is_set_to(second))
+        self.assertNotEqual(first.data_ptr(), second.data_ptr())
 
     def test_one_positional_dimension_uses_the_index_protocol(self):
         class IntSubclass(int):
@@ -82,6 +134,14 @@ class ZerosTests(unittest.TestCase):
                 ):
                     torch.zeros(dimension)
 
+        for dimensions in ((-1, 3), (2, -3), (IndexDimension(-1), 3)):
+            with self.subTest(dimensions=dimensions):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    re.escape("zeros: Dimension size must be non-negative."),
+                ):
+                    torch.zeros(*dimensions)
+
         for dimension, type_name in (
             (True, "bool"),
             (False, "bool"),
@@ -93,6 +153,28 @@ class ZerosTests(unittest.TestCase):
                     rf"must be tuple of ints, not {re.escape(type_name)}$",
                 ):
                     torch.zeros(dimension)
+
+        for dimensions in (
+            (True, 3),
+            (np.bool_(True), 3),
+            ((2,), 3),
+        ):
+            with self.subTest(dimensions=dimensions):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    re.escape("zeros() takes 1 positional argument but 2 were given"),
+                ):
+                    torch.zeros(*dimensions)
+
+        for dimensions, position in (
+            ((2, np.bool_(True)), 2),
+        ):
+            with self.subTest(dimensions=dimensions):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    rf"pos {position}.*type must be tuple of ints",
+                ):
+                    torch.zeros(*dimensions)
 
         for dimension in (
             2**63,
@@ -107,6 +189,19 @@ class ZerosTests(unittest.TestCase):
                 ):
                     torch.zeros(dimension)
 
+        for dimensions, position in (
+            ((2**63, 3), 1),
+            ((2, 2**63), 2),
+            ((-1, 2**63), 2),
+            ((IndexDimension(2**63), -1), 1),
+        ):
+            with self.subTest(dimensions=dimensions):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    rf"pos {position}.*Overflow when unpacking long long",
+                ):
+                    torch.zeros(*dimensions)
+
         with self.assertRaisesRegex(
             RuntimeError,
             re.escape(
@@ -114,6 +209,14 @@ class ZerosTests(unittest.TestCase):
             ),
         ):
             torch.zeros(sys.maxsize)
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            re.escape(
+                f"Storage size calculation overflowed with sizes=[{sys.maxsize}, {sys.maxsize}]"
+            ),
+        ):
+            torch.zeros(sys.maxsize, sys.maxsize)
 
     def test_existing_sequence_and_keyword_forms_are_unchanged(self):
         class CustomSequence(Sequence):
@@ -160,7 +263,10 @@ class ZerosTests(unittest.TestCase):
 
         for call in (
             lambda: torch.zeros(size=2),
-            lambda: torch.zeros(2, 3),
+            lambda: torch.zeros(2, 3, 4),
+            lambda: torch.zeros(2, 3, layout=torch.strided),
+            lambda: torch.zeros(2, 3, out=torch.zeros((2, 3))),
+            lambda: torch.zeros(2, 3, pin_memory=False),
         ):
             with self.subTest(call=call):
                 with self.assertRaises(TypeError):
