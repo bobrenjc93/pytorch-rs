@@ -635,15 +635,7 @@ fn _nn_functional_mse_loss(
     }
     let input_shape = input.inner().shape();
     let target_shape = target.inner().shape();
-    let shapes_match = input_shape == target_shape;
-    let broadcasts_one_scalar =
-        !shapes_match && (input_shape.is_empty() != target_shape.is_empty());
-    if !shapes_match && !broadcasts_one_scalar {
-        return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.mse_loss does not support broadcasting",
-        ));
-    }
-    if broadcasts_one_scalar {
+    if input_shape != target_shape {
         warn_loss_broadcast(py, "mse_loss", input_shape, target_shape)?;
     }
     if is_grad_enabled() && (input.inner().requires_grad() || target.inner().requires_grad()) {

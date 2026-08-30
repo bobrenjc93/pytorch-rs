@@ -126,7 +126,7 @@ class FunctionalMseLossTests(unittest.TestCase):
             ("same operand", same, same),
         )
 
-    def scalar_broadcast_cases(self):
+    def broadcast_cases(self):
         scalar = torch.tensor(-0.0)
         offset_scalar = torch.tensor([17.0, 0.5])[1]
         contiguous = torch.tensor(
@@ -144,6 +144,20 @@ class FunctionalMseLossTests(unittest.TestCase):
             np.arange(6, dtype=np.float32).reshape(3, 1, 2).tolist()
         ).permute(2, 1, 0)
         empty_strided = torch.zeros((2, 0, 3)).transpose(0, 2)
+        matrix = torch.tensor(
+            np.arange(6, dtype=np.float32).reshape(2, 3).tolist()
+        )
+        offset_matrix = torch.tensor(
+            np.arange(12, dtype=np.float32).reshape(2, 2, 3).tolist()
+        )[1]
+        noncontiguous_input = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
+        ).transpose(1, 2)
+        singleton_target = torch.tensor(
+            np.linspace(-1.0, 1.0, 4, dtype=np.float32)
+            .reshape(1, 4, 1)
+            .tolist()
+        )
 
         return (
             ("contiguous scalar input", scalar, contiguous),
@@ -156,6 +170,15 @@ class FunctionalMseLossTests(unittest.TestCase):
             ("singleton strided scalar target", singleton_strided, scalar),
             ("empty strided scalar input", scalar, empty_strided),
             ("empty strided scalar target", empty_strided, scalar),
+            ("vector target", matrix, torch.tensor([1.0, 2.0, 3.0])),
+            ("column target", matrix, torch.tensor([[1.0], [2.0]])),
+            ("offset matrix target", torch.tensor(-0.0), offset_matrix),
+            ("empty singleton broadcast", empty_strided, torch.ones((1, 0, 1))),
+            (
+                "noncontiguous singleton target",
+                noncontiguous_input,
+                singleton_target,
+            ),
         )
 
     @staticmethod
@@ -211,11 +234,11 @@ class FunctionalMseLossTests(unittest.TestCase):
             "``size_average=None``",
             "``reduce=None``",
             "``weight=None``",
-            "exactly one operand may be rank zero",
+            "broadcastable shapes",
             "fuses subtraction and square into one native pass",
             "fresh, independent tensor",
-            "scalar-broadcast warning",
-            "Other broadcasting",
+            "size-mismatch warning",
+            "Unbroadcastable shapes",
             "Tensor subclasses",
             "active ``TorchFunctionMode`` contexts",
             "active autograd recording",
@@ -281,8 +304,8 @@ class FunctionalMseLossTests(unittest.TestCase):
                         self.tensor_state(target)[-1], target_state[-1]
                     )
 
-    def test_scalar_broadcast_matches_composition_warning_and_storage(self):
-        for case, input, target in self.scalar_broadcast_cases():
+    def test_broadcasted_inputs_match_composition_warning_and_storage(self):
+        for case, input, target in self.broadcast_cases():
             difference = input - target
             expected = difference.square()
             input_state = self.tensor_state(input)
@@ -611,6 +634,36 @@ class FunctionalMseLossTests(unittest.TestCase):
                 self.assertIsNone(input.grad)
                 self.assertIsNone(target.grad)
 
+    def test_broadcast_requires_grad_operands_need_no_grad(self):
+        input = torch.tensor(
+            [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
+            requires_grad=True,
+        )
+        target = torch.tensor([0.5, 2.0, -3.0])
+
+        with self.assertWarnsRegex(UserWarning, "Using a target size"):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"^mse_loss\(\): autograd recording is not supported$",
+            ):
+                functional.mse_loss(input, target, reduction="none")
+
+        with warnings.catch_warnings(), torch.no_grad():
+            warnings.simplefilter("ignore")
+            actual = functional.mse_loss(input, target, reduction="none")
+            difference = input - target
+            expected = difference.square()
+        self.assert_matches_composition(
+            actual,
+            expected,
+            case="broadcast no_grad",
+            expected_stride=difference.stride(),
+        )
+        self.assertFalse(actual.requires_grad)
+        self.assertTrue(actual.is_leaf)
+        self.assertIsNone(input.grad)
+        self.assertIsNone(target.grad)
+
     def test_unsupported_options_shapes_and_operands_are_rejected(self):
         input = torch.ones((2, 3))
         target = torch.zeros((2, 3))
@@ -663,20 +716,25 @@ class FunctionalMseLossTests(unittest.TestCase):
                         weight=weight,
                     )
 
-        broadcast_error = (
-            "torch_rs.nn.functional.mse_loss does not support broadcasting"
+        unbroadcastable_target = torch.zeros((2, 2))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"^The size of tensor a \(3\) must match the size of tensor b "
+                r"\(2\) at non-singleton dimension 1$",
+            ):
+                functional.mse_loss(
+                    input,
+                    unbroadcastable_target,
+                    reduction="none",
+                )
+        self.assertEqual(len(caught), 1)
+        self.assertIs(caught[0].category, UserWarning)
+        self.assertEqual(
+            str(caught[0].message),
+            self.broadcast_warning(input, unbroadcastable_target),
         )
-        for other in (
-            torch.zeros((3,)),
-            torch.zeros((2, 1)),
-            torch.zeros((2, 2)),
-        ):
-            with self.subTest(target_shape=other.shape):
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    f"^{re.escape(broadcast_error)}$",
-                ):
-                    functional.mse_loss(input, other, reduction="none")
 
         class Override:
             calls = 0

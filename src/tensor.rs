@@ -9191,11 +9191,14 @@ mod tests {
     }
 
     #[test]
-    fn squared_difference_broadcasts_rank_zero_in_both_operand_orders() {
+    fn squared_difference_broadcast_matches_the_established_composition() {
         let scalar = Tensor::from_vec(vec![13.0, -0.0], [2])
             .unwrap()
             .index_integer(1)
             .unwrap();
+        let matrix = Tensor::from_vec((0_u16..6).map(f32::from).collect(), [2, 3]).unwrap();
+        let vector = Tensor::from_vec(vec![1.0, 2.0, 3.0], [3]).unwrap();
+        let column = Tensor::from_vec(vec![1.0, 2.0], [2, 1]).unwrap();
         let strided = Tensor::from_vec(
             [
                 0x0000_0000,
@@ -9219,12 +9222,16 @@ mod tests {
         .transpose(0, 1)
         .unwrap();
         let empty = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        let singleton_empty = Tensor::ones([1, 0, 1]).unwrap();
 
         for (left, right) in [
             (&scalar, &strided),
             (&strided, &scalar),
             (&scalar, &empty),
             (&empty, &scalar),
+            (&matrix, &vector),
+            (&matrix, &column),
+            (&empty, &singleton_empty),
         ] {
             let expected = left.sub(right).unwrap().square().unwrap();
             let actual = left.squared_difference(right).unwrap();
