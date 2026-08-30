@@ -40,6 +40,7 @@ do not replace the benchmark policy or Burner-managed evaluation progress.
 
 - [Rank-9 `Tensor.sum` release timings](docs/rank9-sum-release-timings.md)
 - [Rank-10 `Tensor.sum` release timings](docs/rank10-sum-release-timings.md)
+- [Rank-11 `Tensor.sum` release timings](docs/rank11-sum-release-timings.md)
 - [`torch.nn.functional.mse_loss(reduction="none")` release timings](docs/mse-loss-release-timings.md)
 - [`torch.nn.functional.l1_loss(reduction="none")` release timings](docs/l1-loss-release-timings.md)
 

@@ -19,6 +19,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/rank10-sum-release-timings.md",
     ),
     (
+        "Rank-11 `Tensor.sum` release timings",
+        "docs/rank11-sum-release-timings.md",
+    ),
+    (
         '`torch.nn.functional.mse_loss(reduction="none")` release timings',
         "docs/mse-loss-release-timings.md",
     ),
@@ -214,6 +218,15 @@ class ReadmeQuickstartTests(unittest.TestCase):
         self.assertIn("burner-managed evaluation progress", normalized_section)
 
         links = dict(re.findall(r"\[([^\]]+)\]\(([^)]+)\)", section))
+        expected_targets = {target for _, target in HISTORICAL_TIMING_REPORTS}
+        indexed_targets = set(links.values())
+        existing_reports = {
+            path.relative_to(REPOSITORY_ROOT).as_posix()
+            for path in (REPOSITORY_ROOT / "docs").glob("*-release-timings.md")
+        }
+        self.assertEqual(indexed_targets, expected_targets)
+        self.assertEqual(indexed_targets, existing_reports)
+
         for label, target in HISTORICAL_TIMING_REPORTS:
             with self.subTest(report=target):
                 self.assertEqual(links.get(label), target)
