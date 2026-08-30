@@ -320,6 +320,19 @@ assert limits == torch.finfo(torch.float)
 assert limits.dtype == "float32" and limits.bits == 32
 assert torch.can_cast(from_=torch.float, to=torch.float32) is True
 assert torch.promote_types(type1=torch.float, type2=torch.float32) is torch.float32
+assert x.dim() == 2
+assert x.ndimension() == 2
+assert x.numel() == 4
+assert x.nelement() == 4
+assert torch.numel(input=x) == 4
+assert x.element_size() == 4
+assert x.nbytes == 16
+assert torch.is_nonzero(torch.tensor([1.0])) is True
+assert torch.tensor([0.0]).is_nonzero() is False
+assert torch.is_complex(x) is False
+assert x.is_complex() is False
+assert torch.is_floating_point(x) is True
+assert x.is_floating_point() is True
 assert torch.broadcast_shapes((2,), [3, 1]) == torch.Size([3, 2])
 assert x.dense_dim() == x.ndim
 assert x.sparse_dim() == 0
@@ -383,15 +396,26 @@ assert cpu_nhwc.is_contiguous(memory_format=torch.channels_last)
 The CPU core provides `float32` tensors, checked construction including copied
 one-dimensional numeric PEP 3118 buffers, constant-filled creation, and layout
 queries. Tensor metadata coverage includes `Tensor.dense_dim()` and
-`Tensor.sparse_dim()` strided-layout dimension metadata, no-argument
-`Tensor.is_pinned()` metadata for the exclusively pageable CPU storage model,
-no-argument `Tensor.is_distributed()` metadata for supported local tensors,
-read-only `Tensor.is_sparse` and `Tensor.is_sparse_csr` strided-layout
-introspection, read-only `Tensor.is_cpu` and `Tensor.is_cuda` device
-introspection, read-only `Tensor.is_quantized` dtype introspection,
-dtype-backed `Tensor.is_signed()` and `torch.is_signed()` queries, read-only
-`torch.float32.abbr == "f32"` metadata, canonical `torch.float32.to_real()`
-identity, and float32-only `torch.finfo` metadata.
+`Tensor.sparse_dim()` strided-layout dimension metadata, read-only
+`Tensor.ndim`, no-argument `Tensor.dim()`/`Tensor.ndimension()` rank queries,
+no-argument `Tensor.numel()`/`Tensor.nelement()` plus top-level
+`torch.numel(input)` cardinality queries, no-argument `Tensor.element_size()`
+byte-size metadata, read-only `Tensor.nbytes` view byte-count metadata,
+no-argument `Tensor.is_pinned()` metadata for the exclusively pageable CPU
+storage model, no-argument `Tensor.is_distributed()` metadata for supported
+local tensors, read-only `Tensor.is_sparse` and `Tensor.is_sparse_csr`
+strided-layout introspection, read-only `Tensor.is_cpu` and `Tensor.is_cuda`
+device introspection, read-only `Tensor.is_quantized` dtype introspection,
+dtype-backed `Tensor.is_signed()` and `torch.is_signed()`,
+`Tensor.is_complex()` and `torch.is_complex(input)`, and
+`Tensor.is_floating_point()` and `torch.is_floating_point(input)` queries,
+read-only `torch.float32.abbr == "f32"` metadata, canonical
+`torch.float32.to_real()` identity, and float32-only `torch.finfo` metadata.
+
+Scalar truth queries are exposed as `Tensor.is_nonzero()` and
+`torch.is_nonzero(input)`. They return exact booleans for one-element tensors,
+including rank-0 tensors and strided one-element views, and raise
+PyTorch-compatible ambiguity errors for empty or multi-element tensors.
 
 Autograd-facing tensor metadata includes leaf-only `Tensor.retain_grad()` as a
 no-op for tensors with `requires_grad=True`, read-only `Tensor.retains_grad`
