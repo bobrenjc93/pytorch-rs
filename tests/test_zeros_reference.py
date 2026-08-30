@@ -241,6 +241,26 @@ class ZerosReferenceTests(unittest.TestCase):
                 "two dimensions negative and duplicate size",
                 lambda module: module.zeros(-1, 3, size=(2,)),
             ),
+            (
+                "two dimensions invalid second and invalid dtype",
+                lambda module: module.zeros(2, object(), dtype=object()),
+            ),
+            (
+                "two dimensions invalid second and invalid device",
+                lambda module: module.zeros(2, object(), device=object()),
+            ),
+            (
+                "two dimensions invalid second and invalid requires_grad",
+                lambda module: module.zeros(2, object(), requires_grad=1),
+            ),
+            (
+                "two dimensions invalid second and duplicate size",
+                lambda module: module.zeros(2, object(), size=(4,)),
+            ),
+            (
+                "two dimensions invalid second and unknown keyword",
+                lambda module: module.zeros(2, object(), unexpected=True),
+            ),
         )
         for case, call in cases:
             with self.subTest(case=case):

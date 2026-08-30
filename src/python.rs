@@ -4199,6 +4199,10 @@ enum CreationSizeOrigin {
 enum PendingCreationSize<'py> {
     Dimensions(Vec<usize>),
     PositionalScalars(Vec<Bound<'py, PyAny>>),
+    PositionalPair {
+        first: Bound<'py, PyAny>,
+        second: Bound<'py, PyAny>,
+    },
 }
 
 struct ParsedCreationSize {
@@ -6718,16 +6722,10 @@ fn parse_creation_size<'py>(
             )));
         }
         (Some(CreationSizeArgument::PositionalPair { first, second }), None) => {
-            let mut dimensions = try_size_vector(2)?;
-            try_push_size(
-                &mut dimensions,
-                bind_creation_positional_dimension(function, first, 1, None, false)?,
-            )?;
-            try_push_size(
-                &mut dimensions,
-                bind_creation_positional_dimension(function, second, 2, None, true)?,
-            )?;
-            return Ok(PendingCreationSize::PositionalScalars(dimensions));
+            return Ok(PendingCreationSize::PositionalPair {
+                first: first.clone(),
+                second: second.clone(),
+            });
         }
         (Some(CreationSizeArgument::Single { value, origin }), None) => (value, *origin),
         (None, Some(value)) => {
@@ -6829,6 +6827,15 @@ fn finish_creation_size(
             });
         }
         PendingCreationSize::PositionalScalars(dimensions) => dimensions,
+        PendingCreationSize::PositionalPair { first, second } => {
+            let mut dimensions = try_size_vector(2)?;
+            try_push_size(&mut dimensions, first)?;
+            try_push_size(
+                &mut dimensions,
+                bind_creation_positional_dimension(function, &second, 2, None, true)?,
+            )?;
+            dimensions
+        }
     };
     let mut signed_dimensions = try_size_vector(dimensions.len())?;
     for (index, dimension) in dimensions.iter().enumerate() {

@@ -218,6 +218,34 @@ class ZerosTests(unittest.TestCase):
         ):
             torch.zeros(sys.maxsize, sys.maxsize)
 
+    def test_invalid_second_positional_dimension_waits_for_keyword_validation(self):
+        cases = (
+            (
+                lambda: torch.zeros(2, object(), dtype=object()),
+                r"zeros\(\): argument 'dtype' must be torch\.dtype, not object",
+            ),
+            (
+                lambda: torch.zeros(2, object(), device=object()),
+                r"zeros\(\): argument 'device' must be torch\.device.*not object",
+            ),
+            (
+                lambda: torch.zeros(2, object(), requires_grad=1),
+                r"zeros\(\): argument 'requires_grad' must be bool, not int",
+            ),
+            (
+                lambda: torch.zeros(2, object(), size=(4,)),
+                r"zeros\(\) got multiple values for argument 'size'",
+            ),
+            (
+                lambda: torch.zeros(2, object(), unexpected=True),
+                r"zeros\(\) got an unexpected keyword argument 'unexpected'",
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, message):
+                    call()
+
     def test_existing_sequence_and_keyword_forms_are_unchanged(self):
         class CustomSequence(Sequence):
             def __init__(self, values):

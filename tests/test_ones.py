@@ -230,6 +230,34 @@ class OnesTests(unittest.TestCase):
         ):
             torch.ones(sys.maxsize, sys.maxsize)
 
+    def test_invalid_second_positional_dimension_waits_for_keyword_validation(self):
+        cases = (
+            (
+                lambda: torch.ones(2, object(), dtype=object()),
+                r"ones\(\): argument 'dtype' must be torch\.dtype, not object",
+            ),
+            (
+                lambda: torch.ones(2, object(), device=object()),
+                r"ones\(\): argument 'device' must be torch\.device.*not object",
+            ),
+            (
+                lambda: torch.ones(2, object(), requires_grad=1),
+                r"ones\(\): argument 'requires_grad' must be bool, not int",
+            ),
+            (
+                lambda: torch.ones(2, object(), size=(4,)),
+                r"ones\(\) got multiple values for argument 'size'",
+            ),
+            (
+                lambda: torch.ones(2, object(), unexpected=True),
+                r"ones\(\) got an unexpected keyword argument 'unexpected'",
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, message):
+                    call()
+
     def test_existing_sequence_and_keyword_forms_are_unchanged(self):
         class CustomSequence(Sequence):
             def __init__(self, values):
