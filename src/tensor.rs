@@ -838,6 +838,31 @@ impl Tensor {
         self.shape() == other.shape()
     }
 
+    /// Reports whether all broadcasted element pairs are close.
+    ///
+    /// This matches `PyTorch`'s `allclose` predicate for the currently supported
+    /// CPU `float32` tensor domain and does not allocate an intermediate
+    /// boolean tensor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the input shapes are not broadcastable or when
+    /// broadcast shape calculations overflow.
+    pub fn allclose(
+        &self,
+        other: &Self,
+        rtol: f32,
+        atol: f32,
+        equal_nan: bool,
+    ) -> Result<bool, TensorError> {
+        let plan = BroadcastPlan::new(self, other)?;
+        if plan.elements == 0 {
+            return Ok(true);
+        }
+
+        allclose_broadcast(self, other, &plan, rtol, atol, equal_nan)
+    }
+
     /// Reports whether two tensors point to the exact same logical view.
     ///
     /// Matching views share storage and have identical storage offsets, shapes,
@@ -4779,6 +4804,76 @@ fn materialize_broadcast(
         }
     }
     Ok(data)
+}
+
+fn allclose_broadcast(
+    left: &Tensor,
+    right: &Tensor,
+    plan: &BroadcastPlan,
+    rtol: f32,
+    atol: f32,
+    equal_nan: bool,
+) -> Result<bool, TensorError> {
+    let mut left_offset = left.offset;
+    let mut right_offset = right.offset;
+    let mut coordinates = try_result_vector(plan.shape.len(), plan.elements)?;
+    coordinates.resize(plan.shape.len(), 0_usize);
+
+    for output_index in 0..plan.elements {
+        let left_value = left
+            .storage
+            .value(left_offset)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let right_value = right
+            .storage
+            .value(right_offset)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        if !allclose_values(left_value, right_value, rtol, atol, equal_nan) {
+            return Ok(false);
+        }
+        if output_index + 1 == plan.elements {
+            break;
+        }
+
+        for axis in (0..plan.shape.len()).rev() {
+            coordinates[axis] = coordinates[axis]
+                .checked_add(1)
+                .ok_or(TensorError::StrideCalculationOverflow)?;
+            if coordinates[axis] < plan.shape[axis] {
+                left_offset = left_offset
+                    .checked_add(plan.dimensions[axis].left_step)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+                right_offset = right_offset
+                    .checked_add(plan.dimensions[axis].right_step)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+                break;
+            }
+
+            coordinates[axis] = 0;
+            left_offset = left_offset
+                .checked_sub(plan.dimensions[axis].left_rewind)
+                .ok_or(TensorError::StrideCalculationOverflow)?;
+            right_offset = right_offset
+                .checked_sub(plan.dimensions[axis].right_rewind)
+                .ok_or(TensorError::StrideCalculationOverflow)?;
+        }
+    }
+    Ok(true)
+}
+
+#[inline]
+#[allow(clippy::float_cmp)]
+fn allclose_values(left: f32, right: f32, rtol: f32, atol: f32, equal_nan: bool) -> bool {
+    if left == right {
+        return true;
+    }
+    if equal_nan && left.is_nan() && right.is_nan() {
+        return true;
+    }
+    if !left.is_finite() || !right.is_finite() {
+        return false;
+    }
+    (left - right).abs() <= atol + rtol * right.abs()
 }
 
 impl BroadcastPlan {
@@ -8814,6 +8909,64 @@ mod tests {
             .transpose(0, 1)
             .unwrap();
         assert_ne!(shared_left, shared_gradient_copy(&unequal));
+    }
+
+    #[test]
+    fn allclose_uses_broadcast_tolerance_and_special_float_rules() {
+        let left = Tensor::from_vec(
+            vec![1.0, 1.0 + 4.0e-6, 2.0, 2.0 + 1.0e-5, 3.0, 3.0 - 2.0e-5],
+            [3, 2],
+        )
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+        let right = Tensor::from_vec(vec![1.0, 2.0, 3.0], [1, 3]).unwrap();
+        assert_eq!(left.shape(), [2, 3]);
+        assert!(!left.is_contiguous());
+        assert!(left.allclose(&right, 1.0e-5, 1.0e-8, false).unwrap());
+        assert!(!left.allclose(&right, 1.0e-6, 1.0e-8, false).unwrap());
+
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        assert!(
+            empty
+                .allclose(&Tensor::ones([1, 0, 1]).unwrap(), 0.0, 0.0, false)
+                .unwrap()
+        );
+
+        let edge_left = Tensor::from_vec(
+            vec![0.0, -0.0, f32::INFINITY, f32::NEG_INFINITY, f32::NAN],
+            [5],
+        )
+        .unwrap();
+        let edge_right = Tensor::from_vec(
+            vec![-0.0, 0.0, f32::INFINITY, f32::NEG_INFINITY, f32::NAN],
+            [5],
+        )
+        .unwrap();
+        assert!(!edge_left.allclose(&edge_right, 0.0, 0.0, false).unwrap());
+        assert!(edge_left.allclose(&edge_right, 0.0, 0.0, true).unwrap());
+
+        assert!(
+            !Tensor::from_vec(vec![1.0], [1])
+                .unwrap()
+                .allclose(
+                    &Tensor::from_vec(vec![f32::INFINITY], [1]).unwrap(),
+                    f32::INFINITY,
+                    0.0,
+                    false
+                )
+                .unwrap()
+        );
+
+        assert!(matches!(
+            Tensor::zeros([2, 3]).unwrap().allclose(
+                &Tensor::zeros([4]).unwrap(),
+                1.0e-5,
+                1.0e-8,
+                false
+            ),
+            Err(TensorError::ShapeMismatch { .. })
+        ));
     }
 
     #[test]

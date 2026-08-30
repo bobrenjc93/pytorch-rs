@@ -544,7 +544,11 @@ requests remain unsupported.
 #### Elementwise and reductions
 
 The eager math surface includes independent deep cloning, exact `Tensor.equal()`
-and `torch.equal()` comparison, identity `Tensor.positive()`/
+and `torch.equal()` comparison, bool-returning `torch.allclose(input, other,
+rtol=1e-05, atol=1e-08, equal_nan=False)` for exact native CPU float32 tensors
+with PyTorch-compatible broadcasting, empty tensor truth, offsets,
+non-contiguous views, signed zero, NaNs, infinities, and tolerance handling,
+identity `Tensor.positive()`/
 `torch.positive()` and unary `+`, unary `-`, `Tensor.neg()`, its
 `Tensor.negative()` alias, `torch.neg()`, and the distinct top-level
 `torch.negative()` builtin. It supports broadcast tensor and real-scalar
@@ -586,7 +590,7 @@ same native kernel; `inplace=True` is rejected before the input can be mutated.
 
 `torch.can_cast` and `torch.promote_types` accept the existing `torch.float32`/`torch.float` singleton aliases in positional or canonical keyword forms. Casting between the supported aliases returns `True`, while promotion returns the same canonical singleton. No additional dtype, casting pair, or promotion pair is exposed.
 
-`torch.functional.broadcast_shapes` and its identical top-level `torch.broadcast_shapes` alias compute canonical `torch.Size` results directly from nonnegative Python integer, tuple, list, and `torch.Size` inputs without creating tensors. `torch.functional.broadcast_tensors(*tensors)` and its canonical top-level alias accept zero inputs or exact native tensors with identical shapes and return a tuple containing those exact objects, preserving strides, offsets, storage, autograd history, and `TorchFunctionMode` dispatch without allocating views. Inputs that require shape expansion, Tensor subclasses, and non-Tensors remain explicitly unsupported and are rejected before tensor allocation or mutation. Symbolic dimensions and tracing remain unsupported.
+`torch.functional.broadcast_shapes` and its identical top-level `torch.broadcast_shapes` alias compute canonical `torch.Size` results directly from nonnegative Python integer, tuple, list, and `torch.Size` inputs without creating tensors. `torch.functional.broadcast_tensors(*tensors)` and its canonical top-level alias accept zero inputs or exact native tensors with identical shapes and return a tuple containing those exact objects, preserving strides, offsets, storage, autograd history, and `TorchFunctionMode` dispatch without allocating views. Inputs that require shape expansion, Tensor subclasses, and non-Tensors remain explicitly unsupported and are rejected before tensor allocation or mutation. `torch.allclose` supports broadcasted shape expansion for comparison only, but does not expose `torch.isclose`, boolean tensor results, or additional dtype/device behavior. Symbolic dimensions and tracing remain unsupported.
 
 ### NN and data
 
