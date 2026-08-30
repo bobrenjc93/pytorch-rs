@@ -1470,27 +1470,86 @@ pub(crate) fn as_tensor_variable_function(
         ));
     };
 
-    let dtype = parse_as_tensor_dtype(arguments.dtype.as_ref())?;
-    validate_as_tensor_device_type(arguments.device.as_ref())?;
+    let dtype = parse_identity_tensor_dtype("as_tensor", arguments.dtype.as_ref())?;
+    validate_identity_tensor_device_type("as_tensor", arguments.device.as_ref())?;
     if let Some(keyword_error) = arguments.keyword_error {
         return Err(keyword_error);
     }
     if let Some(result) = dispatch_as_tensor_mode(py, args, kwargs)? {
         return Ok(result);
     }
-    let device = parse_as_tensor_device(arguments.device.as_ref())?;
+    let device = parse_identity_tensor_device("as_tensor", arguments.device.as_ref())?;
 
+    exact_cpu_float32_identity("as_tensor", data.value, dtype, device)
+}
+
+pub(crate) fn asarray_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let arguments = bind_asarray_arguments(args, kwargs)?;
+    let Some(obj) = arguments.obj else {
+        return Err(PyTypeError::new_err(
+            "asarray() missing 1 required positional arguments: \"obj\"",
+        ));
+    };
+
+    let dtype = parse_identity_tensor_dtype("asarray", arguments.dtype.as_ref())?;
+    validate_identity_tensor_device_type("asarray", arguments.device.as_ref())?;
+    let copy = parse_identity_tensor_bool("asarray", "copy", arguments.copy.as_ref())?;
+    let requires_grad =
+        parse_identity_tensor_bool("asarray", "requires_grad", arguments.requires_grad.as_ref())?;
+    if let Some(keyword_error) = arguments.keyword_error {
+        return Err(keyword_error);
+    }
+    if let Some(result) = dispatch_asarray_mode(py, args, kwargs)? {
+        return Ok(result);
+    }
+    let device = parse_identity_tensor_device("asarray", arguments.device.as_ref())?;
+
+    if copy == Some(true) {
+        return Err(PyNotImplementedError::new_err(
+            "asarray(): copy=True requires allocating a new tensor and is not supported",
+        ));
+    }
+    if requires_grad.is_some() {
+        return Err(PyNotImplementedError::new_err(
+            "asarray(): requires_grad must be omitted or None; identity conversion preserves the input tensor's existing autograd state",
+        ));
+    }
+
+    exact_cpu_float32_identity("asarray", obj.value, dtype, device)
+}
+
+fn exact_cpu_float32_identity(
+    function: &str,
+    object: Bound<'_, PyAny>,
+    dtype: DType,
+    device: Device,
+) -> PyResult<Py<PyAny>> {
     if dtype != DType::Float32 || !device.is_cpu() {
-        return Err(PyNotImplementedError::new_err(
-            "as_tensor(): only identity conversion for CPU float32 tensors is supported",
-        ));
+        return Err(PyNotImplementedError::new_err(format!(
+            "{function}(): only identity conversion for CPU float32 tensors is supported"
+        )));
     }
-    if !data.value.is_exact_instance_of::<PyTensor>() {
-        return Err(PyNotImplementedError::new_err(
-            "as_tensor(): only exact native CPU float32 Tensor inputs are supported; Python sequences, NumPy arrays, and scalar conversions are not implemented",
-        ));
+    if !object.is_exact_instance_of::<PyTensor>() {
+        return Err(PyNotImplementedError::new_err(format!(
+            "{function}(): only exact native CPU float32 Tensor inputs are supported; Python sequences, NumPy arrays, and scalar conversions are not implemented"
+        )));
     }
-    Ok(data.value.unbind())
+    {
+        let tensor = object
+            .cast::<PyTensor>()
+            .expect("the identity input type was checked")
+            .try_borrow()?;
+        if tensor.inner().dtype() != DType::Float32 || !tensor.inner().device().is_cpu() {
+            return Err(PyNotImplementedError::new_err(format!(
+                "{function}(): only identity conversion for CPU float32 tensors is supported"
+            )));
+        }
+    }
+    Ok(object.unbind())
 }
 
 pub(crate) fn scalar_tensor_variable_function(
@@ -4282,6 +4341,15 @@ struct AsTensorCallArguments<'py> {
     keyword_error: Option<PyErr>,
 }
 
+struct AsArrayCallArguments<'py> {
+    obj: Option<ParsedCallArgument<'py>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    copy: Option<Bound<'py, PyAny>>,
+    requires_grad: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
 struct ScalarTensorCallArguments<'py> {
     scalar: Option<ParsedCallArgument<'py>>,
     dtype: Option<Bound<'py, PyAny>>,
@@ -6343,17 +6411,78 @@ fn bind_as_tensor_arguments<'py>(
     Ok(arguments)
 }
 
-fn parse_as_tensor_dtype(dtype: Option<&Bound<'_, PyAny>>) -> PyResult<DType> {
-    let dtype = parse_dtype("as_tensor", dtype)?;
-    if dtype == DType::Float32 {
-        return Ok(dtype);
+fn bind_asarray_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<AsArrayCallArguments<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "asarray() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
     }
-    Err(PyNotImplementedError::new_err(
-        "as_tensor(): dtype conversions are not supported; only torch.float32 identity is implemented",
-    ))
+
+    let mut arguments = AsArrayCallArguments {
+        obj: if positional.is_empty() {
+            None
+        } else {
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            })
+        },
+        dtype: None,
+        device: None,
+        copy: None,
+        requires_grad: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "obj" => {
+                if arguments.obj.is_some() {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("asarray() got multiple values for argument 'obj'")
+                    });
+                } else {
+                    arguments.obj = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            }
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            "copy" => arguments.copy = optional_call_argument(value),
+            "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "asarray() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
 }
 
-fn validate_as_tensor_device_type(device: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+fn parse_identity_tensor_dtype(
+    function: &str,
+    dtype: Option<&Bound<'_, PyAny>>,
+) -> PyResult<DType> {
+    parse_dtype(function, dtype)
+}
+
+fn validate_identity_tensor_device_type(
+    function: &str,
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
     let Some(device) = device else {
         return Ok(());
     };
@@ -6362,11 +6491,31 @@ fn validate_as_tensor_device_type(device: Option<&Bound<'_, PyAny>>) -> PyResult
     }
     let type_name = device.get_type().name()?;
     Err(PyTypeError::new_err(format!(
-        "as_tensor(): argument 'device' must be torch.device, not {type_name}"
+        "{function}(): argument 'device' must be torch.device, not {type_name}"
     )))
 }
 
-fn parse_as_tensor_device(device: Option<&Bound<'_, PyAny>>) -> PyResult<Device> {
+fn parse_identity_tensor_bool(
+    function: &str,
+    argument: &str,
+    value: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Option<bool>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if value.is_exact_instance_of::<PyBool>() {
+        return Ok(Some(value.is_truthy()?));
+    }
+    let actual = python_type_name(value)?;
+    Err(PyTypeError::new_err(format!(
+        "{function}(): argument '{argument}' must be bool, not {actual}"
+    )))
+}
+
+fn parse_identity_tensor_device(
+    function: &str,
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Device> {
     let Some(device) = device else {
         return Ok(Device::Cpu);
     };
@@ -6375,23 +6524,23 @@ fn parse_as_tensor_device(device: Option<&Bound<'_, PyAny>>) -> PyResult<Device>
         if device.inner().is_cpu() && !device.has_index() {
             return Ok(Device::Cpu);
         }
-        return Err(PyNotImplementedError::new_err(
-            "as_tensor(): indexed CPU devices require a copy and are not supported",
-        ));
+        return Err(PyNotImplementedError::new_err(format!(
+            "{function}(): indexed CPU devices require a copy and are not supported"
+        )));
     }
 
     let specification = device.cast::<PyString>()?.to_str()?;
     if specification == "cpu" {
         return Ok(Device::Cpu);
     }
-    validate_as_tensor_device_string(specification)?;
-    parse_device_value("as_tensor", device)?;
-    Err(PyNotImplementedError::new_err(
-        "as_tensor(): explicit indexed CPU devices require a copy and are not supported",
-    ))
+    validate_identity_tensor_device_string(specification)?;
+    parse_device_value(function, device)?;
+    Err(PyNotImplementedError::new_err(format!(
+        "{function}(): explicit indexed CPU devices require a copy and are not supported"
+    )))
 }
 
-fn validate_as_tensor_device_string(specification: &str) -> PyResult<()> {
+fn validate_identity_tensor_device_string(specification: &str) -> PyResult<()> {
     if specification.is_empty() {
         return Err(PyRuntimeError::new_err("Device string must not be empty"));
     }
@@ -6478,6 +6627,36 @@ fn dispatch_as_tensor_mode(
     Err(torch_function_dispatch_error(
         py,
         "torch.as_tensor",
+        Some(mode),
+        None,
+    )?)
+}
+
+fn dispatch_asarray_mode(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    if torch_function_mode_stack::is_empty() {
+        return Ok(None);
+    }
+
+    let function = variable_function(py, "asarray")?;
+    let types = PyTuple::empty(py);
+    let active_mode = torch_function_mode_stack::pop();
+    let Some(mode) = active_mode.get() else {
+        return Ok(None);
+    };
+    validate_torch_function_mode_handler(mode.bind(py))?;
+    let handler = mode.bind(py).getattr("__torch_function__")?;
+    let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+    if !is_not_implemented(py, &result) {
+        return Ok(Some(result));
+    }
+
+    Err(torch_function_dispatch_error(
+        py,
+        "torch.asarray",
         Some(mode),
         None,
     )?)
