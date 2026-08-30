@@ -1,4 +1,9 @@
+import copy
+import inspect
+import pickle
+import re
 import sys
+import types
 import unittest
 
 import numpy as np
@@ -91,14 +96,19 @@ class EyeReferenceTests(unittest.TestCase):
     def test_dtype_device_and_requires_grad_metadata_match_pytorch_2_13(self):
         option_factories = (
             lambda module: {},
+            lambda module: {"out": None},
             lambda module: {"dtype": None},
             lambda module: {"dtype": module.float32},
             lambda module: {"dtype": module.float},
+            lambda module: {"layout": None},
+            lambda module: {"layout": module.strided},
             lambda module: {"device": None},
             lambda module: {"device": "cpu"},
             lambda module: {"device": "cpu:0"},
             lambda module: {"device": module.device("cpu")},
             lambda module: {"device": module.device("cpu", 2)},
+            lambda module: {"pin_memory": None},
+            lambda module: {"pin_memory": False},
             lambda module: {"requires_grad": None},
             lambda module: {"requires_grad": False},
             lambda module: {"requires_grad": True},
@@ -119,6 +129,34 @@ class EyeReferenceTests(unittest.TestCase):
                 self.assertEqual(
                     self.tensor_observation(torch, actual),
                     self.tensor_observation(reference_torch, expected),
+                )
+
+    def test_out_none_and_default_layout_storage_freshness_match_pytorch_2_13(self):
+        case_factories = (
+            lambda module: module.eye(3, out=None),
+            lambda module: module.eye(2, 4, out=None),
+            lambda module: module.eye(4, 2, layout=None),
+            lambda module: module.eye(0, layout=module.strided),
+            lambda module: module.eye(3, 0, out=None, layout=module.strided),
+            lambda module: module.eye(0, 3, out=None, layout=None),
+        )
+        for factory in case_factories:
+            with self.subTest(factory=factory):
+                actual = factory(torch)
+                actual_peer = factory(torch)
+                expected = factory(reference_torch)
+                expected_peer = factory(reference_torch)
+                self.assertEqual(
+                    self.tensor_observation(torch, actual),
+                    self.tensor_observation(reference_torch, expected),
+                )
+                self.assertEqual(
+                    actual.is_set_to(actual_peer),
+                    expected.is_set_to(expected_peer),
+                )
+                self.assertEqual(
+                    actual.data_ptr() == actual_peer.data_ptr(),
+                    expected.data_ptr() == expected_peer.data_ptr(),
                 )
 
     def test_integer_protocol_inputs_match_pytorch_2_13(self):
@@ -170,6 +208,55 @@ class EyeReferenceTests(unittest.TestCase):
                     self.tensor_metadata(torch, actual),
                     self.tensor_metadata(reference_torch, expected),
                 )
+
+    def callable_contract(self, module):
+        function = module.eye
+        owner = function.__reduce__()[1][0]
+        import_namespace = {}
+        wildcard_namespace = {}
+        exec(f"from {module.__name__} import eye as imported_eye", import_namespace)
+        exec(f"from {module.__name__} import *", wildcard_namespace)
+        try:
+            inspect.signature(function)
+        except Exception as error:
+            signature_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+            )
+        else:
+            signature_error = None
+        return {
+            "type": type(function).__name__,
+            "is_builtin": type(function) is types.BuiltinFunctionType,
+            "name": function.__name__,
+            "qualname": function.__qualname__,
+            "module": function.__module__,
+            "owner_name": owner.__name__,
+            "owner_qualname": owner.__qualname__,
+            "owner_module": owner.__module__.replace("torch_rs._C", "torch._C"),
+            "owner_path_identity": owner is module._C._VariableFunctionsClass,
+            "owner_callable_identity": owner.eye is function,
+            "doc": function.__doc__,
+            "text_signature": function.__text_signature__,
+            "copy_identity": copy.copy(function) is function,
+            "deepcopy_identity": copy.deepcopy(function) is function,
+            "repr": re.sub(r"0x[0-9a-f]+", "0x...", repr(function)),
+            "signature_error": signature_error,
+            "all_count": module.__all__.count("eye"),
+            "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
+            "import_identity": import_namespace["imported_eye"] is function,
+            "wildcard_identity": wildcard_namespace["eye"] is function,
+            "pickle_identities": tuple(
+                pickle.loads(pickle.dumps(function, protocol=protocol)) is function
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+            ),
+        }
+
+    def test_callable_metadata_imports_exports_copy_and_pickle_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.callable_contract(torch),
+            self.callable_contract(reference_torch),
+        )
 
 
 if __name__ == "__main__":
