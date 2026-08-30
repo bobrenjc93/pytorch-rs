@@ -632,7 +632,33 @@ class FunctionalLinearTests(unittest.TestCase):
                     np.asarray(expected_bits, dtype=np.uint32),
                 )
 
-    def test_nonfoldable_rank_three_bias_is_added_after_matmul(self):
+    def test_folded_rank_three_bias_matches_addmm_order(self):
+        finite_output = functional.linear(
+            torch.tensor([[[-1.0e20, 3.25]]]),
+            torch.tensor([[1.0, 1.0]]),
+            torch.tensor([1.0e20]),
+        )
+        with self.subTest(case="finite cancellation"):
+            self.assertEqual(finite_output.shape, (1, 1, 1))
+            self.assertEqual(
+                np.asarray(finite_output).reshape(-1).view(np.uint32).item(),
+                np.asarray([0.0], dtype=np.float32).view(np.uint32).item(),
+            )
+
+        singleton_dimension_input = torch.zeros((2, 4, 1)).transpose(1, 2)
+        signed_zero_output = functional.linear(
+            singleton_dimension_input,
+            torch.tensor([[-0.0, -0.0, -0.0, -0.0]]),
+            torch.tensor([-0.0]),
+        )
+        with self.subTest(case="size-one folded dimension"):
+            self.assertEqual(signed_zero_output.shape, (2, 1, 1))
+            np.testing.assert_array_equal(
+                np.asarray(signed_zero_output).reshape(-1).view(np.uint32),
+                np.asarray([0x80000000, 0x80000000], dtype=np.uint32),
+            )
+
+    def test_noncontiguous_rank_three_bias_is_added_after_matmul(self):
         signed_zero_input = torch.zeros((3, 2, 1)).transpose(0, 1)
         signed_zero_output = functional.linear(
             signed_zero_input,
@@ -647,7 +673,7 @@ class FunctionalLinearTests(unittest.TestCase):
             )
 
         finite_input = torch.tensor(
-            [[[-1.0e20, 3.25]], [[0.0, 0.0]]]
+            [[[-1.0e20, 3.25], [0.0, 0.0]], [[0.0, 0.0], [0.0, 0.0]]]
         ).transpose(0, 1)
         finite_output = functional.linear(
             finite_input,
@@ -655,7 +681,7 @@ class FunctionalLinearTests(unittest.TestCase):
             torch.tensor([1.0e20]),
         )
         with self.subTest(case="finite rounding"):
-            self.assertEqual(finite_output.shape, (1, 2, 1))
+            self.assertEqual(finite_output.shape, (2, 2, 1))
             self.assertEqual(
                 np.asarray(finite_output).reshape(-1).view(np.uint32)[0],
                 np.asarray([0.0], dtype=np.float32).view(np.uint32)[0],
@@ -882,6 +908,18 @@ class FunctionalLinearTests(unittest.TestCase):
             with self.subTest(bias_features=bias_features):
                 with self.assertRaisesRegex(RuntimeError, f"^{re.escape(message)}$"):
                     functional.linear(input, weight, torch.zeros((bias_features,)))
+
+    def test_noncontiguous_rank_three_tracked_weight_keeps_post_matmul_bias_errors(self):
+        input = torch.zeros((3, 2, 4)).transpose(0, 1)
+        weight = torch.zeros((5, 4), requires_grad=True)
+        bias = torch.zeros((4,))
+        with torch.no_grad():
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"^The size of tensor a \(5\) must match the size of tensor b "
+                r"\(4\) at non-singleton dimension 2$",
+            ):
+                functional.linear(input, weight, bias)
 
     def test_requires_grad_operands_need_no_grad(self):
         for rank, input_values in (

@@ -3475,6 +3475,108 @@ impl Tensor {
         })
     }
 
+    /// Multiplies two rank-2 matrices and applies a rank-1 bias with
+    /// `PyTorch`'s rank-3 linear flattening order.
+    ///
+    /// Unlike [`Self::matmul_with_row_bias`], finite products are accumulated
+    /// before the bias is added. This matches `addmm` for rank-3
+    /// `nn.functional.linear` while preserving its signed-zero behavior for
+    /// all-zero products.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn matmul_with_addmm_row_bias(
+        &self,
+        other: &Self,
+        bias: &Self,
+    ) -> Result<Self, TensorError> {
+        let output = self.matmul(other)?;
+        let (rows, inner) = (self.shape[0], self.shape[1]);
+        let columns = other.shape[1];
+        let output_elements = output.elements;
+        if bias.shape.len() != 1 || (bias.shape[0] != columns && bias.shape[0] != 1) {
+            let mut expected_bias_shape = try_result_vector(1, output_elements)?;
+            expected_bias_shape.push(columns);
+            return Err(TensorError::ShapeMismatch {
+                left: expected_bias_shape,
+                right: try_clone_result_shape(&bias.shape, bias.elements)?,
+            });
+        }
+
+        let dtype = output.dtype();
+        let device = output.device();
+        let mut values = output.try_to_vec()?;
+        let shape = output.shape;
+        let strides = output.strides;
+        if output_elements != 0 {
+            if inner == 0 {
+                if bias.shape[0] == 1 {
+                    values.fill(bias.value_at_linear_index(0));
+                } else {
+                    let bias_values = bias.try_to_vec()?;
+                    for output_row in values.chunks_exact_mut(columns) {
+                        output_row.copy_from_slice(&bias_values);
+                    }
+                }
+            } else if bias.shape[0] == 1 {
+                let bias_value = bias.value_at_linear_index(0);
+                for row in 0..rows {
+                    for column in 0..columns {
+                        let index = row * columns + column;
+                        values[index] += bias_value;
+                        self.preserve_addmm_negative_zero(
+                            other,
+                            row,
+                            column,
+                            bias_value,
+                            &mut values[index],
+                        );
+                    }
+                }
+            } else {
+                let bias_values = bias.try_to_vec()?;
+                for row in 0..rows {
+                    for (column, &bias_value) in bias_values.iter().enumerate() {
+                        let index = row * columns + column;
+                        values[index] += bias_value;
+                        self.preserve_addmm_negative_zero(
+                            other,
+                            row,
+                            column,
+                            bias_value,
+                            &mut values[index],
+                        );
+                    }
+                }
+            }
+        }
+        Ok(Self::from_owned_parts(
+            values, shape, strides, dtype, device,
+        ))
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn preserve_addmm_negative_zero(
+        &self,
+        other: &Self,
+        row: usize,
+        column: usize,
+        bias: f32,
+        output: &mut f32,
+    ) {
+        if bias.to_bits() != (-0.0_f32).to_bits() || output.to_bits() != 0.0_f32.to_bits() {
+            return;
+        }
+        let inner = self.shape[1];
+        let columns = other.shape[1];
+        let all_products_are_negative_zero = (0..inner).all(|depth| {
+            let left = self.value_at_linear_index(row * inner + depth);
+            let right = other.value_at_linear_index(depth * columns + column);
+            (left * right).to_bits() == (-0.0_f32).to_bits()
+        });
+        if all_products_are_negative_zero {
+            *output = -0.0;
+        }
+    }
+
     fn matmul_with_initializer(
         &self,
         other: &Self,
@@ -9341,6 +9443,52 @@ mod tests {
         ] {
             assert_eq!(actual.numel(), 0);
         }
+    }
+
+    #[test]
+    fn addmm_row_biased_matmul_matches_rank_three_linear_order() {
+        let cancellation = Tensor::from_vec(vec![-1.0e20, 3.25], [1, 2])
+            .unwrap()
+            .matmul_with_addmm_row_bias(
+                &Tensor::from_vec(vec![1.0, 1.0], [2, 1]).unwrap(),
+                &Tensor::from_vec(vec![1.0e20], [1]).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(cancellation.as_slice()[0].to_bits(), 0.0_f32.to_bits());
+
+        let bias = Tensor::from_vec(vec![-0.0], [1]).unwrap();
+        let negative_zero_product = Tensor::from_vec(vec![0.0], [1, 1])
+            .unwrap()
+            .matmul_with_addmm_row_bias(&Tensor::from_vec(vec![-0.0], [1, 1]).unwrap(), &bias)
+            .unwrap();
+        assert_eq!(
+            negative_zero_product.as_slice()[0].to_bits(),
+            (-0.0_f32).to_bits()
+        );
+
+        let positive_zero_product = Tensor::from_vec(vec![0.0], [1, 1])
+            .unwrap()
+            .matmul_with_addmm_row_bias(&Tensor::from_vec(vec![1.0], [1, 1]).unwrap(), &bias)
+            .unwrap();
+        assert_eq!(
+            positive_zero_product.as_slice()[0].to_bits(),
+            0.0_f32.to_bits()
+        );
+
+        let empty_inner = Tensor::zeros([2, 0])
+            .unwrap()
+            .matmul_with_addmm_row_bias(
+                &Tensor::zeros([0, 2]).unwrap(),
+                &Tensor::from_vec(vec![0.5], [1]).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            empty_inner
+                .logical_values()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            vec![0.5_f32.to_bits(); 4]
+        );
     }
 
     #[test]

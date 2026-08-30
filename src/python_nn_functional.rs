@@ -409,11 +409,16 @@ fn linear_rank_two(
     )
 }
 
-fn rank_three_folds_to_matrix(input: &Tensor, weight: &Tensor) -> bool {
+fn rank_three_folds_to_matrix(input: &Tensor, weight: &Tensor, has_bias: bool) -> bool {
     let input_shape = input.shape();
     weight.requires_grad()
         || input.numel() == 0
+        || (has_bias && input.is_contiguous())
         || input.stride()[1].checked_mul(input_shape[1]) == Some(input.stride()[0])
+}
+
+fn rank_three_fuses_bias(input: &Tensor, bias: Option<&PyTensor>) -> bool {
+    bias.is_some() && input.is_contiguous()
 }
 
 fn linear_rank_three(
@@ -425,10 +430,12 @@ fn linear_rank_three(
     let input_shape = input.shape();
     let weight_shape = weight.shape();
     // PyTorch's rank-3 by rank-2 matmul folds the leading dimensions
-    // when they are stride-compatible, the input is empty, or the
-    // matrix operand requires gradients. Otherwise its batched path
-    // reports this layout-dependent inner-dimension error.
-    let folds_to_matrix = rank_three_folds_to_matrix(input, weight);
+    // when they are stride-compatible, the input is empty, the matrix
+    // operand requires gradients, or biased linear takes the contiguous
+    // addmm path. Otherwise its batched path reports this
+    // layout-dependent inner-dimension error.
+    let folds_to_matrix = rank_three_folds_to_matrix(input, weight, bias.is_some());
+    let fuses_bias = rank_three_fuses_bias(input, bias);
     if !folds_to_matrix && input_shape[2] != weight_shape[1] {
         return Err(PyRuntimeError::new_err(format!(
             "Expected size for first two dimensions of batch2 tensor to be: [{}, {}] but got: [{}, {}].",
@@ -446,10 +453,10 @@ fn linear_rank_three(
     let output = input
         .flatten(0, 1)
         .and_then(|input| {
-            if folds_to_matrix {
+            if fuses_bias {
                 bias.map_or_else(
                     || input.matmul(transposed_weight),
-                    |bias| input.matmul_with_row_bias(transposed_weight, bias.inner()),
+                    |bias| input.matmul_with_addmm_row_bias(transposed_weight, bias.inner()),
                 )
             } else {
                 input.matmul(transposed_weight)
@@ -457,7 +464,7 @@ fn linear_rank_three(
         })
         .and_then(|output| output.reshape(output_shape))
         .and_then(|output| {
-            if folds_to_matrix {
+            if fuses_bias {
                 Ok(output)
             } else {
                 match bias {
@@ -466,7 +473,7 @@ fn linear_rank_three(
                 }
             }
         });
-    Ok((output, folds_to_matrix))
+    Ok((output, fuses_bias))
 }
 
 fn resolve_linear_output(
