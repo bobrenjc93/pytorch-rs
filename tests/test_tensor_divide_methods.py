@@ -4,6 +4,7 @@ import inspect
 import operator
 import pickle
 import re
+import sys
 import types
 import unittest
 from multiprocessing.reduction import ForkingPickler
@@ -168,6 +169,49 @@ class TensorDivideMethodTests(unittest.TestCase):
                 inspect.getattr_static(reloaded.Tensor, name),
                 inspect.getattr_static(torch.Tensor, name),
             )
+
+    def test_descriptor_reducer_survives_package_reinitialization(self):
+        original_modules = {
+            name: module
+            for name, module in tuple(sys.modules.items())
+            if name == "torch_rs" or name.startswith("torch_rs.")
+        }
+        try:
+            for name in original_modules:
+                sys.modules.pop(name, None)
+            reinitialized = importlib.import_module("torch_rs")
+            for name in ("div", "divide"):
+                descriptor = inspect.getattr_static(reinitialized.Tensor, name)
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                    with self.subTest(
+                        name=name, protocol=protocol, package="reinitialized"
+                    ):
+                        self.assertIs(
+                            pickle.loads(pickle.dumps(descriptor, protocol)),
+                            descriptor,
+                        )
+                        self.assertIs(
+                            pickle.loads(ForkingPickler.dumps(descriptor, protocol)),
+                            descriptor,
+                        )
+        finally:
+            for name in tuple(sys.modules):
+                if name == "torch_rs" or name.startswith("torch_rs."):
+                    sys.modules.pop(name, None)
+            sys.modules.update(original_modules)
+
+        for name in ("div", "divide"):
+            descriptor = inspect.getattr_static(torch.Tensor, name)
+            for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                with self.subTest(name=name, protocol=protocol, package="restored"):
+                    self.assertIs(
+                        pickle.loads(pickle.dumps(descriptor, protocol)),
+                        descriptor,
+                    )
+                    self.assertIs(
+                        pickle.loads(ForkingPickler.dumps(descriptor, protocol)),
+                        descriptor,
+                    )
 
     def test_argument_errors_and_rejected_extensions(self):
         tensor = torch.tensor([1.0])

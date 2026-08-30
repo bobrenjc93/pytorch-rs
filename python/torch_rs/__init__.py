@@ -367,6 +367,14 @@ def _get_tensorbase_method_descriptor(name):
     return getattr(_TensorBase, name)
 
 
+def _current_tensorbase_reducer_package():
+    """Return the currently importable package that owns TensorBase reducers."""
+    try:
+        return __import__(__name__)
+    except ImportError:
+        return None
+
+
 def _make_tensorbase_method_descriptor_reducer(previous):
     if getattr(
         previous,
@@ -380,8 +388,26 @@ def _make_tensorbase_method_descriptor_reducer(previous):
         )
 
     def reducer(descriptor):
-        if descriptor.__objclass__ is _TensorBase:
-            return _get_tensorbase_method_descriptor, (descriptor.__name__,)
+        current_package = _current_tensorbase_reducer_package()
+        current_tensorbase = (
+            getattr(current_package, "_TensorBase", None)
+            if current_package is not None
+            else None
+        )
+        if descriptor.__objclass__ is _TensorBase or (
+            current_tensorbase is not None
+            and descriptor.__objclass__ is current_tensorbase
+        ):
+            reconstructor = (
+                getattr(
+                    current_package,
+                    "_get_tensorbase_method_descriptor",
+                    _get_tensorbase_method_descriptor,
+                )
+                if current_package is not None
+                else _get_tensorbase_method_descriptor
+            )
+            return reconstructor, (descriptor.__name__,)
         if previous is not None:
             return previous(descriptor)
         return descriptor.__reduce__()
