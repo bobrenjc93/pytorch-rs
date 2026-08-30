@@ -1470,39 +1470,7 @@ impl Tensor {
     /// dense storage interval, independent of dimension order.
     #[must_use]
     pub fn is_non_overlapping_and_dense(&self) -> bool {
-        if self.elements == 0 {
-            return true;
-        }
-
-        let dimensions = self
-            .shape
-            .iter()
-            .filter(|dimension| **dimension > 1)
-            .count();
-        let mut matched = 0_usize;
-        let mut expected_stride = 1_usize;
-        while matched < dimensions {
-            let mut matching_dimension = None;
-            for (axis, (&dimension, &stride)) in
-                self.shape.iter().zip(self.strides.iter()).enumerate()
-            {
-                if dimension > 1 && stride == expected_stride {
-                    if matching_dimension.is_some() {
-                        return false;
-                    }
-                    matching_dimension = Some((axis, dimension));
-                }
-            }
-            let Some((_, dimension)) = matching_dimension else {
-                return false;
-            };
-            let Some(next_stride) = expected_stride.checked_mul(dimension) else {
-                return false;
-            };
-            expected_stride = next_stride;
-            matched += 1;
-        }
-        true
+        layout_is_non_overlapping_and_dense(&self.shape, &self.strides, self.elements)
     }
 
     /// Returns logical values in row-major index order.
@@ -4789,7 +4757,7 @@ impl BroadcastPlan {
         Self::new_with_strides(left, right, |shape, elements| {
             let left_strides = expanded_broadcast_strides(left, shape, elements)?;
             let right_strides = expanded_broadcast_strides(right, shape, elements)?;
-            elementwise_output_strides(
+            elementwise_output_strides_with_fast_setup(
                 shape,
                 &[
                     ElementwiseLayout {
@@ -4927,6 +4895,41 @@ fn expanded_broadcast_strides(
     Ok(strides)
 }
 
+#[cfg(any(feature = "python-bindings", test))]
+fn elementwise_output_strides_with_fast_setup(
+    shape: &[usize],
+    operands: &[ElementwiseLayout<'_>],
+    elements: usize,
+) -> Result<Vec<usize>, TensorError> {
+    if operands
+        .iter()
+        .all(|layout| layout_is_contiguous(shape, layout.strides, elements))
+    {
+        return contiguous_strides(shape, elements);
+    }
+    if operands
+        .iter()
+        .all(|layout| layout_is_channels_last_contiguous(shape, layout.strides))
+    {
+        return channels_last_strides(shape, elements);
+    }
+    if operands
+        .iter()
+        .all(|layout| layout_is_channels_last_3d_contiguous(shape, layout.strides))
+    {
+        return channels_last_3d_strides(shape, elements);
+    }
+    if let Some(first) = operands.first()
+        && operands.iter().all(|layout| {
+            layout.strides == first.strides
+                && layout_is_non_overlapping_and_dense(shape, layout.strides, elements)
+        })
+    {
+        return try_clone_result_shape(first.strides, elements);
+    }
+    elementwise_output_strides(shape, operands, elements)
+}
+
 fn layout_is_contiguous(shape: &[usize], strides: &[usize], elements: usize) -> bool {
     if elements == 0 {
         return true;
@@ -4945,6 +4948,40 @@ fn layout_is_contiguous(shape: &[usize], strides: &[usize], elements: usize) -> 
             return false;
         };
         expected_stride = next_stride;
+    }
+    true
+}
+
+fn layout_is_non_overlapping_and_dense(
+    shape: &[usize],
+    strides: &[usize],
+    elements: usize,
+) -> bool {
+    if elements == 0 {
+        return true;
+    }
+
+    let dimensions = shape.iter().filter(|dimension| **dimension > 1).count();
+    let mut matched = 0_usize;
+    let mut expected_stride = 1_usize;
+    while matched < dimensions {
+        let mut matching_dimension = None;
+        for (axis, (&dimension, &stride)) in shape.iter().zip(strides.iter()).enumerate() {
+            if dimension > 1 && stride == expected_stride {
+                if matching_dimension.is_some() {
+                    return false;
+                }
+                matching_dimension = Some((axis, dimension));
+            }
+        }
+        let Some((_, dimension)) = matching_dimension else {
+            return false;
+        };
+        let Some(next_stride) = expected_stride.checked_mul(dimension) else {
+            return false;
+        };
+        expected_stride = next_stride;
+        matched += 1;
     }
     true
 }
@@ -8466,6 +8503,33 @@ mod tests {
                 .logical_values()
                 .map(f32::to_bits)
                 .eq([0.0_f32, 9.0, 0.0, 9.0, 0.0, 9.0].map(f32::to_bits))
+        );
+        assert!(!actual.shares_storage_with(&input));
+        assert!(!actual.shares_storage_with(&target));
+    }
+
+    #[test]
+    fn squared_difference_canonicalizes_singleton_output_broadcast_strides() {
+        let input = Tensor::from_vec(vec![0.0, 1.0], [2, 1])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let target = Tensor::from_vec(vec![0.0, 1.0], [2]).unwrap();
+
+        assert_eq!(input.shape(), &[1, 2]);
+        assert_eq!(input.stride(), &[1, 1]);
+        assert_eq!(target.shape(), &[2]);
+        assert_eq!(target.stride(), &[1]);
+
+        let actual = input.squared_difference(&target).unwrap();
+        assert_eq!(actual.shape(), &[1, 2]);
+        assert_eq!(actual.stride(), &[2, 1]);
+        assert_eq!(actual.storage_offset(), 0);
+        assert!(
+            actual
+                .logical_values()
+                .map(f32::to_bits)
+                .eq([0.0_f32, 0.0].map(f32::to_bits))
         );
         assert!(!actual.shares_storage_with(&input));
         assert!(!actual.shares_storage_with(&target));

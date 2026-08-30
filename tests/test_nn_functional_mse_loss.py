@@ -458,6 +458,39 @@ class FunctionalMseLossTests(unittest.TestCase):
         self.assertFalse(actual.is_set_to(input))
         self.assertFalse(actual.is_set_to(target))
 
+    def test_broadcasted_singleton_output_stride_matches_pytorch_mse_loss(self):
+        input = torch.tensor([[0.0], [1.0]]).transpose(0, 1)
+        target = torch.tensor([0.0, 1.0])
+        expected = (input - target).square()
+
+        self.assertEqual(input.shape, (1, 2))
+        self.assertEqual(input.stride(), (1, 1))
+        self.assertEqual(target.shape, (2,))
+        self.assertEqual(target.stride(), (1,))
+        self.assertEqual((input - target).stride(), (1, 1))
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            actual = functional.mse_loss(input, target, reduction="none")
+
+        with self.subTest(warning=True):
+            self.assertEqual(len(caught), 1)
+            self.assertIs(caught[0].category, UserWarning)
+            self.assertEqual(str(caught[0].message), self.broadcast_warning(input, target))
+
+        self.assert_matches_composition(
+            actual,
+            expected,
+            case="singleton output broadcast",
+            expected_stride=(2, 1),
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            repeated = functional.mse_loss(input, target, reduction="none")
+        self.assertFalse(actual.is_set_to(repeated))
+        self.assertFalse(actual.is_set_to(input))
+        self.assertFalse(actual.is_set_to(target))
+
     def test_every_call_returns_fresh_independent_storage(self):
         for case, input, target in self.layout_cases():
             first = functional.mse_loss(input, target, reduction="none")
