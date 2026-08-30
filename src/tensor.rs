@@ -621,6 +621,22 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
+    /// Creates a fresh zero-filled tensor with this tensor's shape.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when this tensor is not in canonical row-major
+    /// contiguous layout, or when allocating the result fails.
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn zeros_like(&self) -> Result<Self, TensorError> {
+        let expected_strides = contiguous_strides(&self.shape, self.elements)?;
+        if self.strides != expected_strides {
+            return Err(TensorError::ZerosLikeRequiresContiguous);
+        }
+        let shape = try_clone_result_shape(&self.shape, self.elements)?;
+        Self::zeros_with_metadata(shape, self.dtype(), self.device())
+    }
+
     /// Creates a one-filled tensor.
     ///
     /// # Errors

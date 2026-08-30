@@ -91,6 +91,7 @@ pub enum TensorError {
     UnsupportedMemoryFormat {
         memory_format: MemoryFormat,
     },
+    ZerosLikeRequiresContiguous,
     ContiguousPreserveFormatUnsupported,
     ContiguousMemoryFormatRankMismatch {
         memory_format: MemoryFormat,
@@ -196,6 +197,7 @@ impl Display for TensorError {
                 format_storage_error(formatter, error)
             }
             error @ (Self::UnsupportedMemoryFormat { .. }
+            | Self::ZerosLikeRequiresContiguous
             | Self::ContiguousPreserveFormatUnsupported
             | Self::ContiguousMemoryFormatRankMismatch { .. }) => {
                 format_memory_format_error(formatter, error)
@@ -354,6 +356,8 @@ fn format_memory_format_error(
             formatter,
             "clone with memory format torch.{memory_format} is not supported"
         ),
+        TensorError::ZerosLikeRequiresContiguous => formatter
+            .write_str("zeros_like(): only row-major contiguous input tensors are supported"),
         TensorError::ContiguousPreserveFormatUnsupported => {
             formatter.write_str("preserve memory format is unsupported by the contiguous operator")
         }

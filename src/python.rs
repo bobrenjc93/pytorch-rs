@@ -1592,6 +1592,65 @@ pub(crate) fn arange_variable_function(
         .unbind())
 }
 
+pub(crate) fn zeros_like_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let arguments = bind_zeros_like_arguments(args, kwargs)?;
+    let Some(input) = arguments.input else {
+        return Err(PyTypeError::new_err(
+            "zeros_like() missing 1 required positional arguments: \"input\"",
+        ));
+    };
+    if !input.value.is_exact_instance_of::<PyTensor>() {
+        return Err(legacy_single_tensor_type_error("zeros_like", &input)?);
+    }
+
+    let dtype = parse_identity_dtype("zeros_like", arguments.dtype.as_ref())?;
+    parse_zeros_like_layout(arguments.layout.as_ref())?;
+    validate_zeros_like_device_argument_type(arguments.device.as_ref())?;
+    let requires_grad =
+        parse_factory_requires_grad("zeros_like", arguments.requires_grad.as_ref())?;
+    let memory_format = parse_zeros_like_memory_format(arguments.memory_format.as_ref())?;
+    if let Some(error) = arguments.keyword_error {
+        return Err(error);
+    }
+    if !torch_function_mode_stack::is_empty() {
+        return Err(PyTypeError::new_err(
+            "zeros_like() does not support TorchFunctionMode",
+        ));
+    }
+
+    let device = parse_device("zeros_like", arguments.device.as_ref())?;
+    if dtype != DType::Float32 || device != Device::Cpu {
+        return Err(PyNotImplementedError::new_err(
+            "zeros_like(): only default CPU float32 metadata is supported",
+        ));
+    }
+    if !matches!(
+        memory_format,
+        MemoryFormat::Preserve | MemoryFormat::Contiguous
+    ) {
+        return Err(PyNotImplementedError::new_err(
+            "zeros_like(): only default-equivalent memory_format values are supported",
+        ));
+    }
+
+    let input = input.value.cast::<PyTensor>()?.try_borrow()?;
+    if input.inner.dtype() != DType::Float32 || !input.inner.device().is_cpu() {
+        return Err(PyNotImplementedError::new_err(
+            "zeros_like(): only exact native CPU float32 Tensor inputs are supported",
+        ));
+    }
+    let output = input
+        .inner
+        .zeros_like()
+        .map(|inner| inner.with_requires_grad(requires_grad))
+        .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(output))?.into_any())
+}
+
 fn dispatch_empty_variadic_tensor_input(
     py: Python<'_>,
     name: &str,
@@ -4371,6 +4430,16 @@ struct ArangeCallArguments<'py> {
     keyword_error: Option<PyErr>,
 }
 
+struct ZerosLikeCallArguments<'py> {
+    input: Option<ParsedCallArgument<'py>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    requires_grad: Option<Bound<'py, PyAny>>,
+    memory_format: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
 struct CreationCallArguments<'py> {
     size: Option<Bound<'py, PyAny>>,
     size_origin: Option<CreationSizeOrigin>,
@@ -6358,6 +6427,120 @@ fn arange_overload_unsupported() -> PyErr {
     PyTypeError::new_err(
         "arange(): start and step overloads are not supported; pass one exact Python float endpoint",
     )
+}
+
+fn bind_zeros_like_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ZerosLikeCallArguments<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "zeros_like() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments = ZerosLikeCallArguments {
+        input: if positional.is_empty() {
+            None
+        } else {
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            })
+        },
+        dtype: None,
+        layout: None,
+        device: None,
+        requires_grad: None,
+        memory_format: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "input" => {
+                if arguments.input.is_some() {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(
+                            "zeros_like() got multiple values for argument 'input'",
+                        )
+                    });
+                } else {
+                    arguments.input = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            }
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "layout" => arguments.layout = Some(value),
+            "device" => arguments.device = optional_call_argument(value),
+            "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            "memory_format" => arguments.memory_format = Some(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "zeros_like() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
+}
+
+fn parse_zeros_like_layout(layout: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    let Some(layout) = layout else {
+        return Ok(());
+    };
+    if layout.is_none() {
+        return Ok(());
+    }
+    if layout.is_instance(layout_objects(layout.py())?.layout.bind(layout.py()))? {
+        return Ok(());
+    }
+
+    let actual = python_type_name(layout)?;
+    Err(PyTypeError::new_err(format!(
+        "zeros_like(): argument 'layout' must be torch.layout, not {actual}"
+    )))
+}
+
+fn validate_zeros_like_device_argument_type(device: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    let Some(device) = device else {
+        return Ok(());
+    };
+    if device.cast::<PyDevice>().is_ok() || device.cast::<PyString>().is_ok() {
+        return Ok(());
+    }
+    let actual = python_type_name(device)?;
+    Err(PyTypeError::new_err(format!(
+        "zeros_like(): argument 'device' must be torch.device, not {actual}"
+    )))
+}
+
+fn parse_zeros_like_memory_format(
+    memory_format: Option<&Bound<'_, PyAny>>,
+) -> PyResult<MemoryFormat> {
+    let Some(memory_format) = memory_format else {
+        return Ok(MemoryFormat::Preserve);
+    };
+    if memory_format.is_none() {
+        return Ok(MemoryFormat::Preserve);
+    }
+    if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
+        return Ok(memory_format.try_borrow()?.inner());
+    }
+
+    let actual = python_type_name(memory_format)?;
+    Err(PyTypeError::new_err(format!(
+        "zeros_like(): argument 'memory_format' must be torch.memory_format, not {actual}"
+    )))
 }
 
 fn bind_as_tensor_arguments<'py>(

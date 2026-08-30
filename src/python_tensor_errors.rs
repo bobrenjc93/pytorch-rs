@@ -24,6 +24,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::StorageCapacityOverflow { .. }
         | TensorError::AllocationFailed { .. }
         | TensorError::UnsupportedMemoryFormat { .. }
+        | TensorError::ZerosLikeRequiresContiguous
         | TensorError::ContiguousPreserveFormatUnsupported
         | TensorError::ContiguousMemoryFormatRankMismatch { .. }
         | TensorError::PermutationRankMismatch { .. }
