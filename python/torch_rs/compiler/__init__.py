@@ -13,6 +13,7 @@ _MISSING_PARAMETER_TYPES = ()
 __all__ = [
     "assume_constant_result",
     "reset",
+    "list_backends",
     "disable",
     "set_default_backend",
     "get_default_backend",
@@ -55,6 +56,16 @@ def reset() -> None:
     process-local state used by :func:`torch.compile`. It does not delete
     filesystem caches, such as Inductor's disk cache.
     """
+
+
+def list_backends(exclude_tags=("debug", "experimental")) -> list[str]:
+    """
+    Return valid strings that can be passed to `torch.compile(..., backend="name")`.
+
+    Args:
+        exclude_tags(optional): A tuple of strings representing tags to exclude.
+    """
+    return []
 
 
 def _disable_function(fn, recursive, reason):
