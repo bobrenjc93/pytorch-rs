@@ -46,10 +46,12 @@ Measures the element-wise mean absolute error between ``input`` and ``target``.
 
 The current native implementation requires exact ``torch_rs.Tensor`` operands
 with CPU ``float32`` storage, broadcastable shapes, ``reduction='none'``,
-``size_average=None``, ``reduce=None``, and ``weight=None``. It composes
-subtraction and absolute value and returns a fresh, independent tensor with
-PyTorch-compatible values, shape, strides, scalar metadata, and
-size-mismatch warning.
+``size_average=None``, ``reduce=None``, and ``weight=None``. It fuses
+same-shape row-major contiguous operands into one native absolute-difference
+pass, otherwise preserving the established subtraction and absolute-value
+behavior. The operation returns a fresh, independent tensor with
+PyTorch-compatible values, shape, strides, scalar metadata, and size-mismatch
+warning.
 
 Unbroadcastable shapes, reduced outputs, weights, Tensor subclasses, active
 ``TorchFunctionMode`` contexts, and active autograd recording are not
