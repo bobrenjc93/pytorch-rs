@@ -159,6 +159,21 @@ class AllCloseReferenceTests(unittest.TestCase):
                 {"rtol": float("inf")},
             ),
             (
+                [3.4e38],
+                [-3.4e38],
+                {"rtol": float("inf"), "atol": 0.0},
+            ),
+            (
+                [3.4e38],
+                [-3.4e38],
+                {"rtol": 0.0, "atol": float("inf")},
+            ),
+            (
+                [3.4e38],
+                [-3.4e38],
+                {"rtol": 2.0, "atol": 0.0},
+            ),
+            (
                 [1.0],
                 [1.0 + 1.0e-6],
                 {},
@@ -292,6 +307,136 @@ class AllCloseReferenceTests(unittest.TestCase):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         self.assertEqual(
             self.callable_contract(torch), self.callable_contract(reference_torch)
+        )
+
+    def torch_function_mode_contract(self, module):
+        left = module.tensor([1.0])
+        right = module.tensor([1.0])
+        descriptor = inspect.getattr_static(module.Tensor, "allclose")
+        marker = object()
+
+        def normalize_value(value):
+            if value is left:
+                return "left"
+            if value is right:
+                return "right"
+            return value
+
+        def normalize_kwargs(kwargs):
+            if kwargs is None:
+                return None
+            return tuple((key, normalize_value(kwargs[key])) for key in kwargs)
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        def record_call(case, call):
+            mode = RecordingMode(marker)
+            with mode:
+                result = call()
+            func, dispatch_types, args, kwargs = mode.calls[0]
+            if func is module.allclose:
+                function = "torch.allclose"
+            elif func is descriptor:
+                function = "torch.Tensor.allclose"
+            else:
+                function = repr(func)
+            return (
+                case,
+                result is marker,
+                function,
+                tuple(dispatch_types),
+                tuple(normalize_value(arg) for arg in args),
+                normalize_kwargs(kwargs),
+            )
+
+        calls = [
+            record_call(
+                "top positional",
+                lambda: module.allclose(left, right, rtol=0.0, equal_nan=True),
+            ),
+            record_call(
+                "top keyword",
+                lambda: module.allclose(
+                    input=left, other=right, rtol=0.0, equal_nan=True
+                ),
+            ),
+            record_call(
+                "method positional",
+                lambda: left.allclose(right, rtol=0.0, equal_nan=True),
+            ),
+            record_call(
+                "method keyword",
+                lambda: left.allclose(other=right, rtol=0.0, equal_nan=True),
+            ),
+        ]
+
+        order = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                if func is module.allclose:
+                    function = "torch.allclose"
+                elif func is descriptor:
+                    function = "torch.Tensor.allclose"
+                else:
+                    function = repr(func)
+                order.append(
+                    (
+                        self.label,
+                        function,
+                        tuple(types),
+                        tuple(normalize_value(arg) for arg in args),
+                        normalize_kwargs(kwargs),
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                top_result = module.allclose(input=left, other=right)
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                method_result = left.allclose(other=right)
+
+        errors = []
+        for function_name, call in (
+            ("torch.allclose", lambda: module.allclose(left, right)),
+            ("torch.Tensor.allclose", lambda: left.allclose(right)),
+        ):
+            mode = RecordingMode(NotImplemented)
+            with self.assertRaises(TypeError) as raised:
+                with mode:
+                    call()
+            errors.append(
+                (
+                    function_name,
+                    type(raised.exception).__name__,
+                    str(raised.exception).splitlines()[0],
+                    len(mode.calls),
+                )
+            )
+
+        return (
+            tuple(calls),
+            (top_result is True, method_result is True, tuple(order)),
+            tuple(errors),
+        )
+
+    def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        self.assertEqual(
+            self.torch_function_mode_contract(torch),
+            self.torch_function_mode_contract(reference_torch),
         )
 
     def test_binding_type_and_shape_errors_match_pytorch_2_13(self):

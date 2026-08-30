@@ -1110,6 +1110,20 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nallclose(other, rtol=1e-05, atol=1e-08, equal_nan=False) -> Tensor\n\nSee :func:`torch.allclose`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn allclose(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        let call = bind_method_allclose_arguments(args, kwargs)?;
+        dispatch_allclose_method(slf.py(), tensor, &call, args, kwargs)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\npermute(*dims) -> Tensor\n\nReturns a view of the tensor with its dimensions permuted.\n\nArgs:\n    dims (torch.Size, int..., tuple of int or list of int): the desired ordering of dimensions.\n\nExample:\n    >>> x = torch.randn(2, 3, 5)\n    >>> x.size()\n    torch.Size([2, 3, 5])\n    >>> x.permute(2, 0, 1).size()\n    torch.Size([5, 2, 3])\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn permute(
@@ -1754,7 +1768,7 @@ pub(crate) fn allclose_variable_function(
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     let call = bind_top_level_allclose_arguments(args, kwargs)?;
-    apply_allclose(&call)?.into_py_any(py)
+    dispatch_top_level_allclose(py, &call, args, kwargs)
 }
 
 pub(crate) fn adjoint_variable_function(
@@ -2536,15 +2550,15 @@ struct BoundTopLevelSumCall<'py> {
 }
 
 struct BoundAllCloseCall<'py> {
-    input: Bound<'py, PyTensor>,
-    other: Bound<'py, PyTensor>,
+    input: BoundTensorOrTorchFunction<'py>,
+    other: BoundTensorOrTorchFunction<'py>,
     rtol: f64,
     atol: f64,
     equal_nan: bool,
 }
 
 struct BoundAllCloseMethodCall<'py> {
-    other: Bound<'py, PyTensor>,
+    other: BoundTensorOrTorchFunction<'py>,
     rtol: f64,
     atol: f64,
     equal_nan: bool,
@@ -4781,26 +4795,6 @@ impl PyTensor {
         }
         let other = other.try_borrow()?;
         Ok(self.inner == other.inner)
-    }
-
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
-    #[doc = "\nallclose(other, rtol=1e-05, atol=1e-08, equal_nan=False) -> Tensor\n\nSee :func:`torch.allclose`\n"]
-    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
-    fn allclose(
-        &self,
-        args: &Bound<'_, PyTuple>,
-        kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<bool> {
-        let call = bind_method_allclose_arguments(args, kwargs)?;
-        let other = call.other.try_borrow()?;
-        apply_allclose_tensors(
-            &self.inner,
-            &other.inner,
-            call.rtol,
-            call.atol,
-            call.equal_nan,
-        )
     }
 
     #[pyo3(signature = (*, memory_format=None))]
@@ -10503,7 +10497,7 @@ fn bind_top_level_allclose_arguments<'py>(
         return Err(allclose_missing_arguments_error(&["input", "other"]));
     }
     if arguments[1].is_none() {
-        parse_exact_native_tensor_argument(
+        parse_exact_native_tensor_or_torch_function_argument(
             "allclose",
             "input",
             arguments[0]
@@ -10513,22 +10507,20 @@ fn bind_top_level_allclose_arguments<'py>(
         return Err(allclose_missing_arguments_error(&["other"]));
     }
 
-    let input = parse_exact_native_tensor_argument(
+    let input = parse_exact_native_tensor_or_torch_function_argument(
         "allclose",
         "input",
         arguments[0]
             .as_ref()
             .expect("required input argument is present"),
-    )?
-    .clone();
-    let other = parse_exact_native_tensor_argument(
+    )?;
+    let other = parse_exact_native_tensor_or_torch_function_argument(
         "allclose",
         "other",
         arguments[1]
             .as_ref()
             .expect("required other argument is present"),
-    )?
-    .clone();
+    )?;
     let rtol = arguments[2].as_ref().map_or(Ok(1.0e-5), |argument| {
         parse_allclose_tolerance("rtol", argument)
     })?;
@@ -10606,7 +10598,8 @@ fn bind_method_allclose_arguments<'py>(
     let Some(other_argument) = arguments[0].as_ref() else {
         return Err(allclose_missing_arguments_error(&["other"]));
     };
-    let other = parse_exact_native_tensor_argument("allclose", "other", other_argument)?.clone();
+    let other =
+        parse_exact_native_tensor_or_torch_function_argument("allclose", "other", other_argument)?;
     let rtol = arguments[1].as_ref().map_or(Ok(1.0e-5), |argument| {
         parse_allclose_tolerance("rtol", argument)
     })?;
@@ -10707,6 +10700,23 @@ fn allclose_missing_arguments_error(missing: &[&str]) -> PyErr {
     ))
 }
 
+fn parse_exact_native_tensor_or_torch_function_argument<'py>(
+    function: &str,
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+) -> PyResult<BoundTensorOrTorchFunction<'py>> {
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundTensorOrTorchFunction::Tensor(
+            value.value.cast::<PyTensor>()?.clone(),
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundTensorOrTorchFunction::Override(probed));
+    }
+    parse_exact_native_tensor_argument(function, argument, value)
+        .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
+}
+
 fn parse_exact_native_tensor_argument<'a, 'py>(
     function: &str,
     argument: &str,
@@ -10766,9 +10776,162 @@ fn parse_allclose_equal_nan(value: &ParsedCallArgument<'_>) -> PyResult<bool> {
     )))
 }
 
-fn apply_allclose(call: &BoundAllCloseCall<'_>) -> PyResult<bool> {
-    let input = call.input.try_borrow()?;
-    let other = call.other.try_borrow()?;
+fn allclose_operand_override<'a, 'py>(
+    operand: &'a BoundTensorOrTorchFunction<'py>,
+) -> Option<&'a ProbedTorchFunctionOverride<'py>> {
+    match operand {
+        BoundTensorOrTorchFunction::Tensor(_) => None,
+        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
+    }
+}
+
+fn ordered_allclose_overrides<'py>(
+    input: &BoundTensorOrTorchFunction<'py>,
+    other: &BoundTensorOrTorchFunction<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    ordered_binary_overrides(
+        allclose_operand_override(input),
+        allclose_operand_override(other),
+        "unable to allocate allclose dispatch operands",
+    )
+}
+
+fn ordered_allclose_method_overrides<'py>(
+    other: &BoundTensorOrTorchFunction<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    ordered_binary_overrides(
+        None,
+        allclose_operand_override(other),
+        "unable to allocate allclose dispatch operands",
+    )
+}
+
+fn dispatch_top_level_allclose(
+    py: Python<'_>,
+    call: &BoundAllCloseCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_allclose_overrides(&call.input, &call.other)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_allclose(py, call);
+    }
+
+    let function = variable_function(py, "allclose")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.allclose",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_allclose(py: Python<'_>, call: &BoundAllCloseCall<'_>) -> PyResult<Py<PyAny>> {
+    let (BoundTensorOrTorchFunction::Tensor(input), BoundTensorOrTorchFunction::Tensor(other)) =
+        (&call.input, &call.other)
+    else {
+        unreachable!("allclose overrides were dispatched before the native path")
+    };
+    apply_allclose_tensors(
+        &input.try_borrow()?.inner,
+        &other.try_borrow()?.inner,
+        call.rtol,
+        call.atol,
+        call.equal_nan,
+    )?
+    .into_py_any(py)
+}
+
+fn dispatch_allclose_method(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    call: &BoundAllCloseMethodCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_allclose_method_overrides(&call.other)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_allclose_method(py, tensor, call);
+    }
+
+    let function = py.get_type::<PyTensorBase>().getattr("allclose")?.unbind();
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+    let argument_count = args
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("allclose dispatch argument count overflowed"))?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate allclose dispatch arguments"))?;
+    call_arguments.push(tensor.clone().into_any());
+    call_arguments.extend(args.iter());
+    let call_args = PyTuple::new(py, call_arguments)?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.Tensor.allclose",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_allclose_method(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    call: &BoundAllCloseMethodCall<'_>,
+) -> PyResult<Py<PyAny>> {
+    let BoundTensorOrTorchFunction::Tensor(other) = &call.other else {
+        unreachable!("allclose overrides were dispatched before the native path")
+    };
+    let input = tensor.try_borrow()?;
+    let other = other.try_borrow()?;
     apply_allclose_tensors(
         &input.inner,
         &other.inner,
@@ -10776,6 +10939,7 @@ fn apply_allclose(call: &BoundAllCloseCall<'_>) -> PyResult<bool> {
         call.atol,
         call.equal_nan,
     )
+    .and_then(|result| result.into_py_any(py))
 }
 
 fn validate_allclose_metadata(tensor: &CoreTensor) -> PyResult<()> {

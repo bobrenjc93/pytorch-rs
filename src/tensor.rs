@@ -586,7 +586,11 @@ fn allclose_values(left: f32, right: f32, rtol: f64, atol: f64, equal_nan: bool)
 
     let rtol = rtol as f32;
     let atol = atol as f32;
-    (left - right).abs() <= atol + rtol * right.abs()
+    let difference = (left - right).abs();
+    if difference.is_infinite() {
+        return false;
+    }
+    difference <= atol + rtol * right.abs()
 }
 
 impl Tensor {

@@ -169,6 +169,27 @@ class AllCloseTests(unittest.TestCase):
                 False,
             ),
             (
+                "finite difference overflow infinite rtol",
+                torch.tensor([3.4e38]),
+                torch.tensor([-3.4e38]),
+                {"rtol": float("inf"), "atol": 0.0},
+                False,
+            ),
+            (
+                "finite difference overflow infinite atol",
+                torch.tensor([3.4e38]),
+                torch.tensor([-3.4e38]),
+                {"rtol": 0.0, "atol": float("inf")},
+                False,
+            ),
+            (
+                "finite difference overflowed tolerance",
+                torch.tensor([3.4e38]),
+                torch.tensor([-3.4e38]),
+                {"rtol": 2.0, "atol": 0.0},
+                False,
+            ),
+            (
                 "default tolerance true",
                 torch.tensor([1.0]),
                 torch.tensor([1.0 + 1.0e-6]),
@@ -293,6 +314,115 @@ class AllCloseTests(unittest.TestCase):
         self.assertIs(torch.allclose, function)
         self.assertFalse(hasattr(torch, "isclose"))
         self.assertFalse(hasattr(torch, "bool"))
+
+    def assert_dispatch_call(self, call, expected_function, expected_args, expected_kwargs):
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        mode = RecordingMode()
+        with mode:
+            self.assertIs(call(), marker)
+
+        self.assertEqual(len(mode.calls), 1)
+        function, dispatch_types, args, kwargs = mode.calls[0]
+        self.assertIs(function, expected_function)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(len(args), len(expected_args))
+        for actual, expected in zip(args, expected_args):
+            self.assertIs(actual, expected)
+        if expected_kwargs is None:
+            self.assertIsNone(kwargs)
+            return
+        self.assertEqual(tuple(kwargs), tuple(expected_kwargs))
+        for key, expected in expected_kwargs.items():
+            if isinstance(expected, torch.Tensor):
+                self.assertIs(kwargs[key], expected)
+            else:
+                self.assertEqual(kwargs[key], expected)
+
+    def test_torch_function_modes_receive_allclose_calls_and_can_forward(self):
+        left = torch.tensor([1.0])
+        right = torch.tensor([1.0])
+        descriptor = inspect.getattr_static(torch.Tensor, "allclose")
+
+        self.assert_dispatch_call(
+            lambda: torch.allclose(left, right, rtol=0.0, equal_nan=True),
+            torch.allclose,
+            (left, right),
+            {"rtol": 0.0, "equal_nan": True},
+        )
+        self.assert_dispatch_call(
+            lambda: torch.allclose(input=left, other=right, rtol=0.0, equal_nan=True),
+            torch.allclose,
+            (),
+            {"input": left, "other": right, "rtol": 0.0, "equal_nan": True},
+        )
+        self.assert_dispatch_call(
+            lambda: left.allclose(right, rtol=0.0, equal_nan=True),
+            descriptor,
+            (left, right),
+            {"rtol": 0.0, "equal_nan": True},
+        )
+        self.assert_dispatch_call(
+            lambda: left.allclose(other=right, rtol=0.0, equal_nan=True),
+            descriptor,
+            (left,),
+            {"other": right, "rtol": 0.0, "equal_nan": True},
+        )
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append((self.label, func, types, args, kwargs))
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                self.assertIs(torch.allclose(input=left, other=right), True)
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                self.assertIs(left.allclose(other=right), True)
+        self.assertEqual([entry[0] for entry in order], ["upper", "lower", "upper", "lower"])
+        self.assertTrue(all(entry[2] == () for entry in order))
+        self.assertIs(order[0][1], torch.allclose)
+        self.assertIs(order[1][1], torch.allclose)
+        self.assertIs(order[2][1], descriptor)
+        self.assertIs(order[3][1], descriptor)
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        with self.assertRaises(TypeError) as raised:
+            with DecliningMode():
+                torch.allclose(left, right)
+        self.assertTrue(
+            str(raised.exception).startswith(
+                "Multiple dispatch failed for 'torch.allclose'; "
+                "all __torch_function__ handlers returned NotImplemented:"
+            )
+        )
+        with self.assertRaises(TypeError) as raised:
+            with DecliningMode():
+                left.allclose(right)
+        self.assertTrue(
+            str(raised.exception).startswith(
+                "Multiple dispatch failed for 'torch.Tensor.allclose'; "
+                "all __torch_function__ handlers returned NotImplemented:"
+            )
+        )
+        self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 0)
 
     def test_type_and_binding_errors(self):
         tensor = torch.tensor([1.0])
