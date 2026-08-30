@@ -649,10 +649,22 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(argument="device", value=device):
                 with self.assertRaises(RuntimeError):
                     torch.eye(1, device=device)
-        for keyword in ("out", "layout", "pin_memory"):
-            with self.subTest(keyword=keyword):
-                with self.assertRaises(TypeError):
-                    torch.eye(1, **{keyword: None})
+        for keywords in (
+            {"out": None},
+            {"layout": None},
+            {"layout": torch.strided},
+            {"pin_memory": None},
+            {"pin_memory": False},
+        ):
+            with self.subTest(keywords=keywords):
+                self.assertEqual(torch.eye(1, **keywords).tolist(), [[1.0]])
+
+        with self.assertRaises(RuntimeError):
+            torch.eye(1, out=torch.zeros((1, 1)))
+        with self.assertRaises(TypeError):
+            torch.eye(1, layout=object())
+        with self.assertRaises(RuntimeError):
+            torch.eye(1, pin_memory=True)
 
         with self.assertRaises(TypeError):
             torch.eye(1, 1, torch.float32)
