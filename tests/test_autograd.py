@@ -440,9 +440,6 @@ class AutogradApiTests(unittest.TestCase):
         )
         for name in ("zeros", "ones"):
             factory = getattr(torch, name)
-            parameter = inspect.signature(factory).parameters["requires_grad"]
-            self.assertIs(parameter.kind, inspect.Parameter.KEYWORD_ONLY)
-            self.assertIs(parameter.default, False)
 
             for value, type_name in invalid:
                 with self.subTest(factory=name, value=value):

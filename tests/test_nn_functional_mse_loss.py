@@ -1004,14 +1004,16 @@ class FunctionalMseLossTests(unittest.TestCase):
                 return object()
 
         mode = RecordingMode()
+        input = torch.ones((2, 3), requires_grad=True)
+        target = torch.zeros((3,))
         with self.assertRaisesRegex(
             TypeError,
             r"^mse_loss\(\) does not support an active TorchFunctionMode$",
         ):
             with mode:
                 functional.mse_loss(
-                    torch.ones((2, 3), requires_grad=True),
-                    torch.zeros((3,)),
+                    input,
+                    target,
                     reduction="mean",
                     weight=object(),
                 )
