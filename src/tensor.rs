@@ -3424,9 +3424,13 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when the shapes are not broadcastable or when result
-    /// shape calculation or allocation fails.
+    /// Returns an error when gradient recording is enabled for either operand,
+    /// when the shapes are not broadcastable, or when result shape calculation
+    /// or allocation fails.
     pub fn div(&self, other: &Self) -> Result<Self, TensorError> {
+        if self.records_grad() || other.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
+        }
         self.zip_map(other, |left, right| left / right)
     }
 
@@ -3498,8 +3502,16 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when result allocation fails.
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result allocation fails.
     pub fn div_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
+        }
+        self.div_scalar_values(scalar)
+    }
+
+    fn div_scalar_values(&self, scalar: f32) -> Result<Self, TensorError> {
         self.map_scalar(scalar, |value, scalar| value / scalar)
     }
 
@@ -3518,8 +3530,12 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when result allocation fails.
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result allocation fails.
     pub fn scalar_div(&self, scalar: f32) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
+        }
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
         // PyTorch plans reflected division like a reciprocal followed by a
@@ -3726,7 +3742,7 @@ impl Tensor {
     /// Returns an error when result allocation fails.
     pub fn mean(&self) -> Result<Self, TensorError> {
         let divisor = full_reduction_mean_divisor(self.elements);
-        let mut output = self.sum().div_scalar(divisor)?;
+        let mut output = self.sum().div_scalar_values(divisor)?;
         if self.requires_grad() && is_grad_enabled() {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
