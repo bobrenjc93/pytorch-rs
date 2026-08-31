@@ -150,6 +150,55 @@ class EmptyReferenceTests(unittest.TestCase):
                 self.assertEqual(actual_value.calls, 1)
                 self.assertGreaterEqual(expected_value.calls, 1)
 
+    def test_invalid_sequence_dimensions_match_pytorch_2_13_errors(self):
+        def exception_contract(module, create):
+            try:
+                create(module)
+            except Exception as error:
+                return type(error), str(error).split("\n", 1)[0]
+            self.fail("expected the size sequence to be rejected")
+
+        exact_cases = (
+            lambda module: module.empty([True]),
+            lambda module: module.empty([False]),
+            lambda module: module.empty((True,)),
+            lambda module: module.empty([np.bool_(True)]),
+            lambda module: module.empty([-1]),
+            lambda module: module.empty([1, -2]),
+            lambda module: module.empty([np.int64(-1)]),
+        )
+        for create in exact_cases:
+            with self.subTest(create=create):
+                self.assertEqual(
+                    exception_contract(torch, create),
+                    exception_contract(reference_torch, create),
+                )
+
+        overflow_cases = (
+            lambda module: module.empty([2**63]),
+            lambda module: module.empty([-(2**63) - 1]),
+            lambda module: module.empty([np.uint64(2**63)]),
+            lambda module: module.empty([IndexDimension(2**63)]),
+        )
+        for create in overflow_cases:
+            with self.subTest(create=create):
+                actual_type, actual_message = exception_contract(torch, create)
+                expected_type, expected_message = exception_contract(
+                    reference_torch,
+                    create,
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertIn(
+                    "argument 'size' failed to unpack the object at pos 1",
+                    actual_message,
+                )
+                self.assertIn("Overflow when unpacking long long", actual_message)
+                self.assertIn(
+                    "argument 'size' failed to unpack the object at pos 1",
+                    expected_message,
+                )
+                self.assertIn("Overflow when unpacking long long", expected_message)
+
     def test_error_boundaries_match_or_pin_narrow_unsupported_surface(self):
         for dtype in (reference_torch.float64,):
             with self.subTest(dtype=dtype):

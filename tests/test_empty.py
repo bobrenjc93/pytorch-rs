@@ -217,6 +217,29 @@ class EmptyTests(unittest.TestCase):
                 ):
                     torch.empty(dimension)
 
+        for size, type_name in (
+            ([True], "bool"),
+            ([False], "bool"),
+            ((True,), "bool"),
+            ([np.bool_(True)], "numpy.bool"),
+        ):
+            with self.subTest(size=size):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    rf"argument 'size' \(position 1\) must be tuple of ints, "
+                    rf"but found element of type {re.escape(type_name)} at pos 0$",
+                ):
+                    torch.empty(size)
+
+        for size, message in (
+            ([-1], "Trying to create tensor with negative dimension -1: [-1]"),
+            ([1, -2], "Trying to create tensor with negative dimension -2: [1, -2]"),
+            ([np.int64(-1)], "Trying to create tensor with negative dimension -1: [-1]"),
+        ):
+            with self.subTest(size=size):
+                with self.assertRaisesRegex(RuntimeError, re.escape(message)):
+                    torch.empty(size)
+
         for dimension in (
             2**63,
             -(2**63) - 1,
@@ -229,6 +252,20 @@ class EmptyTests(unittest.TestCase):
                     "failed to unpack.*Overflow when unpacking long long",
                 ):
                     torch.empty(dimension)
+
+        for size in (
+            [2**63],
+            [-(2**63) - 1],
+            [np.uint64(2**63)],
+            [IndexDimension(2**63)],
+        ):
+            with self.subTest(size=size):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    "argument 'size' failed to unpack the object at pos 1 "
+                    "with error .*Overflow when unpacking long long",
+                ):
+                    torch.empty(size)
 
         with self.assertRaisesRegex(
             RuntimeError,

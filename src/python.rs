@@ -8119,7 +8119,7 @@ fn parse_empty_arguments(arguments: EmptyCallArguments<'_>) -> PyResult<ParsedEm
         keyword_error,
     } = arguments;
 
-    let size = parse_creation_size("empty", size.as_ref(), size_origin, None)?;
+    let size = parse_empty_size(size.as_ref(), size_origin)?;
     let has_out = validate_creation_out("empty", out.as_ref())?;
     let dtype = parse_dtype("empty", dtype.as_ref())?;
     parse_factory_layout("empty", layout.as_ref())?;
@@ -8129,7 +8129,6 @@ fn parse_empty_arguments(arguments: EmptyCallArguments<'_>) -> PyResult<ParsedEm
     if let Some(error) = keyword_error {
         return Err(error);
     }
-    let size = finish_creation_size("empty", size)?;
     let device = parse_device("empty", device.as_ref())?;
     Ok(ParsedEmptyArguments {
         size,
@@ -8362,6 +8361,64 @@ fn parse_creation_size<'py>(
     bind_creation_positional_dimension(function, value, sequence_error)
 }
 
+fn parse_empty_size(
+    size: Option<&Bound<'_, PyAny>>,
+    size_origin: Option<CreationSizeOrigin>,
+) -> PyResult<ParsedCreationSize> {
+    let Some(value) = size else {
+        return Err(PyTypeError::new_err(
+            "empty() missing 1 required positional arguments: \"size\"",
+        ));
+    };
+    let origin = size_origin.expect("a selected size value records its origin");
+    let sequence_error = match parse_empty_sequence_size(value) {
+        Ok(size) => {
+            return Ok(ParsedCreationSize {
+                dimensions: validate_size(size)?,
+                scalar_dimension: None,
+            });
+        }
+        Err(error) => error,
+    };
+    if origin != CreationSizeOrigin::Positional {
+        return Err(sequence_error);
+    }
+
+    finish_creation_size(
+        "empty",
+        bind_creation_positional_dimension("empty", value, sequence_error)?,
+    )
+}
+
+fn parse_empty_sequence_size(value: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
+    if !is_sequence_input(value)? {
+        return Err(creation_size_argument_type_error("empty", value, None)?);
+    }
+    let Ok(length) = value.len() else {
+        return Err(creation_size_argument_type_error("empty", value, None)?);
+    };
+    let mut parsed = try_size_vector(length)?;
+    for index in 0..length {
+        let dimension = value.get_item(index)?;
+        if is_bool_size_dimension(&dimension)? {
+            return Err(creation_size_element_type_error(
+                "empty", index, &dimension,
+            )?);
+        }
+        let position = index + 1;
+        let Ok(indexed) = python_number_index(&dimension) else {
+            return Err(creation_size_element_type_error(
+                "empty", index, &dimension,
+            )?);
+        };
+        let dimension = indexed
+            .extract::<i64>()
+            .map_err(|_| creation_size_element_overflow("empty", position))?;
+        try_push_size(&mut parsed, dimension)?;
+    }
+    Ok(parsed)
+}
+
 fn bind_creation_positional_dimension<'py>(
     function: &str,
     dimension: &Bound<'py, PyAny>,
@@ -8422,10 +8479,7 @@ fn extract_creation_dimension(function: &str, dimension: &Bound<'_, PyAny>) -> P
 }
 
 fn creation_dimension_type_error(function: &str, dimension: &Bound<'_, PyAny>) -> PyResult<PyErr> {
-    let type_name = python_type_name(dimension)?;
-    Ok(PyTypeError::new_err(format!(
-        "{function}(): argument 'size' (position 1) must be tuple of ints, not {type_name}"
-    )))
+    creation_size_argument_type_error(function, dimension, Some(1))
 }
 
 fn creation_dimension_overflow(function: &str) -> PyErr {
@@ -8442,6 +8496,42 @@ fn creation_negative_dimension_error(function: &str, dimension: i64) -> PyErr {
             "Trying to create tensor with negative dimension {dimension}: [{dimension}]"
         ))
     }
+}
+
+fn creation_size_argument_type_error(
+    function: &str,
+    value: &Bound<'_, PyAny>,
+    position: Option<usize>,
+) -> PyResult<PyErr> {
+    let type_name = python_type_name(value)?;
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    Ok(PyTypeError::new_err(format!(
+        "{function}(): argument 'size'{position} must be tuple of ints, not {type_name}"
+    )))
+}
+
+fn creation_size_element_type_error(
+    function: &str,
+    index: usize,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    let type_name = python_type_name(value)?;
+    Ok(PyTypeError::new_err(format!(
+        "{function}(): argument 'size' (position 1) must be tuple of ints, but found element of type {type_name} at pos {index}"
+    )))
+}
+
+fn creation_size_element_overflow(function: &str, position: usize) -> PyErr {
+    PyTypeError::new_err(format!(
+        "{function}(): argument 'size' failed to unpack the object at pos {position} with error \"Overflow when unpacking long long\""
+    ))
+}
+
+fn is_bool_size_dimension(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if value.is_instance_of::<PyBool>() {
+        return Ok(true);
+    }
+    is_numpy_scalar_of_types(value, &["bool_"])
 }
 
 fn parse_metadata(
