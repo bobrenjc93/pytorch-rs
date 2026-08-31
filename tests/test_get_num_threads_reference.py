@@ -165,12 +165,12 @@ class GetNumThreadsReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_thread_setters_remain_deliberately_unsupported(self):
+    def test_thread_setters_are_exported_like_pytorch_2_13(self):
         for name in ("set_num_threads", "set_num_interop_threads"):
             with self.subTest(name=name):
-                self.assertFalse(hasattr(torch, name))
-                self.assertFalse(hasattr(torch._C, name))
-                self.assertNotIn(name, torch.__all__)
+                self.assertTrue(hasattr(torch, name))
+                self.assertTrue(hasattr(torch._C, name))
+                self.assertIn(name, torch.__all__)
                 self.assertTrue(hasattr(reference_torch, name))
                 self.assertTrue(hasattr(reference_torch._C, name))
                 self.assertIn(name, reference_torch.__all__)

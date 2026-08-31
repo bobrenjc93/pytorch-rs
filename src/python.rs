@@ -13195,7 +13195,7 @@ fn cpython_type_object_name<'a>(value_type: &'a Bound<'_, PyType>) -> PyResult<&
     Ok(unsafe { CStr::from_ptr(name) })
 }
 
-fn has_numpy_integer_ancestry(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+pub(crate) fn has_numpy_integer_ancestry(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     let py = value.py();
     // Calling type's descriptor directly bypasses metaclass overrides, while
     // __mro__ itself is immutable for the duration of this check.
