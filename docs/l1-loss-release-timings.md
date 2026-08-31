@@ -2,20 +2,21 @@
 
 Date: 2026-08-30
 
-Revision under test: uncommitted worktree based on
+Candidate provenance: source snapshot based on
 `14dbf2f4df31972fd2d08d39533530ee483390bd`.
 
-Command shape: worktree-local `uv venv --clear --python 3.12`, locked
+Command shape: from the repository root, `uv venv --clear --python 3.12`, locked
 `uv sync --locked --no-install-project --group dev --group reference`, then
 release wheel builds through `maturin build --release --locked` and
 installation with `uv pip install --force-reinstall --no-deps`. The clean base
-wheel was built from a `git archive HEAD` snapshot under
-`target/l1-scalar-broadcast.XFZIET/base-src`; the candidate wheel was built
-from this worktree. The timing driver ran against the installed wheels after
-imports and input construction, with 15 warmup blocks and 81 measured blocks
-per implementation. Inputs were CPU `float32` tensors. Broadcast
-size-mismatch warning parity was checked before timing, then `UserWarning` was
-ignored symmetrically for both implementations inside the measured region.
+wheel was built from a `git archive HEAD` snapshot under a repo-local
+`target/l1-scalar-broadcast.*/base-src` directory; the candidate wheel was
+built from the source snapshot under test. The timing driver ran against the
+installed wheels after imports and input construction, with 15 warmup blocks
+and 81 measured blocks per implementation. Inputs were CPU `float32` tensors.
+Broadcast size-mismatch warning parity was checked before timing, then
+`UserWarning` was ignored symmetrically for both implementations inside the
+measured region.
 
 The timings below measure eager `l1_loss(reduction="none")` construction. The
 driver materialized and bit-compared each result against PyTorch before timing
@@ -25,14 +26,14 @@ dead-code and deferred-work guard.
 Checks run before timing:
 
 ```bash
-/home/bobren/.cargo/bin/cargo fmt --check
+cargo fmt --check
 git diff --check
-/home/bobren/.cargo/bin/cargo test --all-targets
-/home/bobren/.cargo/bin/cargo clippy --all-targets -- -D warnings
-PATH="/home/bobren/.cargo/bin:$PATH" PYO3_PYTHON="/usr/bin/python3.12" \
-  /home/bobren/.cargo/bin/cargo clippy --all-targets --features python-bindings -- -D warnings
-PATH="/home/bobren/.cargo/bin:$PATH" PYO3_PYTHON="/usr/bin/python3.12" \
-  /home/bobren/.cargo/bin/cargo test --all-targets --features python-bindings
+cargo test --all-targets
+cargo clippy --all-targets -- -D warnings
+PYO3_PYTHON="$PWD/.venv/bin/python" \
+  cargo clippy --all-targets --features python-bindings -- -D warnings
+PYO3_PYTHON="$PWD/.venv/bin/python" \
+  cargo test --all-targets --features python-bindings
 VIRTUAL_ENV="$PWD/.venv" PYO3_PYTHON="$PWD/.venv/bin/python" \
   .venv/bin/maturin develop --release --locked
 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
@@ -41,8 +42,7 @@ OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
   tests.test_nn_functional_l1_loss \
   tests.test_nn_functional_l1_loss_reference
 .venv/bin/python -m unittest tests.test_readme_quickstart
-PATH="/home/bobren/.cargo/bin:$PATH" \
-  UV_CACHE_DIR="$PWD/.uv-cache" \
+UV_CACHE_DIR="$PWD/.uv-cache" \
   UV_PYTHON_INSTALL_DIR="$PWD/.uv-python" \
   ./scripts/test-python.sh
 ```
