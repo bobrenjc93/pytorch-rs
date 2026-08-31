@@ -3624,6 +3624,29 @@ impl Tensor {
         output
     }
 
+    /// Computes the arithmetic mean of every element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "full-tensor mean uses the PyTorch-compatible float32 element count"
+    )]
+    pub fn mean(&self) -> Result<Self, TensorError> {
+        let summed = self.sum();
+        let total = summed.value_at_linear_index(0);
+        let divisor = self.elements as f32;
+        let mut output = summed.mul_scalar(1.0_f32 / divisor)?;
+        output.storage = Arc::new(Storage::from_scalar(
+            total / divisor,
+            self.dtype(),
+            self.device(),
+        ));
+        Ok(output)
+    }
+
     fn sum_contiguous_shared_gradient(&self) -> Option<f32> {
         if self.elements == 0 || !self.is_contiguous() {
             return None;
