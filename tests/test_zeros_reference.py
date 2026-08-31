@@ -37,6 +37,7 @@ class ZerosReferenceTests(unittest.TestCase):
             str(tensor.dtype),
             tensor.dtype is module.float32,
             str(tensor.device),
+            str(tensor.layout),
             tensor.requires_grad,
             tensor.is_leaf,
         )
@@ -58,13 +59,21 @@ class ZerosReferenceTests(unittest.TestCase):
         metadata_factories = (
             lambda module: {},
             lambda module: {"out": None},
+            lambda module: {"dtype": None},
             lambda module: {"dtype": module.float32},
+            lambda module: {"layout": None},
+            lambda module: {"layout": module.strided},
             lambda module: {"device": "cpu"},
             lambda module: {"device": module.device("cpu")},
+            lambda module: {"pin_memory": None},
+            lambda module: {"pin_memory": False},
+            lambda module: {"requires_grad": None},
             lambda module: {
                 "out": None,
                 "dtype": module.float32,
+                "layout": module.strided,
                 "device": module.device("cpu"),
+                "pin_memory": False,
                 "requires_grad": True,
             },
         )
@@ -96,6 +105,15 @@ class ZerosReferenceTests(unittest.TestCase):
             (
                 "requires grad",
                 lambda module: module.zeros((2,), out=None, requires_grad=True),
+            ),
+            (
+                "default layout and pin memory",
+                lambda module: module.zeros(
+                    (2,),
+                    out=None,
+                    layout=module.strided,
+                    pin_memory=False,
+                ),
             ),
             ("empty", lambda module: module.zeros((0,), out=None)),
             ("scalar tensor", lambda module: module.zeros((), out=None)),
@@ -177,8 +195,24 @@ class ZerosReferenceTests(unittest.TestCase):
                 lambda module: module.zeros(-1, device=object()),
             ),
             (
+                "negative and invalid layout",
+                lambda module: module.zeros(-1, layout=object()),
+            ),
+            (
+                "negative and invalid pin_memory",
+                lambda module: module.zeros(-1, pin_memory=1),
+            ),
+            (
                 "overflow and invalid device",
                 lambda module: module.zeros(2**63, device=object()),
+            ),
+            (
+                "overflow and invalid layout",
+                lambda module: module.zeros(2**63, layout=object()),
+            ),
+            (
+                "overflow and invalid pin_memory",
+                lambda module: module.zeros(2**63, pin_memory=1),
             ),
             (
                 "negative and invalid requires_grad",

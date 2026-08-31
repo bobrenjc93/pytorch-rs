@@ -4396,7 +4396,9 @@ struct CreationCallArguments<'py> {
     shape: Option<Bound<'py, PyAny>>,
     out: Option<Bound<'py, PyAny>>,
     dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
     device: Option<Bound<'py, PyAny>>,
+    pin_memory: Option<Bound<'py, PyAny>>,
     requires_grad: Option<Bound<'py, PyAny>>,
     keyword_error: Option<PyErr>,
 }
@@ -5452,7 +5454,7 @@ fn flatten(
 
 #[pyfunction(
     signature = (*args, **kwargs),
-    text_signature = "(size=None, *, shape=None, out=None, dtype=None, device=None, requires_grad=False)"
+    text_signature = "(size=None, *, shape=None, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)"
 )]
 fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("zeros", args, kwargs)?;
@@ -5468,7 +5470,7 @@ fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
 
 #[pyfunction(
     signature = (*args, **kwargs),
-    text_signature = "(size=None, *, shape=None, out=None, dtype=None, device=None, requires_grad=False)"
+    text_signature = "(size=None, *, shape=None, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)"
 )]
 fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("ones", args, kwargs)?;
@@ -6122,7 +6124,9 @@ fn bind_creation_arguments<'py>(
         shape: None,
         out: None,
         dtype: None,
+        layout: None,
         device: None,
+        pin_memory: None,
         requires_grad: None,
         keyword_error: None,
     };
@@ -6151,7 +6155,9 @@ fn bind_creation_arguments<'py>(
             "shape" => arguments.shape = optional_call_argument(value),
             "out" => arguments.out = optional_call_argument(value),
             "dtype" => arguments.dtype = optional_call_argument(value),
+            "layout" => arguments.layout = optional_call_argument(value),
             "device" => arguments.device = optional_call_argument(value),
+            "pin_memory" => arguments.pin_memory = optional_call_argument(value),
             "requires_grad" => arguments.requires_grad = optional_call_argument(value),
             _ => {
                 arguments.keyword_error.get_or_insert_with(|| {
@@ -6992,8 +6998,14 @@ fn parse_factory_layout(function: &str, layout: Option<&Bound<'_, PyAny>>) -> Py
     let Some(layout) = layout else {
         return Ok(());
     };
-    if layout.is_instance(layout_objects(layout.py())?.layout.bind(layout.py()))? {
+    let layouts = layout_objects(layout.py())?;
+    if layout.is(layouts.strided.bind(layout.py())) {
         return Ok(());
+    }
+    if layout.is_instance(layouts.layout.bind(layout.py()))? {
+        return Err(PyNotImplementedError::new_err(format!(
+            "{function}(): only torch.strided layout is supported"
+        )));
     }
     let actual = python_type_name(layout)?;
     Err(PyTypeError::new_err(format!(
@@ -7221,7 +7233,9 @@ fn parse_creation_arguments(
         shape,
         out,
         dtype,
+        layout,
         device,
+        pin_memory,
         requires_grad,
         keyword_error,
     } = arguments;
@@ -7232,7 +7246,9 @@ fn parse_creation_arguments(
     let size = parse_creation_size(function, size.as_ref(), size_origin, shape.as_ref())?;
     let has_out = validate_creation_out(function, out.as_ref())?;
     let dtype = parse_dtype(function, dtype.as_ref())?;
+    parse_factory_layout(function, layout.as_ref())?;
     validate_device_argument_type(function, device.as_ref())?;
+    let pin_memory = parse_factory_bool(function, "pin_memory", pin_memory.as_ref())?;
     let requires_grad = parse_factory_requires_grad(function, requires_grad.as_ref())?;
     if let Some(error) = keyword_error {
         return Err(error);
@@ -7242,6 +7258,11 @@ fn parse_creation_arguments(
     if has_out {
         return Err(PyRuntimeError::new_err(format!(
             "{function}(): the 'out' argument is not supported"
+        )));
+    }
+    if pin_memory {
+        return Err(PyRuntimeError::new_err(format!(
+            "{function}(): pin_memory=True is not supported; only unpinned CPU storage is implemented"
         )));
     }
     Ok((size, dtype, device, requires_grad))
