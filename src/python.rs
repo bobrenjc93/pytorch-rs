@@ -12283,7 +12283,7 @@ fn bind_tensor_sub_method_positional_arguments<'py>(
                 !first_is_scalar && probe_torch_function_override(&first).is_some();
             let second_is_tensor_like = second.is_instance_of::<PyTensor>()
                 || probe_torch_function_override(&second).is_some();
-            if first_is_scalar && second_is_tensor_like {
+            if (first_is_scalar || first_has_override) && second_is_tensor_like {
                 return Ok((
                     Some(ParsedCallArgument {
                         value: second,

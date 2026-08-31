@@ -277,6 +277,25 @@ class TensorSubMethodReferenceTests(unittest.TestCase):
                 )
             )
 
+        if method_name == "sub":
+            value = Override()
+            Override.calls.clear()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                result = left.sub(value, right)
+            func, dispatch_types, args, kwargs = Override.calls[0]
+            override_observations.append(
+                (
+                    result is marker,
+                    func is descriptor,
+                    tuple(item.__name__ for item in dispatch_types),
+                    len(args),
+                    kwargs is None,
+                    None if kwargs is None else tuple(kwargs),
+                    args[1] is value,
+                )
+            )
+
         invalid_observations = []
         for call in (
             lambda: getattr(left, method_name)([]),

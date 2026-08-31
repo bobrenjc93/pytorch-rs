@@ -253,6 +253,18 @@ class TensorSubMethodTests(unittest.TestCase):
             self.assertEqual(dispatch_types, (Override,))
             self.assertEqual(tuple(kwargs), ("alpha",))
 
+            if name == "sub":
+                events.clear()
+                legacy_alpha = Override()
+                self.assertIs(left.sub(legacy_alpha, right), marker)
+                function, dispatch_types, args, kwargs = events[0]
+                self.assertIs(function, descriptor)
+                self.assertEqual(dispatch_types, (Override,))
+                self.assertIs(args[0], left)
+                self.assertIs(args[1], legacy_alpha)
+                self.assertIs(args[2], right)
+                self.assertIsNone(kwargs)
+
             class DecliningOverride:
                 @classmethod
                 def __torch_function__(cls, func, types, args=(), kwargs=None):
