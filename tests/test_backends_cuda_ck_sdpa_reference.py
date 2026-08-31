@@ -98,6 +98,7 @@ class CudaCkSdpaAvailabilityReferenceTests(unittest.TestCase):
                 if name
                 in {
                     "allow_fp16_bf16_reduction_math_sdp",
+                    "cuBLASModule",
                     "enable_flash_sdp",
                     "enable_math_sdp",
                     "enable_mem_efficient_sdp",
@@ -107,6 +108,7 @@ class CudaCkSdpaAvailabilityReferenceTests(unittest.TestCase):
                     "is_ck_sdpa_available",
                     "is_flash_attention_available",
                     "math_sdp_enabled",
+                    "matmul",
                     "mem_efficient_sdp_enabled",
                 }
             ],

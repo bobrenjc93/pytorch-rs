@@ -50,6 +50,11 @@ static CUDNN_BENCHMARK: AtomicBool = AtomicBool::new(false);
 static CUDNN_BENCHMARK_LIMIT: AtomicI32 = AtomicI32::new(10);
 static CUDNN_DETERMINISTIC: AtomicBool = AtomicBool::new(false);
 static CUDNN_ALLOW_TF32: AtomicBool = AtomicBool::new(true);
+static CUBLAS_ALLOW_TF32: AtomicBool = AtomicBool::new(false);
+static CUBLAS_ALLOW_FP16_REDUCED_PRECISION_REDUCTION: AtomicBool = AtomicBool::new(true);
+static CUBLAS_ALLOW_FP16_REDUCED_PRECISION_REDUCTION_SPLIT_K: AtomicBool = AtomicBool::new(true);
+static CUBLAS_ALLOW_BF16_REDUCED_PRECISION_REDUCTION: AtomicBool = AtomicBool::new(true);
+static CUBLAS_ALLOW_BF16_REDUCED_PRECISION_REDUCTION_SPLIT_K: AtomicBool = AtomicBool::new(true);
 static FLASH_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
 static MEM_EFFICIENT_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
 static MATH_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
@@ -5880,6 +5885,163 @@ fn get_cudnn_allow_tf32_native(_module: &Bound<'_, PyModule>) -> bool {
     CUDNN_ALLOW_TF32.load(Ordering::SeqCst)
 }
 
+// PyTorch exposes the CUDA matmul preferences through torch.backends.cuda.matmul
+// while storing them in private torch._C accessors.
+fn set_cublas_allow_tf32_native(object: &Bound<'_, PyAny>) -> PyResult<()> {
+    if !object.is_exact_instance_of::<PyBool>() {
+        let type_name = python_type_name(object)?;
+        return Err(PyRuntimeError::new_err(format!(
+            "set_allow_tf32_cublas expects a bool, but got {type_name}"
+        )));
+    }
+    CUBLAS_ALLOW_TF32.store(object.is_truthy()?, Ordering::SeqCst);
+    Ok(())
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn set_cublas_allow_tf32_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    object: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: CPython supplies a live borrowed object to a METH_O callback.
+    let object = unsafe { Bound::<PyAny>::from_borrowed_ptr(py, object) };
+    set_cublas_allow_tf32_native(&object)?;
+    Ok(py.None().into_ptr())
+}
+
+#[pyfunction(
+    name = "_get_cublas_allow_tf32",
+    signature = (),
+    text_signature = None
+)]
+#[pyo3(pass_module)]
+fn get_cublas_allow_tf32_native(_module: &Bound<'_, PyModule>) -> bool {
+    CUBLAS_ALLOW_TF32.load(Ordering::SeqCst)
+}
+
+fn validate_cublas_reduced_precision_bool(
+    object: &Bound<'_, PyAny>,
+    setter_name: &str,
+    argument_name: &str,
+) -> PyResult<bool> {
+    if !object.is_exact_instance_of::<PyBool>() {
+        let type_name = python_type_name(object)?;
+        return Err(PyRuntimeError::new_err(format!(
+            "{setter_name} expects a bool for {argument_name}, but got {type_name}"
+        )));
+    }
+    object.is_truthy()
+}
+
+fn set_cublas_allow_reduced_precision_reduction_native(
+    args: &Bound<'_, PyTuple>,
+    allow_reduced_precision: &AtomicBool,
+    allow_split_k: &AtomicBool,
+    setter_name: &str,
+) -> PyResult<()> {
+    match args.len() {
+        0 => {
+            return Err(PyTypeError::new_err(
+                "function takes at least 1 argument (0 given)",
+            ));
+        }
+        1 | 2 => {}
+        count => {
+            return Err(PyTypeError::new_err(format!(
+                "function takes at most 2 arguments ({count} given)"
+            )));
+        }
+    }
+
+    let parsed_allow_reduced_precision = validate_cublas_reduced_precision_bool(
+        &args.get_item(0)?,
+        setter_name,
+        "allow_reduced_precision",
+    )?;
+    let parsed_allow_split_k = if args.len() == 2 {
+        validate_cublas_reduced_precision_bool(&args.get_item(1)?, setter_name, "allow_splitk")?
+    } else {
+        true
+    };
+    if parsed_allow_reduced_precision && !parsed_allow_split_k {
+        return Err(PyRuntimeError::new_err(
+            "allow_splitk=False is not supported when reduced precision reductions are enabled",
+        ));
+    }
+
+    allow_reduced_precision.store(parsed_allow_reduced_precision, Ordering::SeqCst);
+    allow_split_k.store(parsed_allow_split_k, Ordering::SeqCst);
+    Ok(())
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn set_cublas_allow_fp16_reduced_precision_reduction_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    args: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: CPython supplies a live borrowed tuple to a METH_VARARGS callback.
+    let args = unsafe { Bound::<PyAny>::from_borrowed_ptr(py, args) }.cast_into::<PyTuple>()?;
+    set_cublas_allow_reduced_precision_reduction_native(
+        &args,
+        &CUBLAS_ALLOW_FP16_REDUCED_PRECISION_REDUCTION,
+        &CUBLAS_ALLOW_FP16_REDUCED_PRECISION_REDUCTION_SPLIT_K,
+        "set_allow_fp16_reduction_cublas",
+    )?;
+    Ok(py.None().into_ptr())
+}
+
+#[pyfunction(
+    name = "_get_cublas_allow_fp16_reduced_precision_reduction",
+    signature = (),
+    text_signature = None
+)]
+fn get_cublas_allow_fp16_reduced_precision_reduction_native() -> (bool, bool) {
+    (
+        CUBLAS_ALLOW_FP16_REDUCED_PRECISION_REDUCTION.load(Ordering::SeqCst),
+        CUBLAS_ALLOW_FP16_REDUCED_PRECISION_REDUCTION_SPLIT_K.load(Ordering::SeqCst),
+    )
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn set_cublas_allow_bf16_reduced_precision_reduction_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    args: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: CPython supplies a live borrowed tuple to a METH_VARARGS callback.
+    let args = unsafe { Bound::<PyAny>::from_borrowed_ptr(py, args) }.cast_into::<PyTuple>()?;
+    set_cublas_allow_reduced_precision_reduction_native(
+        &args,
+        &CUBLAS_ALLOW_BF16_REDUCED_PRECISION_REDUCTION,
+        &CUBLAS_ALLOW_BF16_REDUCED_PRECISION_REDUCTION_SPLIT_K,
+        "set_allow_bf16_reduction_cublas",
+    )?;
+    Ok(py.None().into_ptr())
+}
+
+#[pyfunction(
+    name = "_get_cublas_allow_bf16_reduced_precision_reduction",
+    signature = (),
+    text_signature = None
+)]
+fn get_cublas_allow_bf16_reduced_precision_reduction_native() -> (bool, bool) {
+    (
+        CUBLAS_ALLOW_BF16_REDUCED_PRECISION_REDUCTION.load(Ordering::SeqCst),
+        CUBLAS_ALLOW_BF16_REDUCED_PRECISION_REDUCTION_SPLIT_K.load(Ordering::SeqCst),
+    )
+}
+
 #[allow(
     unsafe_code,
     reason = "PyCFunction_NewEx requires an audited stable-ABI raw-pointer call"
@@ -5926,6 +6088,63 @@ fn add_cudnn_allow_tf32_setter(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )
     .into_raw();
     definition.ml_flags = ffi::METH_O;
+    let definition = Box::leak(Box::new(definition));
+    let module_name = module.name()?;
+    // SAFETY: the leaked method definition, module, and module name all remain
+    // live for the duration required by the newly owned built-in function.
+    let function = unsafe {
+        Bound::<PyAny>::from_owned_ptr_or_err(
+            py,
+            ffi::PyCFunction_NewEx(definition, module.as_ptr(), module_name.as_ptr()),
+        )?
+        .cast_into::<PyCFunction>()?
+    };
+    module.add_function(function)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "PyCFunction_NewEx requires an audited stable-ABI raw-pointer call"
+)]
+fn add_cublas_allow_tf32_setter(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = module.py();
+    let mut definition = pyo3::impl_::pymethods::PyMethodDef::noargs(
+        c"_set_cublas_allow_tf32",
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            binaryfunc,
+            set_cublas_allow_tf32_callback
+        ),
+        c"",
+    )
+    .into_raw();
+    definition.ml_flags = ffi::METH_O;
+    let definition = Box::leak(Box::new(definition));
+    let module_name = module.name()?;
+    // SAFETY: the leaked method definition, module, and module name all remain
+    // live for the duration required by the newly owned built-in function.
+    let function = unsafe {
+        Bound::<PyAny>::from_owned_ptr_or_err(
+            py,
+            ffi::PyCFunction_NewEx(definition, module.as_ptr(), module_name.as_ptr()),
+        )?
+        .cast_into::<PyCFunction>()?
+    };
+    module.add_function(function)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "PyCFunction_NewEx requires an audited stable-ABI raw-pointer call"
+)]
+fn add_cublas_reduced_precision_setter(
+    module: &Bound<'_, PyModule>,
+    name: &'static CStr,
+    callback: ffi::PyCFunction,
+) -> PyResult<()> {
+    let py = module.py();
+    let mut definition =
+        pyo3::impl_::pymethods::PyMethodDef::noargs(name, callback, c"").into_raw();
+    definition.ml_flags = ffi::METH_VARARGS;
     let definition = Box::leak(Box::new(definition));
     let module_name = module.name()?;
     // SAFETY: the leaked method definition, module, and module name all remain
@@ -5993,6 +6212,47 @@ fn add_cudnn_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "_get_cudnn_deterministic",
         "_set_cudnn_allow_tf32",
         "_get_cudnn_allow_tf32",
+    ] {
+        exports.call_method1("remove", (name,))?;
+    }
+    Ok(())
+}
+
+fn add_cublas_matmul_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    add_cublas_allow_tf32_setter(module)?;
+    module.add_function(wrap_pyfunction!(get_cublas_allow_tf32_native, module)?)?;
+    add_cublas_reduced_precision_setter(
+        module,
+        c"_set_cublas_allow_fp16_reduced_precision_reduction",
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            binaryfunc,
+            set_cublas_allow_fp16_reduced_precision_reduction_callback
+        ),
+    )?;
+    module.add_function(wrap_pyfunction!(
+        get_cublas_allow_fp16_reduced_precision_reduction_native,
+        module
+    )?)?;
+    add_cublas_reduced_precision_setter(
+        module,
+        c"_set_cublas_allow_bf16_reduced_precision_reduction",
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            binaryfunc,
+            set_cublas_allow_bf16_reduced_precision_reduction_callback
+        ),
+    )?;
+    module.add_function(wrap_pyfunction!(
+        get_cublas_allow_bf16_reduced_precision_reduction_native,
+        module
+    )?)?;
+    let exports = module.getattr("__all__")?;
+    for name in [
+        "_set_cublas_allow_tf32",
+        "_get_cublas_allow_tf32",
+        "_set_cublas_allow_fp16_reduced_precision_reduction",
+        "_get_cublas_allow_fp16_reduced_precision_reduction",
+        "_set_cublas_allow_bf16_reduced_precision_reduction",
+        "_get_cublas_allow_bf16_reduced_precision_reduction",
     ] {
         exports.call_method1("remove", (name,))?;
     }
@@ -14422,6 +14682,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     add_default_dtype_validator(module)?;
     add_warn_always_builtins(module)?;
     add_cudnn_builtins(module)?;
+    add_cublas_matmul_builtins(module)?;
     add_flash_sdp_builtins(module)?;
     add_mem_efficient_sdp_builtins(module)?;
     add_math_sdp_builtins(module)?;

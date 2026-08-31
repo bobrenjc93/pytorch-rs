@@ -4,7 +4,9 @@ import torch_rs as torch
 
 __all__ = [
     "is_built",
+    "cuBLASModule",
     "is_ck_sdpa_available",
+    "matmul",
     "enable_flash_sdp",
     "flash_sdp_enabled",
     "enable_mem_efficient_sdp",
@@ -15,6 +17,92 @@ __all__ = [
     "fp16_bf16_reduction_math_sdp_allowed",
     "is_flash_attention_available",
 ]
+
+
+def _cublas_type_repr(obj):
+    obj_type = type(obj)
+    pytorch_names = (
+        (torch.Tensor, "torch.Tensor"),
+        (torch.dtype, "torch.dtype"),
+        (torch.device, "torch.device"),
+        (torch.layout, "torch.layout"),
+        (torch.Size, "torch.Size"),
+        (torch.finfo, "torch.finfo"),
+    )
+    for pytorch_type, name in pytorch_names:
+        if obj_type is pytorch_type:
+            return f"<class '{name}'>"
+    return repr(obj_type)
+
+
+class cuBLASModule:
+    @staticmethod
+    def _parse_reduction_setting(value, attr_name):
+        def _ensure_bool(obj, which):
+            if isinstance(obj, bool):
+                return obj
+            raise TypeError(
+                f"{attr_name} expects a bool for {which}, "
+                f"but got {_cublas_type_repr(obj)}"
+            )
+
+        if isinstance(value, bool):
+            return value, True
+        if isinstance(value, (list, tuple)):
+            if not value:
+                raise TypeError(f"{attr_name} expects at least one boolean argument")
+            if len(value) > 2:
+                raise TypeError(f"{attr_name} expects at most two boolean arguments")
+            allow_reduced_precision = _ensure_bool(value[0], "allow_reduced_precision")
+            if len(value) == 1:
+                return allow_reduced_precision, True
+            allow_splitk = _ensure_bool(value[1], "allow_splitk")
+            return allow_reduced_precision, allow_splitk
+        raise TypeError(
+            f"{attr_name} expects a bool or a tuple/list of bools, "
+            f"but got {_cublas_type_repr(value)}"
+        )
+
+    def __getattr__(self, name):
+        if name == "allow_tf32":
+            return torch._C._get_cublas_allow_tf32()
+        if name == "allow_fp16_reduced_precision_reduction":
+            allow_reduced_precision, _ = (
+                torch._C._get_cublas_allow_fp16_reduced_precision_reduction()
+            )
+            return allow_reduced_precision
+        if name == "allow_bf16_reduced_precision_reduction":
+            allow_reduced_precision, _ = (
+                torch._C._get_cublas_allow_bf16_reduced_precision_reduction()
+            )
+            return allow_reduced_precision
+        raise AttributeError("Unknown attribute " + name)
+
+    def __setattr__(self, name, value):
+        if name == "allow_tf32":
+            return torch._C._set_cublas_allow_tf32(value)
+        if name == "allow_fp16_reduced_precision_reduction":
+            allow_reduced_precision, allow_splitk = self._parse_reduction_setting(
+                value,
+                "allow_fp16_reduced_precision_reduction",
+            )
+            return torch._C._set_cublas_allow_fp16_reduced_precision_reduction(
+                allow_reduced_precision,
+                allow_splitk,
+            )
+        if name == "allow_bf16_reduced_precision_reduction":
+            allow_reduced_precision, allow_splitk = self._parse_reduction_setting(
+                value,
+                "allow_bf16_reduced_precision_reduction",
+            )
+            return torch._C._set_cublas_allow_bf16_reduced_precision_reduction(
+                allow_reduced_precision,
+                allow_splitk,
+            )
+        raise AttributeError("Unknown attribute " + name)
+
+
+matmul = cuBLASModule()
 
 
 def is_built():
