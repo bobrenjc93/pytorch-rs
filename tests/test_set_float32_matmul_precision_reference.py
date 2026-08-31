@@ -26,12 +26,13 @@ class SetFloat32MatmulPrecisionReferenceTests(unittest.TestCase):
             )
 
     def setUp(self):
+        self.actual_original = torch.get_float32_matmul_precision()
         self.reference_original = reference_torch.get_float32_matmul_precision()
         torch.set_float32_matmul_precision("highest")
         reference_torch.set_float32_matmul_precision("highest")
 
     def tearDown(self):
-        torch.set_float32_matmul_precision("highest")
+        torch.set_float32_matmul_precision(self.actual_original)
         reference_torch.set_float32_matmul_precision(self.reference_original)
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -67,6 +68,7 @@ class SetFloat32MatmulPrecisionReferenceTests(unittest.TestCase):
         return (
             result is None,
             module.get_float32_matmul_precision(),
+            module.backends.cuda.matmul.allow_tf32,
             product.tolist(),
             str(product.dtype),
             str(product.device),
@@ -74,11 +76,14 @@ class SetFloat32MatmulPrecisionReferenceTests(unittest.TestCase):
             module.is_grad_enabled(),
         )
 
-    def test_highest_noop_and_bytes_compatibility_match_pytorch_2_13(self):
+    def test_supported_modes_and_bytes_compatibility_match_pytorch_2_13(self):
         for precision, keyword in (
             ("highest", False),
             ("highest", True),
             (b"highest", False),
+            ("high", False),
+            ("high", True),
+            (b"high", False),
         ):
             with self.subTest(precision=precision, keyword=keyword):
                 self.assertEqual(
@@ -91,6 +96,17 @@ class SetFloat32MatmulPrecisionReferenceTests(unittest.TestCase):
                 self.highest_outcome(torch, "highest"),
                 self.highest_outcome(reference_torch, "highest"),
             )
+
+    def test_cuda_matmul_allow_tf32_updates_precision_getter(self):
+        for allow_tf32, precision in ((False, "highest"), (True, "high")):
+            with self.subTest(allow_tf32=allow_tf32):
+                torch.backends.cuda.matmul.allow_tf32 = allow_tf32
+                reference_torch.backends.cuda.matmul.allow_tf32 = allow_tf32
+                self.assertEqual(
+                    torch.get_float32_matmul_precision(),
+                    reference_torch.get_float32_matmul_precision(),
+                )
+                self.assertEqual(torch.get_float32_matmul_precision(), precision)
 
     def test_callable_metadata_matches_pytorch_2_13(self):
         actual_module = importlib.import_module("torch_rs")
@@ -224,24 +240,32 @@ class SetFloat32MatmulPrecisionReferenceTests(unittest.TestCase):
                     reference_torch.get_float32_matmul_precision(), "highest"
                 )
 
-    def test_reduced_precision_modes_remain_an_explicit_difference(self):
-        for precision in ("high", "medium", b"high", b"medium"):
-            with self.subTest(precision=precision):
-                with self.assertRaises(NotImplementedError):
-                    torch.set_float32_matmul_precision(precision)
-                self.assertEqual(torch.get_float32_matmul_precision(), "highest")
+    def test_medium_precision_mode_remains_an_explicit_difference(self):
+        for initial in ("highest", "high"):
+            for precision in ("medium", b"medium"):
+                with self.subTest(initial=initial, precision=precision):
+                    torch.set_float32_matmul_precision(initial)
+                    reference_torch.set_float32_matmul_precision(initial)
 
-                self.assertIsNone(
-                    reference_torch.set_float32_matmul_precision(precision)
-                )
-                expected_precision = (
-                    precision.decode() if isinstance(precision, bytes) else precision
-                )
-                self.assertEqual(
-                    reference_torch.get_float32_matmul_precision(),
-                    expected_precision,
-                )
-                reference_torch.set_float32_matmul_precision("highest")
+                    with self.assertRaises(NotImplementedError):
+                        torch.set_float32_matmul_precision(precision)
+                    self.assertEqual(torch.get_float32_matmul_precision(), initial)
+                    self.assertIs(
+                        torch.backends.cuda.matmul.allow_tf32,
+                        initial == "high",
+                    )
+
+                    self.assertIsNone(
+                        reference_torch.set_float32_matmul_precision(precision)
+                    )
+                    expected_precision = (
+                        precision.decode() if isinstance(precision, bytes) else precision
+                    )
+                    self.assertEqual(
+                        reference_torch.get_float32_matmul_precision(),
+                        expected_precision,
+                    )
+                    reference_torch.set_float32_matmul_precision(initial)
 
 
 if __name__ == "__main__":

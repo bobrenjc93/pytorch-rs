@@ -19,9 +19,16 @@ FUNCTION_DOC = """Returns the current value of float32 matrix multiplication pre
 
 
 class GetFloat32MatmulPrecisionTests(unittest.TestCase):
-    def test_returns_exact_highest_without_runtime_probes(self):
+    def setUp(self):
+        self.original = torch.get_float32_matmul_precision()
+        torch.set_float32_matmul_precision("highest")
+
+    def tearDown(self):
+        torch.set_float32_matmul_precision(self.original)
+
+    def test_returns_exact_precision_without_runtime_probes(self):
         function = torch.get_float32_matmul_precision
-        self.assertEqual(function.__code__.co_names, ())
+        self.assertEqual(function.__code__.co_names, ("_C", "_get_cublas_allow_tf32"))
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
@@ -29,6 +36,11 @@ class GetFloat32MatmulPrecisionTests(unittest.TestCase):
             result = function()
             self.assertIs(type(result), str)
             self.assertEqual(result, "highest")
+
+        torch.backends.cuda.matmul.allow_tf32 = True
+        self.assertEqual(function(), "high")
+        torch.backends.cuda.matmul.allow_tf32 = False
+        self.assertEqual(function(), "highest")
 
     def test_query_preserves_native_matmul_and_grad_mode(self):
         left = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
@@ -56,8 +68,9 @@ class GetFloat32MatmulPrecisionTests(unittest.TestCase):
             (True, "highest", expected_product, True),
         )
 
-    def test_highest_is_stable_across_threads_and_grad_modes(self):
+    def test_precision_is_stable_across_threads_and_grad_modes(self):
         function = torch.get_float32_matmul_precision
+        torch.backends.cuda.matmul.allow_tf32 = True
         worker_count = 8
         barrier = threading.Barrier(worker_count)
         results = [None] * worker_count
@@ -101,10 +114,10 @@ class GetFloat32MatmulPrecisionTests(unittest.TestCase):
                 (
                     expected_grad_state,
                     True,
-                    "highest",
+                    "high",
                     expected_grad_state,
                     True,
-                    "highest",
+                    "high",
                     expected_grad_state,
                 ),
             )
@@ -198,6 +211,9 @@ sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
 assert torch.get_float32_matmul_precision() == "highest"
+torch.backends.cuda.matmul.allow_tf32 = True
+assert torch.get_float32_matmul_precision() == "high"
+torch.backends.cuda.matmul.allow_tf32 = False
 assert torch.set_float32_matmul_precision("highest") is None
 assert torch.get_float32_matmul_precision() == "highest"
 assert "set_float32_matmul_precision" in torch.__all__

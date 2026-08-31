@@ -63,6 +63,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                 if name
                 in {
                     "allow_fp16_bf16_reduction_math_sdp",
+                    "cuBLASModule",
                     "enable_flash_sdp",
                     "enable_math_sdp",
                     "enable_mem_efficient_sdp",
@@ -72,6 +73,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                     "is_ck_sdpa_available",
                     "is_flash_attention_available",
                     "math_sdp_enabled",
+                    "matmul",
                     "mem_efficient_sdp_enabled",
                 }
             ],
@@ -139,6 +141,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                 if name
                 in {
                     "allow_fp16_bf16_reduction_math_sdp",
+                    "cuBLASModule",
                     "enable_flash_sdp",
                     "enable_math_sdp",
                     "enable_mem_efficient_sdp",
@@ -148,6 +151,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                     "is_ck_sdpa_available",
                     "is_flash_attention_available",
                     "math_sdp_enabled",
+                    "matmul",
                     "mem_efficient_sdp_enabled",
                 }
             },
@@ -267,6 +271,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "allow_fp16_bf16_reduction_math_sdp",
+                "cuBLASModule",
                 "enable_flash_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
@@ -276,6 +281,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                 "is_ck_sdpa_available",
                 "is_flash_attention_available",
                 "math_sdp_enabled",
+                "matmul",
                 "mem_efficient_sdp_enabled",
                 "torch",
             },
@@ -285,7 +291,6 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
             {
                 "SDPAParams",
                 "cufft_plan_cache",
-                "matmul",
             }.issubset(expected_public - actual_public)
         )
         self.assertFalse(hasattr(torch, "cuda"))

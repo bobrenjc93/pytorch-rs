@@ -102,26 +102,33 @@ class GetFloat32MatmulPrecisionReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def test_supported_highest_threaded_and_grad_states_match_pytorch_2_13(self):
+    def test_supported_threaded_and_grad_states_match_pytorch_2_13(self):
+        original_actual = torch.get_float32_matmul_precision()
         original_precision = reference_torch.get_float32_matmul_precision()
         try:
-            reference_torch.set_float32_matmul_precision("highest")
-            self.assertEqual(
-                self.supported_state_outcome(torch),
-                self.supported_state_outcome(reference_torch),
-            )
+            for precision in ("highest", "high"):
+                with self.subTest(precision=precision):
+                    torch.set_float32_matmul_precision(precision)
+                    reference_torch.set_float32_matmul_precision(precision)
+                    self.assertEqual(
+                        self.supported_state_outcome(torch),
+                        self.supported_state_outcome(reference_torch),
+                    )
         finally:
+            torch.set_float32_matmul_precision(original_actual)
             reference_torch.set_float32_matmul_precision(original_precision)
 
-        self.assertEqual(torch.get_float32_matmul_precision(), "highest")
+        self.assertEqual(torch.get_float32_matmul_precision(), original_actual)
         self.assertEqual(
             reference_torch.get_float32_matmul_precision(),
             original_precision,
         )
 
-    def test_reference_only_setter_bounds_unsupported_reduced_precision_states(self):
+    def test_reference_only_setter_does_not_mutate_local_precision_state(self):
         actual = torch.get_float32_matmul_precision
         expected = reference_torch.get_float32_matmul_precision
+        original_actual = actual()
+        torch.set_float32_matmul_precision("highest")
         original_precision = expected()
 
         try:
@@ -132,6 +139,7 @@ class GetFloat32MatmulPrecisionReferenceTests(unittest.TestCase):
                 actual_states.append(actual())
                 expected_states.append(expected())
         finally:
+            torch.set_float32_matmul_precision(original_actual)
             reference_torch.set_float32_matmul_precision(original_precision)
 
         self.assertEqual(actual_states, ["highest"] * 4)

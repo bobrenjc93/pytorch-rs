@@ -262,7 +262,9 @@ print(json.dumps({
             cuda.__all__,
             [
                 "is_built",
+                "cuBLASModule",
                 "is_ck_sdpa_available",
+                "matmul",
                 "enable_flash_sdp",
                 "flash_sdp_enabled",
                 "enable_mem_efficient_sdp",
@@ -278,6 +280,7 @@ print(json.dumps({
             {name for name in vars(cuda) if not name.startswith("_")},
             {
                 "allow_fp16_bf16_reduction_math_sdp",
+                "cuBLASModule",
                 "enable_flash_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
@@ -287,6 +290,7 @@ print(json.dumps({
                 "is_ck_sdpa_available",
                 "is_flash_attention_available",
                 "math_sdp_enabled",
+                "matmul",
                 "mem_efficient_sdp_enabled",
                 "torch",
             },
@@ -356,6 +360,7 @@ print(json.dumps({
             {name for name in child_wildcard if not name.startswith("__")},
             {
                 "allow_fp16_bf16_reduction_math_sdp",
+                "cuBLASModule",
                 "enable_flash_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
@@ -365,6 +370,7 @@ print(json.dumps({
                 "is_ck_sdpa_available",
                 "is_flash_attention_available",
                 "math_sdp_enabled",
+                "matmul",
                 "mem_efficient_sdp_enabled",
             },
         )
