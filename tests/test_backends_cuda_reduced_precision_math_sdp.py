@@ -300,6 +300,7 @@ print(json.dumps({
                 "allow_fp16_bf16_reduction_math_sdp",
                 "fp16_bf16_reduction_math_sdp_allowed",
                 "is_flash_attention_available",
+                "sdp_kernel",
             ],
         )
         self.assertEqual(
@@ -318,6 +319,7 @@ print(json.dumps({
                 "math_sdp_enabled",
                 "matmul",
                 "mem_efficient_sdp_enabled",
+                "sdp_kernel",
                 "torch",
             },
         )

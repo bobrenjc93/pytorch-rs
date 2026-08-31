@@ -75,6 +75,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                     "math_sdp_enabled",
                     "matmul",
                     "mem_efficient_sdp_enabled",
+                    "sdp_kernel",
                 }
             ],
         )
@@ -153,6 +154,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                     "math_sdp_enabled",
                     "matmul",
                     "mem_efficient_sdp_enabled",
+                    "sdp_kernel",
                 }
             },
         )
@@ -283,6 +285,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                 "math_sdp_enabled",
                 "matmul",
                 "mem_efficient_sdp_enabled",
+                "sdp_kernel",
                 "torch",
             },
         )

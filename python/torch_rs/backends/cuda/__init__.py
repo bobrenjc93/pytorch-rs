@@ -1,4 +1,5 @@
 # mypy: allow-untyped-defs
+from contextlib import contextmanager as _contextmanager
 from typing import Any as _Any
 
 import torch_rs as torch
@@ -18,6 +19,7 @@ __all__ = [
     "allow_fp16_bf16_reduction_math_sdp",
     "fp16_bf16_reduction_math_sdp_allowed",
     "is_flash_attention_available",
+    "sdp_kernel",
 ]
 
 
@@ -191,3 +193,38 @@ def is_flash_attention_available() -> bool:
         in non-CUDA environments.
     """
     return torch._C._is_flash_attention_available()
+
+
+def _validate_sdp_kernel_bool(enabled: _Any) -> None:
+    if type(enabled) is not bool:
+        torch._C._set_sdp_use_math(enabled)
+
+
+@_contextmanager
+def sdp_kernel(
+    enable_flash: bool = True,
+    enable_math: bool = True,
+    enable_mem_efficient: bool = True,
+):
+    r"""
+    .. warning:: This flag is beta and subject to change.
+
+    This context manager can be used to temporarily enable or disable any of the three backends for scaled dot product attention.
+    Upon exiting the context manager, the previous state of the flags will be restored.
+    """
+    _validate_sdp_kernel_bool(enable_flash)
+    _validate_sdp_kernel_bool(enable_math)
+    _validate_sdp_kernel_bool(enable_mem_efficient)
+
+    old_flash = flash_sdp_enabled()
+    old_mem_efficient = mem_efficient_sdp_enabled()
+    old_math = math_sdp_enabled()
+    try:
+        enable_flash_sdp(enable_flash)
+        enable_mem_efficient_sdp(enable_mem_efficient)
+        enable_math_sdp(enable_math)
+        yield {}
+    finally:
+        enable_flash_sdp(old_flash)
+        enable_mem_efficient_sdp(old_mem_efficient)
+        enable_math_sdp(old_math)
