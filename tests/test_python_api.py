@@ -1924,6 +1924,25 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(result.shape, (2,))
         self.assertEqual(result.tolist(), [3.0, 3.0])
 
+    def test_full_accepts_default_layout_and_unpinned_memory_keywords(self):
+        option_cases = (
+            {"layout": None},
+            {"layout": torch.strided},
+            {"pin_memory": None},
+            {"pin_memory": False},
+            {"layout": torch.strided, "pin_memory": False},
+        )
+        for options in option_cases:
+            with self.subTest(options=options):
+                result = torch.full((2,), -1.25, **options)
+                self.assertEqual(result.shape, (2,))
+                self.assertEqual(result.stride(), (1,))
+                self.assertEqual(result.tolist(), [-1.25, -1.25])
+                self.assertIs(result.dtype, torch.float32)
+                self.assertEqual(result.device, torch.device("cpu"))
+                self.assertIs(result.layout, torch.strided)
+                self.assertFalse(result.is_pinned())
+
     def test_full_rejects_negative_sizes_as_runtime_error(self):
         with self.assertRaisesRegex(RuntimeError, "negative dimension -1"):
             torch.full([-1], 3.0)
@@ -2070,6 +2089,23 @@ class PythonApiBaselineTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "Storage size calculation overflowed"):
             torch.full((2**62, 4), 1e40)
+
+        with self.assertRaisesRegex(
+            TypeError, r"argument 'layout' must be torch\.layout"
+        ):
+            torch.full([-1], 1.0, layout=object(), pin_memory=1)
+
+        with self.assertRaisesRegex(
+            TypeError, r"argument 'pin_memory' must be bool, not int"
+        ):
+            torch.full((1,), 1.0, pin_memory=1, requires_grad=1)
+
+    def test_full_rejects_pinned_allocation(self):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "pin_memory=True is not supported; only unpinned CPU storage is implemented",
+        ):
+            torch.full((1,), 1.0, pin_memory=True)
 
     def test_full_validates_strides_for_empty_shapes(self):
         large = 2**62
