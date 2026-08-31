@@ -24,6 +24,9 @@ when gradient recording is active. Concrete `out`, `sign_`, `torch.sgn` and
 `Tensor.sgn`, tensor subclasses without override handling, non-float32 dtypes,
 and unsupported devices remain outside the supported surface.
 
+The feature matrix below counts this surface with the existing unary CPU
+float32 math and reusable zero-VJP autograd coverage.
+
 Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 
 | Area | Weight | Baseline |
