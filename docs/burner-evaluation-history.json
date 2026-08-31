@@ -8588,6 +8588,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 89
       }
+    },
+    {
+      "key": "pr:1470",
+      "recordedAt": "2026-08-31T05:26:06.840Z",
+      "label": "PR #1470",
+      "kind": "leaf",
+      "prNumber": 1470,
+      "title": "Accept default zeros and ones layout keywords",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 89,
+        "eval_39340456": 90.3,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 89
+      }
     }
   ]
 }
