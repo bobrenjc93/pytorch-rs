@@ -102,6 +102,56 @@ class AsTensorReferenceTests(unittest.TestCase):
             "source_unchanged": before == after,
         }
 
+    def test_python_float_sequences_create_default_cpu_float32_tensors_like_pytorch_2_13(self):
+        actual_cases = (
+            ("float scalar", -0.0),
+            ("list vector", [1.0, 2.5, -3.0]),
+            ("tuple vector", (1.0, 2.0)),
+            ("nested mixed containers", ([1.0, 2.0], (3.0, 4.0))),
+            ("empty list", []),
+            ("empty rows", [[], []]),
+            ("empty rank three", [[[], []], [[], []]]),
+        )
+        expected_cases = actual_cases
+        actual_options = self.option_cases(torch)
+        expected_options = self.option_cases(reference_torch)
+
+        for (case, actual_data), (_, expected_data) in zip(
+            actual_cases, expected_cases, strict=True
+        ):
+            for actual_kwargs, expected_kwargs in zip(
+                actual_options, expected_options, strict=True
+            ):
+                with self.subTest(case=case, options=actual_kwargs):
+                    actual = torch.as_tensor(actual_data, **actual_kwargs)
+                    expected = reference_torch.as_tensor(
+                        expected_data, **expected_kwargs
+                    )
+                    self.assertEqual(
+                        self.comparable_tensor_state(torch, actual),
+                        self.comparable_tensor_state(reference_torch, expected),
+                    )
+
+    def test_rectangular_sequence_errors_match_pytorch_2_13(self):
+        actual_cases = (
+            lambda: torch.as_tensor([[1.0], [2.0, 3.0]]),
+            lambda: torch.as_tensor([[1.0], 2.0]),
+            lambda: torch.as_tensor([1.0, [2.0]]),
+        )
+        expected_cases = (
+            lambda: reference_torch.as_tensor([[1.0], [2.0, 3.0]]),
+            lambda: reference_torch.as_tensor([[1.0], 2.0]),
+            lambda: reference_torch.as_tensor([1.0, [2.0]]),
+        )
+        for actual_call, expected_call in zip(actual_cases, expected_cases, strict=True):
+            with self.subTest(case=actual_call):
+                with self.assertRaises(Exception) as actual_raised:
+                    actual_call()
+                with self.assertRaises(Exception) as expected_raised:
+                    expected_call()
+                self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
+                self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+
     def test_identity_aliasing_and_metadata_match_pytorch_2_13(self):
         actual_cases = self.tensor_cases(torch)
         expected_cases = self.tensor_cases(reference_torch)

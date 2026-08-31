@@ -66,6 +66,18 @@ class AsTensorTests(unittest.TestCase):
             tensor.output_nr,
         )
 
+    def assert_constructed_tensor(self, data, expected_values, expected_shape, expected_stride):
+        result = torch.as_tensor(data)
+        self.assertEqual(result.tolist(), expected_values)
+        self.assertEqual(result.shape, expected_shape)
+        self.assertEqual(result.stride(), expected_stride)
+        self.assertIs(result.dtype, torch.float32)
+        self.assertEqual(result.device, torch.device("cpu"))
+        self.assertFalse(result.requires_grad)
+        self.assertTrue(result.is_leaf)
+        self.assertEqual(result.output_nr, 0)
+        return result
+
     def test_exact_native_cpu_float32_tensors_return_identical_object(self):
         option_cases = (
             {},
@@ -85,6 +97,70 @@ class AsTensorTests(unittest.TestCase):
                     self.assertIs(result, tensor)
                     self.assertEqual(result.data_ptr(), before[4])
                     self.assertEqual(self.tensor_state(tensor), before)
+
+    def test_python_scalars_lists_and_tuples_create_default_cpu_float32_tensors(self):
+        negative_zero = self.assert_constructed_tensor(-0.0, -0.0, (), ())
+        self.assertEqual(
+            np.asarray(negative_zero).reshape(-1).view(np.uint32).tolist(),
+            [0x80000000],
+        )
+
+        cases = (
+            ("float scalar", 1.5, 1.5, (), ()),
+            ("int scalar", 7, 7.0, (), ()),
+            ("list vector", [1.0, 2.5, -3.0], [1.0, 2.5, -3.0], (3,), (1,)),
+            ("tuple vector", (1.0, 2.0), [1.0, 2.0], (2,), (1,)),
+            (
+                "nested mixed containers",
+                ([1.0, 2.0], (3.0, 4.0)),
+                [[1.0, 2.0], [3.0, 4.0]],
+                (2, 2),
+                (2, 1),
+            ),
+            ("empty list", [], [], (0,), (1,)),
+            ("empty rows", [[], []], [[], []], (2, 0), (1, 1)),
+            (
+                "empty rank three",
+                [[[], []], [[], []]],
+                [[[], []], [[], []]],
+                (2, 2, 0),
+                (2, 1, 1),
+            ),
+        )
+        for case, data, expected_values, expected_shape, expected_stride in cases:
+            with self.subTest(case=case):
+                self.assert_constructed_tensor(
+                    data, expected_values, expected_shape, expected_stride
+                )
+
+        explicit = torch.as_tensor(
+            data=[1.0, 2.0], dtype=torch.float32, device=torch.device("cpu")
+        )
+        self.assertEqual(explicit.tolist(), [1.0, 2.0])
+        self.assertEqual(explicit.shape, (2,))
+        self.assertEqual(explicit.stride(), (1,))
+
+    def test_rectangular_sequence_errors_match_pytorch(self):
+        cases = (
+            (
+                lambda: torch.as_tensor([[1.0], [2.0, 3.0]]),
+                ValueError,
+                "expected sequence of length 1 at dim 1 (got 2)",
+            ),
+            (
+                lambda: torch.as_tensor([[1.0], 2.0]),
+                TypeError,
+                "not a sequence",
+            ),
+            (
+                lambda: torch.as_tensor([1.0, [2.0]]),
+                TypeError,
+                "must be real number, not list",
+            ),
+        )
+        for call, error_type, message in cases:
+            with self.subTest(message=message):
+                self.assert_error(call, error_type, message)
 
     def test_identity_preserves_autograd_graph_and_gradient_object(self):
         leaf = torch.tensor(
@@ -173,7 +249,7 @@ class AsTensorTests(unittest.TestCase):
                 {"data": tensor, "dtype": torch.float32},
             ),
             (
-                "unsupported sequence",
+                "sequence",
                 lambda: torch.as_tensor([1.0, 2.0]),
                 ([1.0, 2.0],),
                 None,
@@ -228,7 +304,7 @@ class AsTensorTests(unittest.TestCase):
     def test_binding_errors_and_unsupported_scope_are_explicit(self):
         tensor = torch.tensor([1.0], dtype=torch.float32)
         unsupported_conversion = (
-            "as_tensor(): only exact native CPU float32 Tensor inputs are supported; Python sequences, NumPy arrays, and scalar conversions are not implemented"
+            "as_tensor(): only exact native CPU float32 Tensor inputs, Python int/float scalars, and exact list/tuple sequences are supported"
         )
         cases = (
             (
@@ -298,14 +374,18 @@ class AsTensorTests(unittest.TestCase):
                 NotImplementedError,
                 "as_tensor(): indexed CPU devices require a copy and are not supported",
             ),
-            (lambda: torch.as_tensor([1.0]), NotImplementedError, unsupported_conversion),
-            (lambda: torch.as_tensor((1.0,)), NotImplementedError, unsupported_conversion),
             (
                 lambda: torch.as_tensor(np.asarray([1.0], dtype=np.float32)),
                 NotImplementedError,
                 unsupported_conversion,
             ),
-            (lambda: torch.as_tensor(1.0), NotImplementedError, unsupported_conversion),
+            (
+                lambda: torch.as_tensor(memoryview(np.asarray([1.0], dtype=np.float32))),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
+            (lambda: torch.as_tensor(True), NotImplementedError, unsupported_conversion),
+            (lambda: torch.as_tensor(1.0 + 0.0j), NotImplementedError, unsupported_conversion),
         )
         for call, error_type, message in cases:
             with self.subTest(message=message):

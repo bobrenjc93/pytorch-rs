@@ -1483,15 +1483,20 @@ pub(crate) fn as_tensor_variable_function(
 
     if dtype != DType::Float32 || !device.is_cpu() {
         return Err(PyNotImplementedError::new_err(
-            "as_tensor(): only identity conversion for CPU float32 tensors is supported",
+            "as_tensor(): only identity conversion and default CPU float32 construction are supported",
         ));
     }
-    if !data.value.is_exact_instance_of::<PyTensor>() {
-        return Err(PyNotImplementedError::new_err(
-            "as_tensor(): only exact native CPU float32 Tensor inputs are supported; Python sequences, NumPy arrays, and scalar conversions are not implemented",
-        ));
+    if data.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(data.value.unbind());
     }
-    Ok(data.value.unbind())
+
+    let Some((flattened, shape)) = flatten_as_tensor_supported_data(&data.value)? else {
+        return Err(unsupported_as_tensor_data_error());
+    };
+    let tensor = CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
+        .map(PyTensor::new)
+        .map_err(|error| tensor_error(&error))?;
+    Bound::new(py, tensor).map(|tensor| tensor.into_any().unbind())
 }
 
 pub(crate) fn asarray_variable_function(
@@ -14315,6 +14320,131 @@ fn is_sequence_input(value: &Bound<'_, PyAny>) -> PyResult<bool> {
         return Ok(false);
     }
     Ok(value.hasattr("__len__")? && value.hasattr("__getitem__")?)
+}
+
+fn flatten_as_tensor_supported_data(
+    value: &Bound<'_, PyAny>,
+) -> PyResult<Option<(Vec<f32>, Vec<usize>)>> {
+    let Some(shape) = as_tensor_sequence_shape(value)? else {
+        if let Some(scalar) = extract_as_tensor_python_real_scalar(value)? {
+            return Ok(Some((vec![scalar], Vec::new())));
+        }
+        return Ok(None);
+    };
+
+    let elements = shape.iter().try_fold(1_usize, |elements, dimension| {
+        elements
+            .checked_mul(*dimension)
+            .ok_or_else(|| PyOverflowError::new_err("tensor shape product overflowed usize"))
+    })?;
+    let mut flattened = Vec::new();
+    flattened.try_reserve_exact(elements).map_err(|_| {
+        PyMemoryError::new_err("unable to allocate native tensor storage for as_tensor")
+    })?;
+    flatten_as_tensor_sequence(value, &shape, 0, &mut flattened)?;
+    Ok(Some((flattened, shape)))
+}
+
+fn as_tensor_sequence_shape(value: &Bound<'_, PyAny>) -> PyResult<Option<Vec<usize>>> {
+    if !is_as_tensor_list_or_tuple(value) {
+        return Ok(None);
+    }
+
+    let length = value.len()?;
+    let mut shape = Vec::new();
+    shape.push(length);
+    if length == 0 {
+        return Ok(Some(shape));
+    }
+
+    let first = value.get_item(0)?;
+    if let Some(nested_shape) = as_tensor_sequence_shape(&first)? {
+        shape.extend(nested_shape);
+    } else if extract_as_tensor_python_real_scalar(&first)?.is_none() {
+        return Err(unsupported_tensor_data_error(&first, false)?);
+    }
+    Ok(Some(shape))
+}
+
+fn flatten_as_tensor_sequence(
+    value: &Bound<'_, PyAny>,
+    shape: &[usize],
+    dimension: usize,
+    output: &mut Vec<f32>,
+) -> PyResult<()> {
+    if shape.is_empty() {
+        if let Some(scalar) = extract_as_tensor_python_real_scalar(value)? {
+            output.push(scalar);
+            return Ok(());
+        }
+        if is_as_tensor_list_or_tuple(value) {
+            let type_name = python_type_name(value)?;
+            return Err(PyTypeError::new_err(format!(
+                "must be real number, not {type_name}"
+            )));
+        }
+        return Err(unsupported_tensor_data_error(value, false)?);
+    }
+
+    if !is_as_tensor_list_or_tuple(value) {
+        return Err(PyTypeError::new_err("not a sequence"));
+    }
+
+    let length = value.len()?;
+    let expected = shape[0];
+    if length != expected {
+        return Err(PyValueError::new_err(format!(
+            "expected sequence of length {expected} at dim {dimension} (got {length})"
+        )));
+    }
+    if shape.contains(&0) {
+        for index in 0..length {
+            validate_as_tensor_zero_numel_values(&value.get_item(index)?)?;
+        }
+        return Ok(());
+    }
+
+    let nested_shape = &shape[1..];
+    for index in 0..length {
+        flatten_as_tensor_sequence(&value.get_item(index)?, nested_shape, dimension + 1, output)?;
+    }
+    Ok(())
+}
+
+fn validate_as_tensor_zero_numel_values(value: &Bound<'_, PyAny>) -> PyResult<()> {
+    if extract_as_tensor_python_real_scalar(value)?.is_some() {
+        return Ok(());
+    }
+    if is_as_tensor_list_or_tuple(value) {
+        for index in 0..value.len()? {
+            validate_as_tensor_zero_numel_values(&value.get_item(index)?)?;
+        }
+        return Ok(());
+    }
+    Err(unsupported_tensor_data_error(value, false)?)
+}
+
+fn extract_as_tensor_python_real_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<f32>> {
+    let parsed = if value.is_exact_instance_of::<PyInt>() {
+        Some(parse_integer_fill_value(value)?)
+    } else if value.is_exact_instance_of::<PyFloat>() {
+        Some(value.extract::<f64>().map(ParsedFillValue::Float)?)
+    } else {
+        None
+    };
+    parsed
+        .map(ParsedFillValue::into_scalar_tensor_f32)
+        .transpose()
+}
+
+fn is_as_tensor_list_or_tuple(value: &Bound<'_, PyAny>) -> bool {
+    value.is_exact_instance_of::<PyList>() || value.is_exact_instance_of::<PyTuple>()
+}
+
+fn unsupported_as_tensor_data_error() -> PyErr {
+    PyNotImplementedError::new_err(
+        "as_tensor(): only exact native CPU float32 Tensor inputs, Python int/float scalars, and exact list/tuple sequences are supported",
+    )
 }
 
 fn flatten_rectangular(value: &Bound<'_, PyAny>, output: &mut Vec<f32>) -> PyResult<Vec<usize>> {
