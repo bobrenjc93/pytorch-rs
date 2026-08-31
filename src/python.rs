@@ -4634,7 +4634,7 @@ fn parse_top_level_add_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
             Err(PyTypeError::new_err("an integer is required"))
         }
         Ok(Some(scalar)) => Ok(scalar.into_f32()),
-        Ok(None) => unreachable!("top-level add scalar types were checked while binding"),
+        Ok(None) => Err(add_unsupported_native_operand()),
         Err(_) if value.is_instance_of::<PyInt>() => {
             let message = if python_integer_is_negative(value)? {
                 "can't convert negative int to unsigned"
@@ -12064,6 +12064,12 @@ fn is_numpy_complex_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     value.is_instance(&numpy.getattr("complexfloating")?)
 }
 
+fn is_add_scalar_operand(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    Ok(is_real_arithmetic_scalar(value)?
+        || value.is_instance_of::<PyComplex>()
+        || is_numpy_complex_scalar(value)?)
+}
+
 fn parse_top_level_add_operand<'py>(
     argument: &str,
     value: &ParsedCallArgument<'py>,
@@ -12079,7 +12085,7 @@ fn parse_top_level_add_operand<'py>(
     if value.value.is_instance_of::<PyTensor>() {
         return Err(add_unsupported_native_operand());
     }
-    if is_real_arithmetic_scalar(&value.value)? {
+    if is_add_scalar_operand(&value.value)? {
         return Ok(BoundAddOperand::Scalar(value.value.clone()));
     }
 

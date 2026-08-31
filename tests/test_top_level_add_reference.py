@@ -232,6 +232,7 @@ class TopLevelAddReferenceTests(unittest.TestCase):
         left = module.tensor([2.0])
         right = module.tensor([3.0])
         out = module.zeros((1,))
+        complex_scalar = np.complex64(1j)
         function = module.add
         marker = object()
 
@@ -249,6 +250,11 @@ class TopLevelAddReferenceTests(unittest.TestCase):
             (lambda: function(left, right), 2, None),
             (lambda: function(left, 4.0), 2, None),
             (lambda: function(4.0, left), 2, None),
+            (lambda: function(left, 1j), 2, None),
+            (lambda: function(1j, left), 2, None),
+            (lambda: function(left, complex_scalar), 2, None),
+            (lambda: function(complex_scalar, left), 2, None),
+            (lambda: function(1j, 2j), 2, None),
             (lambda: function(2.0, 3.0), 2, None),
             (lambda: function(left, right, alpha=2), 2, ("alpha",)),
             (lambda: function(left, right, out=out), 2, ("out",)),
@@ -290,6 +296,9 @@ class TopLevelAddReferenceTests(unittest.TestCase):
             lambda value: function(left, value),
             lambda value: function(value, 4.0),
             lambda value: function(4.0, value),
+            lambda value: function(value, 1j),
+            lambda value: function(1j, value),
+            lambda value: function(value, complex_scalar),
             lambda value: function(input=left, other=value),
             lambda value: function(left, right, alpha=value),
             lambda value: function(left, right, out=value),

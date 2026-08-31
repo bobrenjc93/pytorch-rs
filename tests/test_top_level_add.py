@@ -197,6 +197,7 @@ class TopLevelAddTests(unittest.TestCase):
         left = torch.tensor([2.0])
         right = torch.tensor([3.0])
         out = torch.zeros((1,))
+        complex_scalar = np.complex64(1j)
         marker = object()
 
         class RecordingMode(torch.overrides.TorchFunctionMode):
@@ -212,6 +213,14 @@ class TopLevelAddTests(unittest.TestCase):
             ("tensor/tensor", lambda: torch.add(left, right), (left, right), None),
             ("tensor/scalar", lambda: torch.add(left, 4.0), (left, 4.0), None),
             ("scalar/tensor", lambda: torch.add(4.0, left), (4.0, left), None),
+            ("tensor/complex", lambda: torch.add(left, 1j), (left, 1j), None),
+            ("complex/tensor", lambda: torch.add(1j, left), (1j, left), None),
+            (
+                "tensor/NumPy complex",
+                lambda: torch.add(left, complex_scalar),
+                (left, complex_scalar),
+                None,
+            ),
             (
                 "canonical keywords",
                 lambda: torch.add(input=4.0, other=left, alpha=1, out=None),
@@ -344,6 +353,26 @@ class TopLevelAddTests(unittest.TestCase):
         self.assertIs(torch.add(scalar, native), marker)
         self.assertEqual(scalar_events[0][1], (ScalarOverride,))
 
+        events.clear()
+        self.assertIs(torch.add(RightOverride(), 1j), marker)
+        tag, function, dispatch_types, args, kwargs = events[0]
+        self.assertEqual(tag, "right")
+        self.assertIs(function, torch.add)
+        self.assertEqual(dispatch_types, (RightOverride,))
+        self.assertIsInstance(args[0], RightOverride)
+        self.assertEqual(args[1], 1j)
+        self.assertIsNone(kwargs)
+
+        events.clear()
+        self.assertIs(torch.add(np.complex64(1j), RightOverride()), marker)
+        tag, function, dispatch_types, args, kwargs = events[0]
+        self.assertEqual(tag, "right")
+        self.assertIs(function, torch.add)
+        self.assertEqual(dispatch_types, (RightOverride,))
+        self.assertEqual(args[0], np.complex64(1j))
+        self.assertIsInstance(args[1], RightOverride)
+        self.assertIsNone(kwargs)
+
         keyword_events = []
 
         class AlphaOverride:
@@ -453,6 +482,18 @@ class TopLevelAddTests(unittest.TestCase):
             (
                 lambda: torch.add(tensor, tensor, alpha=2),
                 "add\\(\\): nondefault alpha is not supported; only alpha=1 is implemented",
+            ),
+            (
+                lambda: torch.add(tensor, 1j),
+                "add\\(\\): only exact native CPU float32 Tensor operands and real scalars are supported",
+            ),
+            (
+                lambda: torch.add(1j, tensor),
+                "add\\(\\): only exact native CPU float32 Tensor operands and real scalars are supported",
+            ),
+            (
+                lambda: torch.add(np.complex64(1j), tensor),
+                "add\\(\\): only exact native CPU float32 Tensor operands and real scalars are supported",
             ),
             (
                 lambda: torch.add(tensor, tensor, alpha=torch.tensor(2.0)),
