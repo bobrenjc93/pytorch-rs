@@ -118,6 +118,7 @@ print(json.dumps({
     "native_tf32": torch._C._get_cublas_allow_tf32(),
     "native_fp16": torch._C._get_cublas_allow_fp16_reduced_precision_reduction(),
     "native_bf16": torch._C._get_cublas_allow_bf16_reduced_precision_reduction(),
+    "precision": torch.get_float32_matmul_precision(),
     "backend_built": cuda.is_built(),
     "cuda_module": hasattr(torch, "cuda"),
     "cuda_submodule_loaded": "torch_rs.cuda" in sys.modules,
@@ -148,6 +149,7 @@ print(json.dumps({
                 "native_tf32": True,
                 "native_fp16": [False, True],
                 "native_bf16": [False, True],
+                "precision": "high",
                 "backend_built": False,
                 "cuda_module": False,
                 "cuda_submodule_loaded": False,
@@ -199,7 +201,10 @@ print(json.dumps({
                     ),
                     other_states,
                 )
-                self.assertEqual(torch.get_float32_matmul_precision(), "highest")
+                self.assertEqual(
+                    torch.get_float32_matmul_precision(),
+                    "high" if states[0] else "highest",
+                )
                 self.assertIs(cuda.is_built(), False)
 
     def test_invalid_assignments_preserve_state(self):
@@ -232,6 +237,10 @@ print(json.dumps({
                         self.cuda.matmul.allow_tf32 = value
                     self.assertEqual(str(raised.exception), message)
                     self.assertIs(self.cuda.matmul.allow_tf32, state)
+                    self.assertEqual(
+                        torch.get_float32_matmul_precision(),
+                        "high" if state else "highest",
+                    )
 
         invalid_reduction_values = (
             [],

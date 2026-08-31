@@ -57,14 +57,24 @@ class CudaMatmulPreferenceReferenceTests(unittest.TestCase):
     def setUp(self):
         self.actual = importlib.import_module("torch_rs.backends.cuda")
         self.expected = importlib.import_module("torch.backends.cuda")
+        self.actual_precision_original = torch.get_float32_matmul_precision()
+        self.expected_precision_original = (
+            reference_torch.get_float32_matmul_precision()
+        )
         self.actual_original = self.states(self.actual.matmul)
         self.expected_original = self.states(self.expected.matmul)
+        torch.set_float32_matmul_precision("highest")
+        reference_torch.set_float32_matmul_precision("highest")
         self.set_states(self.actual.matmul, (False, True, True))
         self.set_states(self.expected.matmul, (False, True, True))
 
     def tearDown(self):
         self.set_states(self.actual.matmul, self.actual_original)
         self.set_states(self.expected.matmul, self.expected_original)
+        torch.set_float32_matmul_precision(self.actual_precision_original)
+        reference_torch.set_float32_matmul_precision(
+            self.expected_precision_original
+        )
 
     def normalize(self, value):
         if isinstance(value, str):
@@ -133,6 +143,10 @@ class CudaMatmulPreferenceReferenceTests(unittest.TestCase):
                 self.assertEqual(
                     tuple(type(value) for value in self.states(self.actual.matmul)),
                     tuple(type(value) for value in self.states(self.expected.matmul)),
+                )
+                self.assertEqual(
+                    torch.get_float32_matmul_precision(),
+                    reference_torch.get_float32_matmul_precision(),
                 )
 
     def test_invalid_assignments_match_pytorch_2_13(self):
