@@ -29,13 +29,14 @@ use crate::python::{
     real_variable_function, reciprocal_variable_function, reshape_variable_function,
     resolve_conj_variable_function, resolve_neg_variable_function, rsqrt_variable_function,
     scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
-    sin_variable_function, sqrt_variable_function, square_variable_function, sum_variable_function,
-    tanh_variable_function, trunc_variable_function, unbind_variable_function,
+    sin_variable_function, sqrt_variable_function, square_variable_function, sub_variable_function,
+    subtract_variable_function, sum_variable_function, tanh_variable_function,
+    trunc_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 51] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 53] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -85,6 +86,8 @@ const VARIABLE_FUNCTION_NAMES: [&str; 51] = [
     "matmul",
     "mul",
     "multiply",
+    "sub",
+    "subtract",
     "can_cast",
     "promote_types",
 ];
@@ -844,6 +847,40 @@ multiply(input, other, *, out=None)
 Alias for :func:`torch.mul`.
 ";
 
+const SUB_DOC: &std::ffi::CStr = cr"
+sub(input, other, *, alpha=1, out=None) -> Tensor
+
+Subtracts :attr:`other`, scaled by :attr:`alpha`, from :attr:`input`.
+
+.. math::
+    \text{{out}}_i = \text{{input}}_i - \text{{alpha}} \times \text{{other}}_i
+
+
+Supports :ref:`broadcasting to a common shape <broadcasting-semantics>`,
+:ref:`type promotion <type-promotion-doc>`, and integer, float, and complex inputs.
+
+Args:
+    input (Tensor): the input tensor.
+    other (Tensor or Number): the tensor or number to subtract from :attr:`input`.
+
+Keyword args:
+    alpha (Number): the multiplier for :attr:`other`.
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> a = torch.tensor((1, 2))
+    >>> b = torch.tensor((0, 1))
+    >>> torch.sub(a, b, alpha=2)
+    tensor([1, 0])
+";
+
+const SUBTRACT_DOC: &std::ffi::CStr = c"
+subtract(input, other, *, alpha=1, out=None) -> Tensor
+
+Alias for :func:`torch.sub`.
+";
+
 const CAN_CAST_DOC: &std::ffi::CStr = cr"
 can_cast(from_, to) -> bool
 
@@ -1160,6 +1197,8 @@ variable_function_callback!(mean_callback, mean_variable_function);
 variable_function_callback!(tanh_callback, tanh_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
 variable_function_callback!(multiply_callback, multiply_variable_function);
+variable_function_callback!(sub_callback, sub_variable_function);
+variable_function_callback!(subtract_callback, subtract_variable_function);
 variable_function_callback!(
     is_vulkan_available_callback,
     is_vulkan_available_variable_function
@@ -1239,6 +1278,8 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"tanh", tanh_callback, TANH_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
         variable_function_method!(c"multiply", multiply_callback, MULTIPLY_DOC),
+        variable_function_method!(c"sub", sub_callback, SUB_DOC),
+        variable_function_method!(c"subtract", subtract_callback, SUBTRACT_DOC),
         variable_function_method!(c"is_vulkan_available", is_vulkan_available_callback, c""),
         variable_function_method!(c"_nnpack_available", nnpack_available_callback, c""),
         variable_function_method!(c"is_conj", is_conj_callback, IS_CONJ_DOC),
