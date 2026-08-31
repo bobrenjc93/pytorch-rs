@@ -8707,6 +8707,10 @@ fn bind_top_level_mean_arguments<'py>(
     let has_dimension = positional.len() >= 2 || keyword_dim.is_some();
     let has_keepdim = positional.len() >= 3 || keyword_keepdim.is_some();
     let has_out = keyword_out.is_some();
+    if !has_dimension && has_keepdim {
+        return Err(top_level_mean_invalid_combination(positional, keywords)?);
+    }
+
     let input = parse_top_level_mean_input(
         &input_argument,
         has_dimension || has_keepdim || has_out || keyword_dtype.is_some(),
@@ -8865,7 +8869,7 @@ fn top_level_mean_invalid_combination(
     let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
     Ok(PyTypeError::new_err(format!(
         "mean() received an invalid combination of arguments - got ({summary}), but expected one of:\n \
-* (Tensor input, *, torch.dtype dtype = None)\n \
+* (Tensor input, *, torch.dtype dtype = None, Tensor out = None)\n \
 * (Tensor input, tuple of ints dim, bool keepdim = False, *, torch.dtype dtype = None, Tensor out = None)\n"
     )))
 }
@@ -9057,16 +9061,25 @@ fn bind_method_mean_arguments(
     }
 
     let has_dimension = !positional.is_empty() || keyword_dim.is_some();
+    let has_keepdim = positional.len() >= 2 || keyword_keepdim.is_some();
+    if !has_dimension {
+        if has_keepdim {
+            return Err(mean_method_invalid_combination(positional, keywords)?);
+        }
+        if let Some(dtype) = keyword_dtype {
+            bind_method_mean_dtype(&dtype.value, false, positional, keywords)?;
+        }
+        return Ok(());
+    }
+
     let dimension = method_sum_dimension_argument(positional, keyword_dim)?;
-    if let Some(dimension) = &dimension
-        && !is_sum_dimension_argument(&dimension.value)?
-    {
+    let Some(dimension) = dimension else {
+        unreachable!("mean method dimension is present when it has a positional or keyword value")
+    };
+    if !is_sum_dimension_argument(&dimension.value)? {
         return Err(mean_method_invalid_combination(positional, keywords)?);
     }
-    if dimension
-        .as_ref()
-        .is_some_and(|dimension| !dimension.value.is_none())
-    {
+    if !dimension.value.is_none() {
         return Err(mean_unsupported_reduction());
     }
 

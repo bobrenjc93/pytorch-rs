@@ -103,6 +103,10 @@ enum GradFn {
     Sum {
         input: SavedTensor,
     },
+    Mean {
+        input: SavedTensor,
+        scale: f32,
+    },
     Transform {
         input: SavedTensor,
         mapping: TransformMapping,
@@ -146,6 +150,7 @@ impl GradFn {
             Self::MultiplyScalar { input, .. }
             | Self::Negate { input, .. }
             | Self::Sum { input }
+            | Self::Mean { input, .. }
             | Self::Transform { input, .. }
             | Self::Unbind { input, .. } => input.take_parent(pending),
             Self::SavedInputUnary(node) => node.input.take_parent(pending),
@@ -181,6 +186,7 @@ impl GradFn {
             Self::Negate { .. }
             | Self::ZeroVjp(_)
             | Self::Sum { .. }
+            | Self::Mean { .. }
             | Self::Transform { .. }
             | Self::Unbind { .. } => {}
         }
@@ -200,6 +206,7 @@ impl GradFn {
             Self::Negate { .. }
             | Self::ZeroVjp(_)
             | Self::Sum { .. }
+            | Self::Mean { .. }
             | Self::Transform { .. }
             | Self::Unbind { .. } => {}
         }
@@ -1065,6 +1072,7 @@ impl Tensor {
             GradFn::SavedOutputUnary(node) => node.identity,
             GradFn::ZeroVjp(node) => node.identity,
             GradFn::Sum { .. } => AutogradNode::Sum,
+            GradFn::Mean { .. } => AutogradNode::Mean,
             GradFn::Unbind { .. } => AutogradNode::Unbind,
         };
         Some(node.python_name())
@@ -3640,7 +3648,18 @@ impl Tensor {
     /// Returns an error when result allocation fails.
     pub fn mean(&self) -> Result<Self, TensorError> {
         let scale = full_reduction_mean_scale(self.elements);
-        self.sum().mul_scalar(scale)
+        let mut output = self.sum().mul_scalar(scale)?;
+        if self.requires_grad() && is_grad_enabled() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Mean {
+                        input: SavedTensor::from_tensor_metadata(self),
+                        scale,
+                    })),
+                },
+            }));
+        }
+        Ok(output)
     }
 
     fn sum_contiguous_shared_gradient(&self) -> Option<f32> {
@@ -4282,6 +4301,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                         GradFn::MultiplyScalar { input, .. }
                         | GradFn::Negate { input, .. }
                         | GradFn::Sum { input }
+                        | GradFn::Mean { input, .. }
                         | GradFn::Transform { input, .. }
                         | GradFn::Unbind { input, .. } => {
                             push_saved_parent(&mut stack, input);
@@ -4316,6 +4336,9 @@ fn apply_grad_fn(
 ) -> Result<(), TensorError> {
     match grad_fn {
         GradFn::Sum { input } => apply_sum_grad_fn(input, upstream, gradients)?,
+        GradFn::Mean { input, scale } => {
+            apply_mean_grad_fn(input, *scale, upstream, gradients)?;
+        }
         GradFn::MultiplyScalar { input, scalar } => {
             if let Some(meta) = &input.autograd {
                 let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
@@ -4420,6 +4443,19 @@ fn apply_sum_grad_fn(
 ) -> Result<(), TensorError> {
     if let Some(meta) = &input.autograd {
         let gradient = filled_storage(input.elements, upstream[0])?;
+        add_gradient(gradients, meta, input.output_nr, gradient);
+    }
+    Ok(())
+}
+
+fn apply_mean_grad_fn(
+    input: &SavedTensor,
+    scale: f32,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    if let Some(meta) = &input.autograd {
+        let gradient = filled_storage(input.elements, upstream[0] * scale)?;
         add_gradient(gradients, meta, input.output_nr, gradient);
     }
     Ok(())
@@ -6515,8 +6551,10 @@ mod tests {
             .unwrap()
             .with_requires_grad(true);
         let view = leaf.transpose(0, 1).unwrap();
-        view.mean().unwrap().backward().unwrap();
-        let expected_gradient = [1.0_f32 / 6.0; 6];
+        let loss = view.mean().unwrap();
+        loss.backward().unwrap();
+        loss.backward().unwrap();
+        let expected_gradient = [2.0_f32 / 6.0; 6];
         assert!(
             leaf.grad()
                 .unwrap()
@@ -6528,7 +6566,9 @@ mod tests {
 
         let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
         let empty_loss = empty.transpose(0, 2).unwrap().index_integer(1).unwrap();
-        empty_loss.mean().unwrap().backward().unwrap();
+        let empty_mean = empty_loss.mean().unwrap();
+        empty_mean.backward().unwrap();
+        empty_mean.backward().unwrap();
         let empty_gradient = empty.grad().unwrap().unwrap();
         assert_eq!(empty_gradient.shape(), [2, 0, 3]);
         assert!(empty_gradient.logical_values().next().is_none());

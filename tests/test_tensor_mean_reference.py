@@ -171,9 +171,11 @@ class TensorMeanReferenceTests(unittest.TestCase):
             )
             loss = module.mean(leaf.transpose(0, 1), dim=None, dtype=module.float32)
             loss.backward()
+            loss.backward()
 
             empty = module.zeros((2, 0, 3), dtype=module.float32, requires_grad=True)
             empty_loss = empty.transpose(0, 2)[1].mean(None, False)
+            empty_loss.backward()
             empty_loss.backward()
 
             with module.no_grad():
@@ -295,7 +297,7 @@ class TensorMeanReferenceTests(unittest.TestCase):
                 lambda: reference_torch.mean(expected, None, keepdim=True),
             ),
             (
-                lambda: torch.mean(actual, out=torch.empty(())),
+                lambda: torch.mean(actual, out=torch.tensor(0.0)),
                 lambda: reference_torch.mean(expected, out=reference_torch.empty(())),
             ),
         )

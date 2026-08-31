@@ -24,7 +24,7 @@ EXPECTED_METHOD_OVERLOADS = (
 
 EXPECTED_TOP_LEVEL_OVERLOADS = (
     "but expected one of:\n"
-    " * (Tensor input, *, torch.dtype dtype = None)\n"
+    " * (Tensor input, *, torch.dtype dtype = None, Tensor out = None)\n"
     " * (Tensor input, tuple of ints dim, bool keepdim = False, *, "
     "torch.dtype dtype = None, Tensor out = None)\n"
 )
@@ -90,7 +90,6 @@ class TensorMeanTests(unittest.TestCase):
             ("positional none dim", lambda: source.mean(None)),
             ("keyword none dim", lambda: source.mean(dim=None)),
             ("none dim keepdim false", lambda: source.mean(None, False)),
-            ("keyword keepdim false", lambda: source.mean(keepdim=False)),
             ("dtype none", lambda: source.mean(dtype=None)),
             ("dtype float32", lambda: source.mean(dtype=torch.float32)),
             ("dtype float alias", lambda: source.mean(dtype=torch.float)),
@@ -107,7 +106,6 @@ class TensorMeanTests(unittest.TestCase):
             ("positional none dim", lambda: torch.mean(source, None)),
             ("keyword none dim", lambda: torch.mean(source, dim=None)),
             ("none dim keepdim false", lambda: torch.mean(source, None, False)),
-            ("keyword keepdim false", lambda: torch.mean(source, keepdim=False)),
             ("none dim out none", lambda: torch.mean(source, dim=None, out=None)),
             ("out none", lambda: torch.mean(source, out=None)),
             ("input", lambda: torch.mean(input=source)),
@@ -152,15 +150,17 @@ class TensorMeanTests(unittest.TestCase):
                 self.assertTrue(loss.requires_grad)
                 self.assertFalse(loss.is_leaf)
                 loss.backward()
+                loss.backward()
                 np.testing.assert_array_equal(
                     np.asarray(leaf.grad),
-                    np.full((2, 3), np.float32(1.0 / 6.0), dtype=np.float32),
+                    np.full((2, 3), np.float32(2.0 / 6.0), dtype=np.float32),
                 )
 
             with self.subTest(form=form, case="empty autograd"):
                 empty = torch.zeros((2, 0, 3), requires_grad=True)
                 empty_loss = make_loss(empty.transpose(0, 2)[1])
                 self.assertTrue(math.isnan(empty_loss.item()))
+                empty_loss.backward()
                 empty_loss.backward()
                 self.assertEqual(empty.grad.shape, empty.shape)
                 self.assertEqual(empty.grad.tolist(), [[], []])
@@ -357,6 +357,14 @@ class TensorMeanTests(unittest.TestCase):
                 f"{invalid}(extra=bool, ), {EXPECTED_METHOD_OVERLOADS}",
             ),
             (
+                lambda: tensor.mean(keepdim=False),
+                f"{invalid}(keepdim=bool, ), {EXPECTED_METHOD_OVERLOADS}",
+            ),
+            (
+                lambda: tensor.mean(keepdim=True),
+                f"{invalid}(keepdim=bool, ), {EXPECTED_METHOD_OVERLOADS}",
+            ),
+            (
                 lambda: tensor.mean(0, False, torch.float32),
                 "mean() takes from 1 to 2 positional arguments but 3 were given",
             ),
@@ -376,7 +384,6 @@ class TensorMeanTests(unittest.TestCase):
             ("tuple dim", lambda: tensor.mean((0, 1))),
             ("list dim", lambda: tensor.mean(dim=[0, 1])),
             ("positional keepdim true", lambda: tensor.mean(None, True)),
-            ("keyword keepdim true", lambda: tensor.mean(keepdim=True)),
         )
         for case, call in unsupported_cases:
             with self.subTest(case=case):
@@ -409,6 +416,14 @@ class TensorMeanTests(unittest.TestCase):
                 f"{invalid}(Tensor, dtype=int), {EXPECTED_TOP_LEVEL_OVERLOADS}",
             ),
             (
+                lambda: torch.mean(tensor, keepdim=False),
+                f"{invalid}(Tensor, keepdim=bool), {EXPECTED_TOP_LEVEL_OVERLOADS}",
+            ),
+            (
+                lambda: torch.mean(tensor, keepdim=True),
+                f"{invalid}(Tensor, keepdim=bool), {EXPECTED_TOP_LEVEL_OVERLOADS}",
+            ),
+            (
                 lambda: torch.mean(tensor, None, dtype=1),
                 "mean(): argument 'dtype' must be torch.dtype, not int",
             ),
@@ -439,7 +454,6 @@ class TensorMeanTests(unittest.TestCase):
             ("keyword dim", lambda: torch.mean(input=tensor, dim=0)),
             ("tuple dim", lambda: torch.mean(tensor, (0, 1))),
             ("list dim", lambda: torch.mean(tensor, [0, 1])),
-            ("keyword keepdim true", lambda: torch.mean(tensor, keepdim=True)),
             ("keepdim", lambda: torch.mean(tensor, 0, keepdim=True)),
             ("none dim keepdim true", lambda: torch.mean(tensor, None, keepdim=True)),
             ("out", lambda: torch.mean(tensor, out=destination)),
