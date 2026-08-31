@@ -1,4 +1,6 @@
+import copy
 import math
+import pickle
 import sys
 import unittest
 
@@ -190,19 +192,25 @@ class FullReferenceTests(unittest.TestCase):
             lambda module: {"dtype": None},
             lambda module: {"dtype": module.float32},
             lambda module: {"dtype": module.float},
+            lambda module: {"layout": None},
+            lambda module: {"layout": module.strided},
             lambda module: {"out": None},
             lambda module: {"device": None},
             lambda module: {"device": "cpu"},
             lambda module: {"device": "cpu:0"},
             lambda module: {"device": module.device("cpu")},
             lambda module: {"device": module.device("cpu", 2)},
+            lambda module: {"pin_memory": None},
+            lambda module: {"pin_memory": False},
             lambda module: {"requires_grad": None},
             lambda module: {"requires_grad": False},
             lambda module: {"requires_grad": True},
             lambda module: {
                 "out": None,
                 "dtype": module.float32,
+                "layout": module.strided,
                 "device": module.device("cpu"),
+                "pin_memory": False,
                 "requires_grad": True,
             },
         )
@@ -289,6 +297,16 @@ class FullReferenceTests(unittest.TestCase):
                 lambda module: module.full((1,), 3.0, dtype=object(), out=None),
             ),
             (
+                "invalid layout",
+                lambda module: module.full((1,), 3.0, layout=object(), out=None),
+            ),
+            (
+                "invalid pin_memory",
+                lambda module: module.full(
+                    (1,), 3.0, pin_memory=1, out=None
+                ),
+            ),
+            (
                 "invalid device",
                 lambda module: module.full((1,), 3.0, device=object(), out=None),
             ),
@@ -324,6 +342,16 @@ class FullReferenceTests(unittest.TestCase):
                 lambda module: module.full((1,), 1.0, dtype=object(), out=[]),
             ),
             (
+                "invalid layout",
+                lambda module: module.full((1,), 1.0, layout=object(), out=[]),
+            ),
+            (
+                "invalid pin_memory",
+                lambda module: module.full(
+                    (1,), 1.0, pin_memory=1, out=[]
+                ),
+            ),
+            (
                 "unknown keyword",
                 lambda module: module.full((1,), 1.0, unexpected=True, out=[]),
             ),
@@ -338,7 +366,7 @@ class FullReferenceTests(unittest.TestCase):
                     lambda: call(torch), lambda: call(reference_torch)
                 )
 
-    def test_unsupported_dtype_device_layout_and_out_errors_are_pinned(self):
+    def test_unsupported_dtype_device_layout_out_and_pin_memory_errors_are_pinned(self):
         self.assertFalse(hasattr(torch, "float64"))
         self.assertTrue(hasattr(reference_torch, "float64"))
         with self.assertRaisesRegex(
@@ -371,16 +399,38 @@ class FullReferenceTests(unittest.TestCase):
         self.assertIs(meta.dtype, reference_torch.float32)
         self.assertIs(meta.layout, reference_torch.strided)
 
-        for keyword, value in (
-            ("layout", torch.strided),
-            ("pin_memory", False),
-        ):
-            with self.subTest(keyword=keyword):
+        for value in (object(), 1):
+            with self.subTest(argument="layout", value=type(value).__name__):
                 with self.assertRaisesRegex(
                     TypeError,
-                    rf"^full\(\) got an unexpected keyword argument '{keyword}'$",
+                    r"^full\(\): argument 'layout' must be torch\.layout, not ",
                 ):
-                    torch.full((1,), 1.0, out=None, **{keyword: value})
+                    torch.full((1,), 1.0, layout=value)
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^full\(\): argument 'layout' must be torch\.layout, not torch\.layout$",
+        ):
+            torch.full((1,), 1.0, layout=reference_torch.sparse_coo)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^full\(\.\.\.\) is not implemented for sparse layout$",
+        ):
+            reference_torch.full((1,), 1.0, layout=reference_torch.sparse_coo)
+
+        for value in (1, np.bool_(False), object()):
+            with self.subTest(argument="pin_memory", value=type(value).__name__):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^full\(\): argument 'pin_memory' must be bool, not ",
+                ):
+                    torch.full((1,), 1.0, pin_memory=value)
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^full\(\): pin_memory=True is not supported; only unpinned CPU storage is implemented$",
+        ):
+            torch.full((1,), 1.0, pin_memory=True)
 
         out = torch.zeros((1,))
         with self.assertRaisesRegex(
@@ -426,6 +476,13 @@ class FullReferenceTests(unittest.TestCase):
                 "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
                 "import_identity": import_namespace["imported_full"] is function,
                 "wildcard_identity": wildcard_namespace["full"] is function,
+                "copy_identity": copy.copy(function) is function,
+                "deepcopy_identity": copy.deepcopy(function) is function,
+                "pickle_identities": tuple(
+                    pickle.loads(pickle.dumps(function, protocol=protocol))
+                    is function
+                    for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+                ),
             }
 
         self.assertEqual(contract(torch), contract(reference_torch))
