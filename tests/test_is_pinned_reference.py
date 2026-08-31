@@ -221,12 +221,19 @@ class TensorIsPinnedReferenceTests(unittest.TestCase):
             lambda: tensor.is_pinned(None),
             lambda: tensor.is_pinned(device=None),
             lambda: torch.tensor([1.0], pin_memory=True),
-            lambda: torch.zeros((2,), pin_memory=True),
-            lambda: torch.ones((2,), pin_memory=True),
         ):
             with self.subTest(call=call):
                 with self.assertRaises(TypeError):
                     call()
+
+        for name in ("zeros", "ones"):
+            with self.subTest(factory=name):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    rf"^{name}\(\): pin_memory=True is not supported; "
+                    "only unpinned CPU storage is implemented$",
+                ):
+                    getattr(torch, name)((2,), pin_memory=True)
 
     def mode_contract(self, module):
         tensor = module.tensor([1.0], dtype=module.float32)
