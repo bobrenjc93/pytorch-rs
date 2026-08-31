@@ -4780,8 +4780,7 @@ fn tensor_division_method<'py>(
     let (other_argument, rounding_mode_argument, keyword_error) =
         bind_tensor_division_method_arguments(operation, args, kwargs)?;
     let other = parse_tensor_division_method_other(operation, &other_argument, args, kwargs)?;
-    let rounding_mode =
-        parse_tensor_division_method_rounding_mode(rounding_mode_argument.as_ref())?;
+    let rounding_mode = parse_tensor_division_method_rounding_mode(rounding_mode_argument.as_ref());
     if let Some(keyword_error) = keyword_error {
         return Err(keyword_error);
     }
@@ -4842,17 +4841,17 @@ fn parse_tensor_division_method_other<'py>(
 
 fn parse_tensor_division_method_rounding_mode<'py>(
     rounding_mode: Option<&ParsedCallArgument<'py>>,
-) -> PyResult<BoundDivRoundingMode<'py>> {
+) -> BoundDivRoundingMode<'py> {
     let Some(rounding_mode) = rounding_mode else {
-        return Ok(BoundDivRoundingMode::Default);
+        return BoundDivRoundingMode::Default;
     };
     if rounding_mode.value.is_none() {
-        return Ok(BoundDivRoundingMode::Default);
+        return BoundDivRoundingMode::Default;
     }
     if let Some(probed) = probe_torch_function_override(&rounding_mode.value) {
-        return Ok(BoundDivRoundingMode::Override(probed));
+        return BoundDivRoundingMode::Override(probed);
     }
-    Ok(BoundDivRoundingMode::NonDefault)
+    BoundDivRoundingMode::NonDefault
 }
 
 fn ordered_tensor_division_method_overrides<'py>(
@@ -13618,38 +13617,17 @@ fn bind_tensor_division_method_arguments<'py>(
                         position: None,
                     });
                 }
-                "other" => {
-                    keyword_error.get_or_insert(tensor_division_method_binding_error(
-                        operation,
-                        positional,
-                        Some(keywords),
-                    )?);
-                }
                 "x2" if other.is_none() && x2_fallback.is_none() => {
                     x2_fallback = Some(ParsedCallArgument {
                         value,
                         position: None,
                     });
                 }
-                "x2" => {
-                    keyword_error.get_or_insert(tensor_division_method_binding_error(
-                        operation,
-                        positional,
-                        Some(keywords),
-                    )?);
-                }
                 "rounding_mode" if rounding_mode.is_none() => {
                     rounding_mode = Some(ParsedCallArgument {
                         value,
                         position: None,
                     });
-                }
-                "rounding_mode" => {
-                    keyword_error.get_or_insert(tensor_division_method_binding_error(
-                        operation,
-                        positional,
-                        Some(keywords),
-                    )?);
                 }
                 _ => {
                     keyword_error.get_or_insert(tensor_division_method_binding_error(
