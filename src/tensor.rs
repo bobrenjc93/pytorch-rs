@@ -3658,6 +3658,16 @@ impl Tensor {
         self.finish_zero_vjp(output, AutogradNode::Trunc)
     }
 
+    /// Computes the real-valued sign of every element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn sign(&self) -> Result<Self, TensorError> {
+        let output = self.unary_map(sign_value)?;
+        self.finish_zero_vjp(output, AutogradNode::Sign)
+    }
+
     /// Applies the logistic sigmoid function element by element.
     ///
     /// # Errors
@@ -6213,6 +6223,18 @@ fn trunc_value(value: f32) -> f32 {
     round_value(value, f32::trunc)
 }
 
+fn sign_value(value: f32) -> f32 {
+    let bits = value.to_bits();
+    let magnitude = bits & !F32_SIGN_MASK;
+    if magnitude == 0 || magnitude > f32::INFINITY.to_bits() {
+        0.0
+    } else if bits & F32_SIGN_MASK == 0 {
+        1.0
+    } else {
+        -1.0
+    }
+}
+
 fn sigmoid_value(value: f32) -> f32 {
     1.0 / (1.0 + (-value).exp())
 }
@@ -6466,8 +6488,8 @@ mod tests {
         MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor,
         TensorError, contiguous_values_equal, full_reduction_mean_divisor,
         l1_loss_difference_value, logical_offset_for_linear_index,
-        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
-        validate_view_bounds,
+        materialize_contiguous_trailing_broadcast, rsqrt_value, sign_value, sqrt_value,
+        try_result_vector, validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -6587,6 +6609,59 @@ mod tests {
 
         assert_eq!(
             inputs.map(|bits| rsqrt_value(f32::from_bits(bits)).to_bits()),
+            expected
+        );
+    }
+
+    #[test]
+    fn real_sign_matches_pytorch_float32_edge_bits() {
+        let inputs = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x007f_ffff,
+            0x807f_ffff,
+            0x0080_0000,
+            0x8080_0000,
+            0x3eaa_aaab,
+            0xbeaa_aaab,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7f81_2345,
+            0xff81_2345,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
+        let expected = [
+            0x0000_0000,
+            0x0000_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x0000_0000,
+            0x0000_0000,
+            0x0000_0000,
+            0x0000_0000,
+        ];
+
+        assert_eq!(
+            inputs.map(|bits| sign_value(f32::from_bits(bits)).to_bits()),
             expected
         );
     }
@@ -10514,6 +10589,7 @@ mod tests {
             source.trunc().unwrap().grad_fn_name(),
             Some("TruncBackward0")
         );
+        assert_eq!(source.sign().unwrap().grad_fn_name(), Some("SignBackward0"));
         assert_eq!(
             source.sigmoid().unwrap().grad_fn_name(),
             Some("SigmoidBackward0")
@@ -12534,6 +12610,7 @@ mod tests {
             (tensor.floor().unwrap(), shared.floor().unwrap()),
             (tensor.ceil().unwrap(), shared.ceil().unwrap()),
             (tensor.trunc().unwrap(), shared.trunc().unwrap()),
+            (tensor.sign().unwrap(), shared.sign().unwrap()),
             (tensor.sigmoid().unwrap(), shared.sigmoid().unwrap()),
             (tensor.tanh().unwrap(), shared.tanh().unwrap()),
             (tensor.sqrt().unwrap(), shared.sqrt().unwrap()),
@@ -12959,6 +13036,7 @@ mod tests {
             ),
             ("floor", Tensor::floor),
             ("trunc", Tensor::trunc),
+            ("sign", Tensor::sign),
         ] {
             let leaf = Tensor::ones([16_384]).unwrap().with_requires_grad(true);
             let leaf_storage = Arc::downgrade(&leaf.storage);

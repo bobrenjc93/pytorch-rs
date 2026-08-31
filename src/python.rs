@@ -929,6 +929,23 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nsign() -> Tensor\n\nSee :func:`torch.sign`\n"]
+    #[pyo3(text_signature = None)]
+    fn sign(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "sign")? {
+            return Ok(result);
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor.inner.sign().map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nsigmoid() -> Tensor\n\nSee :func:`torch.sigmoid`\n"]
     #[pyo3(text_signature = None)]
     fn sigmoid(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
@@ -2031,6 +2048,14 @@ pub(crate) fn fix_variable_function(
     unary_out_variable_function(UnaryOutOperation::FIX, py, args, kwargs)
 }
 
+pub(crate) fn sign_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::SIGN, py, args, kwargs)
+}
+
 pub(crate) fn neg_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2576,6 +2601,10 @@ struct UnaryOutOperation {
 }
 
 impl UnaryOutOperation {
+    fn requires_exact_native_input(self) -> bool {
+        self.name == "sign"
+    }
+
     const ABS: Self = Self {
         name: "abs",
         qualified_name: "torch.abs",
@@ -2646,6 +2675,14 @@ impl UnaryOutOperation {
         dispatch_allocation_error: "unable to allocate fix dispatch operands",
         out_unsupported_error: "fix(): the 'out' argument is not supported",
         apply: CoreTensor::trunc,
+    };
+
+    const SIGN: Self = Self {
+        name: "sign",
+        qualified_name: "torch.sign",
+        dispatch_allocation_error: "unable to allocate sign dispatch operands",
+        out_unsupported_error: "sign(): the 'out' argument is not supported",
+        apply: CoreTensor::sign,
     };
 
     const RECIPROCAL: Self = Self {
@@ -3077,6 +3114,7 @@ fn dispatch_tensorbase_mode(
                     | "floor"
                     | "reciprocal"
                     | "rsqrt"
+                    | "sign"
                     | "sigmoid"
                     | "sin"
                     | "sqrt"
@@ -12036,24 +12074,84 @@ fn bind_unary_out_arguments<'py>(
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<BoundUnaryOutCall<'py>> {
     let selection = select_legacy_single_argument(operation.name, positional, keywords)?;
-    let input = parse_tensor_or_torch_function_argument(operation.name, "input", &selection.input)?;
+    let input = parse_unary_out_tensor_or_torch_function_argument(
+        operation.name,
+        "input",
+        &selection.input,
+        operation.requires_exact_native_input(),
+    )?;
     let out = match keywords
         .map(|values| values.get_item("out"))
         .transpose()?
         .flatten()
     {
-        Some(out) if !out.is_none() => Some(parse_tensor_or_torch_function_argument(
+        Some(out) if !out.is_none() => Some(parse_unary_out_tensor_or_torch_function_argument(
             operation.name,
             "out",
             &ParsedCallArgument {
                 value: out,
                 position: None,
             },
+            operation.requires_exact_native_input(),
         )?),
         Some(_) | None => None,
     };
     validate_unary_out_keywords(operation, &selection, keywords)?;
     Ok(BoundUnaryOutCall { input, out })
+}
+
+fn parse_unary_out_tensor_or_torch_function_argument<'py>(
+    function: &str,
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+    require_exact_native: bool,
+) -> PyResult<BoundTensorOrTorchFunction<'py>> {
+    if !require_exact_native {
+        return parse_tensor_or_torch_function_argument(function, argument, value);
+    }
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundTensorOrTorchFunction::Tensor(
+            value.value.cast::<PyTensor>()?.clone(),
+        ));
+    }
+    if value.value.is_instance_of::<PyTensor>() {
+        if let Some(probed) = probe_torch_function_override(&value.value) {
+            return Ok(BoundTensorOrTorchFunction::Override(probed));
+        }
+        return Err(unary_out_unsupported_native_input(function));
+    }
+    if let Some(handler) = probe_torch_function_handler(&value.value, true) {
+        if is_disabled_torch_function_handler(&handler) {
+            return parse_tensor_argument(function, argument, value)
+                .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()));
+        }
+        if is_default_external_tensor_torch_function_handler(&handler) {
+            return Err(unary_out_unsupported_native_input(function));
+        }
+        return Ok(BoundTensorOrTorchFunction::Override(
+            probed_torch_function_override(&value.value),
+        ));
+    }
+    parse_tensor_argument(function, argument, value)
+        .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
+}
+
+fn unary_out_unsupported_native_input(function: &str) -> PyErr {
+    PyNotImplementedError::new_err(format!(
+        "{function}(): only exact native CPU float32 Tensor inputs are supported"
+    ))
+}
+
+fn is_default_external_tensor_torch_function_handler(handler: &Bound<'_, PyAny>) -> bool {
+    let module_matches = handler
+        .getattr("__module__")
+        .and_then(|module| module.eq("torch._tensor"))
+        .unwrap_or(false);
+    let qualname_matches = handler
+        .getattr("__qualname__")
+        .and_then(|name| name.eq("Tensor.__torch_function__"))
+        .unwrap_or(false);
+    module_matches && qualname_matches
 }
 
 fn validate_unary_out_keywords(

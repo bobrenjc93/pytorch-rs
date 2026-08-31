@@ -29,14 +29,15 @@ use crate::python::{
     real_variable_function, reciprocal_variable_function, reshape_variable_function,
     resolve_conj_variable_function, resolve_neg_variable_function, rsqrt_variable_function,
     scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
-    sin_variable_function, sqrt_variable_function, square_variable_function, sub_variable_function,
-    subtract_variable_function, sum_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function,
+    sign_variable_function, sin_variable_function, sqrt_variable_function,
+    square_variable_function, sub_variable_function, subtract_variable_function,
+    sum_variable_function, tanh_variable_function, trunc_variable_function,
+    unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 53] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 54] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -66,6 +67,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 53] = [
     "ceil",
     "trunc",
     "fix",
+    "sign",
     "sin",
     "sqrt",
     "sigmoid",
@@ -559,6 +561,29 @@ Example::
     tensor([-0.6341, -1.4208, -1.0900,  0.5826])
     >>> torch.ceil(a)
     tensor([-0., -1., -1.,  1.])
+";
+
+const SIGN_DOC: &std::ffi::CStr = cr"
+sign(input, *, out=None) -> Tensor
+
+Returns a new tensor with the signs of the elements of :attr:`input`.
+
+.. math::
+    \text{out}_{i} = \operatorname{sgn}(\text{input}_{i})
+
+Args:
+    input (Tensor): the input tensor.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> a = torch.tensor([0.7, -1.2, 0., 2.3])
+    >>> a
+    tensor([ 0.7000, -1.2000,  0.0000,  2.3000])
+    >>> torch.sign(a)
+    tensor([ 1., -1.,  0.,  1.])
 ";
 
 const TRUNC_DOC: &std::ffi::CStr = cr"
@@ -1188,6 +1213,7 @@ variable_function_callback!(floor_callback, floor_variable_function);
 variable_function_callback!(ceil_callback, ceil_variable_function);
 variable_function_callback!(trunc_callback, trunc_variable_function);
 variable_function_callback!(fix_callback, fix_variable_function);
+variable_function_callback!(sign_callback, sign_variable_function);
 variable_function_callback!(sin_callback, sin_variable_function);
 variable_function_callback!(sqrt_callback, sqrt_variable_function);
 variable_function_callback!(sigmoid_callback, sigmoid_variable_function);
@@ -1269,6 +1295,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"ceil", ceil_callback, CEIL_DOC),
         variable_function_method!(c"trunc", trunc_callback, TRUNC_DOC),
         variable_function_method!(c"fix", fix_callback, FIX_DOC),
+        variable_function_method!(c"sign", sign_callback, SIGN_DOC),
         variable_function_method!(c"sin", sin_callback, SIN_DOC),
         variable_function_method!(c"sqrt", sqrt_callback, SQRT_DOC),
         variable_function_method!(c"sigmoid", sigmoid_callback, SIGMOID_DOC),
