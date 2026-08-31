@@ -61,8 +61,7 @@ class TensorMeanTests(unittest.TestCase):
         with np.errstate(invalid="ignore", divide="ignore"):
             for value in values:
                 total = np.float32(total + value)
-            scale = np.float32(1.0) / np.float32(values.size)
-            return np.float32(total * scale)
+            return np.float32(total / np.float32(values.size))
 
     @staticmethod
     def value_cases():
@@ -70,6 +69,7 @@ class TensorMeanTests(unittest.TestCase):
         dense = torch.tensor(dense_values.tolist())
         noncontiguous = dense.transpose(0, 2)
         return (
+            ("division rounding", torch.tensor([1.0, 2.0, 4.0]), [1.0, 2.0, 4.0]),
             ("scalar", torch.tensor(-3.5), [-3.5]),
             ("negative zero", torch.tensor(-0.0), [-0.0]),
             ("empty", torch.zeros((2, 0, 3)).transpose(0, 2)[1], []),
@@ -123,7 +123,7 @@ class TensorMeanTests(unittest.TestCase):
             ),
         )
 
-    def test_supported_forms_match_sum_times_reciprocal_metadata_and_storage(self):
+    def test_supported_forms_match_sum_divided_by_count_metadata_and_storage(self):
         for name, source, expected_values in self.value_cases():
             expected = self.sequential_float32_mean(expected_values)
             for form, call in self.supported_method_calls(source):
@@ -172,6 +172,22 @@ class TensorMeanTests(unittest.TestCase):
         self.assertTrue(untracked.is_leaf)
         self.assertIsNone(leaf.grad)
         self.assertTrue(leaf.mean(None, dtype=torch.float32).requires_grad)
+
+        expected_bits = np.asarray(
+            [np.float32(7.0) / np.float32(3.0)] * 3,
+            dtype=np.float32,
+        ).view(np.uint32)
+        for form, make_mean in (
+            ("method", lambda tensor: tensor.mean()),
+            ("top-level", lambda tensor: torch.mean(tensor)),
+        ):
+            with self.subTest(form=form, case="division rounding autograd"):
+                rounding_leaf = torch.tensor([1.0, 2.0, 4.0], requires_grad=True)
+                (make_mean(rounding_leaf) * 7.0).backward()
+                np.testing.assert_array_equal(
+                    np.asarray(rounding_leaf.grad).view(np.uint32),
+                    expected_bits,
+                )
 
     def test_top_level_modes_and_overrides_observe_calls_before_native_limits(self):
         tensor = torch.tensor([[1.0, -2.0], [3.0, 4.0]], requires_grad=True)

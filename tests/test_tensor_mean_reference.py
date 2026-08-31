@@ -53,6 +53,7 @@ class TensorMeanReferenceTests(unittest.TestCase):
         )
         noncontiguous = dense.transpose(0, 2)
         return (
+            ("division rounding", module.tensor([1.0, 2.0, 4.0], dtype=module.float32)),
             ("scalar", module.tensor(-3.5, dtype=module.float32)),
             ("negative zero", module.tensor(-0.0, dtype=module.float32)),
             (
@@ -178,6 +179,11 @@ class TensorMeanReferenceTests(unittest.TestCase):
             empty_loss.backward()
             empty_loss.backward()
 
+            rounding_leaf = module.tensor(
+                [1.0, 2.0, 4.0], dtype=module.float32, requires_grad=True
+            )
+            (rounding_leaf.mean() * 7.0).backward()
+
             with module.no_grad():
                 untracked = module.mean(leaf, dtype=module.float)
             outcomes.append(
@@ -185,12 +191,15 @@ class TensorMeanReferenceTests(unittest.TestCase):
                     np.asarray(leaf.grad).copy(),
                     tuple(empty.grad.shape),
                     empty.grad.tolist(),
+                    np.asarray(rounding_leaf.grad).copy(),
                     untracked.requires_grad,
                     untracked.is_leaf,
                 )
             )
-        self.assertEqual(outcomes[0][1:], outcomes[1][1:])
         np.testing.assert_array_equal(outcomes[0][0], outcomes[1][0])
+        self.assertEqual(outcomes[0][1:3], outcomes[1][1:3])
+        np.testing.assert_array_equal(outcomes[0][3], outcomes[1][3])
+        self.assertEqual(outcomes[0][4:], outcomes[1][4:])
 
     def test_callable_metadata_matches_pytorch_2_13(self):
         actual_tensor = torch.tensor([1.0, 2.0])

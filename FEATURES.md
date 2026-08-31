@@ -12,7 +12,7 @@ governed by [BENCHMARKING.md](BENCHMARKING.md).
 Full-tensor `Tensor.mean(dim=None, keepdim=False, dtype=None)` and
 `torch.mean(input, dim=None, keepdim=False, *, dtype=None, out=None)` are
 supported for exact native CPU float32 tensors by reusing the existing full
-`sum` path plus scalar multiplication. Dimension reductions, `keepdim=True`,
+`sum` path plus scalar division. Dimension reductions, `keepdim=True`,
 concrete `out`, dtype conversions, unsupported operands, and broader mean
 overloads remain outside the supported surface.
 
