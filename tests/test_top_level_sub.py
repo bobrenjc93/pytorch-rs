@@ -565,8 +565,6 @@ class TopLevelSubTests(unittest.TestCase):
         self.assertIs(wildcard_namespace["sub"], function)
         self.assertIs(wildcard_namespace["subtract"], alias)
 
-        self.assertFalse(hasattr(torch.Tensor, "sub"))
-        self.assertFalse(hasattr(torch.Tensor, "subtract"))
         self.assertFalse(hasattr(torch, "sub_"))
         self.assertFalse(hasattr(torch, "subtract_"))
 

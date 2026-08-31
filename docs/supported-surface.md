@@ -10,7 +10,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 | --- | --- | --- |
 | Construction | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.full`, `torch.eye` | [Creation](#creation) |
 | Views and layout | `view`, `reshape`, `permute`, `movedim`, `transpose`, `flatten`, `contiguous`, `cpu` | [Metadata and views](#metadata-and-views) |
-| Math | arithmetic operators, `torch.sub`, `torch.subtract`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` | [Elementwise and reductions](#elementwise-and-reductions) |
+| Math | arithmetic operators, `Tensor.sub`, `Tensor.subtract`, `torch.sub`, `torch.subtract`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` | [Elementwise and reductions](#elementwise-and-reductions) |
 | NN functional | `torch.nn.functional.linear`, `l1_loss`, `mse_loss`, `dropout*`, `sigmoid`, `silu`, `softsign`, `tanh` | [NN/data helpers](#nn-and-data-helpers), [math activations](#elementwise-and-reductions) |
 | Dtype/device metadata | `torch.float32`, `torch.finfo`, `torch.can_cast`, `torch.promote_types`, `Tensor.is_cuda`, `torch.get_device`, `Tensor.cpu` | [tensor metadata](#metadata-and-views), [backend metadata](#backend-and-compiler-metadata) |
 | Autograd state | `torch.is_grad_enabled`, `torch.no_grad`, `torch.is_inference_mode_enabled`, `torch.is_anomaly_enabled`, `torch.is_anomaly_check_nan_enabled`, `torch.autograd.is_view_replay_enabled` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
@@ -629,8 +629,8 @@ and `torch.equal()` comparison, identity `Tensor.positive()`/
 `torch.negative()` builtin. It supports broadcast tensor and real-scalar
 addition, subtraction, multiplication through `*`, `Tensor.mul()`,
 `Tensor.multiply()`, `torch.mul()`, and the distinct top-level
-`torch.multiply()` builtin, default-alpha top-level `torch.sub()` and
-the distinct `torch.subtract()` builtin, plus true division, the listed unary kernels,
+`torch.multiply()` builtin, default-alpha `Tensor.sub()`/`torch.sub()` and
+the distinct `Tensor.subtract()`/`torch.subtract()` callables, plus true division, the listed unary kernels,
 `Tensor.sum(dim=None)`, `torch.sum(input, dim=None, *, dtype=None)`,
 `Tensor.mean(dim=None)`, `torch.mean(input, dim=None, *, dtype=None)`,
 `Tensor.relu()`, `torch.relu()`, and rank-2 matrix multiplication through `@`,
@@ -646,17 +646,18 @@ tensor/real-scalar operands in either order and reuse the same broadcast and
 autograd kernels; their `out` forms and scalar-only multiplication remain
 unsupported.
 
-Top-level `torch.sub(input, other, *, alpha=1, out=None)` and
-`torch.subtract(...)` accept exact native CPU float32 tensor/tensor and
-tensor/real-scalar operands in either order for default-equivalent alpha values
-and reuse the same subtraction, broadcasting, and first-order autograd paths as
-Python `-`. They preserve PyTorch 2.13-compatible values, layout metadata,
-empty tensors, offsets, non-contiguous inputs, signed zero, NaNs, infinities,
-`torch.no_grad()`, callable/export/copy/pickle behavior, and
-`TorchFunctionMode`/`__torch_function__` dispatch before native-only limits.
-Concrete `out` tensors, nondefault numeric or boolean `alpha`, scalar-only
-calls, unsupported operands, tensor subclasses without a handling override,
-dtype/device extension keywords, `Tensor.sub`, `Tensor.subtract`, and in-place
+Top-level `torch.sub(input, other, *, alpha=1, out=None)`/`torch.subtract(...)`
+and method-only `Tensor.sub(other, *, alpha=1)`/`Tensor.subtract(...)` accept
+exact native CPU float32 tensor/tensor and tensor/real-scalar operands for
+default-equivalent alpha values and reuse the same subtraction, broadcasting,
+and first-order autograd paths as Python `-`. Top-level calls support either
+operand order; method calls require the receiver to be the left Tensor operand.
+They preserve PyTorch 2.13-compatible values, layout metadata, empty tensors,
+offsets, non-contiguous inputs, signed zero, NaNs, infinities, `torch.no_grad()`,
+callable/export/copy/pickle behavior, and `TorchFunctionMode`/`__torch_function__`
+dispatch before native-only limits. Concrete `out` tensors, nondefault numeric
+or boolean `alpha`, scalar-only calls, unsupported operands, tensor subclasses
+without a handling override, dtype/device extension keywords, and in-place
 subtraction aliases remain unsupported.
 
 Out-of-place `torch.nn.functional.relu(input, inplace=False)` delegates to the
