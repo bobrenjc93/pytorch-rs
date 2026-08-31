@@ -171,6 +171,38 @@ class AsTensorReferenceTests(unittest.TestCase):
                 self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
                 self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
 
+    def test_sequence_depth_errors_match_pytorch_2_13(self):
+        def nested(depth, container):
+            value = 1.0
+            for _ in range(depth):
+                value = [value] if container is list else (value,)
+            return value
+
+        def recursive_list():
+            value = []
+            value.append(value)
+            return value
+
+        def recursive_tuple():
+            inner = []
+            value = (inner,)
+            inner.append(value)
+            return value
+
+        for case, factory in (
+            ("too deep list", lambda: nested(129, list)),
+            ("too deep tuple", lambda: nested(129, tuple)),
+            ("recursive list", recursive_list),
+            ("recursive tuple", recursive_tuple),
+        ):
+            with self.subTest(case=case):
+                with self.assertRaises(Exception) as actual_raised:
+                    torch.as_tensor(factory())
+                with self.assertRaises(Exception) as expected_raised:
+                    reference_torch.as_tensor(factory())
+                self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
+                self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+
     def test_identity_aliasing_and_metadata_match_pytorch_2_13(self):
         actual_cases = self.tensor_cases(torch)
         expected_cases = self.tensor_cases(reference_torch)

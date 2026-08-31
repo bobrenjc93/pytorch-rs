@@ -88,6 +88,7 @@ const PRIVATE_NATIVE_EXPORTS: [&str; 8] = [
 const NATIVE_CPU_CAPABILITY: &str = "DEFAULT";
 const NATIVE_CK_SDPA_AVAILABLE: bool = false;
 const NATIVE_FLASH_ATTENTION_AVAILABLE: bool = false;
+const MAX_AS_TENSOR_SEQUENCE_DIMENSIONS: usize = 128;
 
 #[pyfunction(name = "_get_cpu_capability", signature = (), text_signature = None)]
 fn get_cpu_capability_native() -> &'static str {
@@ -14346,24 +14347,41 @@ fn flatten_as_tensor_supported_data(
 }
 
 fn as_tensor_sequence_shape(value: &Bound<'_, PyAny>) -> PyResult<Option<Vec<usize>>> {
+    let mut ancestors = Vec::new();
+    as_tensor_sequence_shape_inner(value, 0, &mut ancestors)
+}
+
+fn as_tensor_sequence_shape_inner(
+    value: &Bound<'_, PyAny>,
+    depth: usize,
+    ancestors: &mut Vec<*mut ffi::PyObject>,
+) -> PyResult<Option<Vec<usize>>> {
     if !is_as_tensor_list_or_tuple(value) {
         return Ok(None);
     }
-
-    let length = value.len()?;
-    let mut shape = Vec::new();
-    shape.push(length);
-    if length == 0 {
-        return Ok(Some(shape));
+    if depth >= MAX_AS_TENSOR_SEQUENCE_DIMENSIONS || ancestors.contains(&value.as_ptr()) {
+        return Err(too_many_as_tensor_dimensions_error(value)?);
     }
 
-    let first = value.get_item(0)?;
-    if let Some(nested_shape) = as_tensor_sequence_shape(&first)? {
-        shape.extend(nested_shape);
-    } else if extract_as_tensor_python_real_scalar(&first)?.is_none() {
-        return Err(unsupported_tensor_data_error(&first, false)?);
-    }
-    Ok(Some(shape))
+    ancestors.push(value.as_ptr());
+    let result = (|| {
+        let length = value.len()?;
+        let mut shape = Vec::new();
+        shape.push(length);
+        if length == 0 {
+            return Ok(Some(shape));
+        }
+
+        let first = value.get_item(0)?;
+        if let Some(nested_shape) = as_tensor_sequence_shape_inner(&first, depth + 1, ancestors)? {
+            shape.extend(nested_shape);
+        } else if extract_as_tensor_python_real_scalar(&first)?.is_none() {
+            return Err(unsupported_tensor_data_error(&first, false)?);
+        }
+        Ok(Some(shape))
+    })();
+    ancestors.pop();
+    result
 }
 
 fn flatten_as_tensor_sequence(
@@ -14421,6 +14439,13 @@ fn unsupported_as_tensor_data_error() -> PyErr {
     PyNotImplementedError::new_err(
         "as_tensor(): only exact native CPU float32 Tensor inputs, Python int/float scalars, and exact list/tuple sequences are supported",
     )
+}
+
+fn too_many_as_tensor_dimensions_error(value: &Bound<'_, PyAny>) -> PyResult<PyErr> {
+    let type_name = python_type_name(value)?;
+    Ok(PyValueError::new_err(format!(
+        "too many dimensions '{type_name}'"
+    )))
 }
 
 fn flatten_rectangular(value: &Bound<'_, PyAny>, output: &mut Vec<f32>) -> PyResult<Vec<usize>> {

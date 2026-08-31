@@ -3,6 +3,8 @@ import importlib
 import inspect
 import pickle
 import re
+import subprocess
+import sys
 import types
 import unittest
 
@@ -210,6 +212,54 @@ class AsTensorTests(unittest.TestCase):
         for call, error_type, message in cases:
             with self.subTest(message=message):
                 self.assert_error(call, error_type, message)
+
+    def test_sequence_depth_limit_errors_are_reported(self):
+        list_data = 1.0
+        tuple_data = 1.0
+        for _ in range(128):
+            list_data = [list_data]
+            tuple_data = (tuple_data,)
+
+        self.assertEqual(torch.as_tensor(list_data).shape, (1,) * 128)
+        self.assertEqual(torch.as_tensor(tuple_data).shape, (1,) * 128)
+        self.assert_error(
+            lambda: torch.as_tensor([list_data]), ValueError, "too many dimensions 'list'"
+        )
+        self.assert_error(
+            lambda: torch.as_tensor((tuple_data,)),
+            ValueError,
+            "too many dimensions 'tuple'",
+        )
+
+    def test_self_referential_sequences_raise_without_crashing(self):
+        source = (
+            "import torch_rs as torch\n"
+            "cases = []\n"
+            "value = []\n"
+            "value.append(value)\n"
+            "cases.append(('list', value, \"too many dimensions 'list'\"))\n"
+            "inner = []\n"
+            "value = (inner,)\n"
+            "inner.append(value)\n"
+            "cases.append(('tuple', value, \"too many dimensions 'tuple'\"))\n"
+            "for name, value, message in cases:\n"
+            "    try:\n"
+            "        torch.as_tensor(value)\n"
+            "    except ValueError as exc:\n"
+            "        if str(exc) != message:\n"
+            "            raise AssertionError((name, str(exc), message))\n"
+            "    else:\n"
+            "        raise AssertionError(name)\n"
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(
+            completed.returncode, 0, completed.stdout + completed.stderr
+        )
 
     def test_identity_preserves_autograd_graph_and_gradient_object(self):
         leaf = torch.tensor(
