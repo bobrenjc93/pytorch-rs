@@ -48,10 +48,28 @@ class ZerosLikeReferenceTests(unittest.TestCase):
             ("scalar", module.tensor(-7.0, dtype=module.float32)),
             ("empty", module.zeros((2, 0, 3), dtype=module.float32)),
             (
+                "empty transposed",
+                module.zeros((2, 3, 0), dtype=module.float32).transpose(0, 1),
+            ),
+            (
                 "multidimensional",
                 module.tensor(
                     [[1.0, -2.0, 3.5], [4.0, 5.0, -6.0]],
                     dtype=module.float32,
+                ),
+            ),
+            (
+                "transposed",
+                module.ones((2, 3), dtype=module.float32).transpose(0, 1),
+            ),
+            (
+                "singleton noncanonical contiguous",
+                module.ones((2, 3, 1), dtype=module.float32).transpose(1, 2),
+            ),
+            (
+                "channels last",
+                module.zeros((2, 3, 4, 5), dtype=module.float32).contiguous(
+                    memory_format=module.channels_last
                 ),
             ),
             (
@@ -115,6 +133,50 @@ class ZerosLikeReferenceTests(unittest.TestCase):
                         self.assertNotEqual(
                             expected.data_ptr(), expected_source.data_ptr()
                         )
+
+    def test_torch_function_dispatch_matches_pytorch_2_13(self):
+        actual_source = torch.ones((2, 3), dtype=torch.float32)
+        expected_source = reference_torch.ones(
+            (2, 3), dtype=reference_torch.float32
+        )
+
+        for module, source in ((torch, actual_source), (reference_torch, expected_source)):
+            sentinel = object()
+
+            class RecordingMode(module.overrides.TorchFunctionMode):
+                def __init__(self):
+                    self.calls = []
+
+                def __torch_function__(self, func, types, args=(), kwargs=None):
+                    self.calls.append((func, types, args, kwargs))
+                    return sentinel
+
+            mode = RecordingMode()
+            with mode:
+                self.assertIs(module.zeros_like(source), sentinel)
+            self.assertEqual(len(mode.calls), 1)
+            func, types_arg, args_arg, kwargs_arg = mode.calls[0]
+            self.assertIs(func, module.zeros_like)
+            self.assertEqual(types_arg, ())
+            self.assertEqual(args_arg, (source,))
+            self.assertIsNone(kwargs_arg)
+
+            class Override:
+                calls = []
+
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    cls.calls.append((func, types, args, kwargs))
+                    return sentinel
+
+            override = Override()
+            self.assertIs(module.zeros_like(override), sentinel)
+            self.assertEqual(len(Override.calls), 1)
+            func, types_arg, args_arg, kwargs_arg = Override.calls[0]
+            self.assertIs(func, module.zeros_like)
+            self.assertEqual(types_arg, (Override,))
+            self.assertEqual(args_arg, (override,))
+            self.assertIsNone(kwargs_arg)
 
     def test_no_grad_factory_metadata_matches_pytorch_2_13(self):
         actual_source = torch.ones((2, 3), requires_grad=True) * 3.0

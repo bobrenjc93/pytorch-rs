@@ -1604,28 +1604,28 @@ pub(crate) fn zeros_like_variable_function(
         ));
     };
 
-    let dtype = parse_identity_dtype("zeros_like", arguments.dtype.as_ref())?;
-    parse_zeros_like_layout(arguments.layout.as_ref())?;
+    validate_identity_dtype_type("zeros_like", arguments.dtype.as_ref())?;
+    validate_zeros_like_layout_type(arguments.layout.as_ref())?;
     validate_zeros_like_device_type(arguments.device.as_ref())?;
     let requires_grad =
         parse_factory_requires_grad("zeros_like", arguments.requires_grad.as_ref())?;
-    let memory_format = parse_zeros_like_memory_format(arguments.memory_format.as_ref())?;
+    validate_zeros_like_memory_format_type(arguments.memory_format.as_ref())?;
     if let Some(error) = arguments.keyword_error {
         return Err(error);
     }
-    if !input.value.is_exact_instance_of::<PyTensor>() {
-        if input.value.cast::<PyTensor>().is_ok() {
-            return Err(PyNotImplementedError::new_err(
-                "zeros_like(): Tensor subclasses are not supported",
-            ));
-        }
-        return Err(legacy_single_tensor_type_error("zeros_like", &input)?);
+
+    let input = parse_tensor_or_torch_function_argument("zeros_like", "input", &input)?;
+    if let Some(result) = dispatch_zeros_like_override(py, &input, args, kwargs)? {
+        return Ok(result);
     }
-    if !torch_function_mode_stack::is_empty() {
-        return Err(PyNotImplementedError::new_err(
-            "zeros_like() does not support an active TorchFunctionMode",
-        ));
-    }
+
+    let BoundTensorOrTorchFunction::Tensor(input) = input else {
+        unreachable!("zeros_like override input was handled by dispatch");
+    };
+    let dtype = parse_identity_dtype("zeros_like", arguments.dtype.as_ref())?;
+    parse_zeros_like_layout(arguments.layout.as_ref())?;
+    let device = parse_device("zeros_like", arguments.device.as_ref())?;
+    let memory_format = parse_zeros_like_memory_format(arguments.memory_format.as_ref())?;
     if !matches!(
         memory_format,
         MemoryFormat::Preserve | MemoryFormat::Contiguous
@@ -1635,12 +1635,7 @@ pub(crate) fn zeros_like_variable_function(
         ));
     }
 
-    let device = parse_device("zeros_like", arguments.device.as_ref())?;
-    let input = input
-        .value
-        .cast::<PyTensor>()
-        .expect("zeros_like input exact type was checked above")
-        .try_borrow()?;
+    let input = input.try_borrow()?;
     if input.inner.dtype() != DType::Float32 || input.inner.device() != Device::Cpu {
         return Err(PyNotImplementedError::new_err(
             "zeros_like(): only exact native CPU float32 Tensor inputs are supported",
@@ -1651,16 +1646,111 @@ pub(crate) fn zeros_like_variable_function(
             "zeros_like(): dtype and device conversions are not supported",
         ));
     }
-    if !input.inner.is_contiguous() {
-        return Err(PyNotImplementedError::new_err(
-            "zeros_like(): only row-major contiguous inputs are supported",
-        ));
-    }
 
-    CoreTensor::zeros_with_metadata(input.inner.shape().to_vec(), dtype, device)
+    input
+        .inner
+        .zeros_like_with_memory_format(dtype, device, memory_format)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| tensor_error(&error))?
         .into_py_any(py)
+}
+
+fn dispatch_zeros_like_override(
+    py: Python<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    if torch_function_mode_stack::is_empty()
+        && matches!(input, BoundTensorOrTorchFunction::Tensor(_))
+    {
+        return Ok(None);
+    }
+
+    let function = variable_function(py, "zeros_like")?;
+    let dispatch_types = match input {
+        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
+        BoundTensorOrTorchFunction::Override(probed) => {
+            PyTuple::new(py, [probed.dispatch_type.clone()])?
+        }
+    };
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &dispatch_types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    match input {
+        BoundTensorOrTorchFunction::Override(probed) => {
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result = call_torch_function_handler(
+                py,
+                &handler,
+                &function,
+                &dispatch_types,
+                args,
+                kwargs,
+            )?;
+            if !is_not_implemented(py, &result) {
+                return Ok(Some(result));
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                "torch.zeros_like",
+                active_mode.get(),
+                Some(probed.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundTensorOrTorchFunction::Tensor(_) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.zeros_like",
+                    active_mode.get(),
+                    None,
+                )?);
+            }
+            Ok(None)
+        }
+    }
+}
+
+fn validate_zeros_like_layout_type(layout: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    let Some(layout) = layout else {
+        return Ok(());
+    };
+    let py = layout.py();
+    if layout.is(strided_object(py)?.bind(py))
+        || layout.is_instance(layout_objects(py)?.layout.bind(py))?
+    {
+        return Ok(());
+    }
+    let actual = python_type_name(layout)?;
+    Err(PyTypeError::new_err(format!(
+        "zeros_like(): argument 'layout' must be torch.layout, not {actual}"
+    )))
+}
+
+fn validate_zeros_like_memory_format_type(
+    memory_format: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    let Some(memory_format) = memory_format else {
+        return Ok(());
+    };
+    if memory_format.cast::<PyMemoryFormat>().is_ok() {
+        return Ok(());
+    }
+
+    let type_name = memory_format.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "zeros_like(): argument 'memory_format' must be torch.memory_format, not {type_name}"
+    )))
 }
 
 fn dispatch_empty_variadic_tensor_input(

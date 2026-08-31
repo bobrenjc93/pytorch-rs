@@ -621,6 +621,48 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn zeros_like_with_memory_format(
+        &self,
+        dtype: DType,
+        device: Device,
+        memory_format: MemoryFormat,
+    ) -> Result<Self, TensorError> {
+        let expected_rank = match memory_format {
+            MemoryFormat::ChannelsLast => Some(4),
+            MemoryFormat::ChannelsLast3d => Some(5),
+            MemoryFormat::Preserve | MemoryFormat::Contiguous => None,
+        };
+        if let Some(expected_rank) = expected_rank
+            && self.shape.len() != expected_rank
+        {
+            let _ = contiguous_strides(&self.shape, self.elements)?;
+            return Err(TensorError::ContiguousMemoryFormatRankMismatch {
+                memory_format,
+                expected_rank,
+                actual_rank: self.shape.len(),
+            });
+        }
+
+        let elements = self.elements;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = match memory_format {
+            MemoryFormat::Preserve if elements == 0 || self.is_non_overlapping_and_dense() => {
+                try_clone_result_shape(&self.strides, elements)?
+            }
+            MemoryFormat::Preserve => elementwise_output_strides(
+                &shape,
+                &[ElementwiseLayout::from_tensor(self)],
+                elements,
+            )?,
+            MemoryFormat::Contiguous => contiguous_strides(&shape, elements)?,
+            MemoryFormat::ChannelsLast => channels_last_strides(&shape, elements)?,
+            MemoryFormat::ChannelsLast3d => channels_last_3d_strides(&shape, elements)?,
+        };
+        let data = filled_storage(elements, 0.0)?;
+        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+    }
+
     /// Creates a one-filled tensor.
     ///
     /// # Errors
