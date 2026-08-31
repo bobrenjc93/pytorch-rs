@@ -217,15 +217,15 @@ class TensorIsPinnedReferenceTests(unittest.TestCase):
 
     def test_scope_excludes_pinned_allocation_and_deprecated_device_argument(self):
         tensor = torch.tensor([1.0], dtype=torch.float32)
-        for call in (
-            lambda: tensor.is_pinned(None),
-            lambda: tensor.is_pinned(device=None),
-            lambda: torch.tensor([1.0], pin_memory=True),
-            lambda: torch.zeros((2,), pin_memory=True),
-            lambda: torch.ones((2,), pin_memory=True),
+        for call, error_type in (
+            (lambda: tensor.is_pinned(None), TypeError),
+            (lambda: tensor.is_pinned(device=None), TypeError),
+            (lambda: torch.tensor([1.0], pin_memory=True), TypeError),
+            (lambda: torch.zeros((2,), pin_memory=True), RuntimeError),
+            (lambda: torch.ones((2,), pin_memory=True), RuntimeError),
         ):
             with self.subTest(call=call):
-                with self.assertRaises(TypeError):
+                with self.assertRaises(error_type):
                     call()
 
     def mode_contract(self, module):

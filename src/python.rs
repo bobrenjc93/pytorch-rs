@@ -1592,6 +1592,26 @@ pub(crate) fn arange_variable_function(
         .unbind())
 }
 
+pub(crate) fn zeros_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    Ok(Bound::new(py, zeros_impl(args, kwargs)?)?
+        .into_any()
+        .unbind())
+}
+
+pub(crate) fn ones_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    Ok(Bound::new(py, ones_impl(args, kwargs)?)?
+        .into_any()
+        .unbind())
+}
+
 pub(crate) fn ones_like_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -4502,7 +4522,9 @@ struct CreationCallArguments<'py> {
     shape: Option<Bound<'py, PyAny>>,
     out: Option<Bound<'py, PyAny>>,
     dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
     device: Option<Bound<'py, PyAny>>,
+    pin_memory: Option<Bound<'py, PyAny>>,
     requires_grad: Option<Bound<'py, PyAny>>,
     keyword_error: Option<PyErr>,
 }
@@ -5572,33 +5594,37 @@ fn flatten(
     Py::new(args.py(), PyTensor::new(inner))
 }
 
-#[pyfunction(
-    signature = (*args, **kwargs),
-    text_signature = "(size=None, *, shape=None, out=None, dtype=None, device=None, requires_grad=False)"
-)]
-fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+fn zeros_impl(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("zeros", args, kwargs)?;
-    let (size, dtype, device, requires_grad) = parse_creation_arguments("zeros", arguments)?;
+    let (size, dtype, device, pin_memory, requires_grad) =
+        parse_creation_arguments("zeros", arguments)?;
     let ParsedCreationSize {
         dimensions,
         scalar_dimension,
     } = size;
+    if pin_memory {
+        return Err(PyRuntimeError::new_err(
+            "zeros(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
+        ));
+    }
     CoreTensor::zeros_with_metadata(dimensions, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| scalar_creation_error(&error, scalar_dimension))
 }
 
-#[pyfunction(
-    signature = (*args, **kwargs),
-    text_signature = "(size=None, *, shape=None, out=None, dtype=None, device=None, requires_grad=False)"
-)]
-fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+fn ones_impl(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("ones", args, kwargs)?;
-    let (size, dtype, device, requires_grad) = parse_creation_arguments("ones", arguments)?;
+    let (size, dtype, device, pin_memory, requires_grad) =
+        parse_creation_arguments("ones", arguments)?;
     let ParsedCreationSize {
         dimensions,
         scalar_dimension,
     } = size;
+    if pin_memory {
+        return Err(PyRuntimeError::new_err(
+            "ones(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
+        ));
+    }
     CoreTensor::ones_with_metadata(dimensions, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| scalar_creation_error(&error, scalar_dimension))
@@ -6244,7 +6270,9 @@ fn bind_creation_arguments<'py>(
         shape: None,
         out: None,
         dtype: None,
+        layout: None,
         device: None,
+        pin_memory: None,
         requires_grad: None,
         keyword_error: None,
     };
@@ -6273,7 +6301,9 @@ fn bind_creation_arguments<'py>(
             "shape" => arguments.shape = optional_call_argument(value),
             "out" => arguments.out = optional_call_argument(value),
             "dtype" => arguments.dtype = optional_call_argument(value),
+            "layout" => arguments.layout = optional_call_argument(value),
             "device" => arguments.device = optional_call_argument(value),
+            "pin_memory" => arguments.pin_memory = optional_call_argument(value),
             "requires_grad" => arguments.requires_grad = optional_call_argument(value),
             _ => {
                 arguments.keyword_error.get_or_insert_with(|| {
@@ -7123,6 +7153,26 @@ fn parse_factory_layout(function: &str, layout: Option<&Bound<'_, PyAny>>) -> Py
     )))
 }
 
+fn parse_factory_strided_layout(function: &str, layout: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    let Some(layout) = layout else {
+        return Ok(());
+    };
+    let py = layout.py();
+    let layout_objects = layout_objects(py)?;
+    if !layout.is_instance(layout_objects.layout.bind(py))? {
+        let actual = python_type_name(layout)?;
+        return Err(PyTypeError::new_err(format!(
+            "{function}(): argument 'layout' must be torch.layout, not {actual}"
+        )));
+    }
+    if layout.is(layout_objects.strided.bind(py)) {
+        return Ok(());
+    }
+    Err(PyRuntimeError::new_err(format!(
+        "{function}(): only torch.strided layout is supported"
+    )))
+}
+
 fn validate_scalar_tensor_device_type(device: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
     let Some(device) = device else {
         return Ok(());
@@ -7336,14 +7386,16 @@ fn parse_eye_arguments(
 fn parse_creation_arguments(
     function: &str,
     arguments: CreationCallArguments<'_>,
-) -> PyResult<(ParsedCreationSize, DType, Device, bool)> {
+) -> PyResult<(ParsedCreationSize, DType, Device, bool, bool)> {
     let CreationCallArguments {
         size,
         size_origin,
         shape,
         out,
         dtype,
+        layout,
         device,
+        pin_memory,
         requires_grad,
         keyword_error,
     } = arguments;
@@ -7354,7 +7406,9 @@ fn parse_creation_arguments(
     let size = parse_creation_size(function, size.as_ref(), size_origin, shape.as_ref())?;
     let has_out = validate_creation_out(function, out.as_ref())?;
     let dtype = parse_dtype(function, dtype.as_ref())?;
+    parse_factory_strided_layout(function, layout.as_ref())?;
     validate_device_argument_type(function, device.as_ref())?;
+    let pin_memory = parse_factory_bool(function, "pin_memory", pin_memory.as_ref())?;
     let requires_grad = parse_factory_requires_grad(function, requires_grad.as_ref())?;
     if let Some(error) = keyword_error {
         return Err(error);
@@ -7366,7 +7420,7 @@ fn parse_creation_arguments(
             "{function}(): the 'out' argument is not supported"
         )));
     }
-    Ok((size, dtype, device, requires_grad))
+    Ok((size, dtype, device, pin_memory, requires_grad))
 }
 
 fn parse_ones_like_arguments(
@@ -14429,8 +14483,6 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
     add_tensor_queries(module)?;
-    module.add_function(wrap_pyfunction!(zeros, module)?)?;
-    module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
     module.add_function(wrap_pyfunction!(full, module)?)?;
     let float32 = dtype_object(py, DType::Float32)?;

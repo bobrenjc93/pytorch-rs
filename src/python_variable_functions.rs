@@ -24,23 +24,26 @@ use crate::python::{
     is_conj_variable_function, is_inference_variable_function, matmul_variable_function,
     mean_variable_function, moveaxis_variable_function, movedim_variable_function,
     mul_variable_function, multiply_variable_function, neg_variable_function,
-    negative_variable_function, ones_like_variable_function, permute_variable_function,
-    positive_variable_function, promote_types_variable_function, ravel_variable_function,
-    real_variable_function, reciprocal_variable_function, reshape_variable_function,
-    resolve_conj_variable_function, resolve_neg_variable_function, rsqrt_variable_function,
-    scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
-    sin_variable_function, sqrt_variable_function, square_variable_function, sum_variable_function,
-    tanh_variable_function, trunc_variable_function, unbind_variable_function,
+    negative_variable_function, ones_like_variable_function, ones_variable_function,
+    permute_variable_function, positive_variable_function, promote_types_variable_function,
+    ravel_variable_function, real_variable_function, reciprocal_variable_function,
+    reshape_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
+    rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
+    square_variable_function, sum_variable_function, tanh_variable_function,
+    trunc_variable_function, unbind_variable_function, zeros_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 51] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 53] = [
     "get_device",
     "as_tensor",
     "asarray",
     "scalar_tensor",
     "arange",
+    "zeros",
+    "ones",
     "ones_like",
     "atleast_1d",
     "atleast_2d",
@@ -163,6 +166,20 @@ Example::
     tensor([ 1,  2,  3])
     >>> torch.arange(1, 2.5, 0.5)
     tensor([ 1.0000,  1.5000,  2.0000])
+";
+
+const ZEROS_DOC: &std::ffi::CStr = cr"
+zeros(*size, *, out=None, dtype=None, layout=torch.strided, device=None, requires_grad=False) -> Tensor
+
+Returns a tensor filled with the scalar value `0`, with the shape defined
+by the variable argument :attr:`size`.
+";
+
+const ONES_DOC: &std::ffi::CStr = cr"
+ones(*size, *, out=None, dtype=None, layout=torch.strided, device=None, requires_grad=False) -> Tensor
+
+Returns a tensor filled with the scalar value `1`, with the shape defined
+by the variable argument :attr:`size`.
 ";
 
 const ONES_LIKE_DOC: &std::ffi::CStr = cr"
@@ -1127,6 +1144,8 @@ variable_function_callback!(as_tensor_callback, as_tensor_variable_function);
 variable_function_callback!(asarray_callback, asarray_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
 variable_function_callback!(arange_callback, arange_variable_function);
+variable_function_callback!(zeros_callback, zeros_variable_function);
+variable_function_callback!(ones_callback, ones_variable_function);
 variable_function_callback!(ones_like_callback, ones_like_variable_function);
 variable_function_callback!(atleast_1d_callback, atleast_1d_variable_function);
 variable_function_callback!(atleast_2d_callback, atleast_2d_variable_function);
@@ -1209,6 +1228,8 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"asarray", asarray_callback, ASARRAY_DOC),
         variable_function_method!(c"scalar_tensor", scalar_tensor_callback, c""),
         variable_function_method!(c"arange", arange_callback, ARANGE_DOC),
+        variable_function_method!(c"zeros", zeros_callback, ZEROS_DOC),
+        variable_function_method!(c"ones", ones_callback, ONES_DOC),
         variable_function_method!(c"ones_like", ones_like_callback, ONES_LIKE_DOC),
         variable_function_method!(c"atleast_1d", atleast_1d_callback, c""),
         variable_function_method!(c"atleast_2d", atleast_2d_callback, c""),

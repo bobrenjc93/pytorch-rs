@@ -1,4 +1,9 @@
+import copy
+import inspect
+import pickle
+import re
 import sys
+import types
 import unittest
 
 import numpy as np
@@ -33,10 +38,13 @@ class ZerosReferenceTests(unittest.TestCase):
         return (
             tuple(tensor.shape),
             tensor.stride(),
+            tensor.storage_offset(),
             tensor.tolist(),
             str(tensor.dtype),
             tensor.dtype is module.float32,
             str(tensor.device),
+            str(tensor.layout),
+            tensor.layout is module.strided,
             tensor.requires_grad,
             tensor.is_leaf,
         )
@@ -59,12 +67,18 @@ class ZerosReferenceTests(unittest.TestCase):
             lambda module: {},
             lambda module: {"out": None},
             lambda module: {"dtype": module.float32},
+            lambda module: {"layout": None},
+            lambda module: {"layout": module.strided},
             lambda module: {"device": "cpu"},
             lambda module: {"device": module.device("cpu")},
+            lambda module: {"pin_memory": None},
+            lambda module: {"pin_memory": False},
             lambda module: {
                 "out": None,
                 "dtype": module.float32,
+                "layout": module.strided,
                 "device": module.device("cpu"),
+                "pin_memory": False,
                 "requires_grad": True,
             },
         )
@@ -173,12 +187,32 @@ class ZerosReferenceTests(unittest.TestCase):
                 lambda module: module.zeros(2**63, dtype=object()),
             ),
             (
+                "negative and invalid layout",
+                lambda module: module.zeros(-1, layout=object()),
+            ),
+            (
+                "overflow and invalid layout",
+                lambda module: module.zeros(2**63, layout=object()),
+            ),
+            (
                 "negative and invalid device",
                 lambda module: module.zeros(-1, device=object()),
             ),
             (
                 "overflow and invalid device",
                 lambda module: module.zeros(2**63, device=object()),
+            ),
+            (
+                "negative and invalid pin_memory",
+                lambda module: module.zeros(-1, pin_memory=0),
+            ),
+            (
+                "overflow and invalid pin_memory",
+                lambda module: module.zeros(2**63, pin_memory=0),
+            ),
+            (
+                "negative and pin_memory true",
+                lambda module: module.zeros(-1, pin_memory=True),
             ),
             (
                 "negative and invalid requires_grad",
@@ -212,6 +246,30 @@ class ZerosReferenceTests(unittest.TestCase):
                 "boolean type before requires_grad",
                 lambda module: module.zeros(True, requires_grad=1),
             ),
+            (
+                "invalid dtype before invalid layout",
+                lambda module: module.zeros(2, dtype=object(), layout=object()),
+            ),
+            (
+                "invalid layout before invalid device",
+                lambda module: module.zeros(2, layout=object(), device=object()),
+            ),
+            (
+                "invalid pin_memory before invalid requires_grad",
+                lambda module: module.zeros(2, pin_memory=0, requires_grad=0),
+            ),
+            (
+                "unknown keyword after invalid layout",
+                lambda module: module.zeros(2, unexpected=True, layout=object()),
+            ),
+            (
+                "unknown keyword after invalid pin_memory",
+                lambda module: module.zeros(2, unexpected=True, pin_memory=0),
+            ),
+            (
+                "duplicate size after invalid layout",
+                lambda module: module.zeros(2, size=(2,), layout=object()),
+            ),
         )
         for case, call in cases:
             with self.subTest(case=case):
@@ -230,6 +288,8 @@ class ZerosReferenceTests(unittest.TestCase):
             ("missing size", lambda module: module.zeros(out=[])),
             ("negative size", lambda module: module.zeros(-1, out=[])),
             ("invalid dtype", lambda module: module.zeros(2, dtype=object(), out=[])),
+            ("invalid layout", lambda module: module.zeros(2, layout=object(), out=[])),
+            ("invalid pin_memory", lambda module: module.zeros(2, pin_memory=0, out=[])),
             ("unknown keyword", lambda module: module.zeros(2, unexpected=True, out=[])),
             ("duplicate size", lambda module: module.zeros(2, size=(2,), out=[])),
             ("bool dimension", lambda module: module.zeros(True, out=[])),
@@ -242,6 +302,55 @@ class ZerosReferenceTests(unittest.TestCase):
                 )
                 self.assertIs(actual_type, expected_type)
                 self.assertEqual(actual_message, expected_message)
+
+    def callable_contract(self, module):
+        function = module.zeros
+        owner = function.__reduce__()[1][0]
+        wildcard_namespace = {}
+        exec(f"from {module.__name__} import *", wildcard_namespace)
+        try:
+            inspect.signature(function)
+        except Exception as error:
+            signature_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+            )
+        else:
+            signature_error = None
+        return {
+            "type": type(function).__name__,
+            "is_builtin": type(function) is types.BuiltinFunctionType,
+            "name": function.__name__,
+            "qualname": function.__qualname__,
+            "module": function.__module__,
+            "owner_name": owner.__name__,
+            "owner_qualname": owner.__qualname__,
+            "owner_module": owner.__module__.replace("torch_rs._C", "torch._C"),
+            "owner_path_identity": owner is module._C._VariableFunctionsClass,
+            "owner_callable_identity": owner.zeros is function,
+            "doc_has_signature": (
+                "zeros(*size, *, out=None, dtype=None, layout=torch.strided, "
+                "device=None, requires_grad=False) -> Tensor"
+            )
+            in function.__doc__,
+            "text_signature": function.__text_signature__,
+            "repr": re.sub(r"0x[0-9a-f]+", "0x...", repr(function)),
+            "signature_error": signature_error,
+            "all_count": module.__all__.count("zeros"),
+            "wildcard_identity": wildcard_namespace["zeros"] is function,
+            "copy_identity": copy.copy(function) is function,
+            "deepcopy_identity": copy.deepcopy(function) is function,
+            "pickle_identities": tuple(
+                pickle.loads(pickle.dumps(function, protocol=protocol)) is function
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+            ),
+        }
+
+    def test_callable_metadata_and_exports_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.callable_contract(torch),
+            self.callable_contract(reference_torch),
+        )
 
     @unittest.skipUnless(
         reference_torch is not None and reference_torch.cuda.is_available(),
