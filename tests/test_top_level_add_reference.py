@@ -58,9 +58,33 @@ class TopLevelAddReferenceTests(unittest.TestCase):
                 lambda: reference_torch.add(input=expected_left, other=expected_right),
             ),
             (
+                "x1/x2 aliases",
+                lambda: torch.add(x1=actual_left, x2=actual_right),
+                lambda: reference_torch.add(x1=expected_left, x2=expected_right),
+            ),
+            (
+                "input/x2 aliases",
+                lambda: torch.add(input=actual_left, x2=actual_right),
+                lambda: reference_torch.add(input=expected_left, x2=expected_right),
+            ),
+            (
+                "x1/other aliases",
+                lambda: torch.add(x1=actual_left, other=actual_right),
+                lambda: reference_torch.add(x1=expected_left, other=expected_right),
+            ),
+            (
                 "explicit alpha one",
                 lambda: torch.add(actual_left, actual_right, alpha=1),
                 lambda: reference_torch.add(expected_left, expected_right, alpha=1),
+            ),
+            (
+                "tensor alpha one",
+                lambda: torch.add(actual_left, actual_right, alpha=torch.tensor(1.0)),
+                lambda: reference_torch.add(
+                    expected_left,
+                    expected_right,
+                    alpha=reference_torch.tensor(1.0),
+                ),
             ),
             (
                 "alpha one out none",
@@ -153,6 +177,7 @@ class TopLevelAddReferenceTests(unittest.TestCase):
     def torch_function_dispatch_observation(self, module):
         left = module.tensor([2.0])
         right = module.tensor([3.0])
+        out = module.zeros((1,))
         function = module.add
         marker = object()
 
@@ -167,12 +192,20 @@ class TopLevelAddReferenceTests(unittest.TestCase):
 
         mode_observations = []
         calls = (
-            (lambda: function(left, right), None),
-            (lambda: function(left, 4.0), None),
-            (lambda: function(4.0, left), None),
-            (lambda: function(input=4.0, other=left, alpha=1, out=None), ("input", "other", "alpha", "out")),
+            (lambda: function(left, right), 2, None),
+            (lambda: function(left, 4.0), 2, None),
+            (lambda: function(4.0, left), 2, None),
+            (lambda: function(2.0, 3.0), 2, None),
+            (lambda: function(left, right, alpha=2), 2, ("alpha",)),
+            (lambda: function(left, right, out=out), 2, ("out",)),
+            (
+                lambda: function(input=4.0, other=left, alpha=1, out=None),
+                0,
+                ("input", "other", "alpha", "out"),
+            ),
+            (lambda: function(x1=left, x2=right), 0, ("x1", "x2")),
         )
-        for call, keywords in calls:
+        for call, args_length, keywords in calls:
             mode = RecordingMode()
             with mode:
                 result = call()
@@ -182,7 +215,7 @@ class TopLevelAddReferenceTests(unittest.TestCase):
                     result is marker,
                     func is function,
                     dispatch_types == (),
-                    len(args),
+                    len(args) == args_length,
                     kwargs is None,
                     kwargs is not None and tuple(kwargs) == keywords,
                 )
@@ -204,6 +237,8 @@ class TopLevelAddReferenceTests(unittest.TestCase):
             lambda value: function(value, 4.0),
             lambda value: function(4.0, value),
             lambda value: function(input=left, other=value),
+            lambda value: function(left, right, alpha=value),
+            lambda value: function(left, right, out=value),
         ):
             value = Override()
             Override.calls.clear()
@@ -216,7 +251,8 @@ class TopLevelAddReferenceTests(unittest.TestCase):
                     dispatch_types == (Override,),
                     len(args),
                     kwargs is None,
-                    kwargs is not None and tuple(kwargs) == ("input", "other"),
+                    kwargs is not None
+                    and tuple(kwargs) in {("input", "other"), ("alpha",), ("out",)},
                 )
             )
 
@@ -262,6 +298,8 @@ class TopLevelAddReferenceTests(unittest.TestCase):
         for call in (
             lambda: function([], right),
             lambda: function(left, []),
+            lambda: function(left, right, alpha=[]),
+            lambda: function(left, right, out=[]),
         ):
             invalid_mode = RecordingMode()
             try:

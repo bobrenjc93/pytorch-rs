@@ -72,7 +72,11 @@ class TopLevelAddTests(unittest.TestCase):
         for case, call in (
             ("positional tensors", lambda: torch.add(left, right)),
             ("canonical tensor keywords", lambda: torch.add(input=left, other=right)),
+            ("x1/x2 aliases", lambda: torch.add(x1=left, x2=right)),
+            ("input/x2 aliases", lambda: torch.add(input=left, x2=right)),
+            ("x1/other aliases", lambda: torch.add(x1=left, other=right)),
             ("explicit alpha one", lambda: torch.add(left, right, alpha=1)),
+            ("tensor alpha one", lambda: torch.add(left, right, alpha=torch.tensor(1.0))),
             (
                 "numpy alpha one and out none",
                 lambda: torch.add(left, right, alpha=np.float32(1.0), out=None),
@@ -155,6 +159,7 @@ class TopLevelAddTests(unittest.TestCase):
     def test_torch_function_modes_receive_original_calls_and_can_forward(self):
         left = torch.tensor([2.0])
         right = torch.tensor([3.0])
+        out = torch.zeros((1,))
         marker = object()
 
         class RecordingMode(torch.overrides.TorchFunctionMode):
@@ -176,6 +181,19 @@ class TopLevelAddTests(unittest.TestCase):
                 (),
                 ("input", "other", "alpha", "out"),
             ),
+            (
+                "nondefault alpha",
+                lambda: torch.add(left, right, alpha=2),
+                (left, right),
+                ("alpha",),
+            ),
+            (
+                "concrete out",
+                lambda: torch.add(left, right, out=out),
+                (left, right),
+                ("out",),
+            ),
+            ("scalar/scalar", lambda: torch.add(2.0, 3.0), (2.0, 3.0), None),
         )
         for case, call, expected_args, expected_keywords in calls:
             mode = RecordingMode()
@@ -211,9 +229,8 @@ class TopLevelAddTests(unittest.TestCase):
         for call in (
             lambda: torch.add([], right),
             lambda: torch.add(left, []),
-            lambda: torch.add(left, right, alpha=2),
-            lambda: torch.add(left, right, out=torch.zeros((1,))),
-            lambda: torch.add(2.0, 3.0),
+            lambda: torch.add(left, right, alpha=[]),
+            lambda: torch.add(left, right, out=[]),
         ):
             mode = RecordingMode()
             with mode:
@@ -290,6 +307,41 @@ class TopLevelAddTests(unittest.TestCase):
         self.assertIs(torch.add(scalar, native), marker)
         self.assertEqual(scalar_events[0][1], (ScalarOverride,))
 
+        keyword_events = []
+
+        class AlphaOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                keyword_events.append(("alpha", func, types, args, kwargs))
+                return marker
+
+        class OutOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                keyword_events.append(("out", func, types, args, kwargs))
+                return marker
+
+        self.assertIs(torch.add(native, native, alpha=AlphaOverride()), marker)
+        tag, function, dispatch_types, args, kwargs = keyword_events[-1]
+        self.assertEqual(tag, "alpha")
+        self.assertIs(function, torch.add)
+        self.assertEqual(dispatch_types, (AlphaOverride,))
+        self.assertEqual(args, (native, native))
+        self.assertEqual(tuple(kwargs), ("alpha",))
+
+        self.assertIs(torch.add(native, native, out=OutOverride()), marker)
+        tag, function, dispatch_types, args, kwargs = keyword_events[-1]
+        self.assertEqual(tag, "out")
+        self.assertIs(function, torch.add)
+        self.assertEqual(dispatch_types, (OutOverride,))
+        self.assertEqual(args, (native, native))
+        self.assertEqual(tuple(kwargs), ("out",))
+
+        keyword_events.clear()
+        self.assertIs(torch.add(RightOverride(), native, alpha=AlphaOverride()), marker)
+        self.assertEqual([event[0] for event in events[-1:]], ["right"])
+        self.assertEqual(events[-1][2], (RightOverride, AlphaOverride))
+
         class DecliningOverride:
             @classmethod
             def __torch_function__(cls, func, types, args=(), kwargs=None):
@@ -346,10 +398,6 @@ class TopLevelAddTests(unittest.TestCase):
                 "add\\(\\) got an unexpected keyword argument 'x2'",
             ),
             (
-                lambda: torch.add(x1=tensor, x2=tensor),
-                "add\\(\\) got an unexpected keyword argument 'x1'",
-            ),
-            (
                 lambda: torch.add(foo=tensor),
                 "add\\(\\) got an unexpected keyword argument 'foo'",
             ),
@@ -367,6 +415,10 @@ class TopLevelAddTests(unittest.TestCase):
             ),
             (
                 lambda: torch.add(tensor, tensor, alpha=2),
+                "add\\(\\): nondefault alpha is not supported; only alpha=1 is implemented",
+            ),
+            (
+                lambda: torch.add(tensor, tensor, alpha=torch.tensor(2.0)),
                 "add\\(\\): nondefault alpha is not supported; only alpha=1 is implemented",
             ),
             (
