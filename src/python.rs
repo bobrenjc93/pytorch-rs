@@ -11928,22 +11928,19 @@ fn select_top_level_subtraction_arguments<'py>(
     };
 
     let (other, other_keyword) = if positional.len() < 2 {
-        match keyword_argument(&["other", "x2"])? {
-            Some((name, value)) => (
+        if let Some((name, value)) = keyword_argument(&["other", "x2"])? {
+            (
                 ParsedCallArgument {
                     value,
                     position: None,
                 },
                 Some(name),
-            ),
-            None => {
-                parse_top_level_subtraction_operand(
-                    operation, "input", &input, positional, keywords,
-                )?;
-                return Err(top_level_subtraction_overload_error(
-                    operation, positional, keywords,
-                )?);
-            }
+            )
+        } else {
+            parse_top_level_subtraction_operand(operation, "input", &input, positional, keywords)?;
+            return Err(top_level_subtraction_overload_error(
+                operation, positional, keywords,
+            )?);
         }
     } else {
         (
@@ -12027,16 +12024,20 @@ fn bind_top_level_subtraction_alpha<'py>(
             Err(PyTypeError::new_err("an integer is required"))
         }
         scalar if parsed_subtraction_alpha_is_one(&scalar) => Ok(BoundSubtractionAlpha::Default),
-        _ => Ok(BoundSubtractionAlpha::NonDefault),
+        ParsedArithmeticScalar::Number(_) => Ok(BoundSubtractionAlpha::NonDefault),
     }
 }
 
 fn parsed_subtraction_alpha_is_one(scalar: &ParsedArithmeticScalar) -> bool {
     match scalar {
-        ParsedArithmeticScalar::Number(ParsedFillValue::Float(value)) => *value == 1.0,
+        ParsedArithmeticScalar::Number(ParsedFillValue::Float(value)) => {
+            value.to_bits() == 1.0_f64.to_bits()
+        }
         ParsedArithmeticScalar::Number(ParsedFillValue::SignedInteger(value)) => *value == 1,
         ParsedArithmeticScalar::Number(ParsedFillValue::UnsignedInteger(value)) => *value == 1,
-        ParsedArithmeticScalar::Number(ParsedFillValue::TensorScalar(value)) => *value == 1.0,
+        ParsedArithmeticScalar::Number(ParsedFillValue::TensorScalar(value)) => {
+            value.to_bits() == 1.0_f32.to_bits()
+        }
         ParsedArithmeticScalar::PythonBool(_) | ParsedArithmeticScalar::WideNumpyUnsigned => false,
     }
 }
