@@ -42,21 +42,24 @@ bias operands may be used inside ``torch.no_grad()``.
 _L1_LOSS_DOC = r"""
 l1_loss(input, target, size_average=None, reduce=None, reduction='mean', weight=None) -> Tensor
 
-Measures the element-wise mean absolute error between ``input`` and ``target``.
+Measures the element-wise or summed absolute error between ``input`` and
+``target``.
 
 The current native implementation requires exact ``torch_rs.Tensor`` operands
-with CPU ``float32`` storage, broadcastable shapes, ``reduction='none'``,
-``size_average=None``, ``reduce=None``, and ``weight=None``. It fuses
-same-shape row-major contiguous operands and rank-0 scalar broadcasts over
-row-major contiguous tensors into one native absolute-difference pass,
-otherwise preserving the established subtraction and absolute-value behavior.
-The operation returns a fresh, independent tensor with
-PyTorch-compatible values, shape, strides, scalar metadata, and size-mismatch
-warning.
+with CPU ``float32`` storage, broadcastable shapes, ``reduction='none'`` or
+``reduction='sum'``, ``size_average=None``, ``reduce=None``, and
+``weight=None``. It fuses same-shape row-major contiguous operands and rank-0
+scalar broadcasts over row-major contiguous tensors into one native
+absolute-difference pass, otherwise preserving the established subtraction and
+absolute-value behavior. ``reduction='sum'`` reuses that absolute-difference
+path followed by the full-tensor sum reduction and returns a fresh, independent
+tensor with rank-0 shape. The operation returns PyTorch-compatible values,
+shape, strides, scalar metadata, and size-mismatch warning.
 
-Unbroadcastable shapes, reduced outputs, weights, Tensor subclasses, active
-``TorchFunctionMode`` contexts, and active autograd recording are not
-supported. Gradient-requiring operands may be used inside ``torch.no_grad()``.
+Unbroadcastable shapes, ``reduction='mean'``, weights, dtype/device extensions,
+Tensor subclasses, active ``TorchFunctionMode`` contexts, and active autograd
+recording are not supported. Gradient-requiring operands may be used inside
+``torch.no_grad()``.
 """
 
 

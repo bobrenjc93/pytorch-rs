@@ -12,6 +12,8 @@ use crate::storage::Storage;
 use crate::tensor_error::TensorError;
 
 const F32_SIGN_MASK: u32 = 0x8000_0000;
+#[cfg(any(feature = "python-bindings", test))]
+const F32_QUIET_NAN_MASK: u32 = 0x0040_0000;
 #[cfg(feature = "python-bindings")]
 const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
@@ -3637,6 +3639,18 @@ impl Tensor {
         output
     }
 
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn l1_loss_sum_reduction(&self) -> Self {
+        let total = if let Some(values) = self.dense_physical_slice() {
+            l1_loss_sum_reduce_values(values)
+        } else {
+            self.sum()
+                .item()
+                .expect("a full-tensor sum must produce a scalar")
+        };
+        Self::from_scalar(total, self.dtype(), self.device())
+    }
+
     /// Computes the arithmetic mean of every element.
     ///
     /// Empty tensors follow the same IEEE 754 path as `PyTorch`'s full reduction:
@@ -5983,13 +5997,135 @@ fn absolute_value(value: f32) -> f32 {
 
 #[cfg(any(feature = "python-bindings", test))]
 fn l1_loss_difference_value(left: f32, right: f32) -> f32 {
-    const QUIET_NAN_MASK: u32 = 0x0040_0000;
-
     let right_bits = right.to_bits();
-    if right_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
-        return f32::from_bits(right_bits | QUIET_NAN_MASK);
+    if float32_is_nan_bits(right_bits) {
+        return quiet_float32_nan(right);
     }
     left - right
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_reduce_values(values: &[f32]) -> f32 {
+    let total = values
+        .iter()
+        .copied()
+        .fold(0.0_f32, |total, value| total + value);
+    if !values
+        .iter()
+        .any(|value| float32_is_nan_bits(value.to_bits()))
+    {
+        return total;
+    }
+    l1_loss_sum_preferred_nan(values).unwrap_or(total)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_preferred_nan(values: &[f32]) -> Option<f32> {
+    let mut selected = None;
+    visit_l1_loss_sum_priority(values.len(), |index| {
+        let value = values[index];
+        if float32_is_nan_bits(value.to_bits()) {
+            selected = Some(quiet_float32_nan(value));
+            true
+        } else {
+            false
+        }
+    });
+    selected
+}
+
+// PyTorch 2.13's CPU float32 full reduction is vectorized, making NaN payload
+// priority observable. Keep finite values on the established scalar sum path,
+// but mirror that reduction's lane/chunk precedence when a dense L1 output
+// contains NaNs.
+#[cfg(any(feature = "python-bindings", test))]
+fn visit_l1_loss_sum_priority(length: usize, mut visit: impl FnMut(usize) -> bool) -> bool {
+    if length < 5 {
+        for index in 0..length {
+            if visit(index) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if length < 8 {
+        if visit(0) {
+            return true;
+        }
+        for index in 4..length {
+            if visit(index) {
+                return true;
+            }
+        }
+        for index in 1..4 {
+            if visit(index) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    let full_vectors = length / 8;
+    let full_vector_length = full_vectors * 8;
+    for lane in (0..8).rev() {
+        if visit_l1_loss_sum_chunk_priority(full_vectors, |chunk| visit(chunk * 8 + lane)) {
+            return true;
+        }
+    }
+    for index in full_vector_length..length {
+        if visit(index) {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn visit_l1_loss_sum_chunk_priority(count: usize, mut visit: impl FnMut(usize) -> bool) -> bool {
+    if count <= 4 {
+        for chunk in 0..count {
+            if visit(chunk) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    let groups = count / 4;
+    let remainder = count % 4;
+    for group in 0..groups {
+        if visit(group * 4) {
+            return true;
+        }
+    }
+    if remainder > 0 && visit(groups * 4) {
+        return true;
+    }
+    if remainder > 1 {
+        for chunk in groups * 4 + 1..groups * 4 + remainder {
+            if visit(chunk) {
+                return true;
+            }
+        }
+    }
+    for lane in 1..4 {
+        for group in 0..groups {
+            if visit(group * 4 + lane) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn float32_is_nan_bits(bits: u32) -> bool {
+    bits & !F32_SIGN_MASK > f32::INFINITY.to_bits()
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn quiet_float32_nan(value: f32) -> f32 {
+    f32::from_bits(value.to_bits() | F32_QUIET_NAN_MASK)
 }
 
 #[inline]
@@ -11335,6 +11471,103 @@ mod tests {
         let empty = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
         let singleton_empty = Tensor::ones([1, 0, 1]).unwrap();
         assert_matches(&empty, &singleton_empty);
+    }
+
+    #[test]
+    fn l1_loss_sum_reduction_uses_dense_physical_output_order() {
+        let left = Tensor::from_vec(vec![0.1, 0.1, 0.1, 0.1, 3.0, 0.1], [2, 3])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let right = Tensor::zeros([2, 3]).unwrap().transpose(0, 1).unwrap();
+        let output = left.absolute_difference(&right).unwrap();
+        assert!(!output.is_contiguous());
+        assert!(output.is_non_overlapping_and_dense());
+
+        let logical_total = output.sum().item().unwrap();
+        let physical_total = output
+            .dense_physical_slice()
+            .unwrap()
+            .iter()
+            .copied()
+            .fold(0.0_f32, |total, value| total + value);
+        assert_ne!(logical_total.to_bits(), physical_total.to_bits());
+        assert_eq!(
+            output.l1_loss_sum_reduction().item().unwrap().to_bits(),
+            physical_total.to_bits()
+        );
+    }
+
+    #[test]
+    fn l1_loss_sum_reduction_uses_pytorch_nan_payload_precedence() {
+        let assert_reduces_to = |bits: &[u32], shape: &[usize], expected_bits: u32| {
+            let tensor = Tensor::from_vec(
+                bits.iter().copied().map(f32::from_bits).collect::<Vec<_>>(),
+                shape.to_vec(),
+            )
+            .unwrap();
+            assert_eq!(
+                tensor.l1_loss_sum_reduction().item().unwrap().to_bits(),
+                expected_bits
+            );
+        };
+
+        assert_reduces_to(
+            &[
+                0x0000_0000,
+                0x0000_0000,
+                0x0000_0002,
+                0x0000_0002,
+                0x7f80_0000,
+                0x7f80_0000,
+                0x7fc6_789a,
+                0x7fc2_abcd,
+                0x7fc6_789a,
+                0x7fc2_abcd,
+                0x7f7f_ffff,
+                0x7f7f_ffff,
+            ],
+            &[3, 4],
+            0x7fc2_abcd,
+        );
+        assert_reduces_to(
+            &[
+                0x0000_0000,
+                0x0000_0000,
+                0x0000_0002,
+                0x0000_0002,
+                0x00ff_fffe,
+                0x00ff_fffe,
+                0x0100_0000,
+                0x0100_0000,
+                0x4000_0000,
+                0x4000_0000,
+                0x7f80_0000,
+                0x7f80_0000,
+                0x7fc0_0000,
+                0x7fc0_0000,
+                0x7fc6_789a,
+                0x7fc2_abcd,
+                0x7fc6_789a,
+                0x7fc2_abcd,
+            ],
+            &[3, 6],
+            0x7fc2_abcd,
+        );
+        assert_reduces_to(
+            &[
+                0x3f80_0000,
+                0x4000_0000,
+                0x4040_0000,
+                0x4080_0000,
+                0x40a0_0000,
+                0x40c0_0000,
+                0x40e0_0000,
+                0x7f82_abcd,
+            ],
+            &[8],
+            0x7fc2_abcd,
+        );
     }
 
     #[test]
