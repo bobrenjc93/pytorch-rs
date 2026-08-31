@@ -630,7 +630,8 @@ and `torch.equal()` comparison, identity `Tensor.positive()`/
 addition, subtraction, multiplication through `*`, `Tensor.mul()`,
 `Tensor.multiply()`, `torch.mul()`, and the distinct top-level
 `torch.multiply()` builtin, default-alpha `Tensor.sub()`/`torch.sub()` and
-the distinct `Tensor.subtract()`/`torch.subtract()` callables, plus true division, the listed unary kernels,
+the distinct `Tensor.subtract()`/`torch.subtract()` callables, plus true
+division through `/`, `Tensor.div()`, and `Tensor.divide()`, the listed unary kernels,
 `Tensor.sum(dim=None)`, `torch.sum(input, dim=None, *, dtype=None)`,
 `Tensor.mean(dim=None)`, `torch.mean(input, dim=None, *, dtype=None)`,
 `Tensor.relu()`, `torch.relu()`, and rank-2 matrix multiplication through `@`,
@@ -661,6 +662,20 @@ dispatch before native-only limits. Concrete `out` tensors, nondefault numeric
 or boolean `alpha`, scalar-only calls, unsupported operands, tensor subclasses
 without a handling override, dtype/device extension keywords, and in-place
 subtraction aliases remain unsupported.
+
+`Tensor.div(other, *, rounding_mode=None)` and
+`Tensor.divide(other, *, rounding_mode=None)` accept exact native CPU float32
+tensor/tensor and tensor/real-scalar operands and reuse the same true-division,
+broadcasting, layout, empty tensor, offset, non-contiguous, signed-zero, NaN,
+and infinity behavior as `/`. The methods accept the legacy `x2` operand alias,
+produce fresh output storage, preserve dtype and CPU-device metadata, run under
+`torch.no_grad()` for tensors that otherwise require gradients, and expose
+PyTorch-compatible method descriptor metadata for copying, pickling, and module
+reload. Active autograd recording is rejected until a division VJP is
+implemented. Non-`None` `rounding_mode` values, concrete `out` arguments,
+integer rounding semantics, unsupported dtypes/devices, unsupported operands,
+tensor subclasses without a handling override, and in-place `div_`/`divide_`
+variants remain unsupported.
 
 Out-of-place `torch.nn.functional.relu(input, inplace=False)` delegates to the
 same native kernel; `inplace=True` is rejected before the input can be mutated.
