@@ -607,9 +607,10 @@ and `torch.equal()` comparison, identity `Tensor.positive()`/
 `torch.positive()` and unary `+`, unary `-`, `Tensor.neg()`, its
 `Tensor.negative()` alias, `torch.neg()`, and the distinct top-level
 `torch.negative()` builtin. It supports broadcast tensor and real-scalar
-addition, subtraction, multiplication through `*`, `Tensor.mul()`,
-`Tensor.multiply()`, `torch.mul()`, and the distinct top-level
-`torch.multiply()` builtin, plus true division, the listed unary kernels,
+addition, including top-level `torch.add(input, other, *, alpha=1, out=None)`,
+subtraction, multiplication through `*`, `Tensor.mul()`, `Tensor.multiply()`,
+`torch.mul()`, and the distinct top-level `torch.multiply()` builtin, plus
+true division, the listed unary kernels,
 `Tensor.sum(dim=None)`, `torch.sum(input, dim=None, *, dtype=None)`,
 `Tensor.mean(dim=None)`, `torch.mean(input, dim=None, *, dtype=None)`,
 `Tensor.relu()`, `torch.relu()`, and rank-2 matrix multiplication through `@`,
@@ -624,6 +625,15 @@ Top-level `torch.mul()` and `torch.multiply()` accept tensor/tensor or
 tensor/real-scalar operands in either order and reuse the same broadcast and
 autograd kernels; their `out` forms and scalar-only multiplication remain
 unsupported.
+
+Top-level `torch.add()` accepts tensor/tensor or tensor/real-scalar operands in
+either order, PyTorch-compatible `input`/`other` and `x1`/`x2` keyword aliases,
+and default-equivalent `alpha=1` forms while preserving broadcast layout,
+special float bits, `TorchFunctionMode`/`__torch_function__` dispatch, scalar
+addition autograd, and no-grad tensor/tensor execution. Nondefault `alpha`,
+concrete `out`, complex operands, scalar-only addition, tensor/tensor autograd
+recording, dtype/device extension keywords, and `Tensor.add()`/`Tensor.add_()`
+method exposure remain unsupported.
 
 Out-of-place `torch.nn.functional.relu(input, inplace=False)` delegates to the
 same native kernel; `inplace=True` is rejected before the input can be mutated.
