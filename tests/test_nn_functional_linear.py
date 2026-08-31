@@ -868,12 +868,13 @@ class FunctionalLinearTests(unittest.TestCase):
                 return object()
 
         mode = RecordingMode()
+        mode_bias = torch.ones((2,))
         with self.assertRaisesRegex(
             TypeError,
             r"^linear\(\) does not support an active TorchFunctionMode$",
         ):
             with mode:
-                functional.linear(vector, plain_matrix, bias=torch.ones((2,)))
+                functional.linear(vector, plain_matrix, bias=mode_bias)
         self.assertEqual(mode.calls, 0)
 
 

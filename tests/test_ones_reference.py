@@ -1,4 +1,9 @@
+import copy
+import inspect
+import pickle
+import re
 import sys
+import types
 import unittest
 
 import numpy as np
@@ -33,12 +38,16 @@ class OnesReferenceTests(unittest.TestCase):
         return (
             tuple(tensor.shape),
             tensor.stride(),
+            tensor.storage_offset(),
             tensor.tolist(),
             str(tensor.dtype),
             tensor.dtype is module.float32,
             str(tensor.device),
+            str(tensor.layout),
+            tensor.layout is module.strided,
             tensor.requires_grad,
             tensor.is_leaf,
+            tensor.grad is None,
         )
 
     def capture_error(self, call):
@@ -58,13 +67,26 @@ class OnesReferenceTests(unittest.TestCase):
         metadata_factories = (
             lambda module: {},
             lambda module: {"out": None},
+            lambda module: {"dtype": None},
             lambda module: {"dtype": module.float32},
+            lambda module: {"layout": None},
+            lambda module: {"layout": module.strided},
             lambda module: {"device": "cpu"},
             lambda module: {"device": module.device("cpu")},
+            lambda module: {"pin_memory": None},
+            lambda module: {"pin_memory": False},
+            lambda module: {
+                "out": None,
+                "dtype": None,
+                "layout": None,
+                "pin_memory": False,
+            },
             lambda module: {
                 "out": None,
                 "dtype": module.float32,
+                "layout": module.strided,
                 "device": module.device("cpu"),
+                "pin_memory": False,
                 "requires_grad": True,
             },
         )
@@ -99,6 +121,14 @@ class OnesReferenceTests(unittest.TestCase):
             ),
             ("empty", lambda module: module.ones((0,), out=None)),
             ("scalar tensor", lambda module: module.ones((), out=None)),
+            (
+                "layout strided",
+                lambda module: module.ones((2,), out=None, layout=module.strided),
+            ),
+            (
+                "pin memory false",
+                lambda module: module.ones((2,), out=None, pin_memory=False),
+            ),
         )
 
         for case, factory in cases:
@@ -185,6 +215,14 @@ class OnesReferenceTests(unittest.TestCase):
                 lambda module: module.ones(-1, requires_grad=1),
             ),
             (
+                "negative and invalid layout",
+                lambda module: module.ones(-1, layout=object()),
+            ),
+            (
+                "negative and invalid pin_memory",
+                lambda module: module.ones(-1, pin_memory=0),
+            ),
+            (
                 "index negative and invalid requires_grad",
                 lambda module: module.ones(IndexDimension(-1), requires_grad=1),
             ),
@@ -203,6 +241,26 @@ class OnesReferenceTests(unittest.TestCase):
             (
                 "negative and unknown keyword",
                 lambda module: module.ones(-1, unexpected=True),
+            ),
+            (
+                "valid layout before unknown keyword",
+                lambda module: module.ones(
+                    2, layout=module.strided, unexpected=True
+                ),
+            ),
+            (
+                "valid pin_memory before unknown keyword",
+                lambda module: module.ones(
+                    2, pin_memory=False, unexpected=True
+                ),
+            ),
+            (
+                "invalid layout before unknown keyword",
+                lambda module: module.ones(2, layout=object(), unexpected=True),
+            ),
+            (
+                "invalid pin_memory before unknown keyword",
+                lambda module: module.ones(2, pin_memory=0, unexpected=True),
             ),
             (
                 "index overflow and unknown keyword",
@@ -232,6 +290,14 @@ class OnesReferenceTests(unittest.TestCase):
             ("missing size", lambda module: module.ones(out=[])),
             ("negative size", lambda module: module.ones(-1, out=[])),
             ("invalid dtype", lambda module: module.ones(2, dtype=object(), out=[])),
+            (
+                "invalid layout",
+                lambda module: module.ones(2, layout=object(), out=[]),
+            ),
+            (
+                "invalid pin_memory",
+                lambda module: module.ones(2, pin_memory=0, out=[]),
+            ),
             ("unknown keyword", lambda module: module.ones(2, unexpected=True, out=[])),
             ("duplicate size", lambda module: module.ones(2, size=(2,), out=[])),
             ("bool dimension", lambda module: module.ones(True, out=[])),
@@ -258,6 +324,52 @@ class OnesReferenceTests(unittest.TestCase):
         )
         self.assertIs(actual_type, expected_type)
         self.assertEqual(actual_message, expected_message)
+
+    def callable_contract(self, module):
+        function = module.ones
+        owner = function.__reduce__()[1][0]
+        wildcard_namespace = {}
+        exec(f"from {module.__name__} import *", wildcard_namespace)
+        try:
+            inspect.signature(function)
+        except Exception as error:
+            signature_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+            )
+        else:
+            signature_error = None
+        return {
+            "type": type(function).__name__,
+            "is_builtin": type(function) is types.BuiltinFunctionType,
+            "name": function.__name__,
+            "qualname": function.__qualname__,
+            "module": function.__module__,
+            "owner_name": owner.__name__,
+            "owner_qualname": owner.__qualname__,
+            "owner_module": owner.__module__.replace("torch_rs._C", "torch._C"),
+            "owner_path_identity": owner is module._C._VariableFunctionsClass,
+            "owner_callable_identity": owner.ones is function,
+            "doc": function.__doc__,
+            "text_signature": function.__text_signature__,
+            "repr": re.sub(r"0x[0-9a-f]+", "0x...", repr(function)),
+            "signature_error": signature_error,
+            "all_count": module.__all__.count("ones"),
+            "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
+            "wildcard_identity": wildcard_namespace["ones"] is function,
+            "copy_identity": copy.copy(function) is function,
+            "deepcopy_identity": copy.deepcopy(function) is function,
+            "pickle_identities": tuple(
+                pickle.loads(pickle.dumps(function, protocol=protocol)) is function
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+            ),
+        }
+
+    def test_callable_metadata_and_exports_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.callable_contract(torch),
+            self.callable_contract(reference_torch),
+        )
 
 
 if __name__ == "__main__":

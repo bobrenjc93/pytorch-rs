@@ -771,14 +771,16 @@ class FunctionalL1LossTests(unittest.TestCase):
                 return object()
 
         mode = RecordingMode()
+        input = torch.ones((2, 3), requires_grad=True)
+        target = torch.zeros((3,))
         with self.assertRaisesRegex(
             TypeError,
             r"^l1_loss\(\) does not support an active TorchFunctionMode$",
         ):
             with mode:
                 functional.l1_loss(
-                    torch.ones((2, 3), requires_grad=True),
-                    torch.zeros((3,)),
+                    input,
+                    target,
                     reduction="mean",
                 )
         self.assertEqual(mode.calls, 0)

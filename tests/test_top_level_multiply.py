@@ -187,10 +187,11 @@ class TopLevelMultiplyTests(unittest.TestCase):
         self.assertIs(lower.asserted_function, torch.multiply)
         self.assert_tensor_matches(result, torch.mul(4.0, left), case="forwarded modes")
 
+        out = torch.zeros((1,))
         for call in (
             lambda: torch.multiply([], right),
             lambda: torch.multiply(left, []),
-            lambda: torch.multiply(left, right, out=torch.zeros((1,))),
+            lambda: torch.multiply(left, right, out=out),
         ):
             mode = RecordingMode()
             with mode:
