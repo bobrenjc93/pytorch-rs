@@ -8,7 +8,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 
 | Need | Common calls | Contract section |
 | --- | --- | --- |
-| Construction | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.full`, `torch.eye` | [Creation](#creation) |
+| Construction | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.empty`, `torch.zeros`, `torch.ones`, `torch.full`, `torch.eye` | [Creation](#creation) |
 | Views and layout | `view`, `reshape`, `permute`, `movedim`, `transpose`, `flatten`, `contiguous`, `cpu` | [Metadata and views](#metadata-and-views) |
 | Math | arithmetic operators, `torch.sub`, `torch.subtract`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` | [Elementwise and reductions](#elementwise-and-reductions) |
 | NN functional | `torch.nn.functional.linear`, `l1_loss`, `mse_loss`, `dropout*`, `sigmoid`, `silu`, `softsign`, `tanh` | [NN/data helpers](#nn-and-data-helpers), [math activations](#elementwise-and-reductions) |
@@ -431,7 +431,7 @@ assert cpu_nhwc.is_contiguous(memory_format=torch.channels_last)
 #### Metadata and views
 
 The CPU core provides `float32` tensors, checked construction including copied
-one-dimensional numeric PEP 3118 buffers, constant-filled creation, and layout
+one-dimensional numeric PEP 3118 buffers, empty and constant-filled creation, and layout
 queries. Tensor metadata coverage includes `Tensor.dense_dim()` and
 `Tensor.sparse_dim()` strided-layout dimension metadata, no-argument
 `Tensor.is_pinned()` metadata for the exclusively pageable CPU storage model,
@@ -611,6 +611,8 @@ metadata, and existing autograd history. Python sequences, NumPy arrays,
 scalars, tensor subclasses, dtype conversions, accelerator or meta devices,
 indexed CPU devices that would require a copy, pinned-memory options, `out`,
 `copy=True`, and explicit `requires_grad` mutation requests remain unsupported.
+
+`torch.empty(size, *, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)` creates fresh CPU float32 tensors with PyTorch 2.13-compatible shape, stride, dtype, device, layout, pinning, leaf, and `requires_grad` metadata for scalar, empty, and multidimensional sizes. A single positional integer or integer-protocol value is accepted as a one-dimensional size, while tuple/list-like sizes retain the existing factory size parsing. Supported dtype forms are omitted, `None`, `torch.float32`, and `torch.float`; supported layout forms are omitted, `None`, and `torch.strided`; supported device forms are omitted, `None`, CPU strings, and `torch.device("cpu")` values, all normalized to the CPU device. `out=None`, `pin_memory=None`, and `pin_memory=False` are accepted and behave like omitted defaults without reusing storage or pinning allocation. Tensor contents are intentionally unspecified. Concrete `out` tensors, extra positional dimensions, non-float32 dtype or non-CPU device allocation, `pin_memory=True`, sparse or foreign layouts, `empty_like`, and backend-specific allocation behavior remain unsupported.
 
 `torch.zeros(size, *, out=None, dtype=None, device=None, requires_grad=False)` and `torch.ones(size, *, out=None, dtype=None, device=None, requires_grad=False)` create fresh CPU float32 tensors for scalar, empty, and multidimensional sizes. A single positional integer or integer-protocol value is accepted as a one-dimensional size, while tuple/list-like sizes retain their existing PyTorch-compatible shape, stride, dtype, device, and `requires_grad` metadata. `out=None` is accepted and behaves like the omitted default without reusing storage. Concrete `out` tensors, extra positional dimensions, non-float32 dtype or non-CPU device allocation, `layout`, `pin_memory`, sparse layouts, and backend-specific allocation behavior remain unsupported.
 

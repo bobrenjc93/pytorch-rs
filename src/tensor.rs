@@ -644,6 +644,27 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
+    /// Creates a tensor with fresh storage and unspecified values.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the shape's element count, contiguous stride, or
+    /// storage size overflows.
+    pub fn empty(shape: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
+        Self::empty_with_metadata(shape, DType::Float32, Device::Cpu)
+    }
+
+    pub(crate) fn empty_with_metadata(
+        shape: impl Into<Vec<usize>>,
+        dtype: DType,
+        device: Device,
+    ) -> Result<Self, TensorError> {
+        let shape = shape.into();
+        let (elements, strides) = validated_layout(&shape)?;
+        let data = empty_storage(elements)?;
+        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+    }
+
     /// Creates a one-filled tensor.
     ///
     /// # Errors
@@ -6299,6 +6320,18 @@ fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorEr
     data.try_reserve_exact(elements)
         .map_err(|_| TensorError::AllocationFailed { elements })?;
     data.resize(elements, fill_value);
+    Ok(data)
+}
+
+fn empty_storage(elements: usize) -> Result<Vec<f32>, TensorError> {
+    validate_storage_capacity(elements)?;
+
+    let mut data = Vec::new();
+    data.try_reserve_exact(elements)
+        .map_err(|_| TensorError::AllocationFailed { elements })?;
+    // Safe Rust vectors cannot expose uninitialized elements. This storage is
+    // intentionally fresh; callers must not rely on the placeholder values.
+    data.resize(elements, 0.0);
     Ok(data)
 }
 
