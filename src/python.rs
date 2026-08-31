@@ -1592,6 +1592,25 @@ pub(crate) fn arange_variable_function(
         .unbind())
 }
 
+pub(crate) fn ones_like_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (input, requires_grad) =
+        parse_ones_like_arguments(bind_ones_like_arguments(args, kwargs)?)?;
+    let shape = {
+        let tensor = input.try_borrow()?;
+        validate_ones_like_native_input(&tensor.inner)?;
+        let mut shape = try_size_vector(tensor.inner.shape().len())?;
+        shape.extend_from_slice(tensor.inner.shape());
+        shape
+    };
+    let inner = CoreTensor::ones_with_metadata(shape, DType::Float32, Device::Cpu)
+        .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
+}
+
 fn dispatch_empty_variadic_tensor_input(
     py: Python<'_>,
     name: &str,
@@ -4382,6 +4401,16 @@ struct CreationCallArguments<'py> {
     keyword_error: Option<PyErr>,
 }
 
+struct OnesLikeCallArguments<'py> {
+    input: Option<ParsedCallArgument<'py>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    requires_grad: Option<Bound<'py, PyAny>>,
+    memory_format: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CreationSizeOrigin {
     Positional,
@@ -6136,6 +6165,69 @@ fn bind_creation_arguments<'py>(
     Ok(arguments)
 }
 
+fn bind_ones_like_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<OnesLikeCallArguments<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "ones_like() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments = OnesLikeCallArguments {
+        input: if positional.is_empty() {
+            None
+        } else {
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            })
+        },
+        dtype: None,
+        layout: None,
+        device: None,
+        requires_grad: None,
+        memory_format: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "input" | "x" | "a" | "x1" => {
+                if arguments.input.is_some() {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("ones_like() got multiple values for argument 'input'")
+                    });
+                } else {
+                    arguments.input = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            }
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "layout" => arguments.layout = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            "memory_format" => arguments.memory_format = optional_call_argument(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "ones_like() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
+}
+
 fn optional_call_argument(value: Bound<'_, PyAny>) -> Option<Bound<'_, PyAny>> {
     if value.is_none() { None } else { Some(value) }
 }
@@ -7153,6 +7245,67 @@ fn parse_creation_arguments(
         )));
     }
     Ok((size, dtype, device, requires_grad))
+}
+
+fn parse_ones_like_arguments(
+    arguments: OnesLikeCallArguments<'_>,
+) -> PyResult<(Bound<'_, PyTensor>, bool)> {
+    let OnesLikeCallArguments {
+        input,
+        dtype,
+        layout,
+        device,
+        requires_grad,
+        memory_format,
+        keyword_error,
+    } = arguments;
+
+    let Some(input) = input else {
+        return Err(PyTypeError::new_err(
+            "ones_like() missing 1 required positional arguments: \"input\"",
+        ));
+    };
+    let input = parse_exact_native_tensor_argument("ones_like", "input", &input)?;
+    let memory_format = parse_ones_like_memory_format(memory_format.as_ref())?;
+    parse_identity_dtype("ones_like", dtype.as_ref())?;
+    parse_factory_layout("ones_like", layout.as_ref())?;
+    validate_as_tensor_device_type("ones_like", device.as_ref())?;
+    let requires_grad = parse_factory_requires_grad("ones_like", requires_grad.as_ref())?;
+    if let Some(error) = keyword_error {
+        return Err(error);
+    }
+    parse_as_tensor_device("ones_like", device.as_ref())?;
+
+    if !matches!(
+        memory_format,
+        MemoryFormat::Preserve | MemoryFormat::Contiguous
+    ) {
+        return Err(PyNotImplementedError::new_err(
+            "ones_like(): only default-equivalent memory_format is supported",
+        ));
+    }
+    if !torch_function_mode_stack::is_empty() {
+        return Err(PyNotImplementedError::new_err(
+            "ones_like(): __torch_function__ modes are not supported",
+        ));
+    }
+    Ok((input.clone(), requires_grad))
+}
+
+fn parse_ones_like_memory_format(
+    memory_format: Option<&Bound<'_, PyAny>>,
+) -> PyResult<MemoryFormat> {
+    let Some(memory_format) = memory_format else {
+        return Ok(MemoryFormat::Preserve);
+    };
+    if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
+        return Ok(memory_format.try_borrow()?.inner());
+    }
+
+    let actual = python_type_name(memory_format)?;
+    Err(PyTypeError::new_err(format!(
+        "ones_like(): argument 'memory_format' must be torch.memory_format, not {actual}"
+    )))
 }
 
 fn bind_full_arguments<'py>(
@@ -10814,6 +10967,63 @@ fn parse_tensor_argument<'a, 'py>(
         )));
     };
     Ok(tensor)
+}
+
+fn parse_exact_native_tensor_argument<'a, 'py>(
+    function: &str,
+    argument: &str,
+    value: &'a ParsedCallArgument<'py>,
+) -> PyResult<&'a Bound<'py, PyTensor>> {
+    if !value.value.is_exact_instance_of::<PyTensor>() {
+        if value.value.is_instance_of::<PyTensor>() {
+            return Err(ones_like_unsupported_native_input());
+        }
+        return parse_tensor_argument(function, argument, value);
+    }
+    Ok(value.value.cast::<PyTensor>()?)
+}
+
+fn validate_ones_like_native_input(input: &CoreTensor) -> PyResult<()> {
+    if input.dtype() == DType::Float32
+        && input.device() == Device::Cpu
+        && input.is_contiguous_with_memory_format(MemoryFormat::Contiguous)
+        && ones_like_has_canonical_row_major_strides(input)
+        && input.suggested_memory_format() == MemoryFormat::Contiguous
+    {
+        return Ok(());
+    }
+    Err(ones_like_unsupported_native_input())
+}
+
+fn ones_like_has_canonical_row_major_strides(input: &CoreTensor) -> bool {
+    let shape = input.shape();
+    let strides = input.stride();
+    if shape.len() != strides.len() {
+        return false;
+    }
+
+    let mut expected_stride = 1_usize;
+    for axis in (0..shape.len()).rev() {
+        if strides[axis] != expected_stride {
+            return false;
+        }
+        if axis > 0 {
+            let Some(next_stride) = expected_stride
+                .checked_mul(shape[axis].max(1))
+                .filter(|product| *product <= isize::MAX.unsigned_abs())
+            else {
+                return false;
+            };
+            expected_stride = next_stride;
+        }
+    }
+    true
+}
+
+fn ones_like_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "ones_like(): only exact native CPU float32 row-major contiguous Tensor inputs are supported",
+    )
 }
 
 fn parse_tensor_or_torch_function_argument<'py>(
