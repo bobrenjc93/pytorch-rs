@@ -14,6 +14,16 @@ use crate::tensor_error::TensorError;
 const F32_SIGN_MASK: u32 = 0x8000_0000;
 #[cfg(any(feature = "python-bindings", test))]
 const F32_QUIET_NAN_MASK: u32 = 0x0040_0000;
+#[cfg(any(feature = "python-bindings", test))]
+const L1_LOSS_SUM_VECTOR_WIDTH: usize = 8;
+#[cfg(any(feature = "python-bindings", test))]
+const L1_LOSS_SUM_BLOCK_VECTORS: usize = 4;
+#[cfg(any(feature = "python-bindings", test))]
+const L1_LOSS_SUM_CASCADE_BLOCK_GROUPS: usize = 16;
+#[cfg(any(feature = "python-bindings", test))]
+const L1_LOSS_SUM_LEVEL2_PERIOD_GROUPS: usize = 16 * 16;
+#[cfg(any(feature = "python-bindings", test))]
+const L1_LOSS_SUM_LEVEL3_PERIOD_GROUPS: usize = 16 * 16 * 16;
 #[cfg(feature = "python-bindings")]
 const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
@@ -6006,17 +6016,10 @@ fn l1_loss_difference_value(left: f32, right: f32) -> f32 {
 
 #[cfg(any(feature = "python-bindings", test))]
 fn l1_loss_sum_reduce_values(values: &[f32]) -> f32 {
-    let total = values
-        .iter()
-        .copied()
-        .fold(0.0_f32, |total, value| total + value);
-    if !values
-        .iter()
-        .any(|value| float32_is_nan_bits(value.to_bits()))
-    {
-        return total;
+    if let Some(nan) = l1_loss_sum_preferred_nan(values) {
+        return nan;
     }
-    l1_loss_sum_preferred_nan(values).unwrap_or(total)
+    l1_loss_sum_reduce_finite_values(values)
 }
 
 #[cfg(any(feature = "python-bindings", test))]
@@ -6034,10 +6037,120 @@ fn l1_loss_sum_preferred_nan(values: &[f32]) -> Option<f32> {
     selected
 }
 
-// PyTorch 2.13's CPU float32 full reduction is vectorized, making NaN payload
-// priority observable. Keep finite values on the established scalar sum path,
-// but mirror that reduction's lane/chunk precedence when a dense L1 output
-// contains NaNs.
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_reduce_finite_values(values: &[f32]) -> f32 {
+    if values.len() < 5 {
+        return values
+            .iter()
+            .copied()
+            .fold(0.0_f32, |total, value| total + value);
+    }
+    if values.len() < L1_LOSS_SUM_VECTOR_WIDTH {
+        let mut total = values[0];
+        for value in &values[4..] {
+            total += *value;
+        }
+        for value in &values[1..4] {
+            total += *value;
+        }
+        return total;
+    }
+
+    let full_vectors = values.len() / L1_LOSS_SUM_VECTOR_WIDTH;
+    let full_groups = full_vectors / L1_LOSS_SUM_BLOCK_VECTORS;
+    let mut level1 = l1_loss_sum_zero_accumulator();
+    let mut level2 = l1_loss_sum_zero_accumulator();
+    let mut level3 = l1_loss_sum_zero_accumulator();
+    let mut processed_groups = 0;
+    while processed_groups + L1_LOSS_SUM_CASCADE_BLOCK_GROUPS <= full_groups {
+        let block = l1_loss_sum_group_accumulator(
+            values,
+            processed_groups,
+            processed_groups + L1_LOSS_SUM_CASCADE_BLOCK_GROUPS,
+        );
+        l1_loss_sum_add_accumulator(&mut level1, &block);
+        processed_groups += L1_LOSS_SUM_CASCADE_BLOCK_GROUPS;
+        if processed_groups % L1_LOSS_SUM_LEVEL2_PERIOD_GROUPS == 0 {
+            l1_loss_sum_add_accumulator(&mut level2, &level1);
+            level1 = l1_loss_sum_zero_accumulator();
+            if processed_groups % L1_LOSS_SUM_LEVEL3_PERIOD_GROUPS == 0 {
+                l1_loss_sum_add_accumulator(&mut level3, &level2);
+                level2 = l1_loss_sum_zero_accumulator();
+            }
+        }
+    }
+
+    let mut current = l1_loss_sum_group_accumulator(values, processed_groups, full_groups);
+    l1_loss_sum_add_accumulator(&mut current, &level1);
+    l1_loss_sum_add_accumulator(&mut current, &level2);
+    l1_loss_sum_add_accumulator(&mut current, &level3);
+
+    for vector in full_groups * L1_LOSS_SUM_BLOCK_VECTORS..full_vectors {
+        let base = vector * L1_LOSS_SUM_VECTOR_WIDTH;
+        for lane in 0..L1_LOSS_SUM_VECTOR_WIDTH {
+            current[0][lane] += values[base + lane];
+        }
+    }
+
+    let mut lanes = [0.0_f32; L1_LOSS_SUM_VECTOR_WIDTH];
+    for lane in 0..L1_LOSS_SUM_VECTOR_WIDTH {
+        let mut lane_total = current[0][lane] + current[1][lane];
+        lane_total += current[2][lane];
+        lane_total += current[3][lane];
+        lanes[lane] = lane_total;
+    }
+
+    let mut tail = 0.0_f32;
+    for value in &values[full_vectors * L1_LOSS_SUM_VECTOR_WIDTH..] {
+        tail += *value;
+    }
+
+    let mut total = lanes[0] + tail;
+    for lane_total in &lanes[1..] {
+        total += *lane_total;
+    }
+    total
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_zero_accumulator() -> [[f32; L1_LOSS_SUM_VECTOR_WIDTH]; L1_LOSS_SUM_BLOCK_VECTORS] {
+    [[0.0; L1_LOSS_SUM_VECTOR_WIDTH]; L1_LOSS_SUM_BLOCK_VECTORS]
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_group_accumulator(
+    values: &[f32],
+    start_group: usize,
+    end_group: usize,
+) -> [[f32; L1_LOSS_SUM_VECTOR_WIDTH]; L1_LOSS_SUM_BLOCK_VECTORS] {
+    let mut accumulator = l1_loss_sum_zero_accumulator();
+    for group in start_group..end_group {
+        let group_base = group * L1_LOSS_SUM_BLOCK_VECTORS * L1_LOSS_SUM_VECTOR_WIDTH;
+        for (vector, vector_accumulator) in accumulator.iter_mut().enumerate() {
+            let base = group_base + vector * L1_LOSS_SUM_VECTOR_WIDTH;
+            for lane in 0..L1_LOSS_SUM_VECTOR_WIDTH {
+                vector_accumulator[lane] += values[base + lane];
+            }
+        }
+    }
+    accumulator
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_add_accumulator(
+    accumulator: &mut [[f32; L1_LOSS_SUM_VECTOR_WIDTH]; L1_LOSS_SUM_BLOCK_VECTORS],
+    addend: &[[f32; L1_LOSS_SUM_VECTOR_WIDTH]; L1_LOSS_SUM_BLOCK_VECTORS],
+) {
+    for (accumulator, addend) in accumulator.iter_mut().zip(addend) {
+        for (accumulator, addend) in accumulator.iter_mut().zip(addend) {
+            *accumulator += *addend;
+        }
+    }
+}
+
+// PyTorch 2.13's CPU float32 full reduction is vectorized, making both finite
+// rounding and NaN payload priority observable. The dense L1 sum path mirrors
+// that lane/block structure without changing the repository's general sum.
 #[cfg(any(feature = "python-bindings", test))]
 fn visit_l1_loss_sum_priority(length: usize, mut visit: impl FnMut(usize) -> bool) -> bool {
     if length < 5 {
@@ -6421,7 +6534,7 @@ mod tests {
         CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device, F32_SIGN_MASK, GradFn, LogicalValuesInner,
         MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor,
         TensorError, contiguous_values_equal, full_reduction_mean_divisor,
-        l1_loss_difference_value, logical_offset_for_linear_index,
+        l1_loss_difference_value, l1_loss_sum_reduce_values, logical_offset_for_linear_index,
         materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
         validate_view_bounds,
     };
@@ -11484,17 +11597,49 @@ mod tests {
         assert!(!output.is_contiguous());
         assert!(output.is_non_overlapping_and_dense());
 
-        let logical_total = output.sum().item().unwrap();
+        let logical_values = output.try_to_vec().unwrap();
+        let logical_total = l1_loss_sum_reduce_values(&logical_values);
         let physical_total = output
+            .dense_physical_slice()
+            .map(l1_loss_sum_reduce_values)
+            .unwrap();
+        assert_ne!(logical_total.to_bits(), physical_total.to_bits());
+        assert_eq!(
+            output.l1_loss_sum_reduction().item().unwrap().to_bits(),
+            physical_total.to_bits()
+        );
+    }
+
+    #[test]
+    fn l1_loss_sum_reduction_matches_pytorch_finite_accumulation_order() {
+        let target = Tensor::from_vec(
+            [
+                0x3f20_1fc7,
+                0x3695_46b8,
+                0x3a72_b89e,
+                0x4082_7eff,
+                0x46dc_0c5d,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            [5],
+        )
+        .unwrap();
+        let output = Tensor::zeros([5])
+            .unwrap()
+            .absolute_difference(&target)
+            .unwrap();
+        let scalar_total = output
             .dense_physical_slice()
             .unwrap()
             .iter()
             .copied()
             .fold(0.0_f32, |total, value| total + value);
-        assert_ne!(logical_total.to_bits(), physical_total.to_bits());
+
+        assert_eq!(scalar_total.to_bits(), 0x46dc_15c6);
         assert_eq!(
             output.l1_loss_sum_reduction().item().unwrap().to_bits(),
-            physical_total.to_bits()
+            0x46dc_15c5
         );
     }
 

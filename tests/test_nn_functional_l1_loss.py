@@ -167,9 +167,8 @@ class FunctionalL1LossTests(unittest.TestCase):
     def full_l1_sum_expected(input, target):
         difference = functional.l1_loss(input, target, reduction="none")
         values = np.asarray(difference)
-        total = np.float32(0.0)
         if difference.numel() == 0:
-            return torch.tensor(memoryview(np.asarray([total], dtype=np.float32)))[0]
+            return torch.tensor(memoryview(np.asarray([0.0], dtype=np.float32)))[0]
 
         offsets_and_values = []
         for coordinate in np.ndindex(tuple(difference.shape)):
@@ -189,11 +188,151 @@ class FunctionalL1LossTests(unittest.TestCase):
                 )
             )
         else:
-            sequence = values.reshape(-1)
+            sequence = values.reshape(-1).tolist()
 
-        for value in sequence:
-            total = np.float32(total + value)
+        total = FunctionalL1LossTests.pytorch_float32_full_sum(sequence)
         return torch.tensor(memoryview(np.asarray([total], dtype=np.float32)))[0]
+
+    @staticmethod
+    def pytorch_float32_full_sum(values):
+        values = np.asarray(list(values), dtype=np.float32)
+        selected_nan = FunctionalL1LossTests.pytorch_sum_preferred_nan(values)
+        if selected_nan is not None:
+            return selected_nan
+        return FunctionalL1LossTests.pytorch_float32_finite_sum(values)
+
+    @staticmethod
+    def pytorch_sum_preferred_nan(values):
+        for index in FunctionalL1LossTests.pytorch_sum_nan_priority(len(values)):
+            bits = values[index].view(np.uint32).item()
+            if (bits & 0x7FFF_FFFF) > 0x7F80_0000:
+                return np.asarray(
+                    [bits | 0x0040_0000],
+                    dtype=np.uint32,
+                ).view(np.float32)[0]
+        return None
+
+    @staticmethod
+    def pytorch_sum_nan_priority(length):
+        if length < 5:
+            return range(length)
+        if length < 8:
+            return [0, *range(4, length), 1, 2, 3]
+        chunks = length // 8
+        full_length = chunks * 8
+        chunk_priority = FunctionalL1LossTests.pytorch_sum_chunk_priority(chunks)
+        return [
+            *(chunk * 8 + lane for lane in range(7, -1, -1) for chunk in chunk_priority),
+            *range(full_length, length),
+        ]
+
+    @staticmethod
+    def pytorch_sum_chunk_priority(count):
+        if count <= 4:
+            return range(count)
+        groups, remainder = divmod(count, 4)
+        priority = [group * 4 for group in range(groups)]
+        if remainder:
+            priority.append(groups * 4)
+        if remainder > 1:
+            priority.extend(range(groups * 4 + 1, groups * 4 + remainder))
+        for lane in range(1, 4):
+            priority.extend(group * 4 + lane for group in range(groups))
+        return priority
+
+    @staticmethod
+    def pytorch_float32_finite_sum(values):
+        def add(left, right):
+            return np.float32(np.float32(left) + np.float32(right))
+
+        if len(values) < 5:
+            total = np.float32(0.0)
+            for value in values:
+                total = add(total, value)
+            return total
+        if len(values) < 8:
+            total = np.float32(values[0])
+            for value in values[4:]:
+                total = add(total, value)
+            for value in values[1:4]:
+                total = add(total, value)
+            return total
+
+        width = 8
+        vectors_per_group = 4
+        cascade_block_groups = 16
+        level2_period = 16 * 16
+        level3_period = 16 * 16 * 16
+
+        def zero_accumulator():
+            return np.zeros((vectors_per_group, width), dtype=np.float32)
+
+        def add_accumulator(accumulator, addend):
+            for vector in range(vectors_per_group):
+                for lane in range(width):
+                    accumulator[vector, lane] = add(
+                        accumulator[vector, lane],
+                        addend[vector, lane],
+                    )
+
+        def group_accumulator(start_group, end_group):
+            accumulator = zero_accumulator()
+            for group in range(start_group, end_group):
+                group_base = group * vectors_per_group * width
+                for vector in range(vectors_per_group):
+                    base = group_base + vector * width
+                    for lane in range(width):
+                        accumulator[vector, lane] = add(
+                            accumulator[vector, lane],
+                            values[base + lane],
+                        )
+            return accumulator
+
+        full_vectors = len(values) // width
+        full_groups = full_vectors // vectors_per_group
+        level1 = zero_accumulator()
+        level2 = zero_accumulator()
+        level3 = zero_accumulator()
+        processed_groups = 0
+        while processed_groups + cascade_block_groups <= full_groups:
+            block = group_accumulator(
+                processed_groups,
+                processed_groups + cascade_block_groups,
+            )
+            add_accumulator(level1, block)
+            processed_groups += cascade_block_groups
+            if processed_groups % level2_period == 0:
+                add_accumulator(level2, level1)
+                level1 = zero_accumulator()
+                if processed_groups % level3_period == 0:
+                    add_accumulator(level3, level2)
+                    level2 = zero_accumulator()
+
+        current = group_accumulator(processed_groups, full_groups)
+        add_accumulator(current, level1)
+        add_accumulator(current, level2)
+        add_accumulator(current, level3)
+
+        for vector in range(full_groups * vectors_per_group, full_vectors):
+            base = vector * width
+            for lane in range(width):
+                current[0, lane] = add(current[0, lane], values[base + lane])
+
+        lanes = np.zeros(width, dtype=np.float32)
+        for lane in range(width):
+            lane_total = add(current[0, lane], current[1, lane])
+            lane_total = add(lane_total, current[2, lane])
+            lane_total = add(lane_total, current[3, lane])
+            lanes[lane] = lane_total
+
+        tail = np.float32(0.0)
+        for value in values[full_vectors * width :]:
+            tail = add(tail, value)
+
+        total = add(lanes[0], tail)
+        for lane_total in lanes[1:]:
+            total = add(total, lane_total)
+        return total
 
     @staticmethod
     def call(input, target, form, reduction="none"):
@@ -757,6 +896,31 @@ class FunctionalL1LossTests(unittest.TestCase):
                 expected,
                 case=case,
             )
+
+    def test_sum_reduction_uses_pytorch_finite_accumulation_order(self):
+        target_bits = np.asarray(
+            [
+                0x3F20_1FC7,
+                0x3695_46B8,
+                0x3A72_B89E,
+                0x4082_7EFF,
+                0x46DC_0C5D,
+            ],
+            dtype=np.uint32,
+        )
+        input = torch.zeros((5,), dtype=torch.float32)
+        target = torch.tensor(memoryview(target_bits.view(np.float32)))
+        expected = torch.tensor(
+            memoryview(np.asarray([0x46DC_15C5], dtype=np.uint32).view(np.float32))
+        )[0]
+
+        actual = functional.l1_loss(input, target, reduction="sum")
+
+        self.assert_matches_composition(
+            actual,
+            expected,
+            case="finite accumulation order",
+        )
 
     def test_requires_grad_operands_need_no_grad(self):
         for input_requires_grad, target_requires_grad in (

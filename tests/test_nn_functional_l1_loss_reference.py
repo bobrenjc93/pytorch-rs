@@ -657,6 +657,39 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                     case=("float32 edges", case, reduction),
                 )
 
+    def test_sum_reduction_finite_accumulation_order_matches_pytorch_2_13(
+        self,
+    ):
+        target_bits = np.asarray(
+            [
+                0x3F20_1FC7,
+                0x3695_46B8,
+                0x3A72_B89E,
+                0x4082_7EFF,
+                0x46DC_0C5D,
+            ],
+            dtype=np.uint32,
+        )
+        actual_input = torch.zeros((5,), dtype=torch.float32)
+        actual_target = torch.tensor(memoryview(target_bits.view(np.float32)))
+        expected_input = reference_torch.zeros((5,), dtype=reference_torch.float32)
+        expected_target = reference_torch.tensor(
+            memoryview(target_bits.view(np.float32))
+        )
+
+        actual = functional.l1_loss(
+            actual_input,
+            actual_target,
+            reduction="sum",
+        )
+        expected = reference_functional.l1_loss(
+            expected_input,
+            expected_target,
+            reduction="sum",
+        )
+
+        self.assert_matches(actual, expected, case="finite accumulation order")
+
     def test_scalar_broadcast_float32_edges_match_pytorch_2_13(self):
         tensor_bits = np.asarray(
             [
