@@ -512,6 +512,34 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                     self.assertFalse(expected.is_set_to(expected_input))
                     self.assertFalse(expected.is_set_to(expected_target))
 
+    def test_large_sum_reduction_matches_single_threaded_pytorch_2_13(self):
+        pattern = np.asarray(
+            [8192.0, 0.125, 0.25, 0.5, 1.0, 1.5, 2.0, 3.0],
+            dtype=np.float32,
+        )
+        # 1024 float32 elements enters the cascade carry/flush branch while
+        # remaining deterministic when PyTorch is forced to one CPU thread.
+        input_values = np.tile(pattern, 128)
+        target_values = np.zeros_like(input_values)
+        actual_input = torch.tensor(memoryview(input_values))
+        actual_target = torch.tensor(memoryview(target_values))
+        expected_input = reference_torch.tensor(memoryview(input_values))
+        expected_target = reference_torch.tensor(memoryview(target_values))
+
+        original_threads = reference_torch.get_num_threads()
+        reference_torch.set_num_threads(1)
+        try:
+            expected = reference_functional.mse_loss(
+                expected_input,
+                expected_target,
+                reduction="sum",
+            )
+        finally:
+            reference_torch.set_num_threads(original_threads)
+        actual = functional.mse_loss(actual_input, actual_target, reduction="sum")
+
+        self.assert_matches(actual, expected, case="large cascade sum")
+
     def test_same_stride_noncontiguous_cases_match_pytorch_2_13(self):
         actual_cases = self.make_same_stride_noncontiguous_cases(torch)
         expected_cases = self.make_same_stride_noncontiguous_cases(reference_torch)
