@@ -45,19 +45,8 @@ impl LazyZeroedStorage {
     }
 
     fn data_ptr(&self) -> *const u8 {
-        if let Some(values) = self.initialized.get() {
-            return values.as_ptr().cast();
-        }
-
-        let allocation = self
-            .allocation
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(values) = allocation.as_ref() {
-            return values.as_ptr().cast();
-        }
-
-        drop(allocation);
+        // Public pointer APIs must expose initialized tensor contents, not
+        // spare vector capacity that later materialization would overwrite.
         self.values().as_ptr().cast()
     }
 
@@ -439,9 +428,14 @@ mod tests {
     #[test]
     fn lazy_zeroed_float32_payload_preserves_pointer_and_copy_paths() {
         let storage = Storage::from_lazy_zeroed(4, DType::Float32, Device::Cpu).unwrap();
+        let StoragePayload::CpuFloat32(StorageData::LazyZeroed(values)) = &storage.payload else {
+            panic!("expected lazy storage");
+        };
+        assert!(values.initialized.get().is_none());
         let pointer = storage.data_ptr();
 
         assert!(!pointer.is_null());
+        assert!(values.initialized.get().is_some());
         assert_eq!(storage.dtype(), DType::Float32);
         assert_eq!(storage.device(), Device::Cpu);
         assert_eq!(storage.len(), 4);

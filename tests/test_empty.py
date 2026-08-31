@@ -1,4 +1,5 @@
 import copy
+import ctypes
 import inspect
 import pickle
 import re
@@ -134,6 +135,19 @@ class EmptyTests(unittest.TestCase):
                 else:
                     self.assertEqual(first.data_ptr(), 0)
                     self.assertEqual(second.data_ptr(), 0)
+
+    def test_data_ptr_writes_are_visible_to_tensor_reads(self):
+        values = (12.5, -3.0, 7.25)
+        tensor = torch.empty((len(values),))
+        pointer = tensor.data_ptr()
+        self.assertNotEqual(pointer, 0)
+
+        buffer = (ctypes.c_float * len(values)).from_address(pointer)
+        buffer[:] = values
+
+        self.assertEqual(tensor.data_ptr(), pointer)
+        self.assertEqual(tensor.const_data_ptr(), pointer)
+        self.assertEqual(tensor.tolist(), list(values))
 
     def test_one_positional_dimension_uses_the_index_protocol(self):
         class IntSubclass(int):

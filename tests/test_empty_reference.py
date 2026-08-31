@@ -1,4 +1,5 @@
 import copy
+import ctypes
 import pickle
 import unittest
 
@@ -132,6 +133,19 @@ class EmptyReferenceTests(unittest.TestCase):
                     contract(torch, size),
                     contract(reference_torch, size),
                 )
+
+    def test_data_ptr_writes_match_pytorch_2_13(self):
+        values = (12.5, -3.0, 7.25)
+
+        def contract(module):
+            tensor = module.empty((len(values),), dtype=module.float32)
+            pointer = tensor.data_ptr()
+            self.assertNotEqual(pointer, 0)
+            buffer = (ctypes.c_float * len(values)).from_address(pointer)
+            buffer[:] = values
+            return tensor.data_ptr() == pointer, tensor.tolist()
+
+        self.assertEqual(contract(torch), contract(reference_torch))
 
     def test_integer_protocol_single_size_matches_pytorch_2_13(self):
         for value_factory in (
