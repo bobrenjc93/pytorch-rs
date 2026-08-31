@@ -571,15 +571,18 @@ its implementation engine.
 #### Creation
 
 `torch.as_tensor(data, dtype=None, device=None)` is exposed as a
-PyTorch-style top-level builtin for identity conversion only. When `data` is an
-exact native CPU `float32` tensor and `dtype` and `device` are omitted, `None`,
-or the unindexed CPU/`torch.float32` defaults, the exact same Python Tensor
-object is returned with unchanged storage, shape, stride, storage offset, dtype,
-device, layout, autograd history, leaf state, and output number. Python
-sequences, NumPy arrays, scalars, tensor subclasses, dtype conversions,
-accelerator or meta devices, indexed CPU devices that would require a copy,
-pinned-memory options, concrete or `None` `out` arguments, and explicit copy
-requests remain unsupported.
+PyTorch-style top-level builtin for exact native tensor identity and default CPU
+`float32` construction from Python real scalars and rectangular exact
+list/tuple inputs. Exact native CPU `float32` tensors with omitted, `None`, or
+unindexed CPU/`torch.float32` metadata are returned as the same Python Tensor
+object with unchanged storage, shape, stride, storage offset, dtype, device,
+layout, autograd history, leaf state, and output number. Scalar and sequence
+inputs allocate fresh CPU `float32` leaf tensors with PyTorch-compatible shape,
+stride, device, layout, `requires_grad=False`, output number zero, nested-shape
+errors, and empty nested-sequence behavior. NumPy arrays, buffers, NumPy
+scalars, tensor subclasses, dtype conversions, accelerator or meta devices,
+indexed CPU devices that would require a copy, pinned-memory options, concrete
+or `None` `out` arguments, and explicit copy requests remain unsupported.
 
 `torch.asarray(obj, *, dtype=None, device=None, copy=None, requires_grad=None)`
 is exposed as the matching identity-only array conversion sibling. Exact native
