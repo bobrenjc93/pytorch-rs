@@ -23,6 +23,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/rank11-sum-release-timings.md",
     ),
     (
+        "Rank-12 `Tensor.sum` release timings",
+        "docs/rank12-sum-release-timings.md",
+    ),
+    (
         '`torch.nn.functional.mse_loss(reduction="none")` release timings',
         "docs/mse-loss-release-timings.md",
     ),
