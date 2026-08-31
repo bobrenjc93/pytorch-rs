@@ -38,6 +38,10 @@ HISTORICAL_TIMING_REPORTS = (
         '`torch.nn.functional.l1_loss(reduction="none")` release timings',
         "docs/l1-loss-release-timings.md",
     ),
+    (
+        "True-division tensor release timings",
+        "docs/tensor-div-release-timings.md",
+    ),
 )
 SUPPORTED_SURFACE_ANCHORS = (
     ("Tensors", "tensors"),
