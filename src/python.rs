@@ -2641,6 +2641,14 @@ struct BoundTopLevelAddCall<'py> {
     out: Option<BoundTensorOrTorchFunction<'py>>,
 }
 
+struct ParsedTopLevelAddArguments<'py> {
+    input: Option<ParsedCallArgument<'py>>,
+    other: Option<ParsedCallArgument<'py>>,
+    alpha: Option<Bound<'py, PyAny>>,
+    out: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
 enum BoundAddOperand<'py> {
     Tensor(Bound<'py, PyTensor>),
     Scalar(Bound<'py, PyAny>),
@@ -11472,82 +11480,15 @@ fn bind_top_level_add_arguments<'py>(
         )));
     }
 
-    let mut input = if positional.is_empty() {
-        None
-    } else {
-        Some(ParsedCallArgument {
-            value: positional.get_item(0)?,
-            position: Some(1),
-        })
-    };
-    let mut other = if positional.len() < 2 {
-        None
-    } else {
-        Some(ParsedCallArgument {
-            value: positional.get_item(1)?,
-            position: Some(2),
-        })
-    };
-    let mut alpha = None;
-    let mut out = None;
-    let mut keyword_error = None;
-
-    if let Some(keywords) = keywords {
-        for (key, value) in keywords {
-            let key = key.extract::<String>()?;
-            match key.as_str() {
-                "input" => {
-                    if input.is_some() {
-                        keyword_error.get_or_insert_with(|| {
-                            PyTypeError::new_err("add() got multiple values for argument 'input'")
-                        });
-                    } else {
-                        input = Some(ParsedCallArgument {
-                            value,
-                            position: None,
-                        });
-                    }
-                }
-                "x" | "a" | "x1" if positional.is_empty() && input.is_none() => {
-                    input = Some(ParsedCallArgument {
-                        value,
-                        position: None,
-                    });
-                }
-                "other" => {
-                    if other.is_some() {
-                        keyword_error.get_or_insert_with(|| {
-                            PyTypeError::new_err("add() got multiple values for argument 'other'")
-                        });
-                    } else {
-                        other = Some(ParsedCallArgument {
-                            value,
-                            position: None,
-                        });
-                    }
-                }
-                "x2" if positional.len() < 2 && other.is_none() => {
-                    other = Some(ParsedCallArgument {
-                        value,
-                        position: None,
-                    });
-                }
-                "alpha" => {
-                    alpha = Some(value);
-                }
-                "out" => {
-                    out = Some(value);
-                }
-                _ => {
-                    keyword_error.get_or_insert_with(|| {
-                        PyTypeError::new_err(format!(
-                            "add() got an unexpected keyword argument '{key}'"
-                        ))
-                    });
-                }
-            }
-        }
-    }
+    let arguments = initial_top_level_add_arguments(positional)?;
+    let arguments = merge_top_level_add_keywords(positional, keywords, arguments)?;
+    let ParsedTopLevelAddArguments {
+        input,
+        other,
+        alpha,
+        out,
+        keyword_error,
+    } = arguments;
 
     let Some(input) = input else {
         return Err(PyTypeError::new_err(
@@ -11575,6 +11516,100 @@ fn bind_top_level_add_arguments<'py>(
         alpha,
         out,
     })
+}
+
+fn initial_top_level_add_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+) -> PyResult<ParsedTopLevelAddArguments<'py>> {
+    let input = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let other = if positional.len() < 2 {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    };
+    Ok(ParsedTopLevelAddArguments {
+        input,
+        other,
+        alpha: None,
+        out: None,
+        keyword_error: None,
+    })
+}
+
+fn merge_top_level_add_keywords<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+    mut arguments: ParsedTopLevelAddArguments<'py>,
+) -> PyResult<ParsedTopLevelAddArguments<'py>> {
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "input" => bind_top_level_add_keyword(
+                    &mut arguments.input,
+                    value,
+                    "add() got multiple values for argument 'input'",
+                    &mut arguments.keyword_error,
+                ),
+                "x" | "a" | "x1" if positional.is_empty() && arguments.input.is_none() => {
+                    arguments.input = Some(keyword_call_argument(value));
+                }
+                "other" => bind_top_level_add_keyword(
+                    &mut arguments.other,
+                    value,
+                    "add() got multiple values for argument 'other'",
+                    &mut arguments.keyword_error,
+                ),
+                "x2" if positional.len() < 2 && arguments.other.is_none() => {
+                    arguments.other = Some(keyword_call_argument(value));
+                }
+                "alpha" => {
+                    arguments.alpha = Some(value);
+                }
+                "out" => {
+                    arguments.out = Some(value);
+                }
+                _ => {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "add() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+    Ok(arguments)
+}
+
+fn bind_top_level_add_keyword<'py>(
+    slot: &mut Option<ParsedCallArgument<'py>>,
+    value: Bound<'py, PyAny>,
+    duplicate_message: &'static str,
+    keyword_error: &mut Option<PyErr>,
+) {
+    if slot.is_some() {
+        keyword_error.get_or_insert_with(|| PyTypeError::new_err(duplicate_message));
+    } else {
+        *slot = Some(keyword_call_argument(value));
+    }
+}
+
+fn keyword_call_argument(value: Bound<'_, PyAny>) -> ParsedCallArgument<'_> {
+    ParsedCallArgument {
+        value,
+        position: None,
+    }
 }
 
 fn bind_top_level_reshape_arguments<'py>(
@@ -14533,10 +14568,12 @@ impl ParsedArithmeticScalar {
     fn is_default_add_alpha(&self) -> bool {
         match self {
             Self::PythonBool(value) => *value,
-            Self::Number(ParsedFillValue::Float(value)) => *value == 1.0,
+            Self::Number(ParsedFillValue::Float(value)) => value.to_bits() == 1.0_f64.to_bits(),
             Self::Number(ParsedFillValue::SignedInteger(value)) => *value == 1,
             Self::Number(ParsedFillValue::UnsignedInteger(value)) => *value == 1,
-            Self::Number(ParsedFillValue::TensorScalar(value)) => *value == 1.0,
+            Self::Number(ParsedFillValue::TensorScalar(value)) => {
+                value.to_bits() == 1.0_f32.to_bits()
+            }
             Self::WideNumpyUnsigned => false,
         }
     }
