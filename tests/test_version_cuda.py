@@ -1,6 +1,8 @@
+import copy
 import importlib
 import importlib.metadata
 import os
+import pickle
 import subprocess
 import sys
 import types
@@ -23,6 +25,7 @@ class VersionCudaTests(unittest.TestCase):
         self.assertIs(type(version.__version__), str)
         self.assertIs(version.debug, False)
         self.assertIs(torch._C._has_cuda, False)
+        self.assertIs(version.git_version, None)
         for name in ("cuda", "hip", "rocm", "xpu"):
             with self.subTest(name=name):
                 self.assertIs(getattr(version, name), None)
@@ -42,6 +45,7 @@ class VersionCudaTests(unittest.TestCase):
                 with mock.patch.dict(os.environ, environment, clear=True):
                     self.assertIs(version.debug, False)
                     self.assertIs(torch._C._has_cuda, False)
+                    self.assertIs(version.git_version, None)
                     for name in ("cuda", "hip", "rocm", "xpu"):
                         self.assertIs(getattr(version, name), None)
 
@@ -56,7 +60,7 @@ class VersionCudaTests(unittest.TestCase):
         self.assertIsNone(version.__doc__)
         self.assertEqual(
             version.__all__,
-            ["__version__", "debug", "cuda", "hip", "rocm", "xpu"],
+            ["__version__", "debug", "cuda", "git_version", "hip", "rocm", "xpu"],
         )
         self.assertEqual(
             version.__annotations__,
@@ -74,10 +78,10 @@ class VersionCudaTests(unittest.TestCase):
         self.assertIs(version.Optional, typing.Optional)
         self.assertEqual(
             {name for name in vars(version) if not name.startswith("_")},
-            {"Optional", "debug", "cuda", "hip", "rocm", "xpu"},
+            {"Optional", "debug", "cuda", "git_version", "hip", "rocm", "xpu"},
         )
         self.assertIs(version.debug, False)
-        self.assertFalse(hasattr(version, "git_version"))
+        self.assertIs(version.git_version, None)
 
     def test_direct_and_wildcard_imports_use_the_canonical_module(self):
         version = torch.version
@@ -91,7 +95,7 @@ class VersionCudaTests(unittest.TestCase):
         exec("import torch_rs.version as version", module_import)
         exec(
             "from torch_rs.version import "
-            "__version__, debug, cuda, hip, rocm, xpu",
+            "__version__, debug, cuda, git_version, hip, rocm, xpu",
             direct_import,
         )
         exec("from torch_rs.version import *", child_wildcard)
@@ -101,22 +105,24 @@ class VersionCudaTests(unittest.TestCase):
         self.assertIs(module_import["version"], version)
         self.assertIs(direct_import["__version__"], version.__version__)
         self.assertIs(direct_import["debug"], version.debug)
-        for name in ("cuda", "hip", "rocm", "xpu"):
+        for name in ("cuda", "git_version", "hip", "rocm", "xpu"):
             self.assertIs(direct_import[name], getattr(version, name))
         self.assertEqual(
             [name for name in child_wildcard if name != "__builtins__"],
-            ["__version__", "debug", "cuda", "hip", "rocm", "xpu"],
+            ["__version__", "debug", "cuda", "git_version", "hip", "rocm", "xpu"],
         )
         self.assertIs(child_wildcard["__version__"], version.__version__)
         self.assertIs(child_wildcard["debug"], version.debug)
-        for name in ("cuda", "hip", "rocm", "xpu"):
+        for name in ("cuda", "git_version", "hip", "rocm", "xpu"):
             self.assertIs(child_wildcard[name], getattr(version, name))
         self.assertNotIn("version", torch.__all__)
         self.assertNotIn("__version__", torch.__all__)
         self.assertNotIn("debug", torch.__all__)
+        self.assertNotIn("git_version", torch.__all__)
         self.assertNotIn("version", top_level_wildcard)
         self.assertNotIn("__version__", top_level_wildcard)
         self.assertNotIn("debug", top_level_wildcard)
+        self.assertNotIn("git_version", top_level_wildcard)
         for name in ("cuda", "hip", "rocm", "xpu"):
             self.assertNotIn(name, torch.__all__)
             self.assertNotIn(name, top_level_wildcard)
@@ -129,7 +135,7 @@ class VersionCudaTests(unittest.TestCase):
         expected_package_version = torch.__version__
         version.__version__ = "stale"
         version.debug = True
-        for name in ("cuda", "hip", "rocm", "xpu"):
+        for name in ("cuda", "git_version", "hip", "rocm", "xpu"):
             setattr(version, name, "stale")
 
         reloaded = importlib.reload(version)
@@ -142,7 +148,7 @@ class VersionCudaTests(unittest.TestCase):
         self.assertIs(version.__annotations__, old_annotations)
         self.assertEqual(
             version.__all__,
-            ["__version__", "debug", "cuda", "hip", "rocm", "xpu"],
+            ["__version__", "debug", "cuda", "git_version", "hip", "rocm", "xpu"],
         )
         self.assertEqual(
             list(version.__annotations__),
@@ -150,12 +156,38 @@ class VersionCudaTests(unittest.TestCase):
         )
         self.assertIs(version.__version__, expected_package_version)
         self.assertIs(version.debug, False)
-        for name in ("cuda", "hip", "rocm", "xpu"):
+        for name in ("cuda", "git_version", "hip", "rocm", "xpu"):
             self.assertIs(getattr(version, name), None)
 
-    def test_import_does_not_import_pytorch_or_probe_accelerator_runtimes(self):
+    def test_metadata_constants_copy_deepcopy_and_pickle_as_values(self):
+        version = torch.version
+
+        for name in ("debug", "cuda", "git_version", "hip", "rocm", "xpu"):
+            value = getattr(version, name)
+            with self.subTest(name=name):
+                self.assertIs(copy.copy(value), value)
+                self.assertIs(copy.deepcopy(value), value)
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                    with self.subTest(protocol=protocol):
+                        self.assertIs(
+                            pickle.loads(pickle.dumps(value, protocol=protocol)),
+                            value,
+                        )
+
+        self.assertIs(copy.copy(version.__version__), version.__version__)
+        self.assertIs(copy.deepcopy(version.__version__), version.__version__)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(name="__version__", protocol=protocol):
+                restored = pickle.loads(
+                    pickle.dumps(version.__version__, protocol=protocol)
+                )
+                self.assertIs(type(restored), str)
+                self.assertEqual(restored, version.__version__)
+
+    def test_import_does_not_import_pytorch_or_probe_runtimes_or_git(self):
         script = r"""
 import os
+import subprocess as subprocess_module
 import sys
 
 class RejectExternalRuntimeImport:
@@ -176,6 +208,13 @@ class RejectExternalRuntimeImport:
         return None
 
 sys.meta_path.insert(0, RejectExternalRuntimeImport())
+
+def reject_subprocess_probe(*args, **kwargs):
+    raise RuntimeError("subprocess probe was attempted")
+
+subprocess_module.run = reject_subprocess_probe
+subprocess_module.check_call = reject_subprocess_probe
+subprocess_module.check_output = reject_subprocess_probe
 os.environ.update(
     CUDA_VISIBLE_DEVICES="0",
     NVIDIA_VISIBLE_DEVICES="all",
@@ -184,7 +223,7 @@ os.environ.update(
 import torch_rs as torch
 import torch_rs.version as version
 from torch_rs import version as package_version
-from torch_rs.version import __version__, debug, cuda, hip, rocm, xpu
+from torch_rs.version import __version__, debug, cuda, git_version, hip, rocm, xpu
 
 assert version is package_version is torch.version
 assert version is sys.modules["torch_rs.version"]
@@ -192,10 +231,10 @@ assert __version__ == version.__version__ == torch.__version__
 assert debug is version.debug is False
 assert torch._C._has_cuda is False
 assert cuda is version.cuda is None
+assert git_version is version.git_version is None
 assert hip is version.hip is None
 assert rocm is version.rocm is None
 assert xpu is version.xpu is None
-assert not hasattr(version, "git_version")
 assert torch.cuda.is_available() is False
 assert torch.cuda.device_count() == 0
 assert not hasattr(torch, "debug")
