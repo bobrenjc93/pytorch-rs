@@ -140,6 +140,40 @@ class AsTensorTests(unittest.TestCase):
         self.assertEqual(explicit.shape, (2,))
         self.assertEqual(explicit.stride(), (1,))
 
+    def test_python_numeric_boundaries_cast_to_float32(self):
+        large_integer = 2**100
+        cases = (
+            ("large float scalar", 1e100, np.asarray([np.inf], dtype=np.float32)),
+            (
+                "large float vector",
+                [1e100, -1e100],
+                np.asarray([np.inf, -np.inf], dtype=np.float32),
+            ),
+            (
+                "large int scalar",
+                large_integer,
+                np.asarray([float(large_integer)], dtype=np.float32),
+            ),
+            (
+                "large int vector",
+                [large_integer, -large_integer],
+                np.asarray([float(large_integer), float(-large_integer)], dtype=np.float32),
+            ),
+        )
+        for case, data, expected in cases:
+            with self.subTest(case=case):
+                result = torch.as_tensor(data, dtype=torch.float32)
+                self.assertIs(result.dtype, torch.float32)
+                np.testing.assert_array_equal(
+                    np.asarray(result).reshape(-1),
+                    expected,
+                )
+
+        with self.assertRaises(OverflowError):
+            torch.as_tensor(2**2000, dtype=torch.float32)
+        with self.assertRaises(OverflowError):
+            torch.as_tensor([2**2000], dtype=torch.float32)
+
     def test_rectangular_sequence_errors_are_reported(self):
         cases = (
             (

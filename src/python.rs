@@ -14405,17 +14405,12 @@ fn flatten_as_tensor_sequence(
     Ok(())
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn extract_as_tensor_python_real_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<f32>> {
-    let parsed = if value.is_exact_instance_of::<PyInt>() {
-        Some(parse_integer_fill_value(value)?)
-    } else if value.is_exact_instance_of::<PyFloat>() {
-        Some(value.extract::<f64>().map(ParsedFillValue::Float)?)
-    } else {
-        None
-    };
-    parsed
-        .map(ParsedFillValue::into_scalar_tensor_f32)
-        .transpose()
+    if value.is_exact_instance_of::<PyInt>() || value.is_exact_instance_of::<PyFloat>() {
+        return value.extract::<f64>().map(|value| Some(value as f32));
+    }
+    Ok(None)
 }
 
 fn is_as_tensor_list_or_tuple(value: &Bound<'_, PyAny>) -> bool {

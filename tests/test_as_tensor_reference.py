@@ -132,6 +132,25 @@ class AsTensorReferenceTests(unittest.TestCase):
                         self.comparable_tensor_state(reference_torch, expected),
                     )
 
+    def test_explicit_float32_numeric_boundaries_match_pytorch_2_13(self):
+        large_integer = 2**100
+        cases = (
+            ("large float scalar", 1e100),
+            ("large float vector", [1e100, -1e100]),
+            ("large int scalar", large_integer),
+            ("large int vector", [large_integer, -large_integer]),
+        )
+        for case, data in cases:
+            with self.subTest(case=case):
+                actual = torch.as_tensor(data, dtype=torch.float32)
+                expected = reference_torch.as_tensor(
+                    data, dtype=reference_torch.float32
+                )
+                self.assertEqual(
+                    self.comparable_tensor_state(torch, actual),
+                    self.comparable_tensor_state(reference_torch, expected),
+                )
+
     def test_rectangular_sequence_errors_match_pytorch_2_13(self):
         actual_cases = (
             lambda: torch.as_tensor([[1.0], [2.0, 3.0]]),
