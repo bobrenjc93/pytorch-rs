@@ -1,4 +1,5 @@
 # mypy: allow-untyped-defs
+from contextlib import contextmanager as _contextmanager
 from typing import Any as _Any
 
 import torch_rs as torch
@@ -18,6 +19,7 @@ __all__ = [
     "allow_fp16_bf16_reduction_math_sdp",
     "fp16_bf16_reduction_math_sdp_allowed",
     "is_flash_attention_available",
+    "sdp_kernel",
 ]
 
 
@@ -95,6 +97,25 @@ class cuBLASModule:
 
 
 matmul = cuBLASModule()
+
+
+def _sdp_bool_type_name(value):
+    value_type = type(value)
+    if value_type is torch.Tensor:
+        return "Tensor"
+    if value_type is torch.dtype:
+        return "torch.dtype"
+    if value_type is torch.device:
+        return "torch.device"
+    if value_type is torch.layout:
+        return "torch.layout"
+    if value_type is torch.Size:
+        return "torch.Size"
+    if value_type is torch.finfo:
+        return "torch.finfo"
+    if value_type.__module__ == "numpy":
+        return f"numpy.{value_type.__name__}"
+    return value_type.__name__
 
 
 def is_ck_sdpa_available() -> bool:
@@ -178,6 +199,36 @@ def fp16_bf16_reduction_math_sdp_allowed():
     Returns whether fp16/bf16 reduction in math scaled dot product attention is enabled or not.
     """
     return torch._C._get_math_sdp_allow_fp16_bf16_reduction()
+
+
+@_contextmanager
+def sdp_kernel(
+    enable_flash: bool = True,
+    enable_math: bool = True,
+    enable_mem_efficient: bool = True,
+    enable_cudnn: bool = True,
+):
+    r"""
+    .. warning:: This flag is beta and subject to change.
+
+    This context manager can be used to temporarily enable or disable any of the three backends for scaled dot product attention.
+    Upon exiting the context manager, the previous state of the flags will be restored.
+    """
+    previous_flash = flash_sdp_enabled()
+    previous_math = math_sdp_enabled()
+    previous_mem_efficient = mem_efficient_sdp_enabled()
+    try:
+        enable_flash_sdp(enable_flash)
+        enable_math_sdp(enable_math)
+        enable_mem_efficient_sdp(enable_mem_efficient)
+        if not isinstance(enable_cudnn, bool):
+            type_name = _sdp_bool_type_name(enable_cudnn)
+            raise RuntimeError(f"set_sdp_use_math expects a bool, but got {type_name}")
+        yield {}
+    finally:
+        enable_flash_sdp(previous_flash)
+        enable_math_sdp(previous_math)
+        enable_mem_efficient_sdp(previous_mem_efficient)
 
 
 def is_flash_attention_available() -> bool:

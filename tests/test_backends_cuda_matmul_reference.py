@@ -32,6 +32,7 @@ SUPPORTED_CUDA_NAMES = {
     "math_sdp_enabled",
     "matmul",
     "mem_efficient_sdp_enabled",
+    "sdp_kernel",
 }
 MATMUL_ATTRIBUTES = (
     "allow_tf32",

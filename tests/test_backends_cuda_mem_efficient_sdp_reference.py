@@ -287,6 +287,7 @@ class CudaMemEfficientSdpReferenceTests(unittest.TestCase):
             "math_sdp_enabled",
             "matmul",
             "mem_efficient_sdp_enabled",
+            "sdp_kernel",
         }
 
         self.assertIs(torch.backends.cuda, actual)

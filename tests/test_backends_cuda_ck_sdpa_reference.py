@@ -110,6 +110,7 @@ class CudaCkSdpaAvailabilityReferenceTests(unittest.TestCase):
                     "math_sdp_enabled",
                     "matmul",
                     "mem_efficient_sdp_enabled",
+                    "sdp_kernel",
                 }
             ],
         )
@@ -285,7 +286,6 @@ class CudaCkSdpaAvailabilityReferenceTests(unittest.TestCase):
             "can_use_efficient_attention",
             "can_use_flash_attention",
             "enable_cudnn_sdp",
-            "sdp_kernel",
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch.backends.cuda, name))
