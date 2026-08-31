@@ -129,6 +129,24 @@ class EmptyTests(unittest.TestCase):
                     self.assertNotEqual(with_out_none.data_ptr(), peer.data_ptr())
 
     def test_unsupported_boundaries_are_rejected(self):
+        for call, message in (
+            (
+                lambda: torch.empty((-1,)),
+                "Trying to create tensor with negative dimension -1: [-1]",
+            ),
+            (
+                lambda: torch.empty([1, -2]),
+                "Trying to create tensor with negative dimension -2: [1, -2]",
+            ),
+            (
+                lambda: torch.empty(size=(-1,)),
+                "Trying to create tensor with negative dimension -1: [-1]",
+            ),
+        ):
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(RuntimeError, f"^{re.escape(message)}$"):
+                    call()
+
         out = torch.zeros((1,))
         with self.assertRaisesRegex(
             RuntimeError,

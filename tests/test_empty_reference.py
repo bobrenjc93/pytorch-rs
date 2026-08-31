@@ -181,12 +181,22 @@ class EmptyReferenceTests(unittest.TestCase):
                     self.tensor_contract(reference_torch, expected),
                 )
 
-    def test_negative_positional_dimension_matches_pytorch_2_13(self):
-        for dimension in (-1, IndexDimension(-1)):
-            with self.subTest(dimension=dimension):
+    def test_negative_dimensions_match_pytorch_2_13(self):
+        cases = (
+            ("positional scalar", lambda module: module.empty(-1)),
+            (
+                "positional index scalar",
+                lambda module: module.empty(IndexDimension(-1)),
+            ),
+            ("tuple dimension", lambda module: module.empty((-1,))),
+            ("list dimension", lambda module: module.empty([1, -2])),
+            ("size keyword dimension", lambda module: module.empty(size=(-1,))),
+        )
+        for case, create in cases:
+            with self.subTest(case=case):
                 self.assert_error_matches(
-                    lambda dimension=dimension: torch.empty(dimension),
-                    lambda dimension=dimension: reference_torch.empty(dimension),
+                    lambda create=create: create(torch),
+                    lambda create=create: create(reference_torch),
                 )
 
     def test_unsupported_boundaries_are_pinned(self):

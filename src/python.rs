@@ -5097,6 +5097,11 @@ enum PendingCreationSize<'py> {
     PositionalScalar(Bound<'py, PyAny>),
 }
 
+enum PendingEmptySize<'py> {
+    Dimensions(Vec<i64>),
+    PositionalScalar(Bound<'py, PyAny>),
+}
+
 struct ParsedCreationSize {
     dimensions: Vec<usize>,
     scalar_dimension: Option<usize>,
@@ -8420,7 +8425,7 @@ fn parse_empty_arguments(arguments: EmptyCallArguments<'_>) -> PyResult<ParsedEm
         keyword_error,
     } = arguments;
 
-    let size = parse_creation_size("empty", size.as_ref(), size_origin, None)?;
+    let size = parse_empty_size(size.as_ref(), size_origin)?;
     let has_out = validate_creation_out("empty", out.as_ref())?;
     let dtype = parse_dtype("empty", dtype.as_ref())?;
     parse_factory_layout("empty", layout.as_ref())?;
@@ -8430,7 +8435,7 @@ fn parse_empty_arguments(arguments: EmptyCallArguments<'_>) -> PyResult<ParsedEm
     if let Some(error) = keyword_error {
         return Err(error);
     }
-    let size = finish_creation_size("empty", size)?;
+    let size = finish_empty_size(size)?;
     let device = parse_device("empty", device.as_ref())?;
     Ok(ParsedEmptyArguments {
         size,
@@ -8440,6 +8445,48 @@ fn parse_empty_arguments(arguments: EmptyCallArguments<'_>) -> PyResult<ParsedEm
         pin_memory,
         requires_grad,
     })
+}
+
+fn parse_empty_size<'py>(
+    size: Option<&Bound<'py, PyAny>>,
+    size_origin: Option<CreationSizeOrigin>,
+) -> PyResult<PendingEmptySize<'py>> {
+    let Some(value) = size else {
+        return Err(PyTypeError::new_err(
+            "empty() missing 1 required positional arguments: \"size\"",
+        ));
+    };
+
+    let sequence_error = match parse_factory_size("empty", value) {
+        Ok(dimensions) => return Ok(PendingEmptySize::Dimensions(dimensions)),
+        Err(error) => error,
+    };
+    if size_origin != Some(CreationSizeOrigin::Positional) {
+        return Err(sequence_error);
+    }
+
+    bind_creation_positional_dimension("empty", value, sequence_error).map(|size| match size {
+        PendingCreationSize::PositionalScalar(dimension) => {
+            PendingEmptySize::PositionalScalar(dimension)
+        }
+        PendingCreationSize::Dimensions(_) => {
+            unreachable!("positional scalar binding never returns sequence dimensions")
+        }
+    })
+}
+
+fn finish_empty_size(size: PendingEmptySize<'_>) -> PyResult<ParsedCreationSize> {
+    match size {
+        PendingEmptySize::Dimensions(size) => {
+            validate_size(size).map(|dimensions| ParsedCreationSize {
+                dimensions,
+                scalar_dimension: None,
+            })
+        }
+        PendingEmptySize::PositionalScalar(dimension) => {
+            finish_creation_size("empty", PendingCreationSize::PositionalScalar(dimension))
+        }
+    }
 }
 
 fn parse_ones_like_arguments(
@@ -8656,7 +8703,7 @@ fn parse_creation_size<'py>(
         Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
         Err(error) => error,
     };
-    if !matches!(function, "zeros" | "ones" | "empty") || origin != CreationSizeOrigin::Positional {
+    if !matches!(function, "zeros" | "ones") || origin != CreationSizeOrigin::Positional {
         return Err(sequence_error);
     }
 
@@ -8836,14 +8883,18 @@ fn validate_eye_dimension(argument: &str, dimension: i64) -> PyResult<usize> {
 }
 
 fn parse_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
+    parse_factory_size("full", size)
+}
+
+fn parse_factory_size(function: &str, size: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
     if let Ok(size) = size.cast::<PyList>() {
-        parse_size_dimensions(size.len(), size.iter())
+        parse_size_dimensions(function, size.len(), size.iter())
     } else if let Ok(size) = size.cast::<PyTuple>() {
-        parse_size_dimensions(size.len(), size.iter())
+        parse_size_dimensions(function, size.len(), size.iter())
     } else {
-        Err(PyTypeError::new_err(
-            "full(): argument 'size' must be a tuple or list of integers",
-        ))
+        Err(PyTypeError::new_err(format!(
+            "{function}(): argument 'size' must be a tuple or list of integers"
+        )))
     }
 }
 
@@ -15590,6 +15641,7 @@ fn invalid_reshape_dimension(index: usize, reason: &str) -> PyErr {
 }
 
 fn parse_size_dimensions<'py>(
+    function: &str,
     length: usize,
     dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
 ) -> PyResult<Vec<i64>> {
@@ -15598,6 +15650,7 @@ fn parse_size_dimensions<'py>(
     for (index, dimension) in dimensions.enumerate() {
         if dimension.is_instance_of::<PyBool>() {
             return Err(invalid_size_dimension(
+                function,
                 index,
                 "bool is not a valid size dimension",
             ));
@@ -15606,7 +15659,7 @@ fn parse_size_dimensions<'py>(
             &mut parsed,
             dimension
                 .extract::<i64>()
-                .map_err(|error| invalid_size_dimension(index, &error.to_string()))?,
+                .map_err(|error| invalid_size_dimension(function, index, &error.to_string()))?,
         )?;
     }
 
@@ -15721,9 +15774,9 @@ fn python_allocation_error() -> PyErr {
     PyRuntimeError::new_err("std::bad_alloc")
 }
 
-fn invalid_size_dimension(index: usize, reason: &str) -> PyErr {
+fn invalid_size_dimension(function: &str, index: usize, reason: &str) -> PyErr {
     PyTypeError::new_err(format!(
-        "full(): size element at index {index} is invalid: {reason}"
+        "{function}(): size element at index {index} is invalid: {reason}"
     ))
 }
 
