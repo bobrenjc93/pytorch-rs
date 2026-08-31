@@ -2714,6 +2714,11 @@ impl Tensor {
             output.extend(values.iter().copied().map(&operation));
             return Ok(output);
         }
+        if let Some(output) =
+            self.materialize_owned_rank_2_with_strides(output_strides, &operation)?
+        {
+            return Ok(output);
+        }
         output.resize(self.elements, 0.0);
         for (linear_index, value) in self.logical_values().enumerate() {
             let output_offset =
@@ -2724,6 +2729,55 @@ impl Tensor {
             *slot = operation(value);
         }
         Ok(output)
+    }
+
+    fn materialize_owned_rank_2_with_strides(
+        &self,
+        output_strides: &[usize],
+        operation: &impl Fn(f32) -> f32,
+    ) -> Result<Option<Vec<f32>>, TensorError> {
+        let [rows, columns] = self.shape.as_slice() else {
+            return Ok(None);
+        };
+        if *rows == 0 || *columns == 0 {
+            return Ok(None);
+        }
+        let Some(values) = self.storage.owned_values() else {
+            return Ok(None);
+        };
+        if !layout_is_non_overlapping_and_dense(&self.shape, output_strides, self.elements) {
+            return Ok(None);
+        }
+        let [input_row_stride, input_column_stride] = self.strides.as_slice() else {
+            return Ok(None);
+        };
+        let [output_row_stride, output_column_stride] = output_strides else {
+            return Ok(None);
+        };
+
+        let mut output = filled_storage(self.elements, 0.0)?;
+        if output_row_stride <= output_column_stride {
+            for column in 0..*columns {
+                let mut input_offset = self.offset + column * input_column_stride;
+                let mut output_offset = column * output_column_stride;
+                for _ in 0..*rows {
+                    output[output_offset] = operation(values[input_offset]);
+                    input_offset += input_row_stride;
+                    output_offset += output_row_stride;
+                }
+            }
+        } else {
+            for row in 0..*rows {
+                let mut input_offset = self.offset + row * input_row_stride;
+                let mut output_offset = row * output_row_stride;
+                for _ in 0..*columns {
+                    output[output_offset] = operation(values[input_offset]);
+                    input_offset += input_column_stride;
+                    output_offset += output_column_stride;
+                }
+            }
+        }
+        Ok(Some(output))
     }
 
     /// Selects the leading dimension with one integer, returning a shared-storage view.
@@ -4096,6 +4150,11 @@ impl Tensor {
                 self.device(),
             ));
         }
+        if let Some(output) =
+            self.zip_map_same_shape_owned_rank_2(other, &shape, &strides, &operation)?
+        {
+            return Ok(output);
+        }
         let mut data = filled_storage(elements, 0.0)?;
         for linear_index in 0..elements {
             let output_offset = logical_offset_for_linear_index(&shape, &strides, 0, linear_index)?;
@@ -4111,6 +4170,72 @@ impl Tensor {
             self.dtype(),
             self.device(),
         ))
+    }
+
+    fn zip_map_same_shape_owned_rank_2(
+        &self,
+        other: &Self,
+        shape: &[usize],
+        output_strides: &[usize],
+        operation: &impl Fn(f32, f32) -> f32,
+    ) -> Result<Option<Self>, TensorError> {
+        let [rows, columns] = shape else {
+            return Ok(None);
+        };
+        if *rows == 0 || *columns == 0 {
+            return Ok(None);
+        }
+        let (Some(left_values), Some(right_values)) =
+            (self.storage.owned_values(), other.storage.owned_values())
+        else {
+            return Ok(None);
+        };
+        let [left_row_stride, left_column_stride] = self.strides.as_slice() else {
+            return Ok(None);
+        };
+        let [right_row_stride, right_column_stride] = other.strides.as_slice() else {
+            return Ok(None);
+        };
+        let [output_row_stride, output_column_stride] = output_strides else {
+            return Ok(None);
+        };
+
+        let mut data = filled_storage(self.elements, 0.0)?;
+        if output_row_stride <= output_column_stride {
+            for column in 0..*columns {
+                let mut left_offset = self.offset + column * left_column_stride;
+                let mut right_offset = other.offset + column * right_column_stride;
+                let mut output_offset = column * output_column_stride;
+                for _ in 0..*rows {
+                    data[output_offset] =
+                        operation(left_values[left_offset], right_values[right_offset]);
+                    left_offset += left_row_stride;
+                    right_offset += right_row_stride;
+                    output_offset += output_row_stride;
+                }
+            }
+        } else {
+            for row in 0..*rows {
+                let mut left_offset = self.offset + row * left_row_stride;
+                let mut right_offset = other.offset + row * right_row_stride;
+                let mut output_offset = row * output_row_stride;
+                for _ in 0..*columns {
+                    data[output_offset] =
+                        operation(left_values[left_offset], right_values[right_offset]);
+                    left_offset += left_column_stride;
+                    right_offset += right_column_stride;
+                    output_offset += output_column_stride;
+                }
+            }
+        }
+
+        Ok(Some(Self::from_owned_parts(
+            data,
+            try_clone_result_shape(shape, self.elements)?,
+            try_clone_result_shape(output_strides, self.elements)?,
+            self.dtype(),
+            self.device(),
+        )))
     }
 
     fn same_shape_elementwise_output_strides(
@@ -5119,6 +5244,11 @@ fn materialize_contiguous_trailing_broadcast(
         if trailing_singleton && left.shape[..prefix_end] == right.shape[..prefix_end] {
             return materialize_contiguous_trailing_singleton_broadcast(left, right, operation);
         }
+        if let Some(output) =
+            materialize_contiguous_leading_singleton_broadcast(left, right, operation)?
+        {
+            return Ok(Some(output));
+        }
         return Ok(None);
     } else {
         return Ok(None);
@@ -5186,6 +5316,116 @@ fn materialize_contiguous_trailing_broadcast(
     }
     debug_assert_eq!(data.len(), plan.elements);
     Ok(Some((data, plan)))
+}
+
+fn materialize_contiguous_leading_singleton_broadcast(
+    left: &Tensor,
+    right: &Tensor,
+    operation: &impl Fn(f32, f32) -> f32,
+) -> Result<Option<(Vec<f32>, BroadcastPlan)>, TensorError> {
+    let Some((broad, repeated, repeated_on_left, suffix_start)) =
+        leading_singleton_broadcast_operands(left, right)
+    else {
+        return Ok(None);
+    };
+    if broad.elements == 0 {
+        return Ok(None);
+    }
+    let (Some(broad_values), Some(repeated_values)) =
+        (broad.contiguous_slice(), repeated.contiguous_slice())
+    else {
+        return Ok(None);
+    };
+    let plan = BroadcastPlan::new(left, right)?;
+    if !layout_is_contiguous(&plan.shape, &plan.strides, plan.elements) {
+        return Ok(None);
+    }
+
+    let repeated_elements = repeated.shape[suffix_start..]
+        .iter()
+        .copied()
+        .product::<usize>();
+    debug_assert_eq!(repeated_elements, repeated_values.len());
+    debug_assert_eq!(broad_values.len(), plan.elements);
+    debug_assert_eq!(broad_values.len() % repeated_values.len(), 0);
+
+    let mut data = try_result_vector(plan.elements, plan.elements)?;
+    if repeated_on_left {
+        for broad_slice in broad_values.chunks_exact(repeated_values.len()) {
+            data.extend(
+                repeated_values
+                    .iter()
+                    .copied()
+                    .zip(broad_slice.iter().copied())
+                    .map(|(repeated, broad)| operation(repeated, broad)),
+            );
+        }
+    } else {
+        for broad_slice in broad_values.chunks_exact(repeated_values.len()) {
+            data.extend(
+                broad_slice
+                    .iter()
+                    .copied()
+                    .zip(repeated_values.iter().copied())
+                    .map(|(broad, repeated)| operation(broad, repeated)),
+            );
+        }
+    }
+
+    if repeated_values.iter().any(|value| value.is_nan()) {
+        for (output_slice, broad_slice) in data
+            .chunks_exact_mut(repeated_values.len())
+            .zip(broad_values.chunks_exact(repeated_values.len()))
+        {
+            for ((output, &broad), &repeated) in output_slice
+                .iter_mut()
+                .zip(broad_slice)
+                .zip(repeated_values)
+            {
+                if broad.is_nan() && repeated.is_nan() {
+                    let (left, right) = if repeated_on_left {
+                        (repeated, broad)
+                    } else {
+                        (broad, repeated)
+                    };
+                    *output = apply_binary_operation_scalar(operation, left, right);
+                }
+            }
+        }
+    }
+    debug_assert_eq!(data.len(), plan.elements);
+    Ok(Some((data, plan)))
+}
+
+fn leading_singleton_broadcast_operands<'a>(
+    left: &'a Tensor,
+    right: &'a Tensor,
+) -> Option<(&'a Tensor, &'a Tensor, bool, usize)> {
+    if let Some(suffix_start) = leading_singleton_suffix_start(&left.shape, &right.shape) {
+        Some((left, right, false, suffix_start))
+    } else {
+        leading_singleton_suffix_start(&right.shape, &left.shape)
+            .map(|suffix_start| (right, left, true, suffix_start))
+    }
+}
+
+fn leading_singleton_suffix_start(
+    broad_shape: &[usize],
+    repeated_shape: &[usize],
+) -> Option<usize> {
+    if broad_shape.len() != repeated_shape.len() || broad_shape.is_empty() {
+        return None;
+    }
+    (1..=broad_shape.len()).find(|&suffix_start| {
+        repeated_shape[..suffix_start]
+            .iter()
+            .all(|&dimension| dimension == 1)
+            && broad_shape[..suffix_start]
+                .iter()
+                .zip(&repeated_shape[..suffix_start])
+                .any(|(broad, repeated)| broad != repeated)
+            && broad_shape[suffix_start..] == repeated_shape[suffix_start..]
+    })
 }
 
 #[inline]
@@ -10667,6 +10907,30 @@ mod tests {
         assert_eq!(empty.next(), None);
     }
 
+    fn owned_strided_rank_2_tensor(
+        storage_bits: &[u32],
+        shape: [usize; 2],
+        strides: [usize; 2],
+        offset: usize,
+    ) -> Tensor {
+        let elements = shape.iter().product::<usize>();
+        validate_view_bounds(&shape, &strides, offset, elements, storage_bits.len()).unwrap();
+        Tensor {
+            storage: Arc::new(Storage::from_owned(
+                storage_bits.iter().copied().map(f32::from_bits).collect(),
+                DType::Float32,
+                Device::Cpu,
+            )),
+            shape: shape.to_vec(),
+            strides: strides.to_vec(),
+            offset,
+            elements,
+            output_nr: 0,
+            view_requires_grad: false,
+            autograd: None,
+        }
+    }
+
     fn owned_strided_rank_3_tensor(
         storage_bits: &[u32],
         shape: [usize; 3],
@@ -12249,6 +12513,94 @@ mod tests {
     }
 
     #[test]
+    fn owned_rank_2_binary_fast_path_matches_strided_fallback() {
+        let left_bits = (0_u16..40)
+            .map(|value| (f32::from(value) + 1.0).to_bits())
+            .collect::<Vec<_>>();
+        let right_bits = (0_u16..40)
+            .map(|value| (f32::from(value) + 41.0).to_bits())
+            .collect::<Vec<_>>();
+        let left = owned_strided_rank_2_tensor(&left_bits, [3, 4], [2, 10], 1);
+        let right = owned_strided_rank_2_tensor(&right_bits, [3, 4], [2, 10], 2);
+        let strides = left
+            .same_shape_elementwise_output_strides(&right, left.shape(), left.elements)
+            .unwrap();
+        assert_eq!(strides, [1, 3]);
+        assert!(
+            left.zip_map_same_shape_owned_rank_2(&right, left.shape(), &strides, &add_values)
+                .unwrap()
+                .is_some()
+        );
+
+        let shared_left = shared_gradient_copy(&left);
+        let shared_right = shared_gradient_copy(&right);
+        let expected = binary_outputs(&shared_left, &shared_right);
+        let actual = binary_outputs(&left, &right);
+        for (actual, expected) in actual.into_iter().zip(expected) {
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert_eq!(actual.storage_offset(), expected.storage_offset());
+            assert_eq!(actual.dtype(), expected.dtype());
+            assert_eq!(actual.device(), expected.device());
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+
+        assert!(
+            shared_left
+                .zip_map_same_shape_owned_rank_2(&shared_right, left.shape(), &strides, &add_values)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn owned_rank_2_materialization_fast_path_matches_strided_fallback() {
+        let bits = (0_u16..40)
+            .map(|value| ((f32::from(value) - 20.0) / 3.0).to_bits())
+            .collect::<Vec<_>>();
+        let tensor = owned_strided_rank_2_tensor(&bits, [3, 4], [2, 10], 1);
+        let output_strides = [1, 3];
+        assert!(
+            tensor
+                .materialize_owned_rank_2_with_strides(&output_strides, &|value| value / 2.75)
+                .unwrap()
+                .is_some()
+        );
+
+        let shared = shared_gradient_copy(&tensor);
+        let cases = [
+            (tensor.sign().unwrap(), shared.sign().unwrap()),
+            (
+                tensor.div_scalar(2.75).unwrap(),
+                shared.div_scalar(2.75).unwrap(),
+            ),
+            (
+                tensor.scalar_div(2.75).unwrap(),
+                shared.scalar_div(2.75).unwrap(),
+            ),
+        ];
+
+        for (actual, expected) in cases {
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert_eq!(actual.storage_offset(), expected.storage_offset());
+            assert_eq!(actual.dtype(), expected.dtype());
+            assert_eq!(actual.device(), expected.device());
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+
+    #[test]
     fn owned_general_broadcast_is_bitwise_identical_to_shared_gradient_fallback() {
         let verify = |left: &Tensor, right: &Tensor| {
             assert_ne!(left.shape(), right.shape());
@@ -12426,6 +12778,103 @@ mod tests {
         let empty_vector = Tensor::zeros([0]).unwrap();
         assert_matches_fallback(&empty_broad, &empty_vector);
         assert_matches_fallback(&empty_vector, &empty_broad);
+    }
+
+    #[test]
+    fn contiguous_leading_singleton_broadcast_is_bitwise_identical_to_fallback() {
+        let assert_matches_fallback = |left: &Tensor, right: &Tensor| {
+            let shared_left = shared_gradient_copy(left);
+            let shared_right = shared_gradient_copy(right);
+            let expected = binary_outputs(&shared_left, &shared_right);
+            let actual = binary_outputs(left, right);
+
+            for (actual, expected) in actual.into_iter().zip(expected) {
+                assert_eq!(actual.shape(), expected.shape());
+                assert_eq!(actual.stride(), expected.stride());
+                assert_eq!(actual.storage_offset(), expected.storage_offset());
+                assert_eq!(actual.dtype(), expected.dtype());
+                assert_eq!(actual.device(), expected.device());
+                assert!(
+                    actual
+                        .logical_values()
+                        .map(f32::to_bits)
+                        .eq(expected.logical_values().map(f32::to_bits))
+                );
+            }
+        };
+        let assert_uses_fast_path = |left: &Tensor, right: &Tensor| {
+            let output =
+                materialize_contiguous_trailing_broadcast(left, right, &add_values).unwrap();
+            assert!(output.is_some());
+        };
+
+        let matrix = offset_contiguous_tensor(
+            &[
+                0x3f80_0000,
+                0x4000_0000,
+                0x4040_0000,
+                0x4080_0000,
+                0x40a0_0000,
+                0x40c0_0000,
+                0x40e0_0000,
+                0x4100_0000,
+            ],
+            &[2, 4],
+        );
+        let row = offset_contiguous_tensor(
+            &[0x3f80_0000, 0x8000_0000, 0x7f80_0000, 0xff80_0000],
+            &[1, 4],
+        );
+        for (left, right) in [(&matrix, &row), (&row, &matrix)] {
+            assert_uses_fast_path(left, right);
+            assert_matches_fallback(left, right);
+        }
+
+        let volume = offset_contiguous_tensor(
+            &[
+                0x3f80_0000,
+                0x4000_0000,
+                0x4040_0000,
+                0x4080_0000,
+                0x40a0_0000,
+                0x40c0_0000,
+                0x40e0_0000,
+                0x4100_0000,
+                0x4110_0000,
+                0x4120_0000,
+                0x4130_0000,
+                0x4140_0000,
+            ],
+            &[2, 3, 2],
+        );
+        let leading_singleton = offset_contiguous_tensor(&[0x3f00_0000, 0xbf00_0000], &[1, 1, 2]);
+        for (left, right) in [(&volume, &leading_singleton), (&leading_singleton, &volume)] {
+            assert_uses_fast_path(left, right);
+            assert_matches_fallback(left, right);
+        }
+
+        let paired_nan_matrix = offset_contiguous_tensor(
+            &[0x7fc1_2345, 0xffc5_4321, 0x3f80_0000, 0xbf80_0000],
+            &[2, 2],
+        );
+        let paired_nan_row = offset_contiguous_tensor(&[0x7f85_6789, 0xff81_abcd], &[1, 2]);
+        for (left, right) in [
+            (&paired_nan_matrix, &paired_nan_row),
+            (&paired_nan_row, &paired_nan_matrix),
+        ] {
+            assert_uses_fast_path(left, right);
+            assert_matches_fallback(left, right);
+        }
+
+        let general_left = Tensor::ones([2, 1, 5]).unwrap();
+        let general_right = Tensor::ones([1, 3, 1]).unwrap();
+        assert!(
+            materialize_contiguous_trailing_broadcast(&general_left, &general_right, &add_values)
+                .unwrap()
+                .is_none()
+        );
+        assert_matches_fallback(&general_left, &general_right);
+        assert_matches_fallback(&general_right, &general_left);
     }
 
     #[test]
