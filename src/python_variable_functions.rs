@@ -29,14 +29,15 @@ use crate::python::{
     real_variable_function, reciprocal_variable_function, reshape_variable_function,
     resolve_conj_variable_function, resolve_neg_variable_function, rsqrt_variable_function,
     scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
-    sin_variable_function, sqrt_variable_function, square_variable_function, sub_variable_function,
-    subtract_variable_function, sum_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function,
+    sign_variable_function, sin_variable_function, sqrt_variable_function,
+    square_variable_function, sub_variable_function, subtract_variable_function,
+    sum_variable_function, tanh_variable_function, trunc_variable_function,
+    unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 53] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 54] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -61,6 +62,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 53] = [
     "rsqrt",
     "neg",
     "negative",
+    "sign",
     "exp",
     "floor",
     "ceil",
@@ -484,6 +486,29 @@ const NEGATIVE_DOC: &std::ffi::CStr = c"
 negative(input, *, out=None) -> Tensor
 
 Alias for :func:`torch.neg`
+";
+
+const SIGN_DOC: &std::ffi::CStr = cr"
+sign(input, *, out=None) -> Tensor
+
+Returns a new tensor with the signs of the elements of :attr:`input`.
+
+.. math::
+    \text{out}_{i} = \operatorname{sgn}(\text{input}_{i})
+
+Args:
+    input (Tensor): the input tensor.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> a = torch.tensor([0.7, -1.2, 0., 2.3])
+    >>> a
+    tensor([ 0.7000, -1.2000,  0.0000,  2.3000])
+    >>> torch.sign(a)
+    tensor([ 1., -1.,  0.,  1.])
 ";
 
 const EXP_DOC: &std::ffi::CStr = cr"
@@ -1183,6 +1208,7 @@ variable_function_callback!(reciprocal_callback, reciprocal_variable_function);
 variable_function_callback!(rsqrt_callback, rsqrt_variable_function);
 variable_function_callback!(neg_callback, neg_variable_function);
 variable_function_callback!(negative_callback, negative_variable_function);
+variable_function_callback!(sign_callback, sign_variable_function);
 variable_function_callback!(exp_callback, exp_variable_function);
 variable_function_callback!(floor_callback, floor_variable_function);
 variable_function_callback!(ceil_callback, ceil_variable_function);
@@ -1264,6 +1290,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"rsqrt", rsqrt_callback, RSQRT_DOC),
         variable_function_method!(c"neg", neg_callback, NEG_DOC),
         variable_function_method!(c"negative", negative_callback, NEGATIVE_DOC),
+        variable_function_method!(c"sign", sign_callback, SIGN_DOC),
         variable_function_method!(c"exp", exp_callback, EXP_DOC),
         variable_function_method!(c"floor", floor_callback, FLOOR_DOC),
         variable_function_method!(c"ceil", ceil_callback, CEIL_DOC),

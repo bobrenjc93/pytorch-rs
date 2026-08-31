@@ -844,6 +844,23 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nsign() -> Tensor\n\nSee :func:`torch.sign`\n"]
+    #[pyo3(text_signature = None)]
+    fn sign(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "sign")? {
+            return Ok(result);
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor.inner.sign().map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nexp() -> Tensor\n\nSee :func:`torch.exp`\n"]
     #[pyo3(text_signature = None)]
     fn exp(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
@@ -1975,6 +1992,14 @@ pub(crate) fn absolute_variable_function(
     unary_out_variable_function(UnaryOutOperation::ABSOLUTE, py, args, kwargs)
 }
 
+pub(crate) fn sign_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::SIGN, py, args, kwargs)
+}
+
 pub(crate) fn reciprocal_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2608,6 +2633,14 @@ impl UnaryOutOperation {
         apply: CoreTensor::negate,
     };
 
+    const SIGN: Self = Self {
+        name: "sign",
+        qualified_name: "torch.sign",
+        dispatch_allocation_error: "unable to allocate sign dispatch operands",
+        out_unsupported_error: "sign(): the 'out' argument is not supported",
+        apply: CoreTensor::sign,
+    };
+
     const EXP: Self = Self {
         name: "exp",
         qualified_name: "torch.exp",
@@ -3077,6 +3110,7 @@ fn dispatch_tensorbase_mode(
                     | "floor"
                     | "reciprocal"
                     | "rsqrt"
+                    | "sign"
                     | "sigmoid"
                     | "sin"
                     | "sqrt"

@@ -3498,6 +3498,16 @@ impl Tensor {
         self.unary_map(absolute_value)
     }
 
+    /// Computes the real sign of every element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn sign(&self) -> Result<Self, TensorError> {
+        let output = self.unary_map(sign_value)?;
+        self.finish_zero_vjp(output, AutogradNode::Sign)
+    }
+
     /// Divides every element by a scalar using IEEE 754 true division.
     ///
     /// # Errors
@@ -6159,6 +6169,16 @@ fn negate_value(value: f32) -> f32 {
 
 fn absolute_value(value: f32) -> f32 {
     f32::from_bits(value.to_bits() & !F32_SIGN_MASK)
+}
+
+fn sign_value(value: f32) -> f32 {
+    let bits = value.to_bits();
+    let magnitude = bits & !F32_SIGN_MASK;
+    if magnitude == 0 || magnitude > f32::INFINITY.to_bits() {
+        0.0
+    } else {
+        f32::from_bits((bits & F32_SIGN_MASK) | 1.0_f32.to_bits())
+    }
 }
 
 #[cfg(any(feature = "python-bindings", test))]
@@ -10519,6 +10539,7 @@ mod tests {
             Some("SigmoidBackward0")
         );
         assert_eq!(source.tanh().unwrap().grad_fn_name(), Some("TanhBackward0"));
+        assert_eq!(source.sign().unwrap().grad_fn_name(), Some("SignBackward0"));
         let scalar = Tensor::from_vec(vec![0.5], [])
             .unwrap()
             .with_requires_grad(true);
@@ -12534,6 +12555,7 @@ mod tests {
             (tensor.floor().unwrap(), shared.floor().unwrap()),
             (tensor.ceil().unwrap(), shared.ceil().unwrap()),
             (tensor.trunc().unwrap(), shared.trunc().unwrap()),
+            (tensor.sign().unwrap(), shared.sign().unwrap()),
             (tensor.sigmoid().unwrap(), shared.sigmoid().unwrap()),
             (tensor.tanh().unwrap(), shared.tanh().unwrap()),
             (tensor.sqrt().unwrap(), shared.sqrt().unwrap()),
@@ -12914,6 +12936,10 @@ mod tests {
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
+            tensor.sign(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
             tensor.sigmoid(),
             Err(TensorError::AllocationFailed { elements })
         );
@@ -12959,6 +12985,7 @@ mod tests {
             ),
             ("floor", Tensor::floor),
             ("trunc", Tensor::trunc),
+            ("sign", Tensor::sign),
         ] {
             let leaf = Tensor::ones([16_384]).unwrap().with_requires_grad(true);
             let leaf_storage = Arc::downgrade(&leaf.storage);
