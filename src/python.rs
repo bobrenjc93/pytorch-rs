@@ -4779,6 +4779,7 @@ struct EmptyCallArguments<'py> {
     layout: Option<Bound<'py, PyAny>>,
     device: Option<Bound<'py, PyAny>>,
     pin_memory: Option<Bound<'py, PyAny>>,
+    memory_format: Option<Bound<'py, PyAny>>,
     requires_grad: Option<Bound<'py, PyAny>>,
     keyword_error: Option<PyErr>,
 }
@@ -4816,6 +4817,7 @@ struct ParsedEmptyArguments {
     dtype: DType,
     device: Device,
     pin_memory: bool,
+    memory_format: MemoryFormat,
     requires_grad: bool,
 }
 
@@ -5946,7 +5948,7 @@ fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
 
 #[pyfunction(
     signature = (*args, **kwargs),
-    text_signature = "(size, *, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)"
+    text_signature = "(size, *, out=None, dtype=None, layout=None, device=None, pin_memory=False, memory_format=None, requires_grad=False)"
 )]
 fn empty(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_empty_arguments(args, kwargs)?;
@@ -5956,6 +5958,7 @@ fn empty(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
         dtype,
         device,
         pin_memory,
+        memory_format,
         requires_grad,
     } = parse_empty_arguments(arguments)?;
     let ParsedCreationSize {
@@ -5970,6 +5973,11 @@ fn empty(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
     if pin_memory {
         return Err(PyRuntimeError::new_err(
             "empty(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
+        ));
+    }
+    if memory_format != MemoryFormat::Contiguous {
+        return Err(PyNotImplementedError::new_err(
+            "empty(): only contiguous memory_format is supported",
         ));
     }
     CoreTensor::empty_with_metadata(dimensions, dtype, device)
@@ -6983,6 +6991,7 @@ fn bind_empty_arguments<'py>(
         layout: None,
         device: None,
         pin_memory: None,
+        memory_format: None,
         requires_grad: None,
         keyword_error: None,
     };
@@ -7011,6 +7020,7 @@ fn bind_empty_arguments<'py>(
             "layout" => arguments.layout = optional_call_argument(value),
             "device" => arguments.device = optional_call_argument(value),
             "pin_memory" => arguments.pin_memory = optional_call_argument(value),
+            "memory_format" => arguments.memory_format = optional_call_argument(value),
             "requires_grad" => arguments.requires_grad = optional_call_argument(value),
             _ => {
                 arguments.keyword_error.get_or_insert_with(|| {
@@ -8115,6 +8125,7 @@ fn parse_empty_arguments(arguments: EmptyCallArguments<'_>) -> PyResult<ParsedEm
         layout,
         device,
         pin_memory,
+        memory_format,
         requires_grad,
         keyword_error,
     } = arguments;
@@ -8125,6 +8136,7 @@ fn parse_empty_arguments(arguments: EmptyCallArguments<'_>) -> PyResult<ParsedEm
     parse_factory_layout("empty", layout.as_ref())?;
     validate_device_argument_type("empty", device.as_ref())?;
     let pin_memory = parse_factory_bool("empty", "pin_memory", pin_memory.as_ref())?;
+    let memory_format = parse_empty_memory_format(memory_format.as_ref())?;
     let requires_grad = parse_factory_requires_grad("empty", requires_grad.as_ref())?;
     if let Some(error) = keyword_error {
         return Err(error);
@@ -8136,6 +8148,7 @@ fn parse_empty_arguments(arguments: EmptyCallArguments<'_>) -> PyResult<ParsedEm
         dtype,
         device,
         pin_memory,
+        memory_format,
         requires_grad,
     })
 }
@@ -8198,6 +8211,20 @@ fn parse_ones_like_memory_format(
     let actual = python_type_name(memory_format)?;
     Err(PyTypeError::new_err(format!(
         "ones_like(): argument 'memory_format' must be torch.memory_format, not {actual}"
+    )))
+}
+
+fn parse_empty_memory_format(memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<MemoryFormat> {
+    let Some(memory_format) = memory_format else {
+        return Ok(MemoryFormat::Contiguous);
+    };
+    if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
+        return Ok(memory_format.try_borrow()?.inner());
+    }
+
+    let actual = python_type_name(memory_format)?;
+    Err(PyTypeError::new_err(format!(
+        "empty(): argument 'memory_format' must be torch.memory_format, not {actual}"
     )))
 }
 

@@ -87,6 +87,8 @@ class EmptyReferenceTests(unittest.TestCase):
             lambda module: {"device": module.device("cpu", 2)},
             lambda module: {"pin_memory": None},
             lambda module: {"pin_memory": False},
+            lambda module: {"memory_format": None},
+            lambda module: {"memory_format": module.contiguous_format},
             lambda module: {"requires_grad": None},
             lambda module: {"requires_grad": False},
             lambda module: {"requires_grad": True},
@@ -96,6 +98,7 @@ class EmptyReferenceTests(unittest.TestCase):
                 "layout": module.strided,
                 "device": module.device("cpu"),
                 "pin_memory": False,
+                "memory_format": module.contiguous_format,
                 "requires_grad": True,
             },
         )
@@ -240,6 +243,31 @@ class EmptyReferenceTests(unittest.TestCase):
             r"^empty\(\): pin_memory=True is not supported; only unpinned CPU storage is implemented$",
         ):
             torch.empty((1,), pin_memory=True)
+
+        for memory_format in (0, "contiguous", object()):
+            with self.subTest(memory_format=memory_format):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^empty\(\): argument 'memory_format' must be torch\.memory_format, not ",
+                ):
+                    torch.empty((1,), memory_format=memory_format)
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^empty\(\): argument 'memory_format' must be torch\.memory_format, not ",
+                ):
+                    reference_torch.empty((1,), memory_format=memory_format)
+
+        for memory_format in (
+            torch.preserve_format,
+            torch.channels_last,
+            torch.channels_last_3d,
+        ):
+            with self.subTest(memory_format=memory_format):
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    r"^empty\(\): only contiguous memory_format is supported$",
+                ):
+                    torch.empty((2, 3), memory_format=memory_format)
 
         out = torch.zeros((1,))
         with self.assertRaisesRegex(

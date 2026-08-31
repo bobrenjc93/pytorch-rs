@@ -64,6 +64,7 @@ class EmptyTests(unittest.TestCase):
                     layout=torch.strided,
                     device=torch.device("cpu", 2),
                     pin_memory=False,
+                    memory_format=torch.contiguous_format,
                     requires_grad=True,
                 ),
                 (2,),
@@ -80,6 +81,7 @@ class EmptyTests(unittest.TestCase):
                     layout=None,
                     device=None,
                     pin_memory=None,
+                    memory_format=None,
                     requires_grad=None,
                 ),
                 (2,),
@@ -96,6 +98,16 @@ class EmptyTests(unittest.TestCase):
                     stride,
                     numel=numel,
                     requires_grad=requires_grad,
+                )
+
+    def test_default_equivalent_memory_format_creates_contiguous_tensor(self):
+        for memory_format in (None, torch.contiguous_format):
+            with self.subTest(memory_format=memory_format):
+                self.assert_empty_metadata(
+                    torch.empty((2, 3), memory_format=memory_format),
+                    (2, 3),
+                    (3, 1),
+                    numel=6,
                 )
 
     def test_requires_grad_creates_leaf_inside_no_grad(self):
@@ -325,6 +337,26 @@ class EmptyTests(unittest.TestCase):
         ):
             torch.empty((1,), pin_memory=True)
 
+        for memory_format in (0, "contiguous", object()):
+            with self.subTest(memory_format=memory_format):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^empty\(\): argument 'memory_format' must be torch\.memory_format, not ",
+                ):
+                    torch.empty((1,), memory_format=memory_format)
+
+        for memory_format in (
+            torch.preserve_format,
+            torch.channels_last,
+            torch.channels_last_3d,
+        ):
+            with self.subTest(memory_format=memory_format):
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    r"^empty\(\): only contiguous memory_format is supported$",
+                ):
+                    torch.empty((2, 3), memory_format=memory_format)
+
         self.assertFalse(hasattr(torch, "empty_like"))
         with self.assertRaises(AttributeError):
             torch.empty_like(torch.empty((1,)))
@@ -339,7 +371,7 @@ class EmptyTests(unittest.TestCase):
         self.assertEqual(
             str(inspect.signature(function)),
             "(size, *, out=None, dtype=None, layout=None, device=None, "
-            "pin_memory=False, requires_grad=False)",
+            "pin_memory=False, memory_format=None, requires_grad=False)",
         )
         self.assertEqual(torch.__all__.count("empty"), 1)
         self.assertIs(wildcard_namespace["empty"], function)
