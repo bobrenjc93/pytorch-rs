@@ -373,7 +373,12 @@ def _get_tensorbase_method_descriptor(name):
     return getattr(_TensorBase, name)
 
 
-def _make_tensorbase_method_descriptor_reducer(previous):
+def _make_tensorbase_method_descriptor_reducer(
+    previous,
+    modules=_sys.modules,
+    module_name=__name__,
+    fallback_resolver=_get_tensorbase_method_descriptor,
+):
     if getattr(
         previous,
         "_torch_rs_tensorbase_method_descriptor_reducer",
@@ -387,7 +392,13 @@ def _make_tensorbase_method_descriptor_reducer(previous):
 
     def reducer(descriptor):
         if descriptor.__objclass__ is _TensorBase:
-            return _get_tensorbase_method_descriptor, (descriptor.__name__,)
+            module = modules.get(module_name)
+            resolver = getattr(
+                module,
+                "_get_tensorbase_method_descriptor",
+                fallback_resolver,
+            )
+            return resolver, (descriptor.__name__,)
         if previous is not None:
             return previous(descriptor)
         return descriptor.__reduce__()

@@ -3,6 +3,7 @@ import importlib
 import inspect
 import pickle
 import re
+import sys
 import types
 import unittest
 
@@ -64,6 +65,22 @@ class TensorSubMethodTests(unittest.TestCase):
                     torch.sub(offset, scalar),
                     case=(name, "offset scalar", type(scalar).__name__, scalar),
                 )
+                self.assert_tensor_matches(
+                    getattr(offset, name)(scalar, 1),
+                    torch.sub(offset, scalar),
+                    case=(
+                        name,
+                        "offset scalar positional alpha",
+                        type(scalar).__name__,
+                        scalar,
+                    ),
+                )
+
+        self.assert_tensor_matches(
+            left.sub(1, right),
+            left - right,
+            case=("sub", "legacy positional alpha tensor other"),
+        )
 
         empty = torch.zeros((2, 0, 3)).transpose(0, 2)
         broadcast = torch.ones((1, 1, 2))
@@ -307,6 +324,33 @@ class TensorSubMethodTests(unittest.TestCase):
             self.assertFalse(hasattr(torch.Tensor, name))
             self.assertFalse(hasattr(torch, name))
 
+    def test_descriptor_pickle_survives_package_reinitialization(self):
+        descriptors = {
+            "sub": inspect.getattr_static(torch.Tensor, "sub"),
+            "subtract": inspect.getattr_static(torch.Tensor, "subtract"),
+        }
+        saved_modules = {
+            name: module
+            for name, module in tuple(sys.modules.items())
+            if name == "torch_rs" or name.startswith("torch_rs.")
+        }
+        try:
+            for name in saved_modules:
+                sys.modules.pop(name, None)
+            importlib.import_module("torch_rs")
+        finally:
+            for name in tuple(sys.modules):
+                if name == "torch_rs" or name.startswith("torch_rs."):
+                    sys.modules.pop(name, None)
+            sys.modules.update(saved_modules)
+
+        for name, descriptor in descriptors.items():
+            for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                with self.subTest(name=name, protocol=protocol):
+                    self.assertIs(
+                        pickle.loads(pickle.dumps(descriptor, protocol)), descriptor
+                    )
+
     def test_unsupported_arguments_and_boundaries_do_not_mutate(self):
         tensor = torch.tensor([1.0])
         destination = torch.tensor([17.0])
@@ -353,8 +397,11 @@ class TensorSubMethodTests(unittest.TestCase):
                 with self.assertRaises(TypeError):
                     method(tensor, device=torch.device("cpu"))
             with self.subTest(name=name, boundary="positional alpha"):
-                with self.assertRaises(TypeError):
-                    method(2.0, 1)
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    rf"^{name}\(\): alpha values other than 1 are not supported$",
+                ):
+                    method(2.0, 2)
             with self.subTest(name=name, boundary="unsupported operand"):
                 with self.assertRaises(TypeError):
                     method([])
@@ -381,6 +428,14 @@ class TensorSubMethodTests(unittest.TestCase):
                     with self.assertRaisesRegex(TypeError, expected_error):
                         method(**kwargs)
                     self.assertEqual(UnexpectedOverride.calls, 0)
+
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^sub\(\): alpha values other than 1 are not supported$",
+        ):
+            tensor.sub(2, torch.tensor([3.0]))
+        with self.assertRaises(TypeError):
+            tensor.subtract(1, torch.tensor([3.0]))
 
         with self.assertRaisesRegex(
             TypeError,

@@ -12192,23 +12192,8 @@ fn bind_tensor_sub_method_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<BoundTensorMethodSubtractionArguments<'py>> {
-    if positional.len() > 1 {
-        return Err(PyTypeError::new_err(format!(
-            "sub() takes 1 positional argument but {} were given",
-            positional.len()
-        )));
-    }
-
-    let mut other = if positional.is_empty() {
-        None
-    } else {
-        Some(ParsedCallArgument {
-            value: positional.get_item(0)?,
-            position: Some(1),
-        })
-    };
+    let (mut other, mut alpha) = bind_tensor_sub_method_positional_arguments(positional)?;
     let mut x2_fallback = None;
-    let mut alpha = None;
     let mut keyword_error = None;
 
     if let Some(keywords) = keywords {
@@ -12248,7 +12233,11 @@ fn bind_tensor_sub_method_arguments<'py>(
                         position: None,
                     });
                 }
-                "alpha" => {}
+                "alpha" => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("sub() got multiple values for argument 'alpha'")
+                    });
+                }
                 _ => {
                     keyword_error.get_or_insert_with(|| {
                         PyTypeError::new_err(format!(
@@ -12271,30 +12260,73 @@ fn bind_tensor_sub_method_arguments<'py>(
     Ok((other, alpha, keyword_error))
 }
 
+fn bind_tensor_sub_method_positional_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+) -> PyResult<(
+    Option<ParsedCallArgument<'py>>,
+    Option<ParsedCallArgument<'py>>,
+)> {
+    match positional.len() {
+        0 => Ok((None, None)),
+        1 => Ok((
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            }),
+            None,
+        )),
+        2 => {
+            let first = positional.get_item(0)?;
+            let second = positional.get_item(1)?;
+            let first_is_scalar = is_real_arithmetic_scalar(&first)?;
+            let first_has_override =
+                !first_is_scalar && probe_torch_function_override(&first).is_some();
+            let second_is_tensor_like = second.is_instance_of::<PyTensor>()
+                || probe_torch_function_override(&second).is_some();
+            if first_is_scalar && second_is_tensor_like {
+                return Ok((
+                    Some(ParsedCallArgument {
+                        value: second,
+                        position: Some(2),
+                    }),
+                    Some(ParsedCallArgument {
+                        value: first,
+                        position: Some(1),
+                    }),
+                ));
+            }
+            if (first_is_scalar || first_has_override) && is_real_arithmetic_scalar(&second)? {
+                return Ok((
+                    Some(ParsedCallArgument {
+                        value: first,
+                        position: Some(1),
+                    }),
+                    Some(ParsedCallArgument {
+                        value: second,
+                        position: Some(2),
+                    }),
+                ));
+            }
+            Err(PyTypeError::new_err(format!(
+                "sub() takes 1 positional argument but {} were given",
+                positional.len()
+            )))
+        }
+        _ => Err(PyTypeError::new_err(format!(
+            "sub() takes 1 positional argument but {} were given",
+            positional.len()
+        ))),
+    }
+}
+
 fn bind_tensor_subtract_method_arguments<'py>(
     operation: SubtractionOperation,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<BoundTensorMethodSubtractionArguments<'py>> {
-    if positional.len() > 1 {
-        return Err(tensor_subtract_binding_error(
-            operation,
-            positional,
-            keywords,
-            Some(&SubtractBindingMismatch::InvalidPositionalOverload),
-        )?);
-    }
-
-    let mut other = if positional.is_empty() {
-        None
-    } else {
-        Some(ParsedCallArgument {
-            value: positional.get_item(0)?,
-            position: Some(1),
-        })
-    };
+    let (mut other, mut alpha) =
+        bind_tensor_subtract_method_positional_arguments(operation, positional, keywords)?;
     let mut x2_fallback = None;
-    let mut alpha = None;
     let mut keyword_error = None;
 
     if let Some(keywords) = keywords {
@@ -12343,7 +12375,14 @@ fn bind_tensor_subtract_method_arguments<'py>(
                         position: None,
                     });
                 }
-                "alpha" => {}
+                "alpha" => {
+                    keyword_error.get_or_insert(tensor_subtract_binding_error(
+                        operation,
+                        positional,
+                        Some(keywords),
+                        Some(&SubtractBindingMismatch::IncorrectKeyword("alpha")),
+                    )?);
+                }
                 _ => {
                     keyword_error.get_or_insert(tensor_subtract_binding_error(
                         operation,
@@ -12362,6 +12401,58 @@ fn bind_tensor_subtract_method_arguments<'py>(
         )?);
     };
     Ok((other, alpha, keyword_error))
+}
+
+fn bind_tensor_subtract_method_positional_arguments<'py>(
+    operation: SubtractionOperation,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(
+    Option<ParsedCallArgument<'py>>,
+    Option<ParsedCallArgument<'py>>,
+)> {
+    match positional.len() {
+        0 => Ok((None, None)),
+        1 => Ok((
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            }),
+            None,
+        )),
+        2 => {
+            let first = positional.get_item(0)?;
+            let second = positional.get_item(1)?;
+            if (is_real_arithmetic_scalar(&first)?
+                || probe_torch_function_override(&first).is_some())
+                && (is_real_arithmetic_scalar(&second)?
+                    || probe_torch_function_override(&second).is_some())
+            {
+                return Ok((
+                    Some(ParsedCallArgument {
+                        value: first,
+                        position: Some(1),
+                    }),
+                    Some(ParsedCallArgument {
+                        value: second,
+                        position: Some(2),
+                    }),
+                ));
+            }
+            Err(tensor_subtract_binding_error(
+                operation,
+                positional,
+                keywords,
+                Some(&SubtractBindingMismatch::InvalidPositionalOverload),
+            )?)
+        }
+        _ => Err(tensor_subtract_binding_error(
+            operation,
+            positional,
+            keywords,
+            Some(&SubtractBindingMismatch::InvalidPositionalOverload),
+        )?),
+    }
 }
 
 fn bind_top_level_subtraction_arguments<'py>(

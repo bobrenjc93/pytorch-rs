@@ -4,6 +4,7 @@ import pickle
 import re
 import types
 import unittest
+import warnings
 
 import numpy as np
 import torch_rs as torch
@@ -102,6 +103,28 @@ class TensorSubMethodReferenceTests(unittest.TestCase):
                     getattr(expected_offset, name)(scalar),
                     case=(name, "offset scalar", type(scalar).__name__, scalar),
                 )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", UserWarning)
+                    expected_positional = getattr(expected_offset, name)(scalar, 1)
+                self.assert_matches(
+                    getattr(actual_offset, name)(scalar, 1),
+                    expected_positional,
+                    case=(
+                        name,
+                        "offset scalar positional alpha",
+                        type(scalar).__name__,
+                        scalar,
+                    ),
+                )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            expected_legacy = expected_left.sub(1, expected_right)
+        self.assert_matches(
+            actual_left.sub(1, actual_right),
+            expected_legacy,
+            case=("sub", "legacy positional alpha tensor other"),
+        )
 
         actual_empty = torch.zeros((2, 0, 3)).transpose(0, 2)
         expected_empty = reference_torch.zeros((2, 0, 3)).transpose(0, 2)

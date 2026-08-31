@@ -651,9 +651,11 @@ and method-only `Tensor.sub(other, *, alpha=1)`/`Tensor.subtract(...)` accept
 exact native CPU float32 tensor/tensor and tensor/real-scalar operands for
 default-equivalent alpha values and reuse the same subtraction, broadcasting,
 and first-order autograd paths as Python `-`. Top-level calls support either
-operand order; method calls require the receiver to be the left Tensor operand.
-They preserve PyTorch 2.13-compatible values, layout metadata, empty tensors,
-offsets, non-contiguous inputs, signed zero, NaNs, infinities, `torch.no_grad()`,
+operand order; method calls require the receiver to be the left Tensor operand
+and also accept PyTorch 2.13-compatible default-equivalent scalar positional
+alpha forms, including `Tensor.sub(1, other_tensor)`. They preserve PyTorch
+2.13-compatible values, layout metadata, empty tensors, offsets, non-contiguous
+inputs, signed zero, NaNs, infinities, `torch.no_grad()`,
 callable/export/copy/pickle behavior, and `TorchFunctionMode`/`__torch_function__`
 dispatch before native-only limits. Concrete `out` tensors, nondefault numeric
 or boolean `alpha`, scalar-only calls, unsupported operands, tensor subclasses
