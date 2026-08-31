@@ -1,6 +1,5 @@
 import importlib
 import inspect
-import os
 import re
 import types
 import unittest
@@ -215,21 +214,6 @@ class FunctionalL1LossTests(unittest.TestCase):
 
     @staticmethod
     def pytorch_sum_nan_priority(length):
-        parallel = FunctionalL1LossTests.pytorch_sum_parallel_chunks(length)
-        if parallel is not None:
-            thread_pool_size, active_thread_count, chunk_size = parallel
-            return [
-                start + index
-                for thread_index in FunctionalL1LossTests.pytorch_sum_serial_nan_priority(
-                    thread_pool_size
-                )
-                if thread_index < active_thread_count
-                if (start := thread_index * chunk_size) < length
-                for index in FunctionalL1LossTests.pytorch_sum_serial_nan_priority(
-                    min(length, start + chunk_size) - start
-                )
-            ]
-
         return FunctionalL1LossTests.pytorch_sum_serial_nan_priority(length)
 
     @staticmethod
@@ -275,51 +259,12 @@ class FunctionalL1LossTests(unittest.TestCase):
         ]
 
     @staticmethod
-    def pytorch_sum_parallel_chunks(length):
-        grain_size = 32_768
-        if length <= grain_size:
-            return None
-        if hasattr(os, "sched_getaffinity"):
-            available_cpus = len(os.sched_getaffinity(0))
-        else:
-            available_cpus = os.cpu_count() or 1
-        thread_pool_size = min(available_cpus, 192)
-        active_thread_count = min(
-            (length + grain_size - 1) // grain_size,
-            thread_pool_size,
-        )
-        if active_thread_count <= 1:
-            return None
-        return (
-            thread_pool_size,
-            active_thread_count,
-            (length + active_thread_count - 1) // active_thread_count,
-        )
-
-    @staticmethod
     def pytorch_float32_add(left, right):
         return np.float32(np.float32(left) + np.float32(right))
 
     @staticmethod
     def pytorch_float32_finite_sum(values):
         values = np.asarray(values, dtype=np.float32)
-        parallel = FunctionalL1LossTests.pytorch_sum_parallel_chunks(len(values))
-        if parallel is not None:
-            thread_pool_size, active_thread_count, chunk_size = parallel
-            partials = np.zeros(thread_pool_size, dtype=np.float32)
-            for thread_index in range(active_thread_count):
-                start = thread_index * chunk_size
-                if start >= len(values):
-                    break
-                partials[thread_index] = (
-                    FunctionalL1LossTests.pytorch_float32_finite_sum_serial(
-                        values[start : min(len(values), start + chunk_size)]
-                    )
-                )
-            return FunctionalL1LossTests.pytorch_float32_finite_sum_serial(
-                partials
-            )
-
         return FunctionalL1LossTests.pytorch_float32_finite_sum_serial(values)
 
     @staticmethod
@@ -1003,7 +948,7 @@ class FunctionalL1LossTests(unittest.TestCase):
             case="finite accumulation order",
         )
 
-    def test_sum_reduction_uses_pytorch_parallel_accumulation_order(self):
+    def test_sum_reduction_uses_pytorch_single_worker_accumulation_order(self):
         for length in (32_773, 134_028, 1_048_576):
             input = torch.zeros((length,), dtype=torch.float32)
             target = torch.tensor(
@@ -1016,7 +961,7 @@ class FunctionalL1LossTests(unittest.TestCase):
             self.assert_matches_composition(
                 actual,
                 expected,
-                case=("parallel finite accumulation order", length),
+                case=("single-worker finite accumulation order", length),
             )
 
     def test_sum_reduction_uses_pytorch_cascade_nan_payload_precedence(self):

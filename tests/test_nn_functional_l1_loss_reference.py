@@ -22,6 +22,13 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             raise AssertionError(
                 "nn.functional.l1_loss differentials require pinned PyTorch 2.13.0"
             )
+        cls._reference_num_threads = reference_torch.get_num_threads()
+        reference_torch.set_num_threads(torch.get_num_threads())
+
+    @classmethod
+    def tearDownClass(cls):
+        if hasattr(cls, "_reference_num_threads"):
+            reference_torch.set_num_threads(cls._reference_num_threads)
 
     @staticmethod
     def tensor(module, values):
@@ -690,7 +697,7 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
 
         self.assert_matches(actual, expected, case="finite accumulation order")
 
-    def test_sum_reduction_parallel_accumulation_order_matches_pytorch_2_13(
+    def test_sum_reduction_single_worker_accumulation_order_matches_pytorch_2_13(
         self,
     ):
         for length in (32_773, 134_028, 1_048_576):
@@ -717,7 +724,7 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             self.assert_matches(
                 actual,
                 expected,
-                case=("parallel accumulation order", length),
+                case=("single-worker accumulation order", length),
             )
 
     def test_sum_reduction_cascade_nan_payload_precedence_matches_pytorch_2_13(

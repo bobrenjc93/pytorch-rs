@@ -53,8 +53,10 @@ scalar broadcasts over row-major contiguous tensors into one native
 absolute-difference pass, otherwise preserving the established subtraction and
 absolute-value behavior. ``reduction='sum'`` reuses that absolute-difference
 path followed by the full-tensor sum reduction and returns a fresh, independent
-tensor with rank-0 shape. The operation returns PyTorch-compatible values,
-shape, strides, scalar metadata, and size-mismatch warning.
+tensor with rank-0 shape. Under the fixed single-worker CPU execution contract
+reported by ``torch.get_num_threads()``, the operation returns
+PyTorch-compatible values, shape, strides, scalar metadata, and size-mismatch
+warning.
 
 Unbroadcastable shapes, ``reduction='mean'``, weights, dtype/device extensions,
 Tensor subclasses, active ``TorchFunctionMode`` contexts, and active autograd
