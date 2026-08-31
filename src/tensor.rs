@@ -64,16 +64,19 @@ fn pytorch_cascade_multi_row_sum_scalar<const ROWS: usize>(
     while index + level_step <= size {
         for _ in 0..level_step {
             let base = index * row_stride;
-            for row in 0..ROWS {
-                accumulator[0][row] += values[base + row * column_stride];
+            for (row, total) in accumulator[0].iter_mut().enumerate() {
+                *total += values[base + row * column_stride];
             }
             index += 1;
         }
 
         for level in 1..PYTORCH_SUM_CASCADE_LEVELS {
-            for row in 0..ROWS {
-                accumulator[level][row] += accumulator[level - 1][row];
-                accumulator[level - 1][row] = 0.0;
+            let (lower_levels, upper_levels) = accumulator.split_at_mut(level);
+            let lower_level = &mut lower_levels[level - 1];
+            let current_level = &mut upper_levels[0];
+            for (current, lower) in current_level.iter_mut().zip(lower_level.iter_mut()) {
+                *current += *lower;
+                *lower = 0.0;
             }
 
             let mask = level_mask << (level * level_power);
@@ -85,15 +88,18 @@ fn pytorch_cascade_multi_row_sum_scalar<const ROWS: usize>(
 
     while index < size {
         let base = index * row_stride;
-        for row in 0..ROWS {
-            accumulator[0][row] += values[base + row * column_stride];
+        for (row, total) in accumulator[0].iter_mut().enumerate() {
+            *total += values[base + row * column_stride];
         }
         index += 1;
     }
 
-    for level in 1..PYTORCH_SUM_CASCADE_LEVELS {
-        for row in 0..ROWS {
-            accumulator[0][row] += accumulator[level][row];
+    let (total, upper_levels) = accumulator
+        .split_first_mut()
+        .expect("cascade accumulator always has a root level");
+    for upper_level in upper_levels {
+        for (total, value) in total.iter_mut().zip(upper_level.iter()) {
+            *total += *value;
         }
     }
     accumulator[0]
@@ -112,8 +118,11 @@ fn pytorch_cascade_row_sum_scalar(values: &[f32]) -> f32 {
     for value in &values[size_ilp * PYTORCH_SUM_ILP_FACTOR..] {
         partial_sums[0] += *value;
     }
-    for row in 1..PYTORCH_SUM_ILP_FACTOR {
-        partial_sums[0] += partial_sums[row];
+    let (total, partials) = partial_sums
+        .split_first_mut()
+        .expect("row sum accumulator always has a root lane");
+    for partial in partials {
+        *total += *partial;
     }
     partial_sums[0]
 }
@@ -152,18 +161,21 @@ fn pytorch_cascade_multi_row_sum_f32x8<const ROWS: usize>(
     while index + level_step <= size {
         for _ in 0..level_step {
             let base = index * row_stride_chunks;
-            for row in 0..ROWS {
+            for (row, total) in accumulator[0].iter_mut().enumerate() {
                 let chunk = load_f32x8(values, base + row * column_stride_chunks);
-                add_f32x8(&mut accumulator[0][row], chunk);
+                add_f32x8(total, chunk);
             }
             index += 1;
         }
 
         for level in 1..PYTORCH_SUM_CASCADE_LEVELS {
-            for row in 0..ROWS {
-                let lower = accumulator[level - 1][row];
-                add_f32x8(&mut accumulator[level][row], lower);
-                accumulator[level - 1][row] = [0.0; PYTORCH_SUM_VECTOR_WIDTH];
+            let (lower_levels, upper_levels) = accumulator.split_at_mut(level);
+            let lower_level = &mut lower_levels[level - 1];
+            let current_level = &mut upper_levels[0];
+            for (current, lower) in current_level.iter_mut().zip(lower_level.iter_mut()) {
+                let lower_lanes = *lower;
+                add_f32x8(current, lower_lanes);
+                *lower = [0.0; PYTORCH_SUM_VECTOR_WIDTH];
             }
 
             let mask = level_mask << (level * level_power);
@@ -175,17 +187,19 @@ fn pytorch_cascade_multi_row_sum_f32x8<const ROWS: usize>(
 
     while index < size {
         let base = index * row_stride_chunks;
-        for row in 0..ROWS {
+        for (row, total) in accumulator[0].iter_mut().enumerate() {
             let chunk = load_f32x8(values, base + row * column_stride_chunks);
-            add_f32x8(&mut accumulator[0][row], chunk);
+            add_f32x8(total, chunk);
         }
         index += 1;
     }
 
-    for level in 1..PYTORCH_SUM_CASCADE_LEVELS {
-        for row in 0..ROWS {
-            let upper = accumulator[level][row];
-            add_f32x8(&mut accumulator[0][row], upper);
+    let (total, upper_levels) = accumulator
+        .split_first_mut()
+        .expect("cascade accumulator always has a root level");
+    for upper_level in upper_levels {
+        for (total, upper) in total.iter_mut().zip(upper_level.iter()) {
+            add_f32x8(total, *upper);
         }
     }
     accumulator[0]
@@ -208,9 +222,11 @@ fn pytorch_cascade_row_sum_f32x8(
         let lanes = load_f32x8(values, chunk);
         add_f32x8(&mut partial_sums[0], lanes);
     }
-    for row in 1..PYTORCH_SUM_ILP_FACTOR {
-        let lanes = partial_sums[row];
-        add_f32x8(&mut partial_sums[0], lanes);
+    let (total, partials) = partial_sums
+        .split_first_mut()
+        .expect("row sum accumulator always has a root lane");
+    for partial in partials {
+        add_f32x8(total, *partial);
     }
     partial_sums[0]
 }
