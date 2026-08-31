@@ -1,5 +1,9 @@
+import copy
+import inspect
+import pickle
 import re
 import sys
+import types
 import unittest
 from collections import UserList
 from collections.abc import Sequence
@@ -12,23 +16,32 @@ class ZerosTests(unittest.TestCase):
     def assert_tensor_matches(self, actual, expected):
         self.assertEqual(actual.shape, expected.shape)
         self.assertEqual(actual.stride(), expected.stride())
+        self.assertEqual(actual.storage_offset(), expected.storage_offset())
         self.assertEqual(actual.tolist(), expected.tolist())
         self.assertIs(actual.dtype, expected.dtype)
         self.assertEqual(actual.device, expected.device)
+        self.assertIs(actual.layout, expected.layout)
         self.assertEqual(actual.requires_grad, expected.requires_grad)
         self.assertEqual(actual.is_leaf, expected.is_leaf)
+        self.assertIs(actual.grad, expected.grad)
 
     def test_one_positional_integer_matches_singleton_size(self):
         metadata = (
             {},
             {"out": None},
             {"dtype": torch.float32},
+            {"layout": None},
+            {"layout": torch.strided},
             {"device": "cpu"},
             {"device": torch.device("cpu")},
+            {"pin_memory": None},
+            {"pin_memory": False},
             {
                 "out": None,
                 "dtype": torch.float32,
+                "layout": torch.strided,
                 "device": torch.device("cpu"),
+                "pin_memory": False,
                 "requires_grad": True,
             },
         )
@@ -61,6 +74,32 @@ class ZerosTests(unittest.TestCase):
                 with_out_none = factory({"out": None})
                 self.assert_tensor_matches(with_out_none, baseline)
                 self.assertFalse(with_out_none.is_set_to(baseline))
+
+    def test_default_layout_and_pin_memory_keywords_use_fresh_allocation(self):
+        option_cases = (
+            {"layout": None},
+            {"layout": torch.strided},
+            {"pin_memory": None},
+            {"pin_memory": False},
+            {"layout": None, "pin_memory": False},
+            {"layout": torch.strided, "pin_memory": False},
+            {"out": None, "layout": torch.strided, "pin_memory": False},
+            {
+                "layout": torch.strided,
+                "pin_memory": False,
+                "requires_grad": True,
+            },
+        )
+        for options in option_cases:
+            with self.subTest(options=options):
+                baseline = torch.zeros(
+                    (2, 3),
+                    requires_grad=options.get("requires_grad", False),
+                )
+                actual = torch.zeros((2, 3), **options)
+                self.assert_tensor_matches(actual, baseline)
+                self.assertFalse(actual.is_set_to(baseline))
+                self.assertNotEqual(actual.data_ptr(), baseline.data_ptr())
 
     def test_one_positional_dimension_uses_the_index_protocol(self):
         class IntSubclass(int):
@@ -191,26 +230,71 @@ class ZerosTests(unittest.TestCase):
                 with self.assertRaises(TypeError):
                     call()
 
-    def test_out_tensor_layout_and_pin_memory_remain_unsupported(self):
+    def test_out_tensor_and_unsupported_metadata_remain_unsupported(self):
         with self.assertRaisesRegex(
             RuntimeError,
             re.escape("zeros(): the 'out' argument is not supported"),
         ):
             torch.zeros(2, out=torch.zeros(2))
 
-        for call, message in (
+        self.assert_tensor_matches(
+            torch.zeros(2, layout=torch.strided, out=None),
+            torch.zeros(2),
+        )
+        self.assert_tensor_matches(
+            torch.zeros(2, pin_memory=False, out=None),
+            torch.zeros(2),
+        )
+
+        unsupported = (
             (
-                lambda: torch.zeros(2, layout=torch.strided, out=None),
-                "zeros() got an unexpected keyword argument 'layout'",
+                lambda: torch.zeros(2, layout=object()),
+                TypeError,
+                "zeros(): argument 'layout' must be torch.layout, not object",
             ),
             (
-                lambda: torch.zeros(2, pin_memory=False, out=None),
-                "zeros() got an unexpected keyword argument 'pin_memory'",
+                lambda: torch.zeros(2, pin_memory=0),
+                TypeError,
+                "zeros(): argument 'pin_memory' must be bool, not int",
             ),
-        ):
+            (
+                lambda: torch.zeros(2, pin_memory=True),
+                RuntimeError,
+                "zeros(): pin_memory=True is not supported; "
+                "only unpinned CPU storage is implemented",
+            ),
+        )
+        for call, error_type, message in unsupported:
             with self.subTest(message=message):
-                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                with self.assertRaisesRegex(error_type, f"^{re.escape(message)}$"):
                     call()
+
+    def test_callable_metadata_exports_copy_and_pickle_match_generated_builtins(self):
+        function = torch.zeros
+        owner = function.__reduce__()[1][0]
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "zeros")
+        self.assertEqual(function.__qualname__, "_VariableFunctionsClass.zeros")
+        self.assertEqual(function.__module__, "torch")
+        self.assertIsNone(function.__text_signature__)
+        self.assertRegex(
+            repr(function),
+            r"^<built-in method zeros of type object at 0x[0-9a-f]+>$",
+        )
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner.zeros, function)
+        self.assertEqual(torch.__all__.count("zeros"), 1)
+        self.assertIs(wildcard_namespace["zeros"], function)
+        self.assertIs(copy.copy(function), function)
+        self.assertIs(copy.deepcopy(function), function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(pickle.loads(pickle.dumps(function, protocol)), function)
 
 
 if __name__ == "__main__":

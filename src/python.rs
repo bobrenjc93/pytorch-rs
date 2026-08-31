@@ -1592,6 +1592,62 @@ pub(crate) fn arange_variable_function(
         .unbind())
 }
 
+fn dispatch_creation_mode(
+    py: Python<'_>,
+    name: &str,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    if torch_function_mode_stack::is_empty() {
+        return Ok(None);
+    }
+
+    let function = variable_function(py, name)?;
+    let types = PyTuple::empty(py);
+    let active_mode = torch_function_mode_stack::pop();
+    let Some(mode) = active_mode.get() else {
+        return Ok(None);
+    };
+    validate_torch_function_mode_handler(mode.bind(py))?;
+    let handler = mode.bind(py).getattr("__torch_function__")?;
+    let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+    if !is_not_implemented(py, &result) {
+        return Ok(Some(result));
+    }
+    Err(torch_function_dispatch_error(
+        py,
+        &format!("torch.{name}"),
+        Some(mode),
+        None,
+    )?)
+}
+
+pub(crate) fn zeros_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if let Some(result) = dispatch_creation_mode(py, "zeros", args, kwargs)? {
+        return Ok(result);
+    }
+    Ok(Bound::new(py, zeros_impl(args, kwargs)?)?
+        .into_any()
+        .unbind())
+}
+
+pub(crate) fn ones_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if let Some(result) = dispatch_creation_mode(py, "ones", args, kwargs)? {
+        return Ok(result);
+    }
+    Ok(Bound::new(py, ones_impl(args, kwargs)?)?
+        .into_any()
+        .unbind())
+}
+
 fn dispatch_empty_variadic_tensor_input(
     py: Python<'_>,
     name: &str,
@@ -4377,7 +4433,9 @@ struct CreationCallArguments<'py> {
     shape: Option<Bound<'py, PyAny>>,
     out: Option<Bound<'py, PyAny>>,
     dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
     device: Option<Bound<'py, PyAny>>,
+    pin_memory: Option<Bound<'py, PyAny>>,
     requires_grad: Option<Bound<'py, PyAny>>,
     keyword_error: Option<PyErr>,
 }
@@ -5421,11 +5479,7 @@ fn flatten(
     Py::new(args.py(), PyTensor::new(inner))
 }
 
-#[pyfunction(
-    signature = (*args, **kwargs),
-    text_signature = "(size=None, *, shape=None, out=None, dtype=None, device=None, requires_grad=False)"
-)]
-fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+fn zeros_impl(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("zeros", args, kwargs)?;
     let (size, dtype, device, requires_grad) = parse_creation_arguments("zeros", arguments)?;
     let ParsedCreationSize {
@@ -5437,11 +5491,7 @@ fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
         .map_err(|error| scalar_creation_error(&error, scalar_dimension))
 }
 
-#[pyfunction(
-    signature = (*args, **kwargs),
-    text_signature = "(size=None, *, shape=None, out=None, dtype=None, device=None, requires_grad=False)"
-)]
-fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+fn ones_impl(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("ones", args, kwargs)?;
     let (size, dtype, device, requires_grad) = parse_creation_arguments("ones", arguments)?;
     let ParsedCreationSize {
@@ -6093,7 +6143,9 @@ fn bind_creation_arguments<'py>(
         shape: None,
         out: None,
         dtype: None,
+        layout: None,
         device: None,
+        pin_memory: None,
         requires_grad: None,
         keyword_error: None,
     };
@@ -6122,7 +6174,9 @@ fn bind_creation_arguments<'py>(
             "shape" => arguments.shape = optional_call_argument(value),
             "out" => arguments.out = optional_call_argument(value),
             "dtype" => arguments.dtype = optional_call_argument(value),
+            "layout" => arguments.layout = optional_call_argument(value),
             "device" => arguments.device = optional_call_argument(value),
+            "pin_memory" => arguments.pin_memory = optional_call_argument(value),
             "requires_grad" => arguments.requires_grad = optional_call_argument(value),
             _ => {
                 arguments.keyword_error.get_or_insert_with(|| {
@@ -7129,7 +7183,9 @@ fn parse_creation_arguments(
         shape,
         out,
         dtype,
+        layout,
         device,
+        pin_memory,
         requires_grad,
         keyword_error,
     } = arguments;
@@ -7140,7 +7196,9 @@ fn parse_creation_arguments(
     let size = parse_creation_size(function, size.as_ref(), size_origin, shape.as_ref())?;
     let has_out = validate_creation_out(function, out.as_ref())?;
     let dtype = parse_dtype(function, dtype.as_ref())?;
+    parse_factory_layout(function, layout.as_ref())?;
     validate_device_argument_type(function, device.as_ref())?;
+    let pin_memory = parse_factory_bool(function, "pin_memory", pin_memory.as_ref())?;
     let requires_grad = parse_factory_requires_grad(function, requires_grad.as_ref())?;
     if let Some(error) = keyword_error {
         return Err(error);
@@ -7150,6 +7208,11 @@ fn parse_creation_arguments(
     if has_out {
         return Err(PyRuntimeError::new_err(format!(
             "{function}(): the 'out' argument is not supported"
+        )));
+    }
+    if pin_memory {
+        return Err(PyRuntimeError::new_err(format!(
+            "{function}(): pin_memory=True is not supported; only unpinned CPU storage is implemented"
         )));
     }
     Ok((size, dtype, device, requires_grad))
@@ -13748,8 +13811,6 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
     add_tensor_queries(module)?;
-    module.add_function(wrap_pyfunction!(zeros, module)?)?;
-    module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
     module.add_function(wrap_pyfunction!(full, module)?)?;
     let float32 = dtype_object(py, DType::Float32)?;
