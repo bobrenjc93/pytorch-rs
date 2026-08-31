@@ -1,5 +1,9 @@
+import copy
+import inspect
+import pickle
 import re
 import sys
+import types
 import unittest
 
 import numpy as np
@@ -146,8 +150,11 @@ class EyeTests(unittest.TestCase):
 
     def test_supported_metadata_creates_cpu_float32_leaves(self):
         cases = (
+            {"out": None},
             {"dtype": torch.float32},
             {"dtype": torch.float},
+            {"layout": None},
+            {"layout": torch.strided},
             {"device": "cpu"},
             {"device": "cpu:0"},
             {"device": torch.device("cpu", 2)},
@@ -177,6 +184,115 @@ class EyeTests(unittest.TestCase):
                 )
                 self.assertTrue(tensor.is_leaf)
                 self.assertIsNone(tensor.grad)
+
+    def test_default_out_and_layout_keywords_preserve_allocation_behavior(self):
+        cases = (
+            ((3,), {"out": None}),
+            ((2, 4), {"layout": None}),
+            ((4, 2), {"layout": torch.strided}),
+            ((0,), {"out": None, "layout": torch.strided}),
+            ((3, 0), {"out": None, "layout": None}),
+            ((0, 3), {"out": None, "layout": torch.strided}),
+        )
+        for arguments, kwargs in cases:
+            with self.subTest(arguments=arguments, kwargs=kwargs):
+                actual = torch.eye(*arguments, **kwargs)
+                expected = torch.eye(*arguments)
+                self.assertEqual(
+                    self.tensor_observation(actual),
+                    self.tensor_observation(expected),
+                )
+
+        first = torch.eye(2, out=None, layout=torch.strided)
+        second = torch.eye(2, out=None, layout=torch.strided)
+        self.assertNotEqual(first.data_ptr(), second.data_ptr())
+
+    def test_callable_exports_and_pickling_match_generated_builtin_shape(self):
+        function = torch.eye
+        owner = function.__reduce__()[1][0]
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+
+        self.assertTrue(callable(function))
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "eye")
+        self.assertEqual(function.__qualname__, "_VariableFunctionsClass.eye")
+        self.assertEqual(function.__module__, "torch")
+        self.assertIsNone(function.__text_signature__)
+        self.assertRegex(
+            repr(function),
+            r"^<built-in method eye of type object at 0x[0-9a-f]+>$",
+        )
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner.eye, function)
+        self.assertEqual(torch.__all__.count("eye"), 1)
+        self.assertIs(wildcard_namespace["eye"], function)
+        self.assertIs(copy.copy(function), function)
+        self.assertIs(copy.deepcopy(function), function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(pickle.loads(pickle.dumps(function, protocol)), function)
+
+    def test_unsupported_output_layout_and_pin_memory_options(self):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            re.escape("eye(): the 'out' argument is not supported"),
+        ):
+            torch.eye(1, out=torch.zeros((1, 1)))
+        with self.assertRaisesRegex(
+            TypeError,
+            re.escape("eye(): argument 'out' must be Tensor, not object"),
+        ):
+            torch.eye(1, out=object())
+
+        for layout, type_name in ((object(), "object"), (torch.float32, "torch.dtype")):
+            with self.subTest(argument="layout", value=layout):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    re.escape(
+                        "eye(): argument 'layout' must be torch.layout, "
+                        f"not {type_name}"
+                    ),
+                ):
+                    torch.eye(1, layout=layout)
+
+        for value in (None, False, True):
+            with self.subTest(argument="pin_memory", value=value):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    re.escape("eye() got an unexpected keyword argument 'pin_memory'"),
+                ):
+                    torch.eye(1, pin_memory=value)
+
+    def test_supported_option_type_errors_precede_dimension_conversion(self):
+        invalid_metadata = (
+            lambda: torch.eye(2**63, out=object(), requires_grad=1),
+            lambda: torch.eye(2**63, layout=object(), requires_grad=1),
+            lambda: torch.eye(2**63, dtype=object(), requires_grad=1),
+            lambda: torch.eye(2**63, device=object(), requires_grad=1),
+        )
+        for call in invalid_metadata:
+            with self.subTest(call=call):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertNotIn("argument 'requires_grad'", str(raised.exception))
+
+        out = torch.eye(1)
+        for call, message in (
+            (
+                lambda: torch.eye(2**63, out=out),
+                "Overflow when unpacking long long",
+            ),
+            (
+                lambda: torch.eye(-1, out=out),
+                "n must be greater or equal to 0, got -1",
+            ),
+        ):
+            with self.subTest(message=message):
+                with self.assertRaisesRegex((RuntimeError, ValueError), re.escape(message)):
+                    call()
 
     def test_integer_protocol_inputs(self):
         class IntSubclass(int):

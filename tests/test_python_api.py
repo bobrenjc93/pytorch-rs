@@ -634,7 +634,9 @@ class PythonApiBaselineTests(unittest.TestCase):
         tensor = torch.eye(
             2,
             3,
+            out=None,
             dtype=torch.float,
+            layout=torch.strided,
             device=torch.device("cpu", 2),
         )
         self.assertEqual(tensor.tolist(), [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
@@ -649,10 +651,17 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(argument="device", value=device):
                 with self.assertRaises(RuntimeError):
                     torch.eye(1, device=device)
-        for keyword in ("out", "layout", "pin_memory"):
+
+        self.assertEqual(torch.eye(1, out=None).tolist(), [[1.0]])
+        self.assertEqual(torch.eye(1, layout=None).tolist(), [[1.0]])
+        self.assertEqual(torch.eye(1, layout=torch.strided).tolist(), [[1.0]])
+
+        with self.assertRaises(RuntimeError):
+            torch.eye(1, out=torch.zeros((1, 1)))
+        for keyword in ("layout", "pin_memory"):
             with self.subTest(keyword=keyword):
                 with self.assertRaises(TypeError):
-                    torch.eye(1, **{keyword: None})
+                    torch.eye(1, **{keyword: object()})
 
         with self.assertRaises(TypeError):
             torch.eye(1, 1, torch.float32)

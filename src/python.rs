@@ -4412,7 +4412,9 @@ struct FullCallArguments<'py> {
 struct EyeCallArguments<'py> {
     n: Option<Bound<'py, PyAny>>,
     m: Option<Bound<'py, PyAny>>,
+    out: Option<Bound<'py, PyAny>>,
     dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
     device: Option<Bound<'py, PyAny>>,
     requires_grad: Option<Bound<'py, PyAny>>,
     keyword_error: Option<PyErr>,
@@ -5227,6 +5229,14 @@ fn arange_impl(
         .map_err(|error| scalar_creation_error(&error, Some(elements)))
 }
 
+pub(crate) fn eye_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    Ok(Bound::new(py, eye_impl(args, kwargs)?)?.into_any().unbind())
+}
+
 fn parse_requires_grad(function: &str, requires_grad: &Bound<'_, PyAny>) -> PyResult<bool> {
     if requires_grad.is_exact_instance_of::<PyBool>() {
         return requires_grad.is_truthy();
@@ -5453,14 +5463,15 @@ fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
         .map_err(|error| scalar_creation_error(&error, scalar_dimension))
 }
 
-#[pyfunction(
-    signature = (*args, **kwargs),
-    text_signature = "(n, m=None, *, dtype=None, device=None, requires_grad=False)"
-)]
-fn eye(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+fn eye_impl(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_eye_arguments(args, kwargs)?;
-    let (n, m, dtype, device, requires_grad) = parse_eye_arguments(arguments)?;
+    let (n, m, has_out, dtype, device, requires_grad) = parse_eye_arguments(arguments)?;
     let shape = [n, m];
+    if has_out {
+        return Err(PyRuntimeError::new_err(
+            "eye(): the 'out' argument is not supported",
+        ));
+    }
 
     CoreTensor::eye_with_metadata(n, m, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
@@ -7040,7 +7051,9 @@ fn bind_eye_arguments<'py>(
         } else {
             Some(positional.get_item(1)?)
         },
+        out: None,
         dtype: None,
+        layout: None,
         device: None,
         requires_grad: None,
         keyword_error: None,
@@ -7070,7 +7083,9 @@ fn bind_eye_arguments<'py>(
                     arguments.m = Some(value);
                 }
             }
+            "out" => arguments.out = optional_call_argument(value),
             "dtype" => arguments.dtype = optional_call_argument(value),
+            "layout" => arguments.layout = optional_call_argument(value),
             "device" => arguments.device = optional_call_argument(value),
             "requires_grad" => arguments.requires_grad = optional_call_argument(value),
             _ => {
@@ -7087,11 +7102,13 @@ fn bind_eye_arguments<'py>(
 
 fn parse_eye_arguments(
     arguments: EyeCallArguments<'_>,
-) -> PyResult<(usize, usize, DType, Device, bool)> {
+) -> PyResult<(usize, usize, bool, DType, Device, bool)> {
     let EyeCallArguments {
         n,
         m,
+        out,
         dtype,
+        layout,
         device,
         requires_grad,
         keyword_error,
@@ -7105,7 +7122,9 @@ fn parse_eye_arguments(
     // Factory options are type-checked before dimension conversion. Device
     // resolution and shape validation happen only after all declared option
     // types and competing keywords have been checked.
+    let has_out = validate_creation_out("eye", out.as_ref())?;
     let dtype = parse_dtype("eye", dtype.as_ref())?;
+    validate_strided_factory_layout("eye", layout.as_ref())?;
     validate_device_argument_type("eye", device.as_ref())?;
     let requires_grad = parse_factory_requires_grad("eye", requires_grad.as_ref())?;
     if let Some(error) = keyword_error {
@@ -7116,7 +7135,29 @@ fn parse_eye_arguments(
     let m = m.map_or(Ok(n), |m| parse_eye_dimension("m", &m))?;
     let n = validate_eye_dimension("n", n)?;
     let m = validate_eye_dimension("m", m)?;
-    Ok((n, m, dtype, device, requires_grad))
+    Ok((n, m, has_out, dtype, device, requires_grad))
+}
+
+fn validate_strided_factory_layout(
+    function: &str,
+    layout: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    let Some(layout) = layout else {
+        return Ok(());
+    };
+    let py = layout.py();
+    if !layout.is_instance(layout_objects(py)?.layout.bind(py))? {
+        let actual = python_type_name(layout)?;
+        return Err(PyTypeError::new_err(format!(
+            "{function}(): argument 'layout' must be torch.layout, not {actual}"
+        )));
+    }
+    if layout.is(strided_object(py)?.bind(py)) {
+        return Ok(());
+    }
+    Err(PyRuntimeError::new_err(format!(
+        "{function}(): layout is not supported; only torch.strided is implemented"
+    )))
 }
 
 fn parse_creation_arguments(
@@ -13750,7 +13791,6 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     add_tensor_queries(module)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
-    module.add_function(wrap_pyfunction!(eye, module)?)?;
     module.add_function(wrap_pyfunction!(full, module)?)?;
     let float32 = dtype_object(py, DType::Float32)?;
     module.add("float32", float32.clone_ref(py))?;
