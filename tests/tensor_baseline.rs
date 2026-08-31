@@ -602,6 +602,79 @@ fn sine_handles_scalar_and_empty_tensors_with_pytorch_layouts() {
 }
 
 #[test]
+fn cosine_matches_pytorch_float32_values_and_special_cases() {
+    const ATOL: f32 = 1.0e-6;
+    const RTOL: f32 = 1.0e-6;
+
+    let input = Tensor::from_vec(
+        vec![
+            0.25,
+            -0.5,
+            1.0,
+            -2.0,
+            std::f32::consts::PI,
+            1.0e10,
+            -1.0e10,
+            f32::MAX,
+        ],
+        [2, 2, 2],
+    )
+    .unwrap();
+    // PyTorch 2.x CPU float32 reference values. Transcendental kernels are
+    // compared using the same small mixed absolute/relative tolerance as the
+    // differential suite rather than requiring backend-specific bit identity.
+    let pytorch_reference = [
+        0.968_912_4,
+        0.877_582_55,
+        0.540_302_3,
+        -0.416_146_84,
+        -1.0,
+        0.873_119_6,
+        0.873_119_6,
+        0.853_021,
+    ];
+    let output = input.cos().unwrap();
+
+    assert_eq!(output.shape(), input.shape());
+    assert_eq!(output.stride(), input.stride());
+    assert_eq!(output.dtype(), input.dtype());
+    assert_eq!(output.device(), input.device());
+    for (actual, expected) in output.as_slice().iter().zip(pytorch_reference) {
+        assert!((actual - expected).abs() <= ATOL + RTOL * expected.abs());
+    }
+
+    let special = Tensor::from_vec(
+        vec![0.0, -0.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY],
+        [5],
+    )
+    .unwrap()
+    .cos()
+    .unwrap();
+    assert_eq!(special.as_slice()[0].to_bits(), 1.0_f32.to_bits());
+    assert_eq!(special.as_slice()[1].to_bits(), 1.0_f32.to_bits());
+    assert!(special.as_slice()[2..].iter().all(|value| value.is_nan()));
+}
+
+#[test]
+fn cosine_handles_scalar_and_empty_tensors_with_pytorch_layouts() {
+    let scalar = Tensor::from_vec(vec![0.5], []).unwrap();
+    let scalar_output = scalar.cos().unwrap();
+    assert!(scalar_output.shape().is_empty());
+    assert!(scalar_output.stride().is_empty());
+    assert!((scalar_output.item().unwrap() - 0.877_582_55).abs() <= 1.0e-6);
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap();
+    let empty_output = empty.cos().unwrap();
+    assert_eq!(empty_output.shape(), empty.shape());
+    assert_eq!(empty_output.stride(), empty.stride());
+    assert!(empty_output.as_slice().is_empty());
+
+    let unusual_layout = Tensor::zeros([0, 1]).unwrap().add_scalar(1.0).unwrap();
+    assert_eq!(unusual_layout.stride(), [1, 0]);
+    assert_eq!(unusual_layout.cos().unwrap().stride(), [1, 1]);
+}
+
+#[test]
 fn absolute_value_matches_pytorch_float32_ieee_bits() {
     let input_bits = [
         0x0000_0000,
