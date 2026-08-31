@@ -608,8 +608,9 @@ and `torch.equal()` comparison, identity `Tensor.positive()`/
 `Tensor.negative()` alias, `torch.neg()`, and the distinct top-level
 `torch.negative()` builtin. It supports broadcast tensor and real-scalar
 addition, subtraction, multiplication through `*`, `Tensor.mul()`,
-`Tensor.multiply()`, `torch.mul()`, and the distinct top-level
-`torch.multiply()` builtin, plus true division, the listed unary kernels,
+`Tensor.multiply()`, `torch.mul()`, `torch.sub(input, other, *, alpha=1,
+out=None)`, and the distinct top-level `torch.multiply()` and
+`torch.subtract()` builtins, plus true division, the listed unary kernels,
 `Tensor.sum(dim=None)`, `torch.sum(input, dim=None, *, dtype=None)`,
 `Tensor.mean(dim=None)`, `torch.mean(input, dim=None, *, dtype=None)`,
 `Tensor.relu()`, `torch.relu()`, and rank-2 matrix multiplication through `@`,
@@ -624,6 +625,14 @@ Top-level `torch.mul()` and `torch.multiply()` accept tensor/tensor or
 tensor/real-scalar operands in either order and reuse the same broadcast and
 autograd kernels; their `out` forms and scalar-only multiplication remain
 unsupported.
+
+Top-level `torch.sub()` and `torch.subtract()` accept exact native CPU float32
+tensor/tensor and tensor/real-scalar operands in either order with omitted or
+default-equivalent `alpha=1` and omitted or `out=None`, reusing the same
+broadcast, signed-zero, NaN, infinity, empty, offset/non-contiguous, autograd,
+`no_grad`, and `__torch_function__` behavior as subtraction operators. Concrete
+`out` tensors, nondefault `alpha`, scalar-only calls, unsupported operands,
+Tensor method aliases, and in-place subtraction variants remain unsupported.
 
 Out-of-place `torch.nn.functional.relu(input, inplace=False)` delegates to the
 same native kernel; `inplace=True` is rejected before the input can be mutated.

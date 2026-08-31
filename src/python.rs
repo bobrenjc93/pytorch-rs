@@ -2292,6 +2292,22 @@ pub(crate) fn multiply_variable_function(
     multiplication_variable_function(MultiplicationOperation::Multiply, py, args, kwargs)
 }
 
+pub(crate) fn sub_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    subtraction_variable_function(SubtractionOperation::Sub, py, args, kwargs)
+}
+
+pub(crate) fn subtract_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    subtraction_variable_function(SubtractionOperation::Subtract, py, args, kwargs)
+}
+
 pub(crate) fn can_cast_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2338,6 +2354,19 @@ fn multiplication_variable_function(
         return Err(keyword_error);
     }
     dispatch_top_level_multiplication(operation, py, &input, &other, args, kwargs)
+}
+
+fn subtraction_variable_function(
+    operation: SubtractionOperation,
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (call, keyword_error) = bind_top_level_subtraction_arguments(operation, args, kwargs)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    dispatch_top_level_subtraction(operation, py, &call, args, kwargs)
 }
 
 enum ParsedFillValue {
@@ -2628,6 +2657,19 @@ enum BoundMulOperand<'py> {
     Tensor(Bound<'py, PyTensor>),
     Scalar(Bound<'py, PyAny>),
     Override(ProbedTorchFunctionOverride<'py>),
+}
+
+enum BoundSubtractionAlpha<'py> {
+    Default,
+    NonDefault,
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+struct BoundSubtractionCall<'py> {
+    input: BoundMulOperand<'py>,
+    other: BoundMulOperand<'py>,
+    alpha: BoundSubtractionAlpha<'py>,
+    out: Option<BoundTensorOrTorchFunction<'py>>,
 }
 
 enum BoundDTypeOperand<'py> {
@@ -4306,6 +4348,31 @@ fn ordered_multiplication_overrides<'py>(
     ordered_binary_overrides(input, other, operation.dispatch_allocation_error())
 }
 
+fn ordered_subtraction_overrides<'py>(
+    operation: SubtractionOperation,
+    call: &BoundSubtractionCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(4)
+        .map_err(|_| PyMemoryError::new_err(operation.dispatch_allocation_error()))?;
+
+    if let BoundMulOperand::Override(probed) = &call.input {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let BoundMulOperand::Override(probed) = &call.other {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let BoundSubtractionAlpha::Override(probed) = &call.alpha {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(BoundTensorOrTorchFunction::Override(probed)) = &call.out {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+
+    Ok(overrides)
+}
+
 fn dispatch_top_level_matmul(
     py: Python<'_>,
     input: &BoundTensorOrTorchFunction<'_>,
@@ -4404,6 +4471,142 @@ fn dispatch_top_level_multiplication(
         active_mode.get(),
         &overrides,
     )?)
+}
+
+fn dispatch_top_level_subtraction(
+    operation: SubtractionOperation,
+    py: Python<'_>,
+    call: &BoundSubtractionCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_subtraction_overrides(operation, call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_subtraction(operation, py, call);
+    }
+
+    let function = variable_function(py, operation.name())?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Disable the top mode for the complete dispatch attempt. A mode can call
+    // the public function explicitly to forward to the next mode.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        operation.qualified_name(),
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_subtraction(
+    operation: SubtractionOperation,
+    py: Python<'_>,
+    call: &BoundSubtractionCall<'_>,
+) -> PyResult<Py<PyAny>> {
+    let result = match (&call.input, &call.other) {
+        (BoundMulOperand::Tensor(input), BoundMulOperand::Tensor(other)) => {
+            validate_default_subtraction_alpha(operation, &call.alpha)?;
+            if call.out.is_some() {
+                return Err(unsupported_subtraction_out(operation));
+            }
+            let other = other.try_borrow()?;
+            BinaryOperation::Subtract.apply_tensors(&input.try_borrow()?.inner, &other.inner)
+        }
+        (BoundMulOperand::Tensor(tensor), BoundMulOperand::Scalar(scalar)) => {
+            let scalar = parse_top_level_sub_scalar(scalar)?;
+            validate_default_subtraction_alpha(operation, &call.alpha)?;
+            if call.out.is_some() {
+                return Err(unsupported_subtraction_out(operation));
+            }
+            BinaryOperation::Subtract.apply_scalar(&tensor.try_borrow()?.inner, scalar, false)
+        }
+        (BoundMulOperand::Scalar(scalar), BoundMulOperand::Tensor(tensor)) => {
+            let scalar = parse_top_level_sub_scalar(scalar)?;
+            validate_default_subtraction_alpha(operation, &call.alpha)?;
+            if call.out.is_some() {
+                return Err(unsupported_subtraction_out(operation));
+            }
+            BinaryOperation::Subtract.apply_scalar(&tensor.try_borrow()?.inner, scalar, true)
+        }
+        (BoundMulOperand::Scalar(_), BoundMulOperand::Scalar(_)) => {
+            return Err(PyTypeError::new_err(format!(
+                "{}(): scalar-scalar subtraction is not supported; at least one operand must be Tensor",
+                operation.name()
+            )));
+        }
+        (BoundMulOperand::Override(_), _) | (_, BoundMulOperand::Override(_)) => {
+            unreachable!("subtraction overrides were dispatched before the native path")
+        }
+    };
+    Ok(Py::new(
+        py,
+        PyTensor::new(result.map_err(|error| tensor_error(&error))?),
+    )?
+    .into_any())
+}
+
+fn parse_top_level_sub_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
+    match parse_arithmetic_scalar(value) {
+        Ok(Some(scalar)) if scalar.is_python_bool() => Err(bool_subtraction_error()),
+        Ok(Some(ParsedArithmeticScalar::WideNumpyUnsigned)) => {
+            Err(PyTypeError::new_err("an integer is required"))
+        }
+        Ok(Some(scalar)) => Ok(scalar.into_f32()),
+        Ok(None) => unreachable!("top-level sub scalar types were checked while binding"),
+        Err(_) if value.is_instance_of::<PyInt>() => {
+            let message = if python_integer_is_negative(value)? {
+                "can't convert negative int to unsigned"
+            } else {
+                "int too big to convert"
+            };
+            Err(PyOverflowError::new_err(message))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn validate_default_subtraction_alpha(
+    operation: SubtractionOperation,
+    alpha: &BoundSubtractionAlpha<'_>,
+) -> PyResult<()> {
+    match alpha {
+        BoundSubtractionAlpha::Default => Ok(()),
+        BoundSubtractionAlpha::NonDefault => Err(PyNotImplementedError::new_err(format!(
+            "{}(): only default alpha=1 is supported",
+            operation.name()
+        ))),
+        BoundSubtractionAlpha::Override(_) => {
+            unreachable!("subtraction alpha overrides were dispatched before the native path")
+        }
+    }
+}
+
+fn unsupported_subtraction_out(operation: SubtractionOperation) -> PyErr {
+    PyRuntimeError::new_err(format!(
+        "{}(): the 'out' argument is not supported",
+        operation.name()
+    ))
 }
 
 fn apply_top_level_multiplication(
@@ -4585,6 +4788,12 @@ enum MultiplicationOperation {
     Multiply,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SubtractionOperation {
+    Sub,
+    Subtract,
+}
+
 impl MultiplicationOperation {
     const fn name(self) -> &'static str {
         match self {
@@ -4604,6 +4813,29 @@ impl MultiplicationOperation {
         match self {
             Self::Mul => "unable to allocate mul dispatch operands",
             Self::Multiply => "unable to allocate multiply dispatch operands",
+        }
+    }
+}
+
+impl SubtractionOperation {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Sub => "sub",
+            Self::Subtract => "subtract",
+        }
+    }
+
+    const fn qualified_name(self) -> &'static str {
+        match self {
+            Self::Sub => "torch.sub",
+            Self::Subtract => "torch.subtract",
+        }
+    }
+
+    const fn dispatch_allocation_error(self) -> &'static str {
+        match self {
+            Self::Sub => "unable to allocate sub dispatch operands",
+            Self::Subtract => "unable to allocate subtract dispatch operands",
         }
     }
 }
@@ -11597,6 +11829,326 @@ fn parse_top_level_multiplication_operand<'py>(
 
     parse_tensor_argument(operation.name(), argument, value)?;
     unreachable!("unsupported multiplication operands were rejected by parse_tensor_argument")
+}
+
+struct SubtractionArgumentSelection<'py> {
+    input: ParsedCallArgument<'py>,
+    other: ParsedCallArgument<'py>,
+    input_keyword: Option<&'static str>,
+    other_keyword: Option<&'static str>,
+}
+
+fn bind_top_level_subtraction_arguments<'py>(
+    operation: SubtractionOperation,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(BoundSubtractionCall<'py>, Option<PyErr>)> {
+    let selection = select_top_level_subtraction_arguments(operation, positional, keywords)?;
+    let input = parse_top_level_subtraction_operand(
+        operation,
+        "input",
+        &selection.input,
+        positional,
+        keywords,
+    )?;
+    let other = parse_top_level_subtraction_operand(
+        operation,
+        "other",
+        &selection.other,
+        positional,
+        keywords,
+    )?;
+    let alpha = bind_top_level_subtraction_alpha(operation, keywords)?;
+    let out = bind_top_level_subtraction_out(operation, keywords)?;
+    let keyword_error = validate_top_level_subtraction_keywords(operation, &selection, keywords)?;
+    Ok((
+        BoundSubtractionCall {
+            input,
+            other,
+            alpha,
+            out,
+        },
+        keyword_error,
+    ))
+}
+
+fn select_top_level_subtraction_arguments<'py>(
+    operation: SubtractionOperation,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<SubtractionArgumentSelection<'py>> {
+    if positional.len() > 2 {
+        return Err(if operation == SubtractionOperation::Subtract {
+            top_level_subtraction_overload_error(operation, positional, keywords)?
+        } else {
+            PyTypeError::new_err(format!(
+                "{}() takes 2 positional arguments but {} were given",
+                operation.name(),
+                positional.len()
+            ))
+        });
+    }
+
+    let keyword_argument =
+        |names: &[&'static str]| -> PyResult<Option<(&'static str, Bound<'py, PyAny>)>> {
+            let Some(keywords) = keywords else {
+                return Ok(None);
+            };
+            for name in names {
+                if let Some(value) = keywords.get_item(*name)? {
+                    return Ok(Some((*name, value)));
+                }
+            }
+            Ok(None)
+        };
+
+    let (input, input_keyword) = if positional.is_empty() {
+        match keyword_argument(&["input", "x", "a", "x1"])? {
+            Some((name, value)) => (
+                ParsedCallArgument {
+                    value,
+                    position: None,
+                },
+                Some(name),
+            ),
+            None => {
+                return Err(top_level_subtraction_overload_error(
+                    operation, positional, keywords,
+                )?);
+            }
+        }
+    } else {
+        (
+            ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            },
+            None,
+        )
+    };
+
+    let (other, other_keyword) = if positional.len() < 2 {
+        match keyword_argument(&["other", "x2"])? {
+            Some((name, value)) => (
+                ParsedCallArgument {
+                    value,
+                    position: None,
+                },
+                Some(name),
+            ),
+            None => {
+                parse_top_level_subtraction_operand(
+                    operation, "input", &input, positional, keywords,
+                )?;
+                return Err(top_level_subtraction_overload_error(
+                    operation, positional, keywords,
+                )?);
+            }
+        }
+    } else {
+        (
+            ParsedCallArgument {
+                value: positional.get_item(1)?,
+                position: Some(2),
+            },
+            None,
+        )
+    };
+
+    Ok(SubtractionArgumentSelection {
+        input,
+        other,
+        input_keyword,
+        other_keyword,
+    })
+}
+
+fn parse_top_level_subtraction_operand<'py>(
+    operation: SubtractionOperation,
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundMulOperand<'py>> {
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundMulOperand::Tensor(
+            value.value.cast::<PyTensor>()?.clone(),
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundMulOperand::Override(probed));
+    }
+    if value.value.is_instance_of::<PyTensor>() {
+        return Err(PyNotImplementedError::new_err(format!(
+            "{}(): only exact native Tensor operands are supported",
+            operation.name()
+        )));
+    }
+    if is_real_arithmetic_scalar(&value.value)? {
+        return Ok(BoundMulOperand::Scalar(value.value.clone()));
+    }
+
+    if operation == SubtractionOperation::Subtract {
+        return Err(top_level_subtraction_overload_error(
+            operation, positional, keywords,
+        )?);
+    }
+
+    parse_tensor_argument(operation.name(), argument, value)?;
+    unreachable!("unsupported subtraction operands were rejected by parse_tensor_argument")
+}
+
+fn bind_top_level_subtraction_alpha<'py>(
+    operation: SubtractionOperation,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundSubtractionAlpha<'py>> {
+    let Some(alpha) = keywords
+        .map(|values| values.get_item("alpha"))
+        .transpose()?
+        .flatten()
+    else {
+        return Ok(BoundSubtractionAlpha::Default);
+    };
+    if let Some(probed) = probe_torch_function_override(&alpha) {
+        return Ok(BoundSubtractionAlpha::Override(probed));
+    }
+    let Some(scalar) = parse_arithmetic_scalar(&alpha)? else {
+        let actual = python_type_name(&alpha)?;
+        return Err(PyTypeError::new_err(format!(
+            "{}(): argument 'alpha' must be Number, not {actual}",
+            operation.name()
+        )));
+    };
+    match scalar {
+        ParsedArithmeticScalar::PythonBool(_) => Err(PyRuntimeError::new_err(
+            "Boolean alpha only supported for Boolean results.",
+        )),
+        ParsedArithmeticScalar::WideNumpyUnsigned => {
+            Err(PyTypeError::new_err("an integer is required"))
+        }
+        scalar if parsed_subtraction_alpha_is_one(&scalar) => Ok(BoundSubtractionAlpha::Default),
+        _ => Ok(BoundSubtractionAlpha::NonDefault),
+    }
+}
+
+fn parsed_subtraction_alpha_is_one(scalar: &ParsedArithmeticScalar) -> bool {
+    match scalar {
+        ParsedArithmeticScalar::Number(ParsedFillValue::Float(value)) => *value == 1.0,
+        ParsedArithmeticScalar::Number(ParsedFillValue::SignedInteger(value)) => *value == 1,
+        ParsedArithmeticScalar::Number(ParsedFillValue::UnsignedInteger(value)) => *value == 1,
+        ParsedArithmeticScalar::Number(ParsedFillValue::TensorScalar(value)) => *value == 1.0,
+        ParsedArithmeticScalar::PythonBool(_) | ParsedArithmeticScalar::WideNumpyUnsigned => false,
+    }
+}
+
+fn bind_top_level_subtraction_out<'py>(
+    operation: SubtractionOperation,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<Option<BoundTensorOrTorchFunction<'py>>> {
+    let Some(out) = keywords
+        .map(|values| values.get_item("out"))
+        .transpose()?
+        .flatten()
+    else {
+        return Ok(None);
+    };
+    if out.is_none() {
+        return Ok(None);
+    }
+    parse_tensor_or_torch_function_argument(
+        operation.name(),
+        "out",
+        &ParsedCallArgument {
+            value: out,
+            position: None,
+        },
+    )
+    .map(Some)
+}
+
+fn validate_top_level_subtraction_keywords(
+    operation: SubtractionOperation,
+    selection: &SubtractionArgumentSelection<'_>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<PyErr>> {
+    let Some(keywords) = keywords else {
+        return Ok(None);
+    };
+    let mut keyword_error = None;
+    for key in keywords.keys() {
+        let key = key.extract::<String>()?;
+        let error = match key.as_str() {
+            "input" if selection.input.position.is_some() => Some(PyTypeError::new_err(format!(
+                "{}() got multiple values for argument 'input'",
+                operation.name()
+            ))),
+            "other" if selection.other.position.is_some() => Some(PyTypeError::new_err(format!(
+                "{}() got multiple values for argument 'other'",
+                operation.name()
+            ))),
+            "input" | "other" | "alpha" | "out" => None,
+            "x" | "a" | "x1" if selection.input_keyword == Some(key.as_str()) => None,
+            "x2" if selection.other_keyword == Some(key.as_str()) => None,
+            _ => Some(PyTypeError::new_err(format!(
+                "{}() got an unexpected keyword argument '{key}'",
+                operation.name()
+            ))),
+        };
+        if let Some(error) = error {
+            keyword_error.get_or_insert(error);
+        }
+    }
+    Ok(keyword_error)
+}
+
+fn top_level_subtraction_overload_error(
+    operation: SubtractionOperation,
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let allocation = PythonAllocationFallback::new(positional.py());
+    let summary = call_type_summary_with(
+        positional,
+        keywords,
+        CallKeywordOrder::PyTorchUnorderedMap,
+        &allocation,
+    )?;
+    let mut message = try_string_from_str_with(operation.name(), &allocation)?;
+    if operation == SubtractionOperation::Sub {
+        try_push_string_with(
+            &mut message,
+            "() received an invalid combination of arguments - got (",
+            &allocation,
+        )?;
+        try_push_string_with(&mut message, &summary, &allocation)?;
+        try_push_string_with(
+            &mut message,
+            "), but expected (Tensor input, Tensor other, *, Number alpha = 1, Tensor out = None)",
+            &allocation,
+        )?;
+    } else {
+        try_push_string_with(
+            &mut message,
+            "() received an invalid combination of arguments - got (",
+            &allocation,
+        )?;
+        try_push_string_with(&mut message, &summary, &allocation)?;
+        try_push_string_with(
+            &mut message,
+            "), but expected one of:\n * (Tensor input, Tensor other, *, Number alpha = 1, Tensor out = None)\n * (Tensor input, Number other, Number alpha = 1)",
+            &allocation,
+        )?;
+    }
+    if let Some(nul) = message.find('\0') {
+        message.truncate(nul);
+    }
+    let py = positional.py();
+    let message = PyString::from_bytes(py, message.as_bytes()).map_err(|_| allocation.error())?;
+    let exception = py
+        .get_type::<PyTypeError>()
+        .call1((message,))
+        .map_err(|_| allocation.error())?;
+    Ok(PyErr::from_value(exception))
 }
 
 fn bind_matmul_argument<'py>(
