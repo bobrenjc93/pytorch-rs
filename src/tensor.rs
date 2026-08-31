@@ -25,6 +25,230 @@ fn full_reduction_mean_divisor(elements: usize) -> f32 {
     elements as f32
 }
 
+// Match PyTorch 2.13's CPU float32 cascade_sum for private MSE sum support
+// without changing the public Tensor.sum() sequential-reduction contract.
+#[cfg(feature = "python-bindings")]
+const PYTORCH_SUM_VECTOR_WIDTH: usize = 8;
+#[cfg(feature = "python-bindings")]
+const PYTORCH_SUM_ILP_FACTOR: usize = 4;
+#[cfg(feature = "python-bindings")]
+const PYTORCH_SUM_CASCADE_LEVELS: usize = 4;
+
+#[cfg(feature = "python-bindings")]
+fn ceil_log2_usize(value: usize) -> usize {
+    if value <= 1 {
+        return 0;
+    }
+    let leading_zeros = (value - 1).leading_zeros() as usize;
+    usize::BITS as usize - leading_zeros
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_sum_level_power(size: usize) -> usize {
+    usize::max(4, ceil_log2_usize(size) / PYTORCH_SUM_CASCADE_LEVELS)
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_cascade_multi_row_sum_scalar<const ROWS: usize>(
+    values: &[f32],
+    row_stride: usize,
+    column_stride: usize,
+    size: usize,
+) -> [f32; ROWS] {
+    let level_power = pytorch_sum_level_power(size);
+    let level_step = 1_usize << level_power;
+    let level_mask = level_step - 1;
+    let mut accumulator = [[0.0_f32; ROWS]; PYTORCH_SUM_CASCADE_LEVELS];
+    let mut index = 0_usize;
+
+    while index + level_step <= size {
+        for _ in 0..level_step {
+            let base = index * row_stride;
+            for (row, total) in accumulator[0].iter_mut().enumerate() {
+                *total += values[base + row * column_stride];
+            }
+            index += 1;
+        }
+
+        for level in 1..PYTORCH_SUM_CASCADE_LEVELS {
+            let (lower_levels, upper_levels) = accumulator.split_at_mut(level);
+            let lower_level = &mut lower_levels[level - 1];
+            let current_level = &mut upper_levels[0];
+            for (current, lower) in current_level.iter_mut().zip(lower_level.iter_mut()) {
+                *current += *lower;
+                *lower = 0.0;
+            }
+
+            let mask = level_mask << (level * level_power);
+            if (index & mask) != 0 {
+                break;
+            }
+        }
+    }
+
+    while index < size {
+        let base = index * row_stride;
+        for (row, total) in accumulator[0].iter_mut().enumerate() {
+            *total += values[base + row * column_stride];
+        }
+        index += 1;
+    }
+
+    let (total, upper_levels) = accumulator
+        .split_first_mut()
+        .expect("cascade accumulator always has a root level");
+    for upper_level in upper_levels {
+        for (total, value) in total.iter_mut().zip(upper_level.iter()) {
+            *total += *value;
+        }
+    }
+    accumulator[0]
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_cascade_row_sum_scalar(values: &[f32]) -> f32 {
+    let size_ilp = values.len() / PYTORCH_SUM_ILP_FACTOR;
+    let mut partial_sums = pytorch_cascade_multi_row_sum_scalar::<PYTORCH_SUM_ILP_FACTOR>(
+        values,
+        PYTORCH_SUM_ILP_FACTOR,
+        1,
+        size_ilp,
+    );
+
+    for value in &values[size_ilp * PYTORCH_SUM_ILP_FACTOR..] {
+        partial_sums[0] += *value;
+    }
+    let (total, partials) = partial_sums
+        .split_first_mut()
+        .expect("row sum accumulator always has a root lane");
+    for partial in partials {
+        *total += *partial;
+    }
+    partial_sums[0]
+}
+
+#[cfg(feature = "python-bindings")]
+fn load_f32x8(values: &[f32], chunk: usize) -> [f32; PYTORCH_SUM_VECTOR_WIDTH] {
+    let start = chunk * PYTORCH_SUM_VECTOR_WIDTH;
+    let mut lanes = [0.0_f32; PYTORCH_SUM_VECTOR_WIDTH];
+    lanes.copy_from_slice(&values[start..start + PYTORCH_SUM_VECTOR_WIDTH]);
+    lanes
+}
+
+#[cfg(feature = "python-bindings")]
+fn add_f32x8(
+    accumulator: &mut [f32; PYTORCH_SUM_VECTOR_WIDTH],
+    values: [f32; PYTORCH_SUM_VECTOR_WIDTH],
+) {
+    for (accumulator, value) in accumulator.iter_mut().zip(values) {
+        *accumulator += value;
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_cascade_multi_row_sum_f32x8<const ROWS: usize>(
+    values: &[f32],
+    row_stride_chunks: usize,
+    column_stride_chunks: usize,
+    size: usize,
+) -> [[f32; PYTORCH_SUM_VECTOR_WIDTH]; ROWS] {
+    let level_power = pytorch_sum_level_power(size);
+    let level_step = 1_usize << level_power;
+    let level_mask = level_step - 1;
+    let mut accumulator = [[[0.0_f32; PYTORCH_SUM_VECTOR_WIDTH]; ROWS]; PYTORCH_SUM_CASCADE_LEVELS];
+    let mut index = 0_usize;
+
+    while index + level_step <= size {
+        for _ in 0..level_step {
+            let base = index * row_stride_chunks;
+            for (row, total) in accumulator[0].iter_mut().enumerate() {
+                let chunk = load_f32x8(values, base + row * column_stride_chunks);
+                add_f32x8(total, chunk);
+            }
+            index += 1;
+        }
+
+        for level in 1..PYTORCH_SUM_CASCADE_LEVELS {
+            let (lower_levels, upper_levels) = accumulator.split_at_mut(level);
+            let lower_level = &mut lower_levels[level - 1];
+            let current_level = &mut upper_levels[0];
+            for (current, lower) in current_level.iter_mut().zip(lower_level.iter_mut()) {
+                let lower_lanes = *lower;
+                add_f32x8(current, lower_lanes);
+                *lower = [0.0; PYTORCH_SUM_VECTOR_WIDTH];
+            }
+
+            let mask = level_mask << (level * level_power);
+            if (index & mask) != 0 {
+                break;
+            }
+        }
+    }
+
+    while index < size {
+        let base = index * row_stride_chunks;
+        for (row, total) in accumulator[0].iter_mut().enumerate() {
+            let chunk = load_f32x8(values, base + row * column_stride_chunks);
+            add_f32x8(total, chunk);
+        }
+        index += 1;
+    }
+
+    let (total, upper_levels) = accumulator
+        .split_first_mut()
+        .expect("cascade accumulator always has a root level");
+    for upper_level in upper_levels {
+        for (total, upper) in total.iter_mut().zip(upper_level.iter()) {
+            add_f32x8(total, *upper);
+        }
+    }
+    accumulator[0]
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_cascade_row_sum_f32x8(
+    values: &[f32],
+    vector_chunks: usize,
+) -> [f32; PYTORCH_SUM_VECTOR_WIDTH] {
+    let size_ilp = vector_chunks / PYTORCH_SUM_ILP_FACTOR;
+    let mut partial_sums = pytorch_cascade_multi_row_sum_f32x8::<PYTORCH_SUM_ILP_FACTOR>(
+        values,
+        PYTORCH_SUM_ILP_FACTOR,
+        1,
+        size_ilp,
+    );
+
+    for chunk in size_ilp * PYTORCH_SUM_ILP_FACTOR..vector_chunks {
+        let lanes = load_f32x8(values, chunk);
+        add_f32x8(&mut partial_sums[0], lanes);
+    }
+    let (total, partials) = partial_sums
+        .split_first_mut()
+        .expect("row sum accumulator always has a root lane");
+    for partial in partials {
+        add_f32x8(total, *partial);
+    }
+    partial_sums[0]
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_cpu_full_sum_contiguous_f32(values: &[f32]) -> f32 {
+    if values.len() >= PYTORCH_SUM_VECTOR_WIDTH {
+        let vector_chunks = values.len() / PYTORCH_SUM_VECTOR_WIDTH;
+        let vector_accumulator = pytorch_cascade_row_sum_f32x8(values, vector_chunks);
+        let mut total = 0.0_f32;
+        for value in &values[vector_chunks * PYTORCH_SUM_VECTOR_WIDTH..] {
+            total += *value;
+        }
+        for value in vector_accumulator {
+            total += value;
+        }
+        total
+    } else {
+        pytorch_cascade_row_sum_scalar(values)
+    }
+}
+
 struct AutogradMeta {
     kind: AutogradKind,
 }
@@ -3713,6 +3937,16 @@ impl Tensor {
             }));
         }
         output
+    }
+
+    #[must_use]
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn pytorch_cpu_full_sum(&self) -> Self {
+        let total = self.dense_physical_slice().map_or_else(
+            || self.sum().item().expect("sum output must be scalar"),
+            pytorch_cpu_full_sum_contiguous_f32,
+        );
+        Self::from_scalar(total, self.dtype(), self.device())
     }
 
     /// Computes the arithmetic mean of every element.
