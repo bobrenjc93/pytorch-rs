@@ -3610,10 +3610,7 @@ impl Tensor {
     pub fn sum(&self) -> Self {
         let contiguous_values = self.contiguous_slice();
         let total = if let Some(values) = contiguous_values {
-            values
-                .iter()
-                .copied()
-                .fold(0.0_f32, |total, value| total + value)
+            sum_values(values)
         } else if let Some(total) = self.sum_contiguous_shared_gradient() {
             total
         } else if let Some(total) = self.fold_owned_sum_rank(0.0_f32, |total, value| total + value)
@@ -3624,6 +3621,27 @@ impl Tensor {
                 total + self.value_at_strided_linear_index(index)
             })
         };
+        self.sum_output(total)
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn sum_dense_physical_order(&self) -> Self {
+        let total = if let Some(values) = self.dense_physical_slice() {
+            sum_values(values)
+        } else if let Some(total) = self.sum_contiguous_shared_gradient() {
+            total
+        } else if let Some(total) = self.fold_owned_sum_rank(0.0_f32, |total, value| total + value)
+        {
+            total
+        } else {
+            (0..self.elements).fold(0.0_f32, |total, index| {
+                total + self.value_at_strided_linear_index(index)
+            })
+        };
+        self.sum_output(total)
+    }
+
+    fn sum_output(&self, total: f32) -> Self {
         let mut output = Self::from_scalar(total, self.dtype(), self.device());
         if self.requires_grad() && is_grad_enabled() {
             output.autograd = Some(Arc::new(AutogradMeta {
@@ -5979,6 +5997,13 @@ fn negate_value(value: f32) -> f32 {
 
 fn absolute_value(value: f32) -> f32 {
     f32::from_bits(value.to_bits() & !F32_SIGN_MASK)
+}
+
+fn sum_values(values: &[f32]) -> f32 {
+    values
+        .iter()
+        .copied()
+        .fold(0.0_f32, |total, value| total + value)
 }
 
 #[cfg(any(feature = "python-bindings", test))]

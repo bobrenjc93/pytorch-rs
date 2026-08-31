@@ -537,16 +537,19 @@ fn _nn_functional_l1_loss(
             "torch_rs.nn.functional.l1_loss only supports size_average=None and reduce=None",
         ));
     }
-    let supports_reduction = reduction
+    let reduction = reduction
         .cast::<PyString>()
         .ok()
-        .and_then(|reduction| reduction.to_str().ok())
-        .is_some_and(|reduction| reduction == "none");
-    if !supports_reduction {
-        return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.l1_loss only supports reduction='none'",
-        ));
-    }
+        .and_then(|reduction| reduction.to_str().ok());
+    let sum_reduction = match reduction {
+        Some("none") => false,
+        Some("sum") => true,
+        _ => {
+            return Err(PyNotImplementedError::new_err(
+                "torch_rs.nn.functional.l1_loss only supports reduction='none' or reduction='sum'",
+            ));
+        }
+    };
     if !weight.is_none() {
         return Err(PyNotImplementedError::new_err(
             "torch_rs.nn.functional.l1_loss only supports weight=None",
@@ -577,10 +580,13 @@ fn _nn_functional_l1_loss(
         ));
     }
 
-    let output = input
+    let mut output = input
         .inner()
         .absolute_difference(target.inner())
         .map_err(|error| tensor_error(&error))?;
+    if sum_reduction {
+        output = output.sum_dense_physical_order();
+    }
     PyTensor::new(output).into_py_any(py)
 }
 

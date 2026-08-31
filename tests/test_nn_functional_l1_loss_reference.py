@@ -161,21 +161,21 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
         )
 
     @staticmethod
-    def call(module_functional, input, target, form):
+    def call(module_functional, input, target, form, reduction="none"):
         if form == "reduction keyword":
-            return module_functional.l1_loss(input, target, reduction="none")
+            return module_functional.l1_loss(input, target, reduction=reduction)
         if form == "legacy none keywords":
             return module_functional.l1_loss(
                 input=input,
                 target=target,
                 size_average=None,
                 reduce=None,
-                reduction="none",
+                reduction=reduction,
                 weight=None,
             )
         if form == "five positional":
-            return module_functional.l1_loss(input, target, None, None, "none")
-        return module_functional.l1_loss(input, target, None, None, "none", None)
+            return module_functional.l1_loss(input, target, None, None, reduction)
+        return module_functional.l1_loss(input, target, None, None, reduction, None)
 
     def assert_matches(self, actual, expected, *, case):
         with self.subTest(case=case, metadata=True):
@@ -242,45 +242,54 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             actual_target_before = np.asarray(actual_target).copy()
             expected_input_before = expected_input.clone()
             expected_target_before = expected_target.clone()
-            for form in (
-                "reduction keyword",
-                "legacy none keywords",
-                "five positional",
-                "six positional",
-            ):
-                actual = self.call(
-                    functional,
-                    actual_input,
-                    actual_target,
-                    form,
-                )
-                expected = self.call(
-                    reference_functional,
-                    expected_input,
-                    expected_target,
-                    form,
-                )
-                self.assert_matches(actual, expected, case=(case, form))
+            for reduction in ("none", "sum"):
+                for form in (
+                    "reduction keyword",
+                    "legacy none keywords",
+                    "five positional",
+                    "six positional",
+                ):
+                    actual = self.call(
+                        functional,
+                        actual_input,
+                        actual_target,
+                        form,
+                        reduction=reduction,
+                    )
+                    expected = self.call(
+                        reference_functional,
+                        expected_input,
+                        expected_target,
+                        form,
+                        reduction=reduction,
+                    )
+                    self.assert_matches(
+                        actual,
+                        expected,
+                        case=(case, reduction, form),
+                    )
 
-                actual_repeat = self.call(
-                    functional,
-                    actual_input,
-                    actual_target,
-                    form,
-                )
-                expected_repeat = self.call(
-                    reference_functional,
-                    expected_input,
-                    expected_target,
-                    form,
-                )
-                with self.subTest(case=(case, form), storage=True):
-                    self.assertFalse(actual.is_set_to(actual_repeat))
-                    self.assertFalse(expected.is_set_to(expected_repeat))
-                    self.assertFalse(actual.is_set_to(actual_input))
-                    self.assertFalse(expected.is_set_to(expected_input))
-                    self.assertFalse(actual.is_set_to(actual_target))
-                    self.assertFalse(expected.is_set_to(expected_target))
+                    actual_repeat = self.call(
+                        functional,
+                        actual_input,
+                        actual_target,
+                        form,
+                        reduction=reduction,
+                    )
+                    expected_repeat = self.call(
+                        reference_functional,
+                        expected_input,
+                        expected_target,
+                        form,
+                        reduction=reduction,
+                    )
+                    with self.subTest(case=(case, reduction, form), storage=True):
+                        self.assertFalse(actual.is_set_to(actual_repeat))
+                        self.assertFalse(expected.is_set_to(expected_repeat))
+                        self.assertFalse(actual.is_set_to(actual_input))
+                        self.assertFalse(expected.is_set_to(expected_input))
+                        self.assertFalse(actual.is_set_to(actual_target))
+                        self.assertFalse(expected.is_set_to(expected_target))
 
             with self.subTest(case=case, nonmutation=True):
                 np.testing.assert_array_equal(
@@ -308,52 +317,53 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             expected_name, expected_input, expected_target = expected_case
             self.assertEqual(case, expected_name)
 
-            with warnings.catch_warnings(record=True) as actual_warnings:
-                warnings.simplefilter("always")
-                actual = functional.l1_loss(
-                    actual_input,
-                    actual_target,
-                    reduction="none",
-                )
-            with warnings.catch_warnings(record=True) as expected_warnings:
-                warnings.simplefilter("always")
-                expected = reference_functional.l1_loss(
-                    expected_input,
-                    expected_target,
-                    reduction="none",
-                )
+            for reduction in ("none", "sum"):
+                with warnings.catch_warnings(record=True) as actual_warnings:
+                    warnings.simplefilter("always")
+                    actual = functional.l1_loss(
+                        actual_input,
+                        actual_target,
+                        reduction=reduction,
+                    )
+                with warnings.catch_warnings(record=True) as expected_warnings:
+                    warnings.simplefilter("always")
+                    expected = reference_functional.l1_loss(
+                        expected_input,
+                        expected_target,
+                        reduction=reduction,
+                    )
 
-            with self.subTest(case=case, warning=True):
-                self.assertEqual(len(actual_warnings), len(expected_warnings))
-                self.assertEqual(len(actual_warnings), 1)
-                self.assertIs(actual_warnings[0].category, UserWarning)
-                self.assertIs(expected_warnings[0].category, UserWarning)
-                self.assertEqual(
-                    str(actual_warnings[0].message),
-                    str(expected_warnings[0].message),
-                )
+                with self.subTest(case=case, reduction=reduction, warning=True):
+                    self.assertEqual(len(actual_warnings), len(expected_warnings))
+                    self.assertEqual(len(actual_warnings), 1)
+                    self.assertIs(actual_warnings[0].category, UserWarning)
+                    self.assertIs(expected_warnings[0].category, UserWarning)
+                    self.assertEqual(
+                        str(actual_warnings[0].message),
+                        str(expected_warnings[0].message),
+                    )
 
-            self.assert_matches(actual, expected, case=case)
+                self.assert_matches(actual, expected, case=(case, reduction))
 
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                actual_repeat = functional.l1_loss(
-                    actual_input,
-                    actual_target,
-                    reduction="none",
-                )
-                expected_repeat = reference_functional.l1_loss(
-                    expected_input,
-                    expected_target,
-                    reduction="none",
-                )
-            with self.subTest(case=case, storage=True):
-                self.assertFalse(actual.is_set_to(actual_repeat))
-                self.assertFalse(expected.is_set_to(expected_repeat))
-                self.assertFalse(actual.is_set_to(actual_input))
-                self.assertFalse(expected.is_set_to(expected_input))
-                self.assertFalse(actual.is_set_to(actual_target))
-                self.assertFalse(expected.is_set_to(expected_target))
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    actual_repeat = functional.l1_loss(
+                        actual_input,
+                        actual_target,
+                        reduction=reduction,
+                    )
+                    expected_repeat = reference_functional.l1_loss(
+                        expected_input,
+                        expected_target,
+                        reduction=reduction,
+                    )
+                with self.subTest(case=case, reduction=reduction, storage=True):
+                    self.assertFalse(actual.is_set_to(actual_repeat))
+                    self.assertFalse(expected.is_set_to(expected_repeat))
+                    self.assertFalse(actual.is_set_to(actual_input))
+                    self.assertFalse(expected.is_set_to(expected_input))
+                    self.assertFalse(actual.is_set_to(actual_target))
+                    self.assertFalse(expected.is_set_to(expected_target))
 
     def test_unbroadcastable_shape_warning_and_error_match_pytorch_2_13(self):
         actual_input = torch.ones((2, 3))
@@ -361,30 +371,35 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
         expected_input = reference_torch.ones((2, 3), dtype=reference_torch.float32)
         expected_target = reference_torch.zeros((2, 2), dtype=reference_torch.float32)
 
-        with warnings.catch_warnings(record=True) as actual_warnings:
-            warnings.simplefilter("always")
-            with self.assertRaises(RuntimeError) as actual_error:
-                functional.l1_loss(
-                    actual_input,
-                    actual_target,
-                    reduction="none",
-                )
-        with warnings.catch_warnings(record=True) as expected_warnings:
-            warnings.simplefilter("always")
-            with self.assertRaises(RuntimeError) as expected_error:
-                reference_functional.l1_loss(
-                    expected_input,
-                    expected_target,
-                    reduction="none",
-                )
+        for reduction in ("none", "sum"):
+            with self.subTest(reduction=reduction):
+                with warnings.catch_warnings(record=True) as actual_warnings:
+                    warnings.simplefilter("always")
+                    with self.assertRaises(RuntimeError) as actual_error:
+                        functional.l1_loss(
+                            actual_input,
+                            actual_target,
+                            reduction=reduction,
+                        )
+                with warnings.catch_warnings(record=True) as expected_warnings:
+                    warnings.simplefilter("always")
+                    with self.assertRaises(RuntimeError) as expected_error:
+                        reference_functional.l1_loss(
+                            expected_input,
+                            expected_target,
+                            reduction=reduction,
+                        )
 
-        self.assertEqual(str(actual_error.exception), str(expected_error.exception))
-        self.assertEqual(len(actual_warnings), len(expected_warnings))
-        self.assertEqual(len(actual_warnings), 1)
-        self.assertEqual(
-            str(actual_warnings[0].message),
-            str(expected_warnings[0].message),
-        )
+                self.assertEqual(
+                    str(actual_error.exception),
+                    str(expected_error.exception),
+                )
+                self.assertEqual(len(actual_warnings), len(expected_warnings))
+                self.assertEqual(len(actual_warnings), 1)
+                self.assertEqual(
+                    str(actual_warnings[0].message),
+                    str(expected_warnings[0].message),
+                )
 
     def test_mixed_layout_singleton_stride_matches_pytorch_2_13(self):
         actual_input = self.tensor(
@@ -410,18 +425,24 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
 
         self.assertEqual(actual_input.stride(), (3, 3, 1))
         self.assertEqual(actual_target.stride(), (1, 2, 2))
-        actual = functional.l1_loss(
-            actual_input,
-            actual_target,
-            reduction="none",
-        )
-        expected = reference_functional.l1_loss(
-            expected_input,
-            expected_target,
-            reduction="none",
-        )
-        self.assertEqual(expected.stride(), (3, 3, 1))
-        self.assert_matches(actual, expected, case="mixed singleton strides")
+        for reduction in ("none", "sum"):
+            actual = functional.l1_loss(
+                actual_input,
+                actual_target,
+                reduction=reduction,
+            )
+            expected = reference_functional.l1_loss(
+                expected_input,
+                expected_target,
+                reduction=reduction,
+            )
+            if reduction == "none":
+                self.assertEqual(expected.stride(), (3, 3, 1))
+            self.assert_matches(
+                actual,
+                expected,
+                case=("mixed singleton strides", reduction),
+            )
 
     def test_float32_edge_bits_match_pytorch_2_13(self):
         input_bits = np.asarray(
@@ -478,26 +499,93 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
         expected_target = reference_torch.tensor(
             memoryview(target_bits.view(np.float32))
         ).view(3, 6)
-
-        for case, transpose in (("contiguous", False), ("transposed", True)):
-            if transpose:
-                actual_operands = (
-                    actual_input.transpose(0, 1),
-                    actual_target.transpose(0, 1),
-                )
-                expected_operands = (
+        for case, actual_operands, expected_operands in (
+            (
+                "contiguous",
+                (actual_input, actual_target),
+                (expected_input, expected_target),
+            ),
+            (
+                "transposed",
+                (actual_input.transpose(0, 1), actual_target.transpose(0, 1)),
+                (
                     expected_input.transpose(0, 1),
                     expected_target.transpose(0, 1),
-                )
-            else:
-                actual_operands = (actual_input, actual_target)
-                expected_operands = (expected_input, expected_target)
+                ),
+            ),
+        ):
             actual = functional.l1_loss(*actual_operands, reduction="none")
             expected = reference_functional.l1_loss(
                 *expected_operands,
                 reduction="none",
             )
             self.assert_matches(actual, expected, case=("float32 edges", case))
+
+    def test_sum_reduction_float32_edge_bits_match_pytorch_2_13(self):
+        cases = (
+            (
+                "scalar signed zero",
+                [0x8000_0000],
+                [0x8000_0000],
+            ),
+            (
+                "vector signed zeros",
+                [0x0000_0000, 0x8000_0000, 0x8000_0000],
+                [0x8000_0000, 0x0000_0000, 0x8000_0000],
+            ),
+            (
+                "positive infinity",
+                [0x7F80_0000, 0x3F80_0000],
+                [0x0000_0000, 0x0000_0000],
+            ),
+            (
+                "negative infinity",
+                [0xFF80_0000, 0x3F80_0000],
+                [0x0000_0000, 0x0000_0000],
+            ),
+            (
+                "target quiet nan",
+                [0x3F80_0000, 0x4000_0000],
+                [0x7FC2_ABCD, 0x4040_0000],
+            ),
+            (
+                "target signaling nan",
+                [0x3F80_0000, 0x4000_0000],
+                [0x7F82_ABCD, 0x4040_0000],
+            ),
+            (
+                "input quiet nan",
+                [0x7FC1_2345, 0x4000_0000],
+                [0x3F80_0000, 0x4040_0000],
+            ),
+        )
+        for case, input_bits, target_bits in cases:
+            actual_input_bits = np.asarray(input_bits, dtype=np.uint32)
+            actual_target_bits = np.asarray(target_bits, dtype=np.uint32)
+            actual_input = torch.tensor(
+                memoryview(actual_input_bits.view(np.float32))
+            )
+            actual_target = torch.tensor(
+                memoryview(actual_target_bits.view(np.float32))
+            )
+            expected_input = reference_torch.tensor(
+                memoryview(actual_input_bits.view(np.float32))
+            )
+            expected_target = reference_torch.tensor(
+                memoryview(actual_target_bits.view(np.float32))
+            )
+
+            actual = functional.l1_loss(
+                actual_input,
+                actual_target,
+                reduction="sum",
+            )
+            expected = reference_functional.l1_loss(
+                expected_input,
+                expected_target,
+                reduction="sum",
+            )
+            self.assert_matches(actual, expected, case=case)
 
     def test_scalar_broadcast_float32_edges_match_pytorch_2_13(self):
         tensor_bits = np.asarray(
@@ -564,37 +652,42 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                         if scalar_on_left
                         else (expected_tensor, expected_scalar)
                     )
-                    with warnings.catch_warnings(record=True) as actual_warnings:
-                        warnings.simplefilter("always")
-                        actual = functional.l1_loss(
-                            *actual_operands,
-                            reduction="none",
-                        )
-                    with warnings.catch_warnings(record=True) as expected_warnings:
-                        warnings.simplefilter("always")
-                        expected = reference_functional.l1_loss(
-                            *expected_operands,
-                            reduction="none",
-                        )
+                    for reduction in ("none", "sum"):
+                        with warnings.catch_warnings(record=True) as actual_warnings:
+                            warnings.simplefilter("always")
+                            actual = functional.l1_loss(
+                                *actual_operands,
+                                reduction=reduction,
+                            )
+                        with warnings.catch_warnings(record=True) as expected_warnings:
+                            warnings.simplefilter("always")
+                            expected = reference_functional.l1_loss(
+                                *expected_operands,
+                                reduction=reduction,
+                            )
 
-                    with self.subTest(
-                        layout=layout,
-                        scalar_bits=hex(scalar_bits),
-                        scalar_on_left=scalar_on_left,
-                        warning=True,
-                    ):
-                        self.assertEqual(len(actual_warnings), len(expected_warnings))
-                        self.assertEqual(len(actual_warnings), 1)
-                        self.assertEqual(
-                            str(actual_warnings[0].message),
-                            str(expected_warnings[0].message),
-                        )
+                        with self.subTest(
+                            layout=layout,
+                            scalar_bits=hex(scalar_bits),
+                            scalar_on_left=scalar_on_left,
+                            reduction=reduction,
+                            warning=True,
+                        ):
+                            self.assertEqual(
+                                len(actual_warnings),
+                                len(expected_warnings),
+                            )
+                            self.assertEqual(len(actual_warnings), 1)
+                            self.assertEqual(
+                                str(actual_warnings[0].message),
+                                str(expected_warnings[0].message),
+                            )
 
-                    self.assert_matches(
-                        actual,
-                        expected,
-                        case=(layout, hex(scalar_bits), scalar_on_left),
-                    )
+                        self.assert_matches(
+                            actual,
+                            expected,
+                            case=(layout, hex(scalar_bits), scalar_on_left, reduction),
+                        )
 
     def test_bandwidth_sized_same_shape_contiguous_matches_pytorch_2_13(self):
         input_values = np.linspace(
@@ -656,23 +749,24 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 dtype=reference_torch.float32,
                 requires_grad=target_requires_grad,
             )
-            with torch.no_grad():
-                actual = functional.l1_loss(
-                    actual_input,
-                    actual_target,
-                    reduction="none",
+            for reduction in ("none", "sum"):
+                with torch.no_grad():
+                    actual = functional.l1_loss(
+                        actual_input,
+                        actual_target,
+                        reduction=reduction,
+                    )
+                with reference_torch.no_grad():
+                    expected = reference_functional.l1_loss(
+                        expected_input,
+                        expected_target,
+                        reduction=reduction,
+                    )
+                self.assert_matches(
+                    actual,
+                    expected,
+                    case=(input_requires_grad, target_requires_grad, reduction),
                 )
-            with reference_torch.no_grad():
-                expected = reference_functional.l1_loss(
-                    expected_input,
-                    expected_target,
-                    reduction="none",
-                )
-            self.assert_matches(
-                actual,
-                expected,
-                case=(input_requires_grad, target_requires_grad),
-            )
 
     def test_scalar_broadcast_requires_grad_operands_match_inside_no_grad(self):
         def actual_scalar_input(input_requires_grad, target_requires_grad):
@@ -738,25 +832,26 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                     input_requires_grad,
                     target_requires_grad,
                 )
-                with warnings.catch_warnings(), torch.no_grad():
-                    warnings.simplefilter("ignore")
-                    actual = functional.l1_loss(
-                        actual_input,
-                        actual_target,
-                        reduction="none",
+                for reduction in ("none", "sum"):
+                    with warnings.catch_warnings(), torch.no_grad():
+                        warnings.simplefilter("ignore")
+                        actual = functional.l1_loss(
+                            actual_input,
+                            actual_target,
+                            reduction=reduction,
+                        )
+                    with warnings.catch_warnings(), reference_torch.no_grad():
+                        warnings.simplefilter("ignore")
+                        expected = reference_functional.l1_loss(
+                            expected_input,
+                            expected_target,
+                            reduction=reduction,
+                        )
+                    self.assert_matches(
+                        actual,
+                        expected,
+                        case=(case, input_requires_grad, target_requires_grad, reduction),
                     )
-                with warnings.catch_warnings(), reference_torch.no_grad():
-                    warnings.simplefilter("ignore")
-                    expected = reference_functional.l1_loss(
-                        expected_input,
-                        expected_target,
-                        reduction="none",
-                    )
-                self.assert_matches(
-                    actual,
-                    expected,
-                    case=(case, input_requires_grad, target_requires_grad),
-                )
 
 
 if __name__ == "__main__":
