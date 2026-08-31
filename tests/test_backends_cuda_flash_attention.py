@@ -101,6 +101,8 @@ class CudaFlashAttentionAvailabilityTests(unittest.TestCase):
             {name for name in child_wildcard if not name.startswith("__")},
             {
                 "allow_fp16_bf16_reduction_math_sdp",
+                "cudnn_sdp_enabled",
+                "enable_cudnn_sdp",
                 "enable_flash_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",

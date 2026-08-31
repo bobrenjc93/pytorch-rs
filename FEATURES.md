@@ -26,6 +26,8 @@ Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 
 The creation row includes CPU float32 `torch.zeros(size, *, out=None, dtype=None, device=None, requires_grad=False)` and `torch.ones(size, *, out=None, dtype=None, device=None, requires_grad=False)` allocation for scalar, empty, and multidimensional sizes, including single positional integer dimensions and fresh-storage `out=None` behavior. It also includes CPU float32 `torch.full(size, fill_value, *, out=None, dtype=None, device=None, requires_grad=False)` allocation for the currently supported exact size and fill-value forms. Concrete output tensors, variadic positional dimensions, like-factories, `layout`, `pin_memory`, non-float32 dtypes, and non-CPU devices remain outside the supported creation surface.
 
+The backend row's CUDA SDP preference coverage also includes `torch.backends.cuda.cudnn_sdp_enabled()` and `torch.backends.cuda.enable_cudnn_sdp(enabled)` as CPU-build, process-global, strict-boolean compatibility flags. This does not add `SDPAParams`, `sdp_kernel`, `can_use_*attention`, scaled-dot-product attention execution, CUDA tensors, or `torch.compile`.
+
 The query helpers listed above are count, rank, byte-width, scalar-truth, and
 existing-dtype predicates. They do not expand the supported dtype, device,
 storage, mutation, subclass, or unsupported-boundary contracts.

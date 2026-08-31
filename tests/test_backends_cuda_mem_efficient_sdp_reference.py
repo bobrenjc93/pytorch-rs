@@ -42,6 +42,8 @@ class CudaMemEfficientSdpReferenceTests(unittest.TestCase):
         self.original_expected = reference_torch._C._get_mem_efficient_sdp_enabled()
         self.original_actual_math = torch._C._get_math_sdp_enabled()
         self.original_expected_math = reference_torch._C._get_math_sdp_enabled()
+        self.original_actual_cudnn = torch._C._get_cudnn_sdp_enabled()
+        self.original_expected_cudnn = reference_torch._C._get_cudnn_sdp_enabled()
         self.actual.enable_mem_efficient_sdp(True)
         self.expected.enable_mem_efficient_sdp(True)
 
@@ -50,6 +52,8 @@ class CudaMemEfficientSdpReferenceTests(unittest.TestCase):
         self.expected.enable_mem_efficient_sdp(self.original_expected)
         self.actual.enable_math_sdp(self.original_actual_math)
         self.expected.enable_math_sdp(self.original_expected_math)
+        self.actual.enable_cudnn_sdp(self.original_actual_cudnn)
+        self.expected.enable_cudnn_sdp(self.original_expected_cudnn)
 
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
@@ -275,6 +279,8 @@ class CudaMemEfficientSdpReferenceTests(unittest.TestCase):
         expected = self.expected
         supported = {
             "allow_fp16_bf16_reduction_math_sdp",
+            "cudnn_sdp_enabled",
+            "enable_cudnn_sdp",
             "enable_flash_sdp",
             "enable_math_sdp",
             "enable_mem_efficient_sdp",
@@ -409,6 +415,7 @@ class CudaMemEfficientSdpReferenceTests(unittest.TestCase):
 
     def test_preference_is_independent_from_other_flags_and_execution_support(self):
         actual_other_states = {
+            "cudnn": self.actual.cudnn_sdp_enabled(),
             "flash": self.actual.flash_sdp_enabled(),
             "math": self.actual.math_sdp_enabled(),
         }
@@ -425,6 +432,7 @@ class CudaMemEfficientSdpReferenceTests(unittest.TestCase):
                 self.assertIs(self.expected.mem_efficient_sdp_enabled(), enabled)
                 self.assertEqual(
                     {
+                        "cudnn": self.actual.cudnn_sdp_enabled(),
                         "flash": self.actual.flash_sdp_enabled(),
                         "math": self.actual.math_sdp_enabled(),
                     },
@@ -450,14 +458,6 @@ class CudaMemEfficientSdpReferenceTests(unittest.TestCase):
                 self.assertIs(self.expected.enable_math_sdp(enabled), None)
                 self.assertIs(self.actual.mem_efficient_sdp_enabled(), True)
                 self.assertIs(self.expected.mem_efficient_sdp_enabled(), True)
-
-        for name in (
-            "cudnn_sdp_enabled",
-            "enable_cudnn_sdp",
-        ):
-            with self.subTest(unsupported_preference=name):
-                self.assertFalse(hasattr(self.actual, name))
-                self.assertTrue(hasattr(self.expected, name))
 
         self.assertFalse(hasattr(torch.nn.functional, "scaled_dot_product_attention"))
         self.assertFalse(hasattr(torch, "cuda"))
