@@ -1,3 +1,5 @@
+import copy
+import pickle
 import sys
 import unittest
 
@@ -42,6 +44,7 @@ class EyeReferenceTests(unittest.TestCase):
             "dtype_identity": tensor.dtype is module.float32,
             "device": str(tensor.device),
             "layout": str(tensor.layout),
+            "layout_identity": tensor.layout is module.strided,
             "requires_grad": tensor.requires_grad,
             "is_leaf": tensor.is_leaf,
             "grad_is_none": tensor.grad is None,
@@ -57,6 +60,7 @@ class EyeReferenceTests(unittest.TestCase):
             "dtype_identity": tensor.dtype is module.float32,
             "device": str(tensor.device),
             "layout": str(tensor.layout),
+            "layout_identity": tensor.layout is module.strided,
             "requires_grad": tensor.requires_grad,
             "is_leaf": tensor.is_leaf,
             "grad_is_none": tensor.grad is None,
@@ -91,20 +95,28 @@ class EyeReferenceTests(unittest.TestCase):
     def test_dtype_device_and_requires_grad_metadata_match_pytorch_2_13(self):
         option_factories = (
             lambda module: {},
+            lambda module: {"out": None},
             lambda module: {"dtype": None},
             lambda module: {"dtype": module.float32},
             lambda module: {"dtype": module.float},
+            lambda module: {"layout": None},
+            lambda module: {"layout": module.strided},
             lambda module: {"device": None},
             lambda module: {"device": "cpu"},
             lambda module: {"device": "cpu:0"},
             lambda module: {"device": module.device("cpu")},
             lambda module: {"device": module.device("cpu", 2)},
+            lambda module: {"pin_memory": None},
+            lambda module: {"pin_memory": False},
             lambda module: {"requires_grad": None},
             lambda module: {"requires_grad": False},
             lambda module: {"requires_grad": True},
             lambda module: {
+                "out": None,
                 "dtype": module.float32,
+                "layout": module.strided,
                 "device": module.device("cpu"),
+                "pin_memory": False,
                 "requires_grad": True,
             },
         )
@@ -119,6 +131,34 @@ class EyeReferenceTests(unittest.TestCase):
                 self.assertEqual(
                     self.tensor_observation(torch, actual),
                     self.tensor_observation(reference_torch, expected),
+                )
+
+    def test_out_none_and_strided_layout_storage_freshness_match_pytorch_2_13(self):
+        cases = (
+            lambda module: module.eye(2, out=None),
+            lambda module: module.eye(2, 3, layout=None),
+            lambda module: module.eye(2, 3, layout=module.strided),
+            lambda module: module.eye(0, out=None, layout=module.strided),
+            lambda module: module.eye(3, 0, out=None, layout=module.strided),
+            lambda module: module.eye(0, 3, out=None, layout=module.strided),
+        )
+        for factory in cases:
+            with self.subTest(factory=factory):
+                actual = factory(torch)
+                actual_peer = factory(torch)
+                expected = factory(reference_torch)
+                expected_peer = factory(reference_torch)
+                self.assertEqual(
+                    self.tensor_observation(torch, actual),
+                    self.tensor_observation(reference_torch, expected),
+                )
+                self.assertEqual(
+                    actual.is_set_to(actual_peer),
+                    expected.is_set_to(expected_peer),
+                )
+                self.assertEqual(
+                    actual.data_ptr() == actual_peer.data_ptr(),
+                    expected.data_ptr() == expected_peer.data_ptr(),
                 )
 
     def test_integer_protocol_inputs_match_pytorch_2_13(self):
@@ -144,6 +184,11 @@ class EyeReferenceTests(unittest.TestCase):
             lambda module: module.eye(1, -2),
             lambda module: module.eye(2**63),
             lambda module: module.eye(1, 2**63),
+            lambda module: module.eye(2**63, out=None),
+            lambda module: module.eye(1, 2**63, layout=module.strided),
+            lambda module: module.eye(2**63, pin_memory=False),
+            lambda module: module.eye(-1, out=None),
+            lambda module: module.eye(1, -2, layout=module.strided),
             lambda module: module.eye(np.uint64(2**63)),
             lambda module: module.eye(IndexDimension(2**63)),
             lambda module: module.eye(sys.maxsize, 2),
@@ -161,6 +206,8 @@ class EyeReferenceTests(unittest.TestCase):
         cases = (
             lambda module: module.eye(0, sys.maxsize),
             lambda module: module.eye(sys.maxsize, 0),
+            lambda module: module.eye(0, sys.maxsize, out=None, layout=module.strided),
+            lambda module: module.eye(sys.maxsize, 0, out=None, layout=module.strided),
         )
         for create in cases:
             with self.subTest(create=create):
@@ -170,6 +217,31 @@ class EyeReferenceTests(unittest.TestCase):
                     self.tensor_metadata(torch, actual),
                     self.tensor_metadata(reference_torch, expected),
                 )
+
+    def test_callable_import_wildcard_copy_and_pickle_match_pytorch_2_13(self):
+        def contract(module):
+            function = module.eye
+            import_namespace = {}
+            wildcard_namespace = {}
+            exec(f"from {module.__name__} import eye as imported_eye", import_namespace)
+            exec(f"from {module.__name__} import *", wildcard_namespace)
+            return {
+                "callable": callable(function),
+                "type": type(function).__name__,
+                "name": function.__name__,
+                "all_count": module.__all__.count("eye"),
+                "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
+                "import_identity": import_namespace["imported_eye"] is function,
+                "wildcard_identity": wildcard_namespace["eye"] is function,
+                "copy_identity": copy.copy(function) is function,
+                "deepcopy_identity": copy.deepcopy(function) is function,
+                "pickle_identities": tuple(
+                    pickle.loads(pickle.dumps(function, protocol=protocol)) is function
+                    for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+                ),
+            }
+
+        self.assertEqual(contract(torch), contract(reference_torch))
 
 
 if __name__ == "__main__":

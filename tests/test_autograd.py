@@ -521,6 +521,17 @@ class AutogradApiTests(unittest.TestCase):
                 self.assertIsNone(leaf.grad)
                 self.assertEqual(leaf.tolist(), values)
 
+                default_keyword_leaf = torch.eye(
+                    *arguments,
+                    out=None,
+                    layout=torch.strided,
+                    pin_memory=False,
+                    requires_grad=True,
+                )
+                self.assertTrue(default_keyword_leaf.requires_grad)
+                self.assertTrue(default_keyword_leaf.is_leaf)
+                self.assertEqual(default_keyword_leaf.tolist(), values)
+
                 weights = torch.ones(shape)
                 loss = (leaf * weights).sum()
                 self.assertTrue(loss.requires_grad)
@@ -606,7 +617,7 @@ class AutogradApiTests(unittest.TestCase):
             torch.eye(requires_grad=1)
         self.assertEqual(
             str(raised.exception),
-            "eye() missing 1 required positional argument: 'n'",
+            'eye() missing 1 required positional arguments: "n"',
         )
 
     def test_full_creates_scalar_ordinary_and_empty_leaves(self):
@@ -1306,9 +1317,18 @@ class AutogradReferenceTests(unittest.TestCase):
             module_outcomes = []
             for arguments in cases:
                 leaf = module.eye(*arguments, requires_grad=True)
+                keyword_leaf = module.eye(
+                    *arguments,
+                    out=None,
+                    layout=module.strided,
+                    pin_memory=False,
+                    requires_grad=True,
+                )
                 weights = module.ones(tuple(leaf.shape))
                 loss = (leaf * weights).sum()
                 loss.backward()
+                keyword_loss = (keyword_leaf * weights).sum()
+                keyword_loss.backward()
                 module_outcomes.append(
                     (
                         tuple(leaf.shape),
@@ -1316,6 +1336,10 @@ class AutogradReferenceTests(unittest.TestCase):
                         leaf.requires_grad,
                         leaf.is_leaf,
                         np.asarray(leaf.grad).copy(),
+                        keyword_leaf.tolist(),
+                        keyword_leaf.requires_grad,
+                        keyword_leaf.is_leaf,
+                        np.asarray(keyword_leaf.grad).copy(),
                     )
                 )
             outcomes.append(module_outcomes)
@@ -1323,6 +1347,8 @@ class AutogradReferenceTests(unittest.TestCase):
         for native, expected in zip(outcomes[0], outcomes[1]):
             self.assertEqual(native[:4], expected[:4])
             np.testing.assert_array_equal(native[4], expected[4])
+            self.assertEqual(native[5:8], expected[5:8])
+            np.testing.assert_array_equal(native[8], expected[8])
 
     def test_full_requires_grad_arguments_match_pytorch_2_13(self):
         class Truthy:

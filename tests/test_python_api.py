@@ -631,15 +631,31 @@ class PythonApiBaselineTests(unittest.TestCase):
                     create()
 
     def test_eye_accepts_float32_cpu_metadata_and_rejects_unsupported_options(self):
-        tensor = torch.eye(
-            2,
-            3,
-            dtype=torch.float,
-            device=torch.device("cpu", 2),
+        supported_options = (
+            {"out": None},
+            {"dtype": torch.float},
+            {"layout": None},
+            {"layout": torch.strided},
+            {"device": torch.device("cpu", 2)},
+            {"pin_memory": None},
+            {"pin_memory": False},
+            {
+                "out": None,
+                "dtype": torch.float,
+                "layout": torch.strided,
+                "device": torch.device("cpu", 2),
+                "pin_memory": False,
+            },
         )
-        self.assertEqual(tensor.tolist(), [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-        self.assertIs(tensor.dtype, torch.float32)
-        self.assertEqual(tensor.device, torch.device("cpu"))
+        for options in supported_options:
+            with self.subTest(options=options):
+                tensor = torch.eye(2, 3, **options)
+                self.assertEqual(
+                    tensor.tolist(), [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+                )
+                self.assertIs(tensor.dtype, torch.float32)
+                self.assertEqual(tensor.device, torch.device("cpu"))
+                self.assertIs(tensor.layout, torch.strided)
 
         for dtype in ("float32", np.dtype("float32"), np.float32, float, object()):
             with self.subTest(argument="dtype", value=dtype):
@@ -649,10 +665,18 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(argument="device", value=device):
                 with self.assertRaises(RuntimeError):
                     torch.eye(1, device=device)
-        for keyword in ("out", "layout", "pin_memory"):
-            with self.subTest(keyword=keyword):
-                with self.assertRaises(TypeError):
-                    torch.eye(1, **{keyword: None})
+        destination = torch.zeros((1, 1))
+        with self.assertRaises(RuntimeError):
+            torch.eye(1, out=destination)
+        self.assertEqual(destination.tolist(), [[0.0]])
+        with self.assertRaises(TypeError):
+            torch.eye(1, out=[])
+        with self.assertRaises(TypeError):
+            torch.eye(1, layout=object())
+        with self.assertRaises(RuntimeError):
+            torch.eye(1, pin_memory=True)
+        with self.assertRaises(TypeError):
+            torch.eye(1, pin_memory=1)
 
         with self.assertRaises(TypeError):
             torch.eye(1, 1, torch.float32)
