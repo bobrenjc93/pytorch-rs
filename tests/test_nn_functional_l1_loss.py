@@ -1,5 +1,6 @@
 import importlib
 import inspect
+import os
 import re
 import types
 import unittest
@@ -214,6 +215,22 @@ class FunctionalL1LossTests(unittest.TestCase):
 
     @staticmethod
     def pytorch_sum_nan_priority(length):
+        parallel = FunctionalL1LossTests.pytorch_sum_parallel_chunks(length)
+        if parallel is not None:
+            thread_count, chunk_size = parallel
+            return [
+                start + index
+                for thread_index in range(thread_count - 1, -1, -1)
+                if (start := thread_index * chunk_size) < length
+                for index in FunctionalL1LossTests.pytorch_sum_serial_nan_priority(
+                    min(length, start + chunk_size) - start
+                )
+            ]
+
+        return FunctionalL1LossTests.pytorch_sum_serial_nan_priority(length)
+
+    @staticmethod
+    def pytorch_sum_serial_nan_priority(length):
         if length < 5:
             return range(length)
         if length < 8:
@@ -231,19 +248,76 @@ class FunctionalL1LossTests(unittest.TestCase):
         if count <= 4:
             return range(count)
         groups, remainder = divmod(count, 4)
-        priority = [group * 4 for group in range(groups)]
-        if remainder:
-            priority.append(groups * 4)
-        if remainder > 1:
-            priority.extend(range(groups * 4 + 1, groups * 4 + remainder))
+        group_priority = FunctionalL1LossTests.pytorch_sum_group_priority(groups)
+        priority = [group * 4 for group in group_priority]
+        priority.extend(range(groups * 4, groups * 4 + remainder))
         for lane in range(1, 4):
-            priority.extend(group * 4 + lane for group in range(groups))
+            priority.extend(group * 4 + lane for group in group_priority)
         return priority
 
     @staticmethod
+    def pytorch_sum_group_priority(count):
+        cascade_block_groups = 16
+        level2_period = 16 * 16
+        level3_period = 16 * 16 * 16
+
+        level1_start = count - count % cascade_block_groups
+        level2_start = level1_start - level1_start % level2_period
+        level3_start = level2_start - level2_start % level3_period
+        return [
+            *range(level1_start, count),
+            *range(level2_start, level1_start),
+            *range(level3_start, level2_start),
+            *range(0, level3_start),
+        ]
+
+    @staticmethod
+    def pytorch_sum_parallel_chunks(length):
+        grain_size = 32_768
+        if length <= grain_size:
+            return None
+        if hasattr(os, "sched_getaffinity"):
+            available_cpus = len(os.sched_getaffinity(0))
+        else:
+            available_cpus = os.cpu_count() or 1
+        available_threads = max(available_cpus // 2, 1)
+        thread_count = min(
+            (length + grain_size - 1) // grain_size,
+            available_threads,
+        )
+        if thread_count <= 1:
+            return None
+        return thread_count, (length + thread_count - 1) // thread_count
+
+    @staticmethod
+    def pytorch_float32_add(left, right):
+        return np.float32(np.float32(left) + np.float32(right))
+
+    @staticmethod
     def pytorch_float32_finite_sum(values):
-        def add(left, right):
-            return np.float32(np.float32(left) + np.float32(right))
+        values = np.asarray(values, dtype=np.float32)
+        parallel = FunctionalL1LossTests.pytorch_sum_parallel_chunks(len(values))
+        if parallel is not None:
+            thread_count, chunk_size = parallel
+            partials = []
+            for thread_index in range(thread_count):
+                start = thread_index * chunk_size
+                if start >= len(values):
+                    break
+                partials.append(
+                    FunctionalL1LossTests.pytorch_float32_finite_sum_serial(
+                        values[start : min(len(values), start + chunk_size)]
+                    ),
+                )
+            return FunctionalL1LossTests.pytorch_float32_finite_sum_serial(
+                np.asarray(partials, dtype=np.float32)
+            )
+
+        return FunctionalL1LossTests.pytorch_float32_finite_sum_serial(values)
+
+    @staticmethod
+    def pytorch_float32_finite_sum_serial(values):
+        add = FunctionalL1LossTests.pytorch_float32_add
 
         if len(values) < 5:
             total = np.float32(0.0)
@@ -921,6 +995,53 @@ class FunctionalL1LossTests(unittest.TestCase):
             expected,
             case="finite accumulation order",
         )
+
+    def test_sum_reduction_uses_pytorch_parallel_accumulation_order(self):
+        for length, expected_bits in (
+            (32_773, 0x454C_D4D0),
+            (1_048_576, 0x47CC_CCCF),
+        ):
+            input = torch.zeros((length,), dtype=torch.float32)
+            target = torch.tensor(
+                memoryview(np.full(length, 0.1, dtype=np.float32))
+            )
+            expected = torch.tensor(
+                memoryview(
+                    np.asarray([expected_bits], dtype=np.uint32).view(np.float32)
+                )
+            )[0]
+
+            actual = functional.l1_loss(input, target, reduction="sum")
+
+            self.assert_matches_composition(
+                actual,
+                expected,
+                case=("parallel finite accumulation order", length),
+            )
+
+    def test_sum_reduction_uses_pytorch_cascade_nan_payload_precedence(self):
+        for length, left_index, right_index in (
+            (544, 31, 543),
+            (32_773, 31, 32_772),
+        ):
+            target_bits = np.zeros(length, dtype=np.uint32)
+            target_bits[left_index] = 0x7F80_0001
+            target_bits[right_index] = 0x7F80_1001
+            input = torch.zeros((length,), dtype=torch.float32)
+            target = torch.tensor(memoryview(target_bits.view(np.float32)))
+            expected = torch.tensor(
+                memoryview(
+                    np.asarray([0x7FC0_1001], dtype=np.uint32).view(np.float32)
+                )
+            )[0]
+
+            actual = functional.l1_loss(input, target, reduction="sum")
+
+            self.assert_matches_composition(
+                actual,
+                expected,
+                case=("NaN payload precedence", length),
+            )
 
     def test_requires_grad_operands_need_no_grad(self):
         for input_requires_grad, target_requires_grad in (

@@ -690,6 +690,73 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
 
         self.assert_matches(actual, expected, case="finite accumulation order")
 
+    def test_sum_reduction_parallel_accumulation_order_matches_pytorch_2_13(
+        self,
+    ):
+        for length in (32_773, 1_048_576):
+            target_values = np.full(length, 0.1, dtype=np.float32)
+            actual_input = torch.zeros((length,), dtype=torch.float32)
+            actual_target = torch.tensor(memoryview(target_values))
+            expected_input = reference_torch.zeros(
+                (length,),
+                dtype=reference_torch.float32,
+            )
+            expected_target = reference_torch.tensor(memoryview(target_values))
+
+            actual = functional.l1_loss(
+                actual_input,
+                actual_target,
+                reduction="sum",
+            )
+            expected = reference_functional.l1_loss(
+                expected_input,
+                expected_target,
+                reduction="sum",
+            )
+
+            self.assert_matches(
+                actual,
+                expected,
+                case=("parallel accumulation order", length),
+            )
+
+    def test_sum_reduction_cascade_nan_payload_precedence_matches_pytorch_2_13(
+        self,
+    ):
+        for length, left_index, right_index in (
+            (544, 31, 543),
+            (32_773, 31, 32_772),
+        ):
+            target_bits = np.zeros(length, dtype=np.uint32)
+            target_bits[left_index] = 0x7F80_0001
+            target_bits[right_index] = 0x7F80_1001
+            actual_input = torch.zeros((length,), dtype=torch.float32)
+            actual_target = torch.tensor(memoryview(target_bits.view(np.float32)))
+            expected_input = reference_torch.zeros(
+                (length,),
+                dtype=reference_torch.float32,
+            )
+            expected_target = reference_torch.tensor(
+                memoryview(target_bits.view(np.float32))
+            )
+
+            actual = functional.l1_loss(
+                actual_input,
+                actual_target,
+                reduction="sum",
+            )
+            expected = reference_functional.l1_loss(
+                expected_input,
+                expected_target,
+                reduction="sum",
+            )
+
+            self.assert_matches(
+                actual,
+                expected,
+                case=("NaN payload precedence", length),
+            )
+
     def test_scalar_broadcast_float32_edges_match_pytorch_2_13(self):
         tensor_bits = np.asarray(
             [

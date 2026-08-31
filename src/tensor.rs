@@ -24,6 +24,8 @@ const L1_LOSS_SUM_CASCADE_BLOCK_GROUPS: usize = 16;
 const L1_LOSS_SUM_LEVEL2_PERIOD_GROUPS: usize = 16 * 16;
 #[cfg(any(feature = "python-bindings", test))]
 const L1_LOSS_SUM_LEVEL3_PERIOD_GROUPS: usize = 16 * 16 * 16;
+#[cfg(any(feature = "python-bindings", test))]
+const L1_LOSS_SUM_PARALLEL_GRAIN_SIZE: usize = 32_768;
 #[cfg(feature = "python-bindings")]
 const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
@@ -6023,6 +6025,28 @@ fn l1_loss_sum_reduce_values(values: &[f32]) -> f32 {
 }
 
 #[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_parallel_chunks(length: usize) -> Option<(usize, usize)> {
+    if length <= L1_LOSS_SUM_PARALLEL_GRAIN_SIZE {
+        return None;
+    }
+
+    let available_threads = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1);
+    // PyTorch's default OpenMP intra-op pool on the reference host uses
+    // physical cores; available_parallelism reports logical CPUs.
+    let reference_threads = (available_threads / 2).max(1);
+    let thread_count = length
+        .div_ceil(L1_LOSS_SUM_PARALLEL_GRAIN_SIZE)
+        .min(reference_threads);
+    if thread_count <= 1 {
+        return None;
+    }
+
+    Some((thread_count, length.div_ceil(thread_count)))
+}
+
+#[cfg(any(feature = "python-bindings", test))]
 fn l1_loss_sum_preferred_nan(values: &[f32]) -> Option<f32> {
     let mut selected = None;
     visit_l1_loss_sum_priority(values.len(), |index| {
@@ -6039,6 +6063,24 @@ fn l1_loss_sum_preferred_nan(values: &[f32]) -> Option<f32> {
 
 #[cfg(any(feature = "python-bindings", test))]
 fn l1_loss_sum_reduce_finite_values(values: &[f32]) -> f32 {
+    if let Some((thread_count, chunk_size)) = l1_loss_sum_parallel_chunks(values.len()) {
+        let mut partials = Vec::with_capacity(thread_count);
+        for thread_index in 0..thread_count {
+            let start = thread_index * chunk_size;
+            if start >= values.len() {
+                break;
+            }
+            let end = (start + chunk_size).min(values.len());
+            partials.push(l1_loss_sum_reduce_finite_values_serial(&values[start..end]));
+        }
+        return l1_loss_sum_reduce_finite_values_serial(&partials);
+    }
+
+    l1_loss_sum_reduce_finite_values_serial(values)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_sum_reduce_finite_values_serial(values: &[f32]) -> f32 {
     if values.len() < 5 {
         return values
             .iter()
@@ -6153,6 +6195,25 @@ fn l1_loss_sum_add_accumulator(
 // that lane/block structure without changing the repository's general sum.
 #[cfg(any(feature = "python-bindings", test))]
 fn visit_l1_loss_sum_priority(length: usize, mut visit: impl FnMut(usize) -> bool) -> bool {
+    if let Some((thread_count, chunk_size)) = l1_loss_sum_parallel_chunks(length) {
+        for thread_index in (0..thread_count).rev() {
+            let start = thread_index * chunk_size;
+            if start >= length {
+                continue;
+            }
+            let end = (start + chunk_size).min(length);
+            if visit_l1_loss_sum_serial_priority(end - start, |index| visit(start + index)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    visit_l1_loss_sum_serial_priority(length, visit)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn visit_l1_loss_sum_serial_priority(length: usize, mut visit: impl FnMut(usize) -> bool) -> bool {
     if length < 5 {
         for index in 0..length {
             if visit(index) {
@@ -6206,28 +6267,51 @@ fn visit_l1_loss_sum_chunk_priority(count: usize, mut visit: impl FnMut(usize) -
 
     let groups = count / 4;
     let remainder = count % 4;
-    for group in 0..groups {
-        if visit(group * 4) {
+    if visit_l1_loss_sum_group_priority(groups, |group| visit(group * 4)) {
+        return true;
+    }
+    for chunk in groups * 4..groups * 4 + remainder {
+        if visit(chunk) {
             return true;
         }
     }
-    if remainder > 0 && visit(groups * 4) {
-        return true;
-    }
-    if remainder > 1 {
-        for chunk in groups * 4 + 1..groups * 4 + remainder {
-            if visit(chunk) {
-                return true;
-            }
-        }
-    }
     for lane in 1..4 {
-        for group in 0..groups {
-            if visit(group * 4 + lane) {
-                return true;
-            }
+        if visit_l1_loss_sum_group_priority(groups, |group| visit(group * 4 + lane)) {
+            return true;
         }
     }
+    false
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn visit_l1_loss_sum_group_priority(count: usize, mut visit: impl FnMut(usize) -> bool) -> bool {
+    let level1_start = count - count % L1_LOSS_SUM_CASCADE_BLOCK_GROUPS;
+    for group in level1_start..count {
+        if visit(group) {
+            return true;
+        }
+    }
+
+    let level2_start = level1_start - level1_start % L1_LOSS_SUM_LEVEL2_PERIOD_GROUPS;
+    for group in level2_start..level1_start {
+        if visit(group) {
+            return true;
+        }
+    }
+
+    let level3_start = level2_start - level2_start % L1_LOSS_SUM_LEVEL3_PERIOD_GROUPS;
+    for group in level3_start..level2_start {
+        if visit(group) {
+            return true;
+        }
+    }
+
+    for group in 0..level3_start {
+        if visit(group) {
+            return true;
+        }
+    }
+
     false
 }
 
@@ -6534,7 +6618,8 @@ mod tests {
         CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device, F32_SIGN_MASK, GradFn, LogicalValuesInner,
         MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor,
         TensorError, contiguous_values_equal, full_reduction_mean_divisor,
-        l1_loss_difference_value, l1_loss_sum_reduce_values, logical_offset_for_linear_index,
+        l1_loss_difference_value, l1_loss_sum_reduce_finite_values_serial,
+        l1_loss_sum_reduce_values, logical_offset_for_linear_index,
         materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
         validate_view_bounds,
     };
@@ -11644,6 +11729,39 @@ mod tests {
     }
 
     #[test]
+    fn l1_loss_sum_reduction_matches_pytorch_parallel_accumulation_order() {
+        let target = Tensor::from_vec(vec![0.1_f32; 32_773], [32_773]).unwrap();
+        let output = Tensor::zeros([32_773])
+            .unwrap()
+            .absolute_difference(&target)
+            .unwrap();
+
+        assert_eq!(
+            l1_loss_sum_reduce_finite_values_serial(output.dense_physical_slice().unwrap())
+                .to_bits(),
+            0x454c_d4cf
+        );
+        assert_eq!(
+            output.l1_loss_sum_reduction().item().unwrap().to_bits(),
+            0x454c_d4d0
+        );
+
+        let large_target = Tensor::from_vec(vec![0.1_f32; 1_048_576], [1_048_576]).unwrap();
+        let large_output = Tensor::zeros([1_048_576])
+            .unwrap()
+            .absolute_difference(&large_target)
+            .unwrap();
+        assert_eq!(
+            large_output
+                .l1_loss_sum_reduction()
+                .item()
+                .unwrap()
+                .to_bits(),
+            0x47cc_cccf
+        );
+    }
+
+    #[test]
     fn l1_loss_sum_reduction_uses_pytorch_nan_payload_precedence() {
         let assert_reduces_to = |bits: &[u32], shape: &[usize], expected_bits: u32| {
             let tensor = Tensor::from_vec(
@@ -11713,6 +11831,16 @@ mod tests {
             &[8],
             0x7fc2_abcd,
         );
+
+        let mut large_bits = vec![0_u32; 544];
+        large_bits[31] = 0x7f80_0001;
+        large_bits[543] = 0x7f80_1001;
+        assert_reduces_to(&large_bits, &[544], 0x7fc0_1001);
+
+        let mut parallel_bits = vec![0_u32; 32_773];
+        parallel_bits[31] = 0x7f80_0001;
+        parallel_bits[32_772] = 0x7f80_1001;
+        assert_reduces_to(&parallel_bits, &[32_773], 0x7fc0_1001);
     }
 
     #[test]
