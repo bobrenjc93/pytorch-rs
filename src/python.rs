@@ -1620,30 +1620,25 @@ pub(crate) fn arange_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    if !torch_function_mode_stack::is_empty() {
-        let function = variable_function(py, "arange")?;
-        let types = PyTuple::empty(py);
-        let active_mode = torch_function_mode_stack::pop();
-        if let Some(mode) = active_mode.get() {
-            validate_torch_function_mode_handler(mode.bind(py))?;
-            let handler = mode.bind(py).getattr("__torch_function__")?;
-            let result =
-                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
-            if !is_not_implemented(py, &result) {
-                return Ok(result);
-            }
-            return Err(torch_function_dispatch_error(
-                py,
-                "torch.arange",
-                Some(mode),
-                None,
-            )?);
-        }
+    if let Some(result) = dispatch_no_tensor_factory_mode(py, "arange", args, kwargs)? {
+        return Ok(result);
     }
 
     Ok(Bound::new(py, arange_impl(args, kwargs)?)?
         .into_any()
         .unbind())
+}
+
+pub(crate) fn empty_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if let Some(result) = dispatch_no_tensor_factory_mode(py, "empty", args, kwargs)? {
+        return Ok(result);
+    }
+
+    Ok(Py::new(py, empty_impl(args, kwargs)?)?.into_any())
 }
 
 pub(crate) fn ones_like_variable_function(
@@ -1663,6 +1658,37 @@ pub(crate) fn ones_like_variable_function(
     let inner = CoreTensor::ones_with_metadata(shape, DType::Float32, Device::Cpu)
         .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
+}
+
+fn dispatch_no_tensor_factory_mode(
+    py: Python<'_>,
+    name: &str,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    if torch_function_mode_stack::is_empty() {
+        return Ok(None);
+    }
+
+    let function = variable_function(py, name)?;
+    let types = PyTuple::empty(py);
+    let active_mode = torch_function_mode_stack::pop();
+    let Some(mode) = active_mode.get() else {
+        return Ok(None);
+    };
+    validate_torch_function_mode_handler(mode.bind(py))?;
+    let handler = mode.bind(py).getattr("__torch_function__")?;
+    let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+    if !is_not_implemented(py, &result) {
+        return Ok(Some(result));
+    }
+
+    Err(torch_function_dispatch_error(
+        py,
+        &format!("torch.{name}"),
+        Some(mode),
+        None,
+    )?)
 }
 
 fn dispatch_empty_variadic_tensor_input(
@@ -5367,6 +5393,7 @@ struct EmptyCallArguments<'py> {
     device: Option<Bound<'py, PyAny>>,
     pin_memory: Option<Bound<'py, PyAny>>,
     requires_grad: Option<Bound<'py, PyAny>>,
+    memory_format: Option<Bound<'py, PyAny>>,
     keyword_error: Option<PyErr>,
 }
 
@@ -6556,11 +6583,7 @@ fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
         .map_err(|error| scalar_creation_error(&error, scalar_dimension))
 }
 
-#[pyfunction(
-    signature = (*args, **kwargs),
-    text_signature = "(size, *, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)"
-)]
-fn empty(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+fn empty_impl(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_empty_arguments(args, kwargs)?;
     let (size, dtype, device, pin_memory, requires_grad, has_out) =
         parse_empty_arguments(arguments)?;
@@ -7606,6 +7629,7 @@ fn bind_empty_arguments<'py>(
         device: None,
         pin_memory: None,
         requires_grad: None,
+        memory_format: None,
         keyword_error: None,
     };
     let Some(keywords) = keywords else {
@@ -7634,6 +7658,7 @@ fn bind_empty_arguments<'py>(
             "device" => arguments.device = optional_call_argument(value),
             "pin_memory" => arguments.pin_memory = optional_call_argument(value),
             "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            "memory_format" => arguments.memory_format = optional_call_argument(value),
             _ => {
                 arguments.keyword_error.get_or_insert_with(|| {
                     PyTypeError::new_err(format!(
@@ -8740,11 +8765,13 @@ fn parse_empty_arguments(
         device,
         pin_memory,
         requires_grad,
+        memory_format,
         keyword_error,
     } = arguments;
 
     let size = parse_creation_size("empty", size.as_ref(), size_origin, None)?;
     let has_out = validate_creation_out("empty", out.as_ref())?;
+    let memory_format = parse_empty_memory_format(memory_format.as_ref())?;
     let dtype = parse_dtype("empty", dtype.as_ref())?;
     parse_factory_layout("empty", layout.as_ref())?;
     validate_device_argument_type("empty", device.as_ref())?;
@@ -8752,6 +8779,11 @@ fn parse_empty_arguments(
     let requires_grad = parse_factory_requires_grad("empty", requires_grad.as_ref())?;
     if let Some(error) = keyword_error {
         return Err(error);
+    }
+    if memory_format != MemoryFormat::Contiguous {
+        return Err(PyRuntimeError::new_err(
+            "empty(): only torch.contiguous_format memory_format is supported",
+        ));
     }
     let size = finish_creation_size("empty", size)?;
     let device = parse_device("empty", device.as_ref())?;
@@ -8816,6 +8848,20 @@ fn parse_ones_like_memory_format(
     let actual = python_type_name(memory_format)?;
     Err(PyTypeError::new_err(format!(
         "ones_like(): argument 'memory_format' must be torch.memory_format, not {actual}"
+    )))
+}
+
+fn parse_empty_memory_format(memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<MemoryFormat> {
+    let Some(memory_format) = memory_format else {
+        return Ok(MemoryFormat::Contiguous);
+    };
+    if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
+        return Ok(memory_format.try_borrow()?.inner());
+    }
+
+    let actual = python_type_name(memory_format)?;
+    Err(PyTypeError::new_err(format!(
+        "empty(): argument 'memory_format' must be torch.memory_format, not {actual}"
     )))
 }
 
@@ -8968,15 +9014,91 @@ fn parse_creation_size<'py>(
         }
     };
 
-    let sequence_error = match value.extract::<Vec<usize>>() {
-        Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
-        Err(error) => error,
+    let sequence_error = if function == "empty" {
+        match parse_empty_sequence_size(value, origin) {
+            Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
+            Err(error) => error,
+        }
+    } else {
+        match value.extract::<Vec<usize>>() {
+            Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
+            Err(error) => error,
+        }
     };
     if !matches!(function, "zeros" | "ones" | "empty") || origin != CreationSizeOrigin::Positional {
         return Err(sequence_error);
     }
 
     bind_creation_positional_dimension(function, value, sequence_error)
+}
+
+fn parse_empty_sequence_size(
+    value: &Bound<'_, PyAny>,
+    origin: CreationSizeOrigin,
+) -> PyResult<Vec<usize>> {
+    let Ok(iterator) = value.try_iter() else {
+        return Err(creation_size_type_error("empty", value, origin)?);
+    };
+    let mut signed_dimensions = try_size_vector(0)?;
+    for (index, dimension) in iterator.enumerate() {
+        let dimension = dimension?;
+        let dimension = parse_empty_sequence_dimension(value, &dimension, index, origin)?;
+        try_push_size(&mut signed_dimensions, dimension)?;
+    }
+    if let Some(dimension) = signed_dimensions.iter().find(|dimension| **dimension < 0) {
+        return Err(creation_negative_sequence_dimension_error(
+            *dimension,
+            &signed_dimensions,
+        ));
+    }
+
+    let mut dimensions = try_size_vector(signed_dimensions.len())?;
+    for dimension in signed_dimensions {
+        try_push_size(
+            &mut dimensions,
+            usize::try_from(dimension).map_err(|_| creation_dimension_overflow("empty"))?,
+        )?;
+    }
+    Ok(dimensions)
+}
+
+fn parse_empty_sequence_dimension(
+    sequence: &Bound<'_, PyAny>,
+    dimension: &Bound<'_, PyAny>,
+    index: usize,
+    origin: CreationSizeOrigin,
+) -> PyResult<i64> {
+    if is_bool_creation_dimension(dimension)? {
+        return Err(creation_sequence_dimension_type_error(
+            "empty", sequence, dimension, index, origin,
+        )?);
+    }
+
+    let Ok(indexed) = python_number_index(dimension) else {
+        return Err(creation_sequence_dimension_type_error(
+            "empty", sequence, dimension, index, origin,
+        )?);
+    };
+    indexed
+        .extract::<i64>()
+        .map_err(|_| creation_dimension_overflow("empty"))
+}
+
+fn is_bool_creation_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if dimension.is_instance_of::<PyBool>() {
+        return Ok(true);
+    }
+    let Ok(numpy) = PyModule::import(dimension.py(), "numpy") else {
+        return Ok(false);
+    };
+    for name in ["bool", "bool_"] {
+        if let Ok(bool_type) = numpy.getattr(name)
+            && dimension.is_instance(&bool_type)?
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn bind_creation_positional_dimension<'py>(
@@ -9045,6 +9167,38 @@ fn creation_dimension_type_error(function: &str, dimension: &Bound<'_, PyAny>) -
     )))
 }
 
+fn creation_size_type_error(
+    function: &str,
+    value: &Bound<'_, PyAny>,
+    origin: CreationSizeOrigin,
+) -> PyResult<PyErr> {
+    let type_name = python_type_name(value)?;
+    let position = if origin == CreationSizeOrigin::Positional {
+        " (position 1)"
+    } else {
+        ""
+    };
+    Ok(PyTypeError::new_err(format!(
+        "{function}(): argument 'size'{position} must be tuple of ints, not {type_name}"
+    )))
+}
+
+fn creation_sequence_dimension_type_error(
+    function: &str,
+    sequence: &Bound<'_, PyAny>,
+    dimension: &Bound<'_, PyAny>,
+    index: usize,
+    origin: CreationSizeOrigin,
+) -> PyResult<PyErr> {
+    if origin != CreationSizeOrigin::Positional {
+        return creation_size_type_error(function, sequence, origin);
+    }
+    let type_name = python_type_name(dimension)?;
+    Ok(PyTypeError::new_err(format!(
+        "{function}(): argument 'size' (position 1) must be tuple of ints, but found element of type {type_name} at pos {index}"
+    )))
+}
+
 fn creation_dimension_overflow(function: &str) -> PyErr {
     PyTypeError::new_err(format!(
         "{function}(): argument 'size' failed to unpack the object at pos 1 with error \"Overflow when unpacking long long\""
@@ -9060,6 +9214,12 @@ fn creation_negative_dimension_error(function: &str, dimension: i64) -> PyErr {
             "Trying to create tensor with negative dimension {dimension}: [{dimension}]"
         ))
     }
+}
+
+fn creation_negative_sequence_dimension_error(dimension: i64, dimensions: &[i64]) -> PyErr {
+    PyRuntimeError::new_err(format!(
+        "Trying to create tensor with negative dimension {dimension}: {dimensions:?}"
+    ))
 }
 
 fn parse_metadata(
@@ -16817,7 +16977,6 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
     add_tensor_queries(module)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
-    module.add_function(wrap_pyfunction!(empty, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
     module.add_function(wrap_pyfunction!(full, module)?)?;

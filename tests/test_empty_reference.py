@@ -118,6 +118,11 @@ class EmptyReferenceTests(unittest.TestCase):
             lambda module: {"requires_grad": None},
             lambda module: {"requires_grad": False},
             lambda module: {"requires_grad": True},
+            lambda module: {"memory_format": None},
+            lambda module: {"memory_format": module.contiguous_format},
+            lambda module: module.nn.factory_kwargs(
+                {"memory_format": module.contiguous_format}
+            ),
             lambda module: {
                 "out": None,
                 "dtype": module.float32,
@@ -125,6 +130,7 @@ class EmptyReferenceTests(unittest.TestCase):
                 "device": module.device("cpu"),
                 "pin_memory": False,
                 "requires_grad": True,
+                "memory_format": module.contiguous_format,
             },
         )
         for option_factory in option_factories:
@@ -139,6 +145,23 @@ class EmptyReferenceTests(unittest.TestCase):
                     self.tensor_contract(torch, actual),
                     self.tensor_contract(reference_torch, expected),
                 )
+
+        actual = torch.empty(
+            2,
+            **torch.nn.factory_kwargs(
+                {"memory_format": torch.contiguous_format}
+            ),
+        )
+        expected = reference_torch.empty(
+            2,
+            **reference_torch.nn.factory_kwargs(
+                {"memory_format": reference_torch.contiguous_format}
+            ),
+        )
+        self.assertEqual(
+            self.tensor_contract(torch, actual),
+            self.tensor_contract(reference_torch, expected),
+        )
 
     def test_empty_returns_fresh_storage_like_pytorch_2_13(self):
         def contract(module, shape):
@@ -190,6 +213,7 @@ class EmptyReferenceTests(unittest.TestCase):
             lambda module: module.empty(2**63),
             lambda module: module.empty(np.uint64(2**63)),
             lambda module: module.empty(IndexDimension(2**63)),
+            lambda module: module.empty((2**63, 0)),
         )
         for call in overflow_cases:
             with self.subTest(call=call):
@@ -203,6 +227,24 @@ class EmptyReferenceTests(unittest.TestCase):
                 self.assertIn(marker, expected_message)
                 self.assertIn("Overflow when unpacking long long", actual_message)
                 self.assertIn("Overflow when unpacking long long", expected_message)
+
+        sequence_boundary_cases = (
+            lambda module: module.empty((True,)),
+            lambda module: module.empty((np.bool_(True),)),
+            lambda module: module.empty((-1,)),
+            lambda module: module.empty((2, -1, 3)),
+        )
+        for call in sequence_boundary_cases:
+            with self.subTest(call=call):
+                self.assert_error_matches(lambda: call(torch), lambda: call(reference_torch))
+
+        largest_zero_product = (2**63 - 1, 0)
+        actual = torch.empty(largest_zero_product)
+        expected = reference_torch.empty(largest_zero_product)
+        self.assertEqual(
+            self.tensor_contract(torch, actual),
+            self.tensor_contract(reference_torch, expected),
+        )
 
         storage_cases = (
             lambda module: module.empty((2**62, 4)),
@@ -257,6 +299,24 @@ class EmptyReferenceTests(unittest.TestCase):
         ):
             torch.empty((1,), pin_memory=True)
 
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^empty\(\): argument 'memory_format' must be torch\.memory_format, not ",
+        ):
+            torch.empty((1,), memory_format=object())
+
+        for memory_format in (
+            torch.preserve_format,
+            torch.channels_last,
+            torch.channels_last_3d,
+        ):
+            with self.subTest(memory_format=memory_format):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^empty\(\): only torch\.contiguous_format memory_format is supported$",
+                ):
+                    torch.empty((1, 2, 3, 4, 5), memory_format=memory_format)
+
         out = torch.zeros((1,))
         with self.assertRaisesRegex(
             RuntimeError,
@@ -272,6 +332,153 @@ class EmptyReferenceTests(unittest.TestCase):
 
         self.assertFalse(hasattr(torch, "empty_like"))
         self.assertTrue(hasattr(reference_torch, "empty_like"))
+
+    def mode_dispatch_observation(self, module):
+        function = module.empty
+        marker = object()
+        intercepted = []
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (
+                        func is function,
+                        types,
+                        args,
+                        kwargs,
+                        len(module.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                return marker
+
+        for call, expected_args, expected_kwargs in (
+            (lambda: function((2, 3)), ((2, 3),), None),
+            (lambda: function(size=(2, 3)), (), {"size": (2, 3)}),
+        ):
+            mode = RecordingMode()
+            with mode:
+                result = call()
+                restored_inside = (
+                    module.overrides._get_current_function_mode_stack() == [mode]
+                )
+            intercepted.append(
+                (
+                    result is marker,
+                    mode.calls,
+                    expected_args,
+                    expected_kwargs,
+                    restored_inside,
+                    module.overrides._get_current_function_mode_stack() == [],
+                )
+            )
+
+        forwarding_events = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                forwarding_events.append(
+                    (
+                        self.label,
+                        tuple(
+                            mode.label
+                            for mode in module.overrides._get_current_function_mode_stack()
+                        ),
+                        func is function,
+                        types,
+                        args,
+                        kwargs,
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                forwarded = function(size=(2, 3))
+                nested_restored = (
+                    module.overrides._get_current_function_mode_stack()
+                    == [lower, upper]
+                )
+            lower_restored = (
+                module.overrides._get_current_function_mode_stack() == [lower]
+            )
+        stack_empty = module.overrides._get_current_function_mode_stack() == []
+
+        expected_error = ValueError("handler failed")
+
+        class RaisingMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                raise expected_error
+
+        raising = RaisingMode()
+        with lower:
+            with raising:
+                try:
+                    function((2, 3))
+                except Exception as error:
+                    handler_error = (
+                        type(error).__name__,
+                        str(error),
+                        error.args,
+                        error is expected_error,
+                    )
+                else:
+                    handler_error = None
+                handler_error_restored = (
+                    module.overrides._get_current_function_mode_stack()
+                    == [lower, raising]
+                )
+            handler_lower_restored = (
+                module.overrides._get_current_function_mode_stack() == [lower]
+            )
+
+        class DecliningMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        declining = DecliningMode()
+        with declining:
+            try:
+                function((2, 3))
+            except Exception as error:
+                declining_error = (
+                    type(error).__name__,
+                    re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+                    error.args[1:] if len(error.args) > 1 else (),
+                )
+            else:
+                declining_error = None
+            declining_restored = (
+                module.overrides._get_current_function_mode_stack() == [declining]
+            )
+
+        return (
+            intercepted,
+            forwarding_events,
+            self.tensor_contract(module, forwarded),
+            nested_restored,
+            lower_restored,
+            stack_empty,
+            handler_error,
+            handler_error_restored,
+            handler_lower_restored,
+            declining_error,
+            declining_restored,
+            module.overrides._get_current_function_mode_stack() == [],
+        )
+
+    def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_dispatch_observation(torch),
+            self.mode_dispatch_observation(reference_torch),
+        )
 
     def test_callable_import_and_wildcard_exports_match_pytorch_2_13(self):
         def contract(module):
