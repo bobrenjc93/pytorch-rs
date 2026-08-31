@@ -1924,6 +1924,46 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(result.shape, (2,))
         self.assertEqual(result.tolist(), [3.0, 3.0])
 
+    def test_full_accepts_default_layout_and_pin_memory_keywords(self):
+        option_cases = (
+            {"layout": None},
+            {"layout": torch.strided},
+            {"pin_memory": None},
+            {"pin_memory": False},
+            {"layout": torch.strided, "pin_memory": False},
+            {"out": None, "layout": torch.strided, "pin_memory": False},
+        )
+        for options in option_cases:
+            with self.subTest(options=options):
+                result = torch.full((2,), -0.0, **options)
+                self.assertEqual(result.shape, (2,))
+                self.assertEqual(result.stride(), (1,))
+                self.assertEqual(result.storage_offset(), 0)
+                self.assertIs(result.dtype, torch.float32)
+                self.assertEqual(result.device, torch.device("cpu"))
+                self.assertIs(result.layout, torch.strided)
+                self.assertFalse(result.is_pinned())
+                self.assertEqual(
+                    np.asarray(result).view(np.uint32).tolist(),
+                    [0x80000000, 0x80000000],
+                )
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^full\(\): argument 'layout' must be torch\.layout, not object$",
+        ):
+            torch.full((1,), 1.0, layout=object())
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^full\(\): argument 'pin_memory' must be bool, not int$",
+        ):
+            torch.full((1,), 1.0, pin_memory=0)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^full\(\): pin_memory=True is not supported; only unpinned CPU storage is implemented$",
+        ):
+            torch.full((1,), 1.0, pin_memory=True)
+
     def test_full_rejects_negative_sizes_as_runtime_error(self):
         with self.assertRaisesRegex(RuntimeError, "negative dimension -1"):
             torch.full([-1], 3.0)

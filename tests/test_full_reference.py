@@ -1,4 +1,6 @@
+import copy
 import math
+import pickle
 import sys
 import unittest
 
@@ -56,6 +58,7 @@ class FullReferenceTests(unittest.TestCase):
             "device": str(tensor.device),
             "layout": str(tensor.layout),
             "layout_identity": tensor.layout is module.strided,
+            "is_pinned": tensor.is_pinned(),
             "requires_grad": tensor.requires_grad,
             "is_leaf": tensor.is_leaf,
             "grad_is_none": tensor.grad is None,
@@ -153,6 +156,16 @@ class FullReferenceTests(unittest.TestCase):
                     out=None,
                 ),
             ),
+            (
+                "layout and pin defaults",
+                lambda module: module.full(
+                    (2,),
+                    -0.0,
+                    out=None,
+                    layout=module.strided,
+                    pin_memory=False,
+                ),
+            ),
         )
 
         for case, factory in cases:
@@ -191,18 +204,24 @@ class FullReferenceTests(unittest.TestCase):
             lambda module: {"dtype": module.float32},
             lambda module: {"dtype": module.float},
             lambda module: {"out": None},
+            lambda module: {"layout": None},
+            lambda module: {"layout": module.strided},
             lambda module: {"device": None},
             lambda module: {"device": "cpu"},
             lambda module: {"device": "cpu:0"},
             lambda module: {"device": module.device("cpu")},
             lambda module: {"device": module.device("cpu", 2)},
+            lambda module: {"pin_memory": None},
+            lambda module: {"pin_memory": False},
             lambda module: {"requires_grad": None},
             lambda module: {"requires_grad": False},
             lambda module: {"requires_grad": True},
             lambda module: {
                 "out": None,
                 "dtype": module.float32,
+                "layout": module.strided,
                 "device": module.device("cpu"),
+                "pin_memory": False,
                 "requires_grad": True,
             },
         )
@@ -300,6 +319,44 @@ class FullReferenceTests(unittest.TestCase):
                 "duplicate size",
                 lambda module: module.full((1,), 3.0, size=(1,), out=None),
             ),
+            (
+                "invalid layout before negative size",
+                lambda module: module.full((-1,), 3.0, layout=object(), out=None),
+            ),
+            (
+                "invalid pin before negative size",
+                lambda module: module.full((-1,), 3.0, pin_memory=0, out=None),
+            ),
+            (
+                "invalid pin before requires_grad",
+                lambda module: module.full(
+                    (1,),
+                    3.0,
+                    pin_memory=0,
+                    requires_grad=0,
+                    out=None,
+                ),
+            ),
+            (
+                "unknown after accepted layout",
+                lambda module: module.full(
+                    (1,),
+                    3.0,
+                    layout=module.strided,
+                    unexpected=True,
+                    out=None,
+                ),
+            ),
+            (
+                "duplicate size after accepted layout",
+                lambda module: module.full(
+                    (1,),
+                    3.0,
+                    size=(1,),
+                    layout=module.strided,
+                    out=None,
+                ),
+            ),
         )
         for case, call in cases:
             with self.subTest(case=case):
@@ -371,23 +428,40 @@ class FullReferenceTests(unittest.TestCase):
         self.assertIs(meta.dtype, reference_torch.float32)
         self.assertIs(meta.layout, reference_torch.strided)
 
-        for keyword, value in (
-            ("layout", torch.strided),
-            ("pin_memory", False),
-        ):
-            with self.subTest(keyword=keyword):
+        for layout in (object(), reference_torch.strided, reference_torch.sparse_coo):
+            with self.subTest(layout=layout):
                 with self.assertRaisesRegex(
                     TypeError,
-                    rf"^full\(\) got an unexpected keyword argument '{keyword}'$",
+                    r"^full\(\): argument 'layout' must be torch\.layout, not ",
                 ):
-                    torch.full((1,), 1.0, out=None, **{keyword: value})
+                    torch.full((1,), 1.0, layout=layout)
+
+        for pin_memory in (0, 1, "false", object()):
+            with self.subTest(pin_memory=pin_memory):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^full\(\): argument 'pin_memory' must be bool, not ",
+                ):
+                    torch.full((1,), 1.0, pin_memory=pin_memory)
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^full\(\): pin_memory=True is not supported; only unpinned CPU storage is implemented$",
+        ):
+            torch.full((1,), 1.0, pin_memory=True)
 
         out = torch.zeros((1,))
         with self.assertRaisesRegex(
             RuntimeError,
             r"^full\(\): the 'out' argument is not supported$",
         ):
-            torch.full((1,), 1.0, out=out)
+            torch.full(
+                (1,),
+                1.0,
+                out=out,
+                layout=torch.strided,
+                pin_memory=False,
+            )
         self.assertEqual(out.tolist(), [0.0])
 
         for fill_value in ([1.0], object(), 1 + 2j):
@@ -426,6 +500,12 @@ class FullReferenceTests(unittest.TestCase):
                 "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
                 "import_identity": import_namespace["imported_full"] is function,
                 "wildcard_identity": wildcard_namespace["full"] is function,
+                "copy_identity": copy.copy(function) is function,
+                "deepcopy_identity": copy.deepcopy(function) is function,
+                "pickle_identities": tuple(
+                    pickle.loads(pickle.dumps(function, protocol=protocol)) is function
+                    for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+                ),
             }
 
         self.assertEqual(contract(torch), contract(reference_torch))
