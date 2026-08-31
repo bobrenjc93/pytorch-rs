@@ -650,9 +650,8 @@ class AutogradApiTests(unittest.TestCase):
             def __bool__(self):
                 return True
 
-        parameter = inspect.signature(torch.full).parameters["requires_grad"]
-        self.assertIs(parameter.kind, inspect.Parameter.KEYWORD_ONLY)
-        self.assertIs(parameter.default, False)
+        with self.assertRaises(ValueError):
+            inspect.signature(torch.full)
 
         invalid = (
             (np.bool_(True), "numpy.bool"),

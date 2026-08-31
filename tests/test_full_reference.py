@@ -1,4 +1,6 @@
+import copy
 import math
+import pickle
 import sys
 import unittest
 
@@ -191,18 +193,24 @@ class FullReferenceTests(unittest.TestCase):
             lambda module: {"dtype": module.float32},
             lambda module: {"dtype": module.float},
             lambda module: {"out": None},
+            lambda module: {"layout": None},
+            lambda module: {"layout": module.strided},
             lambda module: {"device": None},
             lambda module: {"device": "cpu"},
             lambda module: {"device": "cpu:0"},
             lambda module: {"device": module.device("cpu")},
             lambda module: {"device": module.device("cpu", 2)},
+            lambda module: {"pin_memory": None},
+            lambda module: {"pin_memory": False},
             lambda module: {"requires_grad": None},
             lambda module: {"requires_grad": False},
             lambda module: {"requires_grad": True},
             lambda module: {
                 "out": None,
                 "dtype": module.float32,
+                "layout": module.strided,
                 "device": module.device("cpu"),
+                "pin_memory": False,
                 "requires_grad": True,
             },
         )
@@ -371,16 +379,23 @@ class FullReferenceTests(unittest.TestCase):
         self.assertIs(meta.dtype, reference_torch.float32)
         self.assertIs(meta.layout, reference_torch.strided)
 
-        for keyword, value in (
-            ("layout", torch.strided),
-            ("pin_memory", False),
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^full\(\): argument 'layout' must be torch\.layout, not object$",
         ):
-            with self.subTest(keyword=keyword):
-                with self.assertRaisesRegex(
-                    TypeError,
-                    rf"^full\(\) got an unexpected keyword argument '{keyword}'$",
-                ):
-                    torch.full((1,), 1.0, out=None, **{keyword: value})
+            torch.full((1,), 1.0, out=None, layout=object())
+        with self.assertRaisesRegex(TypeError, "argument 'layout'"):
+            torch.full((1,), 1.0, out=None, layout=reference_torch.sparse_coo)
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^full\(\): argument 'pin_memory' must be bool, not int$",
+        ):
+            torch.full((1,), 1.0, out=None, pin_memory=0)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^full\(\): pin_memory=True is not supported; only unpinned CPU storage is implemented$",
+        ):
+            torch.full((1,), 1.0, out=None, pin_memory=True)
 
         out = torch.zeros((1,))
         with self.assertRaisesRegex(
@@ -411,6 +426,7 @@ class FullReferenceTests(unittest.TestCase):
     def test_callable_import_and_wildcard_exports_match_pytorch_2_13(self):
         def contract(module):
             function = module.full
+            reduced_owner = function.__reduce__()[1][0]
             import_namespace = {}
             wildcard_namespace = {}
             exec(
@@ -422,10 +438,26 @@ class FullReferenceTests(unittest.TestCase):
                 "callable": callable(function),
                 "type": type(function).__name__,
                 "name": function.__name__,
+                "qualname": function.__qualname__,
+                "module": function.__module__,
+                "doc_header": function.__doc__.splitlines()[1],
+                "text_signature": function.__text_signature__,
                 "all_count": module.__all__.count("full"),
                 "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
                 "import_identity": import_namespace["imported_full"] is function,
                 "wildcard_identity": wildcard_namespace["full"] is function,
+                "copy_identity": copy.copy(function) is function,
+                "deepcopy_identity": copy.deepcopy(function) is function,
+                "pickle_identities": tuple(
+                    pickle.loads(pickle.dumps(function, protocol=protocol))
+                    is function
+                    for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+                ),
+                "reduced_owner_name": reduced_owner.__name__,
+                "reduced_owner_module": reduced_owner.__module__.replace(
+                    "torch_rs", "torch"
+                ),
+                "reduced_owner_attr_identity": reduced_owner.full is function,
             }
 
         self.assertEqual(contract(torch), contract(reference_torch))

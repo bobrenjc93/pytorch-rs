@@ -1924,6 +1924,45 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(result.shape, (2,))
         self.assertEqual(result.tolist(), [3.0, 3.0])
 
+    def test_full_accepts_default_layout_and_pin_memory_keywords(self):
+        option_cases = (
+            {"layout": None},
+            {"layout": torch.strided},
+            {"pin_memory": None},
+            {"pin_memory": False},
+            {"layout": torch.strided, "pin_memory": False},
+        )
+        for options in option_cases:
+            with self.subTest(options=options):
+                tensor = torch.full(
+                    (2, 0, 3),
+                    -0.0,
+                    dtype=torch.float32,
+                    device=torch.device("cpu"),
+                    requires_grad=True,
+                    **options,
+                )
+                self.assertEqual(tensor.shape, (2, 0, 3))
+                self.assertEqual(tensor.stride(), (3, 3, 1))
+                self.assertEqual(tensor.storage_offset(), 0)
+                self.assertEqual(tensor.numel(), 0)
+                self.assertIs(tensor.dtype, torch.float32)
+                self.assertEqual(tensor.device, torch.device("cpu"))
+                self.assertIs(tensor.layout, torch.strided)
+                self.assertTrue(tensor.requires_grad)
+                self.assertTrue(tensor.is_leaf)
+                self.assertFalse(tensor.is_pinned())
+
+        with self.assertRaisesRegex(TypeError, "argument 'layout'"):
+            torch.full((1,), 1.0, layout=object())
+        with self.assertRaisesRegex(TypeError, "argument 'pin_memory' must be bool"):
+            torch.full((1,), 1.0, pin_memory=0)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "pin_memory=True is not supported",
+        ):
+            torch.full((1,), 1.0, pin_memory=True)
+
     def test_full_rejects_negative_sizes_as_runtime_error(self):
         with self.assertRaisesRegex(RuntimeError, "negative dimension -1"):
             torch.full([-1], 3.0)
