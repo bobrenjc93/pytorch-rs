@@ -8702,6 +8702,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 89
       }
+    },
+    {
+      "key": "pr:1498",
+      "recordedAt": "2026-08-31T18:34:34.296Z",
+      "label": "PR #1498",
+      "kind": "leaf",
+      "prNumber": 1498,
+      "title": "Expose enable_grad contexts",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 90,
+        "eval_39340456": 91.5,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 89
+      }
     }
   ]
 }

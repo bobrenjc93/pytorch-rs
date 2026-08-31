@@ -1,4 +1,4 @@
-use pytorch_rs::{MemoryFormat, Tensor, TensorError, is_grad_enabled, no_grad};
+use pytorch_rs::{MemoryFormat, Tensor, TensorError, enable_grad, is_grad_enabled, no_grad};
 use std::{
     sync::{Arc, Barrier},
     thread,
@@ -4291,6 +4291,54 @@ fn no_grad_guards_remain_disabled_until_every_guard_is_dropped() {
 
     drop(inner);
     assert!(leaf.mul_scalar(2.0).unwrap().requires_grad());
+}
+
+#[test]
+fn enable_grad_restores_previous_thread_local_state() {
+    assert!(is_grad_enabled());
+    {
+        let _enabled = enable_grad();
+        assert!(is_grad_enabled());
+    }
+    assert!(is_grad_enabled());
+
+    let outer = no_grad();
+    assert!(!is_grad_enabled());
+    {
+        let _enabled = enable_grad();
+        assert!(is_grad_enabled());
+        {
+            let _inner = no_grad();
+            assert!(!is_grad_enabled());
+        }
+        assert!(is_grad_enabled());
+    }
+    assert!(!is_grad_enabled());
+
+    let unwind = std::panic::catch_unwind(|| {
+        let _enabled = enable_grad();
+        assert!(is_grad_enabled());
+        panic!("restore disabled grad mode");
+    });
+    assert!(unwind.is_err());
+    assert!(!is_grad_enabled());
+
+    thread::spawn(|| {
+        assert!(is_grad_enabled());
+        let _disabled = no_grad();
+        assert!(!is_grad_enabled());
+        {
+            let _enabled = enable_grad();
+            assert!(is_grad_enabled());
+        }
+        assert!(!is_grad_enabled());
+    })
+    .join()
+    .unwrap();
+
+    assert!(!is_grad_enabled());
+    drop(outer);
+    assert!(is_grad_enabled());
 }
 
 #[test]
