@@ -269,6 +269,59 @@ class ZerosTests(unittest.TestCase):
                 with self.assertRaisesRegex(error_type, f"^{re.escape(message)}$"):
                     call()
 
+    def test_torch_function_mode_validates_schema_before_dispatch(self):
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        invalid_calls = (
+            (
+                lambda: torch.zeros(),
+                TypeError,
+                'zeros() missing 1 required positional arguments: "size"',
+            ),
+            (
+                lambda: torch.zeros(2, unexpected=True),
+                TypeError,
+                "zeros() got an unexpected keyword argument 'unexpected'",
+            ),
+            (
+                lambda: torch.zeros(2, pin_memory=0),
+                TypeError,
+                "zeros(): argument 'pin_memory' must be bool, not int",
+            ),
+            (
+                lambda: torch.zeros(2, out=[]),
+                TypeError,
+                "zeros(): argument 'out' must be Tensor, not list",
+            ),
+        )
+        for call, error_type, message in invalid_calls:
+            mode = RecordingMode()
+            with self.subTest(message=message):
+                with mode:
+                    with self.assertRaisesRegex(error_type, f"^{re.escape(message)}$"):
+                        call()
+                self.assertEqual(mode.calls, [])
+
+        mode = RecordingMode()
+        with mode:
+            self.assertIs(
+                torch.zeros(2, layout=torch.strided, pin_memory=False),
+                marker,
+            )
+        function, dispatch_types, args, kwargs = mode.calls[0]
+        self.assertIs(function, torch.zeros)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(args, (2,))
+        self.assertEqual(kwargs, {"layout": torch.strided, "pin_memory": False})
+
     def test_callable_metadata_exports_copy_and_pickle_match_generated_builtins(self):
         function = torch.zeros
         owner = function.__reduce__()[1][0]

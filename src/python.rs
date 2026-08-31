@@ -1646,8 +1646,14 @@ pub(crate) fn zeros_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    if let Some(result) = dispatch_creation_mode(py, "zeros", args, kwargs)? {
-        return Ok(result);
+    if !torch_function_mode_stack::is_empty() {
+        validate_creation_dispatch_arguments(
+            "zeros",
+            bind_creation_arguments("zeros", args, kwargs)?,
+        )?;
+        if let Some(result) = dispatch_creation_mode(py, "zeros", args, kwargs)? {
+            return Ok(result);
+        }
     }
     Ok(Bound::new(py, zeros_impl(args, kwargs)?)?
         .into_any()
@@ -1659,8 +1665,14 @@ pub(crate) fn ones_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    if let Some(result) = dispatch_creation_mode(py, "ones", args, kwargs)? {
-        return Ok(result);
+    if !torch_function_mode_stack::is_empty() {
+        validate_creation_dispatch_arguments(
+            "ones",
+            bind_creation_arguments("ones", args, kwargs)?,
+        )?;
+        if let Some(result) = dispatch_creation_mode(py, "ones", args, kwargs)? {
+            return Ok(result);
+        }
     }
     Ok(Bound::new(py, ones_impl(args, kwargs)?)?
         .into_any()
@@ -6415,6 +6427,107 @@ fn validate_creation_out(function: &str, out: Option<&Bound<'_, PyAny>>) -> PyRe
     Err(PyTypeError::new_err(format!(
         "{function}(): argument 'out' must be Tensor, not {actual}"
     )))
+}
+
+fn validate_creation_dispatch_arguments(
+    function: &str,
+    arguments: CreationCallArguments<'_>,
+) -> PyResult<()> {
+    let CreationCallArguments {
+        size,
+        size_origin,
+        shape,
+        out,
+        dtype,
+        layout,
+        device,
+        pin_memory,
+        requires_grad,
+        keyword_error,
+    } = arguments;
+
+    validate_creation_dispatch_size(function, size.as_ref(), size_origin, shape.as_ref())?;
+    validate_creation_out(function, out.as_ref())?;
+    parse_dtype(function, dtype.as_ref())?;
+    parse_factory_layout(function, layout.as_ref())?;
+    validate_device_argument_type(function, device.as_ref())?;
+    parse_factory_bool(function, "pin_memory", pin_memory.as_ref())?;
+    parse_factory_requires_grad(function, requires_grad.as_ref())?;
+    if let Some(error) = keyword_error {
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn validate_creation_dispatch_size<'py>(
+    function: &str,
+    size: Option<&Bound<'py, PyAny>>,
+    size_origin: Option<CreationSizeOrigin>,
+    shape: Option<&Bound<'py, PyAny>>,
+) -> PyResult<()> {
+    let (value, origin) = match (size, shape) {
+        (Some(_), Some(_)) => {
+            return Err(PyTypeError::new_err(format!(
+                "{function}() received both 'size' and its compatibility alias 'shape'"
+            )));
+        }
+        (Some(value), None) => (
+            value,
+            size_origin.expect("a selected size value records its origin"),
+        ),
+        (None, Some(value)) => (value, CreationSizeOrigin::ShapeKeyword),
+        (None, None) => {
+            return Err(PyTypeError::new_err(format!(
+                "{function}() missing 1 required positional arguments: \"size\""
+            )));
+        }
+    };
+
+    if validate_creation_dispatch_size_sequence(function, value)? {
+        return Ok(());
+    }
+    if origin == CreationSizeOrigin::Positional && validate_creation_dispatch_dimension(value)? {
+        return Ok(());
+    }
+
+    parse_creation_size(function, size, size_origin, shape).map(|_| ())
+}
+
+fn validate_creation_dispatch_size_sequence(
+    function: &str,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<bool> {
+    if value.is_instance_of::<PyString>() || value.is_instance_of::<PyBytes>() {
+        return Ok(false);
+    }
+    let Ok(sequence) = value.cast::<PySequence>() else {
+        return Ok(false);
+    };
+
+    for index in 0..sequence.len()? {
+        let item = sequence.get_item(index)?;
+        if !validate_creation_dispatch_dimension(&item)? {
+            let actual = python_type_name(&item)?;
+            return Err(PyTypeError::new_err(format!(
+                "{function}(): argument 'size' (position 1) must be tuple of ints, but found element of type {actual} at pos {index}"
+            )));
+        }
+    }
+    Ok(true)
+}
+
+fn validate_creation_dispatch_dimension(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if value.is_instance_of::<PyBool>() || is_numpy_scalar_of_types(value, &["bool_"])? {
+        return Ok(false);
+    }
+    if value.is_instance_of::<PyInt>() {
+        return Ok(true);
+    }
+
+    let indexed = PyModule::import(value.py(), "operator")
+        .and_then(|operator| operator.getattr("index"))
+        .and_then(|index| index.call1((value,)));
+    Ok(indexed.is_ok())
 }
 
 fn bind_arange_arguments<'py>(
