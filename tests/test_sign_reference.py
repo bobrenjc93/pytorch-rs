@@ -434,6 +434,40 @@ class TensorSignReferenceTests(unittest.TestCase):
                 )
             )
 
+        spoofed_tensor_observations = []
+
+        class Tensor:
+            __module__ = "torch"
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        for call, keyword in (
+            (lambda value: function(value), None),
+            (lambda value: function(tensor, out=value), "out"),
+        ):
+            value = Tensor()
+            Tensor.calls.clear()
+            result = call(value)
+            dispatched, dispatch_types, args, kwargs = Tensor.calls[0]
+            spoofed_tensor_observations.append(
+                (
+                    result is marker,
+                    dispatched is function,
+                    tuple(item.__name__ for item in dispatch_types),
+                    tuple(item.__module__ for item in dispatch_types),
+                    len(args),
+                    kwargs is None,
+                    None if kwargs is None else tuple(kwargs),
+                    keyword is not None
+                    and kwargs is not None
+                    and kwargs[keyword] is value,
+                )
+            )
+
         subclass_order = []
 
         class BaseOverride:
@@ -500,6 +534,7 @@ class TensorSignReferenceTests(unittest.TestCase):
         return (
             mode_observations,
             override_observations,
+            spoofed_tensor_observations,
             subclass_result is marker,
             subclass_order,
             forward_order,

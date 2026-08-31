@@ -12011,19 +12011,30 @@ fn parse_unary_out_tensor_or_torch_function_argument<'py>(
     argument: &str,
     value: &ParsedCallArgument<'py>,
 ) -> PyResult<BoundTensorOrTorchFunction<'py>> {
-    if operation.name == "sign" && is_exact_foreign_pytorch_tensor(&value.value)? {
+    if let Ok(tensor) = value.value.cast::<PyTensor>() {
+        return Ok(BoundTensorOrTorchFunction::Tensor(tensor.clone()));
+    }
+    if operation.name == "sign" && is_exact_imported_pytorch_tensor(&value.value)? {
         return parse_tensor_argument(operation.name, argument, value)
             .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()));
     }
-    parse_tensor_or_torch_function_argument(operation.name, argument, value)
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundTensorOrTorchFunction::Override(probed));
+    }
+    parse_tensor_argument(operation.name, argument, value)
+        .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
 }
 
-fn is_exact_foreign_pytorch_tensor(value: &Bound<'_, PyAny>) -> PyResult<bool> {
-    let value_type = value.get_type();
-    Ok(
-        value_type.name()?.to_str()? == "Tensor"
-            && value_type.getattr("__module__")?.eq("torch")?,
-    )
+fn is_exact_imported_pytorch_tensor(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let sys = PyModule::import(value.py(), "sys")?;
+    let modules = sys.getattr("modules")?.cast_into::<PyDict>()?;
+    let Some(torch_module) = modules.get_item("torch")? else {
+        return Ok(false);
+    };
+    let Ok(torch_tensor_type) = torch_module.getattr("Tensor") else {
+        return Ok(false);
+    };
+    Ok(value.get_type().as_ptr() == torch_tensor_type.as_ptr())
 }
 
 fn validate_unary_out_keywords(

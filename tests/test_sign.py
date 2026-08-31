@@ -480,6 +480,37 @@ class TensorSignTests(unittest.TestCase):
             self.assertIs(function, torch.sign)
             self.assertEqual(dispatch_types, (Override,))
 
+        spoofed_tensor_calls = []
+
+        class Tensor:
+            __module__ = "torch"
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                spoofed_tensor_calls.append((func, types, args, kwargs))
+                return marker
+
+        spoofed_input = Tensor()
+        spoofed_out = Tensor()
+        self.assertIs(torch.sign(spoofed_input), marker)
+        self.assertIs(torch.sign(tensor, out=spoofed_out), marker)
+        self.assertEqual(len(spoofed_tensor_calls), 2)
+
+        function, dispatch_types, args, kwargs = spoofed_tensor_calls[0]
+        self.assertIs(function, torch.sign)
+        self.assertEqual(dispatch_types, (Tensor,))
+        self.assertEqual(len(args), 1)
+        self.assertIs(args[0], spoofed_input)
+        self.assertIsNone(kwargs)
+
+        function, dispatch_types, args, kwargs = spoofed_tensor_calls[1]
+        self.assertIs(function, torch.sign)
+        self.assertEqual(dispatch_types, (Tensor,))
+        self.assertEqual(len(args), 1)
+        self.assertIs(args[0], tensor)
+        self.assertEqual(tuple(kwargs), ("out",))
+        self.assertIs(kwargs["out"], spoofed_out)
+
         subclass_order = []
 
         class BaseOverride:
