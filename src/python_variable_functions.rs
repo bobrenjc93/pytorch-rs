@@ -31,11 +31,12 @@ use crate::python::{
     scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
     sin_variable_function, sqrt_variable_function, square_variable_function, sum_variable_function,
     tanh_variable_function, trunc_variable_function, unbind_variable_function,
+    unsqueeze_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 51] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 52] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -79,6 +80,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 51] = [
     "resolve_neg",
     "unbind",
     "select",
+    "unsqueeze",
     "permute",
     "movedim",
     "moveaxis",
@@ -896,6 +898,8 @@ const UNBIND_DOC: &std::ffi::CStr = c"\nunbind(input, dim=0) -> seq\n\nRemoves a
 
 const SELECT_DOC: &std::ffi::CStr = c"\nselect(input, dim, index) -> Tensor\n\nSlices the :attr:`input` tensor along the selected dimension at the given index.\nThis function returns a view of the original tensor with the given dimension removed.\n\n.. note:: If :attr:`input` is a sparse tensor and returning a view of\n          the tensor is not possible, a RuntimeError exception is\n          raised. In this is the case, consider using\n          :func:`torch.select_copy` function.\n\nArgs:\n    input (Tensor): the input tensor.\n    dim (int): the dimension to slice\n    index (int): the index to select with\n\n.. note::\n\n    :meth:`select` is equivalent to slicing. For example,\n    ``tensor.select(0, index)`` is equivalent to ``tensor[index]`` and\n    ``tensor.select(2, index)`` is equivalent to ``tensor[:,:,index]``.\n";
 
+const UNSQUEEZE_DOC: &std::ffi::CStr = c"\nunsqueeze(input, dim) -> Tensor\n\nReturns a new tensor with a dimension of size one inserted at the\nspecified position.\n\nThe returned tensor shares the same underlying data with this tensor.\n\nA :attr:`dim` value within the range ``[-input.dim() - 1, input.dim() + 1)``\ncan be used. Negative :attr:`dim` will correspond to :meth:`unsqueeze`\napplied at :attr:`dim` = ``dim + input.dim() + 1``.\n\nArgs:\n    input (Tensor): the input tensor.\n    dim (int): the index at which to insert the singleton dimension\n\nExample::\n\n    >>> x = torch.tensor([1, 2, 3, 4])\n    >>> torch.unsqueeze(x, 0)\n    tensor([[ 1,  2,  3,  4]])\n    >>> torch.unsqueeze(x, 1)\n    tensor([[ 1],\n            [ 2],\n            [ 3],\n            [ 4]])\n";
+
 const PERMUTE_DOC: &std::ffi::CStr = c"\npermute(input, dims) -> Tensor\n\nReturns a view of the original tensor :attr:`input` with its dimensions permuted.\n\nArgs:\n    input (Tensor): the input tensor.\n    dims (torch.Size, tuple of int or list of int): the desired ordering of dimensions.\n\nExample:\n    >>> x = torch.randn(2, 3, 5)\n    >>> x.size()\n    torch.Size([2, 3, 5])\n    >>> torch.permute(x, (2, 0, 1)).size()\n    torch.Size([5, 2, 3])\n";
 
 const MOVEDIM_DOC: &std::ffi::CStr = cr"
@@ -1177,6 +1181,7 @@ variable_function_callback!(resolve_conj_callback, resolve_conj_variable_functio
 variable_function_callback!(resolve_neg_callback, resolve_neg_variable_function);
 variable_function_callback!(unbind_callback, unbind_variable_function);
 variable_function_callback!(select_callback, select_variable_function);
+variable_function_callback!(unsqueeze_callback, unsqueeze_variable_function);
 variable_function_callback!(permute_callback, permute_variable_function);
 variable_function_callback!(movedim_callback, movedim_variable_function);
 variable_function_callback!(moveaxis_callback, moveaxis_variable_function);
@@ -1250,6 +1255,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"resolve_neg", resolve_neg_callback, RESOLVE_NEG_DOC),
         variable_function_method!(c"unbind", unbind_callback, UNBIND_DOC),
         variable_function_method!(c"select", select_callback, SELECT_DOC),
+        variable_function_method!(c"unsqueeze", unsqueeze_callback, UNSQUEEZE_DOC),
         variable_function_method!(c"permute", permute_callback, PERMUTE_DOC),
         variable_function_method!(c"movedim", movedim_callback, MOVEDIM_DOC),
         variable_function_method!(c"moveaxis", moveaxis_callback, MOVEAXIS_DOC),

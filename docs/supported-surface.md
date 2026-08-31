@@ -473,6 +473,7 @@ View and layout coverage includes stride-aware indexing, dimension-zero
 `Tensor.movedim()`/`Tensor.moveaxis()`, `torch.movedim()`, and top-level
 `torch.moveaxis()` views, metadata-only transpose, `Tensor.swapdims()`/
 `torch.swapdims()` and `Tensor.swapaxes()`/`torch.swapaxes()`, squeeze views,
+boundary `Tensor.unsqueeze(dim)`/`torch.unsqueeze(input, dim)` singleton views,
 compatible `Tensor.reshape()`/sequence-form `torch.reshape(input, shape)` and
 `Tensor.reshape_as()` view-or-copy transforms, PyTorch-compatible read-only
 `Tensor.T`, `Tensor.mT`, and real-valued `Tensor.H`/`Tensor.mH` views,
@@ -539,6 +540,14 @@ materialization and autograd path as `contiguous()`. `Tensor.squeeze()`,
 `Tensor.squeeze(dim)`, and
 `torch.squeeze(input, dim)` retain shared storage, strides, and offsets just
 like PyTorch.
+
+`Tensor.unsqueeze(dim)` and `torch.unsqueeze(input, dim)` add a singleton
+dimension only when `dim` normalizes to the front (`0`/`-rank - 1`) or back
+(`rank`/`-1`) insertion point. Supported calls preserve storage sharing,
+shape, stride, storage offset, dtype, device, `no_grad` view metadata, and
+first-order backward through a full `sum`. Interior-dimension `unsqueeze`,
+in-place `unsqueeze_`, named dimensions, tensor subclasses, and active
+`__torch_function__` modes remain unsupported.
 
 For real-valued tensors, `Tensor.imag` and top-level `torch.imag()` share
 PyTorch's non-complex `RuntimeError` path without mutating storage, metadata, or
