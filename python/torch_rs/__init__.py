@@ -111,7 +111,7 @@ def use_deterministic_algorithms(
             "_set_deterministic_algorithms(): argument 'warn_only' "
             f"must be bool, not {type_name}"
         )
-    if mode is True or mode != 0:
+    if not _builtins.int.__eq__(mode, 0):
         raise NotImplementedError(
             f"use_deterministic_algorithms(): mode {mode!r} is not "
             "supported; only False and 0 are implemented"

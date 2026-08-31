@@ -21,6 +21,17 @@ class _DefaultInt(int):
     pass
 
 
+class _NonzeroIntReportsZero(int):
+    def __new__(cls):
+        return int.__new__(cls, 1)
+
+    def __eq__(self, other):
+        return other == 0
+
+    def __ne__(self, other):
+        return False
+
+
 class _CustomMode:
     pass
 
@@ -305,7 +316,7 @@ class UseDeterministicAlgorithmsReferenceTests(unittest.TestCase):
                 )
                 reference_torch.use_deterministic_algorithms(False)
 
-        for mode in (True, 1, _DefaultInt(1), 2, -1):
+        for mode in (True, 1, _DefaultInt(1), _NonzeroIntReportsZero(), 2, -1):
             with self.subTest(actual_mode=mode):
                 with self.assertRaises(NotImplementedError):
                     torch.use_deterministic_algorithms(mode)

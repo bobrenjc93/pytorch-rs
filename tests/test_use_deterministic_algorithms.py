@@ -35,6 +35,28 @@ class _DefaultInt(int):
     pass
 
 
+class _ZeroIntRejectsComparison(int):
+    def __new__(cls):
+        return int.__new__(cls, 0)
+
+    def __eq__(self, other):
+        raise AssertionError("zero mode validation must not call __eq__")
+
+    def __ne__(self, other):
+        raise AssertionError("zero mode validation must not call __ne__")
+
+
+class _NonzeroIntReportsZero(int):
+    def __new__(cls):
+        return int.__new__(cls, 1)
+
+    def __eq__(self, other):
+        return other == 0
+
+    def __ne__(self, other):
+        return False
+
+
 class _RejectTruthiness:
     def __bool__(self):
         raise AssertionError("use_deterministic_algorithms must not use truthiness")
@@ -58,6 +80,7 @@ class UseDeterministicAlgorithmsTests(unittest.TestCase):
             lambda: torch.use_deterministic_algorithms(False, warn_only=False),
             lambda: torch.use_deterministic_algorithms(0),
             lambda: torch.use_deterministic_algorithms(_DefaultInt(0)),
+            lambda: torch.use_deterministic_algorithms(_ZeroIntRejectsComparison()),
             lambda: torch.use_deterministic_algorithms(0, warn_only=False),
         )
 
@@ -151,7 +174,15 @@ class UseDeterministicAlgorithmsTests(unittest.TestCase):
                 self.assert_default_state()
 
     def test_enabling_modes_are_rejected_without_state_changes(self):
-        for mode in (True, 1, _DefaultInt(1), 2, -1, 10**100):
+        for mode in (
+            True,
+            1,
+            _DefaultInt(1),
+            _NonzeroIntReportsZero(),
+            2,
+            -1,
+            10**100,
+        ):
             with self.subTest(mode=mode):
                 expected_grad_mode = torch.is_grad_enabled()
                 message = (
