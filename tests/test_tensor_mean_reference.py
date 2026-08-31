@@ -159,6 +159,24 @@ class TensorMeanReferenceTests(unittest.TestCase):
             )
         self.assert_scalar_matches(actual_untracked, expected_untracked, case="no_grad")
 
+    def test_repeated_backward_matches_pytorch_2_13(self):
+        actual_leaf = torch.tensor([1.0, 2.0], requires_grad=True)
+        expected_leaf = reference_torch.tensor(
+            [1.0, 2.0], dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_loss = actual_leaf.mean()
+        expected_loss = expected_leaf.mean()
+
+        actual_loss.backward()
+        expected_loss.backward()
+        actual_loss.backward()
+        expected_loss.backward()
+
+        np.testing.assert_array_equal(
+            np.asarray(actual_leaf.grad), expected_leaf.grad.cpu().numpy()
+        )
+        self.assertEqual(actual_leaf.grad.tolist(), [1.0, 1.0])
+
     def test_rank_one_transpose_selected_offset_mean_edges_match_pytorch_2_13(self):
         cases = (
             ("signed zero", [-0.0, 0.0, -0.0, 0.0]),

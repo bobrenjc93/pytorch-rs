@@ -95,6 +95,10 @@ enum GradFn {
     SavedInputUnary(SavedInputUnaryNode),
     SavedOutputUnary(SavedOutputUnaryNode),
     ZeroVjp(ZeroVjpNode),
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+    Mean {
+        input: SavedTensor,
+    },
     Sum {
         input: SavedTensor,
     },
@@ -140,6 +144,7 @@ impl GradFn {
             }
             Self::MultiplyScalar { input, .. }
             | Self::Negate { input, .. }
+            | Self::Mean { input }
             | Self::Sum { input }
             | Self::Transform { input, .. }
             | Self::Unbind { input, .. } => input.take_parent(pending),
@@ -175,6 +180,7 @@ impl GradFn {
             }
             Self::Negate { .. }
             | Self::ZeroVjp(_)
+            | Self::Mean { .. }
             | Self::Sum { .. }
             | Self::Transform { .. }
             | Self::Unbind { .. } => {}
@@ -194,6 +200,7 @@ impl GradFn {
             Self::SavedOutputUnary(node) => node.output.storage = None,
             Self::Negate { .. }
             | Self::ZeroVjp(_)
+            | Self::Mean { .. }
             | Self::Sum { .. }
             | Self::Transform { .. }
             | Self::Unbind { .. } => {}
@@ -1059,6 +1066,7 @@ impl Tensor {
             GradFn::SavedInputUnary(node) => node.identity,
             GradFn::SavedOutputUnary(node) => node.identity,
             GradFn::ZeroVjp(node) => node.identity,
+            GradFn::Mean { .. } => AutogradNode::Mean,
             GradFn::Sum { .. } => AutogradNode::Sum,
             GradFn::Unbind { .. } => AutogradNode::Unbind,
         };
@@ -3595,22 +3603,7 @@ impl Tensor {
 
     #[must_use]
     pub fn sum(&self) -> Self {
-        let contiguous_values = self.contiguous_slice();
-        let total = if let Some(values) = contiguous_values {
-            values
-                .iter()
-                .copied()
-                .fold(0.0_f32, |total, value| total + value)
-        } else if let Some(total) = self.sum_contiguous_shared_gradient() {
-            total
-        } else if let Some(total) = self.fold_owned_sum_rank(0.0_f32, |total, value| total + value)
-        {
-            total
-        } else {
-            (0..self.elements).fold(0.0_f32, |total, index| {
-                total + self.value_at_strided_linear_index(index)
-            })
-        };
+        let total = self.full_sum_value();
         let mut output = Self::from_scalar(total, self.dtype(), self.device());
         if self.requires_grad() && is_grad_enabled() {
             output.autograd = Some(Arc::new(AutogradMeta {
@@ -3635,16 +3628,38 @@ impl Tensor {
         reason = "full-tensor mean uses the PyTorch-compatible float32 element count"
     )]
     pub fn mean(&self) -> Result<Self, TensorError> {
-        let summed = self.sum();
-        let total = summed.value_at_linear_index(0);
+        let total = self.full_sum_value();
         let divisor = self.elements as f32;
-        let mut output = summed.mul_scalar(1.0_f32 / divisor)?;
-        output.storage = Arc::new(Storage::from_scalar(
-            total / divisor,
-            self.dtype(),
-            self.device(),
-        ));
+        let mut output = Self::from_scalar(total / divisor, self.dtype(), self.device());
+        if self.requires_grad() && is_grad_enabled() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Mean {
+                        input: SavedTensor::try_from_tensor(self, false)?,
+                    })),
+                },
+            }));
+        }
         Ok(output)
+    }
+
+    fn full_sum_value(&self) -> f32 {
+        let contiguous_values = self.contiguous_slice();
+        if let Some(values) = contiguous_values {
+            values
+                .iter()
+                .copied()
+                .fold(0.0_f32, |total, value| total + value)
+        } else if let Some(total) = self.sum_contiguous_shared_gradient() {
+            total
+        } else if let Some(total) = self.fold_owned_sum_rank(0.0_f32, |total, value| total + value)
+        {
+            total
+        } else {
+            (0..self.elements).fold(0.0_f32, |total, index| {
+                total + self.value_at_strided_linear_index(index)
+            })
+        }
     }
 
     fn sum_contiguous_shared_gradient(&self) -> Option<f32> {
@@ -4285,6 +4300,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                         }
                         GradFn::MultiplyScalar { input, .. }
                         | GradFn::Negate { input, .. }
+                        | GradFn::Mean { input }
                         | GradFn::Sum { input }
                         | GradFn::Transform { input, .. }
                         | GradFn::Unbind { input, .. } => {
@@ -4319,6 +4335,7 @@ fn apply_grad_fn(
     gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
     match grad_fn {
+        GradFn::Mean { input } => apply_mean_grad_fn(input, upstream, gradients)?,
         GradFn::Sum { input } => apply_sum_grad_fn(input, upstream, gradients)?,
         GradFn::MultiplyScalar { input, scalar } => {
             if let Some(meta) = &input.autograd {
@@ -4413,6 +4430,23 @@ fn apply_grad_fn(
             }
         }
         GradFn::Unbind { .. } => unreachable!(),
+    }
+    Ok(())
+}
+
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "full-tensor mean uses the PyTorch-compatible float32 element count"
+)]
+fn apply_mean_grad_fn(
+    input: &SavedTensor,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    if let Some(meta) = &input.autograd {
+        let scale = 1.0_f32 / input.elements as f32;
+        let gradient = filled_storage(input.elements, upstream[0] * scale)?;
+        add_gradient(gradients, meta, input.output_nr, gradient);
     }
     Ok(())
 }
@@ -6655,6 +6689,60 @@ mod tests {
         );
         assert!(!no_grad_sum.requires_grad());
         assert!(no_grad_sum.is_leaf());
+    }
+
+    #[test]
+    fn mean_preserves_empty_repeated_backward_and_no_grad() {
+        let empty_leaf = Tensor::zeros([0, 5]).unwrap().with_requires_grad(true);
+        let empty_view = empty_leaf
+            .transpose(0, 1)
+            .unwrap()
+            .index_integer(2)
+            .unwrap();
+        assert_eq!(empty_view.shape(), [0]);
+        assert_eq!(empty_view.stride(), [5]);
+        assert_eq!(empty_view.storage_offset(), 2);
+        assert!(empty_view.mean().unwrap().item().unwrap().is_nan());
+        let empty_loss = empty_view.mean().unwrap();
+        empty_loss.backward().unwrap();
+        empty_loss.backward().unwrap();
+        let empty_gradient = empty_leaf.grad().unwrap().unwrap();
+        assert_eq!(empty_gradient.shape(), [0, 5]);
+        assert_eq!(empty_gradient.as_slice(), &[] as &[f32]);
+
+        let leaf = Tensor::from_vec((0_u8..20).map(f32::from).collect(), [4, 5])
+            .unwrap()
+            .with_requires_grad(true);
+        let view = leaf.transpose(0, 1).unwrap().index_integer(2).unwrap();
+        assert_eq!(view.shape(), [4]);
+        assert_eq!(view.stride(), [5]);
+        assert_eq!(view.storage_offset(), 2);
+        assert!(!view.is_contiguous());
+
+        let loss = view.mean().unwrap();
+        loss.backward().unwrap();
+        loss.backward().unwrap();
+        let mut expected_gradient = vec![0.0; 20];
+        for row in 0..4 {
+            expected_gradient[row * 5 + 2] = 0.5;
+        }
+        assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), expected_gradient);
+
+        let no_grad_mean = {
+            let _guard = crate::no_grad();
+            view.mean().unwrap()
+        };
+        assert_eq!(
+            no_grad_mean.item().unwrap().to_bits(),
+            shared_gradient_copy(&view)
+                .mean()
+                .unwrap()
+                .item()
+                .unwrap()
+                .to_bits()
+        );
+        assert!(!no_grad_mean.requires_grad());
+        assert!(no_grad_mean.is_leaf());
     }
 
     #[test]
@@ -10243,6 +10331,7 @@ mod tests {
             Some("PowBackward0")
         );
         assert_eq!(source.sqrt().unwrap().grad_fn_name(), Some("SqrtBackward0"));
+        assert_eq!(source.mean().unwrap().grad_fn_name(), Some("MeanBackward0"));
     }
 
     fn binary_outputs(left: &Tensor, right: &Tensor) -> [Tensor; 4] {

@@ -134,6 +134,12 @@ class TopLevelMeanTests(unittest.TestCase):
                     np.asarray(function_leaf.grad), np.asarray(method_leaf.grad)
                 )
 
+        repeated = torch.tensor([1.0, 2.0], requires_grad=True)
+        repeated_loss = torch.mean(repeated)
+        repeated_loss.backward()
+        repeated_loss.backward()
+        self.assertEqual(repeated.grad.tolist(), [1.0, 1.0])
+
         leaf = torch.tensor([1.0, -2.0, 3.0], requires_grad=True)
         with torch.no_grad():
             untracked = torch.mean(leaf, dim=None, dtype=torch.float, out=None)

@@ -110,7 +110,7 @@ class TensorMeanTests(unittest.TestCase):
                 case=("rank-one transpose-selected offset", case),
             )
 
-    def test_autograd_empty_no_grad_and_single_backward(self):
+    def test_autograd_empty_no_grad_and_repeated_backward(self):
         leaf = torch.tensor(
             [[1.0, -2.0, 3.0], [4.0, 5.0, -6.0]], requires_grad=True
         )
@@ -124,9 +124,24 @@ class TensorMeanTests(unittest.TestCase):
             rtol=0,
             atol=0,
         )
+        loss.backward()
+        np.testing.assert_allclose(
+            np.asarray(leaf.grad),
+            np.full((2, 3), np.float32(2.0 / 6.0), dtype=np.float32),
+            rtol=0,
+            atol=0,
+        )
+
+        repeated = torch.tensor([1.0, 2.0], requires_grad=True)
+        repeated_loss = repeated.mean()
+        repeated_loss.backward()
+        repeated_loss.backward()
+        self.assertEqual(repeated.grad.tolist(), [1.0, 1.0])
 
         empty = torch.zeros((2, 0, 3), requires_grad=True)
-        empty.transpose(0, 2).mean(None, False, dtype=None).backward()
+        empty_loss = empty.transpose(0, 2).mean(None, False, dtype=None)
+        empty_loss.backward()
+        empty_loss.backward()
         self.assertEqual(empty.grad.shape, empty.shape)
         self.assertEqual(empty.grad.tolist(), [[], []])
 

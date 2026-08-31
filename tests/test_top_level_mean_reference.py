@@ -220,6 +220,24 @@ class TopLevelMeanReferenceTests(unittest.TestCase):
         )
         self.assertIsNone(actual_leaf.grad)
 
+    def test_repeated_backward_matches_pytorch_2_13(self):
+        actual_leaf = torch.tensor([1.0, 2.0], requires_grad=True)
+        expected_leaf = reference_torch.tensor(
+            [1.0, 2.0], dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_loss = torch.mean(actual_leaf)
+        expected_loss = reference_torch.mean(expected_leaf)
+
+        actual_loss.backward()
+        expected_loss.backward()
+        actual_loss.backward()
+        expected_loss.backward()
+
+        np.testing.assert_array_equal(
+            np.asarray(actual_leaf.grad), expected_leaf.grad.detach().cpu().numpy()
+        )
+        self.assertEqual(actual_leaf.grad.tolist(), [1.0, 1.0])
+
     def test_rank_one_transpose_selected_offset_mean_edges_match_pytorch_2_13(self):
         cases = (
             ("signed zero", [-0.0, 0.0, -0.0, 0.0]),
