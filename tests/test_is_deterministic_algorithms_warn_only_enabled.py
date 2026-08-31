@@ -169,9 +169,9 @@ class IsDeterministicAlgorithmsWarnOnlyEnabledTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_default_only_debug_mode_setter_is_exposed(self):
-        self.assertFalse(hasattr(torch, "use_deterministic_algorithms"))
-        self.assertNotIn("use_deterministic_algorithms", torch.__all__)
+    def test_default_only_deterministic_setters_are_exposed(self):
+        self.assertTrue(hasattr(torch, "use_deterministic_algorithms"))
+        self.assertEqual(torch.__all__.count("use_deterministic_algorithms"), 1)
         self.assertTrue(hasattr(torch, "set_deterministic_debug_mode"))
         self.assertEqual(torch.__all__.count("set_deterministic_debug_mode"), 1)
 
@@ -188,6 +188,8 @@ class RejectPytorchImport:
 sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
+assert torch.is_deterministic_algorithms_warn_only_enabled() is False
+assert torch.use_deterministic_algorithms(False) is None
 assert torch.is_deterministic_algorithms_warn_only_enabled() is False
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """

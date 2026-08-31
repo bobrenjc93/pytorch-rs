@@ -43,6 +43,79 @@ def compiled_with_cxx11_abi() -> _builtins.bool:
     return False
 
 
+def _deterministic_algorithms_type_name(value):
+    value_type = _builtins.type(value)
+    if value_type is Tensor:
+        return "Tensor"
+    if value_type is dtype:
+        return "torch.dtype"
+    if value_type is device:
+        return "torch.device"
+    if value_type is memory_format:
+        return "torch.memory_format"
+    if value_type is layout:
+        return "torch.layout"
+    if value_type is Size:
+        return "torch.Size"
+    if value_type is finfo:
+        return "torch.finfo"
+    return _builtins.object.__getattribute__(value_type, "__name__")
+
+
+def use_deterministic_algorithms(
+    mode: _builtins.bool,
+    *,
+    warn_only: _builtins.bool = False,
+) -> None:
+    r"""Sets whether PyTorch operations must use "deterministic" algorithms.
+
+    This implementation only supports requests that leave deterministic
+    algorithms disabled: ``mode=False`` or integer ``0`` with
+    ``warn_only=False``. Enabling deterministic algorithms, warning-only mode,
+    fill-uninitialized-memory controls, CUDA determinism, and deterministic
+    kernel enforcement are not implemented.
+
+    Args:
+        mode (:class:`bool`): If ``False``, allows nondeterministic operations.
+            Integer ``0`` is accepted as a default-equivalent disabled request.
+        warn_only (:class:`bool`, optional): Must be ``False``. Default:
+            ``False``
+    """
+    if _builtins.type(mode) is _builtins.bool:
+        requested_enabled = mode
+    elif _builtins.isinstance(mode, _builtins.int):
+        if mode == 0:
+            requested_enabled = False
+        else:
+            raise NotImplementedError(
+                "use_deterministic_algorithms(): mode "
+                f"{mode!r} is not supported; only False and 0 are implemented"
+            )
+    else:
+        raise TypeError(
+            "_set_deterministic_algorithms(): argument 'mode' (position 1) "
+            "must be bool, not "
+            f"{_deterministic_algorithms_type_name(mode)}"
+        )
+
+    if _builtins.type(warn_only) is not _builtins.bool:
+        raise TypeError(
+            "_set_deterministic_algorithms(): argument 'warn_only' must be "
+            f"bool, not {_deterministic_algorithms_type_name(warn_only)}"
+        )
+    if warn_only:
+        raise NotImplementedError(
+            "use_deterministic_algorithms(): warn_only=True is not supported; "
+            "only warn_only=False is implemented"
+        )
+    if requested_enabled:
+        raise NotImplementedError(
+            "use_deterministic_algorithms(): mode True is not supported; "
+            "only False and 0 are implemented"
+        )
+    return None
+
+
 def are_deterministic_algorithms_enabled() -> _builtins.bool:
     r"""Returns True if the global deterministic flag is turned on. Refer to
     :func:`torch.use_deterministic_algorithms` documentation for more details.
@@ -433,6 +506,7 @@ __doc__ = _native.__doc__
 # directly importable but excludes it from package wildcard imports.
 __all__ = [
     *(name for name in _native.__all__ if name != "__version__"),
+    "use_deterministic_algorithms",
     "are_deterministic_algorithms_enabled",
     "get_deterministic_debug_mode",
     "set_deterministic_debug_mode",
