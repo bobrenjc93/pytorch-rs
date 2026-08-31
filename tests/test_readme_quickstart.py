@@ -11,6 +11,10 @@ FEATURES = REPOSITORY_ROOT / "FEATURES.md"
 SUPPORTED_SURFACE = REPOSITORY_ROOT / "docs" / "supported-surface.md"
 HISTORICAL_TIMING_REPORTS = (
     (
+        "Rank-1 `Tensor.sum` release timings",
+        "docs/rank1-sum-release-timings.md",
+    ),
+    (
         "Rank-9 `Tensor.sum` release timings",
         "docs/rank9-sum-release-timings.md",
     ),

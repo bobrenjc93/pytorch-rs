@@ -38,6 +38,7 @@ These reports are historical release evidence snapshots: they record the code,
 environment, checks, and timings from specific runs. They are not live gates and
 do not replace the benchmark policy or Burner-managed evaluation progress.
 
+- [Rank-1 `Tensor.sum` release timings](docs/rank1-sum-release-timings.md)
 - [Rank-9 `Tensor.sum` release timings](docs/rank9-sum-release-timings.md)
 - [Rank-10 `Tensor.sum` release timings](docs/rank10-sum-release-timings.md)
 - [Rank-11 `Tensor.sum` release timings](docs/rank11-sum-release-timings.md)

@@ -53,6 +53,25 @@ class TensorSumTests(unittest.TestCase):
             ),
         )
 
+    @staticmethod
+    def rank_one_strided_vector(values, *, requires_grad=False):
+        rows = len(values)
+        columns = 5
+        selected_column = 2
+        matrix = np.full((rows, columns), np.float32(0.5), dtype=np.float32)
+        matrix[:, selected_column] = np.asarray(values, dtype=np.float32)
+        source = torch.tensor(
+            matrix.tolist(), dtype=torch.float32, requires_grad=requires_grad
+        )
+        return source, source.transpose(0, 1)[selected_column], matrix[:, selected_column]
+
+    @staticmethod
+    def sequential_float32_sum(values):
+        total = np.float32(0.0)
+        for value in np.asarray(values, dtype=np.float32):
+            total = np.float32(total + value)
+        return total
+
     def test_dtype_only_forms_reuse_full_reduction_values_and_metadata(self):
         dense = torch.tensor(
             np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
@@ -96,6 +115,63 @@ class TensorSumTests(unittest.TestCase):
         self.assertFalse(untracked.requires_grad)
         self.assertTrue(untracked.is_leaf)
         self.assertTrue(leaf.sum(None, dtype=torch.float32).requires_grad)
+
+    def test_rank_one_transpose_selected_offset_sum_edges(self):
+        cases = (
+            ("signed zero", [-0.0, 0.0, -0.0, 0.0]),
+            ("nan", [1.0, np.nan, 2.0, -3.0]),
+            ("positive infinity", [1.0, np.inf, 2.0, 3.0]),
+            ("negative infinity", [1.0, -np.inf, 2.0, 3.0]),
+            ("sequential cancellation", [1.0e20, -1.0e20, 3.0, -0.0]),
+        )
+
+        for case, values in cases:
+            _, view, selected = self.rank_one_strided_vector(values)
+            self.assertEqual(view.shape, (len(values),))
+            self.assertEqual(view.stride(), (5,))
+            self.assertEqual(view.storage_offset(), 2)
+            self.assertFalse(view.is_contiguous())
+            self.assert_scalar(
+                view.sum(),
+                self.sequential_float32_sum(selected),
+                case=("rank-one transpose-selected offset", case),
+            )
+
+    def test_rank_one_transpose_selected_offset_sum_empty_no_grad_and_repeated_backward(
+        self,
+    ):
+        empty = torch.zeros((0, 5), requires_grad=True)
+        empty_view = empty.transpose(0, 1)[2]
+        self.assertEqual(empty_view.shape, (0,))
+        self.assertEqual(empty_view.stride(), (5,))
+        self.assertEqual(empty_view.storage_offset(), 2)
+        self.assert_scalar(empty_view.sum(), np.float32(0.0), case="rank-one empty")
+        empty_view.sum().backward()
+        self.assertEqual(empty.grad.shape, empty.shape)
+        self.assertEqual(empty.grad.tolist(), [])
+
+        leaf, view, selected = self.rank_one_strided_vector(
+            np.arange(1, 21, dtype=np.float32).reshape(4, 5)[:, 2],
+            requires_grad=True,
+        )
+        loss = view.sum()
+        self.assertTrue(loss.requires_grad)
+        self.assertFalse(loss.is_leaf)
+        loss.backward()
+        loss.backward()
+        expected_gradient = np.zeros((4, 5), dtype=np.float32)
+        expected_gradient[:, 2] = 2.0
+        np.testing.assert_array_equal(np.asarray(leaf.grad), expected_gradient)
+
+        with torch.no_grad():
+            untracked = view.sum()
+        self.assert_scalar(
+            untracked,
+            self.sequential_float32_sum(selected),
+            case="rank-one no_grad",
+        )
+        self.assertFalse(untracked.requires_grad)
+        self.assertTrue(untracked.is_leaf)
 
     def test_rank_11_offset_permuted_sum_cases_cover_boundary_behaviors(self):
         shape = (2, 3, 2, 5, 2, 3, 2, 2, 2, 2, 2)

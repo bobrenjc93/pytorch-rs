@@ -2354,6 +2354,24 @@ impl Tensor {
         Some((values, shape, strides))
     }
 
+    fn fold_owned_rank_1<Accumulator, Function>(
+        &self,
+        initial: Accumulator,
+        mut function: Function,
+    ) -> Option<Accumulator>
+    where
+        Function: FnMut(Accumulator, f32) -> Accumulator,
+    {
+        let (values, [length], [stride]) = self.owned_fixed_rank_parts::<1>()?;
+        let mut accumulator = initial;
+        let mut offset = self.offset;
+        for _ in 0..length {
+            accumulator = function(accumulator, values[offset]);
+            offset = offset.wrapping_add(stride);
+        }
+        Some(accumulator)
+    }
+
     fn fold_owned_rank_2<Accumulator, Function>(
         &self,
         initial: Accumulator,
@@ -2599,6 +2617,7 @@ impl Tensor {
         Function: FnMut(Accumulator, f32) -> Accumulator,
     {
         match self.shape.len() {
+            1 => self.fold_owned_rank_1(initial, function),
             2 => self.fold_owned_rank_2(initial, function),
             3 => self.fold_owned_rank_3(initial, function),
             4 => self.fold_owned_rank_4(initial, function),
@@ -6479,6 +6498,140 @@ mod tests {
             empty_gradient.sum().item().unwrap().to_bits(),
             0.0_f32.to_bits()
         );
+    }
+
+    #[test]
+    fn owned_rank_1_sum_matches_fallback_for_transpose_selected_offset_vectors() {
+        let rank_one_column = |bits: &[u32]| {
+            let rows = bits.len();
+            let columns = 5_usize;
+            let selected_column = 2_usize;
+            let mut storage_bits = vec![0x3f00_0000; rows * columns];
+            for (row, &bits) in bits.iter().enumerate() {
+                storage_bits[row * columns + selected_column] = bits;
+            }
+            Tensor::from_vec(
+                storage_bits
+                    .iter()
+                    .copied()
+                    .map(f32::from_bits)
+                    .collect::<Vec<_>>(),
+                [rows, columns],
+            )
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap()
+            .index_integer(i64::try_from(selected_column).unwrap())
+            .unwrap()
+        };
+
+        for (case, bits) in [
+            (
+                "signed zero",
+                vec![0x8000_0000, 0x0000_0000, 0x8000_0000, 0x0000_0000],
+            ),
+            (
+                "nan",
+                vec![0x3f80_0000, 0x7fc0_0000, 0x4000_0000, 0xc040_0000],
+            ),
+            (
+                "positive infinity",
+                vec![0x3f80_0000, 0x7f80_0000, 0x4000_0000, 0x4040_0000],
+            ),
+            (
+                "negative infinity",
+                vec![0x3f80_0000, 0xff80_0000, 0x4000_0000, 0x4040_0000],
+            ),
+            (
+                "sequential cancellation",
+                vec![0x60ad_78ec, 0xe0ad_78ec, 0x4040_0000, 0x8000_0000],
+            ),
+        ] {
+            let view = rank_one_column(&bits);
+            let shared = shared_gradient_copy(&view);
+            assert_eq!(view.shape(), [bits.len()], "{case}");
+            assert_eq!(view.stride(), [5], "{case}");
+            assert_eq!(view.storage_offset(), 2, "{case}");
+            assert!(!view.is_contiguous(), "{case}");
+            assert!(matches!(
+                view.logical_values().inner,
+                LogicalValuesInner::Strided { .. }
+            ));
+            assert!(
+                shared
+                    .fold_owned_rank_1(0.0_f32, |total, value| total + value)
+                    .is_none(),
+                "{case}"
+            );
+
+            let fast_fold = view
+                .fold_owned_rank_1(0.0_f32, |total, value| total + value)
+                .unwrap();
+            let fallback_sum = shared.sum().item().unwrap();
+            assert_eq!(fast_fold.to_bits(), fallback_sum.to_bits(), "{case}");
+            assert_eq!(
+                view.sum().item().unwrap().to_bits(),
+                fallback_sum.to_bits(),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn owned_rank_1_sum_preserves_empty_repeated_backward_and_no_grad() {
+        let empty_leaf = Tensor::zeros([0, 5]).unwrap().with_requires_grad(true);
+        let empty_view = empty_leaf
+            .transpose(0, 1)
+            .unwrap()
+            .index_integer(2)
+            .unwrap();
+        assert_eq!(empty_view.shape(), [0]);
+        assert_eq!(empty_view.stride(), [5]);
+        assert_eq!(empty_view.storage_offset(), 2);
+        assert_eq!(
+            empty_view
+                .fold_owned_rank_1(13.0_f32, |total, value| total + value)
+                .unwrap()
+                .to_bits(),
+            13.0_f32.to_bits()
+        );
+        assert_eq!(
+            empty_view.sum().item().unwrap().to_bits(),
+            0.0_f32.to_bits()
+        );
+        empty_view.sum().backward().unwrap();
+        let empty_gradient = empty_leaf.grad().unwrap().unwrap();
+        assert_eq!(empty_gradient.shape(), [0, 5]);
+        assert_eq!(empty_gradient.as_slice(), &[] as &[f32]);
+
+        let leaf = Tensor::from_vec((0_u8..20).map(f32::from).collect(), [4, 5])
+            .unwrap()
+            .with_requires_grad(true);
+        let view = leaf.transpose(0, 1).unwrap().index_integer(2).unwrap();
+        assert_eq!(view.shape(), [4]);
+        assert_eq!(view.stride(), [5]);
+        assert_eq!(view.storage_offset(), 2);
+        assert!(!view.is_contiguous());
+
+        let loss = view.sum();
+        loss.backward().unwrap();
+        loss.backward().unwrap();
+        let mut expected_gradient = vec![0.0; 20];
+        for row in 0..4 {
+            expected_gradient[row * 5 + 2] = 2.0;
+        }
+        assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), expected_gradient);
+
+        let no_grad_sum = {
+            let _guard = crate::no_grad();
+            view.sum()
+        };
+        assert_eq!(
+            no_grad_sum.item().unwrap().to_bits(),
+            shared_gradient_copy(&view).sum().item().unwrap().to_bits()
+        );
+        assert!(!no_grad_sum.requires_grad());
+        assert!(no_grad_sum.is_leaf());
     }
 
     #[test]
