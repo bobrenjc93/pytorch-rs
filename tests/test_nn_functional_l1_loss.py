@@ -25,6 +25,17 @@ class FunctionalL1LossTests(unittest.TestCase):
             cls.tensor_bits(tensor).copy(),
         )
 
+    @classmethod
+    def expected_l1_bits(cls, input, target):
+        expected = (input - target).abs()
+        expected_bits = cls.tensor_bits(expected).copy()
+        target_bits = cls.tensor_bits(target)
+        target_nan = (target_bits & 0x7FFF_FFFF) > 0x7F80_0000
+        expected_bits[target_nan] = (
+            target_bits[target_nan] | 0x0040_0000
+        ) & 0x7FFF_FFFF
+        return expected, expected_bits
+
     def assert_matches_composition(
         self,
         actual,
@@ -123,6 +134,90 @@ class FunctionalL1LossTests(unittest.TestCase):
             ("same operand", same, same),
         )
 
+    def channels_last_cases(self):
+        edge_input_patterns = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x0080_0000,
+                0x8080_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        edge_target_patterns = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0001,
+                0x0000_0001,
+                0x807F_FFFF,
+                0x007F_FFFF,
+                0x8080_0000,
+                0x0080_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xFF7F_FFFF,
+                0x7F7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+            ],
+            dtype=np.uint32,
+        )
+        edge_input = torch.tensor(
+            memoryview(np.resize(edge_input_patterns, 24).view(np.float32))
+        ).view(2, 3, 2, 2)
+        edge_target = torch.tensor(
+            memoryview(np.resize(edge_target_patterns, 24).view(np.float32))
+        ).view(2, 3, 2, 2)
+        singleton_input = torch.tensor(
+            np.linspace(-3.0, 4.0, 2 * 3 * 1 * 4, dtype=np.float32)
+            .reshape(2, 3, 1, 4)
+            .tolist()
+        )
+        singleton_target = torch.tensor(
+            np.linspace(5.0, -7.0, 2 * 3 * 1 * 4, dtype=np.float32)
+            .reshape(2, 3, 1, 4)
+            .tolist()
+        )
+        empty_input = torch.zeros((2, 3, 0, 5))
+        empty_target = torch.ones((2, 3, 0, 5))
+
+        return (
+            (
+                "edge bits",
+                edge_input.contiguous(memory_format=torch.channels_last),
+                edge_target.contiguous(memory_format=torch.channels_last),
+            ),
+            (
+                "singleton",
+                singleton_input.contiguous(memory_format=torch.channels_last),
+                singleton_target.contiguous(memory_format=torch.channels_last),
+            ),
+            (
+                "empty",
+                empty_input.contiguous(memory_format=torch.channels_last),
+                empty_target.contiguous(memory_format=torch.channels_last),
+            ),
+        )
+
     def broadcast_cases(self):
         scalar = torch.tensor(-0.0)
         offset_scalar = torch.tensor([17.0, 0.5])[1]
@@ -209,6 +304,8 @@ class FunctionalL1LossTests(unittest.TestCase):
             "``reduce=None``",
             "``weight=None``",
             "fuses same-shape row-major contiguous operands",
+            "non-empty same-shape rank-4 channels-last-contiguous operands",
+            "identical strides and non-overlapping dense storage",
             "rank-0 scalar broadcasts over row-major contiguous tensors",
             "one native absolute-difference pass",
             "subtraction and absolute-value behavior",
@@ -304,6 +401,60 @@ class FunctionalL1LossTests(unittest.TestCase):
         self.assertFalse(actual.is_set_to(target))
         self.assertNotEqual(actual.data_ptr(), input.data_ptr())
         self.assertNotEqual(actual.data_ptr(), target.data_ptr())
+
+    def test_channels_last_cases_match_composition_edges_and_storage(self):
+        for case, input, target in self.channels_last_cases():
+            self.assertEqual(input.shape, target.shape)
+            self.assertEqual(input.stride(), target.stride())
+            self.assertTrue(input.is_contiguous(memory_format=torch.channels_last))
+            self.assertTrue(target.is_contiguous(memory_format=torch.channels_last))
+            if input.numel() != 0:
+                self.assertFalse(input.is_contiguous())
+                self.assertFalse(target.is_contiguous())
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+            expected, expected_bits = self.expected_l1_bits(input, target)
+
+            actual = functional.l1_loss(input, target, reduction="none")
+
+            with self.subTest(case=case, metadata=True):
+                self.assertEqual(actual.shape, expected.shape)
+                self.assertEqual(actual.stride(), expected.stride())
+                self.assertEqual(actual.storage_offset(), expected.storage_offset())
+                self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+                self.assertEqual(
+                    actual.is_contiguous(memory_format=torch.channels_last),
+                    expected.is_contiguous(memory_format=torch.channels_last),
+                )
+                self.assertFalse(actual.requires_grad)
+                self.assertTrue(actual.is_leaf)
+                self.assertIs(actual.dtype, torch.float32)
+                self.assertEqual(actual.device, torch.device("cpu"))
+            with self.subTest(case=case, values=True):
+                np.testing.assert_array_equal(
+                    self.tensor_bits(actual),
+                    expected_bits,
+                )
+            with self.subTest(case=case, storage=True):
+                repeated = functional.l1_loss(input, target, reduction="none")
+                self.assertFalse(actual.is_set_to(repeated))
+                self.assertFalse(actual.is_set_to(input))
+                self.assertFalse(actual.is_set_to(target))
+                if actual.numel() != 0:
+                    self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+                    self.assertNotEqual(actual.data_ptr(), input.data_ptr())
+                    self.assertNotEqual(actual.data_ptr(), target.data_ptr())
+            with self.subTest(case=case, nonmutation=True):
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1],
+                    input_state[-1],
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1],
+                    target_state[-1],
+                )
 
     def test_broadcasted_inputs_match_composition_warning_and_storage(self):
         for case, input, target in self.broadcast_cases():
@@ -605,6 +756,49 @@ class FunctionalL1LossTests(unittest.TestCase):
                 self.assertTrue(actual.is_leaf)
                 self.assertIsNone(input.grad)
                 self.assertIsNone(target.grad)
+
+    def test_channels_last_requires_grad_operands_need_no_grad(self):
+        for input_requires_grad, target_requires_grad in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            input_base = torch.tensor(
+                np.linspace(-2.0, 3.0, 2 * 3 * 2 * 4, dtype=np.float32)
+                .reshape(2, 3, 2, 4)
+                .tolist(),
+                requires_grad=input_requires_grad,
+            )
+            target_base = torch.tensor(
+                np.linspace(5.0, -7.0, 2 * 3 * 2 * 4, dtype=np.float32)
+                .reshape(2, 3, 2, 4)
+                .tolist(),
+                requires_grad=target_requires_grad,
+            )
+            input = input_base.contiguous(memory_format=torch.channels_last)
+            target = target_base.contiguous(memory_format=torch.channels_last)
+            with self.subTest(
+                input_requires_grad=input_requires_grad,
+                target_requires_grad=target_requires_grad,
+            ):
+                self.assertEqual(input.stride(), target.stride())
+                self.assertTrue(input.is_contiguous(memory_format=torch.channels_last))
+                self.assertTrue(target.is_contiguous(memory_format=torch.channels_last))
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^l1_loss\(\): autograd recording is not supported$",
+                ):
+                    functional.l1_loss(input, target, reduction="none")
+
+                with torch.no_grad():
+                    actual = functional.l1_loss(input, target, reduction="none")
+                    difference = input - target
+                    expected = difference.abs()
+                self.assert_matches_composition(actual, expected, case="no_grad")
+                self.assertFalse(actual.requires_grad)
+                self.assertTrue(actual.is_leaf)
+                self.assertIsNone(input_base.grad)
+                self.assertIsNone(target_base.grad)
 
     def test_scalar_broadcast_requires_grad_operands_need_no_grad(self):
         def scalar_input(input_requires_grad, target_requires_grad):
