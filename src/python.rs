@@ -12599,6 +12599,13 @@ fn bind_tensor_add_method_arguments<'py>(
     let mut x2_fallback = None;
     let mut keyword_error = None;
 
+    if alpha.is_none()
+        && tensor_add_method_keywords_include_other_alias(keywords)?
+        && tensor_add_method_positional_other_can_be_alpha(other.as_ref())?
+    {
+        alpha = other.take();
+    }
+
     if let Some(keywords) = keywords {
         for (key, value) in keywords {
             let key = key.extract::<String>()?;
@@ -12684,9 +12691,10 @@ fn bind_tensor_add_method_positional_arguments<'py>(
             let first_is_scalar = is_real_arithmetic_scalar(&first)?;
             let first_has_override =
                 !first_is_scalar && probe_torch_function_override(&first).is_some();
-            let second_is_tensor_like = second.is_instance_of::<PyTensor>()
+            let second_is_supported_other = second.is_instance_of::<PyTensor>()
+                || is_real_arithmetic_scalar(&second)?
                 || probe_torch_function_override(&second).is_some();
-            if (first_is_scalar || first_has_override) && second_is_tensor_like {
+            if (first_is_scalar || first_has_override) && second_is_supported_other {
                 return Ok((
                     Some(ParsedCallArgument {
                         value: second,
@@ -12708,6 +12716,36 @@ fn bind_tensor_add_method_positional_arguments<'py>(
             positional.len()
         ))),
     }
+}
+
+fn tensor_add_method_keywords_include_other_alias(
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<bool> {
+    let Some(keywords) = keywords else {
+        return Ok(false);
+    };
+    for key in keywords.keys() {
+        let key = key.extract::<String>()?;
+        if matches!(key.as_str(), "other" | "x2") {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn tensor_add_method_positional_other_can_be_alpha(
+    other: Option<&ParsedCallArgument<'_>>,
+) -> PyResult<bool> {
+    let Some(other) = other else {
+        return Ok(false);
+    };
+    if other.position != Some(1) {
+        return Ok(false);
+    }
+    if is_real_arithmetic_scalar(&other.value)? {
+        return Ok(true);
+    }
+    Ok(probe_torch_function_override(&other.value).is_some())
 }
 
 fn bind_tensor_sub_method_arguments<'py>(

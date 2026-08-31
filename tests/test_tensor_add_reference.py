@@ -98,6 +98,37 @@ class TensorAddMethodReferenceTests(unittest.TestCase):
             expected_legacy,
             case="legacy positional default alpha tensor other",
         )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            expected_legacy_scalar = expected_left.add(1, 2)
+        legacy_calls = (
+            (
+                "two positional scalars",
+                actual_left.add(1, 2),
+                expected_legacy_scalar,
+            ),
+            (
+                "keyword scalar other",
+                actual_left.add(1, other=2),
+                expected_left.add(1, other=2),
+            ),
+            (
+                "keyword tensor other",
+                actual_left.add(1, other=actual_right),
+                expected_left.add(1, other=expected_right),
+            ),
+            (
+                "x2 tensor other",
+                actual_left.add(1, x2=actual_right),
+                expected_left.add(1, x2=expected_right),
+            ),
+        )
+        for case, actual_legacy, expected_legacy in legacy_calls:
+            self.assert_matches(
+                actual_legacy,
+                expected_legacy,
+                case=("legacy positional default alpha", case),
+            )
 
         actual_offset = actual_left[1]
         expected_offset = expected_left[1]
@@ -197,9 +228,15 @@ class TensorAddMethodReferenceTests(unittest.TestCase):
                 self.calls.append((func, types, args, kwargs))
                 return self.result
 
+        def legacy_keyword_other_call():
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                return left.add(1, other=right)
+
         for call, keyword_names in (
             (lambda: left.add(right), None),
             (lambda: left.add(4.0), None),
+            (legacy_keyword_other_call, ("other",)),
             (lambda: left.add(other=right), ("other",)),
             (lambda: left.add(x2=right), ("x2",)),
             (lambda: left.add(right, alpha=True), ("alpha",)),

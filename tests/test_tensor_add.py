@@ -65,6 +65,18 @@ class TensorAddMethodTests(unittest.TestCase):
             left + right,
             case="legacy positional default alpha tensor other",
         )
+        legacy_calls = (
+            ("two positional scalars", lambda: left.add(1, 2), left + 2),
+            ("keyword scalar other", lambda: left.add(1, other=2), left + 2),
+            ("keyword tensor other", lambda: left.add(1, other=right), left + right),
+            ("x2 tensor other", lambda: left.add(1, x2=right), left + right),
+        )
+        for case, call, expected_legacy in legacy_calls:
+            self.assert_tensor_matches(
+                call(),
+                expected_legacy,
+                case=("legacy positional default alpha", case),
+            )
 
         offset = left[1]
         for scalar in (True, -2, 2.5, np.bool_(True), np.int64(3), np.float32(-0.0)):
@@ -170,6 +182,7 @@ class TensorAddMethodTests(unittest.TestCase):
         calls = (
             (lambda: left.add(right), None),
             (lambda: left.add(4.0), None),
+            (lambda: left.add(1, other=right), ("other",)),
             (lambda: left.add(other=right), ("other",)),
             (lambda: left.add(x2=right), ("x2",)),
             (lambda: left.add(right, alpha=2), ("alpha",)),
@@ -361,9 +374,20 @@ class TensorAddMethodTests(unittest.TestCase):
         ):
             tensor.add(2, torch.tensor([3.0]))
         with self.assertRaisesRegex(
-            TypeError, r"^add\(\) takes 1 positional argument but 2 were given$"
+            NotImplementedError,
+            r"^add\(\): alpha values other than 1 are not supported$",
         ):
             tensor.add(2, 1)
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^add\(\): alpha values other than 1 are not supported$",
+        ):
+            tensor.add(2, other=torch.tensor([3.0]))
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^add\(\): alpha values other than 1 are not supported$",
+        ):
+            tensor.add(2, x2=torch.tensor([3.0]))
         with self.assertRaises(TypeError):
             tensor.add([])
         with self.assertRaisesRegex(
