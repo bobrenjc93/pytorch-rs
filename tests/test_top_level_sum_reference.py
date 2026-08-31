@@ -103,6 +103,18 @@ class TopLevelSumReferenceTests(unittest.TestCase):
         return module.sum(**{form: source})
 
     @staticmethod
+    def rank_one_strided_vector(module, values, *, requires_grad=False):
+        rows = len(values)
+        columns = 5
+        selected_column = 2
+        matrix = np.full((rows, columns), np.float32(0.5), dtype=np.float32)
+        matrix[:, selected_column] = np.asarray(values, dtype=np.float32)
+        source = module.tensor(
+            matrix.tolist(), dtype=module.float32, requires_grad=requires_grad
+        )
+        return source, source.transpose(0, 1)[selected_column]
+
+    @staticmethod
     def autograd_case(module, case):
         if case == "scalar":
             leaf = module.tensor(-3.0, dtype=module.float32, requires_grad=True)
@@ -212,6 +224,89 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             actual, expected, actual_leaf, expected_leaf, case="no_grad"
         )
         self.assertIsNone(actual_leaf.grad)
+
+    def test_rank_one_transpose_selected_offset_sum_edges_match_pytorch_2_13(self):
+        cases = (
+            ("signed zero", [-0.0, 0.0, -0.0, 0.0]),
+            ("nan", [1.0, np.nan, 2.0, -3.0]),
+            ("positive infinity", [1.0, np.inf, 2.0, 3.0]),
+            ("negative infinity", [1.0, -np.inf, 2.0, 3.0]),
+            ("sequential cancellation", [1.0e20, -1.0e20, 3.0, -0.0]),
+        )
+
+        for case, values in cases:
+            _, actual = self.rank_one_strided_vector(torch, values)
+            _, expected = self.rank_one_strided_vector(reference_torch, values)
+            self.assertEqual(actual.shape, tuple(expected.shape))
+            self.assertEqual(actual.stride(), expected.stride())
+            self.assertEqual(actual.storage_offset(), expected.storage_offset())
+            self.assertFalse(actual.is_contiguous())
+            self.assertFalse(expected.is_contiguous())
+            self.assert_scalar_matches(
+                torch.sum(actual),
+                reference_torch.sum(expected),
+                actual,
+                expected,
+                case=("rank-one offset", case),
+            )
+
+    def test_rank_one_transpose_selected_offset_sum_autograd_match_pytorch_2_13(
+        self,
+    ):
+        actual_empty = torch.zeros((0, 5), dtype=torch.float32, requires_grad=True)
+        expected_empty = reference_torch.zeros(
+            (0, 5), dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_empty_view = actual_empty.transpose(0, 1)[2]
+        expected_empty_view = expected_empty.transpose(0, 1)[2]
+        self.assertEqual(actual_empty_view.shape, tuple(expected_empty_view.shape))
+        self.assertEqual(actual_empty_view.stride(), expected_empty_view.stride())
+        self.assertEqual(
+            actual_empty_view.storage_offset(), expected_empty_view.storage_offset()
+        )
+        self.assert_scalar_matches(
+            torch.sum(actual_empty_view),
+            reference_torch.sum(expected_empty_view),
+            actual_empty_view,
+            expected_empty_view,
+            case="rank-one empty",
+        )
+        torch.sum(actual_empty_view).backward()
+        reference_torch.sum(expected_empty_view).backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_empty.grad), expected_empty.grad.detach().cpu().numpy()
+        )
+
+        values = np.arange(1, 21, dtype=np.float32).reshape(4, 5)[:, 2]
+        actual_leaf, actual_view = self.rank_one_strided_vector(
+            torch, values, requires_grad=True
+        )
+        expected_leaf, expected_view = self.rank_one_strided_vector(
+            reference_torch, values, requires_grad=True
+        )
+        actual_loss = torch.sum(actual_view)
+        expected_loss = reference_torch.sum(expected_view)
+        self.assert_scalar_matches(
+            actual_loss, expected_loss, actual_view, expected_view, case="rank-one tracked"
+        )
+        for _ in range(2):
+            actual_loss.backward()
+            expected_loss.backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_leaf.grad), expected_leaf.grad.detach().cpu().numpy()
+        )
+
+        with torch.no_grad():
+            actual_untracked = torch.sum(actual_view)
+        with reference_torch.no_grad():
+            expected_untracked = reference_torch.sum(expected_view)
+        self.assert_scalar_matches(
+            actual_untracked,
+            expected_untracked,
+            actual_view,
+            expected_view,
+            case="rank-one no_grad",
+        )
 
     @staticmethod
     def signature_outcome(callable_object):
