@@ -26,6 +26,8 @@ const L1_LOSS_SUM_LEVEL2_PERIOD_GROUPS: usize = 16 * 16;
 const L1_LOSS_SUM_LEVEL3_PERIOD_GROUPS: usize = 16 * 16 * 16;
 #[cfg(any(feature = "python-bindings", test))]
 const L1_LOSS_SUM_PARALLEL_GRAIN_SIZE: usize = 32_768;
+#[cfg(any(feature = "python-bindings", test))]
+const L1_LOSS_SUM_REFERENCE_MAX_THREADS: usize = 192;
 #[cfg(feature = "python-bindings")]
 const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
@@ -6025,25 +6027,27 @@ fn l1_loss_sum_reduce_values(values: &[f32]) -> f32 {
 }
 
 #[cfg(any(feature = "python-bindings", test))]
-fn l1_loss_sum_parallel_chunks(length: usize) -> Option<(usize, usize)> {
+fn l1_loss_sum_parallel_chunks(length: usize) -> Option<(usize, usize, usize)> {
     if length <= L1_LOSS_SUM_PARALLEL_GRAIN_SIZE {
         return None;
     }
 
-    let available_threads = std::thread::available_parallelism()
+    let thread_pool_size = std::thread::available_parallelism()
         .map(usize::from)
-        .unwrap_or(1);
-    // PyTorch's default OpenMP intra-op pool on the reference host uses
-    // physical cores; available_parallelism reports logical CPUs.
-    let reference_threads = (available_threads / 2).max(1);
-    let thread_count = length
+        .unwrap_or(1)
+        .min(L1_LOSS_SUM_REFERENCE_MAX_THREADS);
+    let active_thread_count = length
         .div_ceil(L1_LOSS_SUM_PARALLEL_GRAIN_SIZE)
-        .min(reference_threads);
-    if thread_count <= 1 {
+        .min(thread_pool_size);
+    if active_thread_count <= 1 {
         return None;
     }
 
-    Some((thread_count, length.div_ceil(thread_count)))
+    Some((
+        thread_pool_size,
+        active_thread_count,
+        length.div_ceil(active_thread_count),
+    ))
 }
 
 #[cfg(any(feature = "python-bindings", test))]
@@ -6063,15 +6067,17 @@ fn l1_loss_sum_preferred_nan(values: &[f32]) -> Option<f32> {
 
 #[cfg(any(feature = "python-bindings", test))]
 fn l1_loss_sum_reduce_finite_values(values: &[f32]) -> f32 {
-    if let Some((thread_count, chunk_size)) = l1_loss_sum_parallel_chunks(values.len()) {
-        let mut partials = Vec::with_capacity(thread_count);
-        for thread_index in 0..thread_count {
+    if let Some((thread_pool_size, active_thread_count, chunk_size)) =
+        l1_loss_sum_parallel_chunks(values.len())
+    {
+        let mut partials = vec![0.0_f32; thread_pool_size];
+        for (thread_index, partial) in partials.iter_mut().enumerate().take(active_thread_count) {
             let start = thread_index * chunk_size;
             if start >= values.len() {
                 break;
             }
             let end = (start + chunk_size).min(values.len());
-            partials.push(l1_loss_sum_reduce_finite_values_serial(&values[start..end]));
+            *partial = l1_loss_sum_reduce_finite_values_serial(&values[start..end]);
         }
         return l1_loss_sum_reduce_finite_values_serial(&partials);
     }
@@ -6195,18 +6201,20 @@ fn l1_loss_sum_add_accumulator(
 // that lane/block structure without changing the repository's general sum.
 #[cfg(any(feature = "python-bindings", test))]
 fn visit_l1_loss_sum_priority(length: usize, mut visit: impl FnMut(usize) -> bool) -> bool {
-    if let Some((thread_count, chunk_size)) = l1_loss_sum_parallel_chunks(length) {
-        for thread_index in (0..thread_count).rev() {
+    if let Some((thread_pool_size, active_thread_count, chunk_size)) =
+        l1_loss_sum_parallel_chunks(length)
+    {
+        return visit_l1_loss_sum_serial_priority(thread_pool_size, |thread_index| {
+            if thread_index >= active_thread_count {
+                return false;
+            }
             let start = thread_index * chunk_size;
             if start >= length {
-                continue;
+                return false;
             }
             let end = (start + chunk_size).min(length);
-            if visit_l1_loss_sum_serial_priority(end - start, |index| visit(start + index)) {
-                return true;
-            }
-        }
-        return false;
+            visit_l1_loss_sum_serial_priority(end - start, |index| visit(start + index))
+        });
     }
 
     visit_l1_loss_sum_serial_priority(length, visit)
@@ -6618,10 +6626,10 @@ mod tests {
         CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device, F32_SIGN_MASK, GradFn, LogicalValuesInner,
         MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor,
         TensorError, contiguous_values_equal, full_reduction_mean_divisor,
-        l1_loss_difference_value, l1_loss_sum_reduce_finite_values_serial,
-        l1_loss_sum_reduce_values, logical_offset_for_linear_index,
-        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
-        validate_view_bounds,
+        l1_loss_difference_value, l1_loss_sum_parallel_chunks,
+        l1_loss_sum_reduce_finite_values_serial, l1_loss_sum_reduce_values,
+        logical_offset_for_linear_index, materialize_contiguous_trailing_broadcast, rsqrt_value,
+        sqrt_value, try_result_vector, validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -11741,9 +11749,33 @@ mod tests {
                 .to_bits(),
             0x454c_d4cf
         );
+        let expected_bits = if l1_loss_sum_parallel_chunks(32_773).is_some() {
+            0x454c_d4d0
+        } else {
+            0x454c_d4cf
+        };
         assert_eq!(
             output.l1_loss_sum_reduction().item().unwrap().to_bits(),
-            0x454c_d4d0
+            expected_bits
+        );
+
+        let split_target = Tensor::from_vec(vec![0.1_f32; 134_028], [134_028]).unwrap();
+        let split_output = Tensor::zeros([134_028])
+            .unwrap()
+            .absolute_difference(&split_target)
+            .unwrap();
+        let expected_split_bits = if l1_loss_sum_parallel_chunks(134_028).is_some() {
+            0x4651_6b35
+        } else {
+            0x4651_6b36
+        };
+        assert_eq!(
+            split_output
+                .l1_loss_sum_reduction()
+                .item()
+                .unwrap()
+                .to_bits(),
+            expected_split_bits
         );
 
         let large_target = Tensor::from_vec(vec![0.1_f32; 1_048_576], [1_048_576]).unwrap();
@@ -11840,7 +11872,14 @@ mod tests {
         let mut parallel_bits = vec![0_u32; 32_773];
         parallel_bits[31] = 0x7f80_0001;
         parallel_bits[32_772] = 0x7f80_1001;
-        assert_reduces_to(&parallel_bits, &[32_773], 0x7fc0_1001);
+        let expected_parallel_nan_bits = if l1_loss_sum_parallel_chunks(32_773)
+            .is_some_and(|(thread_pool_size, _, _)| thread_pool_size > 7)
+        {
+            0x7fc0_1001
+        } else {
+            0x7fc0_0001
+        };
+        assert_reduces_to(&parallel_bits, &[32_773], expected_parallel_nan_bits);
     }
 
     #[test]

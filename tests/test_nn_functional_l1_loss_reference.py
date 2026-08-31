@@ -693,7 +693,7 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
     def test_sum_reduction_parallel_accumulation_order_matches_pytorch_2_13(
         self,
     ):
-        for length in (32_773, 1_048_576):
+        for length in (32_773, 134_028, 1_048_576):
             target_values = np.full(length, 0.1, dtype=np.float32)
             actual_input = torch.zeros((length,), dtype=torch.float32)
             actual_target = torch.tensor(memoryview(target_values))

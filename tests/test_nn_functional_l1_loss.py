@@ -217,10 +217,13 @@ class FunctionalL1LossTests(unittest.TestCase):
     def pytorch_sum_nan_priority(length):
         parallel = FunctionalL1LossTests.pytorch_sum_parallel_chunks(length)
         if parallel is not None:
-            thread_count, chunk_size = parallel
+            thread_pool_size, active_thread_count, chunk_size = parallel
             return [
                 start + index
-                for thread_index in range(thread_count - 1, -1, -1)
+                for thread_index in FunctionalL1LossTests.pytorch_sum_serial_nan_priority(
+                    thread_pool_size
+                )
+                if thread_index < active_thread_count
                 if (start := thread_index * chunk_size) < length
                 for index in FunctionalL1LossTests.pytorch_sum_serial_nan_priority(
                     min(length, start + chunk_size) - start
@@ -280,14 +283,18 @@ class FunctionalL1LossTests(unittest.TestCase):
             available_cpus = len(os.sched_getaffinity(0))
         else:
             available_cpus = os.cpu_count() or 1
-        available_threads = max(available_cpus // 2, 1)
-        thread_count = min(
+        thread_pool_size = min(available_cpus, 192)
+        active_thread_count = min(
             (length + grain_size - 1) // grain_size,
-            available_threads,
+            thread_pool_size,
         )
-        if thread_count <= 1:
+        if active_thread_count <= 1:
             return None
-        return thread_count, (length + thread_count - 1) // thread_count
+        return (
+            thread_pool_size,
+            active_thread_count,
+            (length + active_thread_count - 1) // active_thread_count,
+        )
 
     @staticmethod
     def pytorch_float32_add(left, right):
@@ -298,19 +305,19 @@ class FunctionalL1LossTests(unittest.TestCase):
         values = np.asarray(values, dtype=np.float32)
         parallel = FunctionalL1LossTests.pytorch_sum_parallel_chunks(len(values))
         if parallel is not None:
-            thread_count, chunk_size = parallel
-            partials = []
-            for thread_index in range(thread_count):
+            thread_pool_size, active_thread_count, chunk_size = parallel
+            partials = np.zeros(thread_pool_size, dtype=np.float32)
+            for thread_index in range(active_thread_count):
                 start = thread_index * chunk_size
                 if start >= len(values):
                     break
-                partials.append(
+                partials[thread_index] = (
                     FunctionalL1LossTests.pytorch_float32_finite_sum_serial(
                         values[start : min(len(values), start + chunk_size)]
-                    ),
+                    )
                 )
             return FunctionalL1LossTests.pytorch_float32_finite_sum_serial(
-                np.asarray(partials, dtype=np.float32)
+                partials
             )
 
         return FunctionalL1LossTests.pytorch_float32_finite_sum_serial(values)
@@ -997,19 +1004,12 @@ class FunctionalL1LossTests(unittest.TestCase):
         )
 
     def test_sum_reduction_uses_pytorch_parallel_accumulation_order(self):
-        for length, expected_bits in (
-            (32_773, 0x454C_D4D0),
-            (1_048_576, 0x47CC_CCCF),
-        ):
+        for length in (32_773, 134_028, 1_048_576):
             input = torch.zeros((length,), dtype=torch.float32)
             target = torch.tensor(
                 memoryview(np.full(length, 0.1, dtype=np.float32))
             )
-            expected = torch.tensor(
-                memoryview(
-                    np.asarray([expected_bits], dtype=np.uint32).view(np.float32)
-                )
-            )[0]
+            expected = self.full_l1_sum_expected(input, target)
 
             actual = functional.l1_loss(input, target, reduction="sum")
 
@@ -1029,11 +1029,7 @@ class FunctionalL1LossTests(unittest.TestCase):
             target_bits[right_index] = 0x7F80_1001
             input = torch.zeros((length,), dtype=torch.float32)
             target = torch.tensor(memoryview(target_bits.view(np.float32)))
-            expected = torch.tensor(
-                memoryview(
-                    np.asarray([0x7FC0_1001], dtype=np.uint32).view(np.float32)
-                )
-            )[0]
+            expected = self.full_l1_sum_expected(input, target)
 
             actual = functional.l1_loss(input, target, reduction="sum")
 
