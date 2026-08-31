@@ -540,7 +540,8 @@ class CudaReducedPrecisionMathSdpReferenceTests(unittest.TestCase):
 
         self.assertFalse(hasattr(torch, "float16"))
         self.assertFalse(hasattr(torch, "bfloat16"))
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
         self.assertFalse(
             hasattr(torch.nn.functional, "scaled_dot_product_attention")
         )

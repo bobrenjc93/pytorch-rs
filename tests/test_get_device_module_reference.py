@@ -285,14 +285,15 @@ class GetDeviceModuleReferenceTests(unittest.TestCase):
         self.assertEqual(probe.item(), 1.0)
         reference_torch.cuda.synchronize(0)
 
-        self.assertFalse(hasattr(torch, "cuda"))
-        self.assertNotIn("torch_rs.cuda", sys.modules)
-        with self.assertRaises(ModuleNotFoundError):
-            importlib.import_module("torch_rs.cuda")
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
+        self.assertIs(sys.modules["torch_rs.cuda"], torch.cuda)
+        self.assertIs(importlib.import_module("torch_rs.cuda"), torch.cuda)
         with self.assertRaises(RuntimeError):
             torch.get_device_module("cuda")
-        self.assertFalse(hasattr(torch, "cuda"))
-        self.assertNotIn("torch_rs.cuda", sys.modules)
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
+        self.assertIs(sys.modules["torch_rs.cuda"], torch.cuda)
 
 
 if __name__ == "__main__":

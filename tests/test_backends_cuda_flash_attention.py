@@ -220,7 +220,8 @@ assert is_flash_attention_available.__code__.co_names == (
 assert is_flash_attention_available() is False
 assert torch._C._is_flash_attention_available() is False
 assert not hasattr(torch, "_is_flash_attention_available")
-assert not hasattr(torch, "cuda")
+assert torch.cuda.is_available() is False
+assert torch.cuda.device_count() == 0
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked
     for name in sys.modules

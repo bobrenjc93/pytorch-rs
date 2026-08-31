@@ -340,7 +340,8 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
         self.assertEqual(result.cpu().tolist(), [[[[54.0, 63.0], [90.0, 99.0]]]])
 
         self.assertTrue(hasattr(torch.backends.cudnn, "flags"))
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
         self.assertFalse(hasattr(torch.Tensor, "to"))
         with self.assertRaises(RuntimeError):
@@ -384,7 +385,8 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
         self.assertIs(type(actual.allow_tf32), bool)
         self.assertIs(type(expected.allow_tf32), bool)
 
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
         self.assertTrue(hasattr(reference_torch, "cuda"))
 
 

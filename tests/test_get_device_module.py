@@ -254,7 +254,7 @@ class GetDeviceModuleTests(unittest.TestCase):
                 self.assertEqual(raised.exception.args, (message,))
                 self.assertEqual(self.cache_shape(), before)
 
-    def test_default_stays_cpu_without_importing_accelerator_modules(self):
+    def test_default_stays_cpu_with_cuda_probe_module_loaded(self):
         function = torch.get_device_module
         with mock.patch.dict(
             os.environ,
@@ -263,10 +263,10 @@ class GetDeviceModuleTests(unittest.TestCase):
         ):
             self.assertIs(function(), torch.cpu)
 
-        self.assertFalse(hasattr(torch, "cuda"))
-        self.assertNotIn("torch_rs.cuda", sys.modules)
-        with self.assertRaises(ModuleNotFoundError):
-            importlib.import_module("torch_rs.cuda")
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
+        self.assertIs(sys.modules["torch_rs.cuda"], torch.cuda)
+        self.assertIs(importlib.import_module("torch_rs.cuda"), torch.cuda)
 
         script = r"""
 import os
@@ -287,8 +287,9 @@ import torch_rs
 
 assert torch_rs.get_device_module() is torch_rs.cpu
 assert torch_rs.get_device_module("cpu:7") is torch_rs.cpu
-assert not hasattr(torch_rs, "cuda")
-assert "torch_rs.cuda" not in sys.modules
+assert torch_rs.cuda.is_available() is False
+assert torch_rs.cuda.device_count() == 0
+assert sys.modules["torch_rs.cuda"] is torch_rs.cuda
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(

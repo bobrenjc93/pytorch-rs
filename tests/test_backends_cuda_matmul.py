@@ -151,8 +151,8 @@ print(json.dumps({
                 "native_bf16": [False, True],
                 "precision": "high",
                 "backend_built": False,
-                "cuda_module": False,
-                "cuda_submodule_loaded": False,
+                "cuda_module": True,
+                "cuda_submodule_loaded": True,
                 "cudnn_sdp": False,
                 "sdp_kernel": False,
                 "sdpa_execution": False,
@@ -581,12 +581,12 @@ print(json.dumps({
             with self.subTest(name=name):
                 self.assertFalse(hasattr(cuda, name))
 
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
         self.assertFalse(hasattr(torch, "compile"))
         self.assertFalse(hasattr(torch.nn.functional, "scaled_dot_product_attention"))
-        self.assertNotIn("torch_rs.cuda", sys.modules)
-        with self.assertRaises(ModuleNotFoundError):
-            importlib.import_module("torch_rs.cuda")
+        self.assertIs(sys.modules["torch_rs.cuda"], torch.cuda)
+        self.assertIs(importlib.import_module("torch_rs.cuda"), torch.cuda)
         with self.assertRaisesRegex(
             RuntimeError,
             r"^tensor\(\): device 'cuda:0' is not supported; only 'cpu' is implemented$",

@@ -275,7 +275,8 @@ class CudaCkSdpaAvailabilityReferenceTests(unittest.TestCase):
         reference_torch.cuda.synchronize(device)
         reference_torch.testing.assert_close(result.cpu(), expected)
 
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
         self.assertFalse(
             hasattr(torch.nn.functional, "scaled_dot_product_attention")
         )

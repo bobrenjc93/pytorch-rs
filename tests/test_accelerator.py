@@ -1677,9 +1677,9 @@ class AcceleratorTests(unittest.TestCase):
                 self.assertFalse(hasattr(memory, name))
                 self.assertNotIn(name, memory.__all__)
 
-        self.assertFalse(hasattr(torch, "cuda"))
-        with self.assertRaises(ModuleNotFoundError):
-            importlib.import_module("torch_rs.cuda")
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
+        self.assertIs(importlib.import_module("torch_rs.cuda"), torch.cuda)
         for specification in ("cuda", "cuda:0"):
             with self.subTest(specification=specification):
                 with self.assertRaisesRegex(
@@ -1843,7 +1843,8 @@ assert torch.accelerator.memory_reserved() == 0
 assert torch.accelerator.max_memory_reserved() == 0
 assert torch.accelerator.memory_stats() == OrderedDict()
 assert set(sys.modules) == modules_before_calls
-assert not hasattr(torch, "cuda")
+assert torch.cuda.is_available() is False
+assert torch.cuda.device_count() == 0
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked
     for name in sys.modules
