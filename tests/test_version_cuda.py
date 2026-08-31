@@ -196,7 +196,9 @@ assert hip is version.hip is None
 assert rocm is version.rocm is None
 assert xpu is version.xpu is None
 assert not hasattr(version, "git_version")
-assert not hasattr(torch, "cuda")
+assert torch.cuda.is_available() is False
+assert type(torch.cuda.device_count()) is int
+assert torch.cuda.device_count() == 0
 assert not hasattr(torch, "debug")
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked

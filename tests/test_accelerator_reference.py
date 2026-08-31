@@ -689,8 +689,8 @@ assert not reference_torch._C._accelerator_isAllocatorInitialized()
             ),
             torch_rs_build_metadata,
         )
-        self.assertFalse(hasattr(torch, "cuda"))
-        self.assertNotIn("torch_rs.cuda", sys.modules)
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
 
     def test_empty_cache_cuda_differential_preserves_cpu_build_behavior(self):
         if not reference_torch.cuda.is_available():
@@ -775,7 +775,9 @@ assert (
     torch._C._has_cuda,
     torch.version.cuda,
 ) == torch_rs_state
-assert not hasattr(torch, "cuda")
+assert torch.cuda.is_available() is False
+assert type(torch.cuda.device_count()) is int
+assert torch.cuda.device_count() == 0
 '''
         completed = subprocess.run(
             [sys.executable, "-c", script],
@@ -1045,7 +1047,9 @@ torch_rs_max_reserved_released = [
 ]
 assert torch_rs_max_reserved_released == [0, 0, 0]
 assert all(type(value) is int for value in torch_rs_max_reserved_released)
-assert not hasattr(torch, "cuda")
+assert torch.cuda.is_available() is False
+assert type(torch.cuda.device_count()) is int
+assert torch.cuda.device_count() == 0
 assert torch._C._has_cuda is False
 assert torch.version.cuda is None
 '''
@@ -1204,7 +1208,9 @@ assert (
     reference_torch.accelerator.max_memory_reserved(device_index),
 ) == public_before
 assert torch_rs_counters(ExplodingDeviceToken()) == torch_rs_zero
-assert not hasattr(torch, "cuda")
+assert torch.cuda.is_available() is False
+assert type(torch.cuda.device_count()) is int
+assert torch.cuda.device_count() == 0
 assert torch._C._has_cuda is False
 assert torch.version.cuda is None
 '''
@@ -1340,7 +1346,9 @@ assert reference_after_reset[1] == reference_after_reset[0]
 assert reference_after_reset[2] == reference_before_reset[2]
 assert reference_after_reset[3] == reference_after_reset[2]
 assert torch_rs_counters(ExplodingDeviceToken()) == torch_rs_zero
-assert not hasattr(torch, "cuda")
+assert torch.cuda.is_available() is False
+assert type(torch.cuda.device_count()) is int
+assert torch.cuda.device_count() == 0
 assert torch._C._has_cuda is False
 assert torch.version.cuda is None
 '''
@@ -1962,7 +1970,8 @@ assert torch.version.cuda is None
             with self.subTest(memory_name=name):
                 self.assertFalse(hasattr(actual_memory, name))
 
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
         self.assertTrue(hasattr(reference_torch, "cuda"))
         for specification in ("cuda", "cuda:0"):
             with self.subTest(specification=specification):

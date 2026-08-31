@@ -188,7 +188,8 @@ class CudaFlashAttentionAvailabilityReferenceTests(unittest.TestCase):
         self.assertIs(torch.backends.cuda.is_flash_attention_available(), False)
         self.assertIs(torch._C._is_flash_attention_available(), False)
         self.assertIs(torch.backends.cuda.is_built(), False)
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
 
 
 if __name__ == "__main__":

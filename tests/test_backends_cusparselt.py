@@ -279,7 +279,8 @@ class CuSparseLtAvailabilityTests(unittest.TestCase):
 
         self.assertFalse(hasattr(torch._C, "_cusparselt"))
         self.assertFalse(hasattr(torch, "cusparselt"))
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
 
     def test_import_and_call_are_probe_free_with_cuda_visibility(self):
         script = r'''
@@ -318,7 +319,9 @@ assert not hasattr(cusparselt, "get_max_alg_id")
 assert not hasattr(torch._C, "_cusparselt")
 assert not hasattr(torch, "_has_cusparselt")
 assert not hasattr(torch, "cusparselt")
-assert not hasattr(torch, "cuda")
+assert torch.cuda.is_available() is False
+assert type(torch.cuda.device_count()) is int
+assert torch.cuda.device_count() == 0
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked
     for name in sys.modules

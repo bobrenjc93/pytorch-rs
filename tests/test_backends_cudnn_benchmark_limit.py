@@ -115,7 +115,7 @@ print(json.dumps({
                 "allow_tf32": True,
                 "available": False,
                 "version": None,
-                "cuda": False,
+                "cuda": True,
                 "execution": False,
             },
         )

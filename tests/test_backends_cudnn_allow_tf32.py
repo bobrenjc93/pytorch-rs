@@ -100,7 +100,7 @@ print(json.dumps({
                 "deterministic": False,
                 "available": False,
                 "version": None,
-                "cuda": False,
+                "cuda": True,
                 "execution": False,
             },
         )

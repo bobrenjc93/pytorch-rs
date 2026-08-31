@@ -264,7 +264,9 @@ assert is_ck_sdpa_available.__code__.co_names == (
 assert is_ck_sdpa_available() is False
 assert torch._C._is_ck_sdpa_available() is False
 assert not hasattr(torch, "_is_ck_sdpa_available")
-assert not hasattr(torch, "cuda")
+assert torch.cuda.is_available() is False
+assert type(torch.cuda.device_count()) is int
+assert torch.cuda.device_count() == 0
 assert not hasattr(torch.nn.functional, "scaled_dot_product_attention")
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked

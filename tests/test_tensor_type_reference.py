@@ -488,7 +488,8 @@ class TensorTypeReferenceTests(unittest.TestCase):
             "torch.FloatTensor",
         )
         self.assertEqual(torch.tensor([1.0]).type(), "torch.FloatTensor")
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
         self.assertFalse(hasattr(torch.Tensor, "to"))
         with self.assertRaises(RuntimeError):

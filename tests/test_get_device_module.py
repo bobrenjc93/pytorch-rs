@@ -263,10 +263,9 @@ class GetDeviceModuleTests(unittest.TestCase):
         ):
             self.assertIs(function(), torch.cpu)
 
-        self.assertFalse(hasattr(torch, "cuda"))
-        self.assertNotIn("torch_rs.cuda", sys.modules)
-        with self.assertRaises(ModuleNotFoundError):
-            importlib.import_module("torch_rs.cuda")
+        self.assertIs(torch.cuda, importlib.import_module("torch_rs.cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
 
         script = r"""
 import os
@@ -287,8 +286,9 @@ import torch_rs
 
 assert torch_rs.get_device_module() is torch_rs.cpu
 assert torch_rs.get_device_module("cpu:7") is torch_rs.cpu
-assert not hasattr(torch_rs, "cuda")
-assert "torch_rs.cuda" not in sys.modules
+assert torch_rs.cuda.is_available() is False
+assert type(torch_rs.cuda.device_count()) is int
+assert torch_rs.cuda.device_count() == 0
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
