@@ -7019,6 +7019,21 @@ fn parse_scalar_tensor_layout(layout: Option<&Bound<'_, PyAny>>) -> PyResult<()>
 }
 
 fn parse_factory_layout(function: &str, layout: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    parse_strided_layout(function, layout, || {
+        PyNotImplementedError::new_err(format!(
+            "{function}(): only torch.strided layout is supported"
+        ))
+    })
+}
+
+fn parse_strided_layout<F>(
+    function: &str,
+    layout: Option<&Bound<'_, PyAny>>,
+    unsupported_layout_error: F,
+) -> PyResult<()>
+where
+    F: FnOnce() -> PyErr,
+{
     let Some(layout) = layout else {
         return Ok(());
     };
@@ -7027,9 +7042,7 @@ fn parse_factory_layout(function: &str, layout: Option<&Bound<'_, PyAny>>) -> Py
         return Ok(());
     }
     if layout.is_instance(layouts.layout.bind(layout.py()))? {
-        return Err(PyNotImplementedError::new_err(format!(
-            "{function}(): only torch.strided layout is supported"
-        )));
+        return Err(unsupported_layout_error());
     }
     let actual = python_type_name(layout)?;
     Err(PyTypeError::new_err(format!(
@@ -7479,21 +7492,9 @@ fn parse_full_arguments(arguments: FullCallArguments<'_>) -> PyResult<ParsedFull
 }
 
 fn parse_full_layout(layout: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
-    let Some(layout) = layout else {
-        return Ok(());
-    };
-    if layout.is(strided_object(layout.py())?.bind(layout.py())) {
-        return Ok(());
-    }
-    if layout.is_instance(layout_objects(layout.py())?.layout.bind(layout.py()))? {
-        return Err(PyRuntimeError::new_err(
-            "full(...): only torch.strided layout is supported",
-        ));
-    }
-    let actual = python_type_name(layout)?;
-    Err(PyTypeError::new_err(format!(
-        "full(): argument 'layout' must be torch.layout, not {actual}"
-    )))
+    parse_strided_layout("full", layout, || {
+        PyRuntimeError::new_err("full(...): only torch.strided layout is supported")
+    })
 }
 
 fn parse_creation_size<'py>(
