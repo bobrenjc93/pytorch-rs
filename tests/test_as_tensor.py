@@ -3,6 +3,8 @@ import importlib
 import inspect
 import pickle
 import re
+import subprocess
+import sys
 import types
 import unittest
 
@@ -159,6 +161,62 @@ class AsTensorTests(unittest.TestCase):
         self.assertEqual(second.tolist(), [1.0, 2.0])
         self.assertIsNot(first, second)
         self.assertNotEqual(first.data_ptr(), second.data_ptr())
+
+    def test_recursive_sequences_raise_value_error_without_crashing(self):
+        script = r"""
+import torch_rs as torch
+
+
+def report(name, data):
+    try:
+        torch.as_tensor(data)
+    except Exception as error:
+        print(f"{name}|{type(error).__name__}|{error}")
+    else:
+        print(f"{name}|OK|")
+
+
+self_referential = []
+self_referential.append(self_referential)
+report("self-referential list", self_referential)
+
+mutual = []
+mutual.append([mutual])
+report("mutually recursive list", mutual)
+
+empty_branch_cycle = []
+empty_branch_cycle.append(empty_branch_cycle)
+report("recursive empty branch", [[], empty_branch_cycle])
+
+tuple_list = []
+tuple_cycle = (tuple_list,)
+tuple_list.append(tuple_cycle)
+report("recursive tuple branch", tuple_cycle)
+
+too_deep = 1.0
+for _ in range(129):
+    too_deep = [too_deep]
+report("too many list dimensions", too_deep)
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stderr, "")
+        self.assertEqual(
+            completed.stdout.splitlines(),
+            [
+                "self-referential list|ValueError|too many dimensions 'list'",
+                "mutually recursive list|ValueError|too many dimensions 'list'",
+                "recursive empty branch|ValueError|too many dimensions 'list'",
+                "recursive tuple branch|ValueError|too many dimensions 'tuple'",
+                "too many list dimensions|ValueError|too many dimensions 'list'",
+            ],
+        )
 
     def test_identity_preserves_autograd_graph_and_gradient_object(self):
         leaf = torch.tensor(

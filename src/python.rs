@@ -60,6 +60,7 @@ const BROADCAST_TENSORS_EXACT_TENSORS_ERROR: &str =
     "broadcast_tensors() only supports exact native Tensor inputs";
 const BROADCAST_TENSORS_EXPANSION_ERROR: &str =
     "torch_rs.broadcast_tensors does not support shape expansion";
+const AS_TENSOR_MAX_SEQUENCE_DIMENSIONS: usize = 128;
 
 // These are compile-time facts about the native Cargo build. Keep them native
 // so importing the Python package never probes the host or imports another
@@ -6921,7 +6922,8 @@ fn flatten_as_tensor_input(value: &Bound<'_, PyAny>) -> PyResult<(Vec<f32>, Vec<
     }
 
     let mut output = Vec::new();
-    let shape = flatten_as_tensor_first_shape(value, 0, &mut output)?;
+    let mut active_sequences = Vec::new();
+    let shape = flatten_as_tensor_first_shape(value, 0, &mut output, &mut active_sequences)?;
     Ok((output, shape))
 }
 
@@ -6929,6 +6931,7 @@ fn flatten_as_tensor_first_shape(
     value: &Bound<'_, PyAny>,
     dim: usize,
     output: &mut Vec<f32>,
+    active_sequences: &mut Vec<*mut ffi::PyObject>,
 ) -> PyResult<Vec<usize>> {
     if let Some(scalar) = extract_as_tensor_python_real_scalar(value)? {
         output
@@ -6941,32 +6944,47 @@ fn flatten_as_tensor_first_shape(
         return Err(as_tensor_nested_infer_dtype_error(value)?);
     }
 
-    let sequence = value.cast::<PySequence>()?;
-    let length = sequence.len()?;
-    if length == 0 {
-        return Ok(vec![0]);
-    }
-
-    let first_shape = flatten_as_tensor_first_shape(&sequence.get_item(0)?, dim + 1, output)?;
-    if first_shape.contains(&0) {
-        for index in 1..length {
-            validate_as_tensor_empty_branch(&sequence.get_item(index)?)?;
+    enter_as_tensor_sequence(value, dim, active_sequences)?;
+    let result = (|| {
+        let sequence = value.cast::<PySequence>()?;
+        let length = sequence.len()?;
+        if length == 0 {
+            return Ok(vec![0]);
         }
-    } else {
-        for index in 1..length {
-            flatten_as_tensor_with_shape(
-                &sequence.get_item(index)?,
-                &first_shape,
-                dim + 1,
-                output,
-            )?;
-        }
-    }
 
-    let mut shape = Vec::with_capacity(first_shape.len() + 1);
-    shape.push(length);
-    shape.extend(first_shape);
-    Ok(shape)
+        let first_shape = flatten_as_tensor_first_shape(
+            &sequence.get_item(0)?,
+            dim + 1,
+            output,
+            active_sequences,
+        )?;
+        if first_shape.contains(&0) {
+            for index in 1..length {
+                validate_as_tensor_empty_branch(
+                    &sequence.get_item(index)?,
+                    dim + 1,
+                    active_sequences,
+                )?;
+            }
+        } else {
+            for index in 1..length {
+                flatten_as_tensor_with_shape(
+                    &sequence.get_item(index)?,
+                    &first_shape,
+                    dim + 1,
+                    output,
+                    active_sequences,
+                )?;
+            }
+        }
+
+        let mut shape = Vec::with_capacity(first_shape.len() + 1);
+        shape.push(length);
+        shape.extend(first_shape);
+        Ok(shape)
+    })();
+    active_sequences.pop();
+    result
 }
 
 fn flatten_as_tensor_with_shape(
@@ -6974,6 +6992,7 @@ fn flatten_as_tensor_with_shape(
     shape: &[usize],
     dim: usize,
     output: &mut Vec<f32>,
+    active_sequences: &mut Vec<*mut ffi::PyObject>,
 ) -> PyResult<()> {
     if shape.is_empty() {
         let Some(scalar) = extract_as_tensor_python_real_scalar(value)? else {
@@ -6986,7 +7005,7 @@ fn flatten_as_tensor_with_shape(
         return Ok(());
     }
     if shape.contains(&0) {
-        return validate_as_tensor_empty_branch(value);
+        return validate_as_tensor_empty_branch(value, dim, active_sequences);
     }
     if !is_as_tensor_list_or_tuple(value) {
         if extract_as_tensor_python_real_scalar(value)?.is_some() {
@@ -6995,21 +7014,36 @@ fn flatten_as_tensor_with_shape(
         return Err(as_tensor_nested_infer_dtype_error(value)?);
     }
 
-    let sequence = value.cast::<PySequence>()?;
-    let length = sequence.len()?;
-    if length != shape[0] {
-        return Err(PyValueError::new_err(format!(
-            "expected sequence of length {} at dim {dim} (got {length})",
-            shape[0]
-        )));
-    }
-    for index in 0..length {
-        flatten_as_tensor_with_shape(&sequence.get_item(index)?, &shape[1..], dim + 1, output)?;
-    }
-    Ok(())
+    enter_as_tensor_sequence(value, dim, active_sequences)?;
+    let result = (|| {
+        let sequence = value.cast::<PySequence>()?;
+        let length = sequence.len()?;
+        if length != shape[0] {
+            return Err(PyValueError::new_err(format!(
+                "expected sequence of length {} at dim {dim} (got {length})",
+                shape[0]
+            )));
+        }
+        for index in 0..length {
+            flatten_as_tensor_with_shape(
+                &sequence.get_item(index)?,
+                &shape[1..],
+                dim + 1,
+                output,
+                active_sequences,
+            )?;
+        }
+        Ok(())
+    })();
+    active_sequences.pop();
+    result
 }
 
-fn validate_as_tensor_empty_branch(value: &Bound<'_, PyAny>) -> PyResult<()> {
+fn validate_as_tensor_empty_branch(
+    value: &Bound<'_, PyAny>,
+    dim: usize,
+    active_sequences: &mut Vec<*mut ffi::PyObject>,
+) -> PyResult<()> {
     if extract_as_tensor_python_real_scalar(value)?.is_some() {
         return Ok(());
     }
@@ -7017,15 +7051,44 @@ fn validate_as_tensor_empty_branch(value: &Bound<'_, PyAny>) -> PyResult<()> {
         return Err(as_tensor_nested_infer_dtype_error(value)?);
     }
 
-    let sequence = value.cast::<PySequence>()?;
-    for index in 0..sequence.len()? {
-        validate_as_tensor_empty_branch(&sequence.get_item(index)?)?;
-    }
-    Ok(())
+    enter_as_tensor_sequence(value, dim, active_sequences)?;
+    let result = (|| {
+        let sequence = value.cast::<PySequence>()?;
+        for index in 0..sequence.len()? {
+            validate_as_tensor_empty_branch(&sequence.get_item(index)?, dim + 1, active_sequences)?;
+        }
+        Ok(())
+    })();
+    active_sequences.pop();
+    result
 }
 
 fn is_as_tensor_list_or_tuple(value: &Bound<'_, PyAny>) -> bool {
     value.is_exact_instance_of::<PyList>() || value.is_exact_instance_of::<PyTuple>()
+}
+
+fn enter_as_tensor_sequence(
+    value: &Bound<'_, PyAny>,
+    dim: usize,
+    active_sequences: &mut Vec<*mut ffi::PyObject>,
+) -> PyResult<()> {
+    if dim >= AS_TENSOR_MAX_SEQUENCE_DIMENSIONS || active_sequences.contains(&value.as_ptr()) {
+        return Err(as_tensor_too_many_dimensions_error(value));
+    }
+    active_sequences
+        .try_reserve(1)
+        .map_err(|_| python_allocation_error())?;
+    active_sequences.push(value.as_ptr());
+    Ok(())
+}
+
+fn as_tensor_too_many_dimensions_error(value: &Bound<'_, PyAny>) -> PyErr {
+    let sequence_type = if value.is_exact_instance_of::<PyTuple>() {
+        "tuple"
+    } else {
+        "list"
+    };
+    PyValueError::new_err(format!("too many dimensions '{sequence_type}'"))
 }
 
 #[allow(clippy::cast_possible_truncation)]
