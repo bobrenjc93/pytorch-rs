@@ -42,9 +42,12 @@ assert ratio.tolist() == [[-1.0, 2.0], [3.0, -4.0]]
 
 The current native backend supports eager CPU `float32` tensors, core
 construction and layout/view operations, selected math and neural-network
-functions, and limited first-order autograd. Accelerator tensors, additional
-tensor dtypes, and the full module, optimizer, model-serialization, compiler,
-and distributed stacks remain unsupported.
+functions, and limited first-order autograd. Top-level `torch.cuda` exposes
+CPU-build probes only: `is_available()` is `False` and `device_count()` is `0`.
+CUDA tensors, streams, events, synchronization, memory APIs, device selection,
+runtime initialization, `torch.compile` CUDA execution, additional tensor
+dtypes, and the full module, optimizer, model-serialization, compiler, and
+distributed stacks remain unsupported.
 
 See the [exhaustive supported surface](docs/supported-surface.md) for exact API
 and limitation details, [FEATURES.md](FEATURES.md) for the weighted coverage

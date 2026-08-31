@@ -152,7 +152,7 @@ print(json.dumps({
                 "built": False,
                 "ck_available": False,
                 "flash_available": False,
-                "cuda": False,
+                "cuda": True,
                 "execution": False,
             },
         )
@@ -468,7 +468,8 @@ print(json.dumps({
         self.assertFalse(
             hasattr(torch.nn.functional, "scaled_dot_product_attention")
         )
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
 
 
 if __name__ == "__main__":

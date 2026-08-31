@@ -501,7 +501,8 @@ print(json.dumps({
         self.assertIs(self.cudnn.is_available(), False)
         self.assertIs(self.cudnn.version(), None)
         self.assertFalse(hasattr(torch, "cudnn_convolution"))
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
 
 
 if __name__ == "__main__":

@@ -91,7 +91,7 @@ print(json.dumps({
                 "benchmark": False,
                 "available": False,
                 "version": None,
-                "cuda": False,
+                "cuda": True,
                 "execution": False,
             },
         )

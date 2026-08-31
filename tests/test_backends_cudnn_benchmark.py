@@ -82,7 +82,7 @@ print(json.dumps({
                 "cudnn_enabled": True,
                 "available": False,
                 "version": None,
-                "cuda": False,
+                "cuda": True,
                 "execution": False,
             },
         )

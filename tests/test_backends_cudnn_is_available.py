@@ -283,7 +283,8 @@ class CudnnIsAvailableTests(unittest.TestCase):
             with self.subTest(native_name=name):
                 self.assertFalse(hasattr(torch._C, name))
 
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
         self.assertFalse(hasattr(torch.Tensor, "to"))
         with self.assertRaisesRegex(
@@ -369,7 +370,8 @@ cudnn.benchmark_limit = 10
 cudnn.deterministic = False
 cudnn.allow_tf32 = True
 assert not hasattr(torch, "_has_cudnn")
-assert not hasattr(torch, "cuda")
+assert torch.cuda.is_available() is False
+assert torch.cuda.device_count() == 0
 assert set_flags() == (True, False, 10, False, True, "none", "auto")
 with flags(False, True, 11, True, False):
     assert cudnn.enabled is False

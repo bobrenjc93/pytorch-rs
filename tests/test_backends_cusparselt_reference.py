@@ -341,7 +341,8 @@ class CuSparseLtAvailabilityReferenceTests(unittest.TestCase):
         self.assertFalse(hasattr(torch.backends.cusparselt, "version"))
         self.assertFalse(hasattr(torch.backends.cusparselt, "get_max_alg_id"))
         self.assertFalse(hasattr(torch._C, "_cusparselt"))
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
 
     def test_execution_version_and_algorithm_apis_remain_unsupported(self):
         actual = torch.backends.cusparselt

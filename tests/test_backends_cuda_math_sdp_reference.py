@@ -441,7 +441,8 @@ class CudaMathSdpReferenceTests(unittest.TestCase):
                 self.assertTrue(hasattr(self.expected, name))
 
         self.assertFalse(hasattr(torch.nn.functional, "scaled_dot_product_attention"))
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
         self.assertTrue(hasattr(reference_torch.nn.functional, "scaled_dot_product_attention"))
 
 
