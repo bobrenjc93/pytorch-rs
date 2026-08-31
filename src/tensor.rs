@@ -661,8 +661,9 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
-        let data = empty_storage(elements)?;
-        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+        validate_storage_capacity(elements)?;
+        let storage = Storage::from_lazy_zeroed(elements, dtype, device)?;
+        Ok(Self::from_storage_parts(storage, shape, strides))
     }
 
     /// Creates a one-filled tensor.
@@ -788,9 +789,13 @@ impl Tensor {
         dtype: DType,
         device: Device,
     ) -> Self {
-        let elements = data.len();
+        Self::from_storage_parts(Storage::from_owned(data, dtype, device), shape, strides)
+    }
+
+    fn from_storage_parts(storage: Storage, shape: Vec<usize>, strides: Vec<usize>) -> Self {
+        let elements = storage.len();
         Self {
-            storage: Arc::new(Storage::from_owned(data, dtype, device)),
+            storage: Arc::new(storage),
             shape,
             strides,
             offset: 0,
@@ -6320,18 +6325,6 @@ fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorEr
     data.try_reserve_exact(elements)
         .map_err(|_| TensorError::AllocationFailed { elements })?;
     data.resize(elements, fill_value);
-    Ok(data)
-}
-
-fn empty_storage(elements: usize) -> Result<Vec<f32>, TensorError> {
-    validate_storage_capacity(elements)?;
-
-    let mut data = Vec::new();
-    data.try_reserve_exact(elements)
-        .map_err(|_| TensorError::AllocationFailed { elements })?;
-    // Safe Rust vectors cannot expose uninitialized elements. This storage is
-    // intentionally fresh; callers must not rely on the placeholder values.
-    data.resize(elements, 0.0);
     Ok(data)
 }
 

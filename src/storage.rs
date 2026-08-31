@@ -1,7 +1,8 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::device::Device;
 use crate::dtype::DType;
+use crate::tensor_error::TensorError;
 
 /// Crate-private CPU float32 storage shared by tensors and autograd snapshots.
 pub(crate) struct Storage {
@@ -16,25 +17,105 @@ enum StorageData<T> {
     // Scalar reductions can share the Storage allocation with their payload.
     Inline(T),
     Owned(Vec<T>),
+    LazyZeroed(LazyZeroedStorage),
     SharedGradient(Mutex<Vec<T>>),
+}
+
+struct LazyZeroedStorage {
+    allocation: Mutex<Option<Vec<f32>>>,
+    initialized: OnceLock<Vec<f32>>,
+    len: usize,
+}
+
+impl LazyZeroedStorage {
+    fn new(len: usize) -> Result<Self, TensorError> {
+        let mut allocation = Vec::new();
+        allocation
+            .try_reserve_exact(len)
+            .map_err(|_| TensorError::AllocationFailed { elements: len })?;
+        Ok(Self {
+            allocation: Mutex::new(Some(allocation)),
+            initialized: OnceLock::new(),
+            len,
+        })
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn data_ptr(&self) -> *const u8 {
+        if let Some(values) = self.initialized.get() {
+            return values.as_ptr().cast();
+        }
+
+        let allocation = self
+            .allocation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(values) = allocation.as_ref() {
+            return values.as_ptr().cast();
+        }
+
+        drop(allocation);
+        self.values().as_ptr().cast()
+    }
+
+    fn values(&self) -> &[f32] {
+        self.initialized
+            .get_or_init(|| {
+                let mut allocation = self
+                    .allocation
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .take()
+                    .unwrap_or_default();
+                debug_assert!(allocation.capacity() >= self.len);
+                allocation.resize(self.len, 0.0);
+                allocation
+            })
+            .as_slice()
+    }
+
+    fn into_values(self) -> Vec<f32> {
+        if let Some(values) = self.initialized.into_inner() {
+            return values;
+        }
+
+        let mut allocation = self
+            .allocation
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_default();
+        debug_assert!(allocation.capacity() >= self.len);
+        allocation.resize(self.len, 0.0);
+        allocation
+    }
 }
 
 impl StorageData<f32> {
     fn len(&self) -> usize {
-        self.with_values(<[f32]>::len)
+        match self {
+            Self::LazyZeroed(values) => values.len(),
+            _ => self.with_values(<[f32]>::len),
+        }
     }
 
     fn data_ptr(&self) -> *const u8 {
         // Gradient accumulation only updates existing elements, so a pointer
         // obtained while holding the shared-gradient lock remains stable after
         // the guard is released.
-        self.with_values(|values| values.as_ptr().cast())
+        match self {
+            Self::LazyZeroed(values) => values.data_ptr(),
+            _ => self.with_values(|values| values.as_ptr().cast()),
+        }
     }
 
     fn owned_values(&self) -> Option<&[f32]> {
         match self {
             Self::Inline(value) => Some(std::slice::from_ref(value)),
             Self::Owned(values) => Some(values),
+            Self::LazyZeroed(values) => Some(values.values()),
             Self::SharedGradient(_) => None,
         }
     }
@@ -73,6 +154,7 @@ impl StorageData<f32> {
         let values = match self {
             Self::Inline(value) => return std::slice::from_ref(&value)[start..end].to_vec(),
             Self::Owned(values) => values,
+            Self::LazyZeroed(values) => values.into_values(),
             Self::SharedGradient(values) => values
                 .into_inner()
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
@@ -91,7 +173,7 @@ impl StorageData<f32> {
         from_snapshot: impl FnOnce(Vec<f32>) -> S,
     ) -> Result<S, E> {
         match self {
-            Self::Inline(_) | Self::Owned(_) => Ok(reuse()),
+            Self::Inline(_) | Self::Owned(_) | Self::LazyZeroed(_) => Ok(reuse()),
             Self::SharedGradient(values) => {
                 let values = values
                     .lock()
@@ -103,7 +185,7 @@ impl StorageData<f32> {
 
     fn accumulate_shared_gradient(&self, contribution: Vec<f32>) {
         match self {
-            Self::Inline(_) | Self::Owned(_) => {
+            Self::Inline(_) | Self::Owned(_) | Self::LazyZeroed(_) => {
                 unreachable!("leaf gradients always use shared gradient storage");
             }
             Self::SharedGradient(existing) => {
@@ -122,6 +204,7 @@ impl StorageData<f32> {
         match self {
             Self::Inline(value) => read(std::slice::from_ref(value)),
             Self::Owned(values) => read(values),
+            Self::LazyZeroed(values) => read(values.values()),
             Self::SharedGradient(values) => {
                 let values = values
                     .lock()
@@ -151,6 +234,20 @@ impl Storage {
                 }
             },
         }
+    }
+
+    pub(crate) fn from_lazy_zeroed(
+        elements: usize,
+        dtype: DType,
+        device: Device,
+    ) -> Result<Self, TensorError> {
+        Ok(Self {
+            payload: match (device, dtype) {
+                (Device::Cpu, DType::Float32) => StoragePayload::CpuFloat32(
+                    StorageData::LazyZeroed(LazyZeroedStorage::new(elements)?),
+                ),
+            },
+        })
     }
 
     pub(crate) fn from_shared_gradient(data: Vec<f32>, dtype: DType, device: Device) -> Self {
@@ -340,6 +437,48 @@ mod tests {
     }
 
     #[test]
+    fn lazy_zeroed_float32_payload_preserves_pointer_and_copy_paths() {
+        let storage = Storage::from_lazy_zeroed(4, DType::Float32, Device::Cpu).unwrap();
+        let pointer = storage.data_ptr();
+
+        assert!(!pointer.is_null());
+        assert_eq!(storage.dtype(), DType::Float32);
+        assert_eq!(storage.device(), Device::Cpu);
+        assert_eq!(storage.len(), 4);
+        assert_eq!(storage.value(2), Some(0.0));
+        assert_eq!(storage.value(4), None);
+        assert_eq!(storage.data_ptr(), pointer);
+        assert_eq!(
+            storage.owned_values(),
+            Some([0.0, 0.0, 0.0, 0.0].as_slice())
+        );
+        assert_eq!(storage.data_ptr(), pointer);
+        assert_eq!(storage.with_shared_gradient_range(1, 3, <[f32]>::len), None);
+        assert_eq!(
+            storage
+                .try_copy_values(|values| Ok::<_, Infallible>(values.to_vec()))
+                .unwrap(),
+            [0.0, 0.0, 0.0, 0.0]
+        );
+        assert_eq!(storage.copy_range(1, 3), [0.0, 0.0]);
+    }
+
+    #[test]
+    fn lazy_zeroed_float32_payload_into_range_reuses_allocation() {
+        let storage = Storage::from_lazy_zeroed(3, DType::Float32, Device::Cpu).unwrap();
+        let pointer = storage.data_ptr();
+        let values = storage.into_range(0, 3);
+
+        assert_eq!(values.as_ptr().cast::<u8>(), pointer);
+        assert_eq!(values, [0.0, 0.0, 0.0]);
+
+        let partial = Storage::from_lazy_zeroed(3, DType::Float32, Device::Cpu)
+            .unwrap()
+            .into_range(1, 3);
+        assert_eq!(partial, [0.0, 0.0]);
+    }
+
+    #[test]
     fn shared_gradient_float32_payload_preserves_pointer_and_accumulates() {
         let values = vec![1.0, -2.0, 3.5];
         let pointer = values.as_ptr().cast();
@@ -387,6 +526,13 @@ mod tests {
         })
         .unwrap();
         assert!(Arc::ptr_eq(&saved, &owned));
+
+        let lazy = Arc::new(Storage::from_lazy_zeroed(2, DType::Float32, Device::Cpu).unwrap());
+        let saved = Storage::try_clone_for_saved(&lazy, |_| -> Result<Vec<f32>, Infallible> {
+            panic!("lazy saved storage must not be copied");
+        })
+        .unwrap();
+        assert!(Arc::ptr_eq(&saved, &lazy));
 
         let shared = Arc::new(Storage::from_shared_gradient(
             vec![3.0, 4.0],
