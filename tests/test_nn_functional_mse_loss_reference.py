@@ -359,10 +359,10 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
         )
 
     @staticmethod
-    def call_with_warnings(module_functional, input, target):
+    def call_with_warnings(module_functional, input, target, reduction="none"):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            output = module_functional.mse_loss(input, target, reduction="none")
+            output = module_functional.mse_loss(input, target, reduction=reduction)
         warning_state = [
             (warning.category.__name__, str(warning.message), warning.filename, warning.lineno)
             for warning in caught
@@ -602,6 +602,89 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                     expected_target_bits_before,
                 )
 
+    def test_sum_reduction_values_metadata_storage_and_nonmutation_match_pytorch_2_13(self):
+        actual_cases = (
+            *self.make_cases(torch),
+            *self.make_same_stride_noncontiguous_cases(torch),
+        )
+        expected_cases = (
+            *self.make_cases(reference_torch),
+            *self.make_same_stride_noncontiguous_cases(reference_torch),
+        )
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            actual_input_bits_before = (
+                np.asarray(actual_input).reshape(-1).view(np.uint32).copy()
+            )
+            actual_target_bits_before = (
+                np.asarray(actual_target).reshape(-1).view(np.uint32).copy()
+            )
+            expected_input_bits_before = (
+                expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            expected_target_bits_before = (
+                expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+
+            actual = functional.mse_loss(
+                actual_input,
+                actual_target,
+                reduction="sum",
+            )
+            expected = reference_functional.mse_loss(
+                expected_input,
+                expected_target,
+                reduction="sum",
+            )
+
+            self.assert_matches(actual, expected, case=case)
+            with self.subTest(case=case, scalar_metadata=True):
+                self.assertEqual(actual.shape, ())
+                self.assertEqual(actual.stride(), ())
+                self.assertEqual(actual.storage_offset(), 0)
+                self.assertEqual(actual.numel(), 1)
+            with self.subTest(case=case, storage=True):
+                actual_repeat = functional.mse_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="sum",
+                )
+                expected_repeat = reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="sum",
+                )
+                self.assertFalse(actual.is_set_to(actual_repeat))
+                self.assertFalse(expected.is_set_to(expected_repeat))
+                self.assertFalse(actual.is_set_to(actual_input))
+                self.assertFalse(expected.is_set_to(expected_input))
+                self.assertFalse(actual.is_set_to(actual_target))
+                self.assertFalse(expected.is_set_to(expected_target))
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input).reshape(-1).view(np.uint32),
+                    actual_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target).reshape(-1).view(np.uint32),
+                    actual_target_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_target_bits_before,
+                )
+
     def test_broadcasted_outputs_strides_warnings_storage_and_nonmutation_match(self):
         actual_cases = self.make_broadcast_cases(torch)
         expected_cases = self.make_broadcast_cases(reference_torch)
@@ -665,6 +748,96 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 )
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
+                )
+
+    def test_sum_reduction_broadcast_warnings_storage_and_empty_zero_match_pytorch_2_13(self):
+        actual_cases = self.make_broadcast_cases(torch)
+        expected_cases = self.make_broadcast_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            actual_input_bits_before = (
+                np.asarray(actual_input).reshape(-1).view(np.uint32).copy()
+            )
+            actual_target_bits_before = (
+                np.asarray(actual_target).reshape(-1).view(np.uint32).copy()
+            )
+            expected_input_bits_before = (
+                expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            expected_target_bits_before = (
+                expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+
+            actual, actual_warnings = self.call_with_warnings(
+                functional,
+                actual_input,
+                actual_target,
+                reduction="sum",
+            )
+            expected, expected_warnings = self.call_with_warnings(
+                reference_functional,
+                expected_input,
+                expected_target,
+                reduction="sum",
+            )
+
+            self.assert_matches(actual, expected, case=case)
+            with self.subTest(case=case, warnings=True):
+                self.assertEqual(actual_warnings, expected_warnings)
+                self.assertEqual(len(actual_warnings), 1)
+            if actual_input.numel() == 0 or actual_target.numel() == 0:
+                with self.subTest(case=case, empty_zero_sum=True):
+                    self.assertEqual(
+                        np.float32(actual.item()).view(np.uint32).item(),
+                        np.float32(expected.item()).view(np.uint32).item(),
+                    )
+                    self.assertEqual(
+                        np.float32(actual.item()).view(np.uint32).item(),
+                        np.float32(0.0).view(np.uint32).item(),
+                    )
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                actual_repeat = functional.mse_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="sum",
+                )
+                expected_repeat = reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="sum",
+                )
+            with self.subTest(case=case, storage=True):
+                self.assertFalse(actual.is_set_to(actual_repeat))
+                self.assertFalse(expected.is_set_to(expected_repeat))
+                self.assertFalse(actual.is_set_to(actual_input))
+                self.assertFalse(expected.is_set_to(expected_input))
+                self.assertFalse(actual.is_set_to(actual_target))
+                self.assertFalse(expected.is_set_to(expected_target))
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input).reshape(-1).view(np.uint32),
+                    actual_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target).reshape(-1).view(np.uint32),
+                    actual_target_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_target_bits_before,
                 )
 
     def test_mixed_layout_singleton_stride_matches_pytorch_2_13(self):
@@ -993,6 +1166,54 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 expected,
                 case=(input_requires_grad, target_requires_grad),
             )
+
+    def test_sum_reduction_requires_grad_operands_match_inside_no_grad(self):
+        for input_requires_grad, target_requires_grad in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            actual_input = torch.tensor(
+                [[1.0, -2.0], [3.0, -4.0]],
+                requires_grad=input_requires_grad,
+            )
+            actual_target = torch.tensor(
+                [0.5, -1.5],
+                requires_grad=target_requires_grad,
+            )
+            expected_input = reference_torch.tensor(
+                [[1.0, -2.0], [3.0, -4.0]],
+                dtype=reference_torch.float32,
+                requires_grad=input_requires_grad,
+            )
+            expected_target = reference_torch.tensor(
+                [0.5, -1.5],
+                dtype=reference_torch.float32,
+                requires_grad=target_requires_grad,
+            )
+            with warnings.catch_warnings(), torch.no_grad():
+                warnings.simplefilter("ignore")
+                actual = functional.mse_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="sum",
+                )
+            with warnings.catch_warnings(), reference_torch.no_grad():
+                warnings.simplefilter("ignore")
+                expected = reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="sum",
+                )
+            self.assert_matches(
+                actual,
+                expected,
+                case=(input_requires_grad, target_requires_grad),
+            )
+            self.assertIsNone(actual_input.grad)
+            self.assertIsNone(actual_target.grad)
+            self.assertIsNone(expected_input.grad)
+            self.assertIsNone(expected_target.grad)
 
     def test_unbroadcastable_shape_warning_and_error_match_pytorch_2_13(self):
         actual_input = torch.ones((2, 3))
