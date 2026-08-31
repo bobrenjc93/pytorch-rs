@@ -10,6 +10,7 @@ import threading
 import types
 import typing
 import unittest
+import warnings
 
 import numpy as np
 
@@ -22,6 +23,13 @@ SDP_KERNEL_DOC = """
     This context manager can be used to temporarily enable or disable any of the three backends for scaled dot product attention.
     Upon exiting the context manager, the previous state of the flags will be restored.
     """
+
+SDP_KERNEL_DEPRECATION = (
+    "`torch.backends.cuda.sdp_kernel()` is deprecated. In the future, this "
+    "context manager will be removed. Please see "
+    "`torch.nn.attention.sdpa_kernel()` for the new context manager, with "
+    "updated signature."
+)
 
 CUDA_BACKEND_ALL = [
     "is_built",
@@ -63,9 +71,23 @@ if sys.version_info >= (3, 13):
     SDP_KERNEL_DOC = "\n" + inspect.cleandoc(SDP_KERNEL_DOC) + "\n"
 
 
-class _RejectTruthiness:
+class _BoolProbe:
+    def __init__(self, label, result=True, record=None, error=None):
+        self.label = label
+        self.result = result
+        self.record = record
+        self.error = error
+
     def __bool__(self):
-        raise AssertionError("sdp_kernel must not request truthiness")
+        if self.record is not None:
+            self.record.append(self.label)
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
+class _TruthinessError(Exception):
+    pass
 
 
 class _ContextBodyError(Exception):
@@ -101,6 +123,21 @@ class CudaSdpKernelTests(unittest.TestCase):
         set_sdp_states(self.cuda, self.original)
         self.cuda.allow_fp16_bf16_reduction_math_sdp(self.original_reduction)
 
+    def context(self, *args, **kwargs):
+        return self.context_for(self.cuda.sdp_kernel, *args, **kwargs)
+
+    def context_for(self, function, *args, **kwargs):
+        with self.assertWarnsRegex(
+            FutureWarning,
+            re.escape(SDP_KERNEL_DEPRECATION),
+        ):
+            return function(*args, **kwargs)
+
+    def context_ignoring_deprecation(self, function, *args, **kwargs):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            return function(*args, **kwargs)
+
     def test_default_explicit_nested_and_exceptional_restoration(self):
         cuda = self.cuda
 
@@ -110,7 +147,7 @@ class CudaSdpKernelTests(unittest.TestCase):
         ):
             with self.subTest(initial=initial, mode="default"):
                 set_sdp_states(cuda, initial)
-                context = cuda.sdp_kernel()
+                context = self.context()
                 self.assertEqual(sdp_states(cuda), initial)
                 with context as entered:
                     self.assertEqual(entered, {})
@@ -121,7 +158,7 @@ class CudaSdpKernelTests(unittest.TestCase):
             with self.subTest(initial=initial, mode="explicit"):
                 target = (False, True, False)
                 set_sdp_states(cuda, initial)
-                context = cuda.sdp_kernel(*target)
+                context = self.context(*target)
                 self.assertEqual(sdp_states(cuda), initial)
                 self.assertEqual(context.__enter__(), {})
                 self.assertEqual(sdp_states(cuda), target)
@@ -129,10 +166,10 @@ class CudaSdpKernelTests(unittest.TestCase):
                 self.assertEqual(sdp_states(cuda), initial)
 
         set_sdp_states(cuda, (True, True, True))
-        with cuda.sdp_kernel(False, False, True) as outer:
+        with self.context(False, False, True) as outer:
             self.assertEqual(outer, {})
             self.assertEqual(sdp_states(cuda), (False, False, True))
-            with cuda.sdp_kernel(True, False, False) as inner:
+            with self.context(True, False, False) as inner:
                 self.assertEqual(inner, {})
                 self.assertEqual(sdp_states(cuda), (True, False, False))
             self.assertEqual(sdp_states(cuda), (False, False, True))
@@ -140,47 +177,88 @@ class CudaSdpKernelTests(unittest.TestCase):
 
         marker = _ContextBodyError("body failed")
         with self.assertRaises(_ContextBodyError) as raised:
-            with cuda.sdp_kernel(False, True, False) as entered:
+            with self.context(False, True, False) as entered:
                 self.assertEqual(entered, {})
                 self.assertEqual(sdp_states(cuda), (False, True, False))
                 raise marker
         self.assertIs(raised.exception, marker)
         self.assertEqual(sdp_states(cuda), (True, True, True))
 
-        with cuda.sdp_kernel(False, False, False):
+        with self.context(False, False, False):
             set_sdp_states(cuda, (True, False, True))
         self.assertEqual(sdp_states(cuda), (True, True, True))
 
-    def test_enable_cudnn_argument_is_validated_but_does_not_add_cudnn_state(self):
+    def test_enable_cudnn_argument_is_truth_evaluated_but_does_not_add_cudnn_state(
+        self,
+    ):
         cuda = self.cuda
         set_sdp_states(cuda, (False, False, False))
 
-        with cuda.sdp_kernel(enable_cudnn=False) as entered:
+        with self.context(enable_cudnn=False) as entered:
             self.assertEqual(entered, {})
             self.assertEqual(sdp_states(cuda), (True, True, True))
             self.assertFalse(hasattr(cuda, "cudnn_sdp_enabled"))
             self.assertFalse(hasattr(cuda, "enable_cudnn_sdp"))
         self.assertEqual(sdp_states(cuda), (False, False, False))
 
-    def test_strict_boolean_validation_is_deferred_until_entry(self):
+        with self.context(enable_cudnn=None) as entered:
+            self.assertEqual(entered, {})
+            self.assertEqual(sdp_states(cuda), (True, True, True))
+        self.assertEqual(sdp_states(cuda), (False, False, False))
+
+    def test_arguments_use_truthiness_on_entry(self):
         cuda = self.cuda
-        invalid_values = (
-            (None, "NoneType"),
-            (0, "int"),
-            (1, "int"),
-            (0.0, "float"),
-            (np.bool_(True), "numpy.bool"),
-            ("", "str"),
-            ([], "list"),
-            (object(), "object"),
-            (_RejectTruthiness(), "_RejectTruthiness"),
-            (torch.tensor(True), "Tensor"),
-            (torch.float32, "torch.dtype"),
-            (torch.device("cpu"), "torch.device"),
-            (torch.strided, "torch.layout"),
-            (torch.Size([1]), "torch.Size"),
-            (torch.finfo(torch.float32), "torch.finfo"),
+        cases = (
+            ({"enable_flash": 1}, (True, True, True)),
+            ({"enable_flash": 0}, (False, True, True)),
+            ({"enable_flash": None}, (False, True, True)),
+            ({"enable_math": 1}, (True, True, True)),
+            ({"enable_math": 0}, (True, False, True)),
+            ({"enable_math": None}, (True, False, True)),
+            ({"enable_mem_efficient": object()}, (True, True, True)),
+            ({"enable_mem_efficient": []}, (True, True, False)),
+            ({"enable_mem_efficient": None}, (True, True, False)),
+            ({"enable_cudnn": object()}, (True, True, True)),
+            ({"enable_cudnn": 0}, (True, True, True)),
+            (
+                {
+                    "enable_flash": np.bool_(False),
+                    "enable_math": "",
+                    "enable_mem_efficient": (1,),
+                    "enable_cudnn": None,
+                },
+                (False, False, True),
+            ),
         )
+
+        for kwargs, requested in cases:
+            with self.subTest(kwargs=kwargs):
+                before = (False, True, False)
+                set_sdp_states(cuda, before)
+                context = self.context(**kwargs)
+                self.assertEqual(sdp_states(cuda), before)
+                with context as entered:
+                    self.assertEqual(entered, {})
+                    self.assertEqual(sdp_states(cuda), requested)
+                self.assertEqual(sdp_states(cuda), before)
+
+    def test_truthiness_order_and_errors_leave_state_unchanged(self):
+        cuda = self.cuda
+        order = []
+        before = (False, True, False)
+        set_sdp_states(cuda, before)
+        context = self.context(
+            enable_flash=_BoolProbe("flash", result=False, record=order),
+            enable_math=_BoolProbe("math", result=False, record=order),
+            enable_mem_efficient=_BoolProbe("mem_efficient", result=True, record=order),
+            enable_cudnn=_BoolProbe("cudnn", result=False, record=order),
+        )
+        self.assertEqual(sdp_states(cuda), before)
+        with context:
+            self.assertEqual(order, ["flash", "mem_efficient", "math", "cudnn"])
+            self.assertEqual(sdp_states(cuda), (False, False, True))
+        self.assertEqual(sdp_states(cuda), before)
+
         parameters = (
             "enable_flash",
             "enable_math",
@@ -189,18 +267,16 @@ class CudaSdpKernelTests(unittest.TestCase):
         )
 
         for parameter in parameters:
-            for value, type_name in invalid_values:
-                with self.subTest(parameter=parameter, value_type=type_name):
-                    before = (False, True, False)
-                    set_sdp_states(cuda, before)
-                    context = cuda.sdp_kernel(**{parameter: value})
-                    self.assertEqual(sdp_states(cuda), before)
-                    message = f"set_sdp_use_math expects a bool, but got {type_name}"
-                    with self.assertRaises(RuntimeError) as raised:
-                        context.__enter__()
-                    self.assertEqual(str(raised.exception), message)
-                    self.assertEqual(raised.exception.args, (message,))
-                    self.assertEqual(sdp_states(cuda), before)
+            with self.subTest(parameter=parameter):
+                error = _TruthinessError(f"{parameter} truthiness failed")
+                before = (False, True, False)
+                set_sdp_states(cuda, before)
+                context = self.context(**{parameter: _BoolProbe(parameter, error=error)})
+                self.assertEqual(sdp_states(cuda), before)
+                with self.assertRaises(_TruthinessError) as raised:
+                    context.__enter__()
+                self.assertIs(raised.exception, error)
+                self.assertEqual(sdp_states(cuda), before)
 
     def test_binding_errors_leave_state_unchanged(self):
         cuda = self.cuda
@@ -213,15 +289,29 @@ class CudaSdpKernelTests(unittest.TestCase):
             unexpected_keyword += ". Did you mean 'enable_flash'?"
         cases = (
             (
-                lambda: cuda.sdp_kernel(True, True, True, True, True),
+                lambda: self.context_ignoring_deprecation(
+                    cuda.sdp_kernel,
+                    True,
+                    True,
+                    True,
+                    True,
+                    True,
+                ),
                 "sdp_kernel() takes from 0 to 4 positional arguments but 5 were given",
             ),
             (
-                lambda: cuda.sdp_kernel(_enabled=False),
+                lambda: self.context_ignoring_deprecation(
+                    cuda.sdp_kernel,
+                    _enabled=False,
+                ),
                 unexpected_keyword,
             ),
             (
-                lambda: cuda.sdp_kernel(True, enable_flash=False),
+                lambda: self.context_ignoring_deprecation(
+                    cuda.sdp_kernel,
+                    True,
+                    enable_flash=False,
+                ),
                 "sdp_kernel() got multiple values for argument 'enable_flash'",
             ),
         )
@@ -233,7 +323,7 @@ class CudaSdpKernelTests(unittest.TestCase):
                 self.assertEqual(raised.exception.args, (message,))
                 self.assertEqual(sdp_states(cuda), before)
 
-        context = cuda.sdp_kernel(
+        context = self.context(
             enable_flash=False,
             enable_math=True,
             enable_mem_efficient=False,
@@ -242,6 +332,30 @@ class CudaSdpKernelTests(unittest.TestCase):
         self.assertEqual(sdp_states(cuda), before)
         with context:
             self.assertEqual(sdp_states(cuda), (False, True, False))
+        self.assertEqual(sdp_states(cuda), before)
+
+    def test_deprecation_warning_is_emitted_when_context_is_created(self):
+        cuda = self.cuda
+        before = (False, True, False)
+        set_sdp_states(cuda, before)
+
+        with self.assertWarnsRegex(
+            FutureWarning,
+            re.escape(SDP_KERNEL_DEPRECATION),
+        ) as captured:
+            context = cuda.sdp_kernel()
+        self.assertEqual(str(captured.warning), SDP_KERNEL_DEPRECATION)
+        self.assertEqual(sdp_states(cuda), before)
+
+        with context:
+            self.assertEqual(sdp_states(cuda), (True, True, True))
+        self.assertEqual(sdp_states(cuda), before)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            with self.assertRaises(FutureWarning) as raised:
+                cuda.sdp_kernel()
+        self.assertEqual(str(raised.exception), SDP_KERNEL_DEPRECATION)
         self.assertEqual(sdp_states(cuda), before)
 
     def test_state_is_process_global_across_threads_and_aliases(self):
@@ -257,7 +371,12 @@ class CudaSdpKernelTests(unittest.TestCase):
 
         def worker():
             try:
-                with imported.sdp_kernel(False, False, False) as entered:
+                with self.context_ignoring_deprecation(
+                    imported.sdp_kernel,
+                    False,
+                    False,
+                    False,
+                ) as entered:
                     observations.append(("worker-enter", entered, sdp_states(cuda)))
                     worker_entered.set()
                     if not main_context_exited.wait(timeout=10):
@@ -274,7 +393,7 @@ class CudaSdpKernelTests(unittest.TestCase):
             self.assertTrue(worker_entered.wait(timeout=10))
             self.assertEqual(errors, [])
             self.assertEqual(sdp_states(cuda), (False, False, False))
-            with cuda.sdp_kernel(True, False, True) as entered:
+            with self.context(True, False, True) as entered:
                 self.assertEqual(entered, {})
                 self.assertEqual(sdp_states(cuda), (True, False, True))
             self.assertEqual(sdp_states(cuda), (False, False, False))
@@ -298,6 +417,7 @@ class CudaSdpKernelTests(unittest.TestCase):
         cuda = self.cuda
         function = cuda.sdp_kernel
         wrapped = function.__wrapped__
+        original = wrapped.__wrapped__
 
         self.assertIs(torch.backends.cuda, cuda)
         self.assertIs(sys.modules["torch_rs.backends.cuda"], cuda)
@@ -333,7 +453,11 @@ class CudaSdpKernelTests(unittest.TestCase):
         self.assertEqual(function.__doc__, SDP_KERNEL_DOC)
         self.assertIsNone(function.__defaults__)
         self.assertIsNone(function.__kwdefaults__)
-        self.assertEqual(function.__dict__, {"__wrapped__": wrapped})
+        self.assertEqual(
+            function.__dict__,
+            {"__wrapped__": wrapped, "__deprecated__": SDP_KERNEL_DEPRECATION},
+        )
+        self.assertEqual(function.__deprecated__, SDP_KERNEL_DEPRECATION)
         self.assertFalse(hasattr(function, "__text_signature__"))
         self.assertEqual(function.__code__.co_names, ("_GeneratorContextManager",))
         self.assertEqual(function.__code__.co_freevars, ("func",))
@@ -346,12 +470,27 @@ class CudaSdpKernelTests(unittest.TestCase):
         self.assertEqual(wrapped.__qualname__, "sdp_kernel")
         self.assertEqual(wrapped.__module__, "torch_rs.backends.cuda")
         self.assertEqual(wrapped.__doc__, SDP_KERNEL_DOC)
-        self.assertEqual(wrapped.__defaults__, (True, True, True, True))
+        self.assertIsNone(wrapped.__defaults__)
         self.assertIsNone(wrapped.__kwdefaults__)
-        self.assertEqual(wrapped.__dict__, {})
-        self.assertIn("enable_flash_sdp", wrapped.__code__.co_names)
-        self.assertIn("enable_math_sdp", wrapped.__code__.co_names)
-        self.assertIn("enable_mem_efficient_sdp", wrapped.__code__.co_names)
+        self.assertEqual(
+            wrapped.__dict__,
+            {"__wrapped__": original, "__deprecated__": SDP_KERNEL_DEPRECATION},
+        )
+        self.assertEqual(wrapped.__deprecated__, SDP_KERNEL_DEPRECATION)
+
+        self.assertIs(type(original), types.FunctionType)
+        self.assertEqual(inspect.signature(original), inspect.signature(function))
+        self.assertEqual(inspect.get_annotations(original), inspect.get_annotations(function))
+        self.assertEqual(original.__name__, "sdp_kernel")
+        self.assertEqual(original.__qualname__, "sdp_kernel")
+        self.assertEqual(original.__module__, "torch_rs.backends.cuda")
+        self.assertEqual(original.__doc__, SDP_KERNEL_DOC)
+        self.assertEqual(original.__defaults__, (True, True, True, True))
+        self.assertIsNone(original.__kwdefaults__)
+        self.assertEqual(original.__dict__, {})
+        self.assertIn("enable_flash_sdp", original.__code__.co_names)
+        self.assertIn("enable_math_sdp", original.__code__.co_names)
+        self.assertIn("enable_mem_efficient_sdp", original.__code__.co_names)
 
         backend_import = {}
         function_import = {}
@@ -375,7 +514,7 @@ class CudaSdpKernelTests(unittest.TestCase):
                 self.assertIn(b"torch_rs.backends.cuda", payload)
                 self.assertIs(pickle.loads(payload), function)
 
-        context = function(False, True, False, False)
+        context = self.context_for(function, False, True, False, False)
         self.assertEqual(type(context).__module__, "contextlib")
         self.assertEqual(type(context).__qualname__, "_GeneratorContextManager")
         self.assertEqual(context.__doc__, SDP_KERNEL_DOC)
@@ -400,7 +539,7 @@ class CudaSdpKernelTests(unittest.TestCase):
         old_function = cuda.sdp_kernel
         old_wrapped = old_function.__wrapped__
         namespace = cuda.__dict__
-        active_context = old_function(False, False, True)
+        active_context = self.context_for(old_function, False, False, True)
 
         self.assertEqual(active_context.__enter__(), {})
         self.assertEqual(sdp_states(cuda), (False, False, True))
@@ -418,7 +557,7 @@ class CudaSdpKernelTests(unittest.TestCase):
 
         for function in (old_function, cuda.sdp_kernel):
             with self.subTest(function=function):
-                with function(False, True, False) as entered:
+                with self.context_for(function, False, True, False) as entered:
                     self.assertEqual(entered, {})
                     self.assertEqual(sdp_states(cuda), (False, True, False))
                 self.assertEqual(sdp_states(cuda), (True, True, True))
@@ -438,6 +577,7 @@ class CudaSdpKernelTests(unittest.TestCase):
 import json
 import os
 import sys
+import warnings
 
 class RejectExternalRuntimeImport:
     blocked = {"cupy", "nvidia", "numpy", "pynvml", "torch"}
@@ -461,7 +601,10 @@ from torch_rs.backends.cuda import sdp_kernel
 cuda.enable_flash_sdp(False)
 cuda.enable_math_sdp(False)
 cuda.enable_mem_efficient_sdp(False)
-with sdp_kernel() as entered:
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", FutureWarning)
+    default_context = sdp_kernel()
+with default_context as entered:
     default_state = [
         cuda.flash_sdp_enabled(),
         cuda.math_sdp_enabled(),
@@ -472,7 +615,10 @@ after_default = [
     cuda.math_sdp_enabled(),
     cuda.mem_efficient_sdp_enabled(),
 ]
-with sdp_kernel(False, True, False, enable_cudnn=False) as explicit_entered:
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", FutureWarning)
+    explicit_context = sdp_kernel(False, True, False, enable_cudnn=False)
+with explicit_context as explicit_entered:
     explicit_state = [
         cuda.flash_sdp_enabled(),
         cuda.math_sdp_enabled(),

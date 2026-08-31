@@ -35,6 +35,25 @@ SUPPORTED_CUDA_NAMES = {
 }
 
 
+class _BoolProbe:
+    def __init__(self, label, result=True, record=None, error=None):
+        self.label = label
+        self.result = result
+        self.record = record
+        self.error = error
+
+    def __bool__(self):
+        if self.record is not None:
+            self.record.append(self.label)
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
+class _TruthinessError(Exception):
+    pass
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class CudaSdpKernelReferenceTests(unittest.TestCase):
     @classmethod
@@ -64,6 +83,14 @@ class CudaSdpKernelReferenceTests(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", FutureWarning)
             return function(*args, **kwargs)
+
+    def context_with_warnings(self, function, *args, **kwargs):
+        with warnings.catch_warnings(record=True) as records:
+            warnings.simplefilter("always")
+            context = function(*args, **kwargs)
+        return context, [
+            (type(record.message), str(record.message)) for record in records
+        ]
 
     def states(self, module):
         return (
@@ -142,10 +169,39 @@ class CudaSdpKernelReferenceTests(unittest.TestCase):
         self.assertEqual(actual.__doc__, expected.__doc__)
         self.assertEqual(actual.__defaults__, expected.__defaults__)
         self.assertEqual(actual.__kwdefaults__, expected.__kwdefaults__)
+        self.assertEqual(actual.__dict__.keys(), expected.__dict__.keys())
+        self.assertIs(actual.__dict__["__wrapped__"], actual.__wrapped__)
+        self.assertIs(expected.__dict__["__wrapped__"], expected.__wrapped__)
+        self.assertEqual(actual.__deprecated__, expected.__deprecated__)
         self.assertEqual(
             hasattr(actual, "__text_signature__"),
             hasattr(expected, "__text_signature__"),
         )
+
+        actual_wrapped = actual.__wrapped__
+        expected_wrapped = expected.__wrapped__
+        actual_original = actual_wrapped.__wrapped__
+        expected_original = expected_wrapped.__wrapped__
+        self.assertEqual(type(actual_wrapped), type(expected_wrapped))
+        self.assertEqual(inspect.signature(actual_wrapped), inspect.signature(expected_wrapped))
+        self.assertEqual(
+            inspect.get_annotations(actual_wrapped),
+            inspect.get_annotations(expected_wrapped),
+        )
+        self.assertEqual(actual_wrapped.__defaults__, expected_wrapped.__defaults__)
+        self.assertEqual(actual_wrapped.__kwdefaults__, expected_wrapped.__kwdefaults__)
+        self.assertEqual(actual_wrapped.__dict__.keys(), expected_wrapped.__dict__.keys())
+        self.assertIs(actual_wrapped.__dict__["__wrapped__"], actual_original)
+        self.assertIs(expected_wrapped.__dict__["__wrapped__"], expected_original)
+        self.assertEqual(actual_wrapped.__deprecated__, expected_wrapped.__deprecated__)
+        self.assertEqual(type(actual_original), type(expected_original))
+        self.assertEqual(inspect.signature(actual_original), inspect.signature(expected_original))
+        self.assertEqual(
+            inspect.get_annotations(actual_original),
+            inspect.get_annotations(expected_original),
+        )
+        self.assertEqual(actual_original.__defaults__, expected_original.__defaults__)
+        self.assertEqual(actual_original.__kwdefaults__, expected_original.__kwdefaults__)
 
         for package_name, module in (("torch_rs", self.actual), ("torch", self.expected)):
             function_import = {}
@@ -158,6 +214,38 @@ class CudaSdpKernelReferenceTests(unittest.TestCase):
                 {name for name in child_wildcard if name in SUPPORTED_CUDA_NAMES},
                 SUPPORTED_CUDA_NAMES,
             )
+
+    def test_deprecation_warning_matches_at_context_creation(self):
+        self.set_states(self.actual, (False, True, False))
+        self.set_states(self.expected, (False, True, False))
+
+        actual_context, actual_warnings = self.context_with_warnings(
+            self.actual.sdp_kernel,
+        )
+        expected_context, expected_warnings = self.context_with_warnings(
+            self.expected.sdp_kernel,
+        )
+        self.assertEqual(actual_warnings, expected_warnings)
+        self.assertEqual(self.states(self.actual), self.states(self.expected))
+        self.assertEqual(self.states(self.actual), (False, True, False))
+
+        with actual_context:
+            with expected_context:
+                self.assertEqual(self.states(self.actual), self.states(self.expected))
+                self.assertEqual(self.states(self.actual), (True, True, True))
+        self.assertEqual(self.states(self.actual), self.states(self.expected))
+        self.assertEqual(self.states(self.actual), (False, True, False))
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            with self.assertRaises(FutureWarning) as actual_raised:
+                self.actual.sdp_kernel()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            with self.assertRaises(FutureWarning) as expected_raised:
+                self.expected.sdp_kernel()
+        self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
+        self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
 
     def test_context_transitions_match_supported_preferences(self):
         for initial in (
@@ -215,20 +303,141 @@ class CudaSdpKernelReferenceTests(unittest.TestCase):
         self.assertEqual(self.states(self.actual), (True, True, True))
         self.assertEqual(self.states(self.expected), (True, True, True))
 
+    def test_truthy_arguments_match_supported_preferences(self):
+        cases = (
+            ({"enable_flash": 1}, (True, True, True)),
+            ({"enable_flash": 0}, (False, True, True)),
+            ({"enable_flash": None}, (False, True, True)),
+            ({"enable_math": 1}, (True, True, True)),
+            ({"enable_math": 0}, (True, False, True)),
+            ({"enable_math": None}, (True, False, True)),
+            ({"enable_mem_efficient": object()}, (True, True, True)),
+            ({"enable_mem_efficient": []}, (True, True, False)),
+            ({"enable_mem_efficient": None}, (True, True, False)),
+            ({"enable_cudnn": object()}, (True, True, True)),
+            ({"enable_cudnn": 0}, (True, True, True)),
+            (
+                {
+                    "enable_flash": False,
+                    "enable_math": "",
+                    "enable_mem_efficient": (1,),
+                    "enable_cudnn": None,
+                },
+                (False, False, True),
+            ),
+        )
+
+        for kwargs, requested in cases:
+            with self.subTest(kwargs=kwargs):
+                self.set_states(self.actual, (False, True, False))
+                self.set_states(self.expected, (False, True, False))
+                actual_context = self.context(self.actual.sdp_kernel, **kwargs)
+                expected_context = self.context(self.expected.sdp_kernel, **kwargs)
+                self.assertEqual(self.states(self.actual), self.states(self.expected))
+                self.assertEqual(self.states(self.actual), (False, True, False))
+
+                self.assertEqual(actual_context.__enter__(), expected_context.__enter__())
+                self.assertEqual(self.states(self.actual), self.states(self.expected))
+                self.assertEqual(self.states(self.actual), requested)
+                self.assertIs(
+                    actual_context.__exit__(None, None, None),
+                    expected_context.__exit__(None, None, None),
+                )
+                self.assertEqual(self.states(self.actual), self.states(self.expected))
+                self.assertEqual(self.states(self.actual), (False, True, False))
+
+    def test_truthiness_order_and_errors_match_without_state_mutation(self):
+        actual_order = []
+        expected_order = []
+        self.set_states(self.actual, (False, True, False))
+        self.set_states(self.expected, (False, True, False))
+        actual_context = self.context(
+            self.actual.sdp_kernel,
+            enable_flash=_BoolProbe("flash", result=False, record=actual_order),
+            enable_math=_BoolProbe("math", result=False, record=actual_order),
+            enable_mem_efficient=_BoolProbe(
+                "mem_efficient",
+                result=True,
+                record=actual_order,
+            ),
+            enable_cudnn=_BoolProbe("cudnn", result=False, record=actual_order),
+        )
+        expected_context = self.context(
+            self.expected.sdp_kernel,
+            enable_flash=_BoolProbe("flash", result=False, record=expected_order),
+            enable_math=_BoolProbe("math", result=False, record=expected_order),
+            enable_mem_efficient=_BoolProbe(
+                "mem_efficient",
+                result=True,
+                record=expected_order,
+            ),
+            enable_cudnn=_BoolProbe("cudnn", result=False, record=expected_order),
+        )
+
+        self.assertEqual(actual_context.__enter__(), expected_context.__enter__())
+        self.assertEqual(actual_order, expected_order)
+        self.assertEqual(actual_order, ["flash", "mem_efficient", "math", "cudnn"])
+        self.assertEqual(self.states(self.actual), self.states(self.expected))
+        self.assertEqual(self.states(self.actual), (False, False, True))
+        self.assertIs(
+            actual_context.__exit__(None, None, None),
+            expected_context.__exit__(None, None, None),
+        )
+        self.assertEqual(self.states(self.actual), self.states(self.expected))
+        self.assertEqual(self.states(self.actual), (False, True, False))
+
+        for parameter in (
+            "enable_flash",
+            "enable_math",
+            "enable_mem_efficient",
+            "enable_cudnn",
+        ):
+            with self.subTest(parameter=parameter):
+                self.set_states(self.actual, (False, True, False))
+                self.set_states(self.expected, (False, True, False))
+                actual_context = self.context(
+                    self.actual.sdp_kernel,
+                    **{
+                        parameter: _BoolProbe(
+                            parameter,
+                            error=_TruthinessError(
+                                f"{parameter} truthiness failed"
+                            ),
+                        )
+                    },
+                )
+                expected_context = self.context(
+                    self.expected.sdp_kernel,
+                    **{
+                        parameter: _BoolProbe(
+                            parameter,
+                            error=_TruthinessError(
+                                f"{parameter} truthiness failed"
+                            ),
+                        )
+                    },
+                )
+                self.assert_error_matches(
+                    actual_context.__enter__,
+                    expected_context.__enter__,
+                )
+                self.assertEqual(self.states(self.actual), self.states(self.expected))
+                self.assertEqual(self.states(self.actual), (False, True, False))
+
     def test_errors_copying_pickling_and_reload_match_supported_shape(self):
         actual = self.actual.sdp_kernel
         expected = self.expected.sdp_kernel
         cases = (
             (
-                lambda: actual(True, True, True, True, True),
+                lambda: self.context(actual, True, True, True, True, True),
                 lambda: self.context(expected, True, True, True, True, True),
             ),
             (
-                lambda: actual(_enabled=False),
+                lambda: self.context(actual, _enabled=False),
                 lambda: self.context(expected, _enabled=False),
             ),
             (
-                lambda: actual(True, enable_flash=False),
+                lambda: self.context(actual, True, enable_flash=False),
                 lambda: self.context(expected, True, enable_flash=False),
             ),
         )

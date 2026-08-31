@@ -1,6 +1,8 @@
 # mypy: allow-untyped-defs
 from contextlib import contextmanager as _contextmanager
+from functools import wraps as _wraps
 from typing import Any as _Any
+import warnings as _warnings
 
 import torch_rs as torch
 
@@ -99,23 +101,26 @@ class cuBLASModule:
 matmul = cuBLASModule()
 
 
-def _sdp_bool_type_name(value):
-    value_type = type(value)
-    if value_type is torch.Tensor:
-        return "Tensor"
-    if value_type is torch.dtype:
-        return "torch.dtype"
-    if value_type is torch.device:
-        return "torch.device"
-    if value_type is torch.layout:
-        return "torch.layout"
-    if value_type is torch.Size:
-        return "torch.Size"
-    if value_type is torch.finfo:
-        return "torch.finfo"
-    if value_type.__module__ == "numpy":
-        return f"numpy.{value_type.__name__}"
-    return value_type.__name__
+_SDP_KERNEL_DEPRECATION = (
+    "`torch.backends.cuda.sdp_kernel()` is deprecated. In the future, this "
+    "context manager will be removed. Please see "
+    "`torch.nn.attention.sdpa_kernel()` for the new context manager, with "
+    "updated signature."
+)
+
+
+def _deprecated_sdp_kernel(arg):
+    msg = _SDP_KERNEL_DEPRECATION
+    category = FutureWarning
+    stacklevel = 2
+
+    @_wraps(arg)
+    def wrapped(*args, **kwargs):
+        _warnings.warn(msg, category=category, stacklevel=stacklevel)
+        return arg(*args, **kwargs)
+
+    wrapped.__deprecated__ = msg
+    return wrapped
 
 
 def is_ck_sdpa_available() -> bool:
@@ -202,6 +207,7 @@ def fp16_bf16_reduction_math_sdp_allowed():
 
 
 @_contextmanager
+@_deprecated_sdp_kernel
 def sdp_kernel(
     enable_flash: bool = True,
     enable_math: bool = True,
@@ -214,21 +220,23 @@ def sdp_kernel(
     This context manager can be used to temporarily enable or disable any of the three backends for scaled dot product attention.
     Upon exiting the context manager, the previous state of the flags will be restored.
     """
+    requested_flash = bool(enable_flash)
+    requested_mem_efficient = bool(enable_mem_efficient)
+    requested_math = bool(enable_math)
+    bool(enable_cudnn)
+
     previous_flash = flash_sdp_enabled()
     previous_math = math_sdp_enabled()
     previous_mem_efficient = mem_efficient_sdp_enabled()
     try:
-        enable_flash_sdp(enable_flash)
-        enable_math_sdp(enable_math)
-        enable_mem_efficient_sdp(enable_mem_efficient)
-        if not isinstance(enable_cudnn, bool):
-            type_name = _sdp_bool_type_name(enable_cudnn)
-            raise RuntimeError(f"set_sdp_use_math expects a bool, but got {type_name}")
+        enable_flash_sdp(requested_flash)
+        enable_mem_efficient_sdp(requested_mem_efficient)
+        enable_math_sdp(requested_math)
         yield {}
     finally:
         enable_flash_sdp(previous_flash)
-        enable_math_sdp(previous_math)
         enable_mem_efficient_sdp(previous_mem_efficient)
+        enable_math_sdp(previous_math)
 
 
 def is_flash_attention_available() -> bool:
