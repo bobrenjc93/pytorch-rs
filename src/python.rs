@@ -5494,6 +5494,7 @@ fn eye(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResul
     let (n, m, has_out, dtype, device, pin_memory, requires_grad) = parse_eye_arguments(arguments)?;
     let shape = [n, m];
 
+    CoreTensor::validate_eye_shape(n, m).map_err(|error| eye_shape_error(&error, &shape))?;
     if has_out {
         return Err(PyRuntimeError::new_err(
             "eye(): the 'out' argument is not supported",

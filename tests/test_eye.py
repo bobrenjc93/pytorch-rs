@@ -392,6 +392,31 @@ class EyeTests(unittest.TestCase):
                 ):
                     call()
 
+        overflow_cases = (
+            (
+                lambda: torch.eye(sys.maxsize, 3, out=destination),
+                "numel: integer multiplication overflow",
+            ),
+            (
+                lambda: torch.eye(sys.maxsize, 3, pin_memory=True),
+                "numel: integer multiplication overflow",
+            ),
+            (
+                lambda: torch.eye(sys.maxsize, 1, out=destination),
+                "Storage size calculation overflowed with "
+                f"sizes={[sys.maxsize, 1]}",
+            ),
+            (
+                lambda: torch.eye(sys.maxsize // 4 + 1, 1, pin_memory=True),
+                "Storage size calculation overflowed with "
+                f"sizes={[sys.maxsize // 4 + 1, 1]}",
+            ),
+        )
+        for call, message in overflow_cases:
+            with self.subTest(call=call):
+                with self.assertRaisesRegex(RuntimeError, re.escape(message)):
+                    call()
+
 
 if __name__ == "__main__":
     unittest.main()

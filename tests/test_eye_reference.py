@@ -195,6 +195,10 @@ class EyeReferenceTests(unittest.TestCase):
             lambda module: module.eye(sys.maxsize, 3),
             lambda module: module.eye(sys.maxsize, 1),
             lambda module: module.eye(sys.maxsize // 4 + 1, 1),
+            lambda module: module.eye(sys.maxsize, 3, out=module.zeros((1, 1))),
+            lambda module: module.eye(sys.maxsize, 3, pin_memory=True),
+            lambda module: module.eye(sys.maxsize, 1, out=module.zeros((1, 1))),
+            lambda module: module.eye(sys.maxsize // 4 + 1, 1, pin_memory=True),
         )
         for call in exact_cases:
             with self.subTest(call=call):

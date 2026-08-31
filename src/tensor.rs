@@ -707,6 +707,13 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn validate_eye_shape(n: usize, m: usize) -> Result<(), TensorError> {
+        let shape = [n, m];
+        let (elements, _) = validated_layout(&shape)?;
+        validate_storage_capacity(elements)
+    }
+
     /// Creates a tensor filled with `fill_value`.
     ///
     /// # Errors
