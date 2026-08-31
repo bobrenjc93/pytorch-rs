@@ -3358,7 +3358,26 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn add_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
+        if scalar.is_nan() {
+            let scalar = apply_binary_operation_scalar(&|left, right| left + right, 0.0, scalar);
+            let output = self.map_scalar(scalar, |_value, scalar| scalar)?;
+            return self.finish_copy_transform(
+                output,
+                TransformMapping::Identity,
+                AutogradNode::Add,
+            );
+        }
         let output = self.map_scalar(scalar, |value, scalar| value + scalar)?;
+        self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Add)
+    }
+
+    /// Adds every element to a scalar.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    pub fn scalar_add(&self, scalar: f32) -> Result<Self, TensorError> {
+        let output = self.map_scalar(scalar, |value, scalar| scalar + value)?;
         self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Add)
     }
 

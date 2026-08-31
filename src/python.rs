@@ -17,6 +17,7 @@ use pyo3::types::{
 
 use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError,
+    grad_mode::is_grad_enabled,
     python_cpython_compat as cpython_compat,
     python_device::{PyDevice, device_argument_type_error, parse_device_value},
     python_dtype::{PyDType, add_default_dtype_validator, dtype_object},
@@ -2276,6 +2277,15 @@ pub(crate) fn matmul_variable_function(
     dispatch_top_level_matmul(py, &input, &other, args, kwargs)
 }
 
+pub(crate) fn add_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let call = bind_top_level_add_arguments(args, kwargs)?;
+    dispatch_top_level_add(py, &call, args, kwargs)
+}
+
 pub(crate) fn mul_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2622,6 +2632,27 @@ struct BoundTopLevelMeanCall<'py> {
     dtype: BoundTopLevelMeanDType<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
     default_full_reduction: bool,
+}
+
+struct BoundTopLevelAddCall<'py> {
+    input: BoundAddOperand<'py>,
+    other: BoundAddOperand<'py>,
+    alpha: BoundAddAlpha<'py>,
+    out: Option<BoundTensorOrTorchFunction<'py>>,
+}
+
+enum BoundAddOperand<'py> {
+    Tensor(Bound<'py, PyTensor>),
+    Scalar(Bound<'py, PyAny>),
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+enum BoundAddAlpha<'py> {
+    Default,
+    NonDefault,
+    Boolean,
+    WideNumpyUnsigned,
+    Override(ProbedTorchFunctionOverride<'py>),
 }
 
 enum BoundMulOperand<'py> {
@@ -4274,6 +4305,29 @@ fn ordered_matmul_overrides<'py>(
     ordered_binary_overrides(input, other, "unable to allocate matmul dispatch operands")
 }
 
+fn ordered_add_overrides<'py>(
+    call: &BoundTopLevelAddCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(4)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate add dispatch operands"))?;
+
+    if let BoundAddOperand::Override(probed) = &call.input {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let BoundAddOperand::Override(probed) = &call.other {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let BoundAddAlpha::Override(probed) = &call.alpha {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(BoundTensorOrTorchFunction::Override(probed)) = &call.out {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
 fn ordered_dtype_overrides<'py>(
     operation: DTypeBinaryOperation,
     first: &BoundDTypeOperand<'py>,
@@ -4359,6 +4413,127 @@ fn dispatch_top_level_matmul(
     )?)
 }
 
+fn dispatch_top_level_add(
+    py: Python<'_>,
+    call: &BoundTopLevelAddCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_add_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_add(py, call);
+    }
+
+    let function = variable_function(py, "add")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Disable the top mode for the complete dispatch attempt. A mode can call
+    // the public function explicitly to forward to the next mode.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.add",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_add(py: Python<'_>, call: &BoundTopLevelAddCall<'_>) -> PyResult<Py<PyAny>> {
+    match &call.alpha {
+        BoundAddAlpha::Default => {}
+        BoundAddAlpha::Boolean => {
+            return Err(PyRuntimeError::new_err(
+                "Boolean alpha only supported for Boolean results.",
+            ));
+        }
+        BoundAddAlpha::WideNumpyUnsigned => {
+            return Err(PyTypeError::new_err("an integer is required"));
+        }
+        BoundAddAlpha::NonDefault => {
+            return Err(PyNotImplementedError::new_err(
+                "add(): non-default alpha is not supported",
+            ));
+        }
+        BoundAddAlpha::Override(_) => {
+            unreachable!("add overrides were dispatched before the native path")
+        }
+    }
+    if call.out.is_some() {
+        return Err(PyRuntimeError::new_err(
+            "add(): the 'out' argument is not supported",
+        ));
+    }
+
+    let result = match (&call.input, &call.other) {
+        (BoundAddOperand::Tensor(input), BoundAddOperand::Tensor(other)) => {
+            let input = input.try_borrow()?;
+            let other = other.try_borrow()?;
+            validate_add_native_tensor(&input.inner)?;
+            validate_add_native_tensor(&other.inner)?;
+            if (input.inner.requires_grad() || other.inner.requires_grad()) && is_grad_enabled() {
+                return Err(PyRuntimeError::new_err(
+                    "add(): tensor/tensor autograd recording is not supported",
+                ));
+            }
+            BinaryOperation::Add.apply_tensors(&input.inner, &other.inner)
+        }
+        (BoundAddOperand::Tensor(input), BoundAddOperand::Scalar(scalar)) => {
+            let input = input.try_borrow()?;
+            validate_add_native_tensor(&input.inner)?;
+            let scalar = parse_top_level_binary_scalar(scalar)?;
+            BinaryOperation::Add.apply_scalar(&input.inner, scalar, false)
+        }
+        (BoundAddOperand::Scalar(scalar), BoundAddOperand::Tensor(input)) => {
+            let input = input.try_borrow()?;
+            validate_add_native_tensor(&input.inner)?;
+            let scalar = parse_top_level_binary_scalar(scalar)?;
+            BinaryOperation::Add.apply_scalar(&input.inner, scalar, true)
+        }
+        (BoundAddOperand::Scalar(_), BoundAddOperand::Scalar(_)) => {
+            return Err(PyTypeError::new_err(
+                "add(): scalar-scalar addition is not supported; at least one operand must be Tensor",
+            ));
+        }
+        (BoundAddOperand::Override(_), _) | (_, BoundAddOperand::Override(_)) => {
+            unreachable!("add overrides were dispatched before the native path")
+        }
+    };
+    Ok(Py::new(
+        py,
+        PyTensor::new(result.map_err(|error| tensor_error(&error))?),
+    )?
+    .into_any())
+}
+
+fn validate_add_native_tensor(tensor: &CoreTensor) -> PyResult<()> {
+    if tensor.dtype() == DType::Float32 && tensor.device() == Device::Cpu {
+        return Ok(());
+    }
+    Err(PyNotImplementedError::new_err(
+        "add(): only exact native CPU float32 Tensor operands are supported",
+    ))
+}
+
 fn dispatch_top_level_multiplication(
     operation: MultiplicationOperation,
     py: Python<'_>,
@@ -4419,7 +4594,7 @@ fn apply_top_level_multiplication(
         }
         (BoundMulOperand::Tensor(tensor), BoundMulOperand::Scalar(scalar))
         | (BoundMulOperand::Scalar(scalar), BoundMulOperand::Tensor(tensor)) => {
-            let scalar = parse_top_level_mul_scalar(scalar)?;
+            let scalar = parse_top_level_binary_scalar(scalar)?;
             BinaryOperation::Multiply.apply_scalar(&tensor.try_borrow()?.inner, scalar, false)
         }
         (BoundMulOperand::Scalar(_), BoundMulOperand::Scalar(_)) => {
@@ -4439,7 +4614,7 @@ fn apply_top_level_multiplication(
     .into_any())
 }
 
-fn parse_top_level_mul_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
+fn parse_top_level_binary_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
     match parse_arithmetic_scalar(value) {
         Ok(Some(ParsedArithmeticScalar::WideNumpyUnsigned)) => {
             Err(PyTypeError::new_err("an integer is required"))
@@ -5278,7 +5453,8 @@ impl BinaryOperation {
         reverse: bool,
     ) -> Result<CoreTensor, TensorError> {
         match (self, reverse) {
-            (Self::Add, _) => tensor.add_scalar(scalar),
+            (Self::Add, false) => tensor.add_scalar(scalar),
+            (Self::Add, true) => tensor.scalar_add(scalar),
             (Self::Subtract, false) => tensor.sub_scalar(scalar),
             (Self::Subtract, true) => tensor.scalar_sub(scalar),
             (Self::Multiply, _) => tensor.mul_scalar(scalar),
@@ -11285,6 +11461,122 @@ fn bind_legacy_binary_arguments<'py>(
     Ok(([input, other], keyword_error))
 }
 
+fn bind_top_level_add_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundTopLevelAddCall<'py>> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "add() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut input = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut other = if positional.len() < 2 {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    };
+    let mut alpha = None;
+    let mut out = None;
+    let mut keyword_error = None;
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "input" => {
+                    if input.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("add() got multiple values for argument 'input'")
+                        });
+                    } else {
+                        input = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                "x" | "a" | "x1" if positional.is_empty() && input.is_none() => {
+                    input = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "other" => {
+                    if other.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("add() got multiple values for argument 'other'")
+                        });
+                    } else {
+                        other = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                "x2" if positional.len() < 2 && other.is_none() => {
+                    other = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "alpha" => {
+                    alpha = Some(value);
+                }
+                "out" => {
+                    out = Some(value);
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "add() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let Some(input) = input else {
+        return Err(PyTypeError::new_err(
+            "add() missing 2 required positional argument: \"input\", \"other\"",
+        ));
+    };
+    let Some(other) = other else {
+        parse_top_level_add_input(&input)?;
+        return Err(PyTypeError::new_err(
+            "add() missing 1 required positional arguments: \"other\"",
+        ));
+    };
+
+    let input = parse_top_level_add_input(&input)?;
+    let other = parse_top_level_add_other(&other)?;
+    let alpha = parse_top_level_add_alpha(alpha.as_ref())?;
+    let out = parse_top_level_add_out(out.as_ref())?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+
+    Ok(BoundTopLevelAddCall {
+        input,
+        other,
+        alpha,
+        out,
+    })
+}
+
 fn bind_top_level_reshape_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
@@ -11597,6 +11889,110 @@ fn parse_top_level_multiplication_operand<'py>(
 
     parse_tensor_argument(operation.name(), argument, value)?;
     unreachable!("unsupported multiplication operands were rejected by parse_tensor_argument")
+}
+
+fn parse_top_level_add_input<'py>(
+    value: &ParsedCallArgument<'py>,
+) -> PyResult<BoundAddOperand<'py>> {
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundAddOperand::Tensor(
+            value.value.cast::<PyTensor>()?.clone(),
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundAddOperand::Override(probed));
+    }
+    if value.value.is_instance_of::<PyTensor>() {
+        return Err(add_unsupported_native_tensor());
+    }
+    if is_real_arithmetic_scalar(&value.value)? {
+        return Ok(BoundAddOperand::Scalar(value.value.clone()));
+    }
+    parse_tensor_argument("add", "input", value)
+        .map(|tensor| BoundAddOperand::Tensor(tensor.clone()))
+}
+
+fn parse_top_level_add_other<'py>(
+    value: &ParsedCallArgument<'py>,
+) -> PyResult<BoundAddOperand<'py>> {
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundAddOperand::Tensor(
+            value.value.cast::<PyTensor>()?.clone(),
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundAddOperand::Override(probed));
+    }
+    if value.value.is_instance_of::<PyTensor>() {
+        return Err(add_unsupported_native_tensor());
+    }
+    if is_real_arithmetic_scalar(&value.value)? {
+        return Ok(BoundAddOperand::Scalar(value.value.clone()));
+    }
+    parse_tensor_argument("add", "other", value)?;
+    unreachable!("unsupported add operands were rejected by parse_tensor_argument")
+}
+
+fn parse_top_level_add_alpha<'py>(
+    alpha: Option<&Bound<'py, PyAny>>,
+) -> PyResult<BoundAddAlpha<'py>> {
+    let Some(alpha_value) = alpha else {
+        return Ok(BoundAddAlpha::Default);
+    };
+    if let Some(probed) = probe_torch_function_override(alpha_value) {
+        return Ok(BoundAddAlpha::Override(probed));
+    }
+    let Some(alpha) = parse_arithmetic_scalar(alpha_value)? else {
+        let actual = python_type_name(alpha_value)?;
+        return Err(PyTypeError::new_err(format!(
+            "add(): argument 'alpha' must be Number, not {actual}"
+        )));
+    };
+    if matches!(alpha, ParsedArithmeticScalar::PythonBool(_)) {
+        return Ok(BoundAddAlpha::Boolean);
+    }
+    if matches!(alpha, ParsedArithmeticScalar::WideNumpyUnsigned) {
+        return Ok(BoundAddAlpha::WideNumpyUnsigned);
+    }
+    if alpha.is_default_add_alpha() {
+        Ok(BoundAddAlpha::Default)
+    } else {
+        Ok(BoundAddAlpha::NonDefault)
+    }
+}
+
+fn parse_top_level_add_out<'py>(
+    out: Option<&Bound<'py, PyAny>>,
+) -> PyResult<Option<BoundTensorOrTorchFunction<'py>>> {
+    let Some(out) = out else {
+        return Ok(None);
+    };
+    if out.is_none() {
+        return Ok(None);
+    }
+    if out.is_exact_instance_of::<PyTensor>() {
+        return Ok(Some(BoundTensorOrTorchFunction::Tensor(
+            out.cast::<PyTensor>()?.clone(),
+        )));
+    }
+    if let Some(probed) = probe_torch_function_override(out) {
+        return Ok(Some(BoundTensorOrTorchFunction::Override(probed)));
+    }
+    if out.is_instance_of::<PyTensor>() {
+        return Err(add_unsupported_native_tensor());
+    }
+    let argument = ParsedCallArgument {
+        value: out.clone(),
+        position: None,
+    };
+    parse_tensor_argument("add", "out", &argument)
+        .map(|tensor| Some(BoundTensorOrTorchFunction::Tensor(tensor.clone())))
+}
+
+fn add_unsupported_native_tensor() -> PyErr {
+    PyNotImplementedError::new_err(
+        "add(): only exact native CPU float32 Tensor operands are supported",
+    )
 }
 
 fn bind_matmul_argument<'py>(
@@ -14132,6 +14528,17 @@ impl ParsedFillValue {
 impl ParsedArithmeticScalar {
     fn is_python_bool(&self) -> bool {
         matches!(self, Self::PythonBool(_))
+    }
+
+    fn is_default_add_alpha(&self) -> bool {
+        match self {
+            Self::PythonBool(value) => *value,
+            Self::Number(ParsedFillValue::Float(value)) => *value == 1.0,
+            Self::Number(ParsedFillValue::SignedInteger(value)) => *value == 1,
+            Self::Number(ParsedFillValue::UnsignedInteger(value)) => *value == 1,
+            Self::Number(ParsedFillValue::TensorScalar(value)) => *value == 1.0,
+            Self::WideNumpyUnsigned => false,
+        }
     }
 
     fn into_f32(self) -> f32 {

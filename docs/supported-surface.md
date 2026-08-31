@@ -607,9 +607,9 @@ and `torch.equal()` comparison, identity `Tensor.positive()`/
 `torch.positive()` and unary `+`, unary `-`, `Tensor.neg()`, its
 `Tensor.negative()` alias, `torch.neg()`, and the distinct top-level
 `torch.negative()` builtin. It supports broadcast tensor and real-scalar
-addition, subtraction, multiplication through `*`, `Tensor.mul()`,
-`Tensor.multiply()`, `torch.mul()`, and the distinct top-level
-`torch.multiply()` builtin, plus true division, the listed unary kernels,
+addition, default-alpha top-level `torch.add()`, subtraction, multiplication
+through `*`, `Tensor.mul()`, `Tensor.multiply()`, `torch.mul()`, and the
+distinct top-level `torch.multiply()` builtin, plus true division, the listed unary kernels,
 `Tensor.sum(dim=None)`, `torch.sum(input, dim=None, *, dtype=None)`,
 `Tensor.mean(dim=None)`, `torch.mean(input, dim=None, *, dtype=None)`,
 `Tensor.relu()`, `torch.relu()`, and rank-2 matrix multiplication through `@`,
@@ -624,6 +624,20 @@ Top-level `torch.mul()` and `torch.multiply()` accept tensor/tensor or
 tensor/real-scalar operands in either order and reuse the same broadcast and
 autograd kernels; their `out` forms and scalar-only multiplication remain
 unsupported.
+
+Top-level `torch.add(input, other, *, alpha=1, out=None)` accepts exact native
+CPU float32 tensor/tensor operands and tensor/real-scalar operands in either
+order with default
+alpha. It preserves PyTorch-compatible values, shape, strides, storage offset,
+dtype, CPU device metadata, empty outputs, offset and noncontiguous reads,
+signed zero, infinities, NaNs, `TorchFunctionMode`/`__torch_function__`
+dispatch, callable metadata, imports, copying, pickling, reload behavior, and
+fresh independent output storage. Tensor/scalar calls preserve the existing
+first-order scalar-add autograd path and `torch.no_grad()` behavior. Active
+tensor/tensor autograd recording is rejected until a native binary-add VJP is
+available. Nondefault `alpha`, concrete `out`, scalar-only calls, unsupported
+operands, dtype/device extension keywords, `Tensor.add`, `torch.sub`/aliases,
+and in-place variants remain unsupported.
 
 Out-of-place `torch.nn.functional.relu(input, inplace=False)` delegates to the
 same native kernel; `inplace=True` is rejected before the input can be mutated.
