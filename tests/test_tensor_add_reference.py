@@ -307,6 +307,43 @@ class TensorAddMethodReferenceTests(unittest.TestCase):
             )
         )
 
+        def make_legacy_override(label):
+            class LegacyOverride:
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    legacy_events.append((label, func, types, args, kwargs))
+                    return label
+
+            LegacyOverride.__name__ = label.title()
+            return LegacyOverride
+
+        First = make_legacy_override("first")
+        Second = make_legacy_override("second")
+        legacy_override_observations = []
+        for call, keyword_names in (
+            (lambda: left.add(First(), Second()), None),
+            (lambda: left.add(First(), other=Second()), ("other",)),
+            (lambda: left.add(First(), x2=Second()), ("x2",)),
+        ):
+            legacy_events = []
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                result = call()
+            label, func, dispatch_types, args, kwargs = legacy_events[0]
+            legacy_override_observations.append(
+                (
+                    result,
+                    label,
+                    func is descriptor,
+                    tuple(item.__name__ for item in dispatch_types),
+                    len(args),
+                    args[1].__class__.__name__,
+                    kwargs is None,
+                    None if kwargs is None else tuple(kwargs),
+                    keyword_names,
+                )
+            )
+
         invalid_observations = []
         for call in (
             lambda: left.add([]),
@@ -321,7 +358,12 @@ class TensorAddMethodReferenceTests(unittest.TestCase):
                     (type(error).__name__, str(error), len(invalid_mode.calls))
                 )
 
-        return mode_observations, override_observations, invalid_observations
+        return (
+            mode_observations,
+            override_observations,
+            legacy_override_observations,
+            invalid_observations,
+        )
 
     def test_torch_function_mode_and_operand_dispatch_match_pytorch_2_13(self):
         self.assertEqual(

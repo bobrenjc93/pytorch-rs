@@ -2765,6 +2765,7 @@ struct BoundTensorMethodAddSubCall<'py> {
     input: BoundSubOperand<'py>,
     other: BoundSubOperand<'py>,
     alpha: BoundSubAlpha<'py>,
+    alpha_precedes_other: bool,
 }
 
 type BoundTensorMethodAddSubArguments<'py> = (
@@ -5043,12 +5044,28 @@ fn tensor_add_sub_method<'py>(
     }
 
     let input = parse_tensor_add_sub_method_receiver(operation, slf.as_any())?;
+    let alpha_precedes_other =
+        tensor_add_sub_method_alpha_precedes_other(alpha_argument.as_ref(), &other_argument);
     let call = BoundTensorMethodAddSubCall {
         input,
         other,
         alpha,
+        alpha_precedes_other,
     };
     dispatch_tensor_add_sub_method(operation, slf.py(), slf.as_any(), &call, args, kwargs)
+}
+
+fn tensor_add_sub_method_alpha_precedes_other(
+    alpha: Option<&ParsedCallArgument<'_>>,
+    other: &ParsedCallArgument<'_>,
+) -> bool {
+    alpha
+        .and_then(|alpha| alpha.position)
+        .is_some_and(|alpha_position| {
+            other
+                .position
+                .is_none_or(|other_position| alpha_position < other_position)
+        })
 }
 
 fn parse_tensor_add_sub_method_receiver<'py>(
@@ -5160,7 +5177,12 @@ fn ordered_tensor_add_sub_method_overrides<'py>(
     overrides
         .try_reserve_exact(3)
         .map_err(|_| PyMemoryError::new_err(operation.dispatch_allocation_error()))?;
-    for probed in [input, other, alpha].into_iter().flatten() {
+    let ordered_operands = if call.alpha_precedes_other {
+        [input, alpha, other]
+    } else {
+        [input, other, alpha]
+    };
+    for probed in ordered_operands.into_iter().flatten() {
         insert_ordered_torch_function_override(&mut overrides, probed)?;
     }
     Ok(overrides)

@@ -256,6 +256,41 @@ class TensorAddMethodTests(unittest.TestCase):
         self.assertIs(args[2], right)
         self.assertIsNone(kwargs)
 
+        def make_legacy_override(label):
+            class LegacyOverride:
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    legacy_events.append((label, func, types, args, kwargs))
+                    return label
+
+            LegacyOverride.__name__ = label
+            return LegacyOverride
+
+        First = make_legacy_override("first")
+        Second = make_legacy_override("second")
+        legacy_cases = (
+            ("positional other", lambda: left.add(First(), Second()), None),
+            ("other keyword", lambda: left.add(First(), other=Second()), ("other",)),
+            ("x2 keyword", lambda: left.add(First(), x2=Second()), ("x2",)),
+        )
+        for case, call, expected_keywords in legacy_cases:
+            legacy_events = []
+            with self.subTest(legacy_dispatch=case):
+                self.assertEqual(call(), "first")
+                self.assertEqual(len(legacy_events), 1)
+                label, function, dispatch_types, args, kwargs = legacy_events[0]
+                self.assertEqual(label, "first")
+                self.assertIs(function, descriptor)
+                self.assertEqual(dispatch_types, (First, Second))
+                self.assertIs(args[0], left)
+                self.assertIsInstance(args[1], First)
+                if expected_keywords is None:
+                    self.assertIsInstance(args[2], Second)
+                    self.assertIsNone(kwargs)
+                else:
+                    self.assertEqual(tuple(kwargs), expected_keywords)
+                    self.assertIsInstance(kwargs[expected_keywords[0]], Second)
+
         class DecliningOverride:
             @classmethod
             def __torch_function__(cls, func, types, args=(), kwargs=None):
