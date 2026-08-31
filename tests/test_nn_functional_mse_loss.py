@@ -14,6 +14,43 @@ import torch_rs.nn.functional as functional
 
 
 class FunctionalMseLossTests(unittest.TestCase):
+    MSE_SUM_BITS = {
+        "scalar": 0x40C80000,
+        "empty": 0x00000000,
+        "offset": 0x4702202C,
+        "matching noncontiguous": 0x45776C86,
+        "mixed noncontiguous": 0x459A2B21,
+        "offset noncontiguous": 0x470E5C83,
+        "channels last": 0x46FA80AF,
+        "mixed singleton strides": 0x423F3332,
+        "same operand": 0x00000000,
+        "transposed edge bits": 0xFFC54321,
+        "offset transposed": 0x42E61844,
+        "channels-last-like": 0x468855DD,
+        "singleton strided": 0x42D96667,
+        "empty transposed": 0x00000000,
+    }
+    BROADCAST_MSE_SUM_BITS = {
+        "vector target": 0x41700000,
+        "column target": 0x41800000,
+        "offset vector target": 0x43858000,
+        "noncontiguous vector target": 0x40E00000,
+        "leading singleton broadcast": 0x41D80000,
+        "singleton output broadcast": 0x00000000,
+        "contiguous scalar input": 0x42E10B21,
+        "contiguous scalar target": 0x42E10B21,
+        "contiguous empty scalar input": 0x00000000,
+        "contiguous empty scalar target": 0x00000000,
+        "offset strided scalar input": 0x46EEAC00,
+        "offset strided scalar target": 0x46EEAC00,
+        "channels last scalar input": 0x470B8800,
+        "channels last scalar target": 0x470B8800,
+        "singleton strided scalar input": 0x425C0000,
+        "singleton strided scalar target": 0x425C0000,
+        "empty strided scalar input": 0x00000000,
+        "empty strided scalar target": 0x00000000,
+    }
+
     @staticmethod
     def tensor_bits(tensor):
         return np.asarray(tensor).reshape(-1).view(np.uint32)
@@ -52,6 +89,23 @@ class FunctionalMseLossTests(unittest.TestCase):
             np.testing.assert_array_equal(
                 self.tensor_bits(actual),
                 self.tensor_bits(expected),
+            )
+
+    def assert_matches_sum_value(self, actual, expected_bits, *, case):
+        with self.subTest(case=case, metadata=True):
+            self.assertEqual(actual.shape, ())
+            self.assertEqual(actual.stride(), ())
+            self.assertEqual(actual.storage_offset(), 0)
+            self.assertEqual(actual.numel(), 1)
+            self.assertTrue(actual.is_contiguous())
+            self.assertFalse(actual.requires_grad)
+            self.assertTrue(actual.is_leaf)
+            self.assertIs(actual.dtype, torch.float32)
+            self.assertEqual(actual.device, torch.device("cpu"))
+        with self.subTest(case=case, values=True):
+            self.assertEqual(
+                np.asarray(actual).view(np.uint32).item(),
+                expected_bits,
             )
 
     def layout_cases(self):
@@ -378,27 +432,16 @@ class FunctionalMseLossTests(unittest.TestCase):
                         self.tensor_state(target)[-1], target_state[-1]
                     )
 
-    def test_sum_reduction_matches_composition_metadata_storage_and_nonmutation(self):
+    def test_sum_reduction_matches_pytorch_style_fold_metadata_storage_and_nonmutation(self):
         for case, input, target in (
             *self.layout_cases(),
             *self.same_stride_noncontiguous_cases(),
         ):
-            difference = input - target
-            expected = difference.square().sum()
             input_state = self.tensor_state(input)
             target_state = self.tensor_state(target)
 
             actual = functional.mse_loss(input, target, reduction="sum")
-            self.assert_matches_composition(
-                actual,
-                expected,
-                case=case,
-            )
-            with self.subTest(case=case, scalar_metadata=True):
-                self.assertEqual(actual.shape, ())
-                self.assertEqual(actual.stride(), ())
-                self.assertEqual(actual.storage_offset(), 0)
-                self.assertEqual(actual.numel(), 1)
+            self.assert_matches_sum_value(actual, self.MSE_SUM_BITS[case], case=case)
             with self.subTest(case=case, storage=True):
                 repeated = functional.mse_loss(input, target, reduction="sum")
                 self.assertIsNot(actual, repeated)
@@ -423,7 +466,6 @@ class FunctionalMseLossTests(unittest.TestCase):
 
     def test_sum_reduction_broadcasts_with_warning_and_zero_for_empty(self):
         for case, input, target in self.broadcast_cases():
-            expected = (input - target).square().sum()
             input_state = self.tensor_state(input)
             target_state = self.tensor_state(target)
 
@@ -439,7 +481,11 @@ class FunctionalMseLossTests(unittest.TestCase):
                 self.assertEqual(caught[0].filename, __file__)
                 self.assertEqual(caught[0].lineno, warning_line)
 
-            self.assert_matches_composition(actual, expected, case=case)
+            self.assert_matches_sum_value(
+                actual,
+                self.BROADCAST_MSE_SUM_BITS[case],
+                case=case,
+            )
             if input.numel() == 0 or target.numel() == 0:
                 with self.subTest(case=case, empty_zero_sum=True):
                     self.assertEqual(
@@ -859,12 +905,7 @@ class FunctionalMseLossTests(unittest.TestCase):
         with warnings.catch_warnings(), torch.no_grad():
             warnings.simplefilter("ignore")
             actual = functional.mse_loss(input, target, reduction="sum")
-            expected = (input - target).square().sum()
-        self.assert_matches_composition(
-            actual,
-            expected,
-            case="sum no_grad",
-        )
+        self.assert_matches_sum_value(actual, 0x41500000, case="sum no_grad")
         self.assertFalse(actual.requires_grad)
         self.assertTrue(actual.is_leaf)
         self.assertIsNone(input.grad)

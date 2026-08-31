@@ -3,6 +3,9 @@ use std::fmt::Formatter;
 use std::iter::FusedIterator;
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "python-bindings")]
+use std::cmp::Ordering;
+
 use crate::autograd_node::AutogradNode;
 use crate::device::Device;
 use crate::dtype::DType;
@@ -3160,6 +3163,51 @@ impl Tensor {
         Ok(output)
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn squared_difference_sum(&self, other: &Self) -> Result<Self, TensorError> {
+        let output = self.squared_difference(other)?;
+        let total = output.pytorch_loss_sum();
+        Ok(Self::from_scalar(total, self.dtype(), self.device()))
+    }
+
+    #[cfg(feature = "python-bindings")]
+    fn pytorch_loss_sum(&self) -> f32 {
+        if self.elements == 0 {
+            return 0.0;
+        }
+
+        // PyTorch 2.13 materializes MSE loss and then reduces it with the CPU
+        // cascade_sum kernel. Mirror its all-dim scalar reduction order here.
+        let dims = pytorch_loss_sum_dims(&self.shape, &self.strides);
+        let mut total = 0.0_f32;
+        if dims.len() <= 1 {
+            let stride0 = dims.first().map_or(0, |dim| dim.stride);
+            pytorch_loss_sum_loop(self, self.offset, stride0, 0, self.elements, 1, &mut total);
+            return total;
+        }
+
+        let outer_elements = dims[2..].iter().map(|dim| dim.size).product();
+        for outer_index in 0..outer_elements {
+            let mut quotient = outer_index;
+            let mut base_offset = self.offset;
+            for dim in &dims[2..] {
+                let coordinate = quotient % dim.size;
+                quotient /= dim.size;
+                base_offset += coordinate * dim.stride;
+            }
+            pytorch_loss_sum_loop(
+                self,
+                base_offset,
+                dims[0].stride,
+                dims[1].stride,
+                dims[0].size,
+                dims[1].size,
+                &mut total,
+            );
+        }
+        total
+    }
+
     #[cfg(any(feature = "python-bindings", test))]
     fn squared_difference_same_shape_contiguous(
         &self,
@@ -6161,6 +6209,468 @@ fn l1_loss_difference_value(left: f32, right: f32) -> f32 {
 fn squared_difference_value(left: f32, right: f32) -> f32 {
     let difference = left - right;
     difference * difference
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_sum_add(left: f32, right: f32) -> f32 {
+    if right.is_nan() {
+        right
+    } else if left.is_nan() {
+        left
+    } else {
+        left + right
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+#[derive(Clone, Copy)]
+struct PytorchLossSumDim {
+    size: usize,
+    stride: usize,
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_loss_sum_dims(shape: &[usize], strides: &[usize]) -> Vec<PytorchLossSumDim> {
+    let mut dims = shape
+        .iter()
+        .copied()
+        .zip(strides.iter().copied())
+        .map(|(size, stride)| PytorchLossSumDim { size, stride })
+        .collect::<Vec<_>>();
+    if dims.len() <= 1 {
+        return dims;
+    }
+
+    let mut permutation = (0..dims.len()).rev().collect::<Vec<_>>();
+    for index in 1..permutation.len() {
+        let mut dim1 = index;
+        let mut previous = index;
+        while previous > 0 {
+            previous -= 1;
+            match pytorch_loss_sum_compare_dims(
+                dims[permutation[previous]],
+                dims[permutation[dim1]],
+            ) {
+                Ordering::Greater => {
+                    permutation.swap(previous, dim1);
+                    dim1 = previous;
+                }
+                Ordering::Less => break,
+                Ordering::Equal => {}
+            }
+        }
+    }
+    dims = permutation
+        .into_iter()
+        .map(|index| dims[index])
+        .collect::<Vec<_>>();
+
+    let mut coalesced = Vec::with_capacity(dims.len());
+    coalesced.push(dims[0]);
+    for dim in dims.into_iter().skip(1) {
+        let previous = coalesced
+            .last_mut()
+            .expect("coalesced dimensions are initialized");
+        if previous.size == 1
+            || dim.size == 1
+            || previous
+                .size
+                .checked_mul(previous.stride)
+                .is_some_and(|stride| stride == dim.stride)
+        {
+            if previous.size == 1 {
+                previous.stride = dim.stride;
+            }
+            previous.size *= dim.size;
+        } else {
+            coalesced.push(dim);
+        }
+    }
+    coalesced
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_loss_sum_compare_dims(left: PytorchLossSumDim, right: PytorchLossSumDim) -> Ordering {
+    if left.stride == 0 || right.stride == 0 {
+        Ordering::Equal
+    } else if left.stride < right.stride {
+        Ordering::Less
+    } else if left.stride > right.stride {
+        Ordering::Greater
+    } else if left.size > right.size {
+        Ordering::Greater
+    } else {
+        Ordering::Equal
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+const PYTORCH_LOSS_SUM_VECTOR_WIDTH: usize = 8;
+#[cfg(feature = "python-bindings")]
+const PYTORCH_LOSS_SUM_ILP_FACTOR: usize = 4;
+#[cfg(feature = "python-bindings")]
+const PYTORCH_LOSS_SUM_LEVELS: usize = 4;
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_loss_sum_loop(
+    tensor: &Tensor,
+    base_offset: usize,
+    stride0: usize,
+    stride1: usize,
+    size0: usize,
+    size1: usize,
+    total: &mut f32,
+) {
+    if stride0 == 1 && size0 >= PYTORCH_LOSS_SUM_VECTOR_WIDTH {
+        pytorch_loss_sum_vectorized_inner(tensor, base_offset, stride1, size0, size1, total);
+    } else if stride1 == 1 && size1 >= PYTORCH_LOSS_SUM_VECTOR_WIDTH {
+        pytorch_loss_sum_vectorized_outer(tensor, base_offset, stride0, size0, size1, total);
+    } else if stride0 < stride1 {
+        pytorch_loss_sum_scalar_inner(tensor, base_offset, stride0, stride1, size0, size1, total);
+    } else {
+        pytorch_loss_sum_scalar_outer(tensor, base_offset, stride0, stride1, size0, size1, total);
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_loss_sum_scalar_inner(
+    tensor: &Tensor,
+    base_offset: usize,
+    stride0: usize,
+    stride1: usize,
+    size0: usize,
+    size1: usize,
+    total: &mut f32,
+) {
+    for column in 0..size1 {
+        let row_offset = base_offset + column * stride1;
+        let row_total = pytorch_loss_sum_scalar_row(tensor, row_offset, stride0, size0);
+        *total = pytorch_sum_add(*total, row_total);
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_loss_sum_scalar_outer(
+    tensor: &Tensor,
+    base_offset: usize,
+    stride0: usize,
+    stride1: usize,
+    size0: usize,
+    size1: usize,
+    total: &mut f32,
+) {
+    let mut column = 0;
+    while column + PYTORCH_LOSS_SUM_ILP_FACTOR <= size1 {
+        let row_offset = base_offset + column * stride1;
+        let rows = pytorch_loss_sum_multi_row_scalar(tensor, row_offset, stride0, stride1, size0);
+        for row in rows {
+            *total = pytorch_sum_add(*total, row);
+        }
+        column += PYTORCH_LOSS_SUM_ILP_FACTOR;
+    }
+
+    while column < size1 {
+        let row_offset = base_offset + column * stride1;
+        let row_total = pytorch_loss_sum_scalar_row(tensor, row_offset, stride0, size0);
+        *total = pytorch_sum_add(*total, row_total);
+        column += 1;
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_loss_sum_vectorized_inner(
+    tensor: &Tensor,
+    base_offset: usize,
+    outer_stride: usize,
+    size0: usize,
+    size1: usize,
+    total: &mut f32,
+) {
+    for column in 0..size1 {
+        let row_offset = base_offset + column * outer_stride;
+        let row_total = pytorch_loss_sum_vector_row_total(
+            tensor,
+            row_offset,
+            1,
+            PYTORCH_LOSS_SUM_VECTOR_WIDTH,
+            size0,
+        );
+        *total = pytorch_sum_add(*total, row_total);
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_loss_sum_vectorized_outer(
+    tensor: &Tensor,
+    base_offset: usize,
+    inner_stride: usize,
+    size0: usize,
+    size1: usize,
+    total: &mut f32,
+) {
+    let mut column = 0;
+    while column + PYTORCH_LOSS_SUM_ILP_FACTOR * PYTORCH_LOSS_SUM_VECTOR_WIDTH <= size1 {
+        let row_offset = base_offset + column;
+        let rows = pytorch_loss_sum_multi_row_vector(
+            tensor,
+            row_offset,
+            inner_stride,
+            PYTORCH_LOSS_SUM_VECTOR_WIDTH,
+            size0,
+        );
+        for row in rows {
+            for lane in row {
+                *total = pytorch_sum_add(*total, lane);
+            }
+        }
+        column += PYTORCH_LOSS_SUM_ILP_FACTOR * PYTORCH_LOSS_SUM_VECTOR_WIDTH;
+    }
+
+    while column + PYTORCH_LOSS_SUM_VECTOR_WIDTH <= size1 {
+        let row_offset = base_offset + column;
+        let row = pytorch_loss_sum_vector_accumulators(tensor, row_offset, inner_stride, size0);
+        for lane in row {
+            *total = pytorch_sum_add(*total, lane);
+        }
+        column += PYTORCH_LOSS_SUM_VECTOR_WIDTH;
+    }
+
+    while column < size1 {
+        let row_offset = base_offset + column;
+        let row_total = pytorch_loss_sum_scalar_row(tensor, row_offset, inner_stride, size0);
+        *total = pytorch_sum_add(*total, row_total);
+        column += 1;
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_loss_sum_scalar_row(
+    tensor: &Tensor,
+    base_offset: usize,
+    stride: usize,
+    size: usize,
+) -> f32 {
+    let size_ilp = size / PYTORCH_LOSS_SUM_ILP_FACTOR;
+    let mut partials = pytorch_loss_sum_multi_row_scalar(
+        tensor,
+        base_offset,
+        stride * PYTORCH_LOSS_SUM_ILP_FACTOR,
+        stride,
+        size_ilp,
+    );
+    for index in size_ilp * PYTORCH_LOSS_SUM_ILP_FACTOR..size {
+        partials[0] = pytorch_sum_add(
+            partials[0],
+            pytorch_loss_sum_value(tensor, base_offset + index * stride),
+        );
+    }
+    for row in 1..PYTORCH_LOSS_SUM_ILP_FACTOR {
+        partials[0] = pytorch_sum_add(partials[0], partials[row]);
+    }
+    partials[0]
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_loss_sum_vector_row_total(
+    tensor: &Tensor,
+    base_offset: usize,
+    scalar_stride: usize,
+    vector_stride: usize,
+    size: usize,
+) -> f32 {
+    let vector_size = size / PYTORCH_LOSS_SUM_VECTOR_WIDTH;
+    let vector_accumulator =
+        pytorch_loss_sum_vector_accumulators(tensor, base_offset, vector_stride, vector_size);
+
+    let mut total = 0.0_f32;
+    for index in vector_size * PYTORCH_LOSS_SUM_VECTOR_WIDTH..size {
+        total = pytorch_sum_add(
+            total,
+            pytorch_loss_sum_value(tensor, base_offset + index * scalar_stride),
+        );
+    }
+    for lane in vector_accumulator {
+        total = pytorch_sum_add(total, lane);
+    }
+    total
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_loss_sum_vector_accumulators(
+    tensor: &Tensor,
+    base_offset: usize,
+    stride: usize,
+    vector_size: usize,
+) -> [f32; PYTORCH_LOSS_SUM_VECTOR_WIDTH] {
+    let size_ilp = vector_size / PYTORCH_LOSS_SUM_ILP_FACTOR;
+    let partials = pytorch_loss_sum_multi_row_vector(
+        tensor,
+        base_offset,
+        stride * PYTORCH_LOSS_SUM_ILP_FACTOR,
+        stride,
+        size_ilp,
+    );
+    let mut vector_accumulator = partials[0];
+    for vector_index in size_ilp * PYTORCH_LOSS_SUM_ILP_FACTOR..vector_size {
+        let vector_offset = base_offset + vector_index * stride;
+        for (lane_index, lane) in vector_accumulator.iter_mut().enumerate() {
+            *lane = pytorch_sum_add(
+                *lane,
+                pytorch_loss_sum_value(tensor, vector_offset + lane_index),
+            );
+        }
+    }
+    for row in partials.iter().skip(1) {
+        for (lane, value) in vector_accumulator.iter_mut().zip(row) {
+            *lane = pytorch_sum_add(*lane, *value);
+        }
+    }
+    vector_accumulator
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_loss_sum_multi_row_scalar(
+    tensor: &Tensor,
+    base_offset: usize,
+    row_stride: usize,
+    column_stride: usize,
+    size: usize,
+) -> [f32; PYTORCH_LOSS_SUM_ILP_FACTOR] {
+    let mut accumulators = [[0.0_f32; PYTORCH_LOSS_SUM_ILP_FACTOR]; PYTORCH_LOSS_SUM_LEVELS];
+    let level_power = (ceil_log2(size) / PYTORCH_LOSS_SUM_LEVELS).max(4);
+    let level_step = 1_usize << level_power;
+    let level_mask = level_step - 1;
+    let mut index = 0;
+
+    while index + level_step <= size {
+        for _ in 0..level_step {
+            let row_offset = base_offset + index * row_stride;
+            for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
+                accumulators[0][row] = pytorch_sum_add(
+                    accumulators[0][row],
+                    pytorch_loss_sum_value(tensor, row_offset + row * column_stride),
+                );
+            }
+            index += 1;
+        }
+
+        for level in 1..PYTORCH_LOSS_SUM_LEVELS {
+            for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
+                accumulators[level][row] =
+                    pytorch_sum_add(accumulators[level][row], accumulators[level - 1][row]);
+                accumulators[level - 1][row] = 0.0;
+            }
+
+            let mask = level_mask << (level * level_power);
+            if (index & mask) != 0 {
+                break;
+            }
+        }
+    }
+
+    while index < size {
+        let row_offset = base_offset + index * row_stride;
+        for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
+            accumulators[0][row] = pytorch_sum_add(
+                accumulators[0][row],
+                pytorch_loss_sum_value(tensor, row_offset + row * column_stride),
+            );
+        }
+        index += 1;
+    }
+
+    for level in 1..PYTORCH_LOSS_SUM_LEVELS {
+        for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
+            accumulators[0][row] = pytorch_sum_add(accumulators[0][row], accumulators[level][row]);
+        }
+    }
+    accumulators[0]
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_loss_sum_multi_row_vector(
+    tensor: &Tensor,
+    base_offset: usize,
+    row_stride: usize,
+    column_stride: usize,
+    size: usize,
+) -> [[f32; PYTORCH_LOSS_SUM_VECTOR_WIDTH]; PYTORCH_LOSS_SUM_ILP_FACTOR] {
+    let mut accumulators = [[[0.0_f32; PYTORCH_LOSS_SUM_VECTOR_WIDTH]; PYTORCH_LOSS_SUM_ILP_FACTOR];
+        PYTORCH_LOSS_SUM_LEVELS];
+    let level_power = (ceil_log2(size) / PYTORCH_LOSS_SUM_LEVELS).max(4);
+    let level_step = 1_usize << level_power;
+    let level_mask = level_step - 1;
+    let mut index = 0;
+
+    while index + level_step <= size {
+        for _ in 0..level_step {
+            let row_offset = base_offset + index * row_stride;
+            for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
+                let vector_offset = row_offset + row * column_stride;
+                for lane in 0..PYTORCH_LOSS_SUM_VECTOR_WIDTH {
+                    accumulators[0][row][lane] = pytorch_sum_add(
+                        accumulators[0][row][lane],
+                        pytorch_loss_sum_value(tensor, vector_offset + lane),
+                    );
+                }
+            }
+            index += 1;
+        }
+
+        for level in 1..PYTORCH_LOSS_SUM_LEVELS {
+            for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
+                for lane in 0..PYTORCH_LOSS_SUM_VECTOR_WIDTH {
+                    accumulators[level][row][lane] = pytorch_sum_add(
+                        accumulators[level][row][lane],
+                        accumulators[level - 1][row][lane],
+                    );
+                    accumulators[level - 1][row][lane] = 0.0;
+                }
+            }
+
+            let mask = level_mask << (level * level_power);
+            if (index & mask) != 0 {
+                break;
+            }
+        }
+    }
+
+    while index < size {
+        let row_offset = base_offset + index * row_stride;
+        for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
+            let vector_offset = row_offset + row * column_stride;
+            for lane in 0..PYTORCH_LOSS_SUM_VECTOR_WIDTH {
+                accumulators[0][row][lane] = pytorch_sum_add(
+                    accumulators[0][row][lane],
+                    pytorch_loss_sum_value(tensor, vector_offset + lane),
+                );
+            }
+        }
+        index += 1;
+    }
+
+    for level in 1..PYTORCH_LOSS_SUM_LEVELS {
+        for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
+            for lane in 0..PYTORCH_LOSS_SUM_VECTOR_WIDTH {
+                accumulators[0][row][lane] =
+                    pytorch_sum_add(accumulators[0][row][lane], accumulators[level][row][lane]);
+            }
+        }
+    }
+    accumulators[0]
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_loss_sum_value(tensor: &Tensor, offset: usize) -> f32 {
+    tensor
+        .storage
+        .value(offset)
+        .expect("loss reduction offset must address tensor storage")
+}
+
+#[cfg(feature = "python-bindings")]
+fn ceil_log2(value: usize) -> usize {
+    usize::BITS as usize - value.saturating_sub(1).leading_zeros() as usize
 }
 
 fn relu_value(value: f32) -> f32 {

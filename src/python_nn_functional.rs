@@ -647,11 +647,12 @@ fn _nn_functional_mse_loss(
         ));
     }
 
-    let output = input
-        .inner()
-        .squared_difference(target.inner())
-        .map_err(|error| tensor_error(&error))?;
-    let output = if reduce_sum { output.sum() } else { output };
+    let output = if reduce_sum {
+        input.inner().squared_difference_sum(target.inner())
+    } else {
+        input.inner().squared_difference(target.inner())
+    }
+    .map_err(|error| tensor_error(&error))?;
     PyTensor::new(output).into_py_any(py)
 }
 
