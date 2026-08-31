@@ -1,4 +1,6 @@
+import copy
 import importlib
+import pickle
 import sys
 import types
 import typing
@@ -10,6 +12,20 @@ try:
     import torch as reference_torch
 except ImportError:
     reference_torch = None
+
+
+SUPPORTED_VERSION_NAMES = (
+    "__version__",
+    "debug",
+    "cuda",
+    "git_version",
+    "hip",
+    "rocm",
+    "xpu",
+)
+SUPPORTED_PUBLIC_NAMES = (set(SUPPORTED_VERSION_NAMES) - {"__version__"}) | {
+    "Optional",
+}
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -24,7 +40,6 @@ class VersionCudaReferenceTests(unittest.TestCase):
     def test_module_metadata_and_identity_match_the_supported_scope(self):
         actual = importlib.import_module("torch_rs.version")
         expected = importlib.import_module("torch.version")
-        supported = ("__version__", "debug", "cuda", "hip", "rocm", "xpu")
 
         self.assertIs(torch.version, actual)
         self.assertIs(reference_torch.version, expected)
@@ -35,19 +50,23 @@ class VersionCudaReferenceTests(unittest.TestCase):
         self.assertEqual(actual.__doc__, expected.__doc__)
         self.assertEqual(
             actual.__all__,
-            [name for name in expected.__all__ if name in supported],
+            [name for name in expected.__all__ if name in SUPPORTED_VERSION_NAMES],
         )
         self.assertEqual(
             actual.__annotations__,
             {
                 name: annotation
                 for name, annotation in expected.__annotations__.items()
-                if name in supported
+                if name in SUPPORTED_VERSION_NAMES
             },
         )
         self.assertEqual(
             list(actual.__annotations__),
-            [name for name in expected.__annotations__ if name in supported],
+            [
+                name
+                for name in expected.__annotations__
+                if name in SUPPORTED_VERSION_NAMES
+            ],
         )
         self.assertIs(actual.Optional, typing.Optional)
         self.assertIs(expected.Optional, typing.Optional)
@@ -56,17 +75,20 @@ class VersionCudaReferenceTests(unittest.TestCase):
             {
                 name
                 for name in vars(expected)
-                if name in {"Optional", "debug", "cuda", "hip", "rocm", "xpu"}
+                if name in SUPPORTED_PUBLIC_NAMES
             },
         )
         self.assertIs(type(actual.__version__), type(expected.__version__))
         self.assertIs(actual.debug, expected.debug)
         self.assertIs(actual.debug, False)
+        self.assertTrue(hasattr(actual, "git_version"))
+        self.assertTrue(hasattr(expected, "git_version"))
+        self.assertIs(actual.git_version, None)
+        self.assertIs(type(expected.git_version), str)
+        self.assertTrue(expected.git_version)
         for name in ("cuda", "hip", "rocm", "xpu"):
             with self.subTest(name=name):
                 self.assertIs(getattr(actual, name), None)
-        self.assertFalse(hasattr(actual, "git_version"))
-        self.assertTrue(hasattr(expected, "git_version"))
 
     def test_direct_and_wildcard_imports_match_pytorch_2_13(self):
         actual = torch.version
@@ -83,12 +105,12 @@ class VersionCudaReferenceTests(unittest.TestCase):
             exec(f"import {package_name}.version as version", module_import)
             exec(
                 f"from {package_name}.version import "
-                "__version__, debug, cuda, hip, rocm, xpu",
+                "__version__, debug, cuda, git_version, hip, rocm, xpu",
                 direct_import,
             )
             self.assertIs(package_import["version"], module)
             self.assertIs(module_import["version"], module)
-            for name in ("__version__", "debug", "cuda", "hip", "rocm", "xpu"):
+            for name in SUPPORTED_VERSION_NAMES:
                 self.assertIs(direct_import[name], getattr(module, name))
 
         actual_wildcard = {}
@@ -100,12 +122,12 @@ class VersionCudaReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_wildcard
-                if name in {"__version__", "debug", "cuda", "hip", "rocm", "xpu"}
+                if name in SUPPORTED_VERSION_NAMES
             ],
         )
         self.assertIs(actual_wildcard["__version__"], actual.__version__)
         self.assertIs(actual_wildcard["debug"], actual.debug)
-        for name in ("cuda", "hip", "rocm", "xpu"):
+        for name in ("cuda", "git_version", "hip", "rocm", "xpu"):
             self.assertIs(actual_wildcard[name], getattr(actual, name))
 
         for module in (torch, reference_torch):
@@ -114,6 +136,7 @@ class VersionCudaReferenceTests(unittest.TestCase):
             self.assertNotIn("version", namespace)
             self.assertNotIn("__version__", namespace)
             self.assertNotIn("debug", namespace)
+            self.assertNotIn("git_version", namespace)
             for name in ("cuda", "hip", "rocm", "xpu"):
                 self.assertNotIn(name, namespace)
 
@@ -123,9 +146,10 @@ class VersionCudaReferenceTests(unittest.TestCase):
         old_all = module.__all__
         old_annotations = module.__annotations__
         expected_version = module.__version__
+        expected_git_version = module.git_version
         module.__version__ = "stale"
         module.debug = True
-        for name in ("cuda", "hip", "rocm", "xpu"):
+        for name in ("cuda", "git_version", "hip", "rocm", "xpu"):
             setattr(module, name, "stale")
 
         reloaded = importlib.reload(module)
@@ -139,6 +163,8 @@ class VersionCudaReferenceTests(unittest.TestCase):
             module.__all__,
             module.__version__ == expected_version,
             type(module.__version__).__name__,
+            module.git_version == expected_git_version,
+            type(module.git_version).__name__,
             module.debug is False,
             module.__annotations__ is old_annotations,
             tuple(module.__annotations__),
@@ -152,21 +178,51 @@ class VersionCudaReferenceTests(unittest.TestCase):
         self.assertEqual(actual[:5], expected[:5])
         self.assertEqual(
             actual[5],
-            [
-                name
-                for name in expected[5]
-                if name in {"__version__", "debug", "cuda", "hip", "rocm", "xpu"}
-            ],
+            [name for name in expected[5] if name in SUPPORTED_VERSION_NAMES],
         )
-        self.assertEqual(actual[6:11], expected[6:11])
-        self.assertEqual(actual[11], (None, None, None, None))
+        self.assertEqual(actual[6:9], expected[6:9])
+        self.assertEqual(actual[9], "NoneType")
+        self.assertEqual(expected[9], "str")
+        self.assertEqual(actual[10:13], expected[10:13])
+        self.assertEqual(actual[13], (None, None, None, None))
         self.assertEqual(
-            expected[11],
+            expected[13],
             tuple(
                 getattr(reference_torch.version, name)
                 for name in ("cuda", "hip", "rocm", "xpu")
             ),
         )
+
+    def test_constant_copy_deepcopy_and_pickle_behavior_matches_supported_scope(self):
+        for root in (torch, reference_torch):
+            version = root.version
+            for name in ("debug", "cuda", "git_version", "hip", "rocm", "xpu"):
+                value = getattr(version, name)
+                with self.subTest(package=root.__name__, name=name):
+                    self.assertIs(copy.copy(value), value)
+                    self.assertIs(copy.deepcopy(value), value)
+                    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                        with self.subTest(protocol=protocol):
+                            restored = pickle.loads(
+                                pickle.dumps(value, protocol=protocol)
+                            )
+                            self.assertIs(type(restored), type(value))
+                            self.assertEqual(restored, value)
+
+            for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                with self.subTest(
+                    package=root.__name__,
+                    name="__version__",
+                    protocol=protocol,
+                ):
+                    restored = pickle.loads(
+                        pickle.dumps(version.__version__, protocol=protocol)
+                    )
+                    self.assertIs(type(restored), str)
+                    self.assertEqual(restored, version.__version__)
+
+        self.assertIs(torch.version.git_version, None)
+        self.assertIs(type(reference_torch.version.git_version), str)
 
     def test_cuda_visible_h100_reports_reference_build_version_only(self):
         if not reference_torch.cuda.is_available():
@@ -189,6 +245,8 @@ class VersionCudaReferenceTests(unittest.TestCase):
 
         self.assertIs(torch._C._has_cuda, False)
         self.assertIs(torch.backends.cuda.is_built(), False)
+        self.assertIs(torch.version.git_version, None)
+        self.assertIs(type(reference_torch.version.git_version), str)
         for name in ("cuda", "hip", "rocm", "xpu"):
             with self.subTest(name=name):
                 self.assertIs(getattr(torch.version, name), None)
