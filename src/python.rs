@@ -11977,89 +11977,25 @@ fn select_top_level_subtraction_arguments<'py>(
         )));
     }
 
-    let keyword_argument = |names: &[(&'static str, Option<&'static str>)]| -> PyResult<
-        Option<(Bound<'py, PyAny>, Option<&'static str>)>,
-    > {
-        let Some(keywords) = keywords else {
-            return Ok(None);
-        };
-        for (name, alias) in names {
-            if let Some(value) = keywords.get_item(*name)? {
-                return Ok(Some((value, *alias)));
-            }
-        }
-        Ok(None)
-    };
-
-    let (input, input_keyword_alias) = if positional.is_empty() {
-        keyword_argument(&[
+    let (input, input_keyword_alias) = select_top_level_subtraction_operand(
+        positional,
+        keywords,
+        0,
+        &[
             ("input", None),
             ("x", Some("x")),
             ("a", Some("a")),
             ("x1", Some("x1")),
-        ])?
-        .map_or((None, None), |(value, alias)| {
-            (
-                Some(ParsedCallArgument {
-                    value,
-                    position: None,
-                }),
-                alias,
-            )
-        })
-    } else {
-        (
-            Some(ParsedCallArgument {
-                value: positional.get_item(0)?,
-                position: Some(1),
-            }),
-            None,
-        )
-    };
-    let (other, other_keyword_alias) = if positional.len() < 2 {
-        keyword_argument(&[("other", None), ("x2", Some("x2"))])?.map_or(
-            (None, None),
-            |(value, alias)| {
-                (
-                    Some(ParsedCallArgument {
-                        value,
-                        position: None,
-                    }),
-                    alias,
-                )
-            },
-        )
-    } else {
-        (
-            Some(ParsedCallArgument {
-                value: positional.get_item(1)?,
-                position: Some(2),
-            }),
-            None,
-        )
-    };
-    let alpha = keywords
-        .map(|keywords| {
-            keywords.get_item("alpha").map(|alpha| {
-                alpha.map(|value| ParsedCallArgument {
-                    value,
-                    position: None,
-                })
-            })
-        })
-        .transpose()?
-        .flatten();
-    let out = keywords
-        .map(|keywords| {
-            keywords.get_item("out").map(|out| {
-                out.map(|value| ParsedCallArgument {
-                    value,
-                    position: None,
-                })
-            })
-        })
-        .transpose()?
-        .flatten();
+        ],
+    )?;
+    let (other, other_keyword_alias) = select_top_level_subtraction_operand(
+        positional,
+        keywords,
+        1,
+        &[("other", None), ("x2", Some("x2"))],
+    )?;
+    let alpha = top_level_subtraction_optional_keyword(keywords, "alpha")?;
+    let out = top_level_subtraction_optional_keyword(keywords, "out")?;
 
     let Some(input) = input else {
         return Err(top_level_subtraction_binding_error(
@@ -12080,6 +12016,64 @@ fn select_top_level_subtraction_arguments<'py>(
         alpha,
         out,
     })
+}
+
+fn select_top_level_subtraction_operand<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+    index: usize,
+    names: &[(&'static str, Option<&'static str>)],
+) -> PyResult<(Option<ParsedCallArgument<'py>>, Option<&'static str>)> {
+    if positional.len() > index {
+        return Ok((
+            Some(ParsedCallArgument {
+                value: positional.get_item(index)?,
+                position: Some(index + 1),
+            }),
+            None,
+        ));
+    }
+
+    top_level_subtraction_keyword_argument(keywords, names)?.map_or(
+        Ok((None, None)),
+        |(value, alias)| {
+            Ok((
+                Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                }),
+                alias,
+            ))
+        },
+    )
+}
+
+fn top_level_subtraction_keyword_argument<'py>(
+    keywords: Option<&Bound<'py, PyDict>>,
+    names: &[(&'static str, Option<&'static str>)],
+) -> PyResult<Option<(Bound<'py, PyAny>, Option<&'static str>)>> {
+    let Some(keywords) = keywords else {
+        return Ok(None);
+    };
+    for (name, alias) in names {
+        if let Some(value) = keywords.get_item(*name)? {
+            return Ok(Some((value, *alias)));
+        }
+    }
+    Ok(None)
+}
+
+fn top_level_subtraction_optional_keyword<'py>(
+    keywords: Option<&Bound<'py, PyDict>>,
+    name: &str,
+) -> PyResult<Option<ParsedCallArgument<'py>>> {
+    let Some(keywords) = keywords else {
+        return Ok(None);
+    };
+    Ok(keywords.get_item(name)?.map(|value| ParsedCallArgument {
+        value,
+        position: None,
+    }))
 }
 
 fn validate_top_level_subtraction_keywords(

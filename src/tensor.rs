@@ -4388,116 +4388,27 @@ fn apply_grad_fn(
             right,
             output_shape,
             output_elements,
-        } => {
-            debug_assert_eq!(*output_elements, upstream.len());
-            let mut left_gradient = if left.autograd.is_some() {
-                Some(GradientAccumulator::new(
-                    left.elements,
-                    left.elements == *output_elements,
-                )?)
-            } else {
-                None
-            };
-            let mut right_gradient = if right.autograd.is_some() {
-                Some(GradientAccumulator::new(
-                    right.elements,
-                    right.elements == *output_elements,
-                )?)
-            } else {
-                None
-            };
-            let mut coordinates = try_result_vector(output_shape.len(), *output_elements)?;
-            coordinates.resize(output_shape.len(), 0_usize);
-
-            for (output_index, &output_gradient) in upstream.iter().enumerate() {
-                let mut remaining = output_index;
-                for axis in (0..output_shape.len()).rev() {
-                    coordinates[axis] = remaining % output_shape[axis];
-                    remaining /= output_shape[axis];
-                }
-                let (left_index, left_offset) = left.broadcast_position(output_shape, &coordinates);
-                let (right_index, right_offset) =
-                    right.broadcast_position(output_shape, &coordinates);
-                if let Some(gradient) = &mut left_gradient {
-                    gradient.add(
-                        left_index,
-                        output_gradient
-                            * right
-                                .storage
-                                .as_ref()
-                                .expect("left derivative must save right operand values")
-                                .value(right_offset)
-                                .expect("saved right operand offset must address storage"),
-                    );
-                }
-                if let Some(gradient) = &mut right_gradient {
-                    gradient.add(
-                        right_index,
-                        output_gradient
-                            * left
-                                .storage
-                                .as_ref()
-                                .expect("right derivative must save left operand values")
-                                .value(left_offset)
-                                .expect("saved left operand offset must address storage"),
-                    );
-                }
-            }
-            if let (Some(meta), Some(gradient)) = (&left.autograd, left_gradient) {
-                add_gradient(gradients, meta, left.output_nr, gradient.values);
-            }
-            if let (Some(meta), Some(gradient)) = (&right.autograd, right_gradient) {
-                add_gradient(gradients, meta, right.output_nr, gradient.values);
-            }
-        }
+        } => apply_multiply_grad_fn(
+            left,
+            right,
+            output_shape,
+            *output_elements,
+            upstream,
+            gradients,
+        )?,
         GradFn::Subtract {
             left,
             right,
             output_shape,
             output_elements,
-        } => {
-            debug_assert_eq!(*output_elements, upstream.len());
-            let mut left_gradient = if left.autograd.is_some() {
-                Some(GradientAccumulator::new(
-                    left.elements,
-                    left.elements == *output_elements,
-                )?)
-            } else {
-                None
-            };
-            let mut right_gradient = if right.autograd.is_some() {
-                Some(GradientAccumulator::new(
-                    right.elements,
-                    right.elements == *output_elements,
-                )?)
-            } else {
-                None
-            };
-            let mut coordinates = try_result_vector(output_shape.len(), *output_elements)?;
-            coordinates.resize(output_shape.len(), 0_usize);
-
-            for (output_index, &output_gradient) in upstream.iter().enumerate() {
-                let mut remaining = output_index;
-                for axis in (0..output_shape.len()).rev() {
-                    coordinates[axis] = remaining % output_shape[axis];
-                    remaining /= output_shape[axis];
-                }
-                let (left_index, _) = left.broadcast_position(output_shape, &coordinates);
-                let (right_index, _) = right.broadcast_position(output_shape, &coordinates);
-                if let Some(gradient) = &mut left_gradient {
-                    gradient.add(left_index, output_gradient);
-                }
-                if let Some(gradient) = &mut right_gradient {
-                    gradient.add(right_index, -output_gradient);
-                }
-            }
-            if let (Some(meta), Some(gradient)) = (&left.autograd, left_gradient) {
-                add_gradient(gradients, meta, left.output_nr, gradient.values);
-            }
-            if let (Some(meta), Some(gradient)) = (&right.autograd, right_gradient) {
-                add_gradient(gradients, meta, right.output_nr, gradient.values);
-            }
-        }
+        } => apply_subtract_grad_fn(
+            left,
+            right,
+            output_shape,
+            *output_elements,
+            upstream,
+            gradients,
+        )?,
         GradFn::Transform { input, mapping, .. } => {
             if let Some(meta) = &input.autograd {
                 let gradient = transform_backward(input, mapping, upstream)?;
@@ -4505,6 +4416,128 @@ fn apply_grad_fn(
             }
         }
         GradFn::Unbind { .. } => unreachable!(),
+    }
+    Ok(())
+}
+
+fn apply_multiply_grad_fn(
+    left: &SavedTensor,
+    right: &SavedTensor,
+    output_shape: &[usize],
+    output_elements: usize,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    debug_assert_eq!(output_elements, upstream.len());
+    let mut left_gradient = if left.autograd.is_some() {
+        Some(GradientAccumulator::new(
+            left.elements,
+            left.elements == output_elements,
+        )?)
+    } else {
+        None
+    };
+    let mut right_gradient = if right.autograd.is_some() {
+        Some(GradientAccumulator::new(
+            right.elements,
+            right.elements == output_elements,
+        )?)
+    } else {
+        None
+    };
+    let mut coordinates = try_result_vector(output_shape.len(), output_elements)?;
+    coordinates.resize(output_shape.len(), 0_usize);
+
+    for (output_index, &output_gradient) in upstream.iter().enumerate() {
+        let mut remaining = output_index;
+        for axis in (0..output_shape.len()).rev() {
+            coordinates[axis] = remaining % output_shape[axis];
+            remaining /= output_shape[axis];
+        }
+        let (left_index, left_offset) = left.broadcast_position(output_shape, &coordinates);
+        let (right_index, right_offset) = right.broadcast_position(output_shape, &coordinates);
+        if let Some(gradient) = &mut left_gradient {
+            gradient.add(
+                left_index,
+                output_gradient
+                    * right
+                        .storage
+                        .as_ref()
+                        .expect("left derivative must save right operand values")
+                        .value(right_offset)
+                        .expect("saved right operand offset must address storage"),
+            );
+        }
+        if let Some(gradient) = &mut right_gradient {
+            gradient.add(
+                right_index,
+                output_gradient
+                    * left
+                        .storage
+                        .as_ref()
+                        .expect("right derivative must save left operand values")
+                        .value(left_offset)
+                        .expect("saved left operand offset must address storage"),
+            );
+        }
+    }
+    if let (Some(meta), Some(gradient)) = (&left.autograd, left_gradient) {
+        add_gradient(gradients, meta, left.output_nr, gradient.values);
+    }
+    if let (Some(meta), Some(gradient)) = (&right.autograd, right_gradient) {
+        add_gradient(gradients, meta, right.output_nr, gradient.values);
+    }
+    Ok(())
+}
+
+fn apply_subtract_grad_fn(
+    left: &SavedTensor,
+    right: &SavedTensor,
+    output_shape: &[usize],
+    output_elements: usize,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    debug_assert_eq!(output_elements, upstream.len());
+    let mut left_gradient = if left.autograd.is_some() {
+        Some(GradientAccumulator::new(
+            left.elements,
+            left.elements == output_elements,
+        )?)
+    } else {
+        None
+    };
+    let mut right_gradient = if right.autograd.is_some() {
+        Some(GradientAccumulator::new(
+            right.elements,
+            right.elements == output_elements,
+        )?)
+    } else {
+        None
+    };
+    let mut coordinates = try_result_vector(output_shape.len(), output_elements)?;
+    coordinates.resize(output_shape.len(), 0_usize);
+
+    for (output_index, &output_gradient) in upstream.iter().enumerate() {
+        let mut remaining = output_index;
+        for axis in (0..output_shape.len()).rev() {
+            coordinates[axis] = remaining % output_shape[axis];
+            remaining /= output_shape[axis];
+        }
+        let (left_index, _) = left.broadcast_position(output_shape, &coordinates);
+        let (right_index, _) = right.broadcast_position(output_shape, &coordinates);
+        if let Some(gradient) = &mut left_gradient {
+            gradient.add(left_index, output_gradient);
+        }
+        if let Some(gradient) = &mut right_gradient {
+            gradient.add(right_index, -output_gradient);
+        }
+    }
+    if let (Some(meta), Some(gradient)) = (&left.autograd, left_gradient) {
+        add_gradient(gradients, meta, left.output_nr, gradient.values);
+    }
+    if let (Some(meta), Some(gradient)) = (&right.autograd, right_gradient) {
+        add_gradient(gradients, meta, right.output_nr, gradient.values);
     }
     Ok(())
 }
