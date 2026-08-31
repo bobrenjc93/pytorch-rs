@@ -24,11 +24,6 @@ class TensorBufferTests(unittest.TestCase):
         return tensor
 
     def test_numeric_array_and_memoryview_formats_copy_as_float32(self):
-        boolean_values = (
-            [0.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-            if sys.version_info >= (3, 14)
-            else [0.0, 1.0, 0.0, 1.0, 0.0, 1.0]
-        )
         cases = (
             ("b", [-128, 0, 127]),
             ("B", [0, 128, 255]),
@@ -51,7 +46,7 @@ class TensorBufferTests(unittest.TestCase):
                 self.assert_tensor(memoryview(exporter), values)
 
         for format_code, raw, expected in (
-            ("?", b"\x00\x01\x02\x03\xfe\xff", boolean_values),
+            ("?", b"\x00\x01\x02\x03\xfe\xff", [0.0, 1.0, 1.0, 1.0, 1.0, 1.0]),
             ("n", bytes(2 * ctypes.sizeof(ctypes.c_ssize_t)), [0.0, 0.0]),
             ("N", bytes(2 * ctypes.sizeof(ctypes.c_size_t)), [0.0, 0.0]),
         ):
@@ -67,11 +62,10 @@ class TensorBufferTests(unittest.TestCase):
     def test_native_prefixed_formats(self):
         pointer_high_bit = 1 << (8 * struct.calcsize("@P") - 1)
         pointer_bytes = struct.pack("@PP", 123, pointer_high_bit)
-        boolean_values = [1.0, 1.0] if sys.version_info >= (3, 14) else [0.0, 1.0]
         for format_code, raw, expected in (
             ("@i", struct.pack("@ii", -7, 9), [-7.0, 9.0]),
             ("@f", struct.pack("@ff", -2.5, 3.25), [-2.5, 3.25]),
-            ("@?", b"\x02\x03", boolean_values),
+            ("@?", b"\x02\x03", [1.0, 1.0]),
             ("P", pointer_bytes, [123.0, pointer_high_bit]),
             ("@P", pointer_bytes, [123.0, pointer_high_bit]),
         ):
