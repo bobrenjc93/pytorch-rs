@@ -7247,9 +7247,9 @@ fn parse_creation_arguments(
     Ok((size, dtype, device, requires_grad))
 }
 
-fn parse_ones_like_arguments<'py>(
-    arguments: OnesLikeCallArguments<'py>,
-) -> PyResult<(Bound<'py, PyTensor>, bool)> {
+fn parse_ones_like_arguments(
+    arguments: OnesLikeCallArguments<'_>,
+) -> PyResult<(Bound<'_, PyTensor>, bool)> {
     let OnesLikeCallArguments {
         input,
         dtype,
