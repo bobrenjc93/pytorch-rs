@@ -12216,6 +12216,11 @@ fn bind_tensor_sub_method_arguments<'py>(
             let key = key.extract::<String>()?;
             match key.as_str() {
                 "other" if other.is_none() => {
+                    if x2_fallback.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("sub() got an unexpected keyword argument 'x2'")
+                        });
+                    }
                     other = Some(ParsedCallArgument {
                         value,
                         position: None,
@@ -12297,6 +12302,14 @@ fn bind_tensor_subtract_method_arguments<'py>(
             let key = key.extract::<String>()?;
             match key.as_str() {
                 "other" if other.is_none() => {
+                    if x2_fallback.is_some() {
+                        keyword_error.get_or_insert(tensor_subtract_binding_error(
+                            operation,
+                            positional,
+                            Some(keywords),
+                            Some(&SubtractBindingMismatch::IncorrectKeyword("x2")),
+                        )?);
+                    }
                     other = Some(ParsedCallArgument {
                         value,
                         position: None,

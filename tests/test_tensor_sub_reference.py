@@ -332,6 +332,8 @@ class TensorSubMethodReferenceTests(unittest.TestCase):
     def test_common_binding_and_scalar_errors_match_pytorch_2_13(self):
         actual = torch.tensor([1.0])
         expected = reference_torch.tensor([1.0])
+        actual_alias = torch.tensor([3.0])
+        expected_alias = reference_torch.tensor([3.0])
         for name in ("sub", "subtract"):
             actual_method = getattr(actual, name)
             expected_method = getattr(expected, name)
@@ -339,9 +341,23 @@ class TensorSubMethodReferenceTests(unittest.TestCase):
                 (lambda: actual_method(), lambda: expected_method()),
                 (lambda: actual_method([]), lambda: expected_method([])),
                 (lambda: actual_method(None), lambda: expected_method(None)),
-                (lambda: actual_method(actual, out=actual), lambda: expected_method(expected, out=expected)),
+                (
+                    lambda: actual_method(actual, out=actual),
+                    lambda: expected_method(expected, out=expected),
+                ),
+                (
+                    lambda: actual_method(x2=actual_alias, other=actual),
+                    lambda: expected_method(x2=expected_alias, other=expected),
+                ),
+                (
+                    lambda: actual_method(other=actual, x2=actual_alias),
+                    lambda: expected_method(other=expected, x2=expected_alias),
+                ),
                 (lambda: actual_method(True), lambda: expected_method(True)),
-                (lambda: actual_method(np.uint64(2**63)), lambda: expected_method(np.uint64(2**63))),
+                (
+                    lambda: actual_method(np.uint64(2**63)),
+                    lambda: expected_method(np.uint64(2**63)),
+                ),
                 (lambda: actual_method(2**64), lambda: expected_method(2**64)),
                 (
                     lambda: actual_method(-(2**63) - 1),

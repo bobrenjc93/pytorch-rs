@@ -310,6 +310,17 @@ class TensorSubMethodTests(unittest.TestCase):
     def test_unsupported_arguments_and_boundaries_do_not_mutate(self):
         tensor = torch.tensor([1.0])
         destination = torch.tensor([17.0])
+        alias_other = torch.tensor([3.0])
+        alias_x2 = torch.tensor([1.0])
+
+        class UnexpectedOverride:
+            calls = 0
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls += 1
+                return object()
+
         for name in ("sub", "subtract"):
             method = getattr(tensor, name)
             with self.subTest(name=name, boundary="alpha"):
@@ -347,6 +358,29 @@ class TensorSubMethodTests(unittest.TestCase):
             with self.subTest(name=name, boundary="unsupported operand"):
                 with self.assertRaises(TypeError):
                     method([])
+            ambiguous_alias_cases = (
+                ("x2 then other", {"x2": alias_x2, "other": alias_other}),
+                ("other then x2", {"other": alias_other, "x2": alias_x2}),
+                (
+                    "override x2 then other",
+                    {"x2": UnexpectedOverride(), "other": alias_other},
+                ),
+                (
+                    "other then override x2",
+                    {"other": alias_other, "x2": UnexpectedOverride()},
+                ),
+            )
+            for case, kwargs in ambiguous_alias_cases:
+                expected_error = (
+                    r"^sub\(\) got an unexpected keyword argument 'x2'$"
+                    if name == "sub"
+                    else r"keywords were incorrect: x2"
+                )
+                with self.subTest(name=name, boundary=case):
+                    UnexpectedOverride.calls = 0
+                    with self.assertRaisesRegex(TypeError, expected_error):
+                        method(**kwargs)
+                    self.assertEqual(UnexpectedOverride.calls, 0)
 
         with self.assertRaisesRegex(
             TypeError,
