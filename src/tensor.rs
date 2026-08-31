@@ -3064,6 +3064,11 @@ impl Tensor {
         self.zip_map(other, |left, right| left + right)
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn torch_add(&self, other: &Self) -> Result<Self, TensorError> {
+        self.zip_map(other, torch_add_value)
+    }
+
     /// Subtracts tensors element by element with trailing-dimension broadcasting.
     ///
     /// # Errors
@@ -3359,6 +3364,20 @@ impl Tensor {
     /// Returns an error when result allocation fails.
     pub fn add_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
         let output = self.map_scalar(scalar, |value, scalar| value + scalar)?;
+        self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Add)
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn torch_add_scalar(
+        &self,
+        scalar: f32,
+        scalar_on_left: bool,
+    ) -> Result<Self, TensorError> {
+        let output = if scalar_on_left {
+            self.map_scalar(scalar, |value, scalar| torch_add_value(scalar, value))?
+        } else {
+            self.map_scalar(scalar, torch_add_value)?
+        };
         self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Add)
     }
 
@@ -5990,6 +6009,21 @@ fn l1_loss_difference_value(left: f32, right: f32) -> f32 {
         return f32::from_bits(right_bits | QUIET_NAN_MASK);
     }
     left - right
+}
+
+#[cfg(feature = "python-bindings")]
+fn torch_add_value(left: f32, right: f32) -> f32 {
+    const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+    let right_bits = right.to_bits();
+    if right_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        return f32::from_bits(right_bits | QUIET_NAN_MASK);
+    }
+    let left_bits = left.to_bits();
+    if left_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        return f32::from_bits(left_bits | QUIET_NAN_MASK);
+    }
+    left + right
 }
 
 #[inline]
