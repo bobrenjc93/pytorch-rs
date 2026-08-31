@@ -4771,6 +4771,18 @@ struct CreationCallArguments<'py> {
     keyword_error: Option<PyErr>,
 }
 
+struct EmptyCallArguments<'py> {
+    size: Option<Bound<'py, PyAny>>,
+    size_origin: Option<CreationSizeOrigin>,
+    out: Option<Bound<'py, PyAny>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    pin_memory: Option<Bound<'py, PyAny>>,
+    requires_grad: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
 struct OnesLikeCallArguments<'py> {
     input: Option<ParsedCallArgument<'py>>,
     dtype: Option<Bound<'py, PyAny>>,
@@ -4796,6 +4808,15 @@ enum PendingCreationSize<'py> {
 struct ParsedCreationSize {
     dimensions: Vec<usize>,
     scalar_dimension: Option<usize>,
+}
+
+struct ParsedEmptyArguments {
+    size: ParsedCreationSize,
+    has_out: bool,
+    dtype: DType,
+    device: Device,
+    pin_memory: bool,
+    requires_grad: bool,
 }
 
 struct FullCallArguments<'py> {
@@ -5925,6 +5946,39 @@ fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
 
 #[pyfunction(
     signature = (*args, **kwargs),
+    text_signature = "(size, *, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)"
+)]
+fn empty(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let arguments = bind_empty_arguments(args, kwargs)?;
+    let ParsedEmptyArguments {
+        size,
+        has_out,
+        dtype,
+        device,
+        pin_memory,
+        requires_grad,
+    } = parse_empty_arguments(arguments)?;
+    let ParsedCreationSize {
+        dimensions,
+        scalar_dimension,
+    } = size;
+    if has_out {
+        return Err(PyRuntimeError::new_err(
+            "empty(): the 'out' argument is not supported",
+        ));
+    }
+    if pin_memory {
+        return Err(PyRuntimeError::new_err(
+            "empty(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
+        ));
+    }
+    CoreTensor::empty_with_metadata(dimensions, dtype, device)
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
+        .map_err(|error| scalar_creation_error(&error, scalar_dimension))
+}
+
+#[pyfunction(
+    signature = (*args, **kwargs),
     text_signature = "(n, m=None, *, dtype=None, device=None, requires_grad=False)"
 )]
 fn eye(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
@@ -6894,6 +6948,74 @@ fn bind_creation_arguments<'py>(
                 arguments.keyword_error.get_or_insert_with(|| {
                     PyTypeError::new_err(format!(
                         "{function}() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
+}
+
+fn bind_empty_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<EmptyCallArguments<'py>> {
+    // This narrow binding intentionally reuses the existing one-size factory
+    // form instead of implementing PyTorch's broader variadic shape overload.
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "empty() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut size_was_provided = !positional.is_empty();
+    let size = if positional.is_empty() {
+        None
+    } else {
+        optional_call_argument(positional.get_item(0)?)
+    };
+    let mut arguments = EmptyCallArguments {
+        size_origin: size.as_ref().map(|_| CreationSizeOrigin::Positional),
+        size,
+        out: None,
+        dtype: None,
+        layout: None,
+        device: None,
+        pin_memory: None,
+        requires_grad: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "size" => {
+                if size_was_provided {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("empty() got multiple values for argument 'size'")
+                    });
+                } else {
+                    size_was_provided = true;
+                    arguments.size = optional_call_argument(value);
+                    arguments.size_origin = arguments
+                        .size
+                        .as_ref()
+                        .map(|_| CreationSizeOrigin::SizeKeyword);
+                }
+            }
+            "out" => arguments.out = optional_call_argument(value),
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "layout" => arguments.layout = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            "pin_memory" => arguments.pin_memory = optional_call_argument(value),
+            "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "empty() got an unexpected keyword argument '{key}'"
                     ))
                 });
             }
@@ -7984,6 +8106,40 @@ fn parse_creation_arguments(
     Ok((size, dtype, device, requires_grad))
 }
 
+fn parse_empty_arguments(arguments: EmptyCallArguments<'_>) -> PyResult<ParsedEmptyArguments> {
+    let EmptyCallArguments {
+        size,
+        size_origin,
+        out,
+        dtype,
+        layout,
+        device,
+        pin_memory,
+        requires_grad,
+        keyword_error,
+    } = arguments;
+
+    let size = parse_empty_size(size.as_ref(), size_origin)?;
+    let has_out = validate_creation_out("empty", out.as_ref())?;
+    let dtype = parse_dtype("empty", dtype.as_ref())?;
+    parse_factory_layout("empty", layout.as_ref())?;
+    validate_device_argument_type("empty", device.as_ref())?;
+    let pin_memory = parse_factory_bool("empty", "pin_memory", pin_memory.as_ref())?;
+    let requires_grad = parse_factory_requires_grad("empty", requires_grad.as_ref())?;
+    if let Some(error) = keyword_error {
+        return Err(error);
+    }
+    let device = parse_device("empty", device.as_ref())?;
+    Ok(ParsedEmptyArguments {
+        size,
+        has_out,
+        dtype,
+        device,
+        pin_memory,
+        requires_grad,
+    })
+}
+
 fn parse_ones_like_arguments(
     arguments: OnesLikeCallArguments<'_>,
 ) -> PyResult<(Bound<'_, PyTensor>, bool)> {
@@ -8198,11 +8354,69 @@ fn parse_creation_size<'py>(
         Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
         Err(error) => error,
     };
-    if !matches!(function, "zeros" | "ones") || origin != CreationSizeOrigin::Positional {
+    if !matches!(function, "zeros" | "ones" | "empty") || origin != CreationSizeOrigin::Positional {
         return Err(sequence_error);
     }
 
     bind_creation_positional_dimension(function, value, sequence_error)
+}
+
+fn parse_empty_size(
+    size: Option<&Bound<'_, PyAny>>,
+    size_origin: Option<CreationSizeOrigin>,
+) -> PyResult<ParsedCreationSize> {
+    let Some(value) = size else {
+        return Err(PyTypeError::new_err(
+            "empty() missing 1 required positional arguments: \"size\"",
+        ));
+    };
+    let origin = size_origin.expect("a selected size value records its origin");
+    let sequence_error = match parse_empty_sequence_size(value) {
+        Ok(size) => {
+            return Ok(ParsedCreationSize {
+                dimensions: validate_size(size)?,
+                scalar_dimension: None,
+            });
+        }
+        Err(error) => error,
+    };
+    if origin != CreationSizeOrigin::Positional {
+        return Err(sequence_error);
+    }
+
+    finish_creation_size(
+        "empty",
+        bind_creation_positional_dimension("empty", value, sequence_error)?,
+    )
+}
+
+fn parse_empty_sequence_size(value: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
+    if !is_sequence_input(value)? {
+        return Err(creation_size_argument_type_error("empty", value, None)?);
+    }
+    let Ok(length) = value.len() else {
+        return Err(creation_size_argument_type_error("empty", value, None)?);
+    };
+    let mut parsed = try_size_vector(length)?;
+    for index in 0..length {
+        let dimension = value.get_item(index)?;
+        if is_bool_size_dimension(&dimension)? {
+            return Err(creation_size_element_type_error(
+                "empty", index, &dimension,
+            )?);
+        }
+        let position = index + 1;
+        let Ok(indexed) = python_number_index(&dimension) else {
+            return Err(creation_size_element_type_error(
+                "empty", index, &dimension,
+            )?);
+        };
+        let dimension = indexed
+            .extract::<i64>()
+            .map_err(|_| creation_size_element_overflow("empty", position))?;
+        try_push_size(&mut parsed, dimension)?;
+    }
+    Ok(parsed)
 }
 
 fn bind_creation_positional_dimension<'py>(
@@ -8265,10 +8479,7 @@ fn extract_creation_dimension(function: &str, dimension: &Bound<'_, PyAny>) -> P
 }
 
 fn creation_dimension_type_error(function: &str, dimension: &Bound<'_, PyAny>) -> PyResult<PyErr> {
-    let type_name = python_type_name(dimension)?;
-    Ok(PyTypeError::new_err(format!(
-        "{function}(): argument 'size' (position 1) must be tuple of ints, not {type_name}"
-    )))
+    creation_size_argument_type_error(function, dimension, Some(1))
 }
 
 fn creation_dimension_overflow(function: &str) -> PyErr {
@@ -8281,11 +8492,46 @@ fn creation_negative_dimension_error(function: &str, dimension: i64) -> PyErr {
     if function == "zeros" {
         PyRuntimeError::new_err("zeros: Dimension size must be non-negative.")
     } else {
-        debug_assert_eq!(function, "ones");
         PyRuntimeError::new_err(format!(
             "Trying to create tensor with negative dimension {dimension}: [{dimension}]"
         ))
     }
+}
+
+fn creation_size_argument_type_error(
+    function: &str,
+    value: &Bound<'_, PyAny>,
+    position: Option<usize>,
+) -> PyResult<PyErr> {
+    let type_name = python_type_name(value)?;
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    Ok(PyTypeError::new_err(format!(
+        "{function}(): argument 'size'{position} must be tuple of ints, not {type_name}"
+    )))
+}
+
+fn creation_size_element_type_error(
+    function: &str,
+    index: usize,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    let type_name = python_type_name(value)?;
+    Ok(PyTypeError::new_err(format!(
+        "{function}(): argument 'size' (position 1) must be tuple of ints, but found element of type {type_name} at pos {index}"
+    )))
+}
+
+fn creation_size_element_overflow(function: &str, position: usize) -> PyErr {
+    PyTypeError::new_err(format!(
+        "{function}(): argument 'size' failed to unpack the object at pos {position} with error \"Overflow when unpacking long long\""
+    ))
+}
+
+fn is_bool_size_dimension(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if value.is_instance_of::<PyBool>() {
+        return Ok(true);
+    }
+    is_numpy_scalar_of_types(value, &["bool_"])
 }
 
 fn parse_metadata(
@@ -15529,6 +15775,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     add_tensor_queries(module)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
+    module.add_function(wrap_pyfunction!(empty, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
     module.add_function(wrap_pyfunction!(full, module)?)?;
     let float32 = dtype_object(py, DType::Float32)?;

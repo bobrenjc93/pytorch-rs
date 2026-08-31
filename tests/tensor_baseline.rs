@@ -32,6 +32,7 @@ fn native_metadata_describes_all_supported_storage_shapes() {
 
     for tensor in [
         Tensor::from_vec(vec![2.5], []).unwrap(),
+        Tensor::empty([2]).unwrap(),
         Tensor::zeros([2, 0, 3]).unwrap(),
         Tensor::ones([2, 3]).unwrap(),
         Tensor::eye(2, None).unwrap(),
@@ -299,6 +300,80 @@ fn full_handles_scalar_empty_and_multidimensional_shapes() {
     assert!(matrix.is_leaf());
     assert!(!matrix.requires_grad());
     assert_eq!(matrix.as_slice(), [1.25; 6]);
+}
+
+#[test]
+fn empty_handles_scalar_empty_and_multidimensional_shapes_without_value_contract() {
+    let scalar = Tensor::empty([]).unwrap();
+    assert!(scalar.shape().is_empty());
+    assert!(scalar.stride().is_empty());
+    assert_eq!(scalar.storage_offset(), 0);
+    assert_eq!(scalar.dtype(), DType::Float32);
+    assert_eq!(scalar.device(), Device::Cpu);
+    assert!(scalar.is_leaf());
+    assert!(!scalar.requires_grad());
+    assert_eq!(scalar.numel(), 1);
+    assert_eq!(scalar.as_slice().len(), 1);
+
+    let empty = Tensor::empty([2, 0, 3]).unwrap();
+    assert_eq!(empty.shape(), [2, 0, 3]);
+    assert_eq!(empty.stride(), [3, 3, 1]);
+    assert_eq!(empty.storage_offset(), 0);
+    assert_eq!(empty.dtype(), DType::Float32);
+    assert_eq!(empty.device(), Device::Cpu);
+    assert!(empty.is_leaf());
+    assert!(!empty.requires_grad());
+    assert_eq!(empty.numel(), 0);
+    assert!(empty.as_slice().is_empty());
+
+    let matrix = Tensor::empty([2, 3]).unwrap();
+    assert_eq!(matrix.shape(), [2, 3]);
+    assert_eq!(matrix.stride(), [3, 1]);
+    assert_eq!(matrix.storage_offset(), 0);
+    assert_eq!(matrix.dtype(), DType::Float32);
+    assert_eq!(matrix.device(), Device::Cpu);
+    assert!(matrix.is_leaf());
+    assert!(!matrix.requires_grad());
+    assert_eq!(matrix.numel(), 6);
+    assert_eq!(matrix.as_slice().len(), 6);
+}
+
+#[test]
+fn empty_allocates_fresh_leaf_storage_for_each_nonempty_result() {
+    let first = Tensor::empty([2, 3]).unwrap();
+    let second = Tensor::empty([2, 3]).unwrap();
+
+    assert_ne!(first.data_ptr(), second.data_ptr());
+    assert!(!first.shares_storage_with(&second));
+    assert!(!first.is_set_to(&second));
+
+    let tracked = Tensor::empty([2]).unwrap().with_requires_grad(true);
+    assert!(tracked.requires_grad());
+    assert!(tracked.is_leaf());
+    assert_eq!(tracked.storage_offset(), 0);
+    assert_eq!(tracked.dtype(), DType::Float32);
+    assert_eq!(tracked.device(), Device::Cpu);
+}
+
+#[test]
+fn empty_rejects_shape_and_storage_overflow_before_allocation() {
+    let elements = isize::MAX.unsigned_abs() / size_of::<f32>() + 1;
+    assert_eq!(
+        Tensor::empty([elements]),
+        Err(TensorError::StorageCapacityOverflow { elements })
+    );
+
+    let large = 1_usize << 62;
+    for shape in [
+        vec![0, large, 2],
+        vec![2, 0, large, 2],
+        vec![1, large, 2, 0],
+    ] {
+        assert_eq!(
+            Tensor::empty(shape),
+            Err(TensorError::StrideCalculationOverflow)
+        );
+    }
 }
 
 #[test]
