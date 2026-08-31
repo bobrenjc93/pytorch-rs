@@ -160,6 +160,94 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             ),
         )
 
+    def make_channels_last_cases(self, module):
+        edge_input_patterns = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x0080_0000,
+                0x8080_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        edge_target_patterns = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0001,
+                0x0000_0001,
+                0x807F_FFFF,
+                0x007F_FFFF,
+                0x8080_0000,
+                0x0080_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xFF7F_FFFF,
+                0x7F7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+            ],
+            dtype=np.uint32,
+        )
+        edge_input = module.tensor(
+            memoryview(np.resize(edge_input_patterns, 24).view(np.float32)),
+            dtype=module.float32,
+        ).view(2, 3, 2, 2)
+        edge_target = module.tensor(
+            memoryview(np.resize(edge_target_patterns, 24).view(np.float32)),
+            dtype=module.float32,
+        ).view(2, 3, 2, 2)
+        singleton_input = self.tensor(
+            module,
+            np.linspace(-3.0, 4.0, 2 * 3 * 1 * 4, dtype=np.float32)
+            .reshape(2, 3, 1, 4)
+            .tolist(),
+        )
+        singleton_target = self.tensor(
+            module,
+            np.linspace(5.0, -7.0, 2 * 3 * 1 * 4, dtype=np.float32)
+            .reshape(2, 3, 1, 4)
+            .tolist(),
+        )
+        empty_input = module.zeros((2, 3, 0, 5), dtype=module.float32)
+        empty_target = module.ones((2, 3, 0, 5), dtype=module.float32)
+
+        return (
+            (
+                "edge bits",
+                edge_input.contiguous(memory_format=module.channels_last),
+                edge_target.contiguous(memory_format=module.channels_last),
+            ),
+            (
+                "singleton",
+                singleton_input.contiguous(memory_format=module.channels_last),
+                singleton_target.contiguous(memory_format=module.channels_last),
+            ),
+            (
+                "empty",
+                empty_input.contiguous(memory_format=module.channels_last),
+                empty_target.contiguous(memory_format=module.channels_last),
+            ),
+        )
+
     @staticmethod
     def call(module_functional, input, target, form):
         if form == "reduction keyword":
@@ -294,6 +382,92 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 )
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
+                )
+
+    def test_channels_last_edge_singleton_empty_and_nonmutation_match_pytorch_2_13(self):
+        actual_cases = self.make_channels_last_cases(torch)
+        expected_cases = self.make_channels_last_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            self.assertEqual(actual_input.shape, tuple(expected_input.shape))
+            self.assertEqual(actual_target.shape, tuple(expected_target.shape))
+            self.assertEqual(actual_input.stride(), expected_input.stride())
+            self.assertEqual(actual_target.stride(), expected_target.stride())
+            self.assertEqual(actual_input.stride(), actual_target.stride())
+            self.assertTrue(
+                actual_input.is_contiguous(memory_format=torch.channels_last)
+            )
+            self.assertTrue(
+                expected_input.is_contiguous(
+                    memory_format=reference_torch.channels_last
+                )
+            )
+
+            actual_input_bits_before = (
+                np.asarray(actual_input).reshape(-1).view(np.uint32).copy()
+            )
+            actual_target_bits_before = (
+                np.asarray(actual_target).reshape(-1).view(np.uint32).copy()
+            )
+            expected_input_bits_before = (
+                expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            expected_target_bits_before = (
+                expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+
+            actual = functional.l1_loss(
+                actual_input,
+                actual_target,
+                reduction="none",
+            )
+            expected = reference_functional.l1_loss(
+                expected_input,
+                expected_target,
+                reduction="none",
+            )
+
+            self.assert_matches(actual, expected, case=case)
+            with self.subTest(case=case, storage=True):
+                actual_repeat = functional.l1_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="none",
+                )
+                expected_repeat = reference_functional.l1_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="none",
+                )
+                self.assertFalse(actual.is_set_to(actual_repeat))
+                self.assertFalse(expected.is_set_to(expected_repeat))
+                self.assertFalse(actual.is_set_to(actual_input))
+                self.assertFalse(expected.is_set_to(expected_input))
+                self.assertFalse(actual.is_set_to(actual_target))
+                self.assertFalse(expected.is_set_to(expected_target))
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input).reshape(-1).view(np.uint32),
+                    actual_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target).reshape(-1).view(np.uint32),
+                    actual_target_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_target_bits_before,
                 )
 
     def test_broadcasted_outputs_strides_warnings_and_storage_match_pytorch_2_13(self):
@@ -673,6 +847,91 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 expected,
                 case=(input_requires_grad, target_requires_grad),
             )
+
+    def test_channels_last_requires_grad_matches_no_grad_and_rejects_active_autograd(self):
+        for input_requires_grad, target_requires_grad in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            actual_input_base = torch.tensor(
+                np.linspace(-2.0, 3.0, 2 * 3 * 2 * 4, dtype=np.float32)
+                .reshape(2, 3, 2, 4)
+                .tolist(),
+                requires_grad=input_requires_grad,
+            )
+            actual_target_base = torch.tensor(
+                np.linspace(5.0, -7.0, 2 * 3 * 2 * 4, dtype=np.float32)
+                .reshape(2, 3, 2, 4)
+                .tolist(),
+                requires_grad=target_requires_grad,
+            )
+            expected_input_base = reference_torch.tensor(
+                np.linspace(-2.0, 3.0, 2 * 3 * 2 * 4, dtype=np.float32).reshape(
+                    2, 3, 2, 4
+                ),
+                dtype=reference_torch.float32,
+                requires_grad=input_requires_grad,
+            )
+            expected_target_base = reference_torch.tensor(
+                np.linspace(5.0, -7.0, 2 * 3 * 2 * 4, dtype=np.float32).reshape(
+                    2, 3, 2, 4
+                ),
+                dtype=reference_torch.float32,
+                requires_grad=target_requires_grad,
+            )
+            actual_input = actual_input_base.contiguous(
+                memory_format=torch.channels_last
+            )
+            actual_target = actual_target_base.contiguous(
+                memory_format=torch.channels_last
+            )
+            expected_input = expected_input_base.contiguous(
+                memory_format=reference_torch.channels_last
+            )
+            expected_target = expected_target_base.contiguous(
+                memory_format=reference_torch.channels_last
+            )
+            with self.subTest(
+                input_requires_grad=input_requires_grad,
+                target_requires_grad=target_requires_grad,
+            ):
+                self.assertEqual(actual_input.stride(), expected_input.stride())
+                self.assertEqual(actual_target.stride(), expected_target.stride())
+                self.assertTrue(
+                    actual_input.is_contiguous(memory_format=torch.channels_last)
+                )
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^l1_loss\(\): autograd recording is not supported$",
+                ):
+                    functional.l1_loss(
+                        actual_input,
+                        actual_target,
+                        reduction="none",
+                    )
+
+                with torch.no_grad():
+                    actual = functional.l1_loss(
+                        actual_input,
+                        actual_target,
+                        reduction="none",
+                    )
+                with reference_torch.no_grad():
+                    expected = reference_functional.l1_loss(
+                        expected_input,
+                        expected_target,
+                        reduction="none",
+                    )
+                self.assert_matches(
+                    actual,
+                    expected,
+                    case=(input_requires_grad, target_requires_grad),
+                )
+                self.assertIsNone(actual_input_base.grad)
+                self.assertIsNone(actual_target_base.grad)
+                self.assertIsNone(expected_input_base.grad)
+                self.assertIsNone(expected_target_base.grad)
 
     def test_scalar_broadcast_requires_grad_operands_match_inside_no_grad(self):
         def actual_scalar_input(input_requires_grad, target_requires_grad):
