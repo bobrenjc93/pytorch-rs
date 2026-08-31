@@ -929,6 +929,23 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nsign() -> Tensor\n\nSee :func:`torch.sign`\n"]
+    #[pyo3(text_signature = None)]
+    fn sign(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "sign")? {
+            return Ok(result);
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor.inner.sign().map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nsigmoid() -> Tensor\n\nSee :func:`torch.sigmoid`\n"]
     #[pyo3(text_signature = None)]
     fn sigmoid(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
@@ -2019,6 +2036,14 @@ pub(crate) fn fix_variable_function(
     unary_out_variable_function(UnaryOutOperation::FIX, py, args, kwargs)
 }
 
+pub(crate) fn sign_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::SIGN, py, args, kwargs)
+}
+
 pub(crate) fn neg_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2634,6 +2659,14 @@ impl UnaryOutOperation {
         dispatch_allocation_error: "unable to allocate fix dispatch operands",
         out_unsupported_error: "fix(): the 'out' argument is not supported",
         apply: CoreTensor::trunc,
+    };
+
+    const SIGN: Self = Self {
+        name: "sign",
+        qualified_name: "torch.sign",
+        dispatch_allocation_error: "unable to allocate sign dispatch operands",
+        out_unsupported_error: "sign(): the 'out' argument is not supported",
+        apply: CoreTensor::sign,
     };
 
     const RECIPROCAL: Self = Self {
@@ -11952,14 +11985,15 @@ fn bind_unary_out_arguments<'py>(
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<BoundUnaryOutCall<'py>> {
     let selection = select_legacy_single_argument(operation.name, positional, keywords)?;
-    let input = parse_tensor_or_torch_function_argument(operation.name, "input", &selection.input)?;
+    let input =
+        parse_unary_out_tensor_or_torch_function_argument(operation, "input", &selection.input)?;
     let out = match keywords
         .map(|values| values.get_item("out"))
         .transpose()?
         .flatten()
     {
-        Some(out) if !out.is_none() => Some(parse_tensor_or_torch_function_argument(
-            operation.name,
+        Some(out) if !out.is_none() => Some(parse_unary_out_tensor_or_torch_function_argument(
+            operation,
             "out",
             &ParsedCallArgument {
                 value: out,
@@ -11970,6 +12004,26 @@ fn bind_unary_out_arguments<'py>(
     };
     validate_unary_out_keywords(operation, &selection, keywords)?;
     Ok(BoundUnaryOutCall { input, out })
+}
+
+fn parse_unary_out_tensor_or_torch_function_argument<'py>(
+    operation: UnaryOutOperation,
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+) -> PyResult<BoundTensorOrTorchFunction<'py>> {
+    if operation.name == "sign" && is_exact_foreign_pytorch_tensor(&value.value)? {
+        return parse_tensor_argument(operation.name, argument, value)
+            .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()));
+    }
+    parse_tensor_or_torch_function_argument(operation.name, argument, value)
+}
+
+fn is_exact_foreign_pytorch_tensor(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let value_type = value.get_type();
+    Ok(
+        value_type.name()?.to_str()? == "Tensor"
+            && value_type.getattr("__module__")?.eq("torch")?,
+    )
 }
 
 fn validate_unary_out_keywords(
@@ -12005,7 +12059,7 @@ fn validate_unary_out_keywords(
         }
         return Err(PyTypeError::new_err(format!(
             "{}() got an unexpected keyword argument '{key}'",
-            operation.name
+            operation.name,
         )));
     }
     Ok(())

@@ -16,6 +16,14 @@ supported for exact native CPU float32 tensors by reusing the existing full
 concrete `out`, dtype conversions, unsupported operands, and broader mean
 overloads remain outside the supported surface.
 
+`Tensor.sign()` and `torch.sign(input, *, out=None)` are supported for exact
+native CPU float32 tensors through the shared unary-layout path. They return
+fresh tensors with PyTorch 2.13 real-sign values, including positive zero for
+both signed zeros and NaNs, and record first-order `SignBackward0` zero VJPs
+when gradient recording is active. Concrete `out`, `sign_`, `torch.sgn` and
+`Tensor.sgn`, tensor subclasses without override handling, non-float32 dtypes,
+and unsupported devices remain outside the supported surface.
+
 Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 
 | Area | Weight | Baseline |
