@@ -203,10 +203,17 @@ class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_default_only_debug_mode_setter_support_boundary(self):
+    def test_default_only_deterministic_setter_support_boundary(self):
         self.assertTrue(hasattr(reference_torch, "use_deterministic_algorithms"))
-        self.assertFalse(hasattr(torch, "use_deterministic_algorithms"))
-        self.assertNotIn("use_deterministic_algorithms", torch.__all__)
+        self.assertTrue(hasattr(torch, "use_deterministic_algorithms"))
+        self.assertEqual(
+            torch.__all__.count("use_deterministic_algorithms"),
+            reference_torch.__all__.count("use_deterministic_algorithms"),
+        )
+        self.assertFalse(hasattr(torch._C, "_set_deterministic_algorithms"))
+        self.assertTrue(
+            hasattr(reference_torch._C, "_set_deterministic_algorithms")
+        )
         self.assertTrue(hasattr(reference_torch, "set_deterministic_debug_mode"))
         self.assertTrue(hasattr(torch, "set_deterministic_debug_mode"))
         self.assertEqual(torch.__all__.count("set_deterministic_debug_mode"), 1)

@@ -58,6 +58,71 @@ def get_deterministic_debug_mode() -> _builtins.int:
     return 0
 
 
+def _deterministic_argument_type_name(value) -> str:
+    type_name = _builtins.type(value).__name__
+    if type_name == "dtype":
+        return "torch.dtype"
+    if type_name == "device":
+        return "torch.device"
+    if type_name == "memory_format":
+        return "torch.memory_format"
+    if type_name == "layout":
+        return "torch.layout"
+    if type_name == "Size":
+        return "torch.Size"
+    if type_name == "finfo":
+        return "torch.finfo"
+    return type_name
+
+
+def use_deterministic_algorithms(
+    mode: _builtins.bool,
+    *,
+    warn_only: _builtins.bool = False,
+) -> None:
+    r"""Sets whether PyTorch operations must use "deterministic" algorithms.
+
+    ``torch_rs`` currently implements only the disabled deterministic policy.
+    Passing ``False`` or integer ``0`` is accepted as an idempotent no-op.
+    Enabling deterministic algorithms, enabling warn-only mode, CUDA
+    deterministic behavior, fill-uninitialized-memory controls, and actual
+    deterministic enforcement remain unsupported.
+
+    Args:
+        mode (bool): If False, allows nondeterministic operations. True is not
+            supported by this implementation.
+
+    Keyword args:
+        warn_only (bool, optional): Warn-only deterministic enforcement is not
+            supported. Default: ``False``
+    """
+    if not (
+        _builtins.type(mode) is _builtins.bool
+        or _builtins.isinstance(mode, _builtins.int)
+    ):
+        type_name = _deterministic_argument_type_name(mode)
+        raise TypeError(
+            "_set_deterministic_algorithms(): argument 'mode' (position 1) "
+            f"must be bool, not {type_name}"
+        )
+    if _builtins.type(warn_only) is not _builtins.bool:
+        type_name = _deterministic_argument_type_name(warn_only)
+        raise TypeError(
+            "_set_deterministic_algorithms(): argument 'warn_only' "
+            f"must be bool, not {type_name}"
+        )
+    if not _builtins.int.__eq__(mode, 0):
+        raise NotImplementedError(
+            f"use_deterministic_algorithms(): mode {mode!r} is not "
+            "supported; only False and 0 are implemented"
+        )
+    if warn_only:
+        raise NotImplementedError(
+            "use_deterministic_algorithms(): warn_only=True is not supported"
+        )
+    return None
+
+
 def set_deterministic_debug_mode(debug_mode: _builtins.int | str) -> None:
     r"""Sets the debug mode for deterministic operations.
 
@@ -424,6 +489,7 @@ __all__ = [
     *(name for name in _native.__all__ if name != "__version__"),
     "are_deterministic_algorithms_enabled",
     "get_deterministic_debug_mode",
+    "use_deterministic_algorithms",
     "set_deterministic_debug_mode",
     "is_deterministic_algorithms_warn_only_enabled",
     "get_default_device",
