@@ -10,7 +10,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 | --- | --- | --- |
 | Construction | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.full`, `torch.eye` | [Creation](#creation) |
 | Views and layout | `view`, `reshape`, `permute`, `movedim`, `transpose`, `flatten`, `contiguous`, `cpu` | [Metadata and views](#metadata-and-views) |
-| Math | arithmetic operators, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` | [Elementwise and reductions](#elementwise-and-reductions) |
+| Math | arithmetic operators, `torch.div`, `torch.divide`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` | [Elementwise and reductions](#elementwise-and-reductions) |
 | NN functional | `torch.nn.functional.linear`, `l1_loss`, `mse_loss`, `dropout*`, `sigmoid`, `silu`, `softsign`, `tanh` | [NN/data helpers](#nn-and-data-helpers), [math activations](#elementwise-and-reductions) |
 | Dtype/device metadata | `torch.float32`, `torch.finfo`, `torch.can_cast`, `torch.promote_types`, `Tensor.is_cuda`, `torch.get_device`, `Tensor.cpu` | [tensor metadata](#metadata-and-views), [backend metadata](#backend-and-compiler-metadata) |
 | Autograd state | `torch.is_grad_enabled`, `torch.no_grad`, `torch.is_inference_mode_enabled`, `torch.is_anomaly_enabled`, `torch.is_anomaly_check_nan_enabled`, `torch.autograd.is_view_replay_enabled` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
@@ -77,6 +77,8 @@ assert torch.__future__.get_swap_module_params_on_conversion() is swap_policy
 torch.__future__.set_swap_module_params_on_conversion(False)
 scaled = torch.multiply(input=2.0, other=x)
 assert scaled.tolist() == [[-2.0, 4.0], [6.0, -8.0]]
+divided = torch.divide(input=x, other=2.0)
+assert divided.tolist() == [[-0.5, 1.0], [1.5, -2.0]]
 exponential = torch.exp(input=x)
 assert exponential.shape == x.shape
 sine = torch.sin(input=x)
@@ -627,7 +629,8 @@ and `torch.equal()` comparison, identity `Tensor.positive()`/
 `torch.negative()` builtin. It supports broadcast tensor and real-scalar
 addition, subtraction, multiplication through `*`, `Tensor.mul()`,
 `Tensor.multiply()`, `torch.mul()`, and the distinct top-level
-`torch.multiply()` builtin, plus true division, the listed unary kernels,
+`torch.multiply()` builtin, plus true division through `/`, top-level
+`torch.div()` and distinct `torch.divide()`, the listed unary kernels,
 `Tensor.sum(dim=None)`, `torch.sum(input, dim=None, *, dtype=None)`,
 `Tensor.mean(dim=None)`, `torch.mean(input, dim=None, *, dtype=None)`,
 `Tensor.relu()`, `torch.relu()`, and rank-2 matrix multiplication through `@`,
@@ -642,6 +645,20 @@ Top-level `torch.mul()` and `torch.multiply()` accept tensor/tensor or
 tensor/real-scalar operands in either order and reuse the same broadcast and
 autograd kernels; their `out` forms and scalar-only multiplication remain
 unsupported.
+
+Top-level `torch.div(input, other, *, rounding_mode=None, out=None)` and
+`torch.divide(input, other, *, rounding_mode=None, out=None)` accept
+tensor/tensor or tensor/real-scalar operands in either order and reuse the same
+true-division kernels as `/`. They preserve PyTorch-compatible float32 values,
+including signed zero, infinities, NaNs, broadcasting, empty tensor metadata,
+offset and non-contiguous reads, fresh independent output storage,
+`TorchFunctionMode`/`__torch_function__` dispatch, and ordinary callable
+metadata/import/wildcard/copy/pickle/reload behavior. Active autograd operands
+are rejected until a native division VJP exists; detached tensors and calls
+under `torch.no_grad()` use the inference path. Non-`None` `rounding_mode`,
+concrete `out`, scalar-only division, integer rounding semantics, tensor method
+forms, in-place variants, dtype/device extension keywords, and tensor
+subclasses without `__torch_function__` handling remain unsupported.
 
 Out-of-place `torch.nn.functional.relu(input, inplace=False)` delegates to the
 same native kernel; `inplace=True` is rejected before the input can be mutated.

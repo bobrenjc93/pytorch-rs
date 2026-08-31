@@ -19,7 +19,8 @@ use crate::python::{
     arange_variable_function, as_tensor_variable_function, asarray_variable_function,
     atleast_1d_variable_function, atleast_2d_variable_function, atleast_3d_variable_function,
     broadcast_tensors_variable_function, can_cast_variable_function, ceil_variable_function,
-    conj_variable_function, detach_variable_function, exp_variable_function, fix_variable_function,
+    conj_variable_function, detach_variable_function, div_variable_function,
+    divide_variable_function, exp_variable_function, fix_variable_function,
     floor_variable_function, get_device_variable_function, imag_variable_function,
     is_conj_variable_function, is_inference_variable_function, matmul_variable_function,
     mean_variable_function, moveaxis_variable_function, movedim_variable_function,
@@ -35,7 +36,7 @@ use crate::python::{
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 51] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 53] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -85,6 +86,8 @@ const VARIABLE_FUNCTION_NAMES: [&str; 51] = [
     "matmul",
     "mul",
     "multiply",
+    "div",
+    "divide",
     "can_cast",
     "promote_types",
 ];
@@ -844,6 +847,54 @@ multiply(input, other, *, out=None)
 Alias for :func:`torch.mul`.
 ";
 
+const DIV_DOC: &std::ffi::CStr = cr#"
+div(input, other, *, rounding_mode=None, out=None) -> Tensor
+
+Divides each element of the input ``input`` by the corresponding element of
+:attr:`other`.
+
+
+.. math::
+    \text{out}_i = \frac{\text{input}_i}{\text{other}_i}
+
+
+Supports :ref:`broadcasting to a common shape <broadcasting-semantics>`,
+:ref:`type promotion <type-promotion-doc>`, and integer, float, and complex inputs.
+Always promotes integer types to the default scalar type.
+
+Args:
+    input (Tensor): the input tensor.
+    other (Tensor or Number): the tensor or number to divide by.
+
+Keyword args:
+    rounding_mode (str, optional): Type of rounding applied to the result:
+
+        * ``None`` - default behavior. Performs no rounding and, if both ``input`` and
+          ``other`` are integer types, promotes the inputs to the default scalar type.
+          Equivalent to true division in Python (the ``/`` operator) and NumPy's
+          ``np.true_divide``.
+        * ``"trunc"`` - rounds the results of the division towards zero.
+          Equivalent to C-style integer division.
+        * ``"floor"`` - rounds the results of the division down.
+          Equivalent to floor division in Python (the ``//`` operator).
+
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> x = torch.randn(5)
+    >>> x
+    tensor([ 0.3810,  1.2774, -0.2977, -0.3719,  0.4637])
+    >>> torch.div(x, 0.5)
+    tensor([ 0.7620,  2.5548, -0.5954, -0.7439,  0.9275])
+"#;
+
+const DIVIDE_DOC: &std::ffi::CStr = c"
+divide(input, other, *, rounding_mode=None, out=None)
+
+Alias for :func:`torch.div`.
+";
+
 const CAN_CAST_DOC: &std::ffi::CStr = cr"
 can_cast(from_, to) -> bool
 
@@ -1160,6 +1211,8 @@ variable_function_callback!(mean_callback, mean_variable_function);
 variable_function_callback!(tanh_callback, tanh_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
 variable_function_callback!(multiply_callback, multiply_variable_function);
+variable_function_callback!(div_callback, div_variable_function);
+variable_function_callback!(divide_callback, divide_variable_function);
 variable_function_callback!(
     is_vulkan_available_callback,
     is_vulkan_available_variable_function
@@ -1239,6 +1292,8 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"tanh", tanh_callback, TANH_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
         variable_function_method!(c"multiply", multiply_callback, MULTIPLY_DOC),
+        variable_function_method!(c"div", div_callback, DIV_DOC),
+        variable_function_method!(c"divide", divide_callback, DIVIDE_DOC),
         variable_function_method!(c"is_vulkan_available", is_vulkan_available_callback, c""),
         variable_function_method!(c"_nnpack_available", nnpack_available_callback, c""),
         variable_function_method!(c"is_conj", is_conj_callback, IS_CONJ_DOC),
