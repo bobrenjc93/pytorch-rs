@@ -4539,9 +4539,21 @@ struct FullCallArguments<'py> {
     fill_value: Option<Bound<'py, PyAny>>,
     out: Option<Bound<'py, PyAny>>,
     dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
     device: Option<Bound<'py, PyAny>>,
+    pin_memory: Option<Bound<'py, PyAny>>,
     requires_grad: Option<Bound<'py, PyAny>>,
     keyword_error: Option<PyErr>,
+}
+
+struct ParsedFullArguments {
+    size: Vec<i64>,
+    fill_value: ParsedFillValue,
+    has_out: bool,
+    dtype: DType,
+    device: Device,
+    pin_memory: bool,
+    requires_grad: bool,
 }
 
 struct EyeCallArguments<'py> {
@@ -5620,12 +5632,19 @@ fn eye(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResul
 
 #[pyfunction(
     signature = (*args, **kwargs),
-    text_signature = "(size, fill_value, *, out=None, dtype=None, device=None, requires_grad=False)"
+    text_signature = "(size, fill_value, *, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)"
 )]
 fn full(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_full_arguments(args, kwargs)?;
-    let (size, fill_value, has_out, dtype, device, requires_grad) =
-        parse_full_arguments(arguments)?;
+    let ParsedFullArguments {
+        size,
+        fill_value,
+        has_out,
+        dtype,
+        device,
+        pin_memory,
+        requires_grad,
+    } = parse_full_arguments(arguments)?;
     let shape = validate_size(size)?;
     CoreTensor::validate_full_shape(&shape)
         .map_err(|error| creation_shape_error(&error, &shape))?;
@@ -5635,6 +5654,11 @@ fn full(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
         ));
     }
     let fill_value = fill_value.into_f32()?;
+    if pin_memory {
+        return Err(PyRuntimeError::new_err(
+            "full(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
+        ));
+    }
     CoreTensor::full_with_metadata(shape, fill_value, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| tensor_error(&error))
@@ -7455,7 +7479,9 @@ fn bind_full_arguments<'py>(
         },
         out: None,
         dtype: None,
+        layout: None,
         device: None,
+        pin_memory: None,
         requires_grad: None,
         keyword_error: None,
     };
@@ -7486,7 +7512,9 @@ fn bind_full_arguments<'py>(
             }
             "out" => arguments.out = optional_call_argument(value),
             "dtype" => arguments.dtype = optional_call_argument(value),
+            "layout" => arguments.layout = optional_call_argument(value),
             "device" => arguments.device = optional_call_argument(value),
+            "pin_memory" => arguments.pin_memory = optional_call_argument(value),
             "requires_grad" => arguments.requires_grad = optional_call_argument(value),
             _ => {
                 arguments.keyword_error.get_or_insert_with(|| {
@@ -7500,15 +7528,15 @@ fn bind_full_arguments<'py>(
     Ok(arguments)
 }
 
-fn parse_full_arguments(
-    arguments: FullCallArguments<'_>,
-) -> PyResult<(Vec<i64>, ParsedFillValue, bool, DType, Device, bool)> {
+fn parse_full_arguments(arguments: FullCallArguments<'_>) -> PyResult<ParsedFullArguments> {
     let FullCallArguments {
         size,
         fill_value,
         out,
         dtype,
+        layout,
         device,
+        pin_memory,
         requires_grad,
         keyword_error,
     } = arguments;
@@ -7532,13 +7560,23 @@ fn parse_full_arguments(
     let fill_value = parse_fill_value(&fill_value)?;
     let has_out = validate_creation_out("full", out.as_ref())?;
     let dtype = parse_dtype("full", dtype.as_ref())?;
+    parse_factory_layout("full", layout.as_ref())?;
     validate_device_argument_type("full", device.as_ref())?;
+    let pin_memory = parse_factory_bool("full", "pin_memory", pin_memory.as_ref())?;
     let requires_grad = parse_factory_requires_grad("full", requires_grad.as_ref())?;
     if let Some(error) = keyword_error {
         return Err(error);
     }
     let device = parse_device("full", device.as_ref())?;
-    Ok((size, fill_value, has_out, dtype, device, requires_grad))
+    Ok(ParsedFullArguments {
+        size,
+        fill_value,
+        has_out,
+        dtype,
+        device,
+        pin_memory,
+        requires_grad,
+    })
 }
 
 fn parse_creation_size<'py>(
