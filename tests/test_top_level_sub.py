@@ -140,6 +140,13 @@ class TopLevelSubTests(unittest.TestCase):
         sub_scalar = torch.sub(input=np.float32(4.0), other=left)
         self.assert_tensor_matches(alias_scalar, sub_scalar, case="alias scalar-first")
 
+        positional_alpha = torch.subtract(left, 2, 1)
+        self.assert_tensor_matches(
+            positional_alpha,
+            left - 2,
+            case="subtract scalar overload positional default alpha",
+        )
+
         alias_output.sum().backward()
         self.assertEqual(left.grad.tolist(), [[2.0, 2.0]])
         self.assertEqual(right.grad.tolist(), [[-2.0], [-2.0]])
@@ -481,6 +488,12 @@ class TopLevelSubTests(unittest.TestCase):
                 rf"^{name}\(\): alpha values other than 1 are not supported$",
             ):
                 function(tensor, tensor, alpha=2)
+            if name == "subtract":
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    "^subtract\\(\\): alpha values other than 1 are not supported$",
+                ):
+                    function(tensor, 2, 2)
             with self.assertRaisesRegex(
                 RuntimeError, "^Boolean alpha only supported for Boolean results\\.$"
             ):

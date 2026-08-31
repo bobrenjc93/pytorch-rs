@@ -92,6 +92,11 @@ class TopLevelSubReferenceTests(unittest.TestCase):
                 lambda: reference_torch.subtract(x=expected_left, other=expected_right),
             ),
             (
+                "subtract scalar overload positional default alpha",
+                lambda: torch.subtract(actual_left[1], 2, 1),
+                lambda: reference_torch.subtract(expected_left[1], 2, 1),
+            ),
+            (
                 "tensor/scalar",
                 lambda: torch.sub(actual_left[1], np.float32(-0.0)),
                 lambda: reference_torch.sub(expected_left[1], np.float32(-0.0)),
@@ -419,6 +424,14 @@ class TopLevelSubReferenceTests(unittest.TestCase):
                 (
                     lambda: actual_function(actual, actual, actual),
                     lambda: expected_function(expected, expected, expected),
+                ),
+                (
+                    lambda: actual_function(actual, actual, 1),
+                    lambda: expected_function(expected, expected, 1),
+                ),
+                (
+                    lambda: actual_function(3, actual, 1),
+                    lambda: expected_function(3, expected, 1),
                 ),
                 (
                     lambda: actual_function([], actual),
