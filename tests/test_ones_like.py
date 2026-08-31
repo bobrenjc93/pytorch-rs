@@ -102,15 +102,32 @@ class OnesLikeTests(unittest.TestCase):
     def test_rejects_noncontiguous_channels_last_and_nondefault_metadata(self):
         source = torch.ones((2, 3))
         noncontiguous = source.transpose(0, 1)
+        relaxed_singleton_contiguous = torch.ones((3, 1)).transpose(0, 1)
+        relaxed_empty_contiguous = torch.ones((2, 0, 3)).transpose(0, 2)
         channels_last = torch.ones((2, 3, 4, 5)).contiguous(
             memory_format=torch.channels_last
         )
 
-        for call in (
-            lambda: torch.ones_like(noncontiguous),
-            lambda: torch.ones_like(channels_last),
+        self.assertTrue(relaxed_singleton_contiguous.is_contiguous())
+        self.assertEqual(relaxed_singleton_contiguous.shape, (1, 3))
+        self.assertEqual(relaxed_singleton_contiguous.stride(), (1, 1))
+        self.assertTrue(relaxed_empty_contiguous.is_contiguous())
+        self.assertEqual(relaxed_empty_contiguous.shape, (3, 0, 2))
+        self.assertEqual(relaxed_empty_contiguous.stride(), (1, 3, 3))
+
+        for case, call in (
+            ("noncontiguous", lambda: torch.ones_like(noncontiguous)),
+            (
+                "relaxed singleton contiguous",
+                lambda: torch.ones_like(relaxed_singleton_contiguous),
+            ),
+            (
+                "relaxed empty contiguous",
+                lambda: torch.ones_like(relaxed_empty_contiguous),
+            ),
+            ("channels last", lambda: torch.ones_like(channels_last)),
         ):
-            with self.subTest(call=call), self.assertRaisesRegex(
+            with self.subTest(case=case), self.assertRaisesRegex(
                 NotImplementedError, f"^{re.escape(SUPPORTED_INPUT_ERROR)}$"
             ):
                 call()

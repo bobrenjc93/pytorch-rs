@@ -10987,11 +10987,37 @@ fn validate_ones_like_native_input(input: &CoreTensor) -> PyResult<()> {
     if input.dtype() == DType::Float32
         && input.device() == Device::Cpu
         && input.is_contiguous_with_memory_format(MemoryFormat::Contiguous)
+        && ones_like_has_canonical_row_major_strides(input)
         && input.suggested_memory_format() == MemoryFormat::Contiguous
     {
         return Ok(());
     }
     Err(ones_like_unsupported_native_input())
+}
+
+fn ones_like_has_canonical_row_major_strides(input: &CoreTensor) -> bool {
+    let shape = input.shape();
+    let strides = input.stride();
+    if shape.len() != strides.len() {
+        return false;
+    }
+
+    let mut expected_stride = 1_usize;
+    for axis in (0..shape.len()).rev() {
+        if strides[axis] != expected_stride {
+            return false;
+        }
+        if axis > 0 {
+            let Some(next_stride) = expected_stride
+                .checked_mul(shape[axis].max(1))
+                .filter(|product| *product <= isize::MAX.unsigned_abs())
+            else {
+                return false;
+            };
+            expected_stride = next_stride;
+        }
+    }
+    true
 }
 
 fn ones_like_unsupported_native_input() -> PyErr {
