@@ -20,6 +20,11 @@ const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 4 * 1024;
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
+#[allow(clippy::cast_precision_loss)]
+fn full_reduction_mean_divisor(elements: usize) -> f32 {
+    elements as f32
+}
+
 struct AutogradMeta {
     kind: AutogradKind,
 }
@@ -98,6 +103,10 @@ enum GradFn {
     Sum {
         input: SavedTensor,
     },
+    Mean {
+        input: SavedTensor,
+        divisor: f32,
+    },
     Transform {
         input: SavedTensor,
         mapping: TransformMapping,
@@ -141,6 +150,7 @@ impl GradFn {
             Self::MultiplyScalar { input, .. }
             | Self::Negate { input, .. }
             | Self::Sum { input }
+            | Self::Mean { input, .. }
             | Self::Transform { input, .. }
             | Self::Unbind { input, .. } => input.take_parent(pending),
             Self::SavedInputUnary(node) => node.input.take_parent(pending),
@@ -176,6 +186,7 @@ impl GradFn {
             Self::Negate { .. }
             | Self::ZeroVjp(_)
             | Self::Sum { .. }
+            | Self::Mean { .. }
             | Self::Transform { .. }
             | Self::Unbind { .. } => {}
         }
@@ -195,6 +206,7 @@ impl GradFn {
             Self::Negate { .. }
             | Self::ZeroVjp(_)
             | Self::Sum { .. }
+            | Self::Mean { .. }
             | Self::Transform { .. }
             | Self::Unbind { .. } => {}
         }
@@ -1060,6 +1072,7 @@ impl Tensor {
             GradFn::SavedOutputUnary(node) => node.identity,
             GradFn::ZeroVjp(node) => node.identity,
             GradFn::Sum { .. } => AutogradNode::Sum,
+            GradFn::Mean { .. } => AutogradNode::Mean,
             GradFn::Unbind { .. } => AutogradNode::Unbind,
         };
         Some(node.python_name())
@@ -3624,6 +3637,31 @@ impl Tensor {
         output
     }
 
+    /// Computes the arithmetic mean of every element.
+    ///
+    /// Empty tensors follow the same IEEE 754 path as `PyTorch`'s full reduction:
+    /// `sum(input) / 0`, which materializes a scalar NaN and leaves the
+    /// empty gradient shape intact.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    pub fn mean(&self) -> Result<Self, TensorError> {
+        let divisor = full_reduction_mean_divisor(self.elements);
+        let mut output = self.sum().div_scalar(divisor)?;
+        if self.requires_grad() && is_grad_enabled() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Mean {
+                        input: SavedTensor::from_tensor_metadata(self),
+                        divisor,
+                    })),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
     fn sum_contiguous_shared_gradient(&self) -> Option<f32> {
         if self.elements == 0 || !self.is_contiguous() {
             return None;
@@ -4263,6 +4301,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                         GradFn::MultiplyScalar { input, .. }
                         | GradFn::Negate { input, .. }
                         | GradFn::Sum { input }
+                        | GradFn::Mean { input, .. }
                         | GradFn::Transform { input, .. }
                         | GradFn::Unbind { input, .. } => {
                             push_saved_parent(&mut stack, input);
@@ -4297,6 +4336,9 @@ fn apply_grad_fn(
 ) -> Result<(), TensorError> {
     match grad_fn {
         GradFn::Sum { input } => apply_sum_grad_fn(input, upstream, gradients)?,
+        GradFn::Mean { input, divisor } => {
+            apply_mean_grad_fn(input, *divisor, upstream, gradients)?;
+        }
         GradFn::MultiplyScalar { input, scalar } => {
             if let Some(meta) = &input.autograd {
                 let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
@@ -4401,6 +4443,19 @@ fn apply_sum_grad_fn(
 ) -> Result<(), TensorError> {
     if let Some(meta) = &input.autograd {
         let gradient = filled_storage(input.elements, upstream[0])?;
+        add_gradient(gradients, meta, input.output_nr, gradient);
+    }
+    Ok(())
+}
+
+fn apply_mean_grad_fn(
+    input: &SavedTensor,
+    divisor: f32,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    if let Some(meta) = &input.autograd {
+        let gradient = filled_storage(input.elements, upstream[0] / divisor)?;
         add_gradient(gradients, meta, input.output_nr, gradient);
     }
     Ok(())
@@ -6229,9 +6284,10 @@ mod tests {
         AutogradKind, BroadcastPlan, CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS,
         CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device, F32_SIGN_MASK, GradFn, LogicalValuesInner,
         MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor,
-        TensorError, contiguous_values_equal, l1_loss_difference_value,
-        logical_offset_for_linear_index, materialize_contiguous_trailing_broadcast, rsqrt_value,
-        sqrt_value, try_result_vector, validate_view_bounds,
+        TensorError, contiguous_values_equal, full_reduction_mean_divisor,
+        l1_loss_difference_value, logical_offset_for_linear_index,
+        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
+        validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -6465,6 +6521,82 @@ mod tests {
         assert_eq!(shared_offset.storage_offset(), 4);
         assert!(shared_offset.contiguous_slice().is_none());
         assert_matches_logical_fold(&shared_offset);
+    }
+
+    #[test]
+    fn mean_reuses_sum_and_division_for_values_and_gradients() {
+        let assert_matches_sum_divided = |tensor: &Tensor| {
+            let divisor = full_reduction_mean_divisor(tensor.numel());
+            let expected = tensor.sum().item().unwrap() / divisor;
+            let actual = tensor.mean().unwrap();
+            assert!(actual.shape().is_empty());
+            assert!(actual.stride().is_empty());
+            assert_eq!(actual.storage_offset(), 0);
+            if expected.is_nan() {
+                assert!(actual.item().unwrap().is_nan());
+            } else {
+                assert_eq!(actual.item().unwrap().to_bits(), expected.to_bits());
+            }
+        };
+
+        let rounding_sensitive = Tensor::from_vec(vec![1.0, 2.0, 4.0], [3]).unwrap();
+        assert_matches_sum_divided(&rounding_sensitive);
+
+        let source = Tensor::from_vec(
+            vec![99.0, 98.0, 1.0, f32::NAN, 97.0, 96.0, 2.0, 4.0],
+            [4, 2],
+        )
+        .unwrap();
+        assert_matches_sum_divided(&source.index_integer(1).unwrap());
+        assert_matches_sum_divided(&source.transpose(0, 1).unwrap());
+        assert_matches_sum_divided(&Tensor::from_vec(Vec::new(), [0]).unwrap());
+
+        let leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+            .unwrap()
+            .with_requires_grad(true);
+        let view = leaf.transpose(0, 1).unwrap();
+        let loss = view.mean().unwrap();
+        loss.backward().unwrap();
+        loss.backward().unwrap();
+        let expected_gradient = [2.0_f32 / 6.0; 6];
+        assert!(
+            leaf.grad()
+                .unwrap()
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(expected_gradient.map(f32::to_bits))
+        );
+
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+        let empty_loss = empty.transpose(0, 2).unwrap().index_integer(1).unwrap();
+        let empty_mean = empty_loss.mean().unwrap();
+        empty_mean.backward().unwrap();
+        empty_mean.backward().unwrap();
+        let empty_gradient = empty.grad().unwrap().unwrap();
+        assert_eq!(empty_gradient.shape(), [2, 0, 3]);
+        assert!(empty_gradient.logical_values().next().is_none());
+
+        let rounding_leaf = Tensor::from_vec(vec![1.0, 2.0, 4.0], [3])
+            .unwrap()
+            .with_requires_grad(true);
+        rounding_leaf
+            .mean()
+            .unwrap()
+            .mul_scalar(7.0)
+            .unwrap()
+            .backward()
+            .unwrap();
+        let expected_mean_gradient = (7.0_f32 / 3.0_f32).to_bits();
+        assert!(
+            rounding_leaf
+                .grad()
+                .unwrap()
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq([expected_mean_gradient; 3])
+        );
     }
 
     #[test]
