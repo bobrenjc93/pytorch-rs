@@ -20,6 +20,11 @@ const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 4 * 1024;
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
+#[allow(clippy::cast_precision_loss)]
+fn full_reduction_mean_scale(elements: usize) -> f32 {
+    1.0_f32 / (elements as f32)
+}
+
 struct AutogradMeta {
     kind: AutogradKind,
 }
@@ -3624,6 +3629,20 @@ impl Tensor {
         output
     }
 
+    /// Computes the arithmetic mean of every element.
+    ///
+    /// Empty tensors follow the same IEEE 754 path as `PyTorch`'s full reduction:
+    /// `sum(input) * inf`, which materializes a scalar NaN and leaves the
+    /// empty gradient shape intact.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    pub fn mean(&self) -> Result<Self, TensorError> {
+        let scale = full_reduction_mean_scale(self.elements);
+        self.sum().mul_scalar(scale)
+    }
+
     fn sum_contiguous_shared_gradient(&self) -> Option<f32> {
         if self.elements == 0 || !self.is_contiguous() {
             return None;
@@ -6229,7 +6248,7 @@ mod tests {
         AutogradKind, BroadcastPlan, CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS,
         CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device, F32_SIGN_MASK, GradFn, LogicalValuesInner,
         MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor,
-        TensorError, contiguous_values_equal, l1_loss_difference_value,
+        TensorError, contiguous_values_equal, full_reduction_mean_scale, l1_loss_difference_value,
         logical_offset_for_linear_index, materialize_contiguous_trailing_broadcast, rsqrt_value,
         sqrt_value, try_result_vector, validate_view_bounds,
     };
@@ -6465,6 +6484,54 @@ mod tests {
         assert_eq!(shared_offset.storage_offset(), 4);
         assert!(shared_offset.contiguous_slice().is_none());
         assert_matches_logical_fold(&shared_offset);
+    }
+
+    #[test]
+    fn mean_reuses_sum_and_scalar_multiply_for_values_and_gradients() {
+        let assert_matches_sum_scaled = |tensor: &Tensor| {
+            let scale = full_reduction_mean_scale(tensor.numel());
+            let expected = tensor.sum().item().unwrap() * scale;
+            let actual = tensor.mean().unwrap();
+            assert!(actual.shape().is_empty());
+            assert!(actual.stride().is_empty());
+            assert_eq!(actual.storage_offset(), 0);
+            if expected.is_nan() {
+                assert!(actual.item().unwrap().is_nan());
+            } else {
+                assert_eq!(actual.item().unwrap().to_bits(), expected.to_bits());
+            }
+        };
+
+        let source = Tensor::from_vec(
+            vec![99.0, 98.0, 1.0, f32::NAN, 97.0, 96.0, 2.0, 4.0],
+            [4, 2],
+        )
+        .unwrap();
+        assert_matches_sum_scaled(&source.index_integer(1).unwrap());
+        assert_matches_sum_scaled(&source.transpose(0, 1).unwrap());
+        assert_matches_sum_scaled(&Tensor::from_vec(Vec::new(), [0]).unwrap());
+
+        let leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+            .unwrap()
+            .with_requires_grad(true);
+        let view = leaf.transpose(0, 1).unwrap();
+        view.mean().unwrap().backward().unwrap();
+        let expected_gradient = [1.0_f32 / 6.0; 6];
+        assert!(
+            leaf.grad()
+                .unwrap()
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(expected_gradient.map(f32::to_bits))
+        );
+
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+        let empty_loss = empty.transpose(0, 2).unwrap().index_integer(1).unwrap();
+        empty_loss.mean().unwrap().backward().unwrap();
+        let empty_gradient = empty.grad().unwrap().unwrap();
+        assert_eq!(empty_gradient.shape(), [2, 0, 3]);
+        assert!(empty_gradient.logical_values().next().is_none());
     }
 
     #[test]

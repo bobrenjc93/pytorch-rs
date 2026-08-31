@@ -10,7 +10,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 | --- | --- | --- |
 | Construction | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.full`, `torch.eye` | [Creation](#creation) |
 | Views and layout | `view`, `reshape`, `permute`, `movedim`, `transpose`, `flatten`, `contiguous`, `cpu` | [Metadata and views](#metadata-and-views) |
-| Math | arithmetic operators, `torch.matmul`, `torch.sum`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` | [Elementwise and reductions](#elementwise-and-reductions) |
+| Math | arithmetic operators, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` | [Elementwise and reductions](#elementwise-and-reductions) |
 | NN functional | `torch.nn.functional.linear`, `l1_loss`, `mse_loss`, `dropout*`, `sigmoid`, `silu`, `softsign`, `tanh` | [NN/data helpers](#nn-and-data-helpers), [math activations](#elementwise-and-reductions) |
 | Dtype/device metadata | `torch.float32`, `torch.finfo`, `torch.can_cast`, `torch.promote_types`, `Tensor.is_cuda`, `torch.get_device`, `Tensor.cpu` | [tensor metadata](#metadata-and-views), [backend metadata](#backend-and-compiler-metadata) |
 | Autograd state | `torch.is_grad_enabled`, `torch.no_grad`, `torch.is_inference_mode_enabled`, `torch.is_anomaly_enabled`, `torch.is_anomaly_check_nan_enabled`, `torch.autograd.is_view_replay_enabled` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
@@ -83,6 +83,8 @@ squared = x.square()
 assert torch.square(input=x).tolist() == squared.tolist()
 total = torch.sum(input=x, dtype=torch.float32)
 assert total.item() == 0.0
+average = torch.mean(input=x, dtype=torch.float32)
+assert average.item() == 0.0
 hyperbolic = torch.tanh(input=x)
 assert hyperbolic.shape == x.shape
 functional_hyperbolic = torch.nn.functional.tanh(x)
@@ -608,8 +610,9 @@ and `torch.equal()` comparison, identity `Tensor.positive()`/
 addition, subtraction, multiplication through `*`, `Tensor.mul()`,
 `Tensor.multiply()`, `torch.mul()`, and the distinct top-level
 `torch.multiply()` builtin, plus true division, the listed unary kernels,
-`Tensor.sum(dim=None)`, `torch.sum(input, dim=None, *, dtype=None)`, `Tensor.relu()`,
-`torch.relu()`, and rank-2 matrix multiplication through `@`,
+`Tensor.sum(dim=None)`, `torch.sum(input, dim=None, *, dtype=None)`,
+`Tensor.mean(dim=None)`, `torch.mean(input, dim=None, *, dtype=None)`,
+`Tensor.relu()`, `torch.relu()`, and rank-2 matrix multiplication through `@`,
 `Tensor.matmul()`, and `torch.matmul()`.
 
 Top-level `torch.neg()` and `torch.negative()` share the same layout-preserving
@@ -631,7 +634,7 @@ same native kernel; `inplace=True` is rejected before the input can be mutated.
 
 `Tensor.sin()`/`torch.sin(input, *, out=None)`, `Tensor.sqrt()`/`torch.sqrt(input, *, out=None)`, and `Tensor.square()`/`torch.square(input, *, out=None)` are supported for exact native CPU float32 tensors. They preserve PyTorch-compatible values, including signed zero, infinities, NaNs, and subnormals in the covered edge cases, plus output shape, stride, storage offset, dtype, CPU device, `TorchFunctionMode`/`__torch_function__` dispatch, and fresh independent storage for scalar, empty, offset, and non-contiguous inputs. When eager gradient recording is active they record first-order VJPs (`SinBackward0`, `SqrtBackward0`, and PyTorch-compatible `PowBackward0` for `square`) for the tested scalar, empty, offset, and non-contiguous cases, with ordinary gradient accumulation, `torch.no_grad()`/detach boundaries, and freed-graph reuse errors. Top-level calls accept PyTorch 2.13's legacy input aliases and `out=None`; concrete `out` tensors are rejected without mutation. The tensor-method forms take no arguments, dtype/device extension keywords are not accepted, non-CPU and non-float32 tensors remain outside the current tensor contract, and in-place `sin_`, `sqrt_`, and `square_` are not exposed.
 
-`Tensor.sum(dtype=None)`/`Tensor.sum(dim=None, keepdim=False, dtype=None)` and top-level `torch.sum(input, *, dtype=None)`/`torch.sum(input, dim=None, keepdim=False, *, dtype=None, out=None)` reduce every element of an exact native CPU float32 tensor to a fresh rank-0 CPU float32 tensor. They preserve PyTorch 2.13-compatible scalar values, dtype and CPU-device metadata, empty tensor behavior, non-contiguous and offset reads, first-order autograd accumulation, `torch.no_grad()` boundaries, callable metadata, and `TorchFunctionMode`/`__torch_function__` dispatch for the supported full-reduction binding. Top-level calls accept PyTorch 2.13's legacy input aliases. Real dimensions, tuple/list dimensions, `keepdim=True`, concrete `out`, non-float32 dtype requests, non-tensor native inputs, and broader reduction overloads remain unsupported; the tensor method does not expose an `out` keyword.
+`Tensor.sum(dtype=None)`/`Tensor.sum(dim=None, keepdim=False, dtype=None)` and top-level `torch.sum(input, *, dtype=None)`/`torch.sum(input, dim=None, keepdim=False, *, dtype=None, out=None)` reduce every element of an exact native CPU float32 tensor to a fresh rank-0 CPU float32 tensor. They preserve PyTorch 2.13-compatible scalar values, dtype and CPU-device metadata, empty tensor behavior, non-contiguous and offset reads, first-order autograd accumulation, `torch.no_grad()` boundaries, callable metadata, and `TorchFunctionMode`/`__torch_function__` dispatch for the supported full-reduction binding. Top-level calls accept PyTorch 2.13's legacy input aliases. Real dimensions, tuple/list dimensions, `keepdim=True`, concrete `out`, non-float32 dtype requests, non-tensor native inputs, and broader reduction overloads remain unsupported; the tensor method does not expose an `out` keyword. `Tensor.mean(dim=None, keepdim=False, dtype=None)` and top-level `torch.mean(input, dim=None, keepdim=False, *, dtype=None, out=None)` add the matching full-tensor arithmetic mean for exact native CPU float32 tensors by composing the existing full `sum` with scalar multiplication, including scalar, empty, singleton, offset, non-contiguous, signed-zero, NaN, infinity, `torch.no_grad()`, and first-order autograd behavior. Real dimensions, tuple/list dimensions, `keepdim=True`, concrete `out`, dtype conversions, unsupported operands, and broader mean overloads remain unsupported.
 
 `Tensor.floor()`/`torch.floor(input, *, out=None)`, `Tensor.ceil()`/`torch.ceil(input, *, out=None)`, and `Tensor.trunc()`/`torch.trunc(input, *, out=None)` share the native unary-layout path for CPU float32 tensors, preserving PyTorch-compatible values, output strides, and fresh storage. `Tensor.fix()` and top-level `torch.fix(input, *, out=None)` are distinct method and function callables backed by that same truncation kernel, with PyTorch 2.13-compatible metadata and dispatch. Tracked `ceil`, `floor`, `trunc`, and `fix` calls record reusable `CeilBackward0`, `FloorBackward0`, and `TruncBackward0` nodes whose zero VJPs retain only graph and shape metadata, including for empty tensors and views; detached tensors and calls under `torch.no_grad()` remain on the inference path. The supported top-level calls accept `out=None`; concrete output tensors, higher-order differentiation, and the in-place `floor_`, `ceil_`, `trunc_`, and `fix_` variants remain unsupported.
 

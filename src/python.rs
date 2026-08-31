@@ -2022,6 +2022,15 @@ pub(crate) fn sum_variable_function(
     dispatch_top_level_sum(py, &call, args, kwargs)
 }
 
+pub(crate) fn mean_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let call = bind_top_level_mean_arguments(args, kwargs)?;
+    dispatch_top_level_mean(py, &call, args, kwargs)
+}
+
 pub(crate) fn tanh_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2599,6 +2608,18 @@ enum BoundTopLevelSumDType<'py> {
 struct BoundTopLevelSumCall<'py> {
     input: BoundTensorOrTorchFunction<'py>,
     dtype: BoundTopLevelSumDType<'py>,
+    out: Option<BoundTensorOrTorchFunction<'py>>,
+    default_full_reduction: bool,
+}
+
+enum BoundTopLevelMeanDType<'py> {
+    Native,
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+struct BoundTopLevelMeanCall<'py> {
+    input: BoundTensorOrTorchFunction<'py>,
+    dtype: BoundTopLevelMeanDType<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
     default_full_reduction: bool,
 }
@@ -3649,6 +3670,91 @@ fn apply_top_level_sum(py: Python<'_>, call: &BoundTopLevelSumCall<'_>) -> PyRes
         unreachable!("sum overrides were dispatched before the native path")
     };
     let output = input.try_borrow()?.inner.sum();
+    Ok(Py::new(py, PyTensor::new(output))?.into_any())
+}
+
+fn ordered_top_level_mean_overrides<'py>(
+    call: &BoundTopLevelMeanCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(3)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate mean dispatch operands"))?;
+
+    if let BoundTensorOrTorchFunction::Override(probed) = &call.input {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let BoundTopLevelMeanDType::Override(probed) = &call.dtype {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(BoundTensorOrTorchFunction::Override(probed)) = &call.out {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
+fn dispatch_top_level_mean(
+    py: Python<'_>,
+    call: &BoundTopLevelMeanCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_top_level_mean_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_mean(py, call);
+    }
+
+    let function = variable_function(py, "mean")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_top_level_mean(py, call);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.mean",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_mean(py: Python<'_>, call: &BoundTopLevelMeanCall<'_>) -> PyResult<Py<PyAny>> {
+    if !call.default_full_reduction {
+        return Err(PyNotImplementedError::new_err(
+            "mean(): dim, keepdim, out, and dtype conversion reductions are not supported",
+        ));
+    }
+
+    let BoundTensorOrTorchFunction::Tensor(input) = &call.input else {
+        unreachable!("mean overrides were dispatched before the native path")
+    };
+    let output = input
+        .try_borrow()?
+        .inner
+        .mean()
+        .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(output))?.into_any())
 }
 
@@ -4890,6 +4996,22 @@ impl PyTensor {
     fn sum(&self, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         bind_method_sum_arguments(args, kwargs)?;
         Ok(Self::new(self.inner.sum()))
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nmean(dim=None, keepdim=False, dtype=None) -> Tensor\n\nSee :func:`torch.mean`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn mean(
+        &self,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        bind_method_mean_arguments(args, kwargs)?;
+        self.inner
+            .mean()
+            .map(Self::new)
+            .map_err(|error| tensor_error(&error))
     }
 
     fn __add__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
@@ -8542,6 +8664,224 @@ fn top_level_sum_invalid_combination(
     )))
 }
 
+fn bind_top_level_mean_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundTopLevelMeanCall<'py>> {
+    if positional.len() > 3 {
+        return Err(PyTypeError::new_err(format!(
+            "mean() takes from 2 to 3 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let keyword_input = top_level_sum_keyword_input(keywords)?;
+    let input_argument = top_level_sum_input_argument(positional, keyword_input.as_ref())?;
+    let Some(input_argument) = input_argument else {
+        if positional.is_empty() && keywords.is_none_or(PyDictMethods::is_empty) {
+            return Err(top_level_mean_invalid_combination(positional, keywords)?);
+        }
+        return Err(PyTypeError::new_err(
+            "mean() missing 1 required positional arguments: \"input\"",
+        ));
+    };
+
+    let keyword_dim = top_level_sum_keyword(keywords, "dim")?;
+    let keyword_keepdim = top_level_sum_keyword(keywords, "keepdim")?;
+    let keyword_dtype = top_level_sum_keyword(keywords, "dtype")?;
+    let keyword_out = top_level_sum_keyword(keywords, "out")?;
+    let keyword_input_duplicated = keyword_input.as_ref().is_some_and(|input| input.duplicated);
+    let input_argument_duplicated = positional.len() >= 1 && keyword_input.is_some()
+        || positional.is_empty() && keyword_input_duplicated;
+    let dim_argument_duplicated = positional.len() >= 2 && keyword_dim.is_some();
+    let keepdim_argument_duplicated = positional.len() >= 3 && keyword_keepdim.is_some();
+
+    if top_level_mean_has_unexpected_keyword(keywords)?
+        || input_argument_duplicated
+        || dim_argument_duplicated
+        || keepdim_argument_duplicated
+    {
+        return Err(top_level_mean_invalid_combination(positional, keywords)?);
+    }
+
+    let has_dimension = positional.len() >= 2 || keyword_dim.is_some();
+    let has_keepdim = positional.len() >= 3 || keyword_keepdim.is_some();
+    let has_out = keyword_out.is_some();
+    let input = parse_top_level_mean_input(
+        &input_argument,
+        has_dimension || has_keepdim || has_out || keyword_dtype.is_some(),
+        positional,
+        keywords,
+    )?;
+
+    let dimension = top_level_sum_dimension_argument(positional, keyword_dim)?;
+    if let Some(dimension) = &dimension
+        && !is_sum_dimension_argument(&dimension.value)?
+    {
+        return Err(top_level_mean_invalid_combination(positional, keywords)?);
+    }
+
+    let keepdim = top_level_sum_keepdim_argument(positional, keyword_keepdim)?;
+    if let Some(keepdim) = &keepdim
+        && !keepdim.value.is_exact_instance_of::<PyBool>()
+    {
+        return Err(mean_argument_type_error(
+            "keepdim",
+            keepdim.position,
+            "bool",
+            &keepdim.value,
+        )?);
+    }
+
+    let dtype = match keyword_dtype {
+        Some(dtype) => {
+            bind_top_level_mean_dtype(&dtype.value, has_dimension, positional, keywords)?
+        }
+        None => BoundTopLevelMeanDType::Native,
+    };
+
+    let out = parse_top_level_mean_out(keyword_out)?;
+    let explicit_full_dimension = dimension
+        .as_ref()
+        .is_some_and(|dimension| dimension.value.is_none());
+    let keepdim_is_false = keepdim.as_ref().is_none_or(|keepdim| {
+        keepdim
+            .value
+            .extract::<bool>()
+            .is_ok_and(|keepdim| !keepdim)
+    });
+    let full_reduction =
+        (!has_dimension || explicit_full_dimension) && keepdim_is_false && out.is_none();
+
+    Ok(BoundTopLevelMeanCall {
+        input,
+        dtype,
+        out,
+        default_full_reduction: full_reduction,
+    })
+}
+
+fn top_level_mean_has_unexpected_keyword(keywords: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
+    let Some(keywords) = keywords else {
+        return Ok(false);
+    };
+    for key in keywords.keys() {
+        let key = key.extract::<String>()?;
+        if !matches!(
+            key.as_str(),
+            "input" | "x" | "a" | "x1" | "dim" | "keepdim" | "dtype" | "out"
+        ) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn parse_top_level_mean_input<'py>(
+    input: &ParsedCallArgument<'py>,
+    overload_mismatch_on_non_tensor: bool,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundTensorOrTorchFunction<'py>> {
+    if input.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundTensorOrTorchFunction::Tensor(
+            input.value.cast::<PyTensor>()?.clone(),
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&input.value) {
+        return Ok(BoundTensorOrTorchFunction::Override(probed));
+    }
+    if input.value.is_instance_of::<PyTensor>() {
+        return Err(mean_unsupported_native_input());
+    }
+    if overload_mismatch_on_non_tensor {
+        return Err(top_level_mean_invalid_combination(positional, keywords)?);
+    }
+    Err(legacy_single_tensor_type_error("mean", input)?)
+}
+
+fn bind_top_level_mean_dtype<'py>(
+    dtype: &Bound<'py, PyAny>,
+    has_dimension: bool,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundTopLevelMeanDType<'py>> {
+    if dtype.is_none() {
+        return Ok(BoundTopLevelMeanDType::Native);
+    }
+    if let Ok(dtype) = dtype.cast::<PyDType>() {
+        if dtype.try_borrow()?.inner() == DType::Float32 {
+            return Ok(BoundTopLevelMeanDType::Native);
+        }
+        return Err(mean_unsupported_dtype_conversion());
+    }
+    if let Some(probed) = probe_dtype_torch_function_override(dtype) {
+        return Ok(BoundTopLevelMeanDType::Override(probed));
+    }
+    if has_dimension {
+        return Err(mean_argument_type_error(
+            "dtype",
+            None,
+            "torch.dtype",
+            dtype,
+        )?);
+    }
+    Err(top_level_mean_invalid_combination(positional, keywords)?)
+}
+
+fn parse_top_level_mean_out(
+    keyword_out: Option<TopLevelSumKeyword<'_>>,
+) -> PyResult<Option<BoundTensorOrTorchFunction<'_>>> {
+    let Some(out) = keyword_out else {
+        return Ok(None);
+    };
+    if out.value.is_none() {
+        return Ok(None);
+    }
+    let out = ParsedCallArgument {
+        value: out.value,
+        position: None,
+    };
+    parse_tensor_or_torch_function_argument("mean", "out", &out).map(Some)
+}
+
+fn mean_argument_type_error(
+    argument: &str,
+    position: Option<usize>,
+    expected: &str,
+    actual: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(actual)?;
+    Ok(PyTypeError::new_err(format!(
+        "mean(): argument '{argument}'{position} must be {expected}, not {actual}"
+    )))
+}
+
+fn top_level_mean_invalid_combination(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    Ok(PyTypeError::new_err(format!(
+        "mean() received an invalid combination of arguments - got ({summary}), but expected one of:\n \
+* (Tensor input, *, torch.dtype dtype = None)\n \
+* (Tensor input, tuple of ints dim, bool keepdim = False, *, torch.dtype dtype = None, Tensor out = None)\n"
+    )))
+}
+
+fn mean_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "mean(): only exact native CPU float32 Tensor inputs are supported",
+    )
+}
+
+fn mean_unsupported_dtype_conversion() -> PyErr {
+    PyNotImplementedError::new_err(
+        "mean(): dtype conversions are not supported; only torch.float32 identity is implemented",
+    )
+}
+
 fn bind_method_sum_arguments(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
@@ -8691,6 +9031,124 @@ fn sum_method_invalid_combination(
 * (*, torch.dtype dtype = None)\n \
 * (tuple of ints dim, bool keepdim = False, *, torch.dtype dtype = None)\n"
     )))
+}
+
+fn bind_method_mean_arguments(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<()> {
+    if positional.len() > 2 {
+        if positional.len() == 3 && keywords.is_none_or(PyDictMethods::is_empty) {
+            return Err(PyTypeError::new_err(
+                "mean() takes from 1 to 2 positional arguments but 3 were given",
+            ));
+        }
+        return Err(mean_method_invalid_combination(positional, keywords)?);
+    }
+
+    let keyword_dim = top_level_sum_keyword(keywords, "dim")?;
+    let keyword_keepdim = top_level_sum_keyword(keywords, "keepdim")?;
+    let keyword_dtype = top_level_sum_keyword(keywords, "dtype")?;
+    if method_mean_has_unexpected_keyword(keywords)?
+        || !positional.is_empty() && keyword_dim.is_some()
+        || positional.len() >= 2 && keyword_keepdim.is_some()
+    {
+        return Err(mean_method_invalid_combination(positional, keywords)?);
+    }
+
+    let has_dimension = !positional.is_empty() || keyword_dim.is_some();
+    let dimension = method_sum_dimension_argument(positional, keyword_dim)?;
+    if let Some(dimension) = &dimension
+        && !is_sum_dimension_argument(&dimension.value)?
+    {
+        return Err(mean_method_invalid_combination(positional, keywords)?);
+    }
+    if dimension
+        .as_ref()
+        .is_some_and(|dimension| !dimension.value.is_none())
+    {
+        return Err(mean_unsupported_reduction());
+    }
+
+    let keepdim = method_sum_keepdim_argument(positional, keyword_keepdim)?;
+    if let Some(keepdim) = &keepdim
+        && !keepdim.value.is_exact_instance_of::<PyBool>()
+    {
+        return Err(mean_argument_type_error(
+            "keepdim",
+            keepdim.position,
+            "bool",
+            &keepdim.value,
+        )?);
+    }
+    if keepdim
+        .as_ref()
+        .is_some_and(|keepdim| keepdim.value.extract::<bool>().is_ok_and(|keepdim| keepdim))
+    {
+        return Err(mean_unsupported_reduction());
+    }
+
+    if let Some(dtype) = keyword_dtype {
+        bind_method_mean_dtype(&dtype.value, has_dimension, positional, keywords)?;
+    }
+    Ok(())
+}
+
+fn method_mean_has_unexpected_keyword(keywords: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
+    let Some(keywords) = keywords else {
+        return Ok(false);
+    };
+    for key in keywords.keys() {
+        let key = key.extract::<String>()?;
+        if !matches!(key.as_str(), "dim" | "keepdim" | "dtype") {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn bind_method_mean_dtype(
+    dtype: &Bound<'_, PyAny>,
+    has_dimension: bool,
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<()> {
+    if dtype.is_none() {
+        return Ok(());
+    }
+    if let Ok(dtype) = dtype.cast::<PyDType>() {
+        if dtype.try_borrow()?.inner() == DType::Float32 {
+            return Ok(());
+        }
+        return Err(mean_unsupported_dtype_conversion());
+    }
+    if has_dimension {
+        return Err(mean_argument_type_error(
+            "dtype",
+            None,
+            "torch.dtype",
+            dtype,
+        )?);
+    }
+    Err(mean_method_invalid_combination(positional, keywords)?)
+}
+
+fn mean_method_invalid_combination(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    Ok(PyTypeError::new_err(format!(
+        "mean() received an invalid combination of arguments - got ({summary}), but expected one of:\n \
+* (*, torch.dtype dtype = None)\n \
+* (tuple of ints dim, bool keepdim = False, *, torch.dtype dtype = None)\n"
+    )))
+}
+
+fn mean_unsupported_reduction() -> PyErr {
+    PyNotImplementedError::new_err(
+        "mean(): dim, keepdim, out, and dtype conversion reductions are not supported",
+    )
 }
 
 fn bind_method_flatten_arguments(
