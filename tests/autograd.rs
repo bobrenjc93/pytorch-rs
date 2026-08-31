@@ -204,6 +204,64 @@ fn reciprocal_rejects_recording_before_planning_and_honors_no_grad() {
 }
 
 #[test]
+fn division_rejects_recording_before_planning_and_honors_no_grad() {
+    let left = Tensor::from_vec(vec![2.0, 8.0, 4.0, 16.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let right = Tensor::from_vec(vec![2.0, 4.0], [2, 1])
+        .unwrap()
+        .with_requires_grad(true);
+    let unsupported = TensorError::AutogradRecordingUnsupported { operation: "div" };
+    assert_eq!(left.div(&right), Err(unsupported.clone()));
+    assert_eq!(left.div_scalar(2.0), Err(unsupported.clone()));
+    assert_eq!(left.scalar_div(2.0), Err(unsupported.clone()));
+    assert_eq!(right.div(&left), Err(unsupported.clone()));
+
+    let extreme = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, i64::MAX, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    assert_eq!(extreme.div_scalar(2.0), Err(unsupported));
+
+    {
+        let _guard = no_grad();
+        let output = left
+            .transpose(0, 1)
+            .unwrap()
+            .div(&right.transpose(0, 1).unwrap())
+            .unwrap();
+        assert_eq!(output.shape(), [2, 2]);
+        assert_eq!(output.stride(), [1, 2]);
+        assert_eq!(output.storage_offset(), 0);
+        assert!(!output.requires_grad());
+        assert!(!output.shares_storage_with(&left));
+        assert!(!output.shares_storage_with(&right));
+        assert_eq!(
+            output
+                .logical_values()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            [
+                1.0_f32.to_bits(),
+                1.0_f32.to_bits(),
+                4.0_f32.to_bits(),
+                4.0_f32.to_bits()
+            ]
+        );
+        let extreme_output = extreme.div_scalar(2.0).unwrap();
+        let extreme_middle_dimension = usize::try_from(i64::MAX).unwrap();
+        assert_eq!(extreme_output.shape(), [0, extreme_middle_dimension, 3]);
+        assert!(!extreme_output.requires_grad());
+    }
+
+    let detached = left.detach().unwrap();
+    let detached_output = detached.div(&detached).unwrap();
+    assert!(!detached_output.requires_grad());
+    assert!(!detached_output.shares_storage_with(&detached));
+}
+
+#[test]
 fn reciprocal_square_root_rejects_recording_before_planning_and_honors_no_grad() {
     let leaf = Tensor::from_vec(vec![-4.0, -0.0, 1.0, 4.0], [2, 2])
         .unwrap()
