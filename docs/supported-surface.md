@@ -10,7 +10,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 | --- | --- | --- |
 | Construction | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.full`, `torch.eye` | [Creation](#creation) |
 | Views and layout | `view`, `reshape`, `permute`, `movedim`, `transpose`, `flatten`, `contiguous`, `cpu` | [Metadata and views](#metadata-and-views) |
-| Math | arithmetic operators, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` | [Elementwise and reductions](#elementwise-and-reductions) |
+| Math | arithmetic operators, `torch.sub`, `torch.subtract`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` | [Elementwise and reductions](#elementwise-and-reductions) |
 | NN functional | `torch.nn.functional.linear`, `l1_loss`, `mse_loss`, `dropout*`, `sigmoid`, `silu`, `softsign`, `tanh` | [NN/data helpers](#nn-and-data-helpers), [math activations](#elementwise-and-reductions) |
 | Dtype/device metadata | `torch.float32`, `torch.finfo`, `torch.can_cast`, `torch.promote_types`, `Tensor.is_cuda`, `torch.get_device`, `Tensor.cpu` | [tensor metadata](#metadata-and-views), [backend metadata](#backend-and-compiler-metadata) |
 | Autograd state | `torch.is_grad_enabled`, `torch.no_grad`, `torch.is_inference_mode_enabled`, `torch.is_anomaly_enabled`, `torch.is_anomaly_check_nan_enabled`, `torch.autograd.is_view_replay_enabled` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
@@ -73,6 +73,8 @@ assert torch.__future__.get_swap_module_params_on_conversion() is swap_policy
 torch.__future__.set_swap_module_params_on_conversion(False)
 scaled = torch.multiply(input=2.0, other=x)
 assert scaled.tolist() == [[-2.0, 4.0], [6.0, -8.0]]
+difference = torch.sub(input=x, other=y)
+assert difference.tolist() == [[-2.0, 1.0], [2.0, -5.0]]
 exponential = torch.exp(input=x)
 assert exponential.shape == x.shape
 sine = torch.sin(input=x)
@@ -608,8 +610,9 @@ and `torch.equal()` comparison, identity `Tensor.positive()`/
 `Tensor.negative()` alias, `torch.neg()`, and the distinct top-level
 `torch.negative()` builtin. It supports broadcast tensor and real-scalar
 addition, subtraction, multiplication through `*`, `Tensor.mul()`,
-`Tensor.multiply()`, `torch.mul()`, and the distinct top-level
-`torch.multiply()` builtin, plus true division, the listed unary kernels,
+`Tensor.multiply()`, `torch.mul()`, distinct top-level `torch.multiply()`,
+`torch.sub(input, other, *, alpha=1, out=None)`, and the alias
+`torch.subtract(...)` builtins, plus true division, the listed unary kernels,
 `Tensor.sum(dim=None)`, `torch.sum(input, dim=None, *, dtype=None)`,
 `Tensor.mean(dim=None)`, `torch.mean(input, dim=None, *, dtype=None)`,
 `Tensor.relu()`, `torch.relu()`, and rank-2 matrix multiplication through `@`,
@@ -624,6 +627,16 @@ Top-level `torch.mul()` and `torch.multiply()` accept tensor/tensor or
 tensor/real-scalar operands in either order and reuse the same broadcast and
 autograd kernels; their `out` forms and scalar-only multiplication remain
 unsupported.
+
+Top-level `torch.sub()` and `torch.subtract()` accept exact native CPU float32
+tensor/tensor and tensor/real-scalar operands in either order with default
+`alpha=1` and omitted or `None` `out`. They reuse the same broadcast,
+layout-preserving subtraction and autograd kernels as `-`, including empty,
+offset, non-contiguous, signed-zero, NaN, infinity, `torch.no_grad()`,
+`TorchFunctionMode`/`__torch_function__`, callable metadata, import, wildcard,
+copy, pickle, and reload behavior. Nondefault `alpha`, concrete `out`,
+scalar-only subtraction, boolean operands, unsupported operands, dtype/device
+extensions, tensor-method aliases, and in-place variants remain unsupported.
 
 Out-of-place `torch.nn.functional.relu(input, inplace=False)` delegates to the
 same native kernel; `inplace=True` is rejected before the input can be mutated.
