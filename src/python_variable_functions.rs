@@ -30,17 +30,18 @@ use crate::python::{
     rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
     sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
     square_variable_function, sum_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function,
+    trunc_variable_function, unbind_variable_function, zeros_like_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 49] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 50] = [
     "get_device",
     "as_tensor",
     "asarray",
     "scalar_tensor",
     "arange",
+    "zeros_like",
     "atleast_1d",
     "atleast_2d",
     "atleast_3d",
@@ -161,6 +162,13 @@ Example::
     tensor([ 1,  2,  3])
     >>> torch.arange(1, 2.5, 0.5)
     tensor([ 1.0000,  1.5000,  2.0000])
+";
+
+const ZEROS_LIKE_DOC: &std::ffi::CStr = cr"
+zeros_like(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=None) -> Tensor
+
+Returns a tensor filled with the scalar value 0, with the same size as
+:attr:`input`.
 ";
 
 const AS_TENSOR_DOC: &std::ffi::CStr = cr#"
@@ -1072,6 +1080,7 @@ variable_function_callback!(as_tensor_callback, as_tensor_variable_function);
 variable_function_callback!(asarray_callback, asarray_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
 variable_function_callback!(arange_callback, arange_variable_function);
+variable_function_callback!(zeros_like_callback, zeros_like_variable_function);
 variable_function_callback!(atleast_1d_callback, atleast_1d_variable_function);
 variable_function_callback!(atleast_2d_callback, atleast_2d_variable_function);
 variable_function_callback!(atleast_3d_callback, atleast_3d_variable_function);
@@ -1152,6 +1161,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"asarray", asarray_callback, ASARRAY_DOC),
         variable_function_method!(c"scalar_tensor", scalar_tensor_callback, c""),
         variable_function_method!(c"arange", arange_callback, ARANGE_DOC),
+        variable_function_method!(c"zeros_like", zeros_like_callback, ZEROS_LIKE_DOC),
         variable_function_method!(c"atleast_1d", atleast_1d_callback, c""),
         variable_function_method!(c"atleast_2d", atleast_2d_callback, c""),
         variable_function_method!(c"atleast_3d", atleast_3d_callback, c""),
