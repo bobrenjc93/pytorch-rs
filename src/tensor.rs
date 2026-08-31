@@ -3624,12 +3624,25 @@ impl Tensor {
         self.sum_output(total)
     }
 
-    #[cfg(feature = "python-bindings")]
+    #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn sum_dense_physical_order(&self) -> Self {
         let total = if let Some(values) = self.dense_physical_slice() {
-            sum_values(values)
-        } else if let Some(total) = self.sum_contiguous_shared_gradient() {
-            total
+            pytorch_2_13_cpu_float32_sum_values(values)
+        } else if self.elements != 0 && self.is_contiguous() {
+            let end = self
+                .offset
+                .checked_add(self.elements)
+                .expect("validated contiguous tensor range must fit in storage");
+            self.storage
+                .with_shared_gradient_range(self.offset, end, pytorch_2_13_cpu_float32_sum_values)
+                .unwrap_or_else(|| {
+                    self.fold_owned_sum_rank(0.0_f32, |total, value| total + value)
+                        .unwrap_or_else(|| {
+                            (0..self.elements).fold(0.0_f32, |total, index| {
+                                total + self.value_at_strided_linear_index(index)
+                            })
+                        })
+                })
         } else if let Some(total) = self.fold_owned_sum_rank(0.0_f32, |total, value| total + value)
         {
             total
@@ -6007,6 +6020,125 @@ fn sum_values(values: &[f32]) -> f32 {
 }
 
 #[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_cpu_float32_sum_values(values: &[f32]) -> f32 {
+    const LANES: usize = 8;
+    const VECTORS: usize = 4;
+    const CHUNK_ELEMENTS: usize = LANES * VECTORS;
+    const CASCADE_GROUP_CHUNKS: usize = 16;
+    const CASCADE_LEVEL0_MASK: usize = 0x0f0;
+    const CASCADE_LEVEL1_MASK: usize = 0xf00;
+
+    if values.len() < LANES {
+        return pytorch_2_13_cpu_float32_short_sum(values);
+    }
+
+    let chunk_count = values.len() / CHUNK_ELEMENTS;
+    let vector_count = values.len() / LANES;
+    let mut level0 = zero_sum_accumulator();
+    let mut level1 = zero_sum_accumulator();
+    let mut level2 = zero_sum_accumulator();
+    let mut processed_chunks = 0;
+
+    if values.len() > 95 && chunk_count >= CASCADE_GROUP_CHUNKS {
+        while processed_chunks + CASCADE_GROUP_CHUNKS <= chunk_count {
+            let local = pytorch_2_13_sum_chunks(values, processed_chunks, CASCADE_GROUP_CHUNKS);
+            add_sum_accumulator(&mut level0, &local);
+            processed_chunks += CASCADE_GROUP_CHUNKS;
+
+            if processed_chunks & CASCADE_LEVEL0_MASK == 0 {
+                add_sum_accumulator(&mut level1, &level0);
+                level0 = zero_sum_accumulator();
+
+                if processed_chunks & CASCADE_LEVEL1_MASK == 0 {
+                    add_sum_accumulator(&mut level2, &level1);
+                    level1 = zero_sum_accumulator();
+                }
+            }
+
+            if processed_chunks + CASCADE_GROUP_CHUNKS > chunk_count {
+                break;
+            }
+        }
+    }
+
+    let mut local =
+        pytorch_2_13_sum_chunks(values, processed_chunks, chunk_count - processed_chunks);
+    for vector_index in (chunk_count * VECTORS)..vector_count {
+        let base = vector_index * LANES;
+        for lane in 0..LANES {
+            local[0][lane] += values[base + lane];
+        }
+    }
+
+    add_sum_accumulator(&mut local, &level0);
+    add_sum_accumulator(&mut local, &level1);
+    add_sum_accumulator(&mut local, &level2);
+
+    let mut lane_totals = [0.0_f32; LANES];
+    for lane in 0..LANES {
+        lane_totals[lane] = ((local[0][lane] + local[1][lane]) + local[2][lane]) + local[3][lane];
+    }
+
+    let mut tail = 0.0_f32;
+    for value in &values[(vector_count * LANES)..] {
+        tail += *value;
+    }
+    let mut total = lane_totals[0] + tail;
+    for value in &lane_totals[1..] {
+        total += *value;
+    }
+    total
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_cpu_float32_short_sum(values: &[f32]) -> f32 {
+    if values.len() <= 4 {
+        return sum_values(values);
+    }
+
+    let mut lanes = [0.0_f32; 4];
+    lanes.copy_from_slice(&values[..4]);
+    let tail = sum_values(&values[4..]);
+    ((lanes[0] + tail) + lanes[1]) + lanes[2] + lanes[3]
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn zero_sum_accumulator() -> [[f32; 8]; 4] {
+    [[0.0; 8]; 4]
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn add_sum_accumulator(left: &mut [[f32; 8]; 4], right: &[[f32; 8]; 4]) {
+    for (left_vector, right_vector) in left.iter_mut().zip(right) {
+        for (left_lane, right_lane) in left_vector.iter_mut().zip(right_vector) {
+            *left_lane += *right_lane;
+        }
+    }
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_2_13_sum_chunks(
+    values: &[f32],
+    start_chunk: usize,
+    chunk_count: usize,
+) -> [[f32; 8]; 4] {
+    const LANES: usize = 8;
+    const VECTORS: usize = 4;
+
+    let mut totals = zero_sum_accumulator();
+    for chunk in start_chunk..(start_chunk + chunk_count) {
+        let base = chunk * LANES * VECTORS;
+        for lane in 0..LANES {
+            totals[0][lane] += values[base + lane];
+            totals[1][lane] += values[base + LANES + lane];
+            totals[2][lane] += values[base + 2 * LANES + lane];
+            totals[3][lane] += values[base + 3 * LANES + lane];
+        }
+    }
+    totals
+}
+
+#[cfg(any(feature = "python-bindings", test))]
 fn l1_loss_difference_value(left: f32, right: f32) -> f32 {
     const QUIET_NAN_MASK: u32 = 0x0040_0000;
 
@@ -6311,8 +6443,8 @@ mod tests {
         MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor,
         TensorError, contiguous_values_equal, full_reduction_mean_divisor,
         l1_loss_difference_value, logical_offset_for_linear_index,
-        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
-        validate_view_bounds,
+        materialize_contiguous_trailing_broadcast, pytorch_2_13_cpu_float32_sum_values,
+        rsqrt_value, sqrt_value, sum_values, try_result_vector, validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -6546,6 +6678,28 @@ mod tests {
         assert_eq!(shared_offset.storage_offset(), 4);
         assert!(shared_offset.contiguous_slice().is_none());
         assert_matches_logical_fold(&shared_offset);
+    }
+
+    #[test]
+    fn pytorch_2_13_sum_reducer_matches_dynamic_range_bits() {
+        let mut values = Vec::new();
+        for _ in 0..12 {
+            values.extend([1.0e20_f32, 1.0, 2.0, 3.0]);
+        }
+        assert_eq!(
+            sum_values(&values).to_bits(),
+            0x6282_1AB2,
+            "the public Tensor.sum path intentionally remains a sequential fold",
+        );
+        assert_eq!(
+            pytorch_2_13_cpu_float32_sum_values(&values).to_bits(),
+            0x6282_1AB1,
+        );
+        let tensor = Tensor::from_vec(values, [48]).unwrap();
+        assert_eq!(
+            tensor.sum_dense_physical_order().item().unwrap().to_bits(),
+            0x6282_1AB1,
+        );
     }
 
     #[test]

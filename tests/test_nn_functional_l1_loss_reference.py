@@ -587,6 +587,25 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             )
             self.assert_matches(actual, expected, case=case)
 
+    def test_sum_reduction_dynamic_range_bits_match_pytorch_2_13(self):
+        input_values = np.asarray([1e20, 1.0, 2.0, 3.0] * 12, dtype=np.float32)
+        actual_input = torch.tensor(memoryview(input_values))
+        actual_target = torch.zeros((48,), dtype=torch.float32)
+        expected_input = reference_torch.tensor(memoryview(input_values))
+        expected_target = reference_torch.zeros((48,), dtype=reference_torch.float32)
+
+        actual = functional.l1_loss(
+            actual_input,
+            actual_target,
+            reduction="sum",
+        )
+        expected = reference_functional.l1_loss(
+            expected_input,
+            expected_target,
+            reduction="sum",
+        )
+        self.assert_matches(actual, expected, case="dynamic-range sum")
+
     def test_scalar_broadcast_float32_edges_match_pytorch_2_13(self):
         tensor_bits = np.asarray(
             [

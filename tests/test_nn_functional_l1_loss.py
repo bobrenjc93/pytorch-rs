@@ -28,7 +28,7 @@ class FunctionalL1LossTests(unittest.TestCase):
     @staticmethod
     def dense_physical_sum_bits(tensor):
         values = np.asarray(tensor)
-        total = np.float32(0.0)
+        ordered = []
         axes = tuple(
             axis
             for axis, _ in sorted(
@@ -41,8 +41,109 @@ class FunctionalL1LossTests(unittest.TestCase):
             index = [0] * values.ndim
             for axis, value in zip(axes, ordered_index):
                 index[axis] = value
-            total = np.float32(total + values[tuple(index)])
+            ordered.append(values[tuple(index)])
+        return FunctionalL1LossTests.pytorch_2_13_sum_bits(ordered)
+
+    @staticmethod
+    def pytorch_2_13_sum_bits(values):
+        values = np.asarray(values, dtype=np.float32).reshape(-1)
+        if values.size < 8:
+            total = FunctionalL1LossTests.pytorch_2_13_short_sum(values)
+        else:
+            total = FunctionalL1LossTests.pytorch_2_13_vector_sum(values)
         return np.asarray([total], dtype=np.float32).view(np.uint32).item()
+
+    @staticmethod
+    def pytorch_2_13_short_sum(values):
+        if values.size <= 4:
+            total = np.float32(0.0)
+            for value in values:
+                total = np.float32(total + value)
+            return total
+
+        lanes = values[:4].astype(np.float32, copy=True)
+        tail = np.float32(0.0)
+        for value in values[4:]:
+            tail = np.float32(tail + value)
+        total = np.float32(lanes[0] + tail)
+        for value in lanes[1:]:
+            total = np.float32(total + value)
+        return total
+
+    @staticmethod
+    def pytorch_2_13_vector_sum(values):
+        lanes = 8
+        vectors = 4
+        chunk_elements = lanes * vectors
+        chunk_count = values.size // chunk_elements
+        vector_count = values.size // lanes
+
+        def zero_accumulator():
+            return np.zeros((vectors, lanes), dtype=np.float32)
+
+        def add_accumulator(left, right):
+            for vector in range(vectors):
+                for lane in range(lanes):
+                    left[vector, lane] = np.float32(left[vector, lane] + right[vector, lane])
+
+        def sum_chunks(start_chunk, count):
+            totals = zero_accumulator()
+            for chunk in range(start_chunk, start_chunk + count):
+                base = chunk * chunk_elements
+                for lane in range(lanes):
+                    totals[0, lane] = np.float32(totals[0, lane] + values[base + lane])
+                    totals[1, lane] = np.float32(
+                        totals[1, lane] + values[base + lanes + lane]
+                    )
+                    totals[2, lane] = np.float32(
+                        totals[2, lane] + values[base + 2 * lanes + lane]
+                    )
+                    totals[3, lane] = np.float32(
+                        totals[3, lane] + values[base + 3 * lanes + lane]
+                    )
+            return totals
+
+        level0 = zero_accumulator()
+        level1 = zero_accumulator()
+        level2 = zero_accumulator()
+        processed_chunks = 0
+        if values.size > 95 and chunk_count >= 16:
+            while processed_chunks + 16 <= chunk_count:
+                local = sum_chunks(processed_chunks, 16)
+                add_accumulator(level0, local)
+                processed_chunks += 16
+                if processed_chunks & 0x0F0 == 0:
+                    add_accumulator(level1, level0)
+                    level0 = zero_accumulator()
+                    if processed_chunks & 0xF00 == 0:
+                        add_accumulator(level2, level1)
+                        level1 = zero_accumulator()
+                if processed_chunks + 16 > chunk_count:
+                    break
+
+        local = sum_chunks(processed_chunks, chunk_count - processed_chunks)
+        for vector_index in range(chunk_count * vectors, vector_count):
+            base = vector_index * lanes
+            for lane in range(lanes):
+                local[0, lane] = np.float32(local[0, lane] + values[base + lane])
+        add_accumulator(local, level0)
+        add_accumulator(local, level1)
+        add_accumulator(local, level2)
+
+        lane_totals = np.zeros((lanes,), dtype=np.float32)
+        for lane in range(lanes):
+            lane_totals[lane] = np.float32(
+                np.float32(np.float32(local[0, lane] + local[1, lane]) + local[2, lane])
+                + local[3, lane]
+            )
+
+        tail = np.float32(0.0)
+        for value in values[vector_count * lanes :]:
+            tail = np.float32(tail + value)
+        total = np.float32(lane_totals[0] + tail)
+        for value in lane_totals[1:]:
+            total = np.float32(total + value)
+        return total
 
     def assert_matches_composition(
         self,
@@ -352,6 +453,18 @@ class FunctionalL1LossTests(unittest.TestCase):
                         self.tensor_state(target)[-1], target_state[-1]
                     )
 
+    def test_sum_reduction_matches_pytorch_2_13_dynamic_range_order(self):
+        input_values = np.asarray([1e20, 1.0, 2.0, 3.0] * 12, dtype=np.float32)
+        input = torch.tensor(memoryview(input_values))
+        target = torch.zeros((48,))
+
+        actual = functional.l1_loss(input, target, reduction="sum")
+        self.assert_sum_matches_bits(
+            actual,
+            0x6282_1AB1,
+            case="dynamic-range sum",
+        )
+
     def test_bandwidth_sized_same_shape_contiguous_matches_composition(self):
         input_values = np.linspace(
             -1024.0,
@@ -384,7 +497,7 @@ class FunctionalL1LossTests(unittest.TestCase):
         self.assertNotEqual(actual.data_ptr(), target.data_ptr())
 
         actual_sum = functional.l1_loss(input, target, reduction="sum")
-        expected_sum_bits = self.tensor_bits(expected.sum()).item()
+        expected_sum_bits = self.dense_physical_sum_bits(expected)
         self.assert_sum_matches_bits(
             actual_sum,
             expected_sum_bits,

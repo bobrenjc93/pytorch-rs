@@ -51,7 +51,7 @@ with CPU ``float32`` storage, broadcastable shapes, ``reduction='none'`` or
 scalar broadcasts over row-major contiguous tensors into one native
 absolute-difference pass, otherwise preserving the established subtraction and
 absolute-value behavior. ``reduction='sum'`` reuses that absolute-difference
-path followed by the existing full-tensor sum and returns a fresh rank-0
+path followed by a PyTorch-compatible full-tensor sum and returns a fresh rank-0
 tensor. The operation returns fresh, independent storage with PyTorch-compatible
 values, shape, strides, scalar metadata, and size-mismatch warning.
 
