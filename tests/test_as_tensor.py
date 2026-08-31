@@ -140,7 +140,7 @@ class AsTensorTests(unittest.TestCase):
         self.assertEqual(explicit.shape, (2,))
         self.assertEqual(explicit.stride(), (1,))
 
-    def test_rectangular_sequence_errors_match_pytorch(self):
+    def test_rectangular_sequence_errors_are_reported(self):
         cases = (
             (
                 lambda: torch.as_tensor([[1.0], [2.0, 3.0]]),
@@ -156,6 +156,21 @@ class AsTensorTests(unittest.TestCase):
                 lambda: torch.as_tensor([1.0, [2.0]]),
                 TypeError,
                 "must be real number, not list",
+            ),
+            (
+                lambda: torch.as_tensor([[], [1.0]]),
+                ValueError,
+                "expected sequence of length 0 at dim 1 (got 1)",
+            ),
+            (
+                lambda: torch.as_tensor([[[]], [[1.0]]]),
+                ValueError,
+                "expected sequence of length 0 at dim 2 (got 1)",
+            ),
+            (
+                lambda: torch.as_tensor([[], 1.0]),
+                TypeError,
+                "not a sequence",
             ),
         )
         for call, error_type, message in cases:

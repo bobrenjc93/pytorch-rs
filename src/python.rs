@@ -14397,31 +14397,12 @@ fn flatten_as_tensor_sequence(
             "expected sequence of length {expected} at dim {dimension} (got {length})"
         )));
     }
-    if shape.contains(&0) {
-        for index in 0..length {
-            validate_as_tensor_zero_numel_values(&value.get_item(index)?)?;
-        }
-        return Ok(());
-    }
 
     let nested_shape = &shape[1..];
     for index in 0..length {
         flatten_as_tensor_sequence(&value.get_item(index)?, nested_shape, dimension + 1, output)?;
     }
     Ok(())
-}
-
-fn validate_as_tensor_zero_numel_values(value: &Bound<'_, PyAny>) -> PyResult<()> {
-    if extract_as_tensor_python_real_scalar(value)?.is_some() {
-        return Ok(());
-    }
-    if is_as_tensor_list_or_tuple(value) {
-        for index in 0..value.len()? {
-            validate_as_tensor_zero_numel_values(&value.get_item(index)?)?;
-        }
-        return Ok(());
-    }
-    Err(unsupported_tensor_data_error(value, false)?)
 }
 
 fn extract_as_tensor_python_real_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<f32>> {
