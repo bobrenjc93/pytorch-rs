@@ -66,6 +66,24 @@ class AsTensorTests(unittest.TestCase):
             tensor.output_nr,
         )
 
+    def assert_default_tensor(self, tensor, expected_values, *, shape, stride, tolist):
+        self.assertEqual(tensor.shape, shape)
+        self.assertEqual(tensor.stride(), stride)
+        self.assertEqual(tensor.storage_offset(), 0)
+        self.assertIs(tensor.dtype, torch.float32)
+        self.assertEqual(tensor.device, torch.device("cpu"))
+        self.assertIs(tensor.layout, torch.strided)
+        self.assertFalse(tensor.requires_grad)
+        self.assertTrue(tensor.is_leaf)
+        self.assertEqual(tensor.output_nr, 0)
+        self.assertFalse(tensor.is_pinned())
+        actual_bits = np.asarray(tensor).reshape(-1).view(np.uint32).tolist()
+        expected_bits = (
+            np.asarray(expected_values, dtype=np.float32).reshape(-1).view(np.uint32).tolist()
+        )
+        self.assertEqual(actual_bits, expected_bits)
+        self.assertEqual(tensor.tolist(), tolist)
+
     def test_exact_native_cpu_float32_tensors_return_identical_object(self):
         option_cases = (
             {},
@@ -85,6 +103,62 @@ class AsTensorTests(unittest.TestCase):
                     self.assertIs(result, tensor)
                     self.assertEqual(result.data_ptr(), before[4])
                     self.assertEqual(self.tensor_state(tensor), before)
+
+    def test_python_real_scalars_and_rectangular_sequences_create_default_tensors(self):
+        cases = (
+            ("float scalar", -0.0, (), (), [-0.0], -0.0),
+            ("int scalar", 7, (), (), [7.0], 7.0),
+            (
+                "flat list",
+                [1.0, -0.0, 2.5],
+                (3,),
+                (1,),
+                [1.0, -0.0, 2.5],
+                [1.0, -0.0, 2.5],
+            ),
+            ("flat tuple", (1.0, 2.0), (2,), (1,), [1.0, 2.0], [1.0, 2.0]),
+            (
+                "nested list tuple",
+                [[1.0, 2.0], (3, 4.5)],
+                (2, 2),
+                (2, 1),
+                [1.0, 2.0, 3.0, 4.5],
+                [[1.0, 2.0], [3.0, 4.5]],
+            ),
+            ("empty list", [], (0,), (1,), [], []),
+            ("nested empty", [[], [1.0]], (2, 0), (1, 1), [], [[], []]),
+        )
+        for case, data, shape, stride, expected_values, expected_tolist in cases:
+            with self.subTest(case=case):
+                result = torch.as_tensor(data)
+                self.assert_default_tensor(
+                    result,
+                    expected_values,
+                    shape=shape,
+                    stride=stride,
+                    tolist=expected_tolist,
+                )
+
+        with torch.no_grad():
+            no_grad_result = torch.as_tensor([1.0])
+        self.assert_default_tensor(
+            no_grad_result,
+            [1.0],
+            shape=(1,),
+            stride=(1,),
+            tolist=[1.0],
+        )
+
+    def test_sequence_inputs_are_copied_into_fresh_storage(self):
+        source = [1.0, 2.0]
+        first = torch.as_tensor(source)
+        second = torch.as_tensor(source)
+
+        source[0] = 9.0
+        self.assertEqual(first.tolist(), [1.0, 2.0])
+        self.assertEqual(second.tolist(), [1.0, 2.0])
+        self.assertIsNot(first, second)
+        self.assertNotEqual(first.data_ptr(), second.data_ptr())
 
     def test_identity_preserves_autograd_graph_and_gradient_object(self):
         leaf = torch.tensor(
@@ -228,7 +302,8 @@ class AsTensorTests(unittest.TestCase):
     def test_binding_errors_and_unsupported_scope_are_explicit(self):
         tensor = torch.tensor([1.0], dtype=torch.float32)
         unsupported_conversion = (
-            "as_tensor(): only exact native CPU float32 Tensor inputs are supported; Python sequences, NumPy arrays, and scalar conversions are not implemented"
+            "as_tensor(): only exact native CPU float32 Tensor inputs, Python real scalars, and rectangular list/tuple inputs are supported; "
+            "NumPy arrays, buffers, dtype conversions, CUDA/meta/indexed CPU devices, copy, pinned memory, tensor subclasses, and __torch_function__ argument dispatch are not implemented"
         )
         cases = (
             (
@@ -298,18 +373,60 @@ class AsTensorTests(unittest.TestCase):
                 NotImplementedError,
                 "as_tensor(): indexed CPU devices require a copy and are not supported",
             ),
-            (lambda: torch.as_tensor([1.0]), NotImplementedError, unsupported_conversion),
-            (lambda: torch.as_tensor((1.0,)), NotImplementedError, unsupported_conversion),
             (
                 lambda: torch.as_tensor(np.asarray([1.0], dtype=np.float32)),
                 NotImplementedError,
                 unsupported_conversion,
             ),
-            (lambda: torch.as_tensor(1.0), NotImplementedError, unsupported_conversion),
+            (
+                lambda: torch.as_tensor(memoryview(np.asarray([1.0], dtype=np.float32))),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
+            (
+                lambda: torch.as_tensor(np.float32(1.0)),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
+            (lambda: torch.as_tensor(True), NotImplementedError, unsupported_conversion),
+            (
+                lambda: torch.as_tensor([[1.0], [2.0, 3.0]]),
+                ValueError,
+                "expected sequence of length 1 at dim 1 (got 2)",
+            ),
+            (
+                lambda: torch.as_tensor([1.0, [2.0]]),
+                TypeError,
+                "must be real number, not list",
+            ),
+            (
+                lambda: torch.as_tensor([[1.0], 2.0]),
+                TypeError,
+                "not a sequence",
+            ),
+            (
+                lambda: torch.as_tensor([[], object()]),
+                RuntimeError,
+                "Could not infer dtype of object",
+            ),
+            (
+                lambda: torch.as_tensor([[[]], [[object()]]]),
+                RuntimeError,
+                "Could not infer dtype of object",
+            ),
         )
         for call, error_type, message in cases:
             with self.subTest(message=message):
                 self.assert_error(call, error_type, message)
+
+        class ListSubclass(list):
+            pass
+
+        self.assert_error(
+            lambda: torch.as_tensor(ListSubclass([1.0])),
+            NotImplementedError,
+            unsupported_conversion,
+        )
 
         class Override:
             calls = []

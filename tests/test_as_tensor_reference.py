@@ -90,6 +90,13 @@ class AsTensorReferenceTests(unittest.TestCase):
         state.pop("data_ptr")
         return state
 
+    def as_tensor_creation_contract(self, module, data, options):
+        result = module.as_tensor(data, **options)
+        state = self.comparable_tensor_state(module, result)
+        state["is_pinned"] = result.is_pinned()
+        state["tolist"] = result.tolist()
+        return state
+
     def as_tensor_identity_contract(self, module, tensor, options):
         before = self.tensor_state(module, tensor)
         result = module.as_tensor(tensor, **options)
@@ -122,6 +129,31 @@ class AsTensorReferenceTests(unittest.TestCase):
                         reference_torch, expected, expected_kwargs
                     )
                     self.assertEqual(actual_contract, expected_contract)
+
+    def test_python_real_scalar_and_sequence_creation_matches_pytorch_2_13(self):
+        cases = (
+            ("float scalar", -0.0, {}, {}),
+            (
+                "int scalar explicit float32",
+                7,
+                {"dtype": torch.float32},
+                {"dtype": reference_torch.float32},
+            ),
+            ("flat list", [1.0, -0.0, 2.5], {}, {}),
+            ("flat tuple", (1.0, 2.0), {}, {}),
+            ("nested list tuple", [[1.0, 2.0], (3.0, 4.5)], {}, {}),
+            ("empty list", [], {}, {}),
+            ("nested empty", [[], [1.0]], {}, {}),
+            ("cpu device string", [1.0], {"device": "cpu"}, {"device": "cpu"}),
+        )
+        for case, data, actual_options, expected_options in cases:
+            with self.subTest(case=case):
+                self.assertEqual(
+                    self.as_tensor_creation_contract(torch, data, actual_options),
+                    self.as_tensor_creation_contract(
+                        reference_torch, data, expected_options
+                    ),
+                )
 
     def test_autograd_identity_aliasing_matches_pytorch_2_13(self):
         outcomes = []
@@ -328,6 +360,24 @@ class AsTensorReferenceTests(unittest.TestCase):
                     actual_call()
                 with self.assertRaises(Exception) as expected_raised:
                     expected_call()
+                self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
+                self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+
+    def test_nested_sequence_errors_match_pytorch_2_13(self):
+        cases = (
+            [[1.0], [2.0, 3.0]],
+            [1.0, [2.0]],
+            [[1.0], 2.0],
+            [[[1.0]], [[2.0, 3.0]]],
+            [[], object()],
+            [[[]], [[object()]]],
+        )
+        for data in cases:
+            with self.subTest(data=data):
+                with self.assertRaises(Exception) as actual_raised:
+                    torch.as_tensor(data)
+                with self.assertRaises(Exception) as expected_raised:
+                    reference_torch.as_tensor(data)
                 self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
                 self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
 
