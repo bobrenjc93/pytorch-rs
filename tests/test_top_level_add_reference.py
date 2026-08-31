@@ -14,6 +14,11 @@ except ImportError:
     reference_torch = None
 
 
+def tensor_from_bits(module, bits):
+    values = np.asarray(bits, dtype=np.uint32)
+    return module.tensor(memoryview(values.view(np.float32)))
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class TopLevelAddReferenceTests(unittest.TestCase):
     @classmethod
@@ -140,6 +145,55 @@ class TopLevelAddReferenceTests(unittest.TestCase):
             reference_torch.add(-0.0, reference_torch.tensor(values)),
             case="signed zero and non-finites",
         )
+
+        nan_bits_left = (
+            0x7FC1_1111,
+            0x7FC1_1111,
+            0x3F80_0000,
+            0x7F81_1111,
+            0xFF81_1111,
+        )
+        nan_bits_right = (
+            0x7FC2_2222,
+            0x3F80_0000,
+            0x7FC2_2222,
+            0x3F80_0000,
+            0x7F82_2222,
+        )
+        actual_nan_left = tensor_from_bits(torch, nan_bits_left)
+        actual_nan_right = tensor_from_bits(torch, nan_bits_right)
+        expected_nan_left = tensor_from_bits(reference_torch, nan_bits_left)
+        expected_nan_right = tensor_from_bits(reference_torch, nan_bits_right)
+        scalar_nan = np.asarray([0x7FC3_3333], dtype=np.uint32).view(np.float32)[0]
+        for case, actual_call, expected_call in (
+            (
+                "tensor/tensor NaN payload precedence",
+                lambda: torch.add(actual_nan_left, actual_nan_right),
+                lambda: reference_torch.add(expected_nan_left, expected_nan_right),
+            ),
+            (
+                "tensor/scalar NaN payload precedence",
+                lambda: torch.add(actual_nan_left, scalar_nan),
+                lambda: reference_torch.add(expected_nan_left, scalar_nan),
+            ),
+            (
+                "scalar/tensor NaN payload precedence",
+                lambda: torch.add(scalar_nan, actual_nan_left),
+                lambda: reference_torch.add(scalar_nan, expected_nan_left),
+            ),
+            (
+                "rank-zero tensor NaN payload precedence",
+                lambda: torch.add(
+                    actual_nan_left,
+                    tensor_from_bits(torch, [0x7FC4_4444]).reshape(()),
+                ),
+                lambda: reference_torch.add(
+                    expected_nan_left,
+                    tensor_from_bits(reference_torch, [0x7FC4_4444]).reshape(()),
+                ),
+            ),
+        ):
+            self.assert_matches(actual_call(), expected_call(), case=case)
 
     def test_scalar_autograd_and_no_grad_tensor_tensor_match_pytorch_2_13(self):
         actual_scalar = torch.tensor([2.0, -3.0], requires_grad=True)

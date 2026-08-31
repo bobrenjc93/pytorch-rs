@@ -10,6 +10,15 @@ import numpy as np
 import torch_rs as torch
 
 
+def tensor_from_bits(bits):
+    values = np.asarray(bits, dtype=np.uint32)
+    return torch.tensor(memoryview(values.view(np.float32)))
+
+
+def tensor_bits(tensor):
+    return np.asarray(tensor).reshape(-1).view(np.uint32)
+
+
 FUNCTION_DOC = (
     "\nadd(input, other, *, alpha=1, out=None) -> Tensor\n\n"
     "Adds :attr:`other`, scaled by :attr:`alpha`, to :attr:`input`.\n\n"
@@ -118,6 +127,34 @@ class TopLevelAddTests(unittest.TestCase):
         self.assert_tensor_matches(
             torch.add(-0.0, special), -0.0 + special, case="IEEE special values"
         )
+
+        nan_left = tensor_from_bits(
+            (0x7FC1_1111, 0x7FC1_1111, 0x3F80_0000, 0x7F81_1111, 0xFF81_1111)
+        )
+        nan_right = tensor_from_bits(
+            (0x7FC2_2222, 0x3F80_0000, 0x7FC2_2222, 0x3F80_0000, 0x7F82_2222)
+        )
+        scalar_nan = np.asarray([0x7FC3_3333], dtype=np.uint32).view(np.float32)[0]
+        for case, actual, expected_bits in (
+            (
+                "tensor/tensor NaN payload precedence",
+                torch.add(nan_left, nan_right),
+                (0x7FC2_2222, 0x7FC1_1111, 0x7FC2_2222, 0x7FC1_1111, 0x7FC2_2222),
+            ),
+            (
+                "tensor/scalar NaN payload precedence",
+                torch.add(nan_left, scalar_nan),
+                (0x7FC3_3333,) * 5,
+            ),
+            (
+                "scalar/tensor NaN payload precedence",
+                torch.add(scalar_nan, nan_left),
+                (0x7FC1_1111, 0x7FC1_1111, 0x7FC3_3333, 0x7FC1_1111, 0xFFC1_1111),
+            ),
+        ):
+            np.testing.assert_array_equal(
+                tensor_bits(actual), np.asarray(expected_bits, dtype=np.uint32), err_msg=case
+            )
 
     def test_scalar_autograd_tensor_tensor_no_grad_and_active_tensor_tensor_rejection(self):
         function_scalar = torch.tensor([2.0, -3.0], requires_grad=True)

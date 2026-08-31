@@ -4546,14 +4546,19 @@ fn apply_top_level_add(
                     "add(): tensor/tensor autograd is not supported; native binary add VJP is not implemented",
                 ));
             }
-            BinaryOperation::Add.apply_tensors(&input.inner, &other.inner)
+            input.inner.torch_add(&other.inner)
         }
-        (BoundAddOperand::Tensor(tensor), BoundAddOperand::Scalar(scalar))
-        | (BoundAddOperand::Scalar(scalar), BoundAddOperand::Tensor(tensor)) => {
+        (BoundAddOperand::Tensor(tensor), BoundAddOperand::Scalar(scalar)) => {
             let tensor = tensor.try_borrow()?;
             validate_add_native_tensor(&tensor.inner)?;
             let scalar = parse_top_level_add_scalar(scalar)?;
-            BinaryOperation::Add.apply_scalar(&tensor.inner, scalar, false)
+            tensor.inner.torch_add_scalar(scalar, false)
+        }
+        (BoundAddOperand::Scalar(scalar), BoundAddOperand::Tensor(tensor)) => {
+            let tensor = tensor.try_borrow()?;
+            validate_add_native_tensor(&tensor.inner)?;
+            let scalar = parse_top_level_add_scalar(scalar)?;
+            tensor.inner.torch_add_scalar(scalar, true)
         }
         (BoundAddOperand::Scalar(_), BoundAddOperand::Scalar(_)) => {
             return Err(PyTypeError::new_err(
