@@ -116,6 +116,23 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ("same operand", same, same),
         )
 
+    def make_sum_regression_cases(self, module):
+        multi_nan_input_bits = np.asarray(
+            [0x0000_0000, 0x8000_0000],
+            dtype=np.uint32,
+        )
+        multi_nan_target_bits = np.asarray(
+            [0xFF85_4321, 0x7F81_2345],
+            dtype=np.uint32,
+        )
+        return (
+            (
+                "contiguous multi-nan",
+                module.tensor(memoryview(multi_nan_input_bits.view(np.float32))),
+                module.tensor(memoryview(multi_nan_target_bits.view(np.float32))),
+            ),
+        )
+
     def make_same_shape_contiguous_cases(self, module):
         edge_input_bits = np.asarray(
             [
@@ -605,10 +622,12 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
     def test_sum_reduction_values_metadata_storage_and_nonmutation_match_pytorch_2_13(self):
         actual_cases = (
             *self.make_cases(torch),
+            *self.make_sum_regression_cases(torch),
             *self.make_same_stride_noncontiguous_cases(torch),
         )
         expected_cases = (
             *self.make_cases(reference_torch),
+            *self.make_sum_regression_cases(reference_torch),
             *self.make_same_stride_noncontiguous_cases(reference_torch),
         )
         for actual_case, expected_case in zip(

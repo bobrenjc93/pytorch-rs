@@ -6212,7 +6212,18 @@ fn squared_difference_value(left: f32, right: f32) -> f32 {
 }
 
 #[cfg(feature = "python-bindings")]
-fn pytorch_sum_add(left: f32, right: f32) -> f32 {
+fn pytorch_sum_accumulate(left: f32, right: f32) -> f32 {
+    if left.is_nan() {
+        left
+    } else if right.is_nan() {
+        right
+    } else {
+        left + right
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_sum_combine(left: f32, right: f32) -> f32 {
     if right.is_nan() {
         right
     } else if left.is_nan() {
@@ -6345,7 +6356,7 @@ fn pytorch_loss_sum_scalar_inner(
     for column in 0..size1 {
         let row_offset = base_offset + column * stride1;
         let row_total = pytorch_loss_sum_scalar_row(tensor, row_offset, stride0, size0);
-        *total = pytorch_sum_add(*total, row_total);
+        *total = pytorch_sum_accumulate(*total, row_total);
     }
 }
 
@@ -6364,7 +6375,7 @@ fn pytorch_loss_sum_scalar_outer(
         let row_offset = base_offset + column * stride1;
         let rows = pytorch_loss_sum_multi_row_scalar(tensor, row_offset, stride0, stride1, size0);
         for row in rows {
-            *total = pytorch_sum_add(*total, row);
+            *total = pytorch_sum_accumulate(*total, row);
         }
         column += PYTORCH_LOSS_SUM_ILP_FACTOR;
     }
@@ -6372,7 +6383,7 @@ fn pytorch_loss_sum_scalar_outer(
     while column < size1 {
         let row_offset = base_offset + column * stride1;
         let row_total = pytorch_loss_sum_scalar_row(tensor, row_offset, stride0, size0);
-        *total = pytorch_sum_add(*total, row_total);
+        *total = pytorch_sum_accumulate(*total, row_total);
         column += 1;
     }
 }
@@ -6395,7 +6406,7 @@ fn pytorch_loss_sum_vectorized_inner(
             PYTORCH_LOSS_SUM_VECTOR_WIDTH,
             size0,
         );
-        *total = pytorch_sum_add(*total, row_total);
+        *total = pytorch_sum_accumulate(*total, row_total);
     }
 }
 
@@ -6420,7 +6431,7 @@ fn pytorch_loss_sum_vectorized_outer(
         );
         for row in rows {
             for lane in row {
-                *total = pytorch_sum_add(*total, lane);
+                *total = pytorch_sum_combine(*total, lane);
             }
         }
         column += PYTORCH_LOSS_SUM_ILP_FACTOR * PYTORCH_LOSS_SUM_VECTOR_WIDTH;
@@ -6430,7 +6441,7 @@ fn pytorch_loss_sum_vectorized_outer(
         let row_offset = base_offset + column;
         let row = pytorch_loss_sum_vector_accumulators(tensor, row_offset, inner_stride, size0);
         for lane in row {
-            *total = pytorch_sum_add(*total, lane);
+            *total = pytorch_sum_combine(*total, lane);
         }
         column += PYTORCH_LOSS_SUM_VECTOR_WIDTH;
     }
@@ -6438,7 +6449,7 @@ fn pytorch_loss_sum_vectorized_outer(
     while column < size1 {
         let row_offset = base_offset + column;
         let row_total = pytorch_loss_sum_scalar_row(tensor, row_offset, inner_stride, size0);
-        *total = pytorch_sum_add(*total, row_total);
+        *total = pytorch_sum_accumulate(*total, row_total);
         column += 1;
     }
 }
@@ -6459,13 +6470,13 @@ fn pytorch_loss_sum_scalar_row(
         size_ilp,
     );
     for index in size_ilp * PYTORCH_LOSS_SUM_ILP_FACTOR..size {
-        partials[0] = pytorch_sum_add(
+        partials[0] = pytorch_sum_accumulate(
             partials[0],
             pytorch_loss_sum_value(tensor, base_offset + index * stride),
         );
     }
     for row in 1..PYTORCH_LOSS_SUM_ILP_FACTOR {
-        partials[0] = pytorch_sum_add(partials[0], partials[row]);
+        partials[0] = pytorch_sum_accumulate(partials[0], partials[row]);
     }
     partials[0]
 }
@@ -6484,13 +6495,13 @@ fn pytorch_loss_sum_vector_row_total(
 
     let mut total = 0.0_f32;
     for index in vector_size * PYTORCH_LOSS_SUM_VECTOR_WIDTH..size {
-        total = pytorch_sum_add(
+        total = pytorch_sum_accumulate(
             total,
             pytorch_loss_sum_value(tensor, base_offset + index * scalar_stride),
         );
     }
     for lane in vector_accumulator {
-        total = pytorch_sum_add(total, lane);
+        total = pytorch_sum_combine(total, lane);
     }
     total
 }
@@ -6514,7 +6525,7 @@ fn pytorch_loss_sum_vector_accumulators(
     for vector_index in size_ilp * PYTORCH_LOSS_SUM_ILP_FACTOR..vector_size {
         let vector_offset = base_offset + vector_index * stride;
         for (lane_index, lane) in vector_accumulator.iter_mut().enumerate() {
-            *lane = pytorch_sum_add(
+            *lane = pytorch_sum_accumulate(
                 *lane,
                 pytorch_loss_sum_value(tensor, vector_offset + lane_index),
             );
@@ -6522,7 +6533,7 @@ fn pytorch_loss_sum_vector_accumulators(
     }
     for row in partials.iter().skip(1) {
         for (lane, value) in vector_accumulator.iter_mut().zip(row) {
-            *lane = pytorch_sum_add(*lane, *value);
+            *lane = pytorch_sum_accumulate(*lane, *value);
         }
     }
     vector_accumulator
@@ -6546,7 +6557,7 @@ fn pytorch_loss_sum_multi_row_scalar(
         for _ in 0..level_step {
             let row_offset = base_offset + index * row_stride;
             for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
-                accumulators[0][row] = pytorch_sum_add(
+                accumulators[0][row] = pytorch_sum_accumulate(
                     accumulators[0][row],
                     pytorch_loss_sum_value(tensor, row_offset + row * column_stride),
                 );
@@ -6557,7 +6568,7 @@ fn pytorch_loss_sum_multi_row_scalar(
         for level in 1..PYTORCH_LOSS_SUM_LEVELS {
             for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
                 accumulators[level][row] =
-                    pytorch_sum_add(accumulators[level][row], accumulators[level - 1][row]);
+                    pytorch_sum_accumulate(accumulators[level][row], accumulators[level - 1][row]);
                 accumulators[level - 1][row] = 0.0;
             }
 
@@ -6571,7 +6582,7 @@ fn pytorch_loss_sum_multi_row_scalar(
     while index < size {
         let row_offset = base_offset + index * row_stride;
         for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
-            accumulators[0][row] = pytorch_sum_add(
+            accumulators[0][row] = pytorch_sum_accumulate(
                 accumulators[0][row],
                 pytorch_loss_sum_value(tensor, row_offset + row * column_stride),
             );
@@ -6581,7 +6592,8 @@ fn pytorch_loss_sum_multi_row_scalar(
 
     for level in 1..PYTORCH_LOSS_SUM_LEVELS {
         for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
-            accumulators[0][row] = pytorch_sum_add(accumulators[0][row], accumulators[level][row]);
+            accumulators[0][row] =
+                pytorch_sum_accumulate(accumulators[0][row], accumulators[level][row]);
         }
     }
     accumulators[0]
@@ -6608,7 +6620,7 @@ fn pytorch_loss_sum_multi_row_vector(
             for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
                 let vector_offset = row_offset + row * column_stride;
                 for lane in 0..PYTORCH_LOSS_SUM_VECTOR_WIDTH {
-                    accumulators[0][row][lane] = pytorch_sum_add(
+                    accumulators[0][row][lane] = pytorch_sum_accumulate(
                         accumulators[0][row][lane],
                         pytorch_loss_sum_value(tensor, vector_offset + lane),
                     );
@@ -6620,7 +6632,7 @@ fn pytorch_loss_sum_multi_row_vector(
         for level in 1..PYTORCH_LOSS_SUM_LEVELS {
             for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
                 for lane in 0..PYTORCH_LOSS_SUM_VECTOR_WIDTH {
-                    accumulators[level][row][lane] = pytorch_sum_add(
+                    accumulators[level][row][lane] = pytorch_sum_accumulate(
                         accumulators[level][row][lane],
                         accumulators[level - 1][row][lane],
                     );
@@ -6640,7 +6652,7 @@ fn pytorch_loss_sum_multi_row_vector(
         for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
             let vector_offset = row_offset + row * column_stride;
             for lane in 0..PYTORCH_LOSS_SUM_VECTOR_WIDTH {
-                accumulators[0][row][lane] = pytorch_sum_add(
+                accumulators[0][row][lane] = pytorch_sum_accumulate(
                     accumulators[0][row][lane],
                     pytorch_loss_sum_value(tensor, vector_offset + lane),
                 );
@@ -6652,8 +6664,10 @@ fn pytorch_loss_sum_multi_row_vector(
     for level in 1..PYTORCH_LOSS_SUM_LEVELS {
         for row in 0..PYTORCH_LOSS_SUM_ILP_FACTOR {
             for lane in 0..PYTORCH_LOSS_SUM_VECTOR_WIDTH {
-                accumulators[0][row][lane] =
-                    pytorch_sum_add(accumulators[0][row][lane], accumulators[level][row][lane]);
+                accumulators[0][row][lane] = pytorch_sum_accumulate(
+                    accumulators[0][row][lane],
+                    accumulators[level][row][lane],
+                );
             }
         }
     }

@@ -24,6 +24,7 @@ class FunctionalMseLossTests(unittest.TestCase):
         "channels last": 0x46FA80AF,
         "mixed singleton strides": 0x423F3332,
         "same operand": 0x00000000,
+        "contiguous multi-nan": 0xFFC54321,
         "transposed edge bits": 0xFFC54321,
         "offset transposed": 0x42E61844,
         "channels-last-like": 0x468855DD,
@@ -178,6 +179,23 @@ class FunctionalMseLossTests(unittest.TestCase):
                 mixed_singleton_target,
             ),
             ("same operand", same, same),
+        )
+
+    def sum_regression_cases(self):
+        multi_nan_input_bits = np.asarray(
+            [0x0000_0000, 0x8000_0000],
+            dtype=np.uint32,
+        )
+        multi_nan_target_bits = np.asarray(
+            [0xFF85_4321, 0x7F81_2345],
+            dtype=np.uint32,
+        )
+        return (
+            (
+                "contiguous multi-nan",
+                torch.tensor(memoryview(multi_nan_input_bits.view(np.float32))),
+                torch.tensor(memoryview(multi_nan_target_bits.view(np.float32))),
+            ),
         )
 
     def broadcast_cases(self):
@@ -435,6 +453,7 @@ class FunctionalMseLossTests(unittest.TestCase):
     def test_sum_reduction_matches_pytorch_style_fold_metadata_storage_and_nonmutation(self):
         for case, input, target in (
             *self.layout_cases(),
+            *self.sum_regression_cases(),
             *self.same_stride_noncontiguous_cases(),
         ):
             input_state = self.tensor_state(input)
