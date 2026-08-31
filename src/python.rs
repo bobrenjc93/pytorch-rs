@@ -5234,6 +5234,27 @@ pub(crate) fn eye_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
+    if !torch_function_mode_stack::is_empty() {
+        let function = variable_function(py, "eye")?;
+        let types = PyTuple::empty(py);
+        let active_mode = torch_function_mode_stack::pop();
+        if let Some(mode) = active_mode.get() {
+            validate_torch_function_mode_handler(mode.bind(py))?;
+            let handler = mode.bind(py).getattr("__torch_function__")?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            return Err(torch_function_dispatch_error(
+                py,
+                "torch.eye",
+                Some(mode),
+                None,
+            )?);
+        }
+    }
+
     Ok(Bound::new(py, eye_impl(args, kwargs)?)?.into_any().unbind())
 }
 

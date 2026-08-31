@@ -294,6 +294,154 @@ class EyeTests(unittest.TestCase):
                 with self.assertRaisesRegex((RuntimeError, ValueError), re.escape(message)):
                     call()
 
+    def test_torch_function_mode_intercepts_before_native_validation(self):
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                        tuple(torch.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                return marker
+
+        cases = (
+            (lambda: torch.eye(2), (2,), None),
+            (
+                lambda: torch.eye(2, out=None, layout=torch.strided),
+                (2,),
+                {"out": None, "layout": torch.strided},
+            ),
+            (
+                lambda: torch.eye(2**63, out=None, layout=torch.strided),
+                (2**63,),
+                {"out": None, "layout": torch.strided},
+            ),
+            (
+                lambda: torch.eye(n=2, m=3, out=None, layout=torch.strided),
+                (),
+                {"n": 2, "m": 3, "out": None, "layout": torch.strided},
+            ),
+        )
+        for call, expected_args, expected_kwargs in cases:
+            mode = RecordingMode()
+            with self.subTest(args=expected_args, kwargs=expected_kwargs):
+                with mode:
+                    self.assertIs(call(), marker)
+                    self.assertEqual(
+                        torch.overrides._get_current_function_mode_stack(), [mode]
+                    )
+                self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+                self.assertEqual(len(mode.calls), 1)
+                function, dispatch_types, args, kwargs, handler_stack = mode.calls[0]
+                self.assertIs(function, torch.eye)
+                self.assertEqual(dispatch_types, ())
+                self.assertEqual(args, expected_args)
+                self.assertEqual(kwargs, expected_kwargs)
+                self.assertEqual(handler_stack, ())
+
+    def test_torch_function_mode_forwards_declines_and_restores_the_stack(self):
+        events = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append(
+                    (
+                        self.label,
+                        tuple(
+                            mode.label
+                            for mode in torch.overrides._get_current_function_mode_stack()
+                        ),
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                result = torch.eye(2, out=None, layout=torch.strided)
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(), [lower, upper]
+                )
+            self.assertEqual(torch.overrides._get_current_function_mode_stack(), [lower])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+        self.assertEqual(result.tolist(), [[1.0, 0.0], [0.0, 1.0]])
+        self.assertEqual(
+            [
+                (label, stack, function is torch.eye, types, args, kwargs)
+                for label, stack, function, types, args, kwargs in events
+            ],
+            [
+                (
+                    "upper",
+                    ("lower",),
+                    True,
+                    (),
+                    (2,),
+                    {"out": None, "layout": torch.strided},
+                ),
+                (
+                    "lower",
+                    (),
+                    True,
+                    (),
+                    (2,),
+                    {"out": None, "layout": torch.strided},
+                ),
+            ],
+        )
+
+        expected = ValueError("handler failed")
+
+        class RaisingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                raise expected
+
+        raising = RaisingMode()
+        with lower:
+            with raising:
+                with self.assertRaises(ValueError) as raised:
+                    torch.eye(2)
+                self.assertIs(raised.exception, expected)
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(), [lower, raising]
+                )
+            self.assertEqual(torch.overrides._get_current_function_mode_stack(), [lower])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        declining = DecliningMode()
+        with declining:
+            with self.assertRaisesRegex(
+                TypeError,
+                r"^Multiple dispatch failed for 'torch\.eye'; all "
+                r"__torch_function__ handlers returned NotImplemented:",
+            ):
+                torch.eye(2)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [declining]
+            )
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
     def test_integer_protocol_inputs(self):
         class IntSubclass(int):
             pass

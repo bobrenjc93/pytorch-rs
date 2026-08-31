@@ -160,6 +160,157 @@ class EyeReferenceTests(unittest.TestCase):
             expected_first.data_ptr() != expected_second.data_ptr(),
         )
 
+    def normalize_mode_value(self, module, value):
+        if value is module.strided:
+            return "torch.strided"
+        if isinstance(value, dict):
+            return {
+                key: self.normalize_mode_value(module, item)
+                for key, item in value.items()
+            }
+        return value
+
+    def mode_dispatch_observation(self, module):
+        function = module.eye
+        marker = object()
+        intercepted = []
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (
+                        func is function,
+                        types,
+                        args,
+                        kwargs,
+                        len(module.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                return marker
+
+        for call in (
+            lambda: function(2),
+            lambda: function(2, out=None, layout=module.strided),
+            lambda: function(2**63, out=None, layout=module.strided),
+            lambda: function(n=2, m=3, out=None, layout=module.strided),
+        ):
+            mode = RecordingMode()
+            with mode:
+                result = call()
+                restored_inside = (
+                    module.overrides._get_current_function_mode_stack() == [mode]
+                )
+            intercepted.append(
+                (
+                    result is marker,
+                    tuple(
+                        (
+                            func_is_function,
+                            types,
+                            args,
+                            self.normalize_mode_value(module, kwargs),
+                            stack_depth,
+                        )
+                        for func_is_function, types, args, kwargs, stack_depth in mode.calls
+                    ),
+                    restored_inside,
+                    module.overrides._get_current_function_mode_stack() == [],
+                )
+        )
+
+        forwarding_events = []
+        test_case = self
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                forwarding_events.append(
+                    (
+                        self.label,
+                        tuple(
+                            mode.label
+                            for mode in module.overrides._get_current_function_mode_stack()
+                        ),
+                        func is function,
+                        types,
+                        args,
+                        test_case.normalize_mode_value(module, kwargs),
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                forwarded = function(2, out=None, layout=module.strided)
+                nested_restored = (
+                    module.overrides._get_current_function_mode_stack()
+                    == [lower, upper]
+                )
+            lower_restored = (
+                module.overrides._get_current_function_mode_stack() == [lower]
+            )
+        stack_empty = module.overrides._get_current_function_mode_stack() == []
+
+        native_error_mode = ForwardingMode("native-error")
+        with native_error_mode:
+            try:
+                function(-1, out=None, layout=module.strided)
+            except Exception as error:
+                native_error = (type(error).__name__, str(error), error.args)
+            else:
+                native_error = None
+            native_error_restored = (
+                module.overrides._get_current_function_mode_stack()
+                == [native_error_mode]
+            )
+
+        class DecliningMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        declining = DecliningMode()
+        with declining:
+            try:
+                function(2)
+            except Exception as error:
+                declining_error = (
+                    type(error).__name__,
+                    re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+                    error.args[1:] if len(error.args) > 1 else (),
+                )
+            else:
+                declining_error = None
+            declining_restored = (
+                module.overrides._get_current_function_mode_stack() == [declining]
+            )
+
+        return (
+            intercepted,
+            forwarding_events,
+            self.tensor_observation(module, forwarded),
+            nested_restored,
+            lower_restored,
+            stack_empty,
+            native_error,
+            native_error_restored,
+            declining_error,
+            declining_restored,
+            module.overrides._get_current_function_mode_stack() == [],
+        )
+
+    def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_dispatch_observation(torch),
+            self.mode_dispatch_observation(reference_torch),
+        )
+
     def test_integer_protocol_inputs_match_pytorch_2_13(self):
         cases = (
             lambda: (IntSubclass(2),),
