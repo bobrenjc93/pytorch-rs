@@ -9025,6 +9025,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 91
       }
+    },
+    {
+      "key": "pr:1570",
+      "recordedAt": "2026-09-01T12:05:38.243Z",
+      "label": "PR #1570",
+      "kind": "leaf",
+      "prNumber": 1570,
+      "title": "Record view-operation release timings",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 94,
+        "eval_39340456": 93.8,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 92
+      }
     }
   ]
 }
