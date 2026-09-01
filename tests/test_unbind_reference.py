@@ -31,22 +31,24 @@ class TensorUnbindReferenceTests(unittest.TestCase):
             module.zeros((0, 2)),
         )
 
-    def call_unbind(self, tensor, form):
+    def call_unbind(self, tensor, form, dimension=0):
         if form == "default":
             return tensor.unbind()
         if form == "positional":
-            return tensor.unbind(0)
+            return tensor.unbind(dimension)
         if form == "keyword":
-            return tensor.unbind(dim=0)
+            return tensor.unbind(dim=dimension)
         if form == "negative":
-            return tensor.unbind(-tensor.dim())
+            axis = dimension if dimension >= 0 else dimension + tensor.dim()
+            return tensor.unbind(axis - tensor.dim())
         raise AssertionError(f"unknown call form: {form}")
 
-    def view_contract(self, tensor, form):
-        outputs = self.call_unbind(tensor, form)
-        return self.output_contract(tensor, outputs)
+    def view_contract(self, tensor, form, dimension=0):
+        outputs = self.call_unbind(tensor, form, dimension)
+        return self.output_contract(tensor, outputs, dimension)
 
-    def output_contract(self, tensor, outputs):
+    def output_contract(self, tensor, outputs, dimension=0):
+        axis = dimension if dimension >= 0 else dimension + tensor.dim()
         return {
             "result_type": type(outputs).__name__,
             "source": (
@@ -62,8 +64,8 @@ class TensorUnbindReferenceTests(unittest.TestCase):
                     tuple(output.shape),
                     output.stride(),
                     output.storage_offset(),
-                    output.data_ptr() == tensor[index].data_ptr(),
-                    output.is_set_to(tensor[index]),
+                    output.data_ptr() == tensor.select(axis, index).data_ptr(),
+                    output.is_set_to(tensor.select(axis, index)),
                     output.output_nr,
                     output.requires_grad,
                     output.is_leaf,
@@ -74,19 +76,20 @@ class TensorUnbindReferenceTests(unittest.TestCase):
             ),
         }
 
-    def call_top_level_unbind(self, module, tensor, form):
+    def call_top_level_unbind(self, module, tensor, form, dimension=0):
         if form == "default":
             return module.unbind(tensor)
         if form == "positional":
-            return module.unbind(tensor, 0)
+            return module.unbind(tensor, dimension)
         if form == "keyword":
-            return module.unbind(tensor, dim=0)
+            return module.unbind(tensor, dim=dimension)
         if form == "all_keywords":
-            return module.unbind(input=tensor, dim=0)
+            return module.unbind(input=tensor, dim=dimension)
         if form == "alias":
-            return module.unbind(x=tensor, dim=0)
+            return module.unbind(x=tensor, dim=dimension)
         if form == "negative":
-            return module.unbind(tensor, -tensor.dim())
+            axis = dimension if dimension >= 0 else dimension + tensor.dim()
+            return module.unbind(tensor, axis - tensor.dim())
         raise AssertionError(f"unknown top-level call form: {form}")
 
     def test_values_layout_offsets_and_aliasing_match_pytorch_2_13(self):
@@ -100,6 +103,41 @@ class TensorUnbindReferenceTests(unittest.TestCase):
                     self.assertEqual(
                         self.view_contract(actual, form),
                         self.view_contract(expected, form),
+                    )
+
+    def arbitrary_dimension_cases(self, module):
+        contiguous = module.tensor([float(value) for value in range(24)]).reshape(
+            2, 3, 4
+        )
+        offset = module.tensor([float(value) for value in range(120)]).reshape(
+            2, 3, 4, 5
+        )[1]
+        noncontiguous = module.tensor(
+            [float(value) for value in range(48)]
+        ).reshape(2, 2, 3, 4)[1].transpose(0, 1)
+        empty_middle = module.zeros((2, 3, 0, 4))
+        empty_unbound = module.zeros((2, 0, 3))
+        return (
+            ("contiguous middle", contiguous, 1),
+            ("contiguous trailing", contiguous, 2),
+            ("offset middle", offset, 1),
+            ("noncontiguous middle", noncontiguous, 1),
+            ("negative trailing", noncontiguous, -1),
+            ("empty retained dimension", empty_middle, 1),
+            ("empty unbound dimension", empty_unbound, 1),
+        )
+
+    def test_arbitrary_dimension_views_match_pytorch_2_13(self):
+        actual_cases = self.arbitrary_dimension_cases(torch)
+        expected_cases = self.arbitrary_dimension_cases(reference_torch)
+        for (case, actual, actual_dimension), (_, expected, expected_dimension) in zip(
+            actual_cases, expected_cases, strict=True
+        ):
+            for form in ("positional", "keyword"):
+                with self.subTest(case=case, form=form):
+                    self.assertEqual(
+                        self.view_contract(actual, form, actual_dimension),
+                        self.view_contract(expected, form, expected_dimension),
                     )
 
     def test_top_level_values_layout_offsets_and_aliasing_match_pytorch_2_13(self):
@@ -124,6 +162,27 @@ class TensorUnbindReferenceTests(unittest.TestCase):
                     self.assertEqual(
                         self.output_contract(actual, actual_outputs),
                         self.output_contract(expected, expected_outputs),
+                    )
+
+    def test_top_level_arbitrary_dimension_views_match_pytorch_2_13(self):
+        actual_cases = self.arbitrary_dimension_cases(torch)
+        expected_cases = self.arbitrary_dimension_cases(reference_torch)
+        for (case, actual, actual_dimension), (_, expected, expected_dimension) in zip(
+            actual_cases, expected_cases, strict=True
+        ):
+            for form in ("positional", "keyword", "all_keywords", "alias"):
+                with self.subTest(case=case, form=form):
+                    actual_outputs = self.call_top_level_unbind(
+                        torch, actual, form, actual_dimension
+                    )
+                    expected_outputs = self.call_top_level_unbind(
+                        reference_torch, expected, form, expected_dimension
+                    )
+                    self.assertEqual(
+                        self.output_contract(actual, actual_outputs, actual_dimension),
+                        self.output_contract(
+                            expected, expected_outputs, expected_dimension
+                        ),
                     )
 
     def autograd_contract(self, module, *, top_level=False):
@@ -200,6 +259,91 @@ class TensorUnbindReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.autograd_contract(torch, top_level=True),
             self.autograd_contract(reference_torch, top_level=True),
+        )
+
+    def arbitrary_dimension_autograd_contract(self, module, *, top_level=False):
+        def call(tensor, dimension):
+            if top_level:
+                return module.unbind(tensor, dimension)
+            return tensor.unbind(dimension)
+
+        leaf = module.tensor(
+            [float(value) for value in range(48)], requires_grad=True
+        )
+        source = (leaf * 2.0).reshape(2, 2, 3, 4)[1].transpose(0, 1)
+        outputs = call(source, 1)
+        output_metadata = tuple(
+            (
+                output.output_nr,
+                output.requires_grad,
+                output.is_leaf,
+                tuple(output.shape),
+                output.stride(),
+                output.storage_offset(),
+                output.data_ptr() == source.select(1, index).data_ptr(),
+                output.is_set_to(source.select(1, index)),
+            )
+            for index, output in enumerate(outputs)
+        )
+        loss = outputs[0].sum()
+        for output in outputs[1:]:
+            loss = loss + output.sum()
+        loss.backward()
+
+        no_grad_source = module.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+        )
+        with module.no_grad():
+            no_grad_outputs = call(no_grad_source, 1)
+
+        empty = module.zeros((2, 3, 0, 4), requires_grad=True)
+        empty_outputs = call(empty, 1)
+        empty_metadata = tuple(
+            (
+                output.output_nr,
+                output.requires_grad,
+                output.is_leaf,
+                tuple(output.shape),
+                output.stride(),
+                output.storage_offset(),
+                output.is_set_to(empty.select(1, index)),
+            )
+            for index, output in enumerate(empty_outputs)
+        )
+        empty_outputs[2].sum().backward()
+
+        return {
+            "output_metadata": output_metadata,
+            "gradient": leaf.grad.tolist(),
+            "no_grad": tuple(
+                (
+                    output.output_nr,
+                    output.requires_grad,
+                    output.is_leaf,
+                    output.is_set_to(no_grad_source.select(1, index)),
+                )
+                for index, output in enumerate(no_grad_outputs)
+            ),
+            "empty_metadata": empty_metadata,
+            "empty_gradient_shape": tuple(empty.grad.shape),
+            "empty_gradient": empty.grad.tolist(),
+            "empty_unbound": call(module.zeros((2, 0, 3), requires_grad=True), 1),
+        }
+
+    def test_arbitrary_dimension_autograd_no_grad_and_empty_match_pytorch_2_13(
+        self,
+    ):
+        self.assertEqual(
+            self.arbitrary_dimension_autograd_contract(torch),
+            self.arbitrary_dimension_autograd_contract(reference_torch),
+        )
+
+    def test_top_level_arbitrary_dimension_autograd_no_grad_and_empty_match_pytorch_2_13(
+        self,
+    ):
+        self.assertEqual(
+            self.arbitrary_dimension_autograd_contract(torch, top_level=True),
+            self.arbitrary_dimension_autograd_contract(reference_torch, top_level=True),
         )
 
     def error(self, action):
