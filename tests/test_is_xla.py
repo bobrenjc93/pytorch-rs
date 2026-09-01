@@ -249,8 +249,9 @@ class TensorIsXlaTests(unittest.TestCase):
                             function((1,), device=specification)
 
         tensor = torch.tensor([1.0])
-        self.assertFalse(hasattr(torch.Tensor, "to"))
-        with self.assertRaises(AttributeError):
+        with self.assertRaisesRegex(
+            NotImplementedError, r"device conversions are not supported"
+        ):
             tensor.to("xla")
 
 
