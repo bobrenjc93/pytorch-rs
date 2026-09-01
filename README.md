@@ -51,7 +51,10 @@ flags such as `enable_flash_sdp(...)`, `enable_cudnn_sdp(...)`, and the
 attention-kernel dispatch, or CUDA `torch.compile` execution. Device selection,
 streams, events, synchronization, allocator APIs, runtime initialization,
 additional tensor dtypes, and the full module, optimizer, model-serialization,
-compiler, and distributed stacks remain unsupported.
+and distributed stacks remain unsupported. The compiler namespace is limited to
+eager compatibility helpers and markers such as
+`torch.compiler.allow_in_graph`; `torch.compile`, Dynamo graph execution,
+backend registration, and compiler CUDA execution remain unsupported.
 
 See the [exhaustive supported surface](docs/supported-surface.md) for exact API
 and limitation details, [FEATURES.md](FEATURES.md) for the weighted coverage

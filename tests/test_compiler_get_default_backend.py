@@ -148,6 +148,7 @@ class CompilerGetDefaultBackendTests(unittest.TestCase):
             [
                 "assume_constant_result",
                 "reset",
+                "allow_in_graph",
                 "list_backends",
                 "disable",
                 "set_default_backend",

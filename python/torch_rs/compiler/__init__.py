@@ -13,6 +13,7 @@ _MISSING_PARAMETER_TYPES = ()
 __all__ = [
     "assume_constant_result",
     "reset",
+    "allow_in_graph",
     "list_backends",
     "disable",
     "set_default_backend",
@@ -56,6 +57,23 @@ def reset() -> None:
     process-local state used by :func:`torch.compile`. It does not delete
     filesystem caches, such as Inductor's disk cache.
     """
+
+
+def allow_in_graph(fn):
+    """
+    Mark a callable as safe to insert into compiler graphs.
+
+    This PyTorch-compatible eager marker validates ``fn`` and returns callable
+    objects unchanged. The current implementation does not register the object
+    with Dynamo, call into PyTorch, compile the callable, or change eager
+    execution behavior. ``torch.compile``, backend registration,
+    ``substitute_in_graph``, graph execution, Dynamo execution state, and
+    compiler CUDA behavior remain unsupported.
+    """
+    if isinstance(fn, (list, tuple)):
+        return [allow_in_graph(entry) for entry in fn]
+    assert callable(fn), "allow_in_graph expects a callable"
+    return fn
 
 
 def list_backends(exclude_tags=("debug", "experimental")) -> list[str]:
