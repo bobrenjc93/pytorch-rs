@@ -203,6 +203,92 @@ def get_default_device() -> "torch.device":
     return torch.device("cpu")
 
 
+_DEFAULT_DEVICE_UNSUPPORTED_MESSAGE = (
+    "set_default_device(): only the unindexed CPU default is supported; "
+    "mutable default-device routing, CUDA/meta defaults, indexed CPU "
+    "defaults, and device context behavior are not implemented"
+)
+_KNOWN_DEVICE_TYPES = frozenset(
+    (
+        "cpu",
+        "cuda",
+        "ipu",
+        "xpu",
+        "mkldnn",
+        "opengl",
+        "opencl",
+        "ideep",
+        "hip",
+        "ve",
+        "fpga",
+        "maia",
+        "xla",
+        "lazy",
+        "vulkan",
+        "mps",
+        "meta",
+        "hpu",
+        "mtia",
+        "privateuseone",
+    )
+)
+
+
+def _parse_default_device_string(specification: str) -> tuple[str, bool]:
+    if specification == "":
+        raise RuntimeError("Device string must not be empty")
+
+    device_type, separator, index = specification.partition(":")
+    if device_type not in _KNOWN_DEVICE_TYPES:
+        if device_type and all(
+            byte.isascii() and (byte.isalpha() or byte == "_")
+            for byte in device_type
+        ):
+            raise RuntimeError(
+                "Expected one of cpu, cuda, ipu, xpu, mkldnn, opengl, "
+                "opencl, ideep, hip, ve, fpga, maia, xla, lazy, vulkan, "
+                "mps, meta, hpu, mtia, privateuseone device type at start "
+                f"of device string: {device_type}"
+            )
+        raise RuntimeError(f"Invalid device string: '{specification}'")
+
+    if separator:
+        valid_digits = index and index.isascii() and index.isdecimal()
+        if not valid_digits or (len(index) > 1 and index.startswith("0")):
+            raise RuntimeError(f"Invalid device string: '{specification}'")
+        if int(index) > 2**31 - 1:
+            raise RuntimeError(
+                f"Could not parse device index '{index}' in device string "
+                f"'{specification}'"
+            )
+
+    return device_type, bool(separator)
+
+
+def set_default_device(device: "Device") -> None:
+    r"""Sets the default ``torch.Tensor`` to be allocated on ``device``.
+
+    This CPU-only compatibility entrypoint is a no-op for ``None`` and the
+    existing unindexed CPU default. Mutable default-device routing, CUDA or
+    meta defaults, indexed CPU defaults, and ``torch.device(...)`` context
+    behavior remain unsupported.
+    """
+    if device is None:
+        return None
+
+    if isinstance(device, str):
+        device_type, has_index = _parse_default_device_string(device)
+        if device_type == "cpu" and not has_index:
+            return None
+        raise NotImplementedError(_DEFAULT_DEVICE_UNSUPPORTED_MESSAGE)
+
+    requested_device = torch.device(device)
+    if requested_device.type == "cpu" and requested_device.index is None:
+        return None
+
+    raise NotImplementedError(_DEFAULT_DEVICE_UNSUPPORTED_MESSAGE)
+
+
 @_functools.cache
 def get_device_module(device: torch.device | str | None = None):
     """
@@ -508,6 +594,7 @@ __all__ = [
     "set_deterministic_debug_mode",
     "is_deterministic_algorithms_warn_only_enabled",
     "get_default_device",
+    "set_default_device",
     "get_device_module",
     "get_float32_matmul_precision",
     "set_float32_matmul_precision",

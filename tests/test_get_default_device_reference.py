@@ -1,5 +1,9 @@
 import contextlib
+import copy
+import importlib
 import inspect
+import pickle
+import pickletools
 import threading
 import types
 import unittest
@@ -21,6 +25,12 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
                 "get_default_device differentials require pinned PyTorch 2.13.0"
             )
 
+    def setUp(self):
+        torch.set_default_device(None)
+        reference_torch.set_default_device(None)
+        self.addCleanup(torch.set_default_device, None)
+        self.addCleanup(reference_torch.set_default_device, None)
+
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
             actual_call()
@@ -28,6 +38,19 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
             expected_call()
         self.assertEqual(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+        self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
+
+    def pickle_shape(self, function, protocol):
+        shape = []
+        for opcode, argument, _ in pickletools.genops(
+            pickle.dumps(function, protocol=protocol)
+        ):
+            if opcode.name == "FRAME":
+                argument = "<frame length>"
+            elif isinstance(argument, str):
+                argument = argument.replace("torch_rs", "torch")
+            shape.append((opcode.name, argument))
+        return shape
 
     def default_device_outcome(self, module):
         first = module.get_default_device()
@@ -41,6 +64,30 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
             module.full((2,), 3.0),
         )
         return (
+            str(first),
+            repr(first),
+            first.type,
+            first.index,
+            first == second,
+            first is second,
+            tuple(tensor.device == first for tensor in factories),
+            tuple((tensor.device.type, tensor.device.index) for tensor in factories),
+        )
+
+    def supported_setter_outcome(self, module, device_factory):
+        result = module.set_default_device(device_factory(module))
+        first = module.get_default_device()
+        second = module.get_default_device()
+        factories = (
+            module.tensor([1.0, 2.0]),
+            module.scalar_tensor(1.0),
+            module.zeros((2, 0, 3)),
+            module.ones((2, 3)),
+            module.eye(2, 3),
+            module.full((2,), 3.0),
+        )
+        return (
+            result,
             str(first),
             repr(first),
             first.type,
@@ -147,6 +194,67 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
         )
         self.assertEqual(torch.__all__.count("get_default_device"), 1)
 
+    def test_setter_callable_metadata_imports_copy_and_pickle_match_pytorch_2_13(self):
+        actual = torch.set_default_device
+        expected = reference_torch.set_default_device
+        self.assertIs(type(actual), types.FunctionType)
+        self.assertIs(type(expected), types.FunctionType)
+        self.assertEqual(actual.__name__, expected.__name__)
+        self.assertEqual(actual.__qualname__, expected.__qualname__)
+        self.assertEqual(actual.__annotations__, expected.__annotations__)
+        self.assertEqual(
+            actual.__module__.replace("torch_rs", "torch"),
+            expected.__module__,
+        )
+        self.assertEqual(
+            hasattr(actual, "__text_signature__"),
+            hasattr(expected, "__text_signature__"),
+        )
+        self.assertEqual(str(inspect.signature(actual)), str(inspect.signature(expected)))
+        self.assertEqual(
+            "set_default_device" in torch.__all__,
+            "set_default_device" in reference_torch.__all__,
+        )
+        self.assertEqual(torch.__all__.count("set_default_device"), 1)
+
+        actual_namespace = {}
+        expected_namespace = {}
+        exec("from torch_rs import *", actual_namespace)
+        exec("from torch import *", expected_namespace)
+        self.assertIs(actual_namespace["set_default_device"], actual)
+        self.assertIs(expected_namespace["set_default_device"], expected)
+
+        for function in (actual, expected):
+            self.assertIs(copy.copy(function), function)
+            self.assertIs(copy.deepcopy(function), function)
+
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(pickle.loads(pickle.dumps(actual, protocol)), actual)
+                self.assertIs(pickle.loads(pickle.dumps(expected, protocol)), expected)
+                self.assertEqual(
+                    self.pickle_shape(actual, protocol),
+                    self.pickle_shape(expected, protocol),
+                )
+
+    def test_setter_default_equivalent_cpu_noops_match_pytorch_2_13(self):
+        device_factories = (
+            lambda module: None,
+            lambda module: "cpu",
+            lambda module: module.device("cpu"),
+            lambda module: module.get_default_device(),
+            lambda module: copy.copy(module.get_default_device()),
+            lambda module: pickle.loads(pickle.dumps(module.get_default_device())),
+        )
+        for case, device_factory in enumerate(device_factories):
+            with self.subTest(case=case):
+                self.assertEqual(
+                    self.supported_setter_outcome(torch, device_factory),
+                    self.supported_setter_outcome(reference_torch, device_factory),
+                )
+                torch.set_default_device(None)
+                reference_torch.set_default_device(None)
+
     def test_no_argument_errors_match_pytorch_2_13(self):
         cases = (
             (
@@ -173,6 +281,95 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
+
+    def test_setter_argument_binding_and_malformed_string_errors_match_pytorch_2_13(self):
+        cases = (
+            (
+                lambda: torch.set_default_device(),
+                lambda: reference_torch.set_default_device(),
+            ),
+            (
+                lambda: torch.set_default_device(None, None),
+                lambda: reference_torch.set_default_device(None, None),
+            ),
+            (
+                lambda: torch.set_default_device(None, device=None),
+                lambda: reference_torch.set_default_device(None, device=None),
+            ),
+            (
+                lambda: torch.set_default_device(foo=None),
+                lambda: reference_torch.set_default_device(foo=None),
+            ),
+            (
+                lambda: torch.set_default_device(""),
+                lambda: reference_torch.set_default_device(""),
+            ),
+            (
+                lambda: torch.set_default_device("banana"),
+                lambda: reference_torch.set_default_device("banana"),
+            ),
+            (
+                lambda: torch.set_default_device("CPU"),
+                lambda: reference_torch.set_default_device("CPU"),
+            ),
+            (
+                lambda: torch.set_default_device("cpu:"),
+                lambda: reference_torch.set_default_device("cpu:"),
+            ),
+            (
+                lambda: torch.set_default_device("cpu:01"),
+                lambda: reference_torch.set_default_device("cpu:01"),
+            ),
+            (
+                lambda: torch.set_default_device("cpu:-1"),
+                lambda: reference_torch.set_default_device("cpu:-1"),
+            ),
+            (
+                lambda: torch.set_default_device("cpu:2147483648"),
+                lambda: reference_torch.set_default_device("cpu:2147483648"),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assert_error_matches(actual_call, expected_call)
+                self.assertEqual(torch.get_default_device(), torch.device("cpu"))
+                self.assertEqual(
+                    reference_torch.get_default_device(),
+                    reference_torch.device("cpu"),
+                )
+
+    def test_actual_rejects_default_changing_forms_while_reference_accepts_them(self):
+        unsupported = (
+            "cpu:0",
+            torch.device("cpu", 0),
+            "cuda",
+            "cuda:0",
+            "meta",
+        )
+        for device in unsupported:
+            with self.subTest(device=device):
+                with self.assertRaises(NotImplementedError):
+                    torch.set_default_device(device)
+                self.assertEqual(torch.get_default_device(), torch.device("cpu"))
+
+        for device in ("cpu:0", "meta"):
+            with self.subTest(reference_device=device):
+                self.assertIs(reference_torch.set_default_device(device), None)
+                self.assertEqual(str(reference_torch.get_default_device()), device)
+                reference_torch.set_default_device(None)
+
+    def test_actual_reload_replaces_setter_but_preserves_cpu_default(self):
+        package = importlib.import_module("torch_rs")
+        old_function = package.set_default_device
+        reloaded = importlib.reload(package)
+
+        self.assertIs(reloaded, package)
+        self.assertIs(torch, package)
+        self.assertIsNot(package.set_default_device, old_function)
+        self.assertIs(package.set_default_device("cpu"), None)
+        self.assertEqual(package.get_default_device(), package.device("cpu"))
+        with self.assertRaises(pickle.PicklingError):
+            pickle.dumps(old_function)
 
 
 if __name__ == "__main__":
