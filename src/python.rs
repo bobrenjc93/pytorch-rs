@@ -1015,6 +1015,23 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\ncos() -> Tensor\n\nSee :func:`torch.cos`\n"]
+    #[pyo3(text_signature = None)]
+    fn cos(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "cos")? {
+            return Ok(result);
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor.inner.cos().map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nsqrt() -> Tensor\n\nSee :func:`torch.sqrt`\n"]
     #[pyo3(text_signature = None)]
     fn sqrt(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
@@ -2134,6 +2151,14 @@ pub(crate) fn sin_variable_function(
     unary_out_variable_function(UnaryOutOperation::SIN, py, args, kwargs)
 }
 
+pub(crate) fn cos_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::COS, py, args, kwargs)
+}
+
 pub(crate) fn sqrt_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2778,6 +2803,14 @@ impl UnaryOutOperation {
         apply: CoreTensor::sin,
     };
 
+    const COS: Self = Self {
+        name: "cos",
+        qualified_name: "torch.cos",
+        dispatch_allocation_error: "unable to allocate cos dispatch operands",
+        out_unsupported_error: "cos(): the 'out' argument is not supported",
+        apply: CoreTensor::cos,
+    };
+
     const SQRT: Self = Self {
         name: "sqrt",
         qualified_name: "torch.sqrt",
@@ -3178,6 +3211,7 @@ fn dispatch_tensorbase_mode(
                     | "absolute"
                     | "ceil"
                     | "const_data_ptr"
+                    | "cos"
                     | "exp"
                     | "fix"
                     | "floor"
