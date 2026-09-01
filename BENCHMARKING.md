@@ -46,6 +46,7 @@ do not replace the benchmark policy or Burner-managed evaluation progress.
 - [`+` and `Tensor.add` release timings](docs/tensor-add-release-timings.md)
 - [`*`, `Tensor.mul`/`Tensor.multiply`, and `torch.mul`/`torch.multiply` release timings](docs/tensor-mul-release-timings.md)
 - [`Tensor.abs` and `torch.abs` release timings](docs/tensor-abs-release-timings.md)
+- [`Tensor.sqrt` and `torch.sqrt` release timings](docs/tensor-sqrt-release-timings.md)
 - [`Tensor.view`, reshape, flatten, ravel, and edge-unsqueeze release timings](docs/tensor-view-release-timings.md)
 - [`torch.nn.functional.mse_loss(reduction="none")` release timings](docs/mse-loss-release-timings.md)
 - [`torch.nn.functional.l1_loss(reduction="none")` release timings](docs/l1-loss-release-timings.md)
