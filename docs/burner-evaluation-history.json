@@ -8797,6 +8797,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 89
       }
+    },
+    {
+      "key": "pr:1521",
+      "recordedAt": "2026-09-01T00:18:56.352Z",
+      "label": "PR #1521",
+      "kind": "leaf",
+      "prNumber": 1521,
+      "title": "Record Tensor.add release timings",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 91,
+        "eval_39340456": 92.4,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 90
+      }
     }
   ]
 }
