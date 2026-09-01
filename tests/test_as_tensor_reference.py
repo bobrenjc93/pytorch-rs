@@ -187,6 +187,39 @@ class AsTensorReferenceTests(unittest.TestCase):
                     )
                     self.assertEqual(actual_contract, expected_contract)
 
+    def test_non_float32_numpy_floating_default_inference_remains_unsupported(self):
+        values = (
+            np.float16(1.25),
+            np.float64(-3.5),
+        )
+        options = (
+            ({}, {}),
+            ({"dtype": None}, {"dtype": None}),
+            ({"device": "cpu"}, {"device": "cpu"}),
+            (
+                {"device": torch.device("cpu")},
+                {"device": reference_torch.device("cpu")},
+            ),
+        )
+        unsupported_conversion = (
+            "as_tensor(): only exact native CPU float32 Tensor inputs, Python "
+            "float scalars, NumPy float32 scalars, or explicit float32 NumPy "
+            "floating scalar conversions are supported; Python sequences, "
+            "NumPy arrays, NumPy integer/bool/complex scalars, Python "
+            "non-float scalars, and non-float32 NumPy floating scalars "
+            "without explicit float32 dtype are "
+            "not implemented"
+        )
+        for value in values:
+            for actual_kwargs, expected_kwargs in options:
+                with self.subTest(value=repr(value), options=actual_kwargs):
+                    expected = reference_torch.as_tensor(value, **expected_kwargs)
+                    self.assertNotEqual(str(expected.dtype), "torch.float32")
+                    with self.assertRaisesRegex(
+                        NotImplementedError, re.escape(unsupported_conversion)
+                    ):
+                        torch.as_tensor(value, **actual_kwargs)
+
     def test_numpy_floating_scalar_explicit_float32_matches_pytorch_2_13(self):
         values = (
             np.float16(1.25),

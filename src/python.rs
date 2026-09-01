@@ -1569,6 +1569,7 @@ pub(crate) fn as_tensor_variable_function(
         ));
     };
 
+    let has_explicit_dtype = arguments.dtype.is_some();
     let dtype = parse_as_tensor_dtype(arguments.dtype.as_ref())?;
     validate_as_tensor_device_type("as_tensor", arguments.device.as_ref())?;
     if let Some(keyword_error) = arguments.keyword_error {
@@ -1585,13 +1586,14 @@ pub(crate) fn as_tensor_variable_function(
         ));
     }
     if !data.value.is_exact_instance_of::<PyTensor>() {
-        if let Some(value) = extract_python_or_numpy_float_scalar(&data.value)? {
+        let scalar = extract_python_or_numpy_float_scalar(&data.value, has_explicit_dtype)?;
+        if let Some(value) = scalar {
             return Ok(
                 Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
             );
         }
         return Err(PyNotImplementedError::new_err(
-            "as_tensor(): only exact native CPU float32 Tensor inputs, Python float scalars, or NumPy floating scalars are supported; Python sequences, NumPy arrays, and non-floating scalar conversions are not implemented",
+            "as_tensor(): only exact native CPU float32 Tensor inputs, Python float scalars, NumPy float32 scalars, or explicit float32 NumPy floating scalar conversions are supported; Python sequences, NumPy arrays, NumPy integer/bool/complex scalars, Python non-float scalars, and non-float32 NumPy floating scalars without explicit float32 dtype are not implemented",
         ));
     }
     Ok(data.value.unbind())
@@ -1620,6 +1622,7 @@ pub(crate) fn asarray_variable_function(
         return Ok(result);
     }
 
+    let has_explicit_dtype = arguments.dtype.is_some();
     let dtype = parse_identity_dtype("asarray", arguments.dtype.as_ref())?;
     let device = parse_as_tensor_device("asarray", arguments.device.as_ref())?;
     validate_asarray_copy(arguments.copy.as_ref())?;
@@ -1631,14 +1634,15 @@ pub(crate) fn asarray_variable_function(
         ));
     }
     if !obj.value.is_exact_instance_of::<PyTensor>() {
-        if let Some(value) = extract_python_or_numpy_float_scalar(&obj.value)? {
+        let scalar = extract_python_or_numpy_float_scalar(&obj.value, has_explicit_dtype)?;
+        if let Some(value) = scalar {
             validate_asarray_scalar_copy(arguments.copy.as_ref())?;
             return Ok(
                 Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
             );
         }
         return Err(PyNotImplementedError::new_err(
-            "asarray(): only exact native CPU float32 Tensor inputs, Python float scalars, or NumPy floating scalars are supported; Python sequences, NumPy arrays, and non-floating scalar conversions are not implemented",
+            "asarray(): only exact native CPU float32 Tensor inputs, Python float scalars, NumPy float32 scalars, or explicit float32 NumPy floating scalar conversions are supported; Python sequences, NumPy arrays, NumPy integer/bool/complex scalars, Python non-float scalars, and non-float32 NumPy floating scalars without explicit float32 dtype are not implemented",
         ));
     }
     let should_warn_requires_grad = {
@@ -6544,11 +6548,17 @@ fn extract_exact_python_float_scalar(value: &Bound<'_, PyAny>) -> PyResult<Optio
     Ok(Some(value))
 }
 
-fn extract_python_or_numpy_float_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<f32>> {
+fn extract_python_or_numpy_float_scalar(
+    value: &Bound<'_, PyAny>,
+    has_explicit_dtype: bool,
+) -> PyResult<Option<f32>> {
     if let Some(value) = extract_exact_python_float_scalar(value)? {
         return Ok(Some(value));
     }
     if !is_numpy_scalar_of_types(value, &["floating"])? {
+        return Ok(None);
+    }
+    if !has_explicit_dtype && !is_numpy_scalar_of_types(value, &["float32"])? {
         return Ok(None);
     }
 

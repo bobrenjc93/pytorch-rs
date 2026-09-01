@@ -8,7 +8,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 
 | Adopter task | Supported APIs | Unsupported boundaries to verify |
 | --- | --- | --- |
-| Create CPU `float32` tensors | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.zeros_like`, `torch.ones_like`, `torch.full`, `torch.eye` in [Tensors](#tensors) and [Creation](#creation) | Identity converters reject Python sequences, NumPy arrays, NumPy integer/bool/complex scalars, non-float scalars, dtype conversions, accelerator or meta devices, and copy/output requests; factories reject non-`float32` dtypes, non-CPU devices, concrete `out`, pinning, sparse layouts, and backend-specific allocation. |
+| Create CPU `float32` tensors | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.zeros_like`, `torch.ones_like`, `torch.full`, `torch.eye` in [Tensors](#tensors) and [Creation](#creation) | Identity converters reject Python sequences, NumPy arrays, NumPy integer/bool/complex scalars, non-`float32` NumPy floating scalars without explicit `float32` dtype, non-float scalars, dtype conversions, accelerator or meta devices, and copy/output requests; factories reject non-`float32` dtypes, non-CPU devices, concrete `out`, pinning, sparse layouts, and backend-specific allocation. |
 | Preserve or change tensor layout | `Tensor.view`, `Tensor.view_as`, `Tensor.reshape`, `Tensor.reshape_as`, `torch.reshape`, `Tensor.unsqueeze`, `torch.unsqueeze`, `Tensor.permute`, `torch.permute`, `Tensor.movedim`, `Tensor.moveaxis`, `torch.movedim`, `torch.moveaxis`, `Tensor.contiguous`, `Tensor.cpu` in [Metadata and views](#metadata-and-views) | Unsupported edges include middle-dimension `unsqueeze`, non-leading `select`, sequence `movedim` axes, variadic top-level reshape dimensions, cross-dtype views, complex dtypes, and imaginary views. |
 | Run eager math and reductions | Python `+`, `-`, `*`, and `/` operators, `Tensor.add`, `Tensor.sub`, `Tensor.subtract`, `Tensor.mul`, `Tensor.multiply`, `Tensor.div`, `Tensor.divide`, `torch.sub`, `torch.subtract`, `torch.mul`, `torch.multiply`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` in [Elementwise and reductions](#elementwise-and-reductions) | `torch.add`, concrete `out` tensors, in-place variants, nondefault `alpha` or `rounding_mode`, scalar-only multiplication/division, dimension reductions, `keepdim=True`, dtype conversions, and non-CPU/non-`float32` tensors remain outside the contract. |
 | Use functional NN helpers | `torch.nn.functional.linear`, `torch.nn.functional.relu`, `torch.nn.functional.l1_loss`, `torch.nn.functional.mse_loss`, `torch.nn.functional.dropout`, `torch.nn.functional.dropout1d`, `torch.nn.functional.dropout2d`, `torch.nn.functional.dropout3d`, `torch.nn.functional.sigmoid`, `torch.nn.functional.silu`, `torch.nn.functional.softsign`, `torch.nn.functional.tanh`, `torch.nn.init.calculate_gain` in [NN/data helpers](#nn-and-data-helpers) and [math activations](#elementwise-and-reductions) | Module layers, active autograd for loss/softsign paths, loss reductions other than `"none"`, loss `weight` arguments, nondeterministic dropout, nonidentity inplace dropout, and mutating initializers remain unsupported. |
@@ -622,17 +622,19 @@ conversion and Python or NumPy floating scalar construction. When `data` is an
 exact native CPU `float32` tensor and `dtype` and `device` are omitted, `None`,
 or the unindexed CPU/`torch.float32` defaults, the exact same Python Tensor
 object is returned with unchanged storage, shape, stride, storage offset, dtype,
-device, layout, autograd history, leaf state, and output number. When `data` is
-an exact Python `float` or NumPy floating scalar with the same
-default-equivalent metadata, a fresh rank-0 CPU `float32` leaf tensor is
-allocated with `requires_grad=False`, including finite values, signed zero,
-infinities, and NaN. NumPy floating scalar values are coerced through this
-float32 scalar path rather than used for NumPy dtype inference. Python
-sequences, NumPy arrays, NumPy integer, boolean, and complex scalar values,
-tensor subclasses, non-`float32` dtype conversions, accelerator or meta
-devices, indexed CPU devices that would require a copy, pinned-memory options,
-concrete or `None` `out` arguments, explicit copy requests, and
-`requires_grad` keyword requests remain unsupported.
+device, layout, autograd history, leaf state, and output number. Exact Python
+`float` scalars and NumPy `float32` scalars with the same default-equivalent
+metadata create fresh rank-0 CPU `float32` leaf tensors with
+`requires_grad=False`, including finite values, signed zero, infinities, and
+NaN. Non-`float32` NumPy floating scalar values are accepted only when
+`dtype=torch.float32` or `dtype=torch.float` is explicitly requested, because
+omitted and `dtype=None` forms would infer unsupported NumPy dtypes under
+PyTorch. Python sequences, NumPy arrays, NumPy integer, boolean, and complex
+scalar values, non-`float32` NumPy floating scalars without an explicit
+float32 dtype request, tensor subclasses, non-`float32` dtype conversions,
+accelerator or meta devices, indexed CPU devices that would require a copy,
+pinned-memory options, concrete or `None` `out` arguments, explicit copy
+requests, and `requires_grad` keyword requests remain unsupported.
 
 `torch.asarray(obj, *, dtype=None, device=None, copy=None, requires_grad=None)`
 is exposed as the matching array conversion sibling. Exact native CPU `float32`
@@ -640,17 +642,20 @@ tensors are returned unchanged when `dtype` and `device` are omitted, `None`, or
 default-equivalent, `copy` is omitted, `None`, or `False`, and `requires_grad`
 is omitted or `None`. The tensor identity path preserves the source tensor's
 storage aliasing, shape, stride, storage offset, layout, leaf/output metadata,
-and existing autograd history. Exact Python `float` scalars and NumPy floating
-scalars with omitted, `None`, or default-equivalent dtype/device metadata and
-omitted or `None` `copy`/`requires_grad` options create fresh rank-0 CPU
-`float32` leaves with `requires_grad=False`, including finite values, signed
-zero, infinities, and NaN. NumPy floating scalar values are coerced through this
-float32 scalar path rather than used for NumPy dtype inference. Python
-sequences, NumPy arrays, NumPy integer, boolean, and complex scalar values,
-float subclasses, tensor subclasses, non-`float32` dtype conversions,
-accelerator or meta devices, indexed CPU devices that would require a copy,
-pinned-memory options, `out`, `copy=True`, scalar `copy=False`, and explicit
-`requires_grad` mutation requests remain unsupported.
+and existing autograd history. Exact Python `float` scalars and NumPy
+`float32` scalars with omitted, `None`, or default-equivalent dtype/device
+metadata and omitted or `None` `copy`/`requires_grad` options create fresh
+rank-0 CPU `float32` leaves with `requires_grad=False`, including finite
+values, signed zero, infinities, and NaN. Non-`float32` NumPy floating scalar
+values are accepted only when `dtype=torch.float32` or `dtype=torch.float` is
+explicitly requested, because omitted and `dtype=None` forms would infer
+unsupported NumPy dtypes under PyTorch. Python sequences, NumPy arrays, NumPy
+integer, boolean, and complex scalar values, non-`float32` NumPy floating
+scalars without an explicit float32 dtype request, float subclasses, tensor
+subclasses, non-`float32` dtype conversions, accelerator or meta devices,
+indexed CPU devices that would require a copy, pinned-memory options, `out`,
+`copy=True`, scalar `copy=False`, and explicit `requires_grad` mutation
+requests remain unsupported.
 
 `torch.zeros(size, *, out=None, dtype=None, device=None, requires_grad=False)` and `torch.ones(size, *, out=None, dtype=None, device=None, requires_grad=False)` create fresh CPU float32 tensors for scalar, empty, and multidimensional sizes. A single positional integer or integer-protocol value is accepted as a one-dimensional size, while tuple/list-like sizes retain their existing PyTorch-compatible shape, stride, dtype, device, and `requires_grad` metadata. `out=None` is accepted and behaves like the omitted default without reusing storage. Concrete `out` tensors, extra positional dimensions, non-float32 dtype or non-CPU device allocation, `layout`, `pin_memory`, sparse layouts, and backend-specific allocation behavior remain unsupported.
 

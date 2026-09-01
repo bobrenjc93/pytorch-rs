@@ -163,7 +163,7 @@ class AsArrayTests(unittest.TestCase):
                         result, duplicate, expected_bits
                     )
 
-    def test_numpy_floating_scalars_create_fresh_cpu_float32_leaves(self):
+    def test_numpy_float32_scalars_create_fresh_cpu_float32_leaves(self):
         option_cases = (
             {},
             {"dtype": None},
@@ -182,12 +182,36 @@ class AsArrayTests(unittest.TestCase):
             },
         )
         value_cases = (
-            np.float16(1.25),
             np.float32(0.0),
             np.float32(-0.0),
             np.float32(float("inf")),
             np.float32(float("-inf")),
             np.float32(float("nan")),
+            np.float32(-3.5),
+        )
+        for value in value_cases:
+            expected_bits = int(
+                np.asarray(value, dtype=np.float32).reshape(-1).view(np.uint32)[0]
+            )
+            for options in option_cases:
+                with self.subTest(value=repr(value), options=options):
+                    result = torch.asarray(value, **options)
+                    duplicate = torch.asarray(value, **options)
+                    self.assert_fresh_cpu_float32_leaf(
+                        result, duplicate, expected_bits
+                    )
+
+    def test_non_float32_numpy_floating_scalars_require_explicit_float32_dtype(self):
+        option_cases = (
+            {"dtype": torch.float32},
+            {"dtype": torch.float},
+            {"dtype": torch.float32, "device": "cpu"},
+            {"dtype": torch.float32, "device": torch.device("cpu")},
+            {"dtype": torch.float32, "copy": None},
+            {"dtype": torch.float32, "requires_grad": None},
+        )
+        value_cases = (
+            np.float16(1.25),
             np.float64(-3.5),
         )
         for value in value_cases:
@@ -380,8 +404,11 @@ class AsArrayTests(unittest.TestCase):
         tensor = torch.tensor([1.0], dtype=torch.float32)
         unsupported_conversion = (
             "asarray(): only exact native CPU float32 Tensor inputs, Python "
-            "float scalars, or NumPy floating scalars are supported; Python "
-            "sequences, NumPy arrays, and non-floating scalar conversions are "
+            "float scalars, NumPy float32 scalars, or explicit float32 NumPy "
+            "floating scalar conversions are supported; Python sequences, "
+            "NumPy arrays, NumPy integer/bool/complex scalars, Python "
+            "non-float scalars, and non-float32 NumPy floating scalars "
+            "without explicit float32 dtype are "
             "not implemented"
         )
         explicit_requires_grad = (
@@ -554,6 +581,26 @@ class AsArrayTests(unittest.TestCase):
             ),
             (
                 lambda: torch.asarray(np.asarray(1.0, dtype=np.float32)),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
+            (
+                lambda: torch.asarray(np.float16(1.0)),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
+            (
+                lambda: torch.asarray(np.float16(1.0), dtype=None),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
+            (
+                lambda: torch.asarray(np.float64(1.0)),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
+            (
+                lambda: torch.asarray(np.float64(1.0), device="cpu"),
                 NotImplementedError,
                 unsupported_conversion,
             ),
