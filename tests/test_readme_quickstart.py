@@ -185,6 +185,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         "Integrate eager compiler, JIT, and distributed probes",
         (
             "`torch.compiler.disable`",
+            "`torch.compiler.allow_in_graph`",
             "`torch.jit.annotate`",
             "`torch.distributed.is_available`",
             "`torch.distributed.is_gloo_available`",
