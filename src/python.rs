@@ -1585,7 +1585,7 @@ pub(crate) fn as_tensor_variable_function(
         ));
     }
     if !data.value.is_exact_instance_of::<PyTensor>() {
-        if let Some(value) = extract_python_or_numpy_float_scalar(&data.value)? {
+        if let Some(value) = extract_as_tensor_float_scalar(&data.value)? {
             return Ok(
                 Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
             );
@@ -1631,11 +1631,13 @@ pub(crate) fn asarray_variable_function(
         ));
     }
     if !obj.value.is_exact_instance_of::<PyTensor>() {
-        if let Some(value) = extract_python_or_numpy_float_scalar(&obj.value)? {
+        if let Some(value) = extract_asarray_float_scalar(&obj.value)? {
             validate_asarray_scalar_copy(arguments.copy.as_ref())?;
-            return Ok(
-                Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
-            );
+            return Ok(Py::new(
+                py,
+                rank_zero_scalar_tensor_preserving_bits(value, dtype, device, false)?,
+            )?
+            .into_any());
         }
         return Err(PyNotImplementedError::new_err(
             "asarray(): only exact native CPU float32 Tensor inputs, exact Python float scalars, or NumPy floating scalars are supported; Python sequences, NumPy arrays, and non-floating scalar conversions are not implemented",
@@ -6534,7 +6536,17 @@ fn scalar_tensor_impl(
     rank_zero_scalar_tensor(value, dtype, device, requires_grad)
 }
 
-fn extract_python_or_numpy_float_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<f32>> {
+fn extract_exact_python_float_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<f32>> {
+    if !value.is_exact_instance_of::<PyFloat>() {
+        return Ok(None);
+    }
+
+    #[allow(clippy::cast_possible_truncation)]
+    let value = value.extract::<f64>()? as f32;
+    Ok(Some(value))
+}
+
+fn extract_as_tensor_float_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<f32>> {
     if value.is_exact_instance_of::<PyFloat>() || is_numpy_scalar_of_types(value, &["floating"])? {
         #[allow(clippy::cast_possible_truncation)]
         let value = value.extract::<f64>()? as f32;
@@ -6544,6 +6556,59 @@ fn extract_python_or_numpy_float_scalar(value: &Bound<'_, PyAny>) -> PyResult<Op
     Ok(None)
 }
 
+fn extract_asarray_float_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<f32>> {
+    if let Some(value) = extract_exact_python_float_scalar(value)? {
+        return Ok(Some(value));
+    }
+    extract_numpy_floating_scalar_storage_as_f32(value)
+}
+
+fn extract_numpy_floating_scalar_storage_as_f32(value: &Bound<'_, PyAny>) -> PyResult<Option<f32>> {
+    if !is_numpy_scalar_of_types(value, &["floating"])? {
+        return Ok(None);
+    }
+
+    let numpy = PyModule::import(value.py(), "numpy")?;
+    let array = numpy.getattr("asarray")?.call1((value,))?;
+    let dtype_name = array
+        .getattr("dtype")?
+        .getattr("name")?
+        .extract::<String>()?;
+    let array = if dtype_name == "float32" {
+        array
+    } else {
+        let errstate_kwargs = PyDict::new(value.py());
+        errstate_kwargs.set_item("over", "ignore")?;
+        errstate_kwargs.set_item("under", "ignore")?;
+        errstate_kwargs.set_item("invalid", "ignore")?;
+        let errstate = numpy
+            .getattr("errstate")?
+            .call((), Some(&errstate_kwargs))?;
+        errstate.call_method0("__enter__")?;
+        let cast_result = array.call_method1("astype", (numpy.getattr("float32")?,));
+        let exit_result = errstate.call_method1(
+            "__exit__",
+            (value.py().None(), value.py().None(), value.py().None()),
+        );
+        match (cast_result, exit_result) {
+            (Ok(array), Ok(_)) => array,
+            (Err(error), _) | (_, Err(error)) => return Err(error),
+        }
+    };
+    let contiguous = array.call_method0("tobytes")?;
+    let contiguous = contiguous.cast::<PyBytes>()?;
+    let bytes = contiguous.as_bytes();
+    if bytes.len() != size_of::<f32>() {
+        return Err(PyRuntimeError::new_err(
+            "asarray(): NumPy floating scalar conversion did not produce float32 storage",
+        ));
+    }
+    let bytes: [u8; size_of::<f32>()] = bytes
+        .try_into()
+        .expect("NumPy floating scalar storage length was checked");
+    Ok(Some(f32::from_ne_bytes(bytes)))
+}
+
 fn rank_zero_scalar_tensor(
     value: f32,
     dtype: DType,
@@ -6551,6 +6616,17 @@ fn rank_zero_scalar_tensor(
     requires_grad: bool,
 ) -> PyResult<PyTensor> {
     CoreTensor::full_with_metadata(Vec::new(), value, dtype, device)
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
+        .map_err(|error| tensor_error(&error))
+}
+
+fn rank_zero_scalar_tensor_preserving_bits(
+    value: f32,
+    dtype: DType,
+    device: Device,
+    requires_grad: bool,
+) -> PyResult<PyTensor> {
+    CoreTensor::from_vec_with_metadata(vec![value], Vec::new(), dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| tensor_error(&error))
 }

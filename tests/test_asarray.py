@@ -1,4 +1,5 @@
 import copy
+import ctypes
 import importlib
 import inspect
 import pickle
@@ -13,6 +14,18 @@ import torch_rs as torch
 
 class NumpyFloatSubclass(np.float32):
     pass
+
+
+class FloatProtocolChangingNumpyScalar(np.float32):
+    float_calls = 0
+
+    def __float__(self):
+        type(self).float_calls += 1
+        return 99.0
+
+
+def numpy_float32_from_bits(bits):
+    return np.asarray(bits, dtype=np.uint32).view(np.float32)[()]
 
 
 FUNCTION_DOC_PREFIX = (
@@ -80,6 +93,9 @@ class AsArrayTests(unittest.TestCase):
     def float32_bits(self, tensor):
         return np.asarray(tensor).reshape(-1).view(np.uint32).tolist()
 
+    def float32_storage_bits(self, tensor):
+        return [ctypes.c_uint32.from_address(tensor.data_ptr()).value]
+
     def assert_fresh_scalar_tensor(self, result, duplicate, expected_bits):
         self.assertIsInstance(result, torch.Tensor)
         self.assertIsNot(result, duplicate)
@@ -96,7 +112,7 @@ class AsArrayTests(unittest.TestCase):
         self.assertTrue(result.is_leaf)
         self.assertEqual(result.output_nr, 0)
         self.assertIsNone(result.grad)
-        self.assertEqual(self.float32_bits(result), [expected_bits])
+        self.assertEqual(self.float32_storage_bits(result), [expected_bits])
 
     def test_exact_native_cpu_float32_tensors_return_identical_object(self):
         option_cases = (
@@ -195,6 +211,8 @@ class AsArrayTests(unittest.TestCase):
             (np.float32(float("inf")), 0x7F800000),
             (np.float64(float("-inf")), 0xFF800000),
             (np.float32(float("nan")), 0x7FC00000),
+            (numpy_float32_from_bits(0x7F812345), 0x7F812345),
+            (numpy_float32_from_bits(0xFF812345), 0xFF812345),
             (NumpyFloatSubclass(2.0), 0x40000000),
         )
         for value, expected_bits in value_cases:
@@ -206,6 +224,14 @@ class AsArrayTests(unittest.TestCase):
                     self.assert_fresh_scalar_tensor(
                         result, duplicate, expected_bits
                     )
+
+    def test_numpy_floating_scalar_storage_does_not_call_float_protocol(self):
+        FloatProtocolChangingNumpyScalar.float_calls = 0
+
+        result = torch.asarray(FloatProtocolChangingNumpyScalar(2.0))
+
+        self.assertEqual(self.float32_storage_bits(result), [0x40000000])
+        self.assertEqual(FloatProtocolChangingNumpyScalar.float_calls, 0)
 
     def test_identity_preserves_autograd_graph_and_gradient_object(self):
         leaf = torch.tensor(

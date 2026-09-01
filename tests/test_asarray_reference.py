@@ -1,4 +1,5 @@
 import copy
+import ctypes
 import importlib
 import inspect
 import pickle
@@ -13,6 +14,15 @@ import torch_rs as torch
 
 class NumpyFloatSubclass(np.float32):
     pass
+
+
+class FloatProtocolChangingNumpyScalar(np.float32):
+    def __float__(self):
+        return 99.0
+
+
+def numpy_float32_from_bits(bits):
+    return np.asarray(bits, dtype=np.uint32).view(np.float32)[()]
 
 
 try:
@@ -121,6 +131,9 @@ class AsArrayReferenceTests(unittest.TestCase):
         state.pop("data_ptr")
         return state
 
+    def scalar_float32_storage_bits(self, tensor):
+        return [ctypes.c_uint32.from_address(tensor.data_ptr()).value]
+
     def asarray_identity_contract(self, module, tensor, options):
         before = self.tensor_state(module, tensor)
         with warnings.catch_warnings():
@@ -138,11 +151,13 @@ class AsArrayReferenceTests(unittest.TestCase):
     def asarray_float_scalar_contract(self, module, value, options):
         first = module.asarray(value, **options)
         second = module.asarray(value, **options)
+        state = self.comparable_tensor_state(module, first)
+        state["values"] = self.scalar_float32_storage_bits(first)
         return {
             "fresh_object": first is not second,
             "fresh_storage": first.data_ptr() != second.data_ptr(),
             "not_set_to_duplicate": not first.is_set_to(second),
-            "state": self.comparable_tensor_state(module, first),
+            "state": state,
             "numel": first.numel(),
             "grad_is_none": first.grad is None,
         }
@@ -204,7 +219,10 @@ class AsArrayReferenceTests(unittest.TestCase):
             np.float32(float("inf")),
             np.float32(float("-inf")),
             np.float32(float("nan")),
+            numpy_float32_from_bits(0x7F812345),
+            numpy_float32_from_bits(0xFF812345),
             NumpyFloatSubclass(2.0),
+            FloatProtocolChangingNumpyScalar(2.0),
         )
         actual_options = self.scalar_option_cases(torch)
         expected_options = self.scalar_option_cases(reference_torch)
