@@ -947,10 +947,10 @@ unsqueeze(input, dim) -> Tensor
 Returns a new tensor with a dimension of size one inserted at the
 specified position.
 
-This implementation supports exact native CPU float32 tensors only when
-``dim`` normalizes to ``0`` or ``input.dim()``. Middle-dimension insertion,
-dtype/device extensions, tensor subclasses, and ``__torch_function__`` modes
-remain unsupported.
+This implementation supports exact native CPU float32 tensors for every valid
+insertion dimension. dtype/device extensions, tensor subclasses, broader
+``None`` indexing expansion, and ``__torch_function__`` modes remain
+unsupported.
 ";
 
 const SELECT_DOC: &std::ffi::CStr = c"\nselect(input, dim, index) -> Tensor\n\nSlices the :attr:`input` tensor along the selected dimension at the given index.\nThis function returns a view of the original tensor with the given dimension removed.\n\n.. note:: If :attr:`input` is a sparse tensor and returning a view of\n          the tensor is not possible, a RuntimeError exception is\n          raised. In this is the case, consider using\n          :func:`torch.select_copy` function.\n\nArgs:\n    input (Tensor): the input tensor.\n    dim (int): the dimension to slice\n    index (int): the index to select with\n\n.. note::\n\n    :meth:`select` is equivalent to slicing. For example,\n    ``tensor.select(0, index)`` is equivalent to ``tensor[index]`` and\n    ``tensor.select(2, index)`` is equivalent to ``tensor[:,:,index]``.\n";

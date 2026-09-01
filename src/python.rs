@@ -388,7 +388,7 @@ impl PyTensorBase {
         Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
     }
 
-    #[doc = "\nunsqueeze(dim) -> Tensor\n\nReturns a new tensor with a dimension of size one inserted at the\nspecified position.\n\nOnly leading and trailing dimension insertion is currently supported:\n``dim`` must normalize to ``0`` or ``self.dim()``. Middle-dimension insertion,\ntensor subclasses, and ``__torch_function__`` modes remain unsupported.\n"]
+    #[doc = "\nunsqueeze(dim) -> Tensor\n\nReturns a new tensor with a dimension of size one inserted at the\nspecified position.\n\nThis implementation supports exact native CPU float32 tensors for every valid\ninsertion dimension. dtype/device extensions, tensor subclasses, broader\n``None`` indexing expansion, and ``__torch_function__`` modes remain\nunsupported.\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn unsqueeze(
         slf: &Bound<'_, Self>,
@@ -416,7 +416,7 @@ impl PyTensorBase {
         }
         let tensor = tensor.cast::<PyTensor>()?;
         let dimension = extract_dimension_swap_dimension(&dimension.value)?;
-        apply_edge_unsqueeze(slf.py(), tensor, dimension)
+        apply_unsqueeze(slf.py(), tensor, dimension)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -2287,7 +2287,7 @@ pub(crate) fn unsqueeze_variable_function(
     }
 
     let dimension = extract_dimension_swap_dimension(&dimension.value)?;
-    apply_edge_unsqueeze(py, input, dimension)
+    apply_unsqueeze(py, input, dimension)
 }
 
 pub(crate) fn select_variable_function(
@@ -3214,7 +3214,7 @@ fn unbind_first_dimension(
         .unbind())
 }
 
-fn apply_edge_unsqueeze(
+fn apply_unsqueeze(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
     dimension: i64,
@@ -3223,16 +3223,10 @@ fn apply_edge_unsqueeze(
         let tensor = tensor.try_borrow()?;
         let rank = tensor.inner.shape().len();
         let axis = normalize_unsqueeze_dimension(dimension, rank)?;
-        if axis == 0 {
-            tensor.inner.unsqueeze_front()
-        } else if axis == rank {
-            tensor.inner.unsqueeze_back()
-        } else {
-            return Err(PyNotImplementedError::new_err(format!(
-                "unsqueeze(): only leading and trailing dimensions are supported; got normalized dim {axis} for input with {rank} dimensions"
-            )));
-        }
-        .map_err(|error| tensor_error(&error))?
+        tensor
+            .inner
+            .unsqueeze_axis(axis)
+            .map_err(|error| tensor_error(&error))?
     };
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
 }
