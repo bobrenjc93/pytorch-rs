@@ -3570,6 +3570,20 @@ impl Tensor {
         self.unary_map(rsqrt_value)
     }
 
+    /// Computes the natural logarithm of every element using unary output
+    /// layout planning.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    pub fn log(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "log" });
+        }
+        self.unary_map(log_value)
+    }
+
     fn scalar_div_with_output_layout(
         &self,
         scalar: f32,
@@ -6236,6 +6250,24 @@ fn sqrt_value(value: f32) -> f32 {
     }
 }
 
+fn log_value(value: f32) -> f32 {
+    // PyTorch canonicalizes negative nonzero domain errors to a positive quiet
+    // NaN, while preserving the sign and payload of NaN inputs.
+    const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+    let bits = value.to_bits();
+    let magnitude = bits & !F32_SIGN_MASK;
+    let is_nan = magnitude > f32::INFINITY.to_bits();
+    let is_negative_nonzero = bits & F32_SIGN_MASK != 0 && magnitude != 0;
+    if is_nan {
+        f32::from_bits(bits | QUIET_NAN_MASK)
+    } else if is_negative_nonzero {
+        f32::NAN
+    } else {
+        value.ln()
+    }
+}
+
 fn rsqrt_value(value: f32) -> f32 {
     const QUIET_NAN_MASK: u32 = 0x0040_0000;
 
@@ -6484,7 +6516,7 @@ mod tests {
         CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device, F32_SIGN_MASK, GradFn, LogicalValuesInner,
         MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor,
         TensorError, contiguous_values_equal, full_reduction_mean_divisor,
-        l1_loss_difference_value, logical_offset_for_linear_index,
+        l1_loss_difference_value, log_value, logical_offset_for_linear_index,
         materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
         validate_view_bounds,
     };
@@ -6606,6 +6638,63 @@ mod tests {
 
         assert_eq!(
             inputs.map(|bits| rsqrt_value(f32::from_bits(bits)).to_bits()),
+            expected
+        );
+    }
+
+    #[test]
+    fn logarithm_matches_pytorch_float32_edge_bits() {
+        let inputs = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x007f_ffff,
+            0x807f_ffff,
+            0x0080_0000,
+            0x8080_0000,
+            0x3eaa_aaab,
+            0xbeaa_aaab,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x4000_0000,
+            0xc000_0000,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7f81_2345,
+            0xff81_2345,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
+        let expected = [
+            0xff80_0000,
+            0xff80_0000,
+            0xc2ce_8ed0,
+            0x7fc0_0000,
+            0xc2ae_ac50,
+            0x7fc0_0000,
+            0xc2ae_ac50,
+            0x7fc0_0000,
+            0xbf8c_9f54,
+            0x7fc0_0000,
+            0x0000_0000,
+            0x7fc0_0000,
+            0x3f31_7218,
+            0x7fc0_0000,
+            0x42b1_7218,
+            0x7fc0_0000,
+            0x7f80_0000,
+            0x7fc0_0000,
+            0x7fc1_2345,
+            0xffc1_2345,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
+
+        assert_eq!(
+            inputs.map(|bits| log_value(f32::from_bits(bits)).to_bits()),
             expected
         );
     }
@@ -12943,6 +13032,10 @@ mod tests {
         );
         assert_eq!(
             tensor.rsqrt(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.log(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
