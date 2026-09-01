@@ -3570,13 +3570,10 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when gradient recording is enabled for this tensor, or
-    /// when result metadata or storage allocation fails.
+    /// Returns an error when result metadata or storage allocation fails.
     pub fn rsqrt(&self) -> Result<Self, TensorError> {
-        if self.records_grad() {
-            return Err(TensorError::AutogradRecordingUnsupported { operation: "rsqrt" });
-        }
-        self.unary_map(rsqrt_value)
+        let output = self.unary_map(rsqrt_value)?;
+        self.finish_saved_input_unary_vjp(output, AutogradNode::Rsqrt, apply_rsqrt_vjp)
     }
 
     fn scalar_div_with_output_layout(
@@ -4848,6 +4845,21 @@ fn apply_sqrt_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>
                 sqrt_backward_value(input.value_at_linear_index(index), value)
             }),
         );
+    }
+}
+
+fn apply_rsqrt_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    // PyTorch computes rsqrt backward from the forward rsqrt value. Recompute
+    // that value from the saved input so this node keeps saved-input semantics.
+    if let Some(saved_values) = input.contiguous_slice() {
+        debug_assert_eq!(saved_values.len(), upstream.len());
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| rsqrt_backward_value(saved_value, upstream_value),
+        ));
+    } else {
+        gradient.extend(upstream.iter().enumerate().map(|(index, &value)| {
+            rsqrt_backward_value(input.value_at_linear_index(index), value)
+        }));
     }
 }
 
@@ -6286,6 +6298,13 @@ fn tanh_value(value: f32) -> f32 {
 #[inline]
 fn sqrt_backward_value(input: f32, upstream: f32) -> f32 {
     upstream / (2.0 * sqrt_value(input))
+}
+
+#[inline]
+fn rsqrt_backward_value(input: f32, upstream: f32) -> f32 {
+    let output = rsqrt_value(input);
+    let output_cubed = (output * output) * output;
+    (upstream * -0.5) * output_cubed
 }
 
 #[inline]
@@ -10561,6 +10580,10 @@ mod tests {
             Some("PowBackward0")
         );
         assert_eq!(source.sqrt().unwrap().grad_fn_name(), Some("SqrtBackward0"));
+        assert_eq!(
+            source.rsqrt().unwrap().grad_fn_name(),
+            Some("RsqrtBackward0")
+        );
     }
 
     fn binary_outputs(left: &Tensor, right: &Tensor) -> [Tensor; 4] {

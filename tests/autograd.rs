@@ -293,50 +293,220 @@ fn division_rejects_recording_before_planning_and_honors_no_grad() {
 }
 
 #[test]
-fn reciprocal_square_root_rejects_recording_before_planning_and_honors_no_grad() {
-    let leaf = Tensor::from_vec(vec![-4.0, -0.0, 1.0, 4.0], [2, 2])
+fn reciprocal_square_root_preserves_scalar_empty_offset_and_strided_autograd_history() {
+    let scalar = Tensor::from_vec(vec![4.0], [])
         .unwrap()
         .with_requires_grad(true);
+    let scalar_output = scalar.rsqrt().unwrap();
+    assert!(scalar_output.requires_grad());
+    assert!(!scalar_output.is_leaf());
+    assert!(scalar_output.shape().is_empty());
+    assert!(scalar_output.stride().is_empty());
+    assert_eq!(scalar_output.storage_offset(), 0);
+    scalar_output.backward().unwrap();
     assert_eq!(
-        leaf.rsqrt(),
-        Err(TensorError::AutogradRecordingUnsupported { operation: "rsqrt" })
+        scalar.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        (-0.0625_f32).to_bits()
     );
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let empty_output = empty.rsqrt().unwrap();
+    assert!(empty_output.requires_grad());
+    assert_eq!(empty_output.shape(), [2, 0, 3]);
+    assert_eq!(empty_output.stride(), [3, 3, 1]);
+    assert_eq!(empty_output.storage_offset(), 0);
+    assert_eq!(empty_output.dtype(), empty.dtype());
+    assert_eq!(empty_output.device(), empty.device());
+    empty_output.sum().backward().unwrap();
+    let empty_gradient = empty.grad().unwrap().unwrap();
+    assert_eq!(empty_gradient.shape(), [2, 0, 3]);
+    assert_eq!(empty_gradient.stride(), [3, 3, 1]);
+    assert!(values(&empty_gradient).is_empty());
+
+    let source = Tensor::from_vec((1_u8..=24).map(f32::from).collect(), [2, 3, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    let offset = source.index([1]).unwrap();
+    let offset_output = offset.rsqrt().unwrap();
+    assert!(offset_output.requires_grad());
+    assert_eq!(offset.storage_offset(), 12);
+    assert_eq!(offset_output.shape(), [3, 4]);
+    assert_eq!(offset_output.stride(), [4, 1]);
+    assert_eq!(offset_output.storage_offset(), 0);
+    assert!(!offset_output.shares_storage_with(&offset));
+    offset_output.sum().backward().unwrap();
+    let expected = (1_u8..=24)
+        .map(|value| {
+            if value <= 12 {
+                0.0
+            } else {
+                let reciprocal_root = 1.0 / f32::from(value).sqrt();
+                let reciprocal_root_cubed = (reciprocal_root * reciprocal_root) * reciprocal_root;
+                -0.5 * reciprocal_root_cubed
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(values(&source.grad().unwrap().unwrap()), expected);
+
+    let strided_source = Tensor::from_vec((1_u8..=24).map(f32::from).collect(), [2, 3, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    let strided = strided_source.index([1]).unwrap().transpose(0, 1).unwrap();
+    let weights = Tensor::from_vec((1_u8..=12).map(f32::from).collect(), [4, 3]).unwrap();
+    let strided_output = strided.rsqrt().unwrap();
+    assert!(strided_output.requires_grad());
+    assert_eq!(strided.storage_offset(), 12);
+    assert_eq!(strided_output.shape(), [4, 3]);
+    assert_eq!(strided_output.stride(), [1, 4]);
+    assert_eq!(strided_output.storage_offset(), 0);
+    assert!(!strided_output.shares_storage_with(&strided));
+    let loss = strided_output.mul(&weights).unwrap().sum();
+    loss.backward().unwrap();
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+    let expected = (1_u8..=24)
+        .map(|value| {
+            if value <= 12 {
+                return 0.0;
+            }
+            let index = usize::from(value - 13);
+            let row = index / 4;
+            let column = index % 4;
+            let upstream = f32::from(u8::try_from(column * 3 + row + 1).unwrap());
+            let reciprocal_root = 1.0 / f32::from(value).sqrt();
+            let reciprocal_root_cubed = (reciprocal_root * reciprocal_root) * reciprocal_root;
+            (upstream * -0.5) * reciprocal_root_cubed
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(values(&strided_source.grad().unwrap().unwrap()), expected);
 
     let extreme = Tensor::zeros([0])
         .unwrap()
         .reshape([0, i64::MAX, 3])
         .unwrap()
         .with_requires_grad(true);
+    assert_eq!(extreme.rsqrt(), Err(TensorError::StrideCalculationOverflow));
+}
+
+#[test]
+fn reciprocal_square_root_vjp_matches_pytorch_for_signed_zero_non_finites_and_nans() {
+    let input_bits = [
+        0x0000_0000,
+        0x8000_0000,
+        0x0000_0001,
+        0x8000_0001,
+        0x007f_ffff,
+        0x807f_ffff,
+        0x0080_0000,
+        0x8080_0000,
+        0x3e80_0000,
+        0x3eaa_aaab,
+        0xbeaa_aaab,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x4000_0000,
+        0x4080_0000,
+        0x7f7f_ffff,
+        0xff7f_ffff,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7f81_2345,
+        0xff81_2345,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let weight_bits = [
+        0x3f80_0000,
+        0xbf80_0000,
+        0x0000_0000,
+        0x8000_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x3f00_0000,
+        0xbf00_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x3f80_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+    ];
+    let expected_gradient_bits = [
+        0xff80_0000,
+        0xff80_0000,
+        0xffc0_0000,
+        0xffc0_0000,
+        0xff80_0000,
+        0xffc0_0000,
+        0xff80_0000,
+        0xffc0_0000,
+        0xc080_0000,
+        0x4026_46e3,
+        0xffc0_0000,
+        0x3f00_0000,
+        0xffc0_0000,
+        0x3e35_04f2,
+        0xbd80_0000,
+        0x0000_0000,
+        0xffc0_0000,
+        0x0000_0000,
+        0xffc0_0000,
+        0x7fc1_2345,
+        0xffc1_2345,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let leaf = Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), [input_bits.len()])
+        .unwrap()
+        .with_requires_grad(true);
+    let weights = Tensor::from_vec(
+        weight_bits.map(f32::from_bits).to_vec(),
+        [weight_bits.len()],
+    )
+    .unwrap();
+    let loss = leaf.rsqrt().unwrap().mul(&weights).unwrap().sum();
+
+    loss.backward().unwrap();
+    assert!(
+        leaf.grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .eq(expected_gradient_bits)
+    );
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+}
+
+#[test]
+fn reciprocal_square_root_accumulates_across_graphs_and_obeys_detach_and_no_grad() {
+    let leaf = Tensor::from_vec(vec![1.0, 4.0, 9.0], [3])
+        .unwrap()
+        .with_requires_grad(true);
+    leaf.rsqrt().unwrap().sum().backward().unwrap();
+    leaf.rsqrt().unwrap().sum().backward().unwrap();
     assert_eq!(
-        extreme.rsqrt(),
-        Err(TensorError::AutogradRecordingUnsupported { operation: "rsqrt" })
+        values(&leaf.grad().unwrap().unwrap()),
+        [-1.0, -0.125, -0.037_037_04]
     );
 
-    let source_bits = leaf.logical_values().map(f32::to_bits).collect::<Vec<_>>();
+    assert!(!leaf.detach().unwrap().rsqrt().unwrap().requires_grad());
     {
         let _guard = no_grad();
-        let output = leaf.transpose(0, 1).unwrap().rsqrt().unwrap();
-        assert_eq!(output.shape(), [2, 2]);
-        assert_eq!(output.stride(), [1, 2]);
-        assert_eq!(output.storage_offset(), 0);
+        let output = leaf.transpose(0, 0).unwrap().rsqrt().unwrap();
         assert!(!output.requires_grad());
-        assert!(!output.shares_storage_with(&leaf));
-        assert_eq!(
-            output
-                .logical_values()
-                .map(f32::to_bits)
-                .collect::<Vec<_>>(),
-            [0xffc0_0000, 0x3f80_0000, 0xff80_0000, 0x3f00_0000]
-        );
-        assert_eq!(extreme.rsqrt(), Err(TensorError::StrideCalculationOverflow));
+        assert_eq!(output.shape(), [3]);
+        assert_eq!(output.stride(), [1]);
     }
-    assert_eq!(
-        leaf.logical_values().map(f32::to_bits).collect::<Vec<_>>(),
-        source_bits
-    );
-
-    let detached = leaf.detach().unwrap().rsqrt().unwrap();
-    assert!(!detached.requires_grad());
+    assert!(leaf.rsqrt().unwrap().requires_grad());
 }
 
 #[test]
