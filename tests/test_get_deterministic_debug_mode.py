@@ -164,9 +164,9 @@ class GetDeterministicDebugModeTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_default_only_debug_mode_setter_is_exposed(self):
-        self.assertFalse(hasattr(torch, "use_deterministic_algorithms"))
-        self.assertNotIn("use_deterministic_algorithms", torch.__all__)
+    def test_default_only_deterministic_algorithm_apis_are_exposed(self):
+        self.assertTrue(hasattr(torch, "use_deterministic_algorithms"))
+        self.assertEqual(torch.__all__.count("use_deterministic_algorithms"), 1)
         self.assertTrue(hasattr(torch, "set_deterministic_debug_mode"))
         self.assertEqual(torch.__all__.count("set_deterministic_debug_mode"), 1)
 
@@ -186,7 +186,8 @@ import torch_rs as torch
 result = torch.get_deterministic_debug_mode()
 assert type(result) is int
 assert result == 0
-assert not hasattr(torch, "use_deterministic_algorithms")
+assert torch.use_deterministic_algorithms(False, warn_only=False) is None
+assert "use_deterministic_algorithms" in torch.__all__
 assert torch.set_deterministic_debug_mode("default") is None
 assert torch.get_deterministic_debug_mode() == 0
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
