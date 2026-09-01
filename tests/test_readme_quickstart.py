@@ -31,6 +31,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/rank12-sum-release-timings.md",
     ),
     (
+        "Rank-2 `@`, `Tensor.matmul`, and `torch.matmul` release timings",
+        "docs/rank2-matmul-release-timings.md",
+    ),
+    (
         "`+` and `Tensor.add` release timings",
         "docs/tensor-add-release-timings.md",
     ),
