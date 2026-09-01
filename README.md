@@ -47,7 +47,8 @@ CPU-build probes only: `device_count()` is `0`, `is_available()` is `False`,
 and `is_initialized()` is `False`. CUDA tensors, device selection, streams,
 events, synchronization, allocator APIs, runtime initialization, `torch.compile`
 CUDA execution, additional tensor dtypes, and the full module, optimizer,
-model-serialization, compiler, and distributed stacks remain unsupported.
+model-serialization, compiler execution, and distributed execution stacks
+remain unsupported.
 
 See the [exhaustive supported surface](docs/supported-surface.md) for exact API
 and limitation details, [FEATURES.md](FEATURES.md) for the weighted coverage

@@ -21,6 +21,7 @@ FUNCTION_DOC = """
 COMPILER_EXPORTS = [
     "assume_constant_result",
     "reset",
+    "allow_in_graph",
     "list_backends",
     "disable",
     "set_default_backend",
@@ -246,7 +247,6 @@ class CompilerListBackendsTests(unittest.TestCase):
         self.assertFalse(hasattr(torch.compiler, "register_backend"))
 
         unsupported_compiler_names = (
-            "allow_in_graph",
             "substitute_in_graph",
             "cudagraph_mark_step_begin",
             "load_compiled_function",
