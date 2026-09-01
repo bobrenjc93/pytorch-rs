@@ -3,6 +3,7 @@ import importlib
 import inspect
 import pickle
 import re
+import struct
 import types
 import unittest
 
@@ -16,6 +17,14 @@ FUNCTION_DOC_PREFIX = (
     "Converts :attr:`data` into a tensor, sharing data and preserving autograd\n"
     "history if possible."
 )
+
+
+def float64_from_bits(bits):
+    return struct.unpack(">d", bits.to_bytes(8, "big"))[0]
+
+
+def float32_bits(tensor):
+    return int(np.asarray(tensor).view(np.uint32).item())
 
 
 class AsTensorTests(unittest.TestCase):
@@ -104,6 +113,62 @@ class AsTensorTests(unittest.TestCase):
         gradient = leaf.grad
         self.assertIs(torch.as_tensor(leaf.grad), gradient)
 
+    def test_python_float_scalars_create_fresh_rank_zero_float32_leaves(self):
+        scalar_cases = (
+            (0.0, 0x00000000),
+            (-0.0, 0x80000000),
+            (1.25, 0x3FA00000),
+            (-2.5, 0xC0200000),
+            (1.0e38, 0x7E967699),
+            (3.5e38, 0x7F800000),
+            (-3.5e38, 0xFF800000),
+            (1.0e-46, 0x00000000),
+            (-1.0e-46, 0x80000000),
+            (float("inf"), 0x7F800000),
+            (float("-inf"), 0xFF800000),
+            (float64_from_bits(0x7FF8000000000001), 0x7FC00000),
+            (float64_from_bits(0xFFF8000000000001), 0xFFC00000),
+        )
+        option_cases = (
+            {},
+            {"dtype": None},
+            {"dtype": torch.float32},
+            {"dtype": torch.float},
+            {"device": None},
+            {"device": "cpu"},
+            {"device": torch.device("cpu")},
+            {"dtype": torch.float32, "device": torch.device("cpu")},
+        )
+
+        for value, expected_bits in scalar_cases:
+            for options in option_cases:
+                for form in ("positional", "keyword"):
+                    with self.subTest(
+                        value=repr(value), bits=f"{expected_bits:08x}",
+                        options=options, form=form
+                    ):
+                        if form == "positional":
+                            result = torch.as_tensor(value, **options)
+                            other = torch.as_tensor(value, **options)
+                        else:
+                            result = torch.as_tensor(data=value, **options)
+                            other = torch.as_tensor(data=value, **options)
+
+                        self.assertIsNot(result, other)
+                        self.assertNotEqual(result.data_ptr(), other.data_ptr())
+                        self.assertEqual(result.shape, ())
+                        self.assertEqual(result.stride(), ())
+                        self.assertEqual(result.storage_offset(), 0)
+                        self.assertEqual(result.numel(), 1)
+                        self.assertIs(result.dtype, torch.float32)
+                        self.assertEqual(result.device, torch.device("cpu"))
+                        self.assertIs(result.layout, torch.strided)
+                        self.assertFalse(result.requires_grad)
+                        self.assertTrue(result.is_leaf)
+                        self.assertIsNone(result.grad)
+                        self.assertEqual(result.output_nr, 0)
+                        self.assertEqual(float32_bits(result), expected_bits)
+
     def test_callable_metadata_exports_copy_pickle_and_reload(self):
         package = importlib.import_module("torch_rs")
         native = package._C
@@ -167,10 +232,22 @@ class AsTensorTests(unittest.TestCase):
         cases = (
             ("positional tensor", lambda: torch.as_tensor(tensor), (tensor,), None),
             (
+                "positional float scalar",
+                lambda: torch.as_tensor(1.25),
+                (1.25,),
+                None,
+            ),
+            (
                 "keyword tensor",
                 lambda: torch.as_tensor(data=tensor, dtype=torch.float32),
                 (),
                 {"data": tensor, "dtype": torch.float32},
+            ),
+            (
+                "keyword float scalar",
+                lambda: torch.as_tensor(data=1.25, dtype=torch.float32),
+                (),
+                {"data": 1.25, "dtype": torch.float32},
             ),
             (
                 "unsupported sequence",
@@ -228,7 +305,9 @@ class AsTensorTests(unittest.TestCase):
     def test_binding_errors_and_unsupported_scope_are_explicit(self):
         tensor = torch.tensor([1.0], dtype=torch.float32)
         unsupported_conversion = (
-            "as_tensor(): only exact native CPU float32 Tensor inputs are supported; Python sequences, NumPy arrays, and scalar conversions are not implemented"
+            "as_tensor(): only exact native CPU float32 Tensor inputs and Python float "
+            "scalars are supported; Python sequences, NumPy arrays, integer/bool "
+            "scalar inference, and other scalar conversions are not implemented"
         )
         cases = (
             (
@@ -257,9 +336,24 @@ class AsTensorTests(unittest.TestCase):
                 "as_tensor() got an unexpected keyword argument 'pin_memory'",
             ),
             (
+                lambda: torch.as_tensor(1.0, pin_memory=False),
+                TypeError,
+                "as_tensor() got an unexpected keyword argument 'pin_memory'",
+            ),
+            (
                 lambda: torch.as_tensor(tensor, copy=False),
                 TypeError,
                 "as_tensor() got an unexpected keyword argument 'copy'",
+            ),
+            (
+                lambda: torch.as_tensor(1.0, copy=False),
+                TypeError,
+                "as_tensor() got an unexpected keyword argument 'copy'",
+            ),
+            (
+                lambda: torch.as_tensor(1.0, requires_grad=False),
+                TypeError,
+                "as_tensor() got an unexpected keyword argument 'requires_grad'",
             ),
             (
                 lambda: torch.as_tensor(tensor, dtype=1),
@@ -267,7 +361,17 @@ class AsTensorTests(unittest.TestCase):
                 "as_tensor(): argument 'dtype' must be torch.dtype, not int",
             ),
             (
+                lambda: torch.as_tensor(1.0, dtype=1),
+                TypeError,
+                "as_tensor(): argument 'dtype' must be torch.dtype, not int",
+            ),
+            (
                 lambda: torch.as_tensor(tensor, device=1.5),
+                TypeError,
+                "as_tensor(): argument 'device' must be torch.device, not float",
+            ),
+            (
+                lambda: torch.as_tensor(1.0, device=1.5),
                 TypeError,
                 "as_tensor(): argument 'device' must be torch.device, not float",
             ),
@@ -289,12 +393,32 @@ class AsTensorTests(unittest.TestCase):
                 "as_tensor(): device 'cuda' is not supported; only 'cpu' is implemented",
             ),
             (
+                lambda: torch.as_tensor(1.0, device="cuda"),
+                RuntimeError,
+                "as_tensor(): device 'cuda' is not supported; only 'cpu' is implemented",
+            ),
+            (
+                lambda: torch.as_tensor(1.0, device="meta"),
+                RuntimeError,
+                "as_tensor(): device 'meta' is not supported; only 'cpu' is implemented",
+            ),
+            (
                 lambda: torch.as_tensor(tensor, device="cpu:0"),
                 NotImplementedError,
                 "as_tensor(): explicit indexed CPU devices require a copy and are not supported",
             ),
             (
+                lambda: torch.as_tensor(1.0, device="cpu:0"),
+                NotImplementedError,
+                "as_tensor(): explicit indexed CPU devices require a copy and are not supported",
+            ),
+            (
                 lambda: torch.as_tensor(tensor, device=torch.device("cpu", 1)),
+                NotImplementedError,
+                "as_tensor(): indexed CPU devices require a copy and are not supported",
+            ),
+            (
+                lambda: torch.as_tensor(1.0, device=torch.device("cpu", 1)),
                 NotImplementedError,
                 "as_tensor(): indexed CPU devices require a copy and are not supported",
             ),
@@ -305,7 +429,28 @@ class AsTensorTests(unittest.TestCase):
                 NotImplementedError,
                 unsupported_conversion,
             ),
-            (lambda: torch.as_tensor(1.0), NotImplementedError, unsupported_conversion),
+            (lambda: torch.as_tensor(1), NotImplementedError, unsupported_conversion),
+            (
+                lambda: torch.as_tensor(1, dtype=torch.float32),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
+            (lambda: torch.as_tensor(True), NotImplementedError, unsupported_conversion),
+            (
+                lambda: torch.as_tensor(False, dtype=torch.float32),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
+            (
+                lambda: torch.as_tensor(np.float32(1.0)),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
+            (
+                lambda: torch.as_tensor(np.float64(1.0)),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
         )
         for call, error_type, message in cases:
             with self.subTest(message=message):

@@ -66,6 +66,11 @@ const BROADCAST_TENSORS_EXACT_TENSORS_ERROR: &str =
     "broadcast_tensors() only supports exact native Tensor inputs";
 const BROADCAST_TENSORS_EXPANSION_ERROR: &str =
     "torch_rs.broadcast_tensors does not support shape expansion";
+const AS_TENSOR_UNSUPPORTED_CONVERSION_ERROR: &str = concat!(
+    "as_tensor(): only exact native CPU float32 Tensor inputs and Python float ",
+    "scalars are supported; Python sequences, NumPy arrays, integer/bool scalar ",
+    "inference, and other scalar conversions are not implemented"
+);
 
 // These are compile-time facts about the native Cargo build. Keep them native
 // so importing the Python package never probes the host or imports another
@@ -1552,12 +1557,20 @@ pub(crate) fn as_tensor_variable_function(
             "as_tensor(): only identity conversion for CPU float32 tensors is supported",
         ));
     }
-    if !data.value.is_exact_instance_of::<PyTensor>() {
-        return Err(PyNotImplementedError::new_err(
-            "as_tensor(): only exact native CPU float32 Tensor inputs are supported; Python sequences, NumPy arrays, and scalar conversions are not implemented",
-        ));
+    if data.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(data.value.unbind());
     }
-    Ok(data.value.unbind())
+    if data.value.is_exact_instance_of::<PyFloat>() {
+        let value = data.value.extract::<f64>()?;
+        #[allow(clippy::cast_possible_truncation)]
+        let value = value as f32;
+        let inner = CoreTensor::full_with_metadata(Vec::new(), value, dtype, device)
+            .map_err(|error| tensor_error(&error))?;
+        return Ok(Py::new(py, PyTensor::new(inner))?.into_any());
+    }
+    Err(PyNotImplementedError::new_err(
+        AS_TENSOR_UNSUPPORTED_CONVERSION_ERROR,
+    ))
 }
 
 pub(crate) fn asarray_variable_function(

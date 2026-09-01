@@ -3,6 +3,7 @@ import importlib
 import inspect
 import pickle
 import re
+import struct
 import types
 import unittest
 
@@ -13,6 +14,10 @@ try:
     import torch as reference_torch
 except ImportError:
     reference_torch = None
+
+
+def float64_from_bits(bits):
+    return struct.unpack(">d", bits.to_bytes(8, "big"))[0]
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -90,6 +95,11 @@ class AsTensorReferenceTests(unittest.TestCase):
         state.pop("data_ptr")
         return state
 
+    def scalar_bits(self, module, tensor):
+        if module is reference_torch:
+            return int(tensor.detach().cpu().numpy().view(np.uint32).item())
+        return int(np.asarray(tensor).view(np.uint32).item())
+
     def as_tensor_identity_contract(self, module, tensor, options):
         before = self.tensor_state(module, tensor)
         result = module.as_tensor(tensor, **options)
@@ -122,6 +132,74 @@ class AsTensorReferenceTests(unittest.TestCase):
                         reference_torch, expected, expected_kwargs
                     )
                     self.assertEqual(actual_contract, expected_contract)
+
+    def as_tensor_scalar_contract(self, module, value, options):
+        first = module.as_tensor(value, **options)
+        second = module.as_tensor(value, **options)
+        return {
+            "fresh_object": first is not second,
+            "fresh_storage": first.data_ptr() != second.data_ptr(),
+            "shape": tuple(first.shape),
+            "stride": first.stride(),
+            "storage_offset": first.storage_offset(),
+            "numel": first.numel(),
+            "dtype": str(first.dtype),
+            "device": str(first.device),
+            "layout": str(first.layout),
+            "requires_grad": first.requires_grad,
+            "is_leaf": first.is_leaf,
+            "grad": first.grad,
+            "output_nr": first.output_nr,
+            "bits": self.scalar_bits(module, first),
+        }
+
+    def test_python_float_scalar_creation_matches_pytorch_2_13(self):
+        values = (
+            0.0,
+            -0.0,
+            1.25,
+            -2.5,
+            1.0e38,
+            3.5e38,
+            -3.5e38,
+            1.0e-46,
+            -1.0e-46,
+            float("inf"),
+            float("-inf"),
+            float64_from_bits(0x7FF8000000000001),
+            float64_from_bits(0xFFF8000000000001),
+        )
+        option_pairs = (
+            ({}, {}),
+            ({"dtype": None}, {"dtype": None}),
+            ({"dtype": torch.float32}, {"dtype": reference_torch.float32}),
+            ({"dtype": torch.float}, {"dtype": reference_torch.float}),
+            ({"device": None}, {"device": None}),
+            ({"device": "cpu"}, {"device": "cpu"}),
+            (
+                {"device": torch.device("cpu")},
+                {"device": reference_torch.device("cpu")},
+            ),
+            (
+                {"dtype": torch.float32, "device": torch.device("cpu")},
+                {
+                    "dtype": reference_torch.float32,
+                    "device": reference_torch.device("cpu"),
+                },
+            ),
+        )
+
+        for value in values:
+            for actual_options, expected_options in option_pairs:
+                with self.subTest(value=repr(value), options=actual_options):
+                    self.assertEqual(
+                        self.as_tensor_scalar_contract(
+                            torch, value, actual_options
+                        ),
+                        self.as_tensor_scalar_contract(
+                            reference_torch, value, expected_options
+                        ),
+                    )
 
     def test_autograd_identity_aliasing_matches_pytorch_2_13(self):
         outcomes = []
@@ -214,6 +292,10 @@ class AsTensorReferenceTests(unittest.TestCase):
 
         if case == "positional":
             call = lambda: module.as_tensor(tensor)
+        elif case == "float":
+            call = lambda: module.as_tensor(1.25)
+        elif case == "keyword_float":
+            call = lambda: module.as_tensor(data=1.25, dtype=module.float32)
         elif case == "keyword":
             call = lambda: module.as_tensor(data=tensor, dtype=module.float32)
         elif case == "sequence":
@@ -273,7 +355,14 @@ class AsTensorReferenceTests(unittest.TestCase):
         }
 
     def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
-        for case in ("positional", "keyword", "sequence", "device"):
+        for case in (
+            "positional",
+            "float",
+            "keyword",
+            "keyword_float",
+            "sequence",
+            "device",
+        ):
             with self.subTest(case=case):
                 self.assertEqual(
                     self.mode_dispatch_observation(torch, case),
