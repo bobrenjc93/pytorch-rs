@@ -24,6 +24,13 @@ class AsTensorReferenceTests(unittest.TestCase):
                 "as_tensor differentials require pinned PyTorch 2.13.0"
             )
 
+    def extended_precision_numpy_floating_values(self):
+        values = [("longdouble", np.longdouble(1.25))]
+        float128 = getattr(np, "float128", None)
+        if float128 is not None:
+            values.append(("float128", float128(1.25)))
+        return values
+
     def tensor_cases(self, module):
         leaf = module.tensor(
             [[1.0, 2.0], [3.0, 4.0]],
@@ -222,11 +229,12 @@ class AsTensorReferenceTests(unittest.TestCase):
 
     def test_numpy_floating_scalar_explicit_float32_matches_pytorch_2_13(self):
         values = (
-            np.float16(1.25),
-            np.float64(-3.5),
-            np.float64(float("inf")),
-            np.float64(float("-inf")),
-            np.float64(float("nan")),
+            ("float16", np.float16(1.25)),
+            ("float64", np.float64(-3.5)),
+            ("float64_inf", np.float64(float("inf"))),
+            ("float64_neg_inf", np.float64(float("-inf"))),
+            ("float64_nan", np.float64(float("nan"))),
+            *self.extended_precision_numpy_floating_values(),
         )
         actual_options = (
             {"dtype": torch.float32},
@@ -240,11 +248,11 @@ class AsTensorReferenceTests(unittest.TestCase):
             {"dtype": reference_torch.float32, "device": "cpu"},
             {"dtype": reference_torch.float32, "device": reference_torch.device("cpu")},
         )
-        for value in values:
+        for name, value in values:
             for actual_kwargs, expected_kwargs in zip(
                 actual_options, expected_options, strict=True
             ):
-                with self.subTest(value=repr(value), options=actual_kwargs):
+                with self.subTest(dtype=name, value=repr(value), options=actual_kwargs):
                     actual_contract = self.as_tensor_float_scalar_contract(
                         torch, value, actual_kwargs
                     )

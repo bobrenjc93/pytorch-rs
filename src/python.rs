@@ -1586,7 +1586,11 @@ pub(crate) fn as_tensor_variable_function(
         ));
     }
     if !data.value.is_exact_instance_of::<PyTensor>() {
-        let scalar = extract_python_or_numpy_float_scalar(&data.value, has_explicit_dtype)?;
+        let scalar = extract_python_or_numpy_float_scalar(
+            &data.value,
+            has_explicit_dtype,
+            NUMPY_FLOATING_SCALAR_TYPES,
+        )?;
         if let Some(value) = scalar {
             return Ok(
                 Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
@@ -1634,7 +1638,11 @@ pub(crate) fn asarray_variable_function(
         ));
     }
     if !obj.value.is_exact_instance_of::<PyTensor>() {
-        let scalar = extract_python_or_numpy_float_scalar(&obj.value, has_explicit_dtype)?;
+        let scalar = extract_python_or_numpy_float_scalar(
+            &obj.value,
+            has_explicit_dtype,
+            NUMPY_ASARRAY_FLOATING_SCALAR_TYPES,
+        )?;
         if let Some(value) = scalar {
             validate_asarray_scalar_copy(arguments.copy.as_ref())?;
             return Ok(
@@ -1642,7 +1650,7 @@ pub(crate) fn asarray_variable_function(
             );
         }
         return Err(PyNotImplementedError::new_err(
-            "asarray(): only exact native CPU float32 Tensor inputs, Python float scalars, NumPy float32 scalars, or explicit float32 NumPy floating scalar conversions are supported; Python sequences, NumPy arrays, NumPy integer/bool/complex scalars, Python non-float scalars, and non-float32 NumPy floating scalars without explicit float32 dtype are not implemented",
+            "asarray(): only exact native CPU float32 Tensor inputs, Python float scalars, NumPy float32 scalars, or explicit float32 NumPy float16/float64 scalar conversions are supported; Python sequences, NumPy arrays, NumPy integer/bool/complex scalars, Python non-float scalars, non-float32 NumPy floating scalars without explicit float32 dtype, and NumPy longdouble/float128 scalars are not implemented",
         ));
     }
     let should_warn_requires_grad = {
@@ -6548,17 +6556,27 @@ fn extract_exact_python_float_scalar(value: &Bound<'_, PyAny>) -> PyResult<Optio
     Ok(Some(value))
 }
 
+const NUMPY_FLOATING_SCALAR_TYPES: &[&str] = &["floating"];
+const NUMPY_ASARRAY_FLOATING_SCALAR_TYPES: &[&str] = &["float16", "float32", "float64"];
+const NUMPY_DEFAULT_FLOATING_SCALAR_TYPES: &[&str] = &["float32"];
+
 fn extract_python_or_numpy_float_scalar(
     value: &Bound<'_, PyAny>,
     has_explicit_dtype: bool,
+    explicit_numpy_scalar_types: &[&str],
 ) -> PyResult<Option<f32>> {
     if let Some(value) = extract_exact_python_float_scalar(value)? {
         return Ok(Some(value));
     }
-    if !is_numpy_scalar_of_types(value, &["floating"])? {
+    if !is_numpy_scalar_of_types(value, NUMPY_FLOATING_SCALAR_TYPES)? {
         return Ok(None);
     }
-    if !has_explicit_dtype && !is_numpy_scalar_of_types(value, &["float32"])? {
+    let supported_numpy_scalar_types = if has_explicit_dtype {
+        explicit_numpy_scalar_types
+    } else {
+        NUMPY_DEFAULT_FLOATING_SCALAR_TYPES
+    };
+    if !is_numpy_scalar_of_types(value, supported_numpy_scalar_types)? {
         return Ok(None);
     }
 

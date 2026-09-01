@@ -405,10 +405,10 @@ class AsArrayTests(unittest.TestCase):
         unsupported_conversion = (
             "asarray(): only exact native CPU float32 Tensor inputs, Python "
             "float scalars, NumPy float32 scalars, or explicit float32 NumPy "
-            "floating scalar conversions are supported; Python sequences, "
+            "float16/float64 scalar conversions are supported; Python sequences, "
             "NumPy arrays, NumPy integer/bool/complex scalars, Python "
-            "non-float scalars, and non-float32 NumPy floating scalars "
-            "without explicit float32 dtype are "
+            "non-float scalars, non-float32 NumPy floating scalars "
+            "without explicit float32 dtype, and NumPy longdouble/float128 scalars are "
             "not implemented"
         )
         explicit_requires_grad = (
@@ -601,6 +601,11 @@ class AsArrayTests(unittest.TestCase):
             ),
             (
                 lambda: torch.asarray(np.float64(1.0), device="cpu"),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
+            (
+                lambda: torch.asarray(np.longdouble(1.0), dtype=torch.float32),
                 NotImplementedError,
                 unsupported_conversion,
             ),

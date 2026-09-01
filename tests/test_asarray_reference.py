@@ -23,6 +23,13 @@ class AsArrayReferenceTests(unittest.TestCase):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError("asarray differentials require pinned PyTorch 2.13.0")
 
+    def extended_precision_numpy_floating_values(self):
+        values = [("longdouble", np.longdouble(1.25))]
+        float128 = getattr(np, "float128", None)
+        if float128 is not None:
+            values.append(("float128", float128(1.25)))
+        return values
+
     def tensor_cases(self, module):
         leaf = module.tensor(
             [[1.0, 2.0], [3.0, 4.0]],
@@ -234,10 +241,10 @@ class AsArrayReferenceTests(unittest.TestCase):
         unsupported_conversion = (
             "asarray(): only exact native CPU float32 Tensor inputs, Python "
             "float scalars, NumPy float32 scalars, or explicit float32 NumPy "
-            "floating scalar conversions are supported; Python sequences, "
+            "float16/float64 scalar conversions are supported; Python sequences, "
             "NumPy arrays, NumPy integer/bool/complex scalars, Python "
-            "non-float scalars, and non-float32 NumPy floating scalars "
-            "without explicit float32 dtype are "
+            "non-float scalars, non-float32 NumPy floating scalars "
+            "without explicit float32 dtype, and NumPy longdouble/float128 scalars are "
             "not implemented"
         )
         for value in values:
@@ -245,6 +252,46 @@ class AsArrayReferenceTests(unittest.TestCase):
                 with self.subTest(value=repr(value), options=actual_kwargs):
                     expected = reference_torch.asarray(value, **expected_kwargs)
                     self.assertNotEqual(str(expected.dtype), "torch.float32")
+                    with self.assertRaisesRegex(
+                        NotImplementedError, re.escape(unsupported_conversion)
+                    ):
+                        torch.asarray(value, **actual_kwargs)
+
+    def test_extended_precision_numpy_floating_rejection_matches_pytorch_2_13(self):
+        values = self.extended_precision_numpy_floating_values()
+        actual_options = (
+            {},
+            {"dtype": torch.float32},
+            {"dtype": torch.float},
+            {"dtype": torch.float32, "device": torch.device("cpu")},
+            {"dtype": torch.float32, "copy": None},
+            {"dtype": torch.float32, "requires_grad": None},
+        )
+        expected_options = (
+            {},
+            {"dtype": reference_torch.float32},
+            {"dtype": reference_torch.float},
+            {"dtype": reference_torch.float32, "device": reference_torch.device("cpu")},
+            {"dtype": reference_torch.float32, "copy": None},
+            {"dtype": reference_torch.float32, "requires_grad": None},
+        )
+        unsupported_conversion = (
+            "asarray(): only exact native CPU float32 Tensor inputs, Python "
+            "float scalars, NumPy float32 scalars, or explicit float32 NumPy "
+            "float16/float64 scalar conversions are supported; Python sequences, "
+            "NumPy arrays, NumPy integer/bool/complex scalars, Python "
+            "non-float scalars, non-float32 NumPy floating scalars "
+            "without explicit float32 dtype, and NumPy longdouble/float128 scalars are "
+            "not implemented"
+        )
+        for name, value in values:
+            for actual_kwargs, expected_kwargs in zip(
+                actual_options, expected_options, strict=True
+            ):
+                with self.subTest(dtype=name, options=actual_kwargs):
+                    with self.assertRaises(TypeError) as expected_raised:
+                        reference_torch.asarray(value, **expected_kwargs)
+                    self.assertIn("numpy.longdouble", str(expected_raised.exception))
                     with self.assertRaisesRegex(
                         NotImplementedError, re.escape(unsupported_conversion)
                     ):

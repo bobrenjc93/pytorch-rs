@@ -33,6 +33,13 @@ Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 
 The creation row includes CPU float32 `torch.zeros(size, *, out=None, dtype=None, device=None, requires_grad=False)` and `torch.ones(size, *, out=None, dtype=None, device=None, requires_grad=False)` allocation for scalar, empty, and multidimensional sizes, including single positional integer dimensions and fresh-storage `out=None` behavior. It also includes CPU float32 `torch.zeros_like(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=None)` and `torch.ones_like(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=None)` for exact native canonical row-major contiguous inputs with default-equivalent metadata, plus CPU float32 `torch.full(size, fill_value, *, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)` allocation for the currently supported exact size and fill-value forms. Concrete output tensors, variadic positional dimensions, `empty_like`/`full_like`, `layout` on size factories, non-strided `torch.full` layouts, pinned allocation, non-float32 dtypes, and non-CPU devices remain outside the supported creation surface.
 
+For scalar conversion in the creation row, `torch.asarray` explicit
+non-float32 NumPy coercion is limited to the PyTorch 2.13-compatible
+`float16` and `float64` scalar dtypes; NumPy `longdouble` and `float128`
+remain unsupported even with an explicit float32 dtype request. `torch.as_tensor`
+keeps PyTorch 2.13-compatible explicit float32 coercion for those
+extended-precision NumPy floating scalars.
+
 The query helpers listed above are count, rank, byte-width, scalar-truth, and
 existing-dtype predicates. They do not expand the supported dtype, device,
 storage, mutation, subclass, or unsupported-boundary contracts.

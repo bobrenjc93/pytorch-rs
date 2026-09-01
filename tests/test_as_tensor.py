@@ -180,6 +180,7 @@ class AsTensorTests(unittest.TestCase):
         value_cases = (
             np.float16(1.25),
             np.float64(-3.5),
+            np.longdouble(2.5),
         )
         for value in value_cases:
             expected_bits = int(
