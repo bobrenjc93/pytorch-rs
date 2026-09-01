@@ -72,5 +72,6 @@ from . import cudnn as cudnn
 from . import kleidiai as kleidiai
 from . import mha as mha
 from . import mkl as mkl
+from . import mkldnn as mkldnn
 from . import nnpack as nnpack
 from . import openmp as openmp

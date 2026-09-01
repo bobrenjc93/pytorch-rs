@@ -8,7 +8,13 @@ from unittest import mock
 import torch_rs as torch
 
 
-CAPABILITY_NAMES = ("has_openmp", "has_mkl", "has_lapack", "has_spectral")
+CAPABILITY_NAMES = (
+    "has_openmp",
+    "has_mkl",
+    "has_mkldnn",
+    "has_lapack",
+    "has_spectral",
+)
 
 
 class NativeBuildCapabilityFlagsTests(unittest.TestCase):
@@ -18,6 +24,7 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
             {
                 "USE_OPENMP": "1",
                 "USE_MKL": "1",
+                "USE_MKLDNN": "1",
                 "USE_LAPACK": "1",
                 "USE_SPECTRAL": "1",
             },
@@ -80,7 +87,7 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
         nnpack_probe = torch._nnpack_available
         backend_modules = {
             name: getattr(backends, name)
-            for name in ("openmp", "mkl", "nnpack")
+            for name in ("openmp", "mkl", "mkldnn", "nnpack")
         }
         backend_functions = {
             name: module.is_available
@@ -135,6 +142,7 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
         for backend, flag in (
             ("openmp", "has_openmp"),
             ("mkl", "has_mkl"),
+            ("mkldnn", "has_mkldnn"),
             ("nnpack", None),
         ):
             with self.subTest(backend=backend):
@@ -149,7 +157,6 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
 
         for module_name in (
             "torch_rs.backends.lapack",
-            "torch_rs.backends.mkldnn",
         ):
             with self.subTest(module=module_name):
                 with self.assertRaises(ModuleNotFoundError):
@@ -162,7 +169,7 @@ import os
 import sys
 
 class RejectExternalRuntimeImport:
-    blocked = {"torch", "numpy", "scipy", "mkl", "mkl_service"}
+    blocked = {"torch", "numpy", "scipy", "dnnl", "mkl", "mkldnn", "mkl_service"}
 
     def find_spec(self, fullname, path=None, target=None):
         if fullname.split(".", 1)[0] in self.blocked:
@@ -173,6 +180,7 @@ sys.meta_path.insert(0, RejectExternalRuntimeImport())
 os.environ.update(
     USE_OPENMP="1",
     USE_MKL="1",
+    USE_MKLDNN="1",
     USE_LAPACK="1",
     USE_SPECTRAL="1",
     OMP_NUM_THREADS="64",
@@ -184,7 +192,7 @@ package_wildcard = {}
 native_wildcard = {}
 exec("from torch_rs import *", package_wildcard)
 exec("from torch_rs._C import *", native_wildcard)
-for name in ("has_openmp", "has_mkl", "has_lapack", "has_spectral"):
+for name in ("has_openmp", "has_mkl", "has_mkldnn", "has_lapack", "has_spectral"):
     package_value = getattr(torch, name)
     native_value = getattr(torch._C, name)
     assert package_value is native_value is False
