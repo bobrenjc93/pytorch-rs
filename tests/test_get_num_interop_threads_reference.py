@@ -187,11 +187,11 @@ class GetNumInteropThreadsReferenceTests(unittest.TestCase):
     def test_no_argument_errors_match_pytorch_2_13(self):
         self.assertEqual(self.actual["errors"], self.reference["errors"])
 
-    def test_thread_setters_remain_deliberately_unsupported(self):
+    def test_thread_setters_are_exported_like_pytorch_2_13(self):
         for name in ("set_num_threads", "set_num_interop_threads"):
             with self.subTest(name=name):
                 self.assertEqual(self.reference["setters"][name], [True, True, 1])
-                self.assertEqual(self.actual["setters"][name], [False, False, 0])
+                self.assertEqual(self.actual["setters"][name], [True, True, 1])
 
         self.assertIs(torch._C.get_num_threads, torch.get_num_threads)
         self.assertIs(torch.get_num_threads(), 1)
