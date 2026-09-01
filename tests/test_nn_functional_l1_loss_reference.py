@@ -27,6 +27,11 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
     def tensor(module, values):
         return module.tensor(values, dtype=module.float32)
 
+    @staticmethod
+    def tensor_from_bits(module, bits, shape):
+        values = np.asarray(bits, dtype=np.uint32).view(np.float32)
+        return module.tensor(memoryview(values), dtype=module.float32).view(*shape)
+
     def make_cases(self, module):
         offset_input_base = self.tensor(
             module,
@@ -160,6 +165,76 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             ),
         )
 
+    def make_sum_cases(self, module):
+        offset_input_base = self.tensor(
+            module,
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+        )
+        offset_target_base = self.tensor(
+            module,
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+        )
+        noncontiguous_input = self.tensor(
+            module,
+            np.arange(12, dtype=np.float32).reshape(3, 4).tolist(),
+        ).transpose(0, 1)
+        noncontiguous_target = module.zeros((3, 4), dtype=module.float32).transpose(
+            0,
+            1,
+        )
+        matrix = self.tensor(
+            module,
+            np.arange(6, dtype=np.float32).reshape(2, 3).tolist(),
+        )
+
+        return (
+            ("scalar", self.tensor(module, -0.0), self.tensor(module, 2.5), False),
+            (
+                "empty zero-sum",
+                module.zeros((2, 0, 3), dtype=module.float32).transpose(0, 2),
+                module.ones((2, 0, 3), dtype=module.float32).transpose(0, 2),
+                False,
+            ),
+            ("offset", offset_input_base[1], offset_target_base[0], False),
+            ("noncontiguous", noncontiguous_input, noncontiguous_target, False),
+            (
+                "signed zero",
+                self.tensor_from_bits(
+                    module,
+                    [0x0000_0000, 0x8000_0000, 0x8000_0000, 0x0000_0000],
+                    (4,),
+                ),
+                self.tensor_from_bits(
+                    module,
+                    [0x8000_0000, 0x0000_0000, 0x8000_0000, 0x0000_0000],
+                    (4,),
+                ),
+                False,
+            ),
+            (
+                "nan",
+                self.tensor_from_bits(module, [0x7FC0_0000], (1,)),
+                module.zeros((1,), dtype=module.float32),
+                False,
+            ),
+            (
+                "infinity",
+                self.tensor_from_bits(
+                    module,
+                    [0x7F80_0000, 0xFF80_0000, 0x3F80_0000],
+                    (3,),
+                ),
+                self.tensor(module, [1.0, -1.0, -1.0]),
+                False,
+            ),
+            (
+                "broadcast warning",
+                matrix,
+                self.tensor(module, [1.0, 2.0, 3.0]),
+                True,
+            ),
+        )
+
     def make_channels_last_cases(self, module):
         edge_input_patterns = np.asarray(
             [
@@ -249,21 +324,21 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
         )
 
     @staticmethod
-    def call(module_functional, input, target, form):
+    def call(module_functional, input, target, form, reduction="none"):
         if form == "reduction keyword":
-            return module_functional.l1_loss(input, target, reduction="none")
+            return module_functional.l1_loss(input, target, reduction=reduction)
         if form == "legacy none keywords":
             return module_functional.l1_loss(
                 input=input,
                 target=target,
                 size_average=None,
                 reduce=None,
-                reduction="none",
+                reduction=reduction,
                 weight=None,
             )
         if form == "five positional":
-            return module_functional.l1_loss(input, target, None, None, "none")
-        return module_functional.l1_loss(input, target, None, None, "none", None)
+            return module_functional.l1_loss(input, target, None, None, reduction)
+        return module_functional.l1_loss(input, target, None, None, reduction, None)
 
     def assert_matches(self, actual, expected, *, case):
         with self.subTest(case=case, metadata=True):
@@ -287,6 +362,14 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 np.asarray(actual).reshape(-1).view(np.uint32),
                 expected.detach().cpu().numpy().reshape(-1).view(np.uint32),
             )
+
+    @staticmethod
+    def actual_bits(tensor):
+        return np.asarray(tensor).reshape(-1).view(np.uint32)
+
+    @staticmethod
+    def expected_bits(tensor):
+        return tensor.detach().cpu().numpy().reshape(-1).view(np.uint32)
 
     def test_name_signature_defaults_and_annotations_match_pytorch_2_13(self):
         self.assertEqual(
@@ -770,6 +853,112 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                         case=(layout, hex(scalar_bits), scalar_on_left),
                     )
 
+    def test_sum_reduction_edges_warnings_storage_and_nonmutation_match_pytorch_2_13(
+        self,
+    ):
+        actual_cases = self.make_sum_cases(torch)
+        expected_cases = self.make_sum_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target, expects_warning = actual_case
+            expected_name, expected_input, expected_target, expected_warning = (
+                expected_case
+            )
+            self.assertEqual(case, expected_name)
+            self.assertEqual(expects_warning, expected_warning)
+
+            actual_input_before = self.actual_bits(actual_input).copy()
+            actual_target_before = self.actual_bits(actual_target).copy()
+            expected_input_before = self.expected_bits(expected_input).copy()
+            expected_target_before = self.expected_bits(expected_target).copy()
+            for form in (
+                "reduction keyword",
+                "legacy none keywords",
+                "five positional",
+                "six positional",
+            ):
+                with warnings.catch_warnings(record=True) as actual_warnings:
+                    warnings.simplefilter("always")
+                    actual = self.call(
+                        functional,
+                        actual_input,
+                        actual_target,
+                        form,
+                        reduction="sum",
+                    )
+                with warnings.catch_warnings(record=True) as expected_warnings:
+                    warnings.simplefilter("always")
+                    expected = self.call(
+                        reference_functional,
+                        expected_input,
+                        expected_target,
+                        form,
+                        reduction="sum",
+                    )
+
+                with self.subTest(case=(case, form), warning=True):
+                    self.assertEqual(len(actual_warnings), len(expected_warnings))
+                    self.assertEqual(len(actual_warnings), 1 if expects_warning else 0)
+                    if expects_warning:
+                        self.assertIs(actual_warnings[0].category, UserWarning)
+                        self.assertIs(expected_warnings[0].category, UserWarning)
+                        self.assertEqual(
+                            str(actual_warnings[0].message),
+                            str(expected_warnings[0].message),
+                        )
+
+                self.assert_matches(actual, expected, case=(case, form))
+                with self.subTest(case=(case, form), scalar_metadata=True):
+                    self.assertEqual(actual.shape, ())
+                    self.assertEqual(expected.shape, ())
+                    self.assertEqual(actual.stride(), expected.stride())
+                    self.assertEqual(actual.storage_offset(), expected.storage_offset())
+                    self.assertFalse(actual.is_set_to(actual_input))
+                    self.assertFalse(expected.is_set_to(expected_input))
+                    self.assertFalse(actual.is_set_to(actual_target))
+                    self.assertFalse(expected.is_set_to(expected_target))
+
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    actual_repeat = self.call(
+                        functional,
+                        actual_input,
+                        actual_target,
+                        form,
+                        reduction="sum",
+                    )
+                    expected_repeat = self.call(
+                        reference_functional,
+                        expected_input,
+                        expected_target,
+                        form,
+                        reduction="sum",
+                    )
+                with self.subTest(case=(case, form), storage=True):
+                    self.assertFalse(actual.is_set_to(actual_repeat))
+                    self.assertFalse(expected.is_set_to(expected_repeat))
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    self.actual_bits(actual_input),
+                    actual_input_before,
+                )
+                np.testing.assert_array_equal(
+                    self.actual_bits(actual_target),
+                    actual_target_before,
+                )
+                np.testing.assert_array_equal(
+                    self.expected_bits(expected_input),
+                    expected_input_before,
+                )
+                np.testing.assert_array_equal(
+                    self.expected_bits(expected_target),
+                    expected_target_before,
+                )
+
     def test_bandwidth_sized_same_shape_contiguous_matches_pytorch_2_13(self):
         input_values = np.linspace(
             -1024.0,
@@ -1016,6 +1205,66 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                     expected,
                     case=(case, input_requires_grad, target_requires_grad),
                 )
+
+    def test_sum_reduction_requires_grad_operands_match_inside_no_grad(self):
+        for input_requires_grad, target_requires_grad in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            actual_input = torch.tensor(
+                [[1.0, -2.0], [3.0, -4.0]],
+                requires_grad=input_requires_grad,
+            )
+            actual_target = torch.tensor(
+                [[0.5, 2.0], [-3.0, 4.5]],
+                requires_grad=target_requires_grad,
+            )
+            expected_input = reference_torch.tensor(
+                [[1.0, -2.0], [3.0, -4.0]],
+                dtype=reference_torch.float32,
+                requires_grad=input_requires_grad,
+            )
+            expected_target = reference_torch.tensor(
+                [[0.5, 2.0], [-3.0, 4.5]],
+                dtype=reference_torch.float32,
+                requires_grad=target_requires_grad,
+            )
+            with self.subTest(
+                input_requires_grad=input_requires_grad,
+                target_requires_grad=target_requires_grad,
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^l1_loss\(\): autograd recording is not supported$",
+                ):
+                    functional.l1_loss(
+                        actual_input,
+                        actual_target,
+                        reduction="sum",
+                    )
+
+                with torch.no_grad():
+                    actual = functional.l1_loss(
+                        actual_input,
+                        actual_target,
+                        reduction="sum",
+                    )
+                with reference_torch.no_grad():
+                    expected = reference_functional.l1_loss(
+                        expected_input,
+                        expected_target,
+                        reduction="sum",
+                    )
+                self.assert_matches(
+                    actual,
+                    expected,
+                    case=(input_requires_grad, target_requires_grad),
+                )
+                self.assertIsNone(actual_input.grad)
+                self.assertIsNone(actual_target.grad)
+                self.assertIsNone(expected_input.grad)
+                self.assertIsNone(expected_target.grad)
 
 
 if __name__ == "__main__":

@@ -93,6 +93,12 @@ struct DropoutSchema {
     training: ArgumentSchema,
 }
 
+#[derive(Clone, Copy)]
+enum LossReduction {
+    None,
+    Sum,
+}
+
 impl DropoutSchema {
     const fn new(metadata: DropoutMetadata, inplace: bool) -> Self {
         let operation = if inplace {
@@ -537,16 +543,20 @@ fn _nn_functional_l1_loss(
             "torch_rs.nn.functional.l1_loss only supports size_average=None and reduce=None",
         ));
     }
-    let supports_reduction = reduction
+    let reduction_kind = reduction
         .cast::<PyString>()
         .ok()
         .and_then(|reduction| reduction.to_str().ok())
-        .is_some_and(|reduction| reduction == "none");
-    if !supports_reduction {
-        return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.l1_loss only supports reduction='none'",
-        ));
-    }
+        .and_then(|reduction| match reduction {
+            "none" => Some(LossReduction::None),
+            "sum" => Some(LossReduction::Sum),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            PyNotImplementedError::new_err(
+                "torch_rs.nn.functional.l1_loss only supports reduction='none' or reduction='sum'",
+            )
+        })?;
     if !weight.is_none() {
         return Err(PyNotImplementedError::new_err(
             "torch_rs.nn.functional.l1_loss only supports weight=None",
@@ -581,6 +591,10 @@ fn _nn_functional_l1_loss(
         .inner()
         .absolute_difference(target.inner())
         .map_err(|error| tensor_error(&error))?;
+    let output = match reduction_kind {
+        LossReduction::None => output,
+        LossReduction::Sum => output.sum(),
+    };
     PyTensor::new(output).into_py_any(py)
 }
 
