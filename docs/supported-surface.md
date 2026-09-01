@@ -9,7 +9,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 | Adopter task | Supported APIs | Unsupported boundaries to verify |
 | --- | --- | --- |
 | Create CPU `float32` tensors | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.zeros_like`, `torch.ones_like`, `torch.full`, `torch.eye` in [Tensors](#tensors) and [Creation](#creation) | Identity converters reject Python sequences, NumPy arrays/scalars, non-float scalars, dtype conversions, accelerator or meta devices, and copy/output requests; factories reject non-`float32` dtypes, non-CPU devices, concrete `out`, pinning, sparse layouts, and backend-specific allocation. |
-| Preserve or change tensor layout | `Tensor.view`, `Tensor.view_as`, `Tensor.reshape`, `Tensor.reshape_as`, `torch.reshape`, `Tensor.unsqueeze`, `torch.unsqueeze`, `Tensor.permute`, `torch.permute`, `Tensor.movedim`, `Tensor.moveaxis`, `torch.movedim`, `torch.moveaxis`, `Tensor.contiguous`, `Tensor.cpu` in [Metadata and views](#metadata-and-views) | Unsupported edges include broader `None` indexing expansion, non-leading `select`, sequence `movedim` axes, variadic top-level reshape dimensions, cross-dtype views, complex dtypes, and imaginary views. |
+| Preserve or change tensor layout | `Tensor.view`, `Tensor.view_as`, `Tensor.reshape`, `Tensor.reshape_as`, `torch.reshape`, `Tensor.unsqueeze`, `torch.unsqueeze`, `Tensor.permute`, `torch.permute`, `Tensor.movedim`, `Tensor.moveaxis`, `torch.movedim`, `torch.moveaxis`, `Tensor.contiguous`, `Tensor.cpu` in [Metadata and views](#metadata-and-views) | Unsupported edges include range slicing, advanced indexing, broader `None` indexing expansion, arbitrary-dimension `unbind`, sequence `movedim` axes, variadic top-level reshape dimensions, cross-dtype views, complex dtypes, and imaginary views. |
 | Run eager math and reductions | Python `+`, `-`, `*`, and `/` operators, `Tensor.add`, `Tensor.sub`, `Tensor.subtract`, `Tensor.mul`, `Tensor.multiply`, `Tensor.div`, `Tensor.divide`, `torch.sub`, `torch.subtract`, `torch.mul`, `torch.multiply`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.cos`, `torch.exp`, `torch.log`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` in [Elementwise and reductions](#elementwise-and-reductions) | `torch.add`, concrete `out` tensors, in-place variants, active-autograd `log`, nondefault `alpha` or `rounding_mode`, scalar-only multiplication/division, dimension reductions, `keepdim=True`, dtype conversions, and non-CPU/non-`float32` tensors remain outside the contract. |
 | Use functional NN helpers | `torch.nn.functional.linear`, `torch.nn.functional.relu`, `torch.nn.functional.l1_loss`, `torch.nn.functional.mse_loss`, `torch.nn.functional.dropout`, `torch.nn.functional.dropout1d`, `torch.nn.functional.dropout2d`, `torch.nn.functional.dropout3d`, `torch.nn.functional.sigmoid`, `torch.nn.functional.silu`, `torch.nn.functional.softsign`, `torch.nn.functional.tanh`, `torch.nn.init.calculate_gain` in [NN/data helpers](#nn-and-data-helpers) and [math activations](#elementwise-and-reductions) | Module layers, active autograd for loss/softsign paths, loss reductions other than `"none"`, loss `weight` arguments, nondeterministic dropout, nonidentity inplace dropout, and mutating initializers remain unsupported. |
 | Reuse data and state helpers | `torch.utils.data.Dataset`, `torch.utils.data.IterableDataset`, `torch.utils.data.TensorDataset`, `torch.utils.data.StackDataset`, `torch.utils.data.ConcatDataset`, `torch.utils.data.ChainDataset`, `torch.utils.data.Subset`, `torch.utils.data.Sampler`, `torch.utils.data.SequentialSampler`, `torch.utils.data.BatchSampler`, `torch.utils.data.DistributedSampler`, `torch.utils.data.get_worker_info`, `torch.nn.modules.utils.consume_prefix_in_state_dict_if_present`, `torch.serialization.LoadEndianness`, `torch.serialization.get_default_load_endianness`, `torch.serialization.set_default_load_endianness`, `torch.serialization.get_crc32_options`, `torch.serialization.set_crc32_options`, `torch.serialization.get_default_mmap_options`, `torch.serialization.set_default_mmap_options` in [NN/data helpers](#nn-and-data-helpers) | `DataLoader`, worker processes, random or shuffle-backed sampling, `torch.nn.Module`, optimizers, optimizer state serialization, `torch.save`, and `torch.load` remain unsupported. |
@@ -500,9 +500,9 @@ operations, with PyTorch-compatible multi-output indices for grad-tracked
 `Tensor.unbind()`, `torch.unbind()`, and tensor iteration; `Tensor.chunk` and
 `torch.chunk` are not exposed).
 
-View and layout coverage includes stride-aware indexing, dimension-zero
-`Tensor.select()`/`torch.select()` single first-axis views and
-`Tensor.unbind()`/`torch.unbind()` first-axis views, `Tensor.view()` and
+View and layout coverage includes stride-aware indexing,
+`Tensor.select()`/`torch.select()` single-index views along any valid normalized
+dimension and `Tensor.unbind()`/`torch.unbind()` first-axis views, `Tensor.view()` and
 `Tensor.view_as()` shared-storage views, metadata-only
 `Tensor.unsqueeze(dim)` and `torch.unsqueeze(input, dim)` views at any valid
 insertion dimension,
@@ -520,10 +520,16 @@ row-major, channels-last, and channels-last-3d storage. PyTorch-compatible
 `Tensor.cpu()` identity and memory-format conversion are supported for the CPU
 device.
 
-`Tensor.select(dim, index)` and `torch.select(input, dim, index)` normalize the
-negative first dimension and delegate values, strides, offsets, aliasing, empty
-views, and autograd to the native leading integer-index engine; other
-dimensions remain unsupported.
+`Tensor.select(dim, index)` and `torch.select(input, dim, index)` accept exact
+native CPU float32 tensors when `dim` normalizes to any existing dimension.
+They return shared-storage views with the selected dimension removed, preserve
+PyTorch 2.13-compatible values, shapes, strides, storage offsets, data
+pointers, dtype, and device for contiguous, offset, noncontiguous, empty, and
+negative-dimension/index cases, and support `no_grad` leaf metadata plus
+first-order backward through full `sum()`. Range slicing, advanced indexing,
+arbitrary-dimension `unbind`, dtype or device expansion keywords, tensor
+subclasses without a handling override, and active mode execution beyond
+ordinary `__torch_function__` dispatch remain unsupported.
 
 `Tensor.unsqueeze(dim)` and `torch.unsqueeze(input, dim)` accept exact native
 CPU float32 tensors when `dim` normalizes to any valid insertion position,

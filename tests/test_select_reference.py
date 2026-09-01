@@ -35,6 +35,19 @@ class TensorSelectReferenceTests(unittest.TestCase):
 
     def view_contract(self, module):
         source = self.source(module)
+
+        def observe(case_source, selected, direct):
+            return {
+                "values": selected.tolist(),
+                "shape": tuple(selected.shape),
+                "stride": selected.stride(),
+                "offset": selected.storage_offset(),
+                "data_ptr_matches_direct": selected.data_ptr() == direct.data_ptr(),
+                "is_set_to_direct": selected.is_set_to(direct),
+                "same_dtype": selected.dtype is case_source.dtype,
+                "same_device": selected.device == case_source.device,
+            }
+
         calls = (
             source.select(0, 1),
             source.select(0, index=1),
@@ -45,19 +58,36 @@ class TensorSelectReferenceTests(unittest.TestCase):
         direct = source[1]
         rows = []
         for selected in calls:
-            rows.append(
-                {
-                    "values": selected.tolist(),
-                    "shape": tuple(selected.shape),
-                    "stride": selected.stride(),
-                    "offset": selected.storage_offset(),
-                    "data_ptr_matches_direct": selected.data_ptr()
-                    == direct.data_ptr(),
-                    "is_set_to_direct": selected.is_set_to(direct),
-                    "same_dtype": selected.dtype is source.dtype,
-                    "same_device": selected.device == source.device,
-                }
-            )
+            rows.append(observe(source, selected, direct))
+        contiguous = module.tensor([float(value) for value in range(24)]).reshape(
+            2, 3, 4
+        )
+        offset = module.tensor([float(value) for value in range(120)]).reshape(
+            2, 3, 4, 5
+        )[1]
+        noncontiguous = self.source(module)
+        empty_middle = module.zeros((2, 3, 0, 4))
+        for case_source, selected, direct in (
+            (contiguous, contiguous.select(1, 2), contiguous.transpose(0, 1)[2]),
+            (
+                contiguous,
+                contiguous.select(2, 1),
+                contiguous.transpose(0, 2)[1].transpose(0, 1),
+            ),
+            (offset, offset.select(1, 2), offset.transpose(0, 1)[2]),
+            (
+                noncontiguous,
+                noncontiguous.select(1, 1),
+                noncontiguous.transpose(0, 1)[1],
+            ),
+            (
+                empty_middle,
+                empty_middle.select(1, 2),
+                empty_middle.transpose(0, 1)[2],
+            ),
+            (contiguous, contiguous.select(-2, -1), contiguous.transpose(0, 1)[2]),
+        ):
+            rows.append(observe(case_source, selected, direct))
         empty = module.zeros((2, 0, 3)).select(0, 1)
         rows.append(
             {
@@ -92,17 +122,39 @@ class TensorSelectReferenceTests(unittest.TestCase):
         )
         (selected.transpose(0, 1) * 3.0).sum().backward()
 
+        full_sum_leaf = module.tensor(
+            [float(value) for value in range(48)], requires_grad=True
+        )
+        full_sum_source = (full_sum_leaf * 2.0).reshape(2, 2, 3, 4)[
+            1
+        ].transpose(0, 1)
+        full_sum_selected = full_sum_source.select(1, -1)
+        full_sum_direct = full_sum_source.transpose(0, 1)[1]
+        full_sum_metadata = (
+            full_sum_selected.requires_grad,
+            full_sum_selected.is_leaf,
+            full_sum_selected.output_nr,
+            tuple(full_sum_selected.shape),
+            full_sum_selected.stride(),
+            full_sum_selected.storage_offset(),
+            full_sum_selected.data_ptr() == full_sum_direct.data_ptr(),
+            full_sum_selected.is_set_to(full_sum_direct),
+        )
+        full_sum_selected.sum().backward()
+
         no_grad_source = module.tensor(
             [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
         )
         with module.no_grad():
-            untracked = no_grad_source.select(dim=0, index=1)
+            untracked = no_grad_source.select(dim=1, index=1)
 
         empty = module.zeros((2, 0, 3), requires_grad=True)
         empty.select(0, 1).sum().backward()
         return {
             "metadata": metadata,
             "gradient": leaf.grad.tolist(),
+            "full_sum_metadata": full_sum_metadata,
+            "full_sum_gradient": full_sum_leaf.grad.tolist(),
             "no_grad": (
                 untracked.requires_grad,
                 untracked.is_leaf,
@@ -110,6 +162,7 @@ class TensorSelectReferenceTests(unittest.TestCase):
                 tuple(untracked.shape),
                 untracked.stride(),
                 untracked.storage_offset(),
+                untracked.is_set_to(no_grad_source.transpose(0, 1)[1]),
             ),
             "empty_gradient_shape": tuple(empty.grad.shape),
             "empty_gradient": empty.grad.tolist(),
@@ -142,6 +195,8 @@ class TensorSelectReferenceTests(unittest.TestCase):
             self.error(lambda: tensor.select(0, 2**100)),
             self.error(lambda: tensor.select(0, 2)),
             self.error(lambda: tensor.select(-3, -3)),
+            self.error(lambda: tensor.select(1, 3)),
+            self.error(lambda: tensor.select(-2, -4)),
             self.error(lambda: tensor.select(3, 0)),
             self.error(lambda: tensor.select(-4, 0)),
             self.error(lambda: scalar.select(0, 0)),
@@ -328,6 +383,19 @@ class TensorSelectReferenceTests(unittest.TestCase):
     def top_level_view_contract(self, module):
         source = self.source(module)
         direct = source[1]
+
+        def observe(case_source, selected, direct):
+            return {
+                "values": selected.tolist(),
+                "shape": tuple(selected.shape),
+                "stride": selected.stride(),
+                "offset": selected.storage_offset(),
+                "data_ptr_matches_direct": selected.data_ptr() == direct.data_ptr(),
+                "is_set_to_direct": selected.is_set_to(direct),
+                "same_dtype": selected.dtype is case_source.dtype,
+                "same_device": selected.device == case_source.device,
+            }
+
         calls = (
             module.select(source, 0, 1),
             module.select(source, 0, index=1),
@@ -339,22 +407,50 @@ class TensorSelectReferenceTests(unittest.TestCase):
             module.select(x1=source, dim=0, index=1),
             module.select(source, -3, -2),
         )
-        observations = tuple(
-            {
-                "values": selected.tolist(),
-                "shape": tuple(selected.shape),
-                "stride": selected.stride(),
-                "offset": selected.storage_offset(),
-                "data_ptr_matches_direct": selected.data_ptr() == direct.data_ptr(),
-                "is_set_to_direct": selected.is_set_to(direct),
-                "same_dtype": selected.dtype is source.dtype,
-                "same_device": selected.device == source.device,
-            }
-            for selected in calls
+        observations = tuple(observe(source, selected, direct) for selected in calls)
+        contiguous = module.tensor([float(value) for value in range(24)]).reshape(
+            2, 3, 4
+        )
+        offset = module.tensor([float(value) for value in range(120)]).reshape(
+            2, 3, 4, 5
+        )[1]
+        noncontiguous = self.source(module)
+        empty_middle = module.zeros((2, 3, 0, 4))
+        arbitrary_axis_observations = tuple(
+            observe(case_source, selected, direct)
+            for case_source, selected, direct in (
+                (
+                    contiguous,
+                    module.select(contiguous, 1, 2),
+                    contiguous.transpose(0, 1)[2],
+                ),
+                (
+                    contiguous,
+                    module.select(contiguous, 2, 1),
+                    contiguous.transpose(0, 2)[1].transpose(0, 1),
+                ),
+                (offset, module.select(offset, 1, 2), offset.transpose(0, 1)[2]),
+                (
+                    noncontiguous,
+                    module.select(noncontiguous, 1, 1),
+                    noncontiguous.transpose(0, 1)[1],
+                ),
+                (
+                    empty_middle,
+                    module.select(empty_middle, 1, 2),
+                    empty_middle.transpose(0, 1)[2],
+                ),
+                (
+                    contiguous,
+                    module.select(contiguous, -2, -1),
+                    contiguous.transpose(0, 1)[2],
+                ),
+            )
         )
         empty = module.select(module.zeros((2, 0, 3)), 0, 1)
         scalar = module.select(module.tensor([1.0, 2.0, 3.0]), -1, -1)
         return observations, {
+            "arbitrary_axis_observations": arbitrary_axis_observations,
             "empty_shape": tuple(empty.shape),
             "empty_stride": empty.stride(),
             "empty_offset": empty.storage_offset(),
@@ -390,11 +486,31 @@ class TensorSelectReferenceTests(unittest.TestCase):
         )
         (selected.transpose(0, 1) * 3.0).sum().backward()
 
+        full_sum_leaf = module.tensor(
+            [float(value) for value in range(48)], requires_grad=True
+        )
+        full_sum_source = (full_sum_leaf * 2.0).reshape(2, 2, 3, 4)[
+            1
+        ].transpose(0, 1)
+        full_sum_selected = module.select(full_sum_source, 1, -1)
+        full_sum_direct = full_sum_source.transpose(0, 1)[1]
+        full_sum_metadata = (
+            full_sum_selected.requires_grad,
+            full_sum_selected.is_leaf,
+            full_sum_selected.output_nr,
+            tuple(full_sum_selected.shape),
+            full_sum_selected.stride(),
+            full_sum_selected.storage_offset(),
+            full_sum_selected.data_ptr() == full_sum_direct.data_ptr(),
+            full_sum_selected.is_set_to(full_sum_direct),
+        )
+        full_sum_selected.sum().backward()
+
         no_grad_source = module.tensor(
             [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
         )
         with module.no_grad():
-            untracked = module.select(input=no_grad_source, dim=0, index=1)
+            untracked = module.select(input=no_grad_source, dim=1, index=1)
 
         empty = module.zeros((2, 0, 3), requires_grad=True)
         empty_selected = module.select(empty, 0, 1)
@@ -402,6 +518,8 @@ class TensorSelectReferenceTests(unittest.TestCase):
         return {
             "metadata": metadata,
             "gradient": leaf.grad.tolist(),
+            "full_sum_metadata": full_sum_metadata,
+            "full_sum_gradient": full_sum_leaf.grad.tolist(),
             "no_grad": (
                 untracked.requires_grad,
                 untracked.is_leaf,
@@ -409,7 +527,7 @@ class TensorSelectReferenceTests(unittest.TestCase):
                 tuple(untracked.shape),
                 untracked.stride(),
                 untracked.storage_offset(),
-                untracked.is_set_to(no_grad_source[1]),
+                untracked.is_set_to(no_grad_source.transpose(0, 1)[1]),
             ),
             "empty": (
                 empty_selected.requires_grad,
@@ -457,6 +575,8 @@ class TensorSelectReferenceTests(unittest.TestCase):
             self.error(lambda: module.select(tensor, 0, 2**100)),
             self.error(lambda: module.select(tensor, 0, 2)),
             self.error(lambda: module.select(tensor, -3, -3)),
+            self.error(lambda: module.select(tensor, 1, 3)),
+            self.error(lambda: module.select(tensor, -2, -4)),
             self.error(lambda: module.select(tensor, 3, 0)),
             self.error(lambda: module.select(tensor, -4, 0)),
             self.error(lambda: module.select(scalar, 0, 0)),

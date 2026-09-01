@@ -47,7 +47,7 @@ class TensorSelectTests(unittest.TestCase):
         self.assertIs(actual.dtype, expected.dtype)
         self.assertEqual(actual.device, expected.device)
 
-    def test_call_forms_reuse_native_leading_integer_index_views(self):
+    def test_call_forms_reuse_native_select_views(self):
         source = offset_noncontiguous_source()
         self.assertEqual(source.shape, (3, 2, 4))
         self.assertEqual(source.stride(), (4, 12, 1))
@@ -79,7 +79,49 @@ class TensorSelectTests(unittest.TestCase):
         self.assertEqual(scalar.item(), 3.0)
         self.assertTrue(scalar.is_set_to(vector[-1]))
 
-    def test_empty_views_bounds_and_deliberate_dimension_limits(self):
+    def test_arbitrary_dimension_views_match_indexing(self):
+        contiguous = torch.tensor([float(value) for value in range(24)]).reshape(
+            2, 3, 4
+        )
+        offset = torch.tensor([float(value) for value in range(120)]).reshape(
+            2, 3, 4, 5
+        )[1]
+        noncontiguous = offset_noncontiguous_source()
+        empty = torch.zeros((2, 3, 0, 4))
+
+        cases = (
+            ("contiguous middle", contiguous, 1, 2, contiguous.transpose(0, 1)[2]),
+            (
+                "contiguous trailing",
+                contiguous,
+                2,
+                1,
+                contiguous.transpose(0, 2)[1].transpose(0, 1),
+            ),
+            ("offset middle", offset, 1, 2, offset.transpose(0, 1)[2]),
+            (
+                "noncontiguous middle",
+                noncontiguous,
+                1,
+                1,
+                noncontiguous.transpose(0, 1)[1],
+            ),
+            (
+                "empty middle",
+                empty,
+                1,
+                2,
+                empty.transpose(0, 1)[2],
+            ),
+            ("negative dim and index", contiguous, -2, -1, contiguous.transpose(0, 1)[2]),
+        )
+        for case, source, dimension, index, expected in cases:
+            with self.subTest(case=case, surface="method"):
+                self.assert_same_view(source.select(dimension, index), expected)
+            with self.subTest(case=case, surface="top-level"):
+                self.assert_same_view(torch.select(source, dimension, index), expected)
+
+    def test_empty_views_bounds_and_index_errors(self):
         empty = torch.zeros((2, 0, 3), requires_grad=True)
         selected = empty.select(0, 1)
         self.assertEqual(selected.shape, (0, 3))
@@ -111,6 +153,16 @@ class TensorSelectTests(unittest.TestCase):
                 "select(): index -3 out of range for tensor of size [2, 3, 4] at dimension 0",
             ),
             (
+                lambda: torch.zeros((2, 3, 4)).select(1, 3),
+                IndexError,
+                "select(): index 3 out of range for tensor of size [2, 3, 4] at dimension 1",
+            ),
+            (
+                lambda: torch.zeros((2, 3, 4)).select(-2, -4),
+                IndexError,
+                "select(): index -4 out of range for tensor of size [2, 3, 4] at dimension 1",
+            ),
+            (
                 lambda: torch.tensor(1.0).select(0, 0),
                 IndexError,
                 "select() cannot be applied to a 0-dim tensor.",
@@ -129,16 +181,6 @@ class TensorSelectTests(unittest.TestCase):
                 lambda: torch.zeros((2, 3, 4)).select(-4, 0),
                 IndexError,
                 "Dimension out of range (expected to be in range of [-3, 2], but got -4)",
-            ),
-            (
-                lambda: torch.zeros((2, 3, 4)).select(1, 0),
-                RuntimeError,
-                "Tensor.select only supports dimension 0",
-            ),
-            (
-                lambda: torch.zeros((2, 3, 4)).select(-2, 0),
-                RuntimeError,
-                "Tensor.select only supports dimension 0",
             ),
         )
         for call, error_type, message in cases:
@@ -166,15 +208,29 @@ class TensorSelectTests(unittest.TestCase):
             expected_gradient[index] = 6.0
         self.assertEqual(leaf.grad.tolist(), expected_gradient)
 
+        full_sum_leaf = torch.tensor(
+            [float(value) for value in range(48)], requires_grad=True
+        )
+        full_sum_source = (full_sum_leaf * 2.0).reshape(2, 2, 3, 4)[
+            1
+        ].transpose(0, 1)
+        full_sum_selected = full_sum_source.select(1, -1)
+        self.assert_same_view(full_sum_selected, full_sum_source.transpose(0, 1)[1])
+        full_sum_selected.sum().backward()
+        expected_full_sum_gradient = [0.0] * 48
+        for index in range(36, 48):
+            expected_full_sum_gradient[index] = 2.0
+        self.assertEqual(full_sum_leaf.grad.tolist(), expected_full_sum_gradient)
+
         no_grad_source = torch.tensor(
             [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
         )
         with torch.no_grad():
-            untracked = no_grad_source.select(dim=0, index=1)
+            untracked = no_grad_source.select(dim=1, index=1)
         self.assertTrue(untracked.requires_grad)
         self.assertTrue(untracked.is_leaf)
         self.assertEqual(untracked.output_nr, 0)
-        self.assertTrue(untracked.is_set_to(no_grad_source[1]))
+        self.assertTrue(untracked.is_set_to(no_grad_source.transpose(0, 1)[1]))
 
         empty = torch.zeros((2, 0, 3), requires_grad=True)
         empty.select(0, 1).sum().backward()
@@ -405,7 +461,7 @@ class TensorSelectTests(unittest.TestCase):
         self.assertEqual(len(declining.calls), 1)
         self.assertEqual(lower.calls, [])
 
-    def test_top_level_forms_reuse_native_leading_integer_index_views(self):
+    def test_top_level_forms_reuse_native_select_views(self):
         source = offset_noncontiguous_source()
         expected = source[1]
         calls = (
@@ -454,15 +510,29 @@ class TensorSelectTests(unittest.TestCase):
             expected_gradient[index] = 6.0
         self.assertEqual(leaf.grad.tolist(), expected_gradient)
 
+        full_sum_leaf = torch.tensor(
+            [float(value) for value in range(48)], requires_grad=True
+        )
+        full_sum_source = (full_sum_leaf * 2.0).reshape(2, 2, 3, 4)[
+            1
+        ].transpose(0, 1)
+        full_sum_selected = torch.select(full_sum_source, 1, -1)
+        self.assert_same_view(full_sum_selected, full_sum_source.transpose(0, 1)[1])
+        full_sum_selected.sum().backward()
+        expected_full_sum_gradient = [0.0] * 48
+        for index in range(36, 48):
+            expected_full_sum_gradient[index] = 2.0
+        self.assertEqual(full_sum_leaf.grad.tolist(), expected_full_sum_gradient)
+
         no_grad_source = torch.tensor(
             [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
         )
         with torch.no_grad():
-            untracked = torch.select(input=no_grad_source, dim=0, index=1)
+            untracked = torch.select(input=no_grad_source, dim=1, index=1)
         self.assertTrue(untracked.requires_grad)
         self.assertTrue(untracked.is_leaf)
         self.assertEqual(untracked.output_nr, 0)
-        self.assertTrue(untracked.is_set_to(no_grad_source[1]))
+        self.assertTrue(untracked.is_set_to(no_grad_source.transpose(0, 1)[1]))
 
         empty = torch.zeros((2, 0, 3), requires_grad=True)
         selected_empty = torch.select(empty, 0, 1)
@@ -475,7 +545,7 @@ class TensorSelectTests(unittest.TestCase):
         self.assertEqual(empty.grad.shape, (2, 0, 3))
         self.assertEqual(empty.grad.tolist(), [[], []])
 
-    def test_top_level_binding_errors_conversion_order_and_dimension_limit(self):
+    def test_top_level_binding_errors_and_conversion_order(self):
         tensor = torch.zeros((2, 3, 4))
         scalar = torch.tensor(1.0)
         cases = (
@@ -575,6 +645,16 @@ class TensorSelectTests(unittest.TestCase):
                 "select(): index -3 out of range for tensor of size [2, 3, 4] at dimension 0",
             ),
             (
+                lambda: torch.select(tensor, 1, 3),
+                IndexError,
+                "select(): index 3 out of range for tensor of size [2, 3, 4] at dimension 1",
+            ),
+            (
+                lambda: torch.select(tensor, -2, -4),
+                IndexError,
+                "select(): index -4 out of range for tensor of size [2, 3, 4] at dimension 1",
+            ),
+            (
                 lambda: torch.select(tensor, 3, 0),
                 IndexError,
                 "Dimension out of range (expected to be in range of [-3, 2], but got 3)",
@@ -612,12 +692,6 @@ class TensorSelectTests(unittest.TestCase):
         selected = torch.select(tensor, np.int64(0), StatefulIndex())
         self.assertEqual(calls, ["index", "index", "index"])
         self.assertEqual(selected.storage_offset(), 0)
-
-        for dimension in (1, -2):
-            with self.subTest(dimension=dimension), self.assertRaisesRegex(
-                RuntimeError, "^torch\\.select only supports dimension 0$"
-            ):
-                torch.select(tensor, dimension, 0)
 
     def test_top_level_torch_function_modes_receive_original_calls_and_forward(self):
         tensor = torch.zeros((2, 3, 4))

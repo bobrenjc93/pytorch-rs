@@ -139,6 +139,10 @@ enum TransformMapping {
     Index {
         input_start: usize,
     },
+    Select {
+        dimension: usize,
+        index: usize,
+    },
 }
 
 impl SavedTensor {
@@ -2856,9 +2860,85 @@ impl Tensor {
         Ok(output)
     }
 
+    /// Selects one dimension with an integer, returning a shared-storage view.
+    ///
+    /// The caller passes an already-normalized dimension. Negative indices wrap
+    /// from the end of the selected dimension. The returned tensor removes that
+    /// dimension and keeps every surviving stride unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a missing dimension, an out-of-bounds index,
+    /// checked arithmetic overflow, or view metadata allocation failure.
+    pub fn select_dimension(&self, dimension: usize, index: i64) -> Result<Self, TensorError> {
+        let offset = self.checked_index_offset(self.offset, dimension, index)?;
+        let mut shape = try_result_vector(self.shape.len().saturating_sub(1), self.elements)?;
+        shape.extend_from_slice(&self.shape[..dimension]);
+        shape.extend_from_slice(&self.shape[dimension + 1..]);
+        let mut strides = try_result_vector(self.strides.len().saturating_sub(1), self.elements)?;
+        strides.extend_from_slice(&self.strides[..dimension]);
+        strides.extend_from_slice(&self.strides[dimension + 1..]);
+        let elements = element_count(&shape)?;
+        validate_view_bounds(&shape, &strides, offset, elements, self.storage.len())?;
+        let mut output = Self {
+            storage: Arc::clone(&self.storage),
+            shape,
+            strides,
+            offset,
+            elements,
+            output_nr: 0,
+            view_requires_grad: self.requires_grad(),
+            autograd: None,
+        };
+        if self.records_grad() {
+            self.record_transform(
+                &mut output,
+                TransformMapping::Select {
+                    dimension,
+                    index: self.normalized_index_for_dimension(dimension, index)?,
+                },
+                AutogradNode::Select,
+            )?;
+        }
+        Ok(output)
+    }
+
     pub(crate) fn checked_index_offset(
         &self,
         offset: usize,
+        dimension: usize,
+        index: i64,
+    ) -> Result<usize, TensorError> {
+        let normalized = self.normalized_index_for_dimension(dimension, index)?;
+        if self.elements == 0 {
+            // PyTorch carries empty-view offsets as signed 64-bit metadata and
+            // permits arithmetic to wrap before rejecting a negative result.
+            let offset =
+                i64::try_from(offset).map_err(|_| TensorError::IndexCalculationOverflow)?;
+            let stride = i64::try_from(self.strides[dimension])
+                .map_err(|_| TensorError::IndexCalculationOverflow)?;
+            let normalized =
+                i64::try_from(normalized).map_err(|_| TensorError::IndexCalculationOverflow)?;
+            let offset = offset.wrapping_add(normalized.wrapping_mul(stride));
+            return usize::try_from(offset)
+                .map_err(|_| TensorError::InvalidStorageOffset { offset });
+        }
+        let contribution = normalized
+            .checked_mul(self.strides[dimension])
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let offset = offset
+            .checked_add(contribution)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        if i64::try_from(offset).is_err() {
+            let offset = i64::try_from(offset.cast_signed())
+                .expect("an isize storage offset must fit in i64");
+            return Err(TensorError::InvalidStorageOffset { offset });
+        }
+        Ok(offset)
+    }
+
+    fn normalized_index_for_dimension(
+        &self,
         dimension: usize,
         index: i64,
     ) -> Result<usize, TensorError> {
@@ -2884,31 +2964,7 @@ impl Tensor {
         } else {
             index
         };
-        if self.elements == 0 {
-            // PyTorch carries empty-view offsets as signed 64-bit metadata and
-            // permits arithmetic to wrap before rejecting a negative result.
-            let offset =
-                i64::try_from(offset).map_err(|_| TensorError::IndexCalculationOverflow)?;
-            let stride = i64::try_from(self.strides[dimension])
-                .map_err(|_| TensorError::IndexCalculationOverflow)?;
-            let offset = offset.wrapping_add(normalized.wrapping_mul(stride));
-            return usize::try_from(offset)
-                .map_err(|_| TensorError::InvalidStorageOffset { offset });
-        }
-        let normalized =
-            usize::try_from(normalized).map_err(|_| TensorError::IndexCalculationOverflow)?;
-        let contribution = normalized
-            .checked_mul(self.strides[dimension])
-            .ok_or(TensorError::IndexCalculationOverflow)?;
-        let offset = offset
-            .checked_add(contribution)
-            .ok_or(TensorError::IndexCalculationOverflow)?;
-        if i64::try_from(offset).is_err() {
-            let offset = i64::try_from(offset.cast_signed())
-                .expect("an isize storage offset must fit in i64");
-            return Err(TensorError::InvalidStorageOffset { offset });
-        }
-        Ok(offset)
+        usize::try_from(normalized).map_err(|_| TensorError::IndexCalculationOverflow)
     }
 
     /// Returns a tensor with the same logical values and a new shape.
@@ -4919,6 +4975,9 @@ fn transform_backward(
                 .copy_from_slice(upstream);
             Ok(gradient)
         }
+        TransformMapping::Select { dimension, index } => {
+            select_backward(input, *dimension, *index, upstream)
+        }
         TransformMapping::Permute {
             dimensions,
             output_shape,
@@ -4971,6 +5030,61 @@ fn transform_backward(
             Ok(gradient)
         }
     }
+}
+
+fn select_backward(
+    input: &SavedTensor,
+    dimension: usize,
+    index: usize,
+    upstream: &[f32],
+) -> Result<Vec<f32>, TensorError> {
+    let mut gradient = filled_storage(input.elements, 0.0)?;
+    if upstream.is_empty() {
+        return Ok(gradient);
+    }
+
+    let input_strides = contiguous_strides(&input.shape, input.elements)?;
+    let mut coordinates = try_result_vector(input.shape.len().saturating_sub(1), upstream.len())?;
+    coordinates.resize(input.shape.len().saturating_sub(1), 0_usize);
+    for (output_index, &value) in upstream.iter().enumerate() {
+        let mut remaining = output_index;
+        for input_axis in (0..input.shape.len()).rev() {
+            if input_axis == dimension {
+                continue;
+            }
+            let output_axis = if input_axis < dimension {
+                input_axis
+            } else {
+                input_axis - 1
+            };
+            coordinates[output_axis] = remaining % input.shape[input_axis];
+            remaining /= input.shape[input_axis];
+        }
+
+        let mut input_index = index
+            .checked_mul(input_strides[dimension])
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        for (input_axis, &stride) in input_strides.iter().enumerate() {
+            if input_axis == dimension {
+                continue;
+            }
+            let output_axis = if input_axis < dimension {
+                input_axis
+            } else {
+                input_axis - 1
+            };
+            let contribution = coordinates[output_axis]
+                .checked_mul(stride)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            input_index = input_index
+                .checked_add(contribution)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+        }
+        *gradient
+            .get_mut(input_index)
+            .ok_or(TensorError::IndexCalculationOverflow)? = value;
+    }
+    Ok(gradient)
 }
 
 fn add_gradient(
