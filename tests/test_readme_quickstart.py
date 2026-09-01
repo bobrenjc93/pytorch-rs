@@ -106,7 +106,11 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
             "`torch.nn.functional.dropout1d`",
             "`torch.nn.functional.softsign`",
         ),
-        ("Module layers", "loss reductions other than", "mutating initializers"),
+        (
+            "Module layers",
+            "loss `weight` arguments",
+            "mutating initializers",
+        ),
         (
             "[NN/data helpers](#nn-and-data-helpers)",
             "[math activations](#elementwise-and-reductions)",
@@ -125,7 +129,11 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
     (
         "Check dtype, device, and backend state",
         ("`torch.float32`", "`torch.finfo`", "`torch.get_device`"),
-        ("Additional dtypes", "CUDA tensors", "unlisted backend APIs"),
+        (
+            "Additional dtypes",
+            "CUDA streams/events/synchronization",
+            "other accelerator memory-management APIs",
+        ),
         (
             "[tensor metadata](#metadata-and-views)",
             "[backend metadata](#backend-and-compiler-metadata)",
