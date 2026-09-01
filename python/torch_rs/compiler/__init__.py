@@ -141,6 +141,7 @@ def allow_in_graph(fn):
         return [allow_in_graph(entry) for entry in fn]
     if not callable(fn):
         raise AssertionError("allow_in_graph expects a callable")
+    _state.register_allow_in_graph_callable(fn)
     return fn
 
 

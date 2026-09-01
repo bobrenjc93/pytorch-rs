@@ -1,4 +1,5 @@
 import copy
+import gc
 import importlib
 import inspect
 import json
@@ -9,6 +10,7 @@ import sys
 import types
 import typing
 import unittest
+import weakref
 
 import torch_rs as torch
 
@@ -40,6 +42,13 @@ class _CallableObject:
     def __call__(self, value):
         self.calls.append(value)
         return value + len(self.calls)
+
+
+class _SlotCallable:
+    __slots__ = ()
+
+    def __call__(self):
+        return "called"
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -154,6 +163,42 @@ class CompilerAllowInGraphReferenceTests(unittest.TestCase):
             self.sequence_outcome(reference_torch),
         )
 
+    def lifecycle_outcome(self, module, allowed_ids):
+        target = _CallableObject()
+        target_id = id(target)
+        target_ref = weakref.ref(target)
+        before = target_id in allowed_ids
+        marked = module.compiler.allow_in_graph(target)
+        after = target_id in allowed_ids
+        marked_is_target = marked is target
+        del marked
+        del target
+        for _ in range(10):
+            if target_ref() is None:
+                break
+            gc.collect()
+        return (
+            before,
+            after,
+            marked_is_target,
+            target_ref() is None,
+            target_id in allowed_ids,
+        )
+
+    def test_marker_registry_lifecycle_matches_pytorch_2_13(self):
+        import torch._dynamo.trace_rules as reference_trace_rules
+
+        self.assertEqual(
+            self.lifecycle_outcome(
+                torch,
+                torch.compiler._state._allowed_in_graph_callable_ids,
+            ),
+            self.lifecycle_outcome(
+                reference_torch,
+                reference_trace_rules._allowed_callable_ids,
+            ),
+        )
+
     def test_non_callable_errors_match_pytorch_2_13(self):
         target_factories = (
             lambda: None,
@@ -162,6 +207,20 @@ class CompilerAllowInGraphReferenceTests(unittest.TestCase):
             types.SimpleNamespace,
             lambda: [1],
             lambda: (1,),
+        )
+        for case, target_factory in enumerate(target_factories):
+            with self.subTest(case=case):
+                actual_target = target_factory()
+                expected_target = target_factory()
+                self.assert_error_matches(
+                    lambda: torch.compiler.allow_in_graph(actual_target),
+                    lambda: reference_torch.compiler.allow_in_graph(expected_target),
+                )
+
+    def test_non_weakrefable_callable_errors_match_pytorch_2_13(self):
+        target_factories = (
+            _SlotCallable,
+            lambda: list.append,
         )
         for case, target_factory in enumerate(target_factories):
             with self.subTest(case=case):

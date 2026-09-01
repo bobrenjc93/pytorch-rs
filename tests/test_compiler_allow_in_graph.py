@@ -1,4 +1,5 @@
 import copy
+import gc
 import importlib
 import inspect
 import pickle
@@ -7,6 +8,7 @@ import sys
 import types
 import typing
 import unittest
+import weakref
 
 import torch_rs as torch
 
@@ -124,6 +126,13 @@ class _CallableObject:
         return value + len(self.calls)
 
 
+class _SlotCallable:
+    __slots__ = ()
+
+    def __call__(self):
+        return "called"
+
+
 class CompilerAllowInGraphTests(unittest.TestCase):
     def test_returns_function_lambda_builtin_and_callable_objects_without_wrapping(self):
         calls = []
@@ -140,6 +149,10 @@ class CompilerAllowInGraphTests(unittest.TestCase):
         marked = torch.compiler.allow_in_graph(calculate)
 
         self.assertIs(marked, calculate)
+        self.assertIn(
+            id(calculate),
+            torch.compiler._state._allowed_in_graph_callable_ids,
+        )
         self.assertEqual(calculate.__dict__, original_dict)
         self.assertEqual(marked(3, scale=2), 7)
         self.assertEqual(marked(3, scale=2), 8)
@@ -158,6 +171,10 @@ class CompilerAllowInGraphTests(unittest.TestCase):
         self.assertEqual(lambda_function.__dict__, {})
         marked_lambda = torch.compiler.allow_in_graph(lambda_function)
         self.assertIs(marked_lambda, lambda_function)
+        self.assertIn(
+            id(lambda_function),
+            torch.compiler._state._allowed_in_graph_callable_ids,
+        )
         self.assertEqual(lambda_function.__dict__, {})
         self.assertEqual(marked_lambda(4), 8)
         self.assertEqual(marked_lambda.__name__, "<lambda>")
@@ -169,9 +186,35 @@ class CompilerAllowInGraphTests(unittest.TestCase):
         self.assertEqual(callable_object.__dict__, {"calls": []})
         marked_object = torch.compiler.allow_in_graph(callable_object)
         self.assertIs(marked_object, callable_object)
+        self.assertIn(
+            id(callable_object),
+            torch.compiler._state._allowed_in_graph_callable_ids,
+        )
         self.assertEqual(callable_object.__dict__, {"calls": []})
         self.assertEqual(marked_object(5), 6)
         self.assertEqual(callable_object.calls, [5])
+
+    def test_marker_registry_is_weakref_backed_and_survives_compiler_reload(self):
+        compiler = torch.compiler
+        target = _CallableObject()
+        target_id = id(target)
+        target_ref = weakref.ref(target)
+
+        self.assertNotIn(target_id, compiler._state._allowed_in_graph_callable_ids)
+        self.assertIs(compiler.allow_in_graph(target), target)
+        self.assertIn(target_id, compiler._state._allowed_in_graph_callable_ids)
+
+        reloaded = importlib.reload(compiler)
+        self.assertIs(reloaded, compiler)
+        self.assertIn(target_id, compiler._state._allowed_in_graph_callable_ids)
+
+        del target
+        for _ in range(10):
+            if target_ref() is None:
+                break
+            gc.collect()
+        self.assertIsNone(target_ref())
+        self.assertNotIn(target_id, compiler._state._allowed_in_graph_callable_ids)
 
     def test_sequence_inputs_return_fresh_lists_with_original_callables(self):
         def first():
@@ -198,6 +241,24 @@ class CompilerAllowInGraphTests(unittest.TestCase):
                     torch.compiler.allow_in_graph(target)
                 self.assertEqual(str(raised.exception), "allow_in_graph expects a callable")
                 self.assertEqual(raised.exception.args, ("allow_in_graph expects a callable",))
+
+    def test_rejects_non_weakrefable_callable_targets_like_pytorch_2_13(self):
+        cases = (
+            (
+                _SlotCallable(),
+                "cannot create weak reference to '_SlotCallable' object",
+            ),
+            (
+                list.append,
+                "cannot create weak reference to 'method_descriptor' object",
+            ),
+        )
+        for target, message in cases:
+            with self.subTest(target=target):
+                with self.assertRaises(TypeError) as raised:
+                    torch.compiler.allow_in_graph(target)
+                self.assertEqual(str(raised.exception), message)
+                self.assertEqual(raised.exception.args, (message,))
 
     def test_signature_documentation_and_module_identity(self):
         compiler = importlib.import_module("torch_rs.compiler")
