@@ -146,6 +146,7 @@ class CudaCkSdpaAvailabilityTests(unittest.TestCase):
                 "allow_fp16_bf16_reduction_math_sdp",
                 "fp16_bf16_reduction_math_sdp_allowed",
                 "is_flash_attention_available",
+                "sdp_kernel",
             ],
         )
         self.assertEqual(
@@ -163,6 +164,7 @@ class CudaCkSdpaAvailabilityTests(unittest.TestCase):
                 "is_built",
                 "is_ck_sdpa_available",
                 "is_flash_attention_available",
+                "sdp_kernel",
                 "math_sdp_enabled",
                 "matmul",
                 "mem_efficient_sdp_enabled",

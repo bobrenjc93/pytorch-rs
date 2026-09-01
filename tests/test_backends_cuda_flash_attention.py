@@ -112,6 +112,7 @@ class CudaFlashAttentionAvailabilityTests(unittest.TestCase):
                 "is_built",
                 "is_ck_sdpa_available",
                 "is_flash_attention_available",
+                "sdp_kernel",
                 "math_sdp_enabled",
                 "matmul",
                 "mem_efficient_sdp_enabled",

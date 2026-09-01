@@ -44,6 +44,7 @@ CUDA_BACKEND_ALL = [
     "allow_fp16_bf16_reduction_math_sdp",
     "fp16_bf16_reduction_math_sdp_allowed",
     "is_flash_attention_available",
+    "sdp_kernel",
 ]
 
 CUDA_BACKEND_PUBLIC = {
@@ -59,6 +60,7 @@ CUDA_BACKEND_PUBLIC = {
     "is_built",
     "is_ck_sdpa_available",
     "is_flash_attention_available",
+    "sdp_kernel",
     "math_sdp_enabled",
     "matmul",
     "mem_efficient_sdp_enabled",
@@ -194,7 +196,7 @@ print(json.dumps({
                 "cuda_available": False,
                 "cuda_devices": 0,
                 "can_use_cudnn_attention": False,
-                "sdp_kernel": False,
+                "sdp_kernel": True,
                 "execution": False,
                 "compile": False,
                 "reference_torch_loaded": False,
@@ -539,7 +541,6 @@ print(json.dumps({
             "can_use_cudnn_attention",
             "can_use_efficient_attention",
             "can_use_flash_attention",
-            "sdp_kernel",
         ):
             with self.subTest(unsupported_execution_api=name):
                 self.assertFalse(hasattr(cuda, name))

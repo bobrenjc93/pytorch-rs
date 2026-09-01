@@ -44,6 +44,7 @@ CUDA_BACKEND_ALL = [
     "allow_fp16_bf16_reduction_math_sdp",
     "fp16_bf16_reduction_math_sdp_allowed",
     "is_flash_attention_available",
+    "sdp_kernel",
 ]
 
 CUDA_BACKEND_PUBLIC = {
@@ -59,6 +60,7 @@ CUDA_BACKEND_PUBLIC = {
     "is_built",
     "is_ck_sdpa_available",
     "is_flash_attention_available",
+    "sdp_kernel",
     "math_sdp_enabled",
     "matmul",
     "mem_efficient_sdp_enabled",
