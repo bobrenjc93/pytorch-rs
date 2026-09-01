@@ -7,12 +7,19 @@ It does not enable TorchScript graph execution or fusion.
 import contextlib as _contextlib
 
 
+def _repr_for_pybind_error(value):
+    try:
+        return repr(value)
+    except BaseException:
+        return "<repr raised Error>"
+
+
 def _invalid_graph_executor_optimize_error(value):
     return TypeError(
         "_set_graph_executor_optimize(): incompatible function arguments. "
         "The following argument types are supported:\n"
         "    1. (arg0: bool) -> None\n\n"
-        f"Invoked with: {value!r}"
+        f"Invoked with: {_repr_for_pybind_error(value)}"
     )
 
 

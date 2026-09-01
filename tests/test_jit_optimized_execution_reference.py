@@ -68,6 +68,19 @@ class BadBool:
         return "BadBool()"
 
 
+class BadRepr:
+    def __repr__(self):
+        raise RuntimeError("repr failed")
+
+
+class BadBoolBadRepr:
+    def __bool__(self):
+        raise RuntimeError("bool failed")
+
+    def __repr__(self):
+        raise RuntimeError("repr failed")
+
+
 class KeyboardInterruptBool:
     def __bool__(self):
         raise KeyboardInterrupt("bool interrupted")
@@ -202,6 +215,8 @@ class JitOptimizedExecutionReferenceTests(unittest.TestCase):
             "",
             "yes",
             BadBool(),
+            BadRepr(),
+            BadBoolBadRepr(),
             KeyboardInterruptBool(),
             SystemExitBool(),
             LenOnly(),

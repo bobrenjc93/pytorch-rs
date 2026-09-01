@@ -55,6 +55,19 @@ class BadBool:
         return "BadBool()"
 
 
+class BadRepr:
+    def __repr__(self):
+        raise RuntimeError("repr failed")
+
+
+class BadBoolBadRepr:
+    def __bool__(self):
+        raise RuntimeError("bool failed")
+
+    def __repr__(self):
+        raise RuntimeError("repr failed")
+
+
 class KeyboardInterruptBool:
     def __bool__(self):
         raise KeyboardInterrupt("bool interrupted")
@@ -136,12 +149,14 @@ class JitOptimizedExecutionTests(unittest.TestCase):
             ("", "''"),
             ("yes", "'yes'"),
             (BadBool(), "BadBool()"),
+            (BadRepr(), "<repr raised Error>"),
+            (BadBoolBadRepr(), "<repr raised Error>"),
             (KeyboardInterruptBool(), "KeyboardInterruptBool()"),
             (SystemExitBool(), "SystemExitBool()"),
             (LenOnly(), "LenOnly()"),
         )
-        for value, expected_suffix in invalid_cases:
-            with self.subTest(value=value):
+        for index, (value, expected_suffix) in enumerate(invalid_cases):
+            with self.subTest(index=index):
                 self.assert_invalid_entry(value, expected_suffix)
 
     def test_nested_contexts_exceptional_exits_and_grad_state(self):
