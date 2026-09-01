@@ -9,6 +9,8 @@ __all__ = [
     "cuBLASModule",
     "is_ck_sdpa_available",
     "matmul",
+    "enable_cudnn_sdp",
+    "cudnn_sdp_enabled",
     "enable_flash_sdp",
     "flash_sdp_enabled",
     "enable_mem_efficient_sdp",
@@ -106,6 +108,24 @@ def is_ck_sdpa_available() -> bool:
     """
     # pyrefly: ignore [missing-attribute]
     return torch._C._is_ck_sdpa_available()
+
+
+def enable_cudnn_sdp(enabled: bool):
+    r"""
+    .. warning:: This flag is beta and subject to change.
+
+    Enables or disables cuDNN scaled dot product attention.
+    """
+    torch._C._set_sdp_use_cudnn(enabled)
+
+
+def cudnn_sdp_enabled():
+    r"""
+    .. warning:: This flag is beta and subject to change.
+
+    Returns whether cuDNN scaled dot product attention is enabled or not.
+    """
+    return torch._C._get_cudnn_sdp_enabled()
 
 
 def enable_flash_sdp(enabled: bool):
