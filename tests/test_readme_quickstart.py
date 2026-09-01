@@ -40,6 +40,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-mul-release-timings.md",
     ),
     (
+        "`Tensor.abs` and `torch.abs` release timings",
+        "docs/tensor-abs-release-timings.md",
+    ),
+    (
         '`torch.nn.functional.mse_loss(reduction="none")` release timings',
         "docs/mse-loss-release-timings.md",
     ),
