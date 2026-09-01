@@ -40,6 +40,41 @@ FUNCTION_DOC = (
 )
 
 
+class IntSubclass(int):
+    pass
+
+
+class IndexDimension:
+    def __init__(self, value):
+        self.value = value
+
+    def __index__(self):
+        return self.value
+
+
+class TupleIndexDimension(tuple):
+    def __new__(cls, values, index_value):
+        instance = super().__new__(cls, values)
+        instance.index_value = index_value
+        instance.calls = 0
+        return instance
+
+    def __index__(self):
+        self.calls += 1
+        return self.index_value
+
+
+class ListIndexDimension(list):
+    def __init__(self, values, index_value):
+        super().__init__(values)
+        self.index_value = index_value
+        self.calls = 0
+
+    def __index__(self):
+        self.calls += 1
+        return self.index_value
+
+
 class TopLevelReshapeTests(unittest.TestCase):
     def assert_matches_method(self, output, source, method_output, *, aliases):
         self.assertIsNot(output, source)
@@ -56,7 +91,7 @@ class TopLevelReshapeTests(unittest.TestCase):
         np.testing.assert_array_equal(np.asarray(output), np.asarray(method_output))
 
     def reshape_calls(self, source, shape):
-        return (
+        calls = (
             ("positional-tuple", lambda: torch.reshape(source, tuple(shape))),
             ("positional-list", lambda: torch.reshape(source, list(shape))),
             ("positional-size", lambda: torch.reshape(source, torch.Size(shape))),
@@ -67,6 +102,9 @@ class TopLevelReshapeTests(unittest.TestCase):
             ("a-alias", lambda: torch.reshape(a=source, shape=tuple(shape))),
             ("x1-alias", lambda: torch.reshape(x1=source, shape=tuple(shape))),
         )
+        if shape:
+            calls = (*calls, ("variadic", lambda: torch.reshape(source, *shape)))
+        return calls
 
     def test_sequence_forms_delegate_to_the_native_reshape_engine(self):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
@@ -74,8 +112,15 @@ class TopLevelReshapeTests(unittest.TestCase):
         cases = (
             ("scalar", torch.tensor(-0.0), (), True),
             ("empty-offset", torch.zeros((2, 0, 3)).transpose(0, 2)[1], (2, 0), True),
+            ("single-dimension", base, (24,), True),
             ("contiguous", base, (6, 4), True),
             ("contiguous-offset", base[1], (2, 6), True),
+            (
+                "noncontiguous-compatible",
+                base.transpose(0, 1),
+                (3, 2, 2, 2),
+                True,
+            ),
             ("transposed-copy", base.transpose(0, 2), (6, 4), False),
         )
 
@@ -90,10 +135,38 @@ class TopLevelReshapeTests(unittest.TestCase):
         negative_zero = torch.reshape(torch.tensor(-0.0), ())
         self.assertEqual(np.asarray(negative_zero).view(np.uint32).item(), 0x8000_0000)
 
+    def test_variadic_integer_compatible_dimensions_delegate_to_native_reshape(self):
+        source = torch.tensor(np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist())
+        cases = (
+            (IntSubclass(2), np.int64(3), IndexDimension(4)),
+            (IndexDimension(6), np.uint32(4)),
+            (2, IndexDimension(-1), 2),
+        )
+        for dimensions in cases:
+            with self.subTest(dimensions=tuple(type(item).__name__ for item in dimensions)):
+                result = torch.reshape(source, *dimensions)
+                direct = source.reshape(*dimensions)
+                self.assert_matches_method(result, source, direct, aliases=True)
+
+    def test_variadic_dimensions_do_not_expand_sequence_subclasses(self):
+        tensor = torch.zeros((6,))
+        for dimension_type in (TupleIndexDimension, ListIndexDimension):
+            with self.subTest(dimension_type=dimension_type.__name__):
+                sequence = dimension_type((6,), 2)
+                result = torch.reshape(tensor, sequence, 3)
+                self.assertEqual(result.shape, (2, 3))
+                self.assertEqual(result.stride(), (3, 1))
+                self.assertEqual(result.data_ptr(), tensor.data_ptr())
+                self.assertEqual(sequence.calls, 2)
+
     def test_inferred_empty_offset_and_shape_errors_match_tensor_reshape(self):
         source = torch.tensor(np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist())
         inferred = torch.reshape(source, (2, -1, 2))
         direct = source.reshape((2, -1, 2))
+        self.assert_matches_method(inferred, source, direct, aliases=True)
+
+        inferred = torch.reshape(source, 2, -1, 2)
+        direct = source.reshape(2, -1, 2)
         self.assert_matches_method(inferred, source, direct, aliases=True)
 
         maximum = sys.maxsize
@@ -119,6 +192,21 @@ class TopLevelReshapeTests(unittest.TestCase):
                 self.assertEqual(
                     str(top_level_raised.exception), str(method_raised.exception)
                 )
+                with self.assertRaises(RuntimeError) as variadic_raised:
+                    torch.reshape(torch.zeros((6,)), *shape)
+                with self.assertRaises(RuntimeError) as method_variadic_raised:
+                    torch.zeros((6,)).reshape(*shape)
+                self.assertEqual(
+                    str(variadic_raised.exception),
+                    str(method_variadic_raised.exception),
+                )
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^reshape\(\): argument 'shape' \(position 2\) must be tuple of ints, "
+            r"but found element of type bool at pos 0$",
+        ):
+            torch.reshape(torch.zeros((4,)), True, 4)
 
     def test_view_and_copy_outputs_outlive_their_sources(self):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
@@ -171,7 +259,7 @@ class TopLevelReshapeTests(unittest.TestCase):
         repeated_leaf = torch.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
         )
-        loss = torch.reshape(repeated_leaf.transpose(0, 1), (3, 2)).sum()
+        loss = torch.reshape(repeated_leaf.transpose(0, 1), 3, 2).sum()
         loss.backward()
         loss.backward()
         np.testing.assert_array_equal(
@@ -183,13 +271,22 @@ class TopLevelReshapeTests(unittest.TestCase):
             [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
         )
         with torch.no_grad():
-            alias = torch.reshape(no_grad_source, (4,))
-            copied = torch.reshape(no_grad_source.transpose(0, 1), (4,))
+            alias = torch.reshape(no_grad_source, 4)
+            copied = torch.reshape(no_grad_source.transpose(0, 1), 4)
         self.assertTrue(alias.requires_grad)
         self.assertTrue(alias.is_leaf)
         self.assertEqual(alias.data_ptr(), no_grad_source.data_ptr())
         self.assertFalse(copied.requires_grad)
         self.assertTrue(copied.is_leaf)
+
+        full_sum_leaf = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+        )
+        torch.reshape(full_sum_leaf, 3, 2).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(full_sum_leaf.grad),
+            np.ones((2, 3), dtype=np.float32),
+        )
 
     def test_overrides_and_modes_receive_the_original_top_level_call(self):
         marker = object()
@@ -205,6 +302,12 @@ class TopLevelReshapeTests(unittest.TestCase):
         value = Override()
         for form, call, expected_args, expected_kwargs in (
             ("positional", lambda: torch.reshape(value, (2, 2)), (value, (2, 2)), None),
+            (
+                "variadic",
+                lambda: torch.reshape(value, 2, 2),
+                (value, 2, 2),
+                None,
+            ),
             (
                 "keyword",
                 lambda: torch.reshape(input=value, shape=(2, 2)),
@@ -242,6 +345,11 @@ class TopLevelReshapeTests(unittest.TestCase):
                 lambda shape: torch.reshape(tensor, shape),
             ),
             (
+                "shape variadic element",
+                (Override(), 2),
+                lambda shape: torch.reshape(tensor, *shape),
+            ),
+            (
                 "shape list element",
                 [Override(), 2],
                 lambda shape: torch.reshape(input=tensor, shape=shape),
@@ -257,6 +365,9 @@ class TopLevelReshapeTests(unittest.TestCase):
                 if form == "shape list element":
                     self.assertEqual(args, ())
                     self.assertEqual(kwargs, {"input": tensor, "shape": shape})
+                elif form == "shape variadic element":
+                    self.assertEqual(args, (tensor, *shape))
+                    self.assertIsNone(kwargs)
                 else:
                     self.assertEqual(args, (tensor, shape))
                     self.assertIsNone(kwargs)
@@ -362,10 +473,10 @@ class TopLevelReshapeTests(unittest.TestCase):
 
         mode = RecordingMode(marker)
         with mode:
-            self.assertIs(torch.reshape(tensor, (1, 2.0)), marker)
+            self.assertIs(torch.reshape(tensor, 1, 2.0), marker)
         self.assertEqual(
             mode.calls,
-            [(torch.reshape, (), (tensor, (1, 2.0)), None)],
+            [(torch.reshape, (), (tensor, 1, 2.0), None)],
         )
 
         mode = RecordingMode(marker)
@@ -375,7 +486,7 @@ class TopLevelReshapeTests(unittest.TestCase):
             r"but found element of type float at pos 0$",
         ):
             with mode:
-                torch.reshape(tensor, (2.0, 1))
+                torch.reshape(tensor, 2.0, 1)
         self.assertEqual(mode.calls, [])
 
         mode = RecordingMode(marker)
@@ -401,13 +512,13 @@ class TopLevelReshapeTests(unittest.TestCase):
 
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
-                forwarded = torch.reshape(tensor, (2, 2))
+                forwarded = torch.reshape(tensor, 2, 2)
         self.assertEqual([call[0] for call in order], ["upper", "lower"])
         self.assertTrue(all(call[1] is torch.reshape for call in order))
         self.assertTrue(all(call[2] == () for call in order))
-        self.assertEqual(order[0][3], (tensor, (2, 2)))
+        self.assertEqual(order[0][3], (tensor, 2, 2))
         self.assertIsNone(order[0][4])
-        self.assertEqual(order[1][3], (tensor, (2, 2)))
+        self.assertEqual(order[1][3], (tensor, 2, 2))
         self.assertEqual(order[1][4], {})
         self.assertEqual(forwarded.shape, (2, 2))
 
@@ -501,7 +612,8 @@ for call in cases:
             ),
             (
                 lambda: torch.reshape(tensor, (2, 2), (4,)),
-                "reshape() takes 2 positional arguments but 3 were given",
+                "reshape(): argument 'shape' (position 2) must be tuple of ints, "
+                "but found element of type tuple at pos 0",
             ),
             (
                 lambda: torch.reshape(tensor, (2, 2), input=tensor),
@@ -520,12 +632,17 @@ for call in cases:
                 'reshape() missing 2 required positional argument: "input", "shape"',
             ),
             (
-                lambda: torch.reshape(tensor, 4),
-                "reshape(): argument 'shape' (position 2) must be tuple of ints, not int",
+                lambda: torch.reshape(input=tensor, shape=4),
+                "reshape(): argument 'shape' must be tuple of ints, not int",
             ),
             (
                 lambda: torch.reshape(tensor, torch.float32),
                 "reshape(): argument 'shape' (position 2) must be tuple of ints, not torch.dtype",
+            ),
+            (
+                lambda: torch.reshape(tensor, 2.0, 2),
+                "reshape(): argument 'shape' (position 2) must be tuple of ints, "
+                "but found element of type float at pos 0",
             ),
             (
                 lambda: torch.reshape(tensor, [True]),
@@ -554,6 +671,22 @@ for call in cases:
                 "reshape() got an unexpected keyword argument 'extra'",
             ),
             (
+                lambda: torch.reshape(tensor, 2, 2, extra=True),
+                "reshape() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.reshape(tensor, 2, 2, shape=(2, 2)),
+                "reshape() got multiple values for argument 'shape'",
+            ),
+            (
+                lambda: torch.reshape(tensor, 2, 2, dtype=torch.float32),
+                "reshape() got an unexpected keyword argument 'dtype'",
+            ),
+            (
+                lambda: torch.reshape(tensor, 2, 2, device=torch.device("cpu")),
+                "reshape() got an unexpected keyword argument 'device'",
+            ),
+            (
                 lambda: torch.reshape(x=tensor, a=tensor, shape=(2, 2)),
                 "reshape() got an unexpected keyword argument 'x'",
             ),
@@ -568,6 +701,16 @@ for call in cases:
         too_large = 2**63
         too_small = -(2**63) - 1
         cases = (
+            (
+                "variadic-single",
+                lambda: torch.reshape(tensor, too_large),
+                1,
+            ),
+            (
+                "variadic-second",
+                lambda: torch.reshape(tensor, 1, too_large),
+                2,
+            ),
             (
                 "positional-tuple",
                 lambda: torch.reshape(tensor, (too_large,)),
@@ -630,6 +773,17 @@ for call in cases:
         result = torch.reshape(tensor, (dimension, 2))
         self.assertEqual(result.shape, (2, 2))
         self.assertEqual(dimension.calls, 2)
+
+        dimension = StatefulIndexDimension((4, 1, 4))
+        result = torch.reshape(tensor, dimension)
+        self.assertEqual(result.shape, (4,))
+        self.assertEqual(dimension.calls, 3)
+
+        first = StatefulIndexDimension((2, 2))
+        second = StatefulIndexDimension((2,))
+        result = torch.reshape(tensor, first, second)
+        self.assertEqual(result.shape, (2, 2))
+        self.assertEqual((first.calls, second.calls), (2, 1))
 
         dimension = StatefulIndexDimension((1, 2))
         result = torch.reshape(input=tensor, shape=[dimension, 2])
