@@ -9196,6 +9196,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 92
       }
+    },
+    {
+      "key": "pr:1617",
+      "recordedAt": "2026-09-01T21:54:44.140Z",
+      "label": "PR #1617",
+      "kind": "leaf",
+      "prNumber": 1617,
+      "title": "Add supported-surface namespace summary tables",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 95,
+        "eval_39340456": 95.3,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 93
+      }
     }
   ]
 }
