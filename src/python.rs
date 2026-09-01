@@ -1090,6 +1090,23 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nlog() -> Tensor\n\nSee :func:`torch.log`\n"]
+    #[pyo3(text_signature = None)]
+    fn log(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "log")? {
+            return Ok(result);
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor.inner.log().map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\npositive() -> Tensor\n\nSee :func:`torch.positive`\n"]
     #[pyo3(text_signature = None)]
     fn positive(slf: &Bound<'_, Self>) -> PyResult<Py<PyTensor>> {
@@ -2045,6 +2062,14 @@ pub(crate) fn rsqrt_variable_function(
     unary_out_variable_function(UnaryOutOperation::RSQRT, py, args, kwargs)
 }
 
+pub(crate) fn log_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::LOG, py, args, kwargs)
+}
+
 pub(crate) fn exp_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2737,6 +2762,14 @@ impl UnaryOutOperation {
         apply: CoreTensor::rsqrt,
     };
 
+    const LOG: Self = Self {
+        name: "log",
+        qualified_name: "torch.log",
+        dispatch_allocation_error: "unable to allocate log dispatch operands",
+        out_unsupported_error: "log(): the 'out' argument is not supported",
+        apply: CoreTensor::log,
+    };
+
     const SIN: Self = Self {
         name: "sin",
         qualified_name: "torch.sin",
@@ -3148,6 +3181,7 @@ fn dispatch_tensorbase_mode(
                     | "exp"
                     | "fix"
                     | "floor"
+                    | "log"
                     | "reciprocal"
                     | "rsqrt"
                     | "sigmoid"
