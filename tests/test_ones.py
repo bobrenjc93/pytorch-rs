@@ -18,7 +18,7 @@ class OnesTests(unittest.TestCase):
         self.assertEqual(actual.requires_grad, expected.requires_grad)
         self.assertEqual(actual.is_leaf, expected.is_leaf)
 
-    def test_one_positional_integer_matches_singleton_size(self):
+    def test_positional_integer_sizes_match_tuple_size(self):
         metadata = (
             {},
             {"out": None},
@@ -32,16 +32,30 @@ class OnesTests(unittest.TestCase):
                 "requires_grad": True,
             },
         )
-        for keywords in metadata:
-            with self.subTest(keywords=keywords):
-                self.assert_tensor_matches(
-                    torch.ones(2, **keywords),
-                    torch.ones((2,), **keywords),
-                )
+        for size in ((2,), (2, 3), (2, 3, 0)):
+            for keywords in metadata:
+                with self.subTest(size=size, keywords=keywords):
+                    self.assert_tensor_matches(
+                        torch.ones(*size, **keywords),
+                        torch.ones(size, **keywords),
+                    )
+
+    def test_variadic_requires_grad_is_explicit_under_no_grad(self):
+        with torch.no_grad():
+            default = torch.ones(2, 3)
+            leaf = torch.ones(2, 3, requires_grad=True)
+        self.assertFalse(default.requires_grad)
+        self.assertTrue(leaf.requires_grad)
+        self.assertTrue(leaf.is_leaf)
+        self.assert_tensor_matches(
+            leaf,
+            torch.ones((2, 3), requires_grad=True),
+        )
 
     def test_out_none_uses_default_fresh_allocation(self):
         cases = (
             ("scalar", lambda keywords: torch.ones(2, **keywords)),
+            ("variadic", lambda keywords: torch.ones(2, 3, 0, **keywords)),
             ("tuple", lambda keywords: torch.ones((2, 3), **keywords)),
             ("size keyword", lambda keywords: torch.ones(size=(2,), **keywords)),
             (
@@ -83,6 +97,10 @@ class OnesTests(unittest.TestCase):
                     torch.ones(dimension),
                     torch.ones((2,)),
                 )
+        self.assert_tensor_matches(
+            torch.ones(IntSubclass(2), np.int64(3), custom),
+            torch.ones((2, 3, 2)),
+        )
         self.assertGreater(custom.calls, 0)
 
     def test_zero_negative_boolean_and_overflowing_dimensions(self):
@@ -99,6 +117,12 @@ class OnesTests(unittest.TestCase):
         self.assertEqual(empty.numel(), 0)
         self.assertEqual(empty.tolist(), [])
 
+        variadic_empty = torch.ones(2, 3, 0)
+        self.assertEqual(variadic_empty.shape, (2, 3, 0))
+        self.assertEqual(variadic_empty.stride(), (3, 1, 1))
+        self.assertEqual(variadic_empty.numel(), 0)
+        self.assertEqual(variadic_empty.tolist(), [[[], [], []], [[], [], []]])
+
         for dimension in (-1, IndexDimension(-1)):
             with self.subTest(dimension=dimension):
                 with self.assertRaisesRegex(
@@ -108,6 +132,19 @@ class OnesTests(unittest.TestCase):
                     ),
                 ):
                     torch.ones(dimension)
+
+        for call in (
+            lambda: torch.ones(2, -1),
+            lambda: torch.ones(2, IndexDimension(-1)),
+        ):
+            with self.subTest(call=call):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    re.escape(
+                        "Trying to create tensor with negative dimension -1: [2, -1]"
+                    ),
+                ):
+                    call()
 
         for dimension, type_name in (
             (True, "bool"),
@@ -121,6 +158,14 @@ class OnesTests(unittest.TestCase):
                 ):
                     torch.ones(dimension)
 
+        for call in (
+            lambda: torch.ones(2, True),
+            lambda: torch.ones(2, np.bool_(True)),
+        ):
+            with self.subTest(call=call):
+                with self.assertRaises(TypeError):
+                    call()
+
         for dimension in (
             2**63,
             -(2**63) - 1,
@@ -133,6 +178,12 @@ class OnesTests(unittest.TestCase):
                     "failed to unpack.*Overflow when unpacking long long",
                 ):
                     torch.ones(dimension)
+
+        with self.assertRaisesRegex(
+            TypeError,
+            "pos 2.*Overflow when unpacking long long",
+        ):
+            torch.ones(2, 2**63)
 
         with self.assertRaisesRegex(
             RuntimeError,
@@ -186,10 +237,7 @@ class OnesTests(unittest.TestCase):
             str(omitted_positional_error.exception),
         )
 
-        for call in (
-            lambda: torch.ones(size=2),
-            lambda: torch.ones(2, 3),
-        ):
+        for call in (lambda: torch.ones(size=2),):
             with self.subTest(call=call):
                 with self.assertRaises(TypeError):
                     call()
@@ -199,15 +247,31 @@ class OnesTests(unittest.TestCase):
             RuntimeError,
             re.escape("ones(): the 'out' argument is not supported"),
         ):
-            torch.ones(2, out=torch.ones(2))
+            torch.ones(2, 3, out=torch.ones((2, 3)))
 
         for call, message in (
             (
-                lambda: torch.ones(2, layout=torch.strided, out=None),
+                lambda: torch.ones(2, 3, size=(2, 3)),
+                "ones() got multiple values for argument 'size'",
+            ),
+            (
+                lambda: torch.ones(2, 3, shape=(2, 3)),
+                "ones() received both 'size' and its compatibility alias 'shape'",
+            ),
+            (
+                lambda: torch.ones(2, 3, dtype=object()),
+                "ones(): argument 'dtype' must be torch.dtype, not object",
+            ),
+            (
+                lambda: torch.ones(2, 3, device=object()),
+                "ones(): argument 'device' must be torch.device or str, not object",
+            ),
+            (
+                lambda: torch.ones(2, 3, layout=torch.strided, out=None),
                 "ones() got an unexpected keyword argument 'layout'",
             ),
             (
-                lambda: torch.ones(2, pin_memory=False, out=None),
+                lambda: torch.ones(2, 3, pin_memory=False, out=None),
                 "ones() got an unexpected keyword argument 'pin_memory'",
             ),
         ):

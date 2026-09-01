@@ -88,10 +88,63 @@ class ZerosReferenceTests(unittest.TestCase):
                         self.tensor_observation(reference_torch, expected),
                     )
 
+    def test_variadic_results_and_storage_match_pytorch_2_13(self):
+        cases = (
+            ("matrix", lambda module: module.zeros(2, 3)),
+            ("zero size", lambda module: module.zeros(2, 3, 0)),
+            (
+                "integer protocol",
+                lambda module: module.zeros(
+                    IntSubclass(2), np.int64(3), IndexDimension(0)
+                ),
+            ),
+            (
+                "requires grad",
+                lambda module: module.zeros(2, 3, requires_grad=True),
+            ),
+        )
+
+        for case, factory in cases:
+            with self.subTest(case=case):
+                actual = factory(torch)
+                actual_peer = factory(torch)
+                expected = factory(reference_torch)
+                expected_peer = factory(reference_torch)
+                self.assertEqual(
+                    self.tensor_observation(torch, actual),
+                    self.tensor_observation(reference_torch, expected),
+                )
+                self.assertEqual(
+                    actual.is_set_to(actual_peer),
+                    expected.is_set_to(expected_peer),
+                )
+                self.assertEqual(
+                    actual.data_ptr() == actual_peer.data_ptr(),
+                    expected.data_ptr() == expected_peer.data_ptr(),
+                )
+
+    def test_variadic_no_grad_matches_pytorch_2_13(self):
+        with torch.no_grad():
+            actual_default = torch.zeros(2, 3)
+            actual_requires_grad = torch.zeros(2, 3, requires_grad=True)
+        with reference_torch.no_grad():
+            expected_default = reference_torch.zeros(2, 3)
+            expected_requires_grad = reference_torch.zeros(2, 3, requires_grad=True)
+
+        self.assertEqual(
+            self.tensor_observation(torch, actual_default),
+            self.tensor_observation(reference_torch, expected_default),
+        )
+        self.assertEqual(
+            self.tensor_observation(torch, actual_requires_grad),
+            self.tensor_observation(reference_torch, expected_requires_grad),
+        )
+
     def test_out_none_results_and_storage_freshness_match_pytorch_2_13(self):
         cases = (
             ("scalar", lambda module: module.zeros(2, out=None)),
             ("tuple", lambda module: module.zeros((2, 3), out=None)),
+            ("variadic", lambda module: module.zeros(2, 3, 0, out=None)),
             ("size keyword", lambda module: module.zeros(size=(2,), out=None)),
             (
                 "requires grad",
@@ -126,7 +179,6 @@ class ZerosReferenceTests(unittest.TestCase):
             IndexDimension(-1),
             True,
             False,
-            np.bool_(True),
             sys.maxsize,
             IndexDimension(sys.maxsize),
         )
