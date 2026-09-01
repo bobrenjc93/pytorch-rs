@@ -4,6 +4,7 @@ import decimal
 import fractions
 import importlib
 import inspect
+import numbers
 import pickle
 import pickletools
 import re
@@ -42,6 +43,17 @@ class _BoolProbe:
 class _LenOnly:
     def __len__(self):
         return 1
+
+
+class _FakeNumber(numbers.Number):
+    pass
+
+
+class _RegisteredNumber:
+    pass
+
+
+numbers.Number.register(_RegisteredNumber)
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -274,6 +286,8 @@ class JitOptimizedExecutionReferenceTests(unittest.TestCase):
             {1: 2},
             object(),
             _LenOnly(),
+            _FakeNumber(),
+            _RegisteredNumber(),
             np.array([]),
             np.array([True, False]),
         )

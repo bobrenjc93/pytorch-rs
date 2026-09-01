@@ -2,7 +2,6 @@
 """Fuser and graph-executor compatibility helpers."""
 
 import contextlib as _contextlib
-import numbers as _numbers
 
 
 def _graph_executor_optimize_type_error(value):
@@ -20,7 +19,7 @@ def _has_bool_slot(value):
 
 
 def _validate_graph_executor_optimize_flag(value):
-    if value is None or isinstance(value, _numbers.Number) or _has_bool_slot(value):
+    if value is None or _has_bool_slot(value):
         try:
             bool(value)
         except BaseException:
