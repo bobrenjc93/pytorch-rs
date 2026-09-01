@@ -179,6 +179,13 @@ class ZerosTests(unittest.TestCase):
             ),
         ):
             torch.zeros(sys.maxsize)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            re.escape(
+                f"Storage size calculation overflowed with sizes=[{sys.maxsize}]"
+            ),
+        ):
+            torch.zeros(sys.maxsize, pin_memory=True)
 
     def test_existing_sequence_and_keyword_forms_are_unchanged(self):
         class CustomSequence(Sequence):

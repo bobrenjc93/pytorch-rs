@@ -754,7 +754,7 @@ impl Tensor {
     }
 
     #[cfg(feature = "python-bindings")]
-    pub(crate) fn validate_full_shape(shape: &[usize]) -> Result<usize, TensorError> {
+    pub(crate) fn validate_factory_shape(shape: &[usize]) -> Result<usize, TensorError> {
         let (elements, _) = validated_layout(shape)?;
         validate_storage_capacity(elements)?;
         Ok(elements)

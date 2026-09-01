@@ -296,6 +296,10 @@ class ZerosReferenceTests(unittest.TestCase):
                 lambda module: module.zeros(1, pin_memory=0, requires_grad=0),
             ),
             (
+                "storage overflow before unsupported pin",
+                lambda module: module.zeros(sys.maxsize, pin_memory=True),
+            ),
+            (
                 "negative and invalid requires_grad",
                 lambda module: module.zeros(-1, requires_grad=1),
             ),

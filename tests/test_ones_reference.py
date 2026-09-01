@@ -296,6 +296,10 @@ class OnesReferenceTests(unittest.TestCase):
                 lambda module: module.ones(1, pin_memory=0, requires_grad=0),
             ),
             (
+                "storage overflow before unsupported pin",
+                lambda module: module.ones(sys.maxsize, pin_memory=True),
+            ),
+            (
                 "negative and invalid requires_grad",
                 lambda module: module.ones(-1, requires_grad=1),
             ),

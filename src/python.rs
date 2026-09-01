@@ -6661,11 +6661,19 @@ fn flatten(
 )]
 fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("zeros", args, kwargs)?;
-    let (size, dtype, device, requires_grad) = parse_creation_arguments("zeros", arguments)?;
+    let (size, dtype, device, pin_memory, requires_grad) =
+        parse_creation_arguments("zeros", arguments)?;
     let ParsedCreationSize {
         dimensions,
         scalar_dimension,
     } = size;
+    if pin_memory {
+        CoreTensor::validate_factory_shape(&dimensions)
+            .map_err(|error| scalar_creation_error(&error, scalar_dimension))?;
+        return Err(PyRuntimeError::new_err(
+            "zeros(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
+        ));
+    }
     CoreTensor::zeros_with_metadata(dimensions, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| scalar_creation_error(&error, scalar_dimension))
@@ -6677,11 +6685,19 @@ fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
 )]
 fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("ones", args, kwargs)?;
-    let (size, dtype, device, requires_grad) = parse_creation_arguments("ones", arguments)?;
+    let (size, dtype, device, pin_memory, requires_grad) =
+        parse_creation_arguments("ones", arguments)?;
     let ParsedCreationSize {
         dimensions,
         scalar_dimension,
     } = size;
+    if pin_memory {
+        CoreTensor::validate_factory_shape(&dimensions)
+            .map_err(|error| scalar_creation_error(&error, scalar_dimension))?;
+        return Err(PyRuntimeError::new_err(
+            "ones(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
+        ));
+    }
     CoreTensor::ones_with_metadata(dimensions, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| scalar_creation_error(&error, scalar_dimension))
@@ -6717,7 +6733,7 @@ fn full(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
         requires_grad,
     } = parse_full_arguments(arguments)?;
     let shape = validate_size(size)?;
-    CoreTensor::validate_full_shape(&shape)
+    CoreTensor::validate_factory_shape(&shape)
         .map_err(|error| creation_shape_error(&error, &shape))?;
     if has_out {
         return Err(PyRuntimeError::new_err(
@@ -8731,7 +8747,7 @@ fn parse_eye_arguments(
 fn parse_creation_arguments(
     function: &str,
     arguments: CreationCallArguments<'_>,
-) -> PyResult<(ParsedCreationSize, DType, Device, bool)> {
+) -> PyResult<(ParsedCreationSize, DType, Device, bool, bool)> {
     let CreationCallArguments {
         size,
         size_origin,
@@ -8765,12 +8781,7 @@ fn parse_creation_arguments(
             "{function}(): the 'out' argument is not supported"
         )));
     }
-    if pin_memory {
-        return Err(PyRuntimeError::new_err(format!(
-            "{function}(): pin_memory=True is not supported; only unpinned CPU storage is implemented"
-        )));
-    }
-    Ok((size, dtype, device, requires_grad))
+    Ok((size, dtype, device, pin_memory, requires_grad))
 }
 
 fn parse_like_factory_arguments<'py>(
