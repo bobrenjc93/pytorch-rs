@@ -134,6 +134,36 @@ class CompilerAllowInGraphTests(unittest.TestCase):
                     ("allow_in_graph expects a callable",),
                 )
 
+    def test_noncallable_validation_survives_optimized_python(self):
+        script = r"""
+import torch_rs as torch
+
+def function():
+    return None
+
+for target in (None, 1, object(), "value", [function, 1]):
+    try:
+        torch.compiler.allow_in_graph(target)
+    except AssertionError as error:
+        if str(error) != "allow_in_graph expects a callable":
+            raise AssertionError(str(error))
+        if error.args != ("allow_in_graph expects a callable",):
+            raise AssertionError(error.args)
+    else:
+        raise AssertionError(f"accepted non-callable target: {target!r}")
+"""
+        completed = subprocess.run(
+            [sys.executable, "-O", "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+
     def test_signature_metadata_and_module_identity(self):
         compiler = importlib.import_module("torch_rs.compiler")
         function = compiler.allow_in_graph
