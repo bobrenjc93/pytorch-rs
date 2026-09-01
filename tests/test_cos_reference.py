@@ -244,6 +244,48 @@ class CosReferenceTests(unittest.TestCase):
             expected_formula.numpy().view(np.uint32),
         )
 
+    def test_vjp_nan_grad_outputs_match_pytorch_2_13(self):
+        edge_input_bits = np.asarray(
+            (
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7F81_2345,
+                0xFF81_2345,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ),
+            dtype=np.uint32,
+        )
+        nan_weight_bits = np.asarray(
+            (
+                0x7F81_2345,
+                0xFF81_2345,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ),
+            dtype=np.uint32,
+        )
+        input_bits = np.repeat(edge_input_bits, len(nan_weight_bits))
+        weight_bits = np.tile(nan_weight_bits, len(edge_input_bits))
+        input_values = input_bits.view(np.float32)
+        weight_values = weight_bits.view(np.float32)
+        actual_leaf = torch.tensor(memoryview(input_values), requires_grad=True)
+        expected_leaf = reference_torch.tensor(input_values, requires_grad=True)
+        actual_weights = torch.tensor(memoryview(weight_values))
+        expected_weights = reference_torch.tensor(weight_values)
+
+        (actual_leaf.cos() * actual_weights).sum().backward()
+        (expected_leaf.cos() * expected_weights).sum().backward()
+        expected_formula = expected_weights * (-expected_leaf.detach().sin())
+        np.testing.assert_array_equal(
+            expected_leaf.grad.detach().numpy().view(np.uint32),
+            expected_formula.numpy().view(np.uint32),
+        )
+        np.testing.assert_array_equal(
+            np.asarray(actual_leaf.grad).view(np.uint32),
+            expected_leaf.grad.detach().numpy().view(np.uint32),
+        )
+
     def test_detach_no_grad_freed_graph_and_higher_order_match_pytorch_2_13(self):
         values = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
         actual_leaf = torch.tensor(values, requires_grad=True)

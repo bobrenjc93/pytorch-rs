@@ -3827,6 +3827,62 @@ fn cosine_vjp_uses_negative_sine_of_saved_input() {
 }
 
 #[test]
+fn cosine_vjp_preserves_pytorch_nan_payloads_for_nan_upstream() {
+    let nan_input_bits = [
+        0x7f80_0000,
+        0xff80_0000,
+        0x7f81_2345,
+        0xff81_2345,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let nan_weight_bits = [
+        0x7f81_2345,
+        0xff81_2345,
+        0x7fc1_2345,
+        0xffc5_4321,
+        0x7f81_2345,
+        0xff81_2345,
+    ];
+    let nan_expected_bits = [
+        0x7fc0_0000,
+        0x7fc0_0000,
+        0xffc1_2345,
+        0x7fc1_2345,
+        0xffc1_2345,
+        0x7fc5_4321,
+    ];
+    let nan_leaf = Tensor::from_vec(
+        nan_input_bits.map(f32::from_bits).to_vec(),
+        [nan_input_bits.len()],
+    )
+    .unwrap()
+    .with_requires_grad(true);
+    let nan_weights = Tensor::from_vec(
+        nan_weight_bits.map(f32::from_bits).to_vec(),
+        [nan_weight_bits.len()],
+    )
+    .unwrap();
+    nan_leaf
+        .cos()
+        .unwrap()
+        .mul(&nan_weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    assert!(
+        nan_leaf
+            .grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .eq(nan_expected_bits)
+    );
+}
+
+#[test]
 fn cosine_obeys_detach_no_grad_and_freed_graph_boundaries() {
     let leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
         .unwrap()

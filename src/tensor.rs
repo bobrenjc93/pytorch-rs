@@ -4765,12 +4765,24 @@ fn apply_sin_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>)
     );
 }
 
+fn cos_backward_value(input: f32, upstream: f32) -> f32 {
+    let local_gradient = -input.sin();
+    // ATen CPU multiplication preserves this right-hand NaN for
+    // grad_output * -sin(input); Rust scalar multiplication can keep the
+    // upstream NaN payload instead.
+    if local_gradient.is_nan() {
+        local_gradient
+    } else {
+        upstream * local_gradient
+    }
+}
+
 fn apply_cos_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
     gradient.extend(
         upstream
             .iter()
             .enumerate()
-            .map(|(index, value)| value * -input.value_at_linear_index(index).sin()),
+            .map(|(index, &value)| cos_backward_value(input.value_at_linear_index(index), value)),
     );
 }
 
