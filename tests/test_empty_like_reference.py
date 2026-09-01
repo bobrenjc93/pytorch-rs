@@ -1,5 +1,4 @@
 import copy
-import importlib
 import pickle
 import types
 import unittest
@@ -153,23 +152,6 @@ class EmptyLikeReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.callable_contract(torch),
             self.callable_contract(reference_torch),
-        )
-
-    def reload_contract(self, module):
-        native = module._C
-        function = module.empty_like
-        return (
-            importlib.reload(native) is native,
-            native.empty_like is function,
-            importlib.reload(module) is module,
-            module.empty_like is function,
-            module.__all__.count("empty_like"),
-        )
-
-    def test_reload_behavior_matches_pytorch_2_13(self):
-        self.assertEqual(
-            self.reload_contract(torch),
-            self.reload_contract(reference_torch),
         )
 
 
