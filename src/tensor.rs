@@ -25,6 +25,10 @@ fn full_reduction_mean_divisor(elements: usize) -> f32 {
     elements as f32
 }
 
+fn invalid_storage_offset_from_wrapped_usize(offset: usize) -> Result<i64, TensorError> {
+    i64::try_from(offset.cast_signed()).map_err(|_| TensorError::IndexCalculationOverflow)
+}
+
 struct AutogradMeta {
     kind: AutogradKind,
 }
@@ -2824,8 +2828,7 @@ impl Tensor {
             .checked_add(contribution)
             .ok_or(TensorError::IndexCalculationOverflow)?;
         if i64::try_from(offset).is_err() {
-            let offset = i64::try_from(offset.cast_signed())
-                .expect("an isize storage offset must fit in i64");
+            let offset = invalid_storage_offset_from_wrapped_usize(offset)?;
             return Err(TensorError::InvalidStorageOffset { offset });
         }
 
@@ -3005,8 +3008,7 @@ impl Tensor {
             .checked_add(contribution)
             .ok_or(TensorError::IndexCalculationOverflow)?;
         if i64::try_from(offset).is_err() {
-            let offset = i64::try_from(offset.cast_signed())
-                .expect("an isize storage offset must fit in i64");
+            let offset = invalid_storage_offset_from_wrapped_usize(offset)?;
             return Err(TensorError::InvalidStorageOffset { offset });
         }
         Ok(offset)

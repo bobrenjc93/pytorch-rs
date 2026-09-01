@@ -9901,7 +9901,7 @@ fn parse_exact_native_narrow_tensor_argument<'py>(
             "{function}() only supports exact native Tensor inputs"
         )));
     }
-    parse_tensor_argument(function, argument, value).map(Bound::clone)
+    parse_tensor_argument(function, argument, value).cloned()
 }
 
 pub(crate) fn bind_size_dimension<'py>(

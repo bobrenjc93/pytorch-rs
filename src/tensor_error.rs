@@ -148,30 +148,10 @@ impl Display for TensorError {
             Self::SliceCannotApplyToScalar => {
                 formatter.write_str("slice() cannot be applied to a 0-dim tensor.")
             }
-            Self::NarrowCannotApplyToScalar => {
-                formatter.write_str("narrow() cannot be applied to a 0-dim tensor.")
-            }
-            Self::NarrowNegativeLength => {
-                formatter.write_str("narrow(): length must be non-negative.")
-            }
-            Self::NarrowStartOutOfRange { start, size, .. } => write!(
-                formatter,
-                "start out of range (expected to be in range of [{}, {size}], but got {start})",
-                if *size == 0 {
-                    "0".to_owned()
-                } else {
-                    format!("-{size}")
-                }
-            ),
-            Self::NarrowLengthOutOfRange {
-                start,
-                length,
-                size,
-                ..
-            } => write!(
-                formatter,
-                "start ({start}) + length ({length}) exceeds dimension size ({size})."
-            ),
+            error @ (Self::NarrowCannotApplyToScalar
+            | Self::NarrowNegativeLength
+            | Self::NarrowStartOutOfRange { .. }
+            | Self::NarrowLengthOutOfRange { .. }) => format_narrow_error(formatter, error),
             Self::TooManyIndices { dimensions } => {
                 write!(
                     formatter,
@@ -280,6 +260,40 @@ fn format_matmul_inner_dimension_mismatch(
             formatter,
             "matmul inner dimensions differ for {left:?} and {right:?}"
         ),
+    }
+}
+
+fn format_narrow_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
+    match error {
+        TensorError::NarrowCannotApplyToScalar => {
+            formatter.write_str("narrow() cannot be applied to a 0-dim tensor.")
+        }
+        TensorError::NarrowNegativeLength => {
+            formatter.write_str("narrow(): length must be non-negative.")
+        }
+        TensorError::NarrowStartOutOfRange { start, size, .. } => {
+            if *size == 0 {
+                write!(
+                    formatter,
+                    "start out of range (expected to be in range of [0, 0], but got {start})"
+                )
+            } else {
+                write!(
+                    formatter,
+                    "start out of range (expected to be in range of [-{size}, {size}], but got {start})"
+                )
+            }
+        }
+        TensorError::NarrowLengthOutOfRange {
+            start,
+            length,
+            size,
+            ..
+        } => write!(
+            formatter,
+            "start ({start}) + length ({length}) exceeds dimension size ({size})."
+        ),
+        _ => unreachable!("format_narrow_error received non-narrow error"),
     }
 }
 
