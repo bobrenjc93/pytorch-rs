@@ -12,23 +12,34 @@ class ZerosTests(unittest.TestCase):
     def assert_tensor_matches(self, actual, expected):
         self.assertEqual(actual.shape, expected.shape)
         self.assertEqual(actual.stride(), expected.stride())
+        self.assertEqual(actual.storage_offset(), expected.storage_offset())
+        self.assertEqual(actual.numel(), expected.numel())
         self.assertEqual(actual.tolist(), expected.tolist())
         self.assertIs(actual.dtype, expected.dtype)
         self.assertEqual(actual.device, expected.device)
+        self.assertIs(actual.layout, expected.layout)
+        self.assertEqual(actual.is_pinned(), expected.is_pinned())
         self.assertEqual(actual.requires_grad, expected.requires_grad)
         self.assertEqual(actual.is_leaf, expected.is_leaf)
+        self.assertEqual(actual.grad is None, expected.grad is None)
 
     def test_one_positional_integer_matches_singleton_size(self):
         metadata = (
             {},
             {"out": None},
             {"dtype": torch.float32},
+            {"layout": None},
+            {"layout": torch.strided},
             {"device": "cpu"},
             {"device": torch.device("cpu")},
+            {"pin_memory": None},
+            {"pin_memory": False},
             {
                 "out": None,
                 "dtype": torch.float32,
+                "layout": torch.strided,
                 "device": torch.device("cpu"),
+                "pin_memory": False,
                 "requires_grad": True,
             },
         )
@@ -61,6 +72,35 @@ class ZerosTests(unittest.TestCase):
                 with_out_none = factory({"out": None})
                 self.assert_tensor_matches(with_out_none, baseline)
                 self.assertFalse(with_out_none.is_set_to(baseline))
+
+    def test_default_layout_and_pin_memory_keywords_use_default_allocation(self):
+        shapes = ((), (0,), (2, 0, 3), [2, 1], torch.Size([2, 0, 1]))
+        metadata = (
+            {"layout": None},
+            {"layout": torch.strided},
+            {"pin_memory": None},
+            {"pin_memory": False},
+            {"layout": None, "pin_memory": None},
+            {"layout": torch.strided, "pin_memory": False},
+            {
+                "out": None,
+                "dtype": torch.float,
+                "layout": torch.strided,
+                "device": torch.device("cpu"),
+                "pin_memory": False,
+                "requires_grad": True,
+            },
+        )
+        for shape in shapes:
+            for keywords in metadata:
+                with self.subTest(shape=shape, keywords=keywords):
+                    actual = torch.zeros(shape, **keywords)
+                    baseline = torch.zeros(
+                        shape,
+                        requires_grad=keywords.get("requires_grad", False),
+                    )
+                    self.assert_tensor_matches(actual, baseline)
+                    self.assertFalse(actual.is_set_to(baseline))
 
     def test_one_positional_dimension_uses_the_index_protocol(self):
         class IntSubclass(int):
@@ -191,26 +231,35 @@ class ZerosTests(unittest.TestCase):
                 with self.assertRaises(TypeError):
                     call()
 
-    def test_out_tensor_layout_and_pin_memory_remain_unsupported(self):
+    def test_out_tensor_and_unsupported_layout_pin_memory_remain_rejected(self):
         with self.assertRaisesRegex(
             RuntimeError,
             re.escape("zeros(): the 'out' argument is not supported"),
         ):
-            torch.zeros(2, out=torch.zeros(2))
+            torch.zeros(2, out=torch.zeros(2), layout=torch.strided, pin_memory=False)
 
-        for call, message in (
-            (
-                lambda: torch.zeros(2, layout=torch.strided, out=None),
-                "zeros() got an unexpected keyword argument 'layout'",
-            ),
-            (
-                lambda: torch.zeros(2, pin_memory=False, out=None),
-                "zeros() got an unexpected keyword argument 'pin_memory'",
+        with self.assertRaisesRegex(
+            RuntimeError,
+            re.escape(
+                "zeros(): pin_memory=True is not supported; only unpinned CPU "
+                "storage is implemented"
             ),
         ):
-            with self.subTest(message=message):
-                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
-                    call()
+            torch.zeros(2, layout=torch.strided, pin_memory=True)
+
+        for pin_memory in (0, 1, "false", object()):
+            with self.subTest(pin_memory=pin_memory):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^zeros\(\): argument 'pin_memory' must be bool, not ",
+                ):
+                    torch.zeros(2, pin_memory=pin_memory)
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^zeros\(\): argument 'layout' must be torch\.layout, not ",
+        ):
+            torch.zeros(2, layout=object())
 
 
 if __name__ == "__main__":
