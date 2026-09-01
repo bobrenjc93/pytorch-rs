@@ -427,6 +427,38 @@ class CosTests(unittest.TestCase):
             atol=0.0,
         )
 
+        class RaisingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                raise ValueError("cos mode failed")
+
+        order.clear()
+        with ForwardingMode("lower"):
+            with self.assertRaisesRegex(ValueError, "^cos mode failed$"):
+                with RaisingMode():
+                    tensor.cos()
+            self.assertEqual(
+                len(torch.overrides._get_current_function_mode_stack()), 1
+            )
+            recovered = tensor.cos()
+        self.assertEqual(order, ["lower"])
+        self.assertEqual(recovered.tolist(), tensor.detach().cos().tolist())
+        self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 0)
+
+        old_recursion_limit = sys.getrecursionlimit()
+        declining = RecordingMode(NotImplemented)
+        try:
+            sys.setrecursionlimit(80)
+            with declining:
+                with self.assertRaises(RecursionError):
+                    tensor.cos()
+                self.assertEqual(
+                    len(torch.overrides._get_current_function_mode_stack()), 1
+                )
+        finally:
+            sys.setrecursionlimit(old_recursion_limit)
+        self.assertGreater(len(declining.calls), 1)
+        self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 0)
+
         extreme = torch.zeros((0,)).reshape((0, sys.maxsize, 3))
         with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             torch.cos(extreme)

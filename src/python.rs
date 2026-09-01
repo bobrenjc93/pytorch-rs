@@ -3123,6 +3123,7 @@ fn dispatch_tensorbase_mode(
                     | "absolute"
                     | "ceil"
                     | "const_data_ptr"
+                    | "cos"
                     | "exp"
                     | "fix"
                     | "floor"

@@ -1,6 +1,7 @@
 import inspect
 import pickle
 import re
+import sys
 import types
 import unittest
 
@@ -430,6 +431,66 @@ class CosReferenceTests(unittest.TestCase):
         override_result = function(Override())
         out_override_result = function(module.tensor([1.0]), out=Override())
 
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label, events):
+                self.label = label
+                self.events = events
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.events.append(
+                    [
+                        self.label,
+                        len(module.overrides._get_current_function_mode_stack()),
+                    ]
+                )
+                return func(*args, **(kwargs or {}))
+
+        class RaisingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = 0
+                self.handler_stack_depth = None
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls += 1
+                self.handler_stack_depth = len(
+                    module.overrides._get_current_function_mode_stack()
+                )
+                raise ValueError("cos mode failed")
+
+        recovery_events = []
+        raising = RaisingMode()
+        with ForwardingMode("lower", recovery_events):
+            try:
+                with raising:
+                    tensor.cos()
+            except Exception as error:
+                raising_error = (type(error).__name__, str(error))
+                raising_stack_inside_lower = len(
+                    module.overrides._get_current_function_mode_stack()
+                )
+            else:
+                raising_error = None
+                raising_stack_inside_lower = None
+            recovered = tensor.cos()
+
+        old_recursion_limit = sys.getrecursionlimit()
+        declining = RecordingMode(NotImplemented)
+        try:
+            sys.setrecursionlimit(80)
+            with declining:
+                try:
+                    tensor.cos()
+                except Exception as error:
+                    declining_error = (type(error).__name__, str(error))
+                    declining_stack_inside = len(
+                        module.overrides._get_current_function_mode_stack()
+                    )
+                else:
+                    declining_error = None
+                    declining_stack_inside = None
+        finally:
+            sys.setrecursionlimit(old_recursion_limit)
+
         return (
             observations,
             override_result is marker,
@@ -442,6 +503,20 @@ class CosReferenceTests(unittest.TestCase):
                     None if kwargs is None else tuple(kwargs),
                 )
                 for func, dispatch_types, _, kwargs in override_calls
+            ),
+            (
+                declining_error,
+                len(declining.calls),
+                declining_stack_inside,
+            ),
+            (
+                raising_error,
+                raising.calls,
+                raising.handler_stack_depth,
+                raising_stack_inside_lower,
+                recovery_events,
+                recovered.tolist(),
+                len(module.overrides._get_current_function_mode_stack()),
             ),
         )
 
