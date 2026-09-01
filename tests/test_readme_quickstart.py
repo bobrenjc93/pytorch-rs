@@ -128,11 +128,30 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
     ),
     (
         "Check dtype, device, and backend state",
-        ("`torch.float32`", "`torch.finfo`", "`torch.get_device`"),
+        (
+            "`torch.float32`",
+            "`torch.finfo`",
+            "`torch.get_device`",
+            "`torch.cpu.current_device`",
+            "`torch.cpu.synchronize`",
+            "`torch.cpu.set_device`",
+            "`torch.accelerator.empty_cache`",
+            "`torch.accelerator.reset_accumulated_memory_stats`",
+            "`torch.accelerator.reset_peak_memory_stats`",
+            "`torch.accelerator.memory_allocated`",
+            "`torch.accelerator.max_memory_allocated`",
+            "`torch.accelerator.memory_reserved`",
+            "`torch.accelerator.max_memory_reserved`",
+            "`torch.backends.nnpack.set_flags`",
+            "`torch.backends.cuda.enable_flash_sdp`",
+            "`torch.backends.cudnn.benchmark_limit`",
+            "`torch.backends.mha.get_fastpath_enabled`",
+        ),
         (
             "Additional dtypes",
-            "CUDA streams/events/synchronization",
-            "other accelerator memory-management APIs",
+            "CUDA tensors/transfers/streams/events/synchronization/runtime/kernels",
+            "memory-management APIs outside the named helper set",
+            "backend APIs outside [Backend and compiler metadata]",
         ),
         (
             "[tensor metadata](#metadata-and-views)",
@@ -159,8 +178,25 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
             "`torch.compiler.disable`",
             "`torch.jit.annotate`",
             "`torch.distributed.is_available`",
+            "`torch.distributed.is_gloo_available`",
+            "`torch.distributed.is_mpi_available`",
+            "`torch.distributed.is_nccl_available`",
+            "`torch.distributed.is_ucc_available`",
+            "`torch.distributed.is_xccl_available`",
+            "`torch.distributed.get_backend_config`",
+            "`torch.distributed.get_backend`",
+            "`torch.distributed.get_rank`",
+            "`torch.distributed.get_world_size`",
+            "`torch.distributed.get_process_group_ranks`",
+            "`torch.distributed.get_node_local_rank`",
         ),
-        ("Actual `torch.compile`", "TorchScript compilation", "collectives"),
+        (
+            "Actual `torch.compile`",
+            "TorchScript compilation",
+            "process-group creation",
+            "initialized backend/config/rank/world-size access",
+            "distributed APIs outside [Backend and compiler metadata]",
+        ),
         ("[Backend and compiler metadata](#backend-and-compiler-metadata)",),
     ),
 )
@@ -333,6 +369,9 @@ class ReadmeQuickstartTests(unittest.TestCase):
             task_index,
         )
         self.assertIn("| --- | --- | --- |", task_index)
+        self.assertNotIn("other accelerator memory-management APIs", task_index)
+        self.assertNotIn("unlisted backend APIs", task_index)
+        self.assertNotIn("remaining distributed APIs", task_index)
         for label, calls, boundaries, links in SUPPORTED_SURFACE_TASK_INDEX_ROWS:
             with self.subTest(task_index_row=label):
                 self.assertIn(f"| {label} |", task_index)
