@@ -331,6 +331,8 @@ class CudaReducedPrecisionMathSdpReferenceTests(unittest.TestCase):
         supported = {
             "allow_fp16_bf16_reduction_math_sdp",
             "cuBLASModule",
+            "cudnn_sdp_enabled",
+            "enable_cudnn_sdp",
             "enable_flash_sdp",
             "enable_math_sdp",
             "enable_mem_efficient_sdp",
@@ -462,6 +464,7 @@ class CudaReducedPrecisionMathSdpReferenceTests(unittest.TestCase):
 
     def test_preference_is_independent_from_other_flags_and_execution_support(self):
         actual_other_states = {
+            "cudnn": self.actual.cudnn_sdp_enabled(),
             "flash": self.actual.flash_sdp_enabled(),
             "math": self.actual.math_sdp_enabled(),
             "mem_efficient": self.actual.mem_efficient_sdp_enabled(),
@@ -492,6 +495,7 @@ class CudaReducedPrecisionMathSdpReferenceTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     {
+                        "cudnn": self.actual.cudnn_sdp_enabled(),
                         "flash": self.actual.flash_sdp_enabled(),
                         "math": self.actual.math_sdp_enabled(),
                         "mem_efficient": self.actual.mem_efficient_sdp_enabled(),
@@ -530,13 +534,10 @@ class CudaReducedPrecisionMathSdpReferenceTests(unittest.TestCase):
                     self.expected.fp16_bf16_reduction_math_sdp_allowed(), True
                 )
 
-        for name in (
-            "cudnn_sdp_enabled",
-            "enable_cudnn_sdp",
-        ):
-            with self.subTest(unsupported_preference=name):
-                self.assertFalse(hasattr(self.actual, name))
-                self.assertTrue(hasattr(self.expected, name))
+        self.assertIs(
+            self.actual.cudnn_sdp_enabled(),
+            self.expected.cudnn_sdp_enabled(),
+        )
 
         self.assertFalse(hasattr(torch, "float16"))
         self.assertFalse(hasattr(torch, "bfloat16"))

@@ -18,6 +18,8 @@ CUDA_BACKEND_ALL = [
     "cuBLASModule",
     "is_ck_sdpa_available",
     "matmul",
+    "enable_cudnn_sdp",
+    "cudnn_sdp_enabled",
     "enable_flash_sdp",
     "flash_sdp_enabled",
     "enable_mem_efficient_sdp",
@@ -31,6 +33,8 @@ CUDA_BACKEND_ALL = [
 CUDA_BACKEND_PUBLIC = {
     "allow_fp16_bf16_reduction_math_sdp",
     "cuBLASModule",
+    "cudnn_sdp_enabled",
+    "enable_cudnn_sdp",
     "enable_flash_sdp",
     "enable_math_sdp",
     "enable_mem_efficient_sdp",
@@ -153,7 +157,7 @@ print(json.dumps({
                 "backend_built": False,
                 "cuda_module": True,
                 "cuda_submodule_loaded": True,
-                "cudnn_sdp": False,
+                "cudnn_sdp": True,
                 "sdp_kernel": False,
                 "sdpa_execution": False,
                 "compile": False,
@@ -169,6 +173,7 @@ print(json.dumps({
             cuda.math_sdp_enabled(),
             cuda.mem_efficient_sdp_enabled(),
             cuda.fp16_bf16_reduction_math_sdp_allowed(),
+            cuda.cudnn_sdp_enabled(),
             torch.backends.cudnn.allow_tf32,
         )
 
@@ -197,6 +202,7 @@ print(json.dumps({
                         cuda.math_sdp_enabled(),
                         cuda.mem_efficient_sdp_enabled(),
                         cuda.fp16_bf16_reduction_math_sdp_allowed(),
+                        cuda.cudnn_sdp_enabled(),
                         torch.backends.cudnn.allow_tf32,
                     ),
                     other_states,
@@ -570,10 +576,8 @@ print(json.dumps({
             "can_use_flash_attention",
             "cublas_workspace_size",
             "cublaslt_workspace_size",
-            "cudnn_sdp_enabled",
             "current_stream",
             "device_count",
-            "enable_cudnn_sdp",
             "is_available",
             "sdp_kernel",
             "synchronize",
@@ -581,6 +585,10 @@ print(json.dumps({
             with self.subTest(name=name):
                 self.assertFalse(hasattr(cuda, name))
 
+        cudnn_state = cuda.cudnn_sdp_enabled()
+        self.assertIs(cuda.enable_cudnn_sdp(not cudnn_state), None)
+        self.assertIs(cuda.cudnn_sdp_enabled(), not cudnn_state)
+        self.assertIs(cuda.enable_cudnn_sdp(cudnn_state), None)
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertFalse(hasattr(torch, "compile"))

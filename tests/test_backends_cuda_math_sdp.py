@@ -45,11 +45,13 @@ class CudaMathSdpTests(unittest.TestCase):
         self.cuda = importlib.import_module("torch_rs.backends.cuda")
         self.original = torch._C._get_math_sdp_enabled()
         self.original_flash = torch._C._get_flash_sdp_enabled()
+        self.original_cudnn = torch._C._get_cudnn_sdp_enabled()
         self.cuda.enable_math_sdp(True)
 
     def tearDown(self):
         self.cuda.enable_math_sdp(self.original)
         self.cuda.enable_flash_sdp(self.original_flash)
+        self.cuda.enable_cudnn_sdp(self.original_cudnn)
 
     def test_fresh_process_defaults_to_exact_true_without_sdpa_execution(self):
         script = r'''
@@ -58,6 +60,7 @@ import json
 import torch_rs as torch
 
 cuda = torch.backends.cuda
+cudnn_before = cuda.cudnn_sdp_enabled()
 initial = cuda.math_sdp_enabled()
 first = cuda.enable_math_sdp(False)
 disabled = cuda.math_sdp_enabled()
@@ -69,6 +72,7 @@ print(json.dumps({
     "disabled": disabled,
     "second": second,
     "restored": cuda.math_sdp_enabled(),
+    "cudnn_unchanged": cuda.cudnn_sdp_enabled() is cudnn_before,
     "built": cuda.is_built(),
     "ck_available": cuda.is_ck_sdpa_available(),
     "flash_available": cuda.is_flash_attention_available(),
@@ -96,6 +100,7 @@ print(json.dumps({
                 "disabled": False,
                 "second": None,
                 "restored": True,
+                "cudnn_unchanged": True,
                 "built": False,
                 "ck_available": False,
                 "flash_available": False,
@@ -108,6 +113,7 @@ print(json.dumps({
         cuda = self.cuda
         flash_state = cuda.flash_sdp_enabled()
         mem_efficient_state = cuda.mem_efficient_sdp_enabled()
+        cudnn_state = cuda.cudnn_sdp_enabled()
 
         self.assertIs(cuda.math_sdp_enabled(), True)
         self.assertIs(type(cuda.math_sdp_enabled()), bool)
@@ -121,6 +127,7 @@ print(json.dumps({
                     cuda.mem_efficient_sdp_enabled(),
                     mem_efficient_state,
                 )
+                self.assertIs(cuda.cudnn_sdp_enabled(), cudnn_state)
                 self.assertIs(cuda.is_built(), False)
                 self.assertIs(cuda.is_ck_sdpa_available(), False)
                 self.assertIs(cuda.is_flash_attention_available(), False)
@@ -259,6 +266,8 @@ print(json.dumps({
                 "cuBLASModule",
                 "is_ck_sdpa_available",
                 "matmul",
+                "enable_cudnn_sdp",
+                "cudnn_sdp_enabled",
                 "enable_flash_sdp",
                 "flash_sdp_enabled",
                 "enable_mem_efficient_sdp",
@@ -275,6 +284,8 @@ print(json.dumps({
             {
                 "allow_fp16_bf16_reduction_math_sdp",
                 "cuBLASModule",
+                "cudnn_sdp_enabled",
+                "enable_cudnn_sdp",
                 "enable_flash_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
@@ -355,6 +366,8 @@ print(json.dumps({
             {
                 "allow_fp16_bf16_reduction_math_sdp",
                 "cuBLASModule",
+                "cudnn_sdp_enabled",
+                "enable_cudnn_sdp",
                 "enable_flash_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
@@ -424,6 +437,8 @@ print(json.dumps({
         self.assertIs(cuda.math_sdp_enabled(), False)
 
     def test_private_accessors_and_sdp_execution_boundary(self):
+        cudnn_state = self.cuda.cudnn_sdp_enabled()
+
         self.assertTrue(hasattr(torch._C, "_get_math_sdp_enabled"))
         self.assertTrue(hasattr(torch._C, "_set_sdp_use_math"))
         self.assertFalse(hasattr(torch, "_get_math_sdp_enabled"))
@@ -437,12 +452,7 @@ print(json.dumps({
         self.assertIs(self.cuda.is_built(), False)
         self.assertIs(self.cuda.is_ck_sdpa_available(), False)
         self.assertIs(self.cuda.is_flash_attention_available(), False)
-        for name in (
-            "cudnn_sdp_enabled",
-            "enable_cudnn_sdp",
-        ):
-            with self.subTest(unsupported_preference=name):
-                self.assertFalse(hasattr(self.cuda, name))
+        self.assertIs(self.cuda.cudnn_sdp_enabled(), cudnn_state)
         self.assertFalse(
             hasattr(torch.nn.functional, "scaled_dot_product_attention")
         )
