@@ -13557,27 +13557,29 @@ fn bind_top_level_reshape_arguments<'py>(
             position: Some(1),
         })
     };
-    let shape = if positional.len() < 2 {
-        keyword_argument(&["shape"])?
+    let shape = match positional.len().cmp(&2) {
+        std::cmp::Ordering::Less => keyword_argument(&["shape"])?
             .map(|value| ParsedCallArgument {
                 value,
                 position: None,
             })
-            .map(TopLevelReshapeShapeArgument::Single)
-    } else if positional.len() == 2 {
-        Some(TopLevelReshapeShapeArgument::Single(ParsedCallArgument {
-            value: positional.get_item(1)?,
-            position: Some(2),
-        }))
-    } else {
-        let mut dimensions = try_size_vector(positional.len() - 1)?;
-        for dimension in positional.iter().skip(1) {
-            try_push_size(&mut dimensions, dimension)?;
+            .map(TopLevelReshapeShapeArgument::Single),
+        std::cmp::Ordering::Equal => {
+            Some(TopLevelReshapeShapeArgument::Single(ParsedCallArgument {
+                value: positional.get_item(1)?,
+                position: Some(2),
+            }))
         }
-        Some(TopLevelReshapeShapeArgument::Variadic {
-            dimensions,
-            position: Some(2),
-        })
+        std::cmp::Ordering::Greater => {
+            let mut dimensions = try_size_vector(positional.len() - 1)?;
+            for dimension in positional.iter().skip(1) {
+                try_push_size(&mut dimensions, dimension)?;
+            }
+            Some(TopLevelReshapeShapeArgument::Variadic {
+                dimensions,
+                position: Some(2),
+            })
+        }
     };
 
     let Some(input) = input else {
@@ -16301,9 +16303,9 @@ fn parse_reshape_shape(
     parse_reshape_dimensions(shape_dimensions.len(), shape_dimensions.iter())
 }
 
-fn bind_top_level_reshape_shape<'py>(
-    argument: TopLevelReshapeShapeArgument<'py>,
-) -> PyResult<BoundTopLevelReshapeShape<'py>> {
+fn bind_top_level_reshape_shape(
+    argument: TopLevelReshapeShapeArgument<'_>,
+) -> PyResult<BoundTopLevelReshapeShape<'_>> {
     match argument {
         TopLevelReshapeShapeArgument::Single(argument) => {
             if let Ok(dimensions) = argument.value.cast::<PyList>() {
