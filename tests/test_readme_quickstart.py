@@ -96,8 +96,21 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
     ),
     (
         "Preserve or change tensor layout",
-        ("`Tensor.view`", "`Tensor.reshape`", "`torch.reshape`", "`Tensor.cpu`"),
-        ("non-leading `select`", "sequence `movedim` axes", "cross-dtype views"),
+        (
+            "`Tensor.select`",
+            "`torch.select`",
+            "`Tensor.view`",
+            "`Tensor.reshape`",
+            "`torch.reshape`",
+            "`Tensor.cpu`",
+        ),
+        (
+            "range slicing",
+            "advanced indexing",
+            "arbitrary-dimension `unbind`",
+            "sequence `movedim` axes",
+            "cross-dtype views",
+        ),
         ("[Metadata and views](#metadata-and-views)",),
     ),
     (

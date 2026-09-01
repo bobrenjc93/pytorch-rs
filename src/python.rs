@@ -477,7 +477,7 @@ impl PyTensorBase {
         // integer dimension. Keep that observable order after mode dispatch.
         let index = extract_select_index(&index.value)?;
         let dimension = extract_dimension_swap_dimension(&dimension.value)?;
-        select_first_dimension(slf.py(), tensor, dimension, index, "Tensor.select")
+        select_dimension(slf.py(), tensor, dimension, index)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -3331,12 +3331,11 @@ fn unsqueeze_torch_function_mode_error() -> PyErr {
     PyNotImplementedError::new_err("unsqueeze(): __torch_function__ modes are not supported")
 }
 
-fn select_first_dimension(
+fn select_dimension(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
     dimension: i64,
     index: i64,
-    operation: &str,
 ) -> PyResult<Py<PyAny>> {
     let tensor = tensor.try_borrow()?;
     let shape = tensor.inner.shape();
@@ -3346,13 +3345,8 @@ fn select_first_dimension(
         ));
     }
     let axis = normalize_dimension(dimension, shape.len())?;
-    if axis != 0 {
-        return Err(PyRuntimeError::new_err(format!(
-            "{operation} only supports dimension 0"
-        )));
-    }
 
-    let inner = tensor.inner.index_integer(index).map_err(|error| {
+    let inner = tensor.inner.select_dimension(axis, index).map_err(|error| {
         if let TensorError::IndexOutOfBounds {
             index, dimension, ..
         } = &error
@@ -3449,7 +3443,7 @@ fn dispatch_top_level_select(
     {
         let index = extract_select_index(&index.value)?;
         let dimension = extract_dimension_swap_dimension(&dimension.value)?;
-        return select_first_dimension(py, tensor, dimension, index, "torch.select");
+        return select_dimension(py, tensor, dimension, index);
     }
 
     let function = variable_function(py, "select")?;
@@ -3499,7 +3493,7 @@ fn dispatch_top_level_select(
             }
             let index = extract_select_index(&index.value)?;
             let dimension = extract_dimension_swap_dimension(&dimension.value)?;
-            select_first_dimension(py, tensor, dimension, index, "torch.select")
+            select_dimension(py, tensor, dimension, index)
         }
     }
 }
