@@ -37,6 +37,13 @@ The query helpers listed above are count, rank, byte-width, scalar-truth, and
 existing-dtype predicates. They do not expand the supported dtype, device,
 storage, mutation, subclass, or unsupported-boundary contracts.
 
+The dtypes and compilation rows' CPU-build CUDA probes also include
+`torch.cuda.is_initialized()`: it returns the exact `False` singleton without
+importing PyTorch, probing CUDA/NVML or other hardware state, initializing CUDA,
+or adding mutable runtime state. CUDA tensors, device selection, streams,
+events, synchronization, allocator APIs, memory APIs, runtime initialization,
+and `torch.compile` CUDA execution remain unsupported.
+
 The autograd surface also includes reference-tested no-argument state queries:
 `torch.is_grad_enabled()`, `torch.is_inference_mode_enabled()`,
 `torch.is_anomaly_enabled()`, `torch.is_anomaly_check_nan_enabled()`, and
