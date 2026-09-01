@@ -274,7 +274,7 @@ class AsTensorTests(unittest.TestCase):
     def test_binding_errors_and_unsupported_scope_are_explicit(self):
         tensor = torch.tensor([1.0], dtype=torch.float32)
         unsupported_conversion = (
-            "as_tensor(): only exact native CPU float32 Tensor inputs and Python float scalars are supported; Python sequences, NumPy arrays, integer and boolean scalars, and dtype/device/copy conversions are not implemented"
+            "as_tensor(): only exact native CPU float32 Tensor inputs and exact Python float scalars are supported; Python sequences, NumPy arrays and scalars, integer and boolean scalars, and dtype/device/copy conversions are not implemented"
         )
         cases = (
             (
@@ -396,6 +396,11 @@ class AsTensorTests(unittest.TestCase):
             ),
             (
                 lambda: torch.as_tensor(np.float32(1.0)),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
+            (
+                lambda: torch.as_tensor(np.float64(1.0)),
                 NotImplementedError,
                 unsupported_conversion,
             ),

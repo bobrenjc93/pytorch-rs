@@ -1555,14 +1555,14 @@ pub(crate) fn as_tensor_variable_function(
     if data.value.is_exact_instance_of::<PyTensor>() {
         return Ok(data.value.unbind());
     }
-    if data.value.is_instance_of::<PyFloat>() {
+    if data.value.is_exact_instance_of::<PyFloat>() {
         let value = data.value.extract::<f32>()?;
         let inner = CoreTensor::from_vec_with_metadata(vec![value], Vec::new(), dtype, device)
             .map_err(|error| tensor_error(&error))?;
         return Ok(Py::new(py, PyTensor::new(inner))?.into_any());
     }
     Err(PyNotImplementedError::new_err(
-        "as_tensor(): only exact native CPU float32 Tensor inputs and Python float scalars are supported; Python sequences, NumPy arrays, integer and boolean scalars, and dtype/device/copy conversions are not implemented",
+        "as_tensor(): only exact native CPU float32 Tensor inputs and exact Python float scalars are supported; Python sequences, NumPy arrays and scalars, integer and boolean scalars, and dtype/device/copy conversions are not implemented",
     ))
 }
 

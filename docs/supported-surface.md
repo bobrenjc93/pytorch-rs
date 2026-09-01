@@ -596,16 +596,17 @@ its implementation engine.
 #### Creation
 
 `torch.as_tensor(data, dtype=None, device=None)` is exposed as a
-PyTorch-style top-level builtin for identity conversion and Python float scalar
-creation only. When `data` is an exact native CPU `float32` tensor and `dtype`
-and `device` are omitted, `None`, or the unindexed CPU/`torch.float32` defaults,
-the exact same Python Tensor object is returned with unchanged storage, shape,
-stride, storage offset, dtype, device, layout, autograd history, leaf state, and
-output number. When `data` is a Python float scalar with the same
+PyTorch-style top-level builtin for identity conversion and exact Python float
+scalar creation only. When `data` is an exact native CPU `float32` tensor and
+`dtype` and `device` are omitted, `None`, or the unindexed CPU/`torch.float32`
+defaults, the exact same Python Tensor object is returned with unchanged
+storage, shape, stride, storage offset, dtype, device, layout, autograd history,
+leaf state, and output number. When `data` is an exact Python float scalar with
+the same
 default-equivalent metadata, a fresh rank-0 CPU `float32` leaf tensor is
 created, preserving finite values, signed zero, infinities, and NaNs through
-the existing tensor scalar conversion path. Python sequences, NumPy
-arrays and scalars, integer or boolean scalar dtype inference, tensor
+the existing tensor scalar conversion path. Python sequences, NumPy arrays and
+scalars, integer, boolean, or custom-subclass scalar dtype inference, tensor
 subclasses, dtype conversions, accelerator or meta devices, indexed CPU devices
 that would require a copy, pinned-memory options, concrete or `None` `out`
 arguments, explicit copy requests, and `requires_grad` keyword requests remain
