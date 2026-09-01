@@ -19,26 +19,26 @@ use crate::python::{
     arange_variable_function, as_tensor_variable_function, asarray_variable_function,
     atleast_1d_variable_function, atleast_2d_variable_function, atleast_3d_variable_function,
     broadcast_tensors_variable_function, can_cast_variable_function, ceil_variable_function,
-    conj_variable_function, cos_variable_function, detach_variable_function, exp_variable_function,
-    fix_variable_function, floor_variable_function, get_device_variable_function,
-    imag_variable_function, is_conj_variable_function, is_inference_variable_function,
-    log_variable_function, matmul_variable_function, mean_variable_function,
-    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
-    multiply_variable_function, neg_variable_function, negative_variable_function,
-    ones_like_variable_function, permute_variable_function, positive_variable_function,
-    promote_types_variable_function, ravel_variable_function, real_variable_function,
-    reciprocal_variable_function, reshape_variable_function, resolve_conj_variable_function,
-    resolve_neg_variable_function, rsqrt_variable_function, scalar_tensor_variable_function,
-    select_variable_function, sigmoid_variable_function, sin_variable_function,
-    sqrt_variable_function, square_variable_function, sub_variable_function,
-    subtract_variable_function, sum_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function, unsqueeze_variable_function,
-    zeros_like_variable_function,
+    conj_variable_function, cos_variable_function, detach_variable_function, div_variable_function,
+    divide_variable_function, exp_variable_function, fix_variable_function,
+    floor_variable_function, get_device_variable_function, imag_variable_function,
+    is_conj_variable_function, is_inference_variable_function, log_variable_function,
+    matmul_variable_function, mean_variable_function, moveaxis_variable_function,
+    movedim_variable_function, mul_variable_function, multiply_variable_function,
+    neg_variable_function, negative_variable_function, ones_like_variable_function,
+    permute_variable_function, positive_variable_function, promote_types_variable_function,
+    ravel_variable_function, real_variable_function, reciprocal_variable_function,
+    reshape_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
+    rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
+    square_variable_function, sub_variable_function, subtract_variable_function,
+    sum_variable_function, tanh_variable_function, trunc_variable_function,
+    unbind_variable_function, unsqueeze_variable_function, zeros_like_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 57] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 59] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -94,6 +94,8 @@ const VARIABLE_FUNCTION_NAMES: [&str; 57] = [
     "subtract",
     "mul",
     "multiply",
+    "div",
+    "divide",
     "can_cast",
     "promote_types",
 ];
@@ -907,6 +909,36 @@ multiply(input, other, *, out=None)
 Alias for :func:`torch.mul`.
 ";
 
+const DIV_DOC: &std::ffi::CStr = cr"
+div(input, other, *, rounding_mode=None, out=None) -> Tensor
+
+Divides each element of the input ``input`` by the corresponding element of
+:attr:`other`.
+
+.. math::
+    \text{out}_i = \frac{\text{input}_i}{\text{other}_i}
+
+The current native implementation supports exact CPU ``float32`` tensor/tensor,
+tensor/real-scalar, and real-scalar/tensor true division with
+``rounding_mode=None``. Scalar-only calls, concrete ``out`` tensors, non-``None``
+``rounding_mode`` values, in-place variants, other dtypes/devices, and tensor
+subclasses without a ``__torch_function__`` override remain unsupported.
+
+Args:
+    input (Tensor): the dividend tensor.
+    other (Tensor or Number): the divisor tensor or number.
+
+Keyword args:
+    rounding_mode (str, optional): must be ``None``.
+    out (Tensor, optional): unsupported except ``None``.
+";
+
+const DIVIDE_DOC: &std::ffi::CStr = c"
+divide(input, other, *, rounding_mode=None, out=None) -> Tensor
+
+Alias for :func:`torch.div`.
+";
+
 const SUB_DOC: &std::ffi::CStr = cr"
 sub(input, other, *, alpha=1, out=None) -> Tensor
 
@@ -1274,6 +1306,8 @@ variable_function_callback!(sub_callback, sub_variable_function);
 variable_function_callback!(subtract_callback, subtract_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
 variable_function_callback!(multiply_callback, multiply_variable_function);
+variable_function_callback!(div_callback, div_variable_function);
+variable_function_callback!(divide_callback, divide_variable_function);
 variable_function_callback!(
     is_vulkan_available_callback,
     is_vulkan_available_variable_function
@@ -1359,6 +1393,8 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"subtract", subtract_callback, SUBTRACT_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
         variable_function_method!(c"multiply", multiply_callback, MULTIPLY_DOC),
+        variable_function_method!(c"div", div_callback, DIV_DOC),
+        variable_function_method!(c"divide", divide_callback, DIVIDE_DOC),
         variable_function_method!(c"is_vulkan_available", is_vulkan_available_callback, c""),
         variable_function_method!(c"_nnpack_available", nnpack_available_callback, c""),
         variable_function_method!(c"is_conj", is_conj_callback, IS_CONJ_DOC),

@@ -10,7 +10,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 | --- | --- | --- |
 | Create CPU `float32` tensors | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.zeros_like`, `torch.ones_like`, `torch.full`, `torch.eye` in [Tensors](#tensors) and [Creation](#creation) | Identity converters reject Python sequences, NumPy arrays/scalars, non-float scalars, dtype conversions, accelerator or meta devices, and copy/output requests; factories reject non-`float32` dtypes, non-CPU devices, concrete `out`, pinning, sparse layouts, and backend-specific allocation. |
 | Preserve or change tensor layout | `Tensor.select`, `torch.select`, `Tensor.view`, `Tensor.view_as`, `Tensor.reshape`, `Tensor.reshape_as`, `torch.reshape`, `Tensor.unsqueeze`, `torch.unsqueeze`, `Tensor.permute`, `torch.permute`, `Tensor.movedim`, `Tensor.moveaxis`, `torch.movedim`, `torch.moveaxis`, `Tensor.contiguous`, `Tensor.cpu` in [Metadata and views](#metadata-and-views) | Unsupported edges include range slicing, advanced indexing, broader `None` indexing expansion, arbitrary-dimension `unbind`, sequence `movedim` axes, variadic top-level reshape dimensions, cross-dtype views, complex dtypes, and imaginary views. |
-| Run eager math and reductions | Python `+`, `-`, `*`, and `/` operators, `Tensor.add`, `Tensor.sub`, `Tensor.subtract`, `Tensor.mul`, `Tensor.multiply`, `Tensor.div`, `Tensor.divide`, `torch.sub`, `torch.subtract`, `torch.mul`, `torch.multiply`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.cos`, `torch.exp`, `torch.log`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` in [Elementwise and reductions](#elementwise-and-reductions) | `torch.add`, concrete `out` tensors, in-place variants, active-autograd `log`, nondefault `alpha` or `rounding_mode`, scalar-only multiplication/division, dimension reductions, `keepdim=True`, dtype conversions, and non-CPU/non-`float32` tensors remain outside the contract. |
+| Run eager math and reductions | Python `+`, `-`, `*`, and `/` operators, `Tensor.add`, `Tensor.sub`, `Tensor.subtract`, `Tensor.mul`, `Tensor.multiply`, `Tensor.div`, `Tensor.divide`, `torch.sub`, `torch.subtract`, `torch.mul`, `torch.multiply`, `torch.div`, `torch.divide`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.cos`, `torch.exp`, `torch.log`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` in [Elementwise and reductions](#elementwise-and-reductions) | `torch.add`, concrete `out` tensors, in-place variants, active-autograd `log` and division, nondefault `alpha` or `rounding_mode`, scalar-only multiplication/division, dimension reductions, `keepdim=True`, dtype conversions, and non-CPU/non-`float32` tensors remain outside the contract. |
 | Use functional NN helpers | `torch.nn.functional.linear`, `torch.nn.functional.relu`, `torch.nn.functional.l1_loss`, `torch.nn.functional.mse_loss`, `torch.nn.functional.dropout`, `torch.nn.functional.dropout1d`, `torch.nn.functional.dropout2d`, `torch.nn.functional.dropout3d`, `torch.nn.functional.sigmoid`, `torch.nn.functional.silu`, `torch.nn.functional.softsign`, `torch.nn.functional.tanh`, `torch.nn.init.calculate_gain` in [NN/data helpers](#nn-and-data-helpers) and [math activations](#elementwise-and-reductions) | Module layers, active autograd for loss/softsign paths, loss reductions other than `"none"`, loss `weight` arguments, nondeterministic dropout, nonidentity inplace dropout, and mutating initializers remain unsupported. |
 | Reuse data and state helpers | `torch.utils.data.Dataset`, `torch.utils.data.IterableDataset`, `torch.utils.data.TensorDataset`, `torch.utils.data.StackDataset`, `torch.utils.data.ConcatDataset`, `torch.utils.data.ChainDataset`, `torch.utils.data.Subset`, `torch.utils.data.Sampler`, `torch.utils.data.SequentialSampler`, `torch.utils.data.BatchSampler`, `torch.utils.data.DistributedSampler`, `torch.utils.data.get_worker_info`, `torch.nn.modules.utils.consume_prefix_in_state_dict_if_present`, `torch.serialization.LoadEndianness`, `torch.serialization.get_default_load_endianness`, `torch.serialization.set_default_load_endianness`, `torch.serialization.get_crc32_options`, `torch.serialization.set_crc32_options`, `torch.serialization.get_default_mmap_options`, `torch.serialization.set_default_mmap_options` in [NN/data helpers](#nn-and-data-helpers) | `DataLoader`, worker processes, random or shuffle-backed sampling, `torch.nn.Module`, optimizers, optimizer state serialization, `torch.save`, and `torch.load` remain unsupported. |
 | Check dtype, device, and backend state | `torch.float32`, `torch.float`, `torch.finfo`, `torch.can_cast`, `torch.promote_types`, `Tensor.is_cuda`, `torch.get_device`, `Tensor.cpu`, `torch.cpu.is_available`, `torch.cpu.is_initialized`, `torch.cpu.current_device`, `torch.cpu.device_count`, `torch.cpu.synchronize`, `torch.cpu.set_device`, `torch.cpu.Event`, `torch.cuda.device_count`, `torch.cuda.is_available`, `torch.cuda.is_initialized`, `torch.accelerator.current_accelerator`, `torch.accelerator.current_device_index`, `torch.accelerator.current_device_idx`, `torch.accelerator.is_available`, `torch.accelerator.device_count`, `torch.accelerator.empty_cache`, `torch.accelerator.reset_accumulated_memory_stats`, `torch.accelerator.reset_peak_memory_stats`, `torch.accelerator.memory_stats`, `torch.accelerator.memory_allocated`, `torch.accelerator.max_memory_allocated`, `torch.accelerator.memory_reserved`, `torch.accelerator.max_memory_reserved`, `torch.backends.cpu.get_cpu_capability`, `torch.backends.nnpack.set_flags`, `torch.backends.cuda.enable_flash_sdp`, `torch.backends.cuda.enable_cudnn_sdp`, `torch.backends.cuda.sdp_kernel`, `torch.backends.cudnn.benchmark_limit`, `torch.backends.mha.get_fastpath_enabled`, `torch.version.cuda` in [tensor metadata](#metadata-and-views) and [backend metadata](#backend-and-compiler-metadata) | Additional dtypes, CUDA tensors/transfers/streams/events/synchronization/runtime/kernels, `torch.nn.functional.scaled_dot_product_attention`, actual attention-kernel dispatch, CUDA `torch.compile` execution, accelerator selection, accelerator streams/graphs/execution, memory-management APIs outside the named helper set, non-`None` accelerator/CUDA version reporting, and backend APIs outside [Backend and compiler metadata](#backend-and-compiler-metadata) remain unsupported. |
@@ -28,7 +28,7 @@ boundaries in [Current baseline](#current-baseline) remain authoritative.
 | --- | --- | --- |
 | Creation and dtype metadata | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.zeros_like`, `torch.ones_like`, `torch.full`, `torch.eye`, `torch.float32`/`torch.float`, `torch.finfo`, `torch.can_cast`, `torch.promote_types`, `torch.Size` | [Tensors](#tensors), [Creation](#creation), [Metadata and views](#metadata-and-views) |
 | Views and layout helpers | `torch.select`, `torch.reshape`, `torch.unsqueeze`, `torch.permute`, `torch.movedim`, `torch.moveaxis`, `torch.transpose`, `torch.swapdims`, `torch.swapaxes`, `torch.squeeze`, `torch.flatten`, `torch.ravel`, `torch.adjoint`, `torch.t`, `torch.real`, `torch.imag`, `torch.conj`, `torch.positive` | [Metadata and views](#metadata-and-views) |
-| Math, reductions, and predicates | `torch.sub`, `torch.subtract`, `torch.mul`, `torch.multiply`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.absolute`, `torch.neg`, `torch.negative`, `torch.cos`, `torch.exp`, `torch.log`, `torch.sin`, `torch.sqrt`, `torch.square`, `torch.floor`, `torch.ceil`, `torch.trunc`, `torch.fix`, `torch.sigmoid`, `torch.tanh`, `torch.equal`, `torch.numel`, `torch.is_nonzero`, `torch.is_complex`, `torch.is_floating_point`, `torch.is_signed`, `torch.get_device`, `torch.broadcast_shapes`, `torch.broadcast_tensors` | [Elementwise and reductions](#elementwise-and-reductions), [Metadata and views](#metadata-and-views) |
+| Math, reductions, and predicates | `torch.sub`, `torch.subtract`, `torch.mul`, `torch.multiply`, `torch.div`, `torch.divide`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.absolute`, `torch.neg`, `torch.negative`, `torch.cos`, `torch.exp`, `torch.log`, `torch.sin`, `torch.sqrt`, `torch.square`, `torch.floor`, `torch.ceil`, `torch.trunc`, `torch.fix`, `torch.sigmoid`, `torch.tanh`, `torch.equal`, `torch.numel`, `torch.is_nonzero`, `torch.is_complex`, `torch.is_floating_point`, `torch.is_signed`, `torch.get_device`, `torch.broadcast_shapes`, `torch.broadcast_tensors` | [Elementwise and reductions](#elementwise-and-reductions), [Metadata and views](#metadata-and-views) |
 | Eager process state | `torch.no_grad`, `torch.enable_grad`, `torch.is_grad_enabled`, `torch.autograd.backward`, autocast-cache helpers, deterministic/debug-mode helpers, warning-policy helpers, thread-count queries, matmul-precision helpers, build flags, `torch.__future__`, `torch.version` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
 
 ### Tensor
@@ -152,7 +152,7 @@ torch.__future__.set_swap_module_params_on_conversion(False)
 scaled = torch.multiply(input=2.0, other=x)
 assert scaled.tolist() == [[-2.0, 4.0], [6.0, -8.0]]
 delta = torch.subtract(input=scaled, other=x)
-ratio = scaled.divide(delta, rounding_mode=None)
+ratio = torch.divide(scaled, delta, rounding_mode=None)
 assert delta.tolist() == [[-1.0, 2.0], [3.0, -4.0]]
 assert ratio.tolist() == [[2.0, 2.0], [2.0, 2.0]]
 exponential = torch.exp(input=x)
@@ -764,7 +764,8 @@ through `*`, `Tensor.mul()`, `Tensor.multiply()`, `torch.mul()`, and the
 distinct top-level `torch.multiply()` builtin, default-alpha
 `Tensor.sub()`/`torch.sub()` and the distinct
 `Tensor.subtract()`/`torch.subtract()` callables, true division through `/`,
-`Tensor.div()`, and `Tensor.divide()`, plus the listed unary kernels,
+`Tensor.div()`, `Tensor.divide()`, `torch.div()`, and the distinct top-level
+`torch.divide()` builtin, plus the listed unary kernels,
 `Tensor.sum(dim=None)`, `torch.sum(input, dim=None, *, dtype=None)`,
 `Tensor.mean(dim=None)`, `torch.mean(input, dim=None, *, dtype=None)`,
 `Tensor.relu()`, `torch.relu()`, and rank-2 matrix multiplication through `@`,
@@ -810,18 +811,20 @@ or boolean `alpha`, scalar-only calls, unsupported operands, tensor subclasses
 without a handling override, dtype/device extension keywords, and in-place
 subtraction aliases remain unsupported.
 
-`Tensor.div(other, *, rounding_mode=None)` and
+Top-level `torch.div(input, other, *, rounding_mode=None, out=None)`/
+`torch.divide(...)` and method-only `Tensor.div(other, *, rounding_mode=None)`/
 `Tensor.divide(other, *, rounding_mode=None)` accept exact native CPU float32
-tensor/tensor operands and tensor/real-scalar operands, with PyTorch
-2.13-compatible broadcasting, noncontiguous and offset inputs, empty tensors,
-signed zero, NaNs, infinities, fresh output storage, callable metadata,
-copy/pickle/reload behavior, and `TorchFunctionMode`/`__torch_function__`
-dispatch for supported signatures. They reuse the same true-division path as
-Python `/` and only support `rounding_mode=None`. Active autograd recording is
-rejected until a division VJP exists; operands that require gradients remain
-usable under `torch.no_grad()`. Concrete `out` tensors, non-`None`
-`rounding_mode` values including integer floor/truncation semantics,
-unsupported operands, tensor subclasses without a handling override,
+tensor/tensor operands and tensor/real-scalar operands; top-level calls also
+accept real-scalar/tensor operands. They preserve PyTorch 2.13-compatible
+broadcasting, noncontiguous and offset inputs, empty tensors, signed zero,
+NaNs, infinities, fresh output storage, callable metadata,
+import/wildcard/copy/pickle/reload behavior, and `TorchFunctionMode`/
+`__torch_function__` dispatch for supported signatures. They reuse the same
+true-division path as Python `/` and only support `rounding_mode=None`. Active
+autograd recording is rejected until a division VJP exists; operands that
+require gradients remain usable under `torch.no_grad()`. Concrete `out`
+tensors, non-`None` `rounding_mode` values including integer floor/truncation
+semantics, unsupported operands, tensor subclasses without a handling override,
 dtype/device extension keywords, scalar-only calls, and in-place `div_`/
 `divide_` variants remain unsupported.
 
