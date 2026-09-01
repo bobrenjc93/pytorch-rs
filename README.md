@@ -43,14 +43,16 @@ assert ratio.tolist() == [[-1.0, 2.0], [3.0, -4.0]]
 The current native backend supports eager CPU `float32` tensors, core
 construction and layout/view operations, selected math and neural-network
 functions, and limited first-order autograd. Top-level `torch.cuda` exposes
-CPU-build probes only: `device_count()` is `0`, `is_available()` is `False`,
-and `is_initialized()` is `False`. `torch.backends.cuda` includes preference
-flags such as `enable_flash_sdp(...)` and `enable_cudnn_sdp(...)`, but they do
-not add scaled-dot-product-attention or CUDA execution. CUDA tensors, device
-selection, streams, events, synchronization, allocator APIs, runtime
-initialization, `torch.compile` CUDA execution, additional tensor dtypes, and
-the full module, optimizer, model-serialization, compiler, and distributed
-stacks remain unsupported.
+CPU-build probes plus allocator-query no-ops: `device_count()` is `0`,
+`is_available()` is `False`, `is_initialized()` is `False`, memory counters
+return `0`, memory stats return empty `OrderedDict`s, and reset/cache helpers
+return `None`. `torch.backends.cuda` includes preference flags such as
+`enable_flash_sdp(...)` and `enable_cudnn_sdp(...)`, but they do not add
+scaled-dot-product-attention or CUDA execution. CUDA tensors, real allocator
+state, device selection, streams, events, synchronization, memory snapshots,
+runtime initialization, `torch.compile` CUDA execution, additional tensor
+dtypes, and the full module, optimizer, model-serialization, compiler, and
+distributed stacks remain unsupported.
 
 See the [exhaustive supported surface](docs/supported-surface.md) for exact API
 and limitation details, [FEATURES.md](FEATURES.md) for the weighted coverage
