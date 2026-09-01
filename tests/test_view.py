@@ -673,6 +673,69 @@ class TensorViewTests(unittest.TestCase):
             (3, 1, 1, 1, 1, 1),
         )
 
+    def test_seven_or_more_positional_dimensions_delegate_to_native_view(self):
+        base = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
+        )
+        cases = (
+            ("contiguous-seven", base, (2, 3, 1, 1, 1, 1, 4)),
+            ("contiguous-eight", base, (1, 2, 3, 1, 1, 1, 1, 4)),
+            ("contiguous-inferred", base, (2, -1, 1, 1, 1, 1, 4)),
+            ("contiguous-offset", base[1], (1, 3, 1, 1, 1, 1, 4)),
+            ("empty", torch.zeros((0,)), (2, 0, 3, 1, 1, 1, 1)),
+            (
+                "integer-protocol",
+                base,
+                (
+                    IntSubclass(2),
+                    np.int64(3),
+                    np.uint32(1),
+                    IndexDimension(1),
+                    1,
+                    1,
+                    IndexDimension(4),
+                ),
+            ),
+        )
+        for case, source, dimensions in cases:
+            with self.subTest(case=case):
+                result = source.view(*dimensions)
+                direct = source.reshape(tuple(result.shape))
+                self.assertIsNot(result, source)
+                self.assertEqual(result.shape, direct.shape)
+                self.assertEqual(result.stride(), direct.stride())
+                self.assertEqual(result.storage_offset(), direct.storage_offset())
+                self.assertEqual(result.is_contiguous(), direct.is_contiguous())
+                self.assertEqual(result.requires_grad, direct.requires_grad)
+                self.assertEqual(result.is_leaf, direct.is_leaf)
+                self.assertEqual(result.data_ptr(), source.data_ptr())
+                self.assertTrue(result.is_set_to(direct))
+                np.testing.assert_array_equal(np.asarray(result), np.asarray(direct))
+
+        first = StatefulIndexDimension((2, 1, 2))
+        second = StatefulIndexDimension((3,))
+        third = StatefulIndexDimension((1,))
+        fourth = StatefulIndexDimension((1,))
+        fifth = StatefulIndexDimension((1,))
+        sixth = StatefulIndexDimension((1,))
+        seventh = StatefulIndexDimension((4,))
+        result = torch.zeros((24,)).view(
+            first, second, third, fourth, fifth, sixth, seventh
+        )
+        self.assertEqual(result.shape, (2, 3, 1, 1, 1, 1, 4))
+        self.assertEqual(
+            (
+                first.calls,
+                second.calls,
+                third.calls,
+                fourth.calls,
+                fifth.calls,
+                sixth.calls,
+                seventh.calls,
+            ),
+            (3, 1, 1, 1, 1, 1, 1),
+        )
+
     def test_inferred_and_extreme_empty_shapes_preserve_aliasing(self):
         source = torch.tensor(np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist())
         for form, argument, keyword in self.shape_forms((2, -1, 2)):
@@ -748,6 +811,7 @@ class TensorViewTests(unittest.TestCase):
             (lambda: source.view(1, 6, 2, 2), INCOMPATIBLE_LAYOUT),
             (lambda: source.view(1, 1, 6, 2, 2), INCOMPATIBLE_LAYOUT),
             (lambda: source.view(1, 1, 1, 6, 2, 2), INCOMPATIBLE_LAYOUT),
+            (lambda: source.view(1, 1, 1, 1, 6, 2, 2), INCOMPATIBLE_LAYOUT),
             (
                 lambda: torch.zeros((6,)).view(2, 2),
                 "shape '[2, 2]' is invalid for input of size 6",
@@ -767,6 +831,10 @@ class TensorViewTests(unittest.TestCase):
             (
                 lambda: torch.zeros((6,)).view(1, 1, 1, 2, 2, 2),
                 "shape '[1, 1, 1, 2, 2, 2]' is invalid for input of size 6",
+            ),
+            (
+                lambda: torch.zeros((6,)).view(1, 1, 1, 1, 1, 2, 2),
+                "shape '[1, 1, 1, 1, 1, 2, 2]' is invalid for input of size 6",
             ),
             (
                 lambda: torch.zeros((6,)).view(-1, -1),
@@ -789,6 +857,10 @@ class TensorViewTests(unittest.TestCase):
                 "only one dimension can be inferred",
             ),
             (
+                lambda: torch.zeros((6,)).view(-1, 1, 1, 1, 1, 1, -1),
+                "only one dimension can be inferred",
+            ),
+            (
                 lambda: torch.zeros((6,)).view(2, -2),
                 "invalid shape dimension -2 at index 1 of shape [2, -2]",
             ),
@@ -807,6 +879,10 @@ class TensorViewTests(unittest.TestCase):
             (
                 lambda: torch.zeros((6,)).view(1, -2, 1, 1, 1, 3),
                 "invalid shape dimension -2 at index 1 of shape [1, -2, 1, 1, 1, 3]",
+            ),
+            (
+                lambda: torch.zeros((6,)).view(1, -2, 1, 1, 1, 1, 3),
+                "invalid shape dimension -2 at index 1 of shape [1, -2, 1, 1, 1, 1, 3]",
             ),
             (
                 lambda: torch.zeros((0,)).view(0, -1),
@@ -833,6 +909,12 @@ class TensorViewTests(unittest.TestCase):
             (
                 lambda: torch.zeros((0,)).view(2, 0, 1, 1, 1, -1),
                 "cannot reshape tensor of 0 elements into shape [2, 0, 1, 1, 1, -1] "
+                "because the unspecified dimension size -1 can be any value "
+                "and is ambiguous",
+            ),
+            (
+                lambda: torch.zeros((0,)).view(2, 0, 1, 1, 1, 1, -1),
+                "cannot reshape tensor of 0 elements into shape [2, 0, 1, 1, 1, 1, -1] "
                 "because the unspecified dimension size -1 can be any value "
                 "and is ambiguous",
             ),
@@ -1161,6 +1243,46 @@ class TensorViewTests(unittest.TestCase):
             ):
                 tensor.view(*dimensions)
 
+    def test_seven_or_more_positional_dimension_conversion_matches_pytorch_parsing(self):
+        tensor = torch.zeros((24,))
+        cases = (
+            (
+                IntSubclass(2),
+                np.int64(3),
+                np.uint32(1),
+                IndexDimension(1),
+                1,
+                1,
+                IndexDimension(4),
+            ),
+            (IndexDimension(2), 3, 1, 1, 1, 1, np.int64(4)),
+        )
+        for dimensions in cases:
+            with self.subTest(dimensions=tuple(type(item).__name__ for item in dimensions)):
+                result = tensor.view(*dimensions)
+                self.assertEqual(result.shape, (2, 3, 1, 1, 1, 1, 4))
+                self.assertEqual(result.stride(), (12, 4, 4, 4, 4, 4, 1))
+                self.assertEqual(result.data_ptr(), tensor.data_ptr())
+
+        bool_result = torch.zeros((1,)).view(1, True, 1, 1, 1, 1, 1)
+        self.assertEqual(bool_result.shape, (1, 1, 1, 1, 1, 1, 1))
+        invalid_first = (
+            "view() received an invalid combination of arguments - got "
+            "(bool, int, int, int, int, int, int), but expected one of:\n"
+            " * (torch.dtype dtype)\n"
+            " * (tuple of ints size)\n"
+        )
+        with self.assertRaisesRegex(TypeError, f"^{re.escape(invalid_first)}$"):
+            tensor.view(True, 1, 1, 1, 1, 1, 24)
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^view\(\): argument 'size' failed to unpack the object at pos 7 "
+            r'with error "type must be tuple of ints,but got float"$',
+        ):
+            tensor.view(2, 3, 1, 1, 1, 1, 4.0)
+        with self.assertRaisesRegex(TypeError, "pos 7.*Overflow when unpacking long long"):
+            tensor.view(2, 3, 1, 1, 1, 1, 2**63)
+
     def test_two_positional_dimensions_prefer_dual_sequence_contents(self):
         tensor = torch.zeros((6,))
         for dimension_type in (TupleIndexDimension, ListIndexDimension):
@@ -1251,6 +1373,24 @@ class TensorViewTests(unittest.TestCase):
                 self.assertEqual(result.data_ptr(), tensor.data_ptr())
                 self.assertEqual(fallback.calls, 3)
 
+    def test_seven_or_more_positional_dimensions_prefer_dual_sequence_contents(self):
+        tensor = torch.zeros((24,))
+        for dimension_type in (TupleIndexDimension, ListIndexDimension):
+            with self.subTest(dimension_type=dimension_type.__name__):
+                sequence = dimension_type((24,), 2)
+                result = tensor.view(sequence, 3, 1, 1, 1, 1, 4)
+                self.assertEqual(result.shape, (24,))
+                self.assertEqual(result.stride(), (1,))
+                self.assertEqual(result.data_ptr(), tensor.data_ptr())
+                self.assertEqual(sequence.calls, 1)
+
+                fallback = dimension_type((2.0, 3), 2)
+                result = tensor.view(fallback, 3, 1, 1, 1, 1, 4)
+                self.assertEqual(result.shape, (2, 3, 1, 1, 1, 1, 4))
+                self.assertEqual(result.stride(), (12, 4, 4, 4, 4, 4, 1))
+                self.assertEqual(result.data_ptr(), tensor.data_ptr())
+                self.assertEqual(fallback.calls, 3)
+
     def test_operator_index_poisoning_cannot_change_shape_parsing(self):
         tensor = torch.zeros((6,))
         original_index = operator.index
@@ -1277,6 +1417,9 @@ class TensorViewTests(unittest.TestCase):
             six_variadic = torch.zeros((192,)).view(2, 3, 4, 2, 2, 2)
             self.assertEqual(six_variadic.shape, (2, 3, 4, 2, 2, 2))
             self.assertEqual(six_variadic.stride(), (96, 32, 8, 4, 2, 1))
+            seven_variadic = torch.zeros((24,)).view(2, 3, 1, 1, 1, 1, 4)
+            self.assertEqual(seven_variadic.shape, (2, 3, 1, 1, 1, 1, 4))
+            self.assertEqual(seven_variadic.stride(), (12, 4, 4, 4, 4, 4, 1))
             flattened = tensor.view(-1)
             self.assertEqual(flattened.shape, (6,))
             self.assertEqual(flattened.stride(), (1,))
@@ -1409,6 +1552,22 @@ class TensorViewTests(unittest.TestCase):
         )
         np.testing.assert_array_equal(np.asarray(six_leaf.grad), expected_six_grad)
 
+        high_rank_leaf = torch.tensor(
+            np.arange(24, dtype=np.float32).tolist(),
+            requires_grad=True,
+        )
+        high_rank_result = high_rank_leaf.view(2, 3, 1, 1, 1, 1, 4)
+        self.assertEqual(high_rank_result.shape, (2, 3, 1, 1, 1, 1, 4))
+        self.assertEqual(high_rank_result.stride(), (12, 4, 4, 4, 4, 4, 1))
+        self.assertTrue(high_rank_result.requires_grad)
+        self.assertFalse(high_rank_result.is_leaf)
+        self.assertEqual(high_rank_result.data_ptr(), high_rank_leaf.data_ptr())
+        high_rank_result.sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(high_rank_leaf.grad),
+            np.ones((24,), dtype=np.float32),
+        )
+
         repeated_leaf = torch.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
         )
@@ -1476,6 +1635,10 @@ class TensorViewTests(unittest.TestCase):
         self.assertEqual(
             descriptor(tensor, 1, 1, 1, 1, 1, 2).shape, (1, 1, 1, 1, 1, 2)
         )
+        self.assertEqual(
+            descriptor(tensor, 1, 1, 1, 1, 1, 1, 2).shape,
+            (1, 1, 1, 1, 1, 1, 2),
+        )
         self.assertEqual(descriptor(tensor, size=[2, 1]).shape, (2, 1))
 
     def test_torch_function_modes_receive_original_calls_and_forward(self):
@@ -1523,6 +1686,12 @@ class TensorViewTests(unittest.TestCase):
                 "six integers",
                 lambda: tensor.view(1, 1, 1, 1, 2, 3),
                 (tensor, 1, 1, 1, 1, 2, 3),
+                None,
+            ),
+            (
+                "seven integers",
+                lambda: tensor.view(1, 1, 1, 1, 1, 2, 3),
+                (tensor, 1, 1, 1, 1, 1, 2, 3),
                 None,
             ),
             (
@@ -1621,6 +1790,14 @@ class TensorViewTests(unittest.TestCase):
         self.assertEqual(len(six_variadic_deferred.calls), 1)
         _, _, args, kwargs = six_variadic_deferred.calls[0]
         self.assertEqual(args, (tensor, 1, 1, 1, 1, 2, 3.0))
+        self.assertIsNone(kwargs)
+
+        seven_variadic_deferred = RecordingMode(marker)
+        with seven_variadic_deferred:
+            self.assertIs(tensor.view(1, 1, 1, 1, 1, 2, 3.0), marker)
+        self.assertEqual(len(seven_variadic_deferred.calls), 1)
+        _, _, args, kwargs = seven_variadic_deferred.calls[0]
+        self.assertEqual(args, (tensor, 1, 1, 1, 1, 1, 2, 3.0))
         self.assertIsNone(kwargs)
 
         variadic_invalid = RecordingMode(marker)
@@ -1722,6 +1899,19 @@ class TensorViewTests(unittest.TestCase):
         order.clear()
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
+                forwarded = tensor.view(1, 1, 1, 1, 1, 2, 3)
+        self.assertEqual([entry[0] for entry in order], ["upper", "lower"])
+        for _, function, dispatch_types, args, kwargs in order:
+            self.assertIs(function, descriptor)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, (tensor, 1, 1, 1, 1, 1, 2, 3))
+            self.assertIsNone(kwargs)
+        self.assertEqual(forwarded.shape, (1, 1, 1, 1, 1, 2, 3))
+        self.assertEqual(forwarded.data_ptr(), tensor.data_ptr())
+
+        order.clear()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
                 forwarded = tensor.view(-1)
         self.assertEqual([entry[0] for entry in order], ["upper", "lower"])
         for _, function, dispatch_types, args, kwargs in order:
@@ -1760,13 +1950,6 @@ class TensorViewTests(unittest.TestCase):
         self.assertFalse(forwarded.requires_grad)
         self.assertTrue(forwarded.is_leaf)
 
-        unsupported_variadic = RecordingMode(marker)
-        with unsupported_variadic, self.assertRaisesRegex(
-            TypeError, "seven or more positional dimensions are not supported"
-        ):
-            tensor.view(1, 1, 1, 1, 1, 2, 3)
-        self.assertEqual(unsupported_variadic.calls, [])
-
         declining = RecordingMode(NotImplemented)
         with self.assertRaises(TypeError) as raised:
             with declining:
@@ -1794,7 +1977,6 @@ class TensorViewTests(unittest.TestCase):
         calls = (
             lambda: tensor.view(size=-1),
             lambda: tensor.view(size=torch.float32),
-            lambda: tensor.view(1, 1, 1, 1, 1, 2, 3),
             lambda: tensor.view(True),
             lambda: tensor.view(torch.float32, 6),
             lambda: tensor.view(torch.float32, size=(6,)),
@@ -1846,6 +2028,15 @@ class TensorViewTests(unittest.TestCase):
             TypeError, f"^{re.escape(six_dimension_keyword_overload)}$"
         ):
             tensor.view(1, 1, 1, 1, 2, 3, size=(1, 1, 1, 1, 2, 3))
+
+        seven_dimension_keyword_overload = keyword_overload.replace(
+            "(int, int, size=tuple)",
+            "(int, int, int, int, int, int, int, size=tuple)",
+        )
+        with self.assertRaisesRegex(
+            TypeError, f"^{re.escape(seven_dimension_keyword_overload)}$"
+        ):
+            tensor.view(1, 1, 1, 1, 1, 2, 3, size=(1, 1, 1, 1, 1, 2, 3))
 
         mixed_dimension = StatefulIndexDimension((6, 6))
         with self.assertRaises(TypeError):
