@@ -40,6 +40,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-mul-release-timings.md",
     ),
     (
+        "Rank-2 matmul release timings",
+        "docs/rank2-matmul-release-timings.md",
+    ),
+    (
         "`Tensor.abs` and `torch.abs` release timings",
         "docs/tensor-abs-release-timings.md",
     ),
