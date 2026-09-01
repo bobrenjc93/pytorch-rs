@@ -143,6 +143,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
             "`torch.cpu.current_device`",
             "`torch.cpu.synchronize`",
             "`torch.cpu.set_device`",
+            "`torch.cuda.empty_cache`",
             "`torch.accelerator.empty_cache`",
             "`torch.accelerator.reset_accumulated_memory_stats`",
             "`torch.accelerator.reset_peak_memory_stats`",
@@ -159,6 +160,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         (
             "Additional dtypes",
             "CUDA tensors/transfers/streams/events/synchronization/runtime/kernels",
+            "CUDA allocator statistics and memory snapshots",
             "memory-management APIs outside the named helper set",
             "backend APIs outside [Backend and compiler metadata]",
         ),
