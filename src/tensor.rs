@@ -623,6 +623,7 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
+    #[cfg(feature = "python-bindings")]
     pub(crate) fn empty_with_metadata(
         shape: impl Into<Vec<usize>>,
         dtype: DType,
