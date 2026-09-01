@@ -103,13 +103,47 @@ fn square_sum_records_shared_leaf_once_and_accumulates_gradients() {
 }
 
 #[test]
-fn absolute_value_rejects_recording_before_planning_and_honors_no_grad() {
+fn absolute_value_records_saved_input_vjp_for_views_and_honors_no_grad() {
     let leaf = Tensor::from_vec(vec![-2.0, -0.0, 1.0, 4.0], [2, 2])
         .unwrap()
         .with_requires_grad(true);
+
+    let output = leaf.transpose(0, 1).unwrap().abs().unwrap();
+    assert_eq!(output.shape(), [2, 2]);
+    assert_eq!(output.stride(), [1, 2]);
+    assert_eq!(output.storage_offset(), 0);
+    assert!(output.requires_grad());
+    assert!(!output.is_leaf());
+    assert!(!output.shares_storage_with(&leaf));
     assert_eq!(
-        leaf.abs(),
-        Err(TensorError::AutogradRecordingUnsupported { operation: "abs" })
+        output
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        [
+            2.0_f32.to_bits(),
+            1.0_f32.to_bits(),
+            0.0_f32.to_bits(),
+            4.0_f32.to_bits()
+        ]
+    );
+
+    let loss = output.sum();
+    loss.backward().unwrap();
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+    assert_eq!(
+        leaf.grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        [
+            (-1.0_f32).to_bits(),
+            0.0_f32.to_bits(),
+            1.0_f32.to_bits(),
+            1.0_f32.to_bits()
+        ]
     );
 
     let extreme = Tensor::zeros([0])
@@ -117,10 +151,7 @@ fn absolute_value_rejects_recording_before_planning_and_honors_no_grad() {
         .reshape([0, i64::MAX, 3])
         .unwrap()
         .with_requires_grad(true);
-    assert_eq!(
-        extreme.abs(),
-        Err(TensorError::AutogradRecordingUnsupported { operation: "abs" })
-    );
+    assert_eq!(extreme.abs(), Err(TensorError::StrideCalculationOverflow));
 
     {
         let _guard = no_grad();
