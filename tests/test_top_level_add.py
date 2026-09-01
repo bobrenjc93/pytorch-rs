@@ -1,0 +1,487 @@
+import copy
+import importlib
+import inspect
+import pickle
+import re
+import types
+import unittest
+
+import numpy as np
+import torch_rs as torch
+
+
+ADD_DOC = (
+    "\nadd(input, other, *, alpha=1, out=None) -> Tensor\n\n"
+    "Adds :attr:`other`, scaled by :attr:`alpha`, to :attr:`input`.\n\n"
+    ".. math::\n"
+    "    \\text{{out}}_i = \\text{{input}}_i + \\text{{alpha}} \\times "
+    "\\text{{other}}_i\n\n\n"
+    "Supports :ref:`broadcasting to a common shape <broadcasting-semantics>`,\n"
+    ":ref:`type promotion <type-promotion-doc>`, and integer, float, and "
+    "complex inputs.\n\n"
+    "Args:\n"
+    "    input (Tensor): the input tensor.\n"
+    "    other (Tensor or Number): the tensor or number to add to :attr:`input`.\n\n"
+    "Keyword arguments:\n"
+    "    alpha (Number): the multiplier for :attr:`other`.\n"
+    "    out (Tensor, optional): the output tensor.\n\n"
+    "Examples::\n\n"
+    "    >>> a = torch.randn(4)\n"
+    "    >>> a\n"
+    "    tensor([ 0.0202,  1.0985,  1.3506, -0.6056])\n"
+    "    >>> torch.add(a, 20)\n"
+    "    tensor([ 20.0202,  21.0985,  21.3506,  19.3944])\n\n"
+    "    >>> b = torch.randn(4)\n"
+    "    >>> b\n"
+    "    tensor([-0.9732, -0.3497,  0.6245,  0.4022])\n"
+    "    >>> c = torch.randn(4, 1)\n"
+    "    >>> c\n"
+    "    tensor([[ 0.3743],\n"
+    "            [-1.7724],\n"
+    "            [-0.5811],\n"
+    "            [-0.8017]])\n"
+    "    >>> torch.add(b, c, alpha=10)\n"
+    "    tensor([[  2.7695,   3.3930,   4.3672,   4.1450],\n"
+    "            [-18.6971, -18.0736, -17.0994, -17.3216],\n"
+    "            [ -6.7845,  -6.1610,  -5.1868,  -5.4090],\n"
+    "            [ -8.9902,  -8.3667,  -7.3925,  -7.6147]])\n"
+)
+
+
+class TopLevelAddTests(unittest.TestCase):
+    def assert_tensor_matches(self, actual, expected, *, case):
+        with self.subTest(case=case, metadata=True):
+            self.assertEqual(actual.shape, expected.shape)
+            self.assertEqual(actual.stride(), expected.stride())
+            self.assertEqual(actual.storage_offset(), expected.storage_offset())
+            self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+            self.assertEqual(actual.requires_grad, expected.requires_grad)
+            self.assertEqual(actual.is_leaf, expected.is_leaf)
+            self.assertIs(actual.dtype, torch.float32)
+            self.assertEqual(actual.device, torch.device("cpu"))
+        with self.subTest(case=case, values=True):
+            np.testing.assert_array_equal(
+                np.asarray(actual).reshape(-1).view(np.uint32),
+                np.asarray(expected).reshape(-1).view(np.uint32),
+            )
+
+    def test_values_broadcast_scalars_empties_and_special_bits(self):
+        left = torch.tensor([[[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]]]).transpose(
+            0, 2
+        )
+        right = torch.tensor([[2.0], [-0.0], [float("inf")]])
+        expected = left + right
+        calls = (
+            ("positional tensors", lambda: torch.add(left, right)),
+            ("canonical keywords", lambda: torch.add(input=left, other=right)),
+            ("x aliases", lambda: torch.add(x=left, x2=right)),
+            ("x1 aliases", lambda: torch.add(x1=left, x2=right)),
+            ("default alpha", lambda: torch.add(left, right, alpha=1)),
+            ("default alpha numpy", lambda: torch.add(left, right, alpha=np.int64(1))),
+            (
+                "default alpha numpy bool",
+                lambda: torch.add(left, right, alpha=np.bool_(True)),
+            ),
+            ("explicit out none", lambda: torch.add(left, right, out=None)),
+        )
+        for case, call in calls:
+            self.assert_tensor_matches(call(), expected, case=case)
+
+        offset = left[1]
+        for scalar in (True, -2, 2.5, np.bool_(True), np.int64(3), np.float32(-0.0)):
+            for order, call, expected in (
+                (
+                    "tensor/scalar",
+                    lambda scalar=scalar: torch.add(offset, scalar),
+                    offset + scalar,
+                ),
+                (
+                    "scalar/tensor",
+                    lambda scalar=scalar: torch.add(scalar, offset),
+                    scalar + offset,
+                ),
+                (
+                    "keyword scalar/tensor",
+                    lambda scalar=scalar: torch.add(input=scalar, other=offset),
+                    scalar + offset,
+                ),
+            ):
+                self.assert_tensor_matches(
+                    call(), expected, case=(order, type(scalar).__name__, scalar)
+                )
+
+        empty = torch.zeros((2, 0, 3)).transpose(0, 2)
+        broadcast = torch.ones((1, 1, 2))
+        self.assert_tensor_matches(
+            torch.add(empty, broadcast),
+            empty + broadcast,
+            case="strided broadcast empty",
+        )
+
+        special_bits = np.asarray(
+            (0x0000_0000, 0x8000_0000, 0x7F80_0000, 0xFF80_0000, 0x7FC1_2345),
+            dtype=np.uint32,
+        )
+        special = torch.tensor(memoryview(special_bits.view(np.float32)))
+        zeros = torch.zeros((5,))
+        result = torch.add(special, zeros)
+        self.assert_tensor_matches(result, special + zeros, case="signed zero and non-finites")
+        self.assertFalse(result.is_set_to(special))
+        self.assertFalse(result.is_set_to(zeros))
+        if result.numel():
+            self.assertNotEqual(result.data_ptr(), special.data_ptr())
+            self.assertNotEqual(result.data_ptr(), zeros.data_ptr())
+
+    def test_autograd_no_grad_and_shared_operands_reuse_addition_path(self):
+        function_left = torch.tensor([[2.0, 3.0]], requires_grad=True)
+        function_right = torch.tensor([[5.0], [7.0], [11.0]], requires_grad=True)
+        operator_left = torch.tensor([[2.0, 3.0]], requires_grad=True)
+        operator_right = torch.tensor([[5.0], [7.0], [11.0]], requires_grad=True)
+
+        function_output = torch.add(
+            function_left.transpose(0, 1), function_right.transpose(0, 1)
+        )
+        operator_output = operator_left.transpose(0, 1) + operator_right.transpose(
+            0, 1
+        )
+        self.assert_tensor_matches(function_output, operator_output, case="tracked views")
+        function_output.sum().backward()
+        operator_output.sum().backward()
+        self.assert_tensor_matches(
+            function_left.grad, operator_left.grad, case="left gradient"
+        )
+        self.assert_tensor_matches(
+            function_right.grad, operator_right.grad, case="right gradient"
+        )
+
+        function_shared = torch.tensor([2.0, -3.0], requires_grad=True)
+        operator_shared = torch.tensor([2.0, -3.0], requires_grad=True)
+        torch.add(function_shared, function_shared).sum().backward()
+        (operator_shared + operator_shared).sum().backward()
+        self.assert_tensor_matches(
+            function_shared.grad, operator_shared.grad, case="shared operand gradient"
+        )
+
+        function_scalar = torch.tensor([2.0, -3.0], requires_grad=True)
+        operator_scalar = torch.tensor([2.0, -3.0], requires_grad=True)
+        torch.add(4.0, function_scalar).sum().backward()
+        (4.0 + operator_scalar).sum().backward()
+        self.assert_tensor_matches(
+            function_scalar.grad, operator_scalar.grad, case="scalar-first gradient"
+        )
+
+        function_empty = torch.zeros((2, 0, 3), requires_grad=True)
+        operator_empty = torch.zeros((2, 0, 3), requires_grad=True)
+        torch.add(function_empty, torch.ones((1, 1, 3))).sum().backward()
+        (operator_empty + torch.ones((1, 1, 3))).sum().backward()
+        self.assert_tensor_matches(
+            function_empty.grad, operator_empty.grad, case="empty gradient"
+        )
+
+        left = torch.tensor([[1.0, 2.0]], requires_grad=True)
+        right = torch.tensor([[3.0], [4.0]], requires_grad=True)
+        with torch.no_grad():
+            tensor_output = torch.add(left.transpose(0, 1), right.transpose(0, 1))
+            scalar_output = torch.add(2.0, left)
+        self.assertFalse(tensor_output.requires_grad)
+        self.assertFalse(scalar_output.requires_grad)
+        self.assertTrue(torch.add(left, right.transpose(0, 1)).requires_grad)
+
+    def test_modes_and_overrides_observe_calls_before_native_limits(self):
+        left = torch.tensor([2.0])
+        right = torch.tensor([3.0])
+        destination = torch.tensor([0.0])
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result=marker):
+                self.calls = []
+                self.result = result
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        calls = (
+            (lambda: torch.add(left, right), (left, right), None),
+            (lambda: torch.add(left, 4.0), (left, 4.0), None),
+            (lambda: torch.add(4.0, left), (4.0, left), None),
+            (
+                lambda: torch.add(input=4.0, other=left, alpha=2),
+                (),
+                ("input", "other", "alpha"),
+            ),
+            (
+                lambda: torch.add(left, right, out=destination),
+                (left, right),
+                ("out",),
+            ),
+        )
+        for call, expected_args, expected_keywords in calls:
+            mode = RecordingMode()
+            with mode:
+                self.assertIs(call(), marker)
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            self.assertIs(function, torch.add)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, expected_args)
+            if expected_keywords is None:
+                self.assertIsNone(kwargs)
+            else:
+                self.assertEqual(tuple(kwargs), expected_keywords)
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                actual = torch.add(input=4.0, other=left, alpha=1)
+        self.assertEqual(order, ["upper", "lower"])
+        self.assert_tensor_matches(actual, 4.0 + left, case="forwarded modes")
+
+        for call in (
+            lambda: torch.add([], right),
+            lambda: torch.add(left, []),
+            lambda: torch.add(left, right, alpha=[]),
+        ):
+            mode = RecordingMode()
+            with mode:
+                with self.assertRaises(TypeError):
+                    call()
+            self.assertEqual(mode.calls, [])
+
+        events = []
+
+        class LeftOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("left", func, types, args, kwargs))
+                return NotImplemented
+
+        class RightOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("right", func, types, args, kwargs))
+                return marker
+
+        self.assertIs(torch.add(LeftOverride(), RightOverride()), marker)
+        self.assertEqual([event[0] for event in events], ["left", "right"])
+        for _, function, dispatch_types, args, kwargs in events:
+            self.assertIs(function, torch.add)
+            self.assertEqual(dispatch_types, (LeftOverride, RightOverride))
+            self.assertEqual(len(args), 2)
+            self.assertIsNone(kwargs)
+
+        events.clear()
+        self.assertIs(torch.add(input=left, other=RightOverride(), alpha=2), marker)
+        _, function, dispatch_types, args, kwargs = events[0]
+        self.assertIs(function, torch.add)
+        self.assertEqual(dispatch_types, (RightOverride,))
+        self.assertEqual(args, ())
+        self.assertEqual(tuple(kwargs), ("input", "other", "alpha"))
+
+        subclass_events = []
+
+        class BaseOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                subclass_events.append("base")
+                return marker
+
+        class DerivedOverride(BaseOverride):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                subclass_events.append(("derived", types))
+                return marker
+
+        self.assertIs(torch.add(BaseOverride(), DerivedOverride()), marker)
+        self.assertEqual(
+            subclass_events, [("derived", (DerivedOverride, BaseOverride))]
+        )
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        with self.assertRaises(TypeError) as raised:
+            torch.add(DecliningOverride(), left)
+        self.assertEqual(
+            str(raised.exception),
+            "Multiple dispatch failed for 'torch.add'; all __torch_function__ "
+            "handlers returned NotImplemented:\n\n"
+            f"  - tensor subclass <class '{DecliningOverride.__module__}."
+            f"{DecliningOverride.__qualname__}'>\n\n"
+            "For more information, try re-running with TORCH_LOGS=not_implemented",
+        )
+
+    def test_errors_metadata_import_reload_and_unsupported_surface(self):
+        tensor = torch.tensor([1.0])
+        cases = (
+            (
+                lambda: torch.add(),
+                "add() received an invalid combination of arguments - got "
+                "(), but expected (Tensor input, Tensor other, *, Number "
+                "alpha = 1, Tensor out = None)",
+            ),
+            (
+                lambda: torch.add(tensor),
+                "add() received an invalid combination of arguments - got "
+                "(Tensor), but expected (Tensor input, Tensor other, *, "
+                "Number alpha = 1, Tensor out = None)",
+            ),
+            (
+                lambda: torch.add(2),
+                "add() received an invalid combination of arguments - got "
+                "(int), but expected (Tensor input, Tensor other, *, "
+                "Number alpha = 1, Tensor out = None)",
+            ),
+            (
+                lambda: torch.add(tensor, tensor, tensor),
+                "add() takes 2 positional arguments but 3 were given",
+            ),
+            (
+                lambda: torch.add([], tensor),
+                "add(): argument 'input' (position 1) must be Tensor, not list",
+            ),
+            (
+                lambda: torch.add(tensor, []),
+                "add(): argument 'other' (position 2) must be Tensor, not list",
+            ),
+            (
+                lambda: torch.add(input=None, other=tensor),
+                "add(): argument 'input' must be Tensor, not NoneType",
+            ),
+            (
+                lambda: torch.add(tensor, tensor, input=tensor),
+                "add() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.add(tensor, tensor, x2=tensor),
+                "add() got an unexpected keyword argument 'x2'",
+            ),
+            (
+                lambda: torch.add(foo=tensor),
+                "add() received an invalid combination of arguments - got "
+                "unrecognized keyword arguments: foo",
+            ),
+            (
+                lambda: torch.add(tensor, tensor, extra=True),
+                "add() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.add(tensor, tensor, alpha=[]),
+                "add(): argument 'alpha' must be Number, not list",
+            ),
+            (
+                lambda: torch.add(tensor, np.uint64(2**63)),
+                "an integer is required",
+            ),
+            (lambda: torch.add(tensor, 2**64), "int too big to convert"),
+            (
+                lambda: torch.add(-(2**63) - 1, tensor),
+                "can't convert negative int to unsigned",
+            ),
+            (
+                lambda: torch.add(2, 3),
+                "add(): scalar-scalar addition is not supported; at least one "
+                "operand must be Tensor",
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(Exception, f"^{re.escape(message)}$"):
+                    call()
+
+        destination = torch.tensor([17.0])
+        with self.assertRaisesRegex(
+            RuntimeError, r"^add\(\): the 'out' argument is not supported$"
+        ):
+            torch.add(tensor, tensor, out=destination)
+        self.assertEqual(destination.tolist(), [17.0])
+
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^add\(\): alpha values other than 1 are not supported$",
+        ):
+            torch.add(tensor, tensor, alpha=2)
+        with self.assertRaisesRegex(
+            RuntimeError, "^Boolean alpha only supported for Boolean results\\.$"
+        ):
+            torch.add(tensor, tensor, alpha=True)
+
+        try:
+            class TensorSubclass(torch.Tensor):
+                pass
+        except TypeError:
+            TensorSubclass = None
+
+        if TensorSubclass is not None:
+            with self.assertRaises((TypeError, NotImplementedError)):
+                torch.add(TensorSubclass(), tensor)
+        self.assertFalse(hasattr(torch, "float64"))
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^tensor\(\): device 'cuda' is not supported; only 'cpu' is implemented$",
+        ):
+            torch.tensor([2.0], device="cuda")
+
+        function = torch.add
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "add")
+        self.assertEqual(function.__qualname__, "_VariableFunctionsClass.add")
+        self.assertEqual(function.__module__, "torch")
+        self.assertIsNone(function.__text_signature__)
+        self.assertEqual(function.__doc__, ADD_DOC)
+        self.assertRegex(
+            repr(function), r"^<built-in method add of type object at 0x[0-9a-f]+>$"
+        )
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+
+        owner = function.__reduce__()[1][0]
+        self.assertEqual(owner.__name__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__qualname__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__module__, "torch_rs._C")
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner.add, function)
+        for mutation in (
+            lambda: setattr(owner, "add", None),
+            lambda: delattr(owner, "add"),
+        ):
+            with self.assertRaises(TypeError):
+                mutation()
+            self.assertIs(owner.add, function)
+
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(
+                    pickle.loads(pickle.dumps(function, protocol=protocol)), function
+                )
+        self.assertIs(copy.copy(function), function)
+        self.assertIs(copy.deepcopy(function), function)
+
+        self.assertEqual(torch.__all__.count("add"), 1)
+        self.assertNotIn("_VariableFunctionsClass", torch.__all__)
+        self.assertFalse(hasattr(torch, "_VariableFunctionsClass"))
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+        self.assertIs(wildcard_namespace["add"], function)
+
+        self.assertFalse(hasattr(torch, "add_"))
+        self.assertFalse(hasattr(torch.Tensor, "add_"))
+
+        reloaded = importlib.reload(torch)
+        self.assertIs(reloaded, torch)
+        self.assertIs(torch.add, function)
+
+
+if __name__ == "__main__":
+    unittest.main()
