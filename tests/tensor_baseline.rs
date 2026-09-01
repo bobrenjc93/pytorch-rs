@@ -602,6 +602,67 @@ fn sine_handles_scalar_and_empty_tensors_with_pytorch_layouts() {
 }
 
 #[test]
+fn cosine_preserves_pytorch_float32_edges_and_unary_layouts() {
+    let input_bits = [
+        0x0000_0000,
+        0x8000_0000,
+        0x0000_0001,
+        0x8000_0001,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7f81_2345,
+        0xff81_2345,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let expected_bits = [
+        0x3f80_0000,
+        0x3f80_0000,
+        0x3f80_0000,
+        0x3f80_0000,
+        0xffc0_0000,
+        0xffc0_0000,
+        0x7fc1_2345,
+        0xffc1_2345,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let input =
+        Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), [input_bits.len()]).unwrap();
+    let output = input.cos().unwrap();
+    assert!(output.logical_values().map(f32::to_bits).eq(expected_bits));
+    assert!(!output.shares_storage_with(&input));
+
+    let base = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+    let strided = base.transpose(0, 2).unwrap();
+    let offset = strided.index_integer(1).unwrap();
+    let cases: [(Tensor, Vec<usize>); 4] = [
+        (Tensor::from_vec(vec![-0.0], []).unwrap(), Vec::new()),
+        (
+            Tensor::zeros([2, 0, 3])
+                .unwrap()
+                .transpose(0, 2)
+                .unwrap()
+                .index_integer(1)
+                .unwrap(),
+            vec![2, 1],
+        ),
+        (offset, vec![1, 3]),
+        (strided, vec![1, 4, 12]),
+    ];
+
+    for (input, expected_strides) in cases {
+        let output = input.cos().unwrap();
+        assert_eq!(output.shape(), input.shape());
+        assert_eq!(output.stride(), expected_strides);
+        assert_eq!(output.storage_offset(), 0);
+        assert_eq!(output.dtype(), input.dtype());
+        assert_eq!(output.device(), input.device());
+        assert!(!output.shares_storage_with(&input));
+    }
+}
+
+#[test]
 fn absolute_value_matches_pytorch_float32_ieee_bits() {
     let input_bits = [
         0x0000_0000,

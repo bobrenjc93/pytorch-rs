@@ -3618,6 +3618,16 @@ impl Tensor {
         self.finish_saved_input_unary_vjp(output, AutogradNode::Sin, apply_sin_vjp)
     }
 
+    /// Computes the cosine of every element in radians.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn cos(&self) -> Result<Self, TensorError> {
+        let output = self.unary_map(f32::cos)?;
+        self.finish_saved_input_unary_vjp(output, AutogradNode::Cos, apply_cos_vjp)
+    }
+
     /// Computes the base-e exponential of every element.
     ///
     /// # Errors
@@ -4752,6 +4762,15 @@ fn apply_sin_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>)
             .iter()
             .enumerate()
             .map(|(index, value)| value * input.value_at_linear_index(index).cos()),
+    );
+}
+
+fn apply_cos_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    gradient.extend(
+        upstream
+            .iter()
+            .enumerate()
+            .map(|(index, value)| value * -input.value_at_linear_index(index).sin()),
     );
 }
 
@@ -10504,6 +10523,7 @@ mod tests {
 
         assert_eq!(source.relu().unwrap().grad_fn_name(), Some("ReluBackward0"));
         assert_eq!(source.sin().unwrap().grad_fn_name(), Some("SinBackward0"));
+        assert_eq!(source.cos().unwrap().grad_fn_name(), Some("CosBackward0"));
         assert_eq!(source.exp().unwrap().grad_fn_name(), Some("ExpBackward0"));
         assert_eq!(source.ceil().unwrap().grad_fn_name(), Some("CeilBackward0"));
         assert_eq!(
@@ -12530,6 +12550,7 @@ mod tests {
             (tensor.negate().unwrap(), shared.negate().unwrap()),
             (tensor.relu().unwrap(), shared.relu().unwrap()),
             (tensor.sin().unwrap(), shared.sin().unwrap()),
+            (tensor.cos().unwrap(), shared.cos().unwrap()),
             (tensor.exp().unwrap(), shared.exp().unwrap()),
             (tensor.floor().unwrap(), shared.floor().unwrap()),
             (tensor.ceil().unwrap(), shared.ceil().unwrap()),
@@ -12895,6 +12916,10 @@ mod tests {
 
         assert_eq!(
             tensor.exp(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.cos(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
