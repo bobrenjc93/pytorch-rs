@@ -79,6 +79,35 @@ class TensorReciprocalReferenceTests(unittest.TestCase):
             module.tensor(memoryview(special_bits.view(np.float32))),
         )
 
+    @staticmethod
+    def autograd_case(module, case):
+        if case == "scalar":
+            leaf = module.tensor(4.0, dtype=module.float32, requires_grad=True)
+            return leaf, leaf, None
+        if case == "empty":
+            leaf = module.zeros((2, 0, 3), dtype=module.float32, requires_grad=True)
+            return leaf, leaf.transpose(0, 2)[1], None
+        if case == "offset":
+            leaf = module.tensor(
+                np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4).tolist(),
+                dtype=module.float32,
+                requires_grad=True,
+            )
+            return leaf, leaf[1], None
+        if case == "noncontiguous":
+            leaf = module.tensor(
+                np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4).tolist(),
+                dtype=module.float32,
+                requires_grad=True,
+            )
+            input = leaf.transpose(0, 2)[1]
+            weights = module.tensor(
+                np.arange(1, 7, dtype=np.float32).reshape(3, 2).tolist(),
+                dtype=module.float32,
+            )
+            return leaf, input, weights
+        raise AssertionError(f"unknown reciprocal autograd case: {case}")
+
     def test_values_layouts_and_fresh_storage_match_pytorch_2_13(self):
         actual_cases = self.tensor_cases(torch)
         expected_cases = self.tensor_cases(reference_torch)
@@ -90,6 +119,123 @@ class TensorReciprocalReferenceTests(unittest.TestCase):
             self.assert_tensor_matches(actual_output, expected_output, case=case)
             self.assertFalse(actual_output.is_set_to(actual))
             self.assertFalse(expected_output.is_set_to(expected))
+
+    def test_autograd_scalar_empty_offset_and_noncontiguous_match_pytorch_2_13(
+        self,
+    ):
+        for case in ("scalar", "empty", "offset", "noncontiguous"):
+            actual_leaf, actual_input, actual_weights = self.autograd_case(torch, case)
+            expected_leaf, expected_input, expected_weights = self.autograd_case(
+                reference_torch, case
+            )
+            actual_output = actual_input.reciprocal()
+            expected_output = expected_input.reciprocal()
+            self.assert_tensor_matches(
+                actual_output, expected_output, case=(case, "forward")
+            )
+
+            if actual_weights is None:
+                actual_loss = actual_output if case == "scalar" else actual_output.sum()
+                expected_loss = (
+                    expected_output if case == "scalar" else expected_output.sum()
+                )
+            else:
+                actual_loss = (actual_output * actual_weights).sum()
+                expected_loss = (expected_output * expected_weights).sum()
+            actual_loss.backward()
+            expected_loss.backward()
+            self.assert_tensor_matches(
+                actual_leaf.grad,
+                expected_leaf.grad,
+                case=(case, "gradient"),
+            )
+
+    def test_autograd_special_values_match_pytorch_2_13_bitwise(self):
+        input_bits = np.asarray(
+            (
+                0x00000000,
+                0x80000000,
+                0x00000001,
+                0x80000001,
+                0x00800000,
+                0x80800000,
+                0x3E800000,
+                0x3F800000,
+                0x40000000,
+                0x40800000,
+                0x7F7FFFFF,
+                0xFF7FFFFF,
+                0x7F800000,
+                0xFF800000,
+                0x7F812345,
+                0xFF812345,
+                0x7FC12345,
+                0xFFC54321,
+            ),
+            dtype=np.uint32,
+        )
+        weight_bits = np.asarray(
+            (
+                0x3F800000,
+                0xBF800000,
+                0x00000000,
+                0x80000000,
+                0x7F800000,
+                0xFF800000,
+                0x3F000000,
+                0xBF000000,
+                0x3F800000,
+                0xBF800000,
+                0x3F800000,
+                0xBF800000,
+                0x3F800000,
+                0xBF800000,
+                0x3F800000,
+                0xBF800000,
+                0x7FC01234,
+                0xFFC05678,
+            ),
+            dtype=np.uint32,
+        )
+        tensors = []
+        for module in (torch, reference_torch):
+            leaf = module.tensor(
+                memoryview(input_bits.view(np.float32)), requires_grad=True
+            )
+            weights = module.tensor(memoryview(weight_bits.view(np.float32)))
+            output = leaf.reciprocal()
+            (output * weights).sum().backward()
+            tensors.append((output, leaf.grad))
+
+        self.assert_tensor_matches(
+            tensors[0][0], tensors[1][0], case="special forward"
+        )
+        self.assert_tensor_matches(
+            tensors[0][1], tensors[1][1], case="special gradient"
+        )
+
+    def test_autograd_accumulation_and_graph_freeing_match_pytorch_2_13(self):
+        snapshots = []
+        for module in (torch, reference_torch):
+            accumulated = module.tensor(
+                [1.0, 2.0, -4.0], dtype=module.float32, requires_grad=True
+            )
+            accumulated.reciprocal().sum().backward()
+            first = np.asarray(accumulated.grad).copy()
+            accumulated.reciprocal().sum().backward()
+            second = np.asarray(accumulated.grad).copy()
+
+            freed = module.tensor(
+                [1.0, 2.0, -4.0], dtype=module.float32, requires_grad=True
+            )
+            loss = freed.reciprocal().sum()
+            loss.backward()
+            second_backward_error = self.error(loss.backward)
+            snapshots.append((first, second, second_backward_error))
+
+        np.testing.assert_array_equal(snapshots[0][0], snapshots[1][0])
+        np.testing.assert_array_equal(snapshots[0][1], snapshots[1][1])
+        self.assertEqual(snapshots[0][2], snapshots[1][2])
 
     @staticmethod
     def error(action):
@@ -249,15 +395,10 @@ print(json.dumps({
             self.mode_dispatch_observation("torch"),
         )
 
-    def test_inference_only_and_unsupported_boundaries_remain_explicit(self):
+    def test_no_grad_and_unsupported_boundaries_remain_explicit(self):
         actual = torch.tensor([2.0], requires_grad=True)
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^reciprocal\(\): autograd recording is not supported$",
-        ):
-            actual.reciprocal()
-
         expected = reference_torch.tensor([2.0], requires_grad=True)
+        self.assertTrue(actual.reciprocal().requires_grad)
         self.assertTrue(expected.reciprocal().requires_grad)
 
         with torch.no_grad():
@@ -265,6 +406,12 @@ print(json.dumps({
         with reference_torch.no_grad():
             expected_no_grad = expected.reciprocal()
         self.assert_tensor_matches(actual_no_grad, expected_no_grad, case="no_grad")
+
+        self.assert_tensor_matches(
+            actual.detach().reciprocal(),
+            expected.detach().reciprocal(),
+            case="detach",
+        )
 
         self.assertFalse(hasattr(torch.Tensor, "reciprocal_"))
         self.assertTrue(hasattr(reference_torch.Tensor, "reciprocal_"))
