@@ -9215,6 +9215,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 93
       }
+    },
+    {
+      "key": "pr:1623",
+      "recordedAt": "2026-09-01T23:50:13.331Z",
+      "label": "PR #1623",
+      "kind": "leaf",
+      "prNumber": 1623,
+      "title": "Accept variadic zeros and ones sizes",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 95,
+        "eval_39340456": 95.7,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 93
+      }
     }
   ]
 }
