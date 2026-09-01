@@ -295,6 +295,40 @@ class TopLevelAddReferenceTests(unittest.TestCase):
                 )
             )
 
+        legacy_order = []
+
+        class LegacyAlphaOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                legacy_order.append(
+                    (
+                        "alpha",
+                        func is function,
+                        tuple(item.__name__ for item in types),
+                        len(args),
+                        kwargs is None,
+                    )
+                )
+                return marker
+
+        class LegacyOtherOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                legacy_order.append(
+                    (
+                        "other",
+                        func is function,
+                        tuple(item.__name__ for item in types),
+                        len(args),
+                        kwargs is None,
+                    )
+                )
+                return object()
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            legacy_result = function(left, LegacyAlphaOverride(), LegacyOtherOverride())
+
         order = []
 
         class LeftOverride:
@@ -360,6 +394,8 @@ class TopLevelAddReferenceTests(unittest.TestCase):
         return (
             mode_observations,
             override_observations,
+            legacy_result is marker,
+            legacy_order,
             both_result is marker,
             order,
             subclass_result is marker,

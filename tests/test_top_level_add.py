@@ -301,6 +301,34 @@ class TopLevelAddTests(unittest.TestCase):
         self.assertEqual(args, (left, right))
         self.assertEqual(tuple(kwargs), ("alpha",))
 
+        legacy_alpha_marker = object()
+        legacy_other_marker = object()
+        legacy_events = []
+
+        class LegacyAlphaOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                legacy_events.append(("alpha", func, types, args, kwargs))
+                return legacy_alpha_marker
+
+        class LegacyOtherOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                legacy_events.append(("other", func, types, args, kwargs))
+                return legacy_other_marker
+
+        legacy_alpha = LegacyAlphaOverride()
+        legacy_other = LegacyOtherOverride()
+        self.assertIs(
+            torch.add(left, legacy_alpha, legacy_other), legacy_alpha_marker
+        )
+        [(label, function, dispatch_types, args, kwargs)] = legacy_events
+        self.assertEqual(label, "alpha")
+        self.assertIs(function, torch.add)
+        self.assertEqual(dispatch_types, (LegacyAlphaOverride, LegacyOtherOverride))
+        self.assertEqual(args, (left, legacy_alpha, legacy_other))
+        self.assertIsNone(kwargs)
+
         subclass_events = []
 
         class BaseOverride:

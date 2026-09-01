@@ -2459,6 +2459,12 @@ fn subtraction_variable_function(
     let alpha_is_positional = alpha
         .as_ref()
         .is_some_and(|alpha| alpha.position == Some(3));
+    let alpha_precedes_other = alpha.as_ref().is_some_and(|alpha| {
+        alpha
+            .position
+            .zip(arguments[1].position)
+            .is_some_and(|(alpha_position, other_position)| alpha_position < other_position)
+    });
     let input = parse_top_level_subtraction_input(operation, &arguments[0], args, kwargs)?;
     let other = parse_top_level_subtraction_other(operation, &arguments[1], args, kwargs)?;
     let alpha = parse_top_level_subtraction_alpha(operation, alpha.as_ref(), args, kwargs)?;
@@ -2472,6 +2478,7 @@ fn subtraction_variable_function(
         alpha,
         out,
         alpha_is_positional,
+        alpha_precedes_other,
     };
     dispatch_top_level_subtraction(operation, py, &call, args, kwargs)
 }
@@ -2766,6 +2773,7 @@ struct BoundTopLevelSubtractionCall<'py> {
     alpha: BoundSubAlpha<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
     alpha_is_positional: bool,
+    alpha_precedes_other: bool,
 }
 
 struct BoundTensorMethodDivisionCall<'py> {
@@ -4913,7 +4921,12 @@ fn ordered_subtraction_overrides<'py>(
     overrides
         .try_reserve_exact(4)
         .map_err(|_| PyMemoryError::new_err(operation.dispatch_allocation_error()))?;
-    for probed in [input, other, alpha, out].into_iter().flatten() {
+    let ordered_operands = if call.alpha_precedes_other {
+        [input, alpha, other, out]
+    } else {
+        [input, other, alpha, out]
+    };
+    for probed in ordered_operands.into_iter().flatten() {
         insert_ordered_torch_function_override(&mut overrides, probed)?;
     }
     Ok(overrides)
@@ -13097,41 +13110,7 @@ fn bind_top_level_subtraction_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<BoundTopLevelSubtractionArguments<'py>> {
-    let function = operation.name();
-    if matches!(operation, SubtractionOperation::Add) {
-        let mut disallowed_three_argument_keyword = false;
-        if positional.len() == 3
-            && let Some(keywords) = keywords
-        {
-            for key in keywords.keys() {
-                let key = key.extract::<String>()?;
-                if key != "out" {
-                    disallowed_three_argument_keyword = true;
-                    break;
-                }
-            }
-        }
-        if positional.len() > 3 || (positional.len() == 3 && disallowed_three_argument_keyword) {
-            return Err(PyTypeError::new_err(format!(
-                "{function}() takes 2 positional arguments but {} were given",
-                positional.len()
-            )));
-        }
-    } else if matches!(operation, SubtractionOperation::Subtract) {
-        if positional.len() > 3
-            || (positional.len() == 3 && keywords.is_some_and(|keywords| !keywords.is_empty()))
-        {
-            return Err(PyTypeError::new_err(format!(
-                "{function}() takes 2 positional arguments but {} were given",
-                positional.len()
-            )));
-        }
-    } else if positional.len() > 2 {
-        return Err(PyTypeError::new_err(format!(
-            "{function}() takes 2 positional arguments but {} were given",
-            positional.len()
-        )));
-    }
+    validate_top_level_subtraction_positional_arity(operation, positional, keywords)?;
 
     if matches!(operation, SubtractionOperation::Add) && positional.len() == 3 {
         return bind_top_level_add_positional_scalar_overload(positional, keywords);
@@ -13217,6 +13196,53 @@ fn bind_top_level_subtraction_arguments<'py>(
     )?;
 
     Ok(([input, other], alpha, out, keyword_error))
+}
+
+fn validate_top_level_subtraction_positional_arity(
+    operation: SubtractionOperation,
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<()> {
+    let function = operation.name();
+    if matches!(operation, SubtractionOperation::Add) {
+        let mut disallowed_three_argument_keyword = false;
+        if positional.len() == 3
+            && let Some(keywords) = keywords
+        {
+            for key in keywords.keys() {
+                let key = key.extract::<String>()?;
+                if key != "out" {
+                    disallowed_three_argument_keyword = true;
+                    break;
+                }
+            }
+        }
+        if positional.len() > 3 || (positional.len() == 3 && disallowed_three_argument_keyword) {
+            return Err(PyTypeError::new_err(format!(
+                "{function}() takes 2 positional arguments but {} were given",
+                positional.len()
+            )));
+        }
+        return Ok(());
+    }
+    if matches!(operation, SubtractionOperation::Subtract) {
+        if positional.len() > 3
+            || (positional.len() == 3 && keywords.is_some_and(|keywords| !keywords.is_empty()))
+        {
+            return Err(PyTypeError::new_err(format!(
+                "{function}() takes 2 positional arguments but {} were given",
+                positional.len()
+            )));
+        }
+        return Ok(());
+    }
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "{function}() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+    Ok(())
 }
 
 fn bind_top_level_add_positional_scalar_overload<'py>(
