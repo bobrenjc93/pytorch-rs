@@ -115,6 +115,14 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
             self.assert_matches(actual, expected, actual_source, expected_source, case)
             retained.append((actual, expected))
 
+        for case, actual_source, expected_source, shape in cases[1:]:
+            with self.subTest(case=case, form="variadic"):
+                actual = torch.reshape(actual_source, *shape)
+                expected = reference_torch.reshape(expected_source, tuple(shape))
+                self.assertIsNot(actual, actual_source)
+                self.assertIsNot(expected, expected_source)
+                self.assert_matches(actual, expected, actual_source, expected_source, case)
+
         del actual_base, expected_base, cases
         gc.collect()
         np.testing.assert_array_equal(
@@ -138,6 +146,13 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
             expected_source,
             "inferred",
         )
+        self.assert_matches(
+            torch.reshape(actual_source, 2, -1, 2),
+            reference_torch.reshape(expected_source, (2, -1, 2)),
+            actual_source,
+            expected_source,
+            "variadic inferred",
+        )
 
         maximum = sys.maxsize
         actual_empty = torch.zeros((0,))
@@ -149,6 +164,13 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
         self.assertEqual(actual.storage_offset(), expected.storage_offset())
         self.assertEqual(actual.data_ptr() == actual_empty.data_ptr(), True)
         self.assertEqual(expected.data_ptr() == expected_empty.data_ptr(), True)
+        self.assertEqual(actual.tolist(), expected.tolist())
+
+        actual = torch.reshape(actual_empty, 0, maximum, maximum)
+        self.assertEqual(actual.shape, expected.shape)
+        self.assertEqual(actual.stride(), expected.stride())
+        self.assertEqual(actual.storage_offset(), expected.storage_offset())
+        self.assertEqual(actual.data_ptr() == actual_empty.data_ptr(), True)
         self.assertEqual(actual.tolist(), expected.tolist())
 
         for shape in ((2, 2), (-1, -1), (2, -2), (0, -1)):
@@ -167,7 +189,11 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
             leaf = module.tensor(
                 [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
             )
-            view = module.reshape(leaf, (3, 2))
+            view = (
+                module.reshape(leaf, 3, 2)
+                if module is torch
+                else module.reshape(leaf, (3, 2))
+            )
             states.append((view.requires_grad, view.is_leaf))
             weights = module.tensor([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
             (view * weights).sum().backward()
@@ -176,7 +202,11 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
             copy_leaf = module.tensor(
                 [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
             )
-            copied = module.reshape(copy_leaf.transpose(0, 1), [6])
+            copied = (
+                module.reshape(copy_leaf.transpose(0, 1), 6)
+                if module is torch
+                else module.reshape(copy_leaf.transpose(0, 1), [6])
+            )
             states.append((copied.requires_grad, copied.is_leaf))
             weights = module.tensor([10.0, 20.0, 30.0, 40.0, 50.0, 60.0])
             (copied * weights).sum().backward()
@@ -185,7 +215,11 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
             repeated_leaf = module.tensor(
                 [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
             )
-            loss = module.reshape(repeated_leaf.transpose(0, 1), (3, 2)).sum()
+            loss = (
+                module.reshape(repeated_leaf.transpose(0, 1), 3, 2)
+                if module is torch
+                else module.reshape(repeated_leaf.transpose(0, 1), (3, 2))
+            ).sum()
             loss.backward()
             loss.backward()
             gradients.append(np.asarray(repeated_leaf.grad).copy())
@@ -194,8 +228,16 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
                 [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
             )
             with module.no_grad():
-                alias = module.reshape(source, (4,))
-                copied = module.reshape(source.transpose(0, 1), (4,))
+                alias = (
+                    module.reshape(source, 4)
+                    if module is torch
+                    else module.reshape(source, (4,))
+                )
+                copied = (
+                    module.reshape(source.transpose(0, 1), 4)
+                    if module is torch
+                    else module.reshape(source.transpose(0, 1), (4,))
+                )
             states.append(
                 (
                     alias.requires_grad,
@@ -217,10 +259,6 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
             (lambda: torch.reshape(), lambda: reference_torch.reshape()),
             (lambda: torch.reshape(actual), lambda: reference_torch.reshape(expected)),
             (
-                lambda: torch.reshape(actual, (2, 2), (4,)),
-                lambda: reference_torch.reshape(expected, (2, 2), (4,)),
-            ),
-            (
                 lambda: torch.reshape(actual, (2, 2), input=actual),
                 lambda: reference_torch.reshape(expected, (2, 2), input=expected),
             ),
@@ -233,10 +271,13 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
                 lambda: reference_torch.reshape(input=expected, size=(2, 2)),
             ),
             (
+                lambda: torch.reshape(input=actual, shape=4),
+                lambda: reference_torch.reshape(input=expected, shape=4),
+            ),
+            (
                 lambda: torch.reshape(shape=(2, 2)),
                 lambda: reference_torch.reshape(shape=(2, 2)),
             ),
-            (lambda: torch.reshape(actual, 4), lambda: reference_torch.reshape(expected, 4)),
             (
                 lambda: torch.reshape(actual, torch.float32),
                 lambda: reference_torch.reshape(expected, reference_torch.float32),
@@ -705,11 +746,12 @@ print(json.dumps({"actual": capture(torch_rs), "expected": capture(torch)}))
             ),
         }
 
-    def test_callable_metadata_documentation_and_exports_match_pytorch_2_13(self):
-        self.assertEqual(
-            self.callable_contract(torch),
-            self.callable_contract(reference_torch),
-        )
+    def test_callable_metadata_and_exports_match_pytorch_2_13(self):
+        actual = self.callable_contract(torch)
+        expected = self.callable_contract(reference_torch)
+        self.assertTrue(actual.pop("doc").startswith("\nreshape(input, *shape) -> Tensor"))
+        expected.pop("doc")
+        self.assertEqual(actual, expected)
 
 
 if __name__ == "__main__":

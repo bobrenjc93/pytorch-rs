@@ -385,7 +385,7 @@ Alias for :func:`torch.abs`
 const RAVEL_DOC: &std::ffi::CStr = c"\nravel(input) -> Tensor\n\nReturn a contiguous flattened tensor. A copy is made only if needed.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.tensor([[[1, 2],\n    ...                    [3, 4]],\n    ...                   [[5, 6],\n    ...                    [7, 8]]])\n    >>> torch.ravel(t)\n    tensor([1, 2, 3, 4, 5, 6, 7, 8])\n";
 
 const RESHAPE_DOC: &std::ffi::CStr = cr"
-reshape(input, shape) -> Tensor
+reshape(input, *shape) -> Tensor
 
 Returns a tensor with the same data and number of elements as :attr:`input`,
 but with the specified shape. When possible, the returned tensor will be a view
@@ -400,12 +400,15 @@ dimensions and the number of elements in :attr:`input`.
 
 Args:
     input (Tensor): the tensor to be reshaped
-    shape (tuple of int): the new shape
+    shape (tuple of int or int...): the new shape
 
 Example::
 
     >>> a = torch.arange(4.)
     >>> torch.reshape(a, (2, 2))
+    tensor([[ 0.,  1.],
+            [ 2.,  3.]])
+    >>> torch.reshape(a, 2, 2)
     tensor([[ 0.,  1.],
             [ 2.,  3.]])
     >>> b = torch.tensor([[0, 1], [2, 3]])

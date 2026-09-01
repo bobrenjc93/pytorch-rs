@@ -9,7 +9,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 | Adopter task | Supported APIs | Unsupported boundaries to verify |
 | --- | --- | --- |
 | Create CPU `float32` tensors | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.zeros_like`, `torch.ones_like`, `torch.full`, `torch.eye` in [Tensors](#tensors) and [Creation](#creation) | Identity converters reject Python sequences, NumPy arrays/scalars, non-float scalars, dtype conversions, accelerator or meta devices, and copy/output requests; factories reject non-`float32` dtypes, non-CPU devices, concrete `out`, pinning, sparse layouts, and backend-specific allocation. |
-| Preserve or change tensor layout | `Tensor.view`, `Tensor.view_as`, `Tensor.reshape`, `Tensor.reshape_as`, `torch.reshape`, `Tensor.permute`, `torch.permute`, `Tensor.movedim`, `Tensor.moveaxis`, `torch.movedim`, `torch.moveaxis`, `Tensor.contiguous`, `Tensor.cpu` in [Metadata and views](#metadata-and-views) | Unsupported edges include non-leading `select`, sequence `movedim` axes, variadic top-level reshape dimensions, cross-dtype views, complex dtypes, and imaginary views. |
+| Preserve or change tensor layout | `Tensor.view`, `Tensor.view_as`, `Tensor.reshape`, `Tensor.reshape_as`, `torch.reshape`, `Tensor.permute`, `torch.permute`, `Tensor.movedim`, `Tensor.moveaxis`, `torch.movedim`, `torch.moveaxis`, `Tensor.contiguous`, `Tensor.cpu` in [Metadata and views](#metadata-and-views) | Unsupported edges include non-leading `select`, sequence `movedim` axes, mixed top-level reshape `shape=` and positional shape calls, top-level reshape dtype/device extensions, cross-dtype views, complex dtypes, and imaginary views. |
 | Run eager math and reductions | Python `+`, `-`, `*`, and `/` operators, `Tensor.add`, `Tensor.sub`, `Tensor.subtract`, `Tensor.mul`, `Tensor.multiply`, `Tensor.div`, `Tensor.divide`, `torch.sub`, `torch.subtract`, `torch.mul`, `torch.multiply`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` in [Elementwise and reductions](#elementwise-and-reductions) | `torch.add`, concrete `out` tensors, in-place variants, nondefault `alpha` or `rounding_mode`, scalar-only multiplication/division, dimension reductions, `keepdim=True`, dtype conversions, and non-CPU/non-`float32` tensors remain outside the contract. |
 | Use functional NN helpers | `torch.nn.functional.linear`, `torch.nn.functional.relu`, `torch.nn.functional.l1_loss`, `torch.nn.functional.mse_loss`, `torch.nn.functional.dropout`, `torch.nn.functional.dropout1d`, `torch.nn.functional.dropout2d`, `torch.nn.functional.dropout3d`, `torch.nn.functional.sigmoid`, `torch.nn.functional.silu`, `torch.nn.functional.softsign`, `torch.nn.functional.tanh`, `torch.nn.init.calculate_gain` in [NN/data helpers](#nn-and-data-helpers) and [math activations](#elementwise-and-reductions) | Module layers, active autograd for loss/softsign paths, loss reductions other than `"none"`, loss `weight` arguments, nondeterministic dropout, nonidentity inplace dropout, and mutating initializers remain unsupported. |
 | Reuse data and state helpers | `torch.utils.data.Dataset`, `torch.utils.data.IterableDataset`, `torch.utils.data.TensorDataset`, `torch.utils.data.StackDataset`, `torch.utils.data.ConcatDataset`, `torch.utils.data.ChainDataset`, `torch.utils.data.Subset`, `torch.utils.data.Sampler`, `torch.utils.data.SequentialSampler`, `torch.utils.data.BatchSampler`, `torch.utils.data.DistributedSampler`, `torch.utils.data.get_worker_info`, `torch.nn.modules.utils.consume_prefix_in_state_dict_if_present`, `torch.serialization.LoadEndianness`, `torch.serialization.get_default_load_endianness`, `torch.serialization.set_default_load_endianness`, `torch.serialization.get_crc32_options`, `torch.serialization.set_crc32_options`, `torch.serialization.get_default_mmap_options`, `torch.serialization.set_default_mmap_options` in [NN/data helpers](#nn-and-data-helpers) | `DataLoader`, worker processes, random or shuffle-backed sampling, `torch.nn.Module`, optimizers, optimizer state serialization, `torch.save`, and `torch.load` remain unsupported. |
@@ -487,8 +487,9 @@ View and layout coverage includes stride-aware indexing, dimension-zero
 `Tensor.movedim()`/`Tensor.moveaxis()`, `torch.movedim()`, and top-level
 `torch.moveaxis()` views, metadata-only transpose, `Tensor.swapdims()`/
 `torch.swapdims()` and `Tensor.swapaxes()`/`torch.swapaxes()`, squeeze views,
-compatible `Tensor.reshape()`/sequence-form `torch.reshape(input, shape)` and
-`Tensor.reshape_as()` view-or-copy transforms, PyTorch-compatible read-only
+compatible `Tensor.reshape()` and `torch.reshape(input, shape)` sequence or
+variadic integer-compatible shape forms, plus `Tensor.reshape_as()`
+view-or-copy transforms, PyTorch-compatible read-only
 `Tensor.T`, `Tensor.mT`, and real-valued `Tensor.H`/`Tensor.mH` views,
 `Tensor.adjoint()`/`torch.adjoint()` matrix-adjoint views, rank-limited
 `Tensor.t()` and `torch.t()`, `Tensor.flatten()`, `Tensor.ravel()`, and
@@ -513,13 +514,16 @@ integer `size=` keywords, mixed shape/dtype calls, and cross-dtype
 reinterpretation remain unsupported. Invalid bool-first, negative, overflow,
 product-mismatch, and ambiguous empty-inference shapes remain error cases.
 
-`torch.reshape(input, shape)` accepts tuple, list, and `torch.Size` shapes plus
-PyTorch 2.13 legacy input aliases and delegates values, shape inference,
-view-or-copy layout, errors, and first-order autograd to the same reshape
-engine; variadic top-level dimensions remain unsupported, so pass a single
-shape sequence. `Tensor.reshape_as(other)` passes `other.shape` through the same
-reshape engine, so storage sharing, materialization, strides, and autograd
-behavior match `Tensor.reshape(other.shape)`.
+`torch.reshape(input, *shape)` accepts tuple, list, `torch.Size`, one
+integer-compatible dimension, or variadic positional integer-compatible
+dimensions, plus PyTorch 2.13 legacy input aliases. It delegates values, shape
+inference, view-or-copy layout, errors, and first-order autograd to the same
+reshape engine. Mixed `shape=` and positional shape calls, dtype/device
+extensions, bool dimensions, invalid negative dimensions, overflowed
+dimensions, product-mismatch shapes, and subclass expansion remain unsupported.
+`Tensor.reshape_as(other)` passes `other.shape` through the same reshape engine,
+so storage sharing, materialization, strides, and autograd behavior match
+`Tensor.reshape(other.shape)`.
 
 `Tensor.permute()` accepts variadic dimensions, a tuple or list, and the `dims=`
 form; top-level `torch.permute(input, dims)` accepts a tuple or list. Both
