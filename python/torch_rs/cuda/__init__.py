@@ -2,7 +2,7 @@ r"""
 CPU-build CUDA compatibility probes.
 """
 
-__all__ = ["is_available", "device_count"]
+__all__ = ["device_count", "is_available", "is_initialized"]
 
 
 def is_available() -> bool:
@@ -13,3 +13,8 @@ def is_available() -> bool:
 def device_count() -> int:
     r"""Returns the number of GPUs available."""
     return 0
+
+
+def is_initialized():
+    r"""Return whether PyTorch's CUDA state has been initialized."""
+    return False
