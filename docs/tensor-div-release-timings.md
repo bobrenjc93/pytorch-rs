@@ -8,18 +8,7 @@ only; it does not change the runtime implementation.
 
 Exact setup, build, check, and timing commands were run from the repository
 root. The timing driver was a one-off file under ignored `target/` storage and
-emitted JSON under `target/tensor-div-release-timings*.json`. The ignored
-Cargo home used `target/vendor` as its only source replacement.
-
-`target/cargo-home/config.toml` contained:
-
-```toml
-[source.crates-io]
-replace-with = "vendored-sources"
-
-[source.vendored-sources]
-directory = "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7a69d19c/target/vendor"
-```
+emitted JSON under `target/tensor-div-release-timings*.json`.
 
 ```bash
 env UV_CACHE_DIR="$PWD/target/uv-cache" \
@@ -32,6 +21,8 @@ env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$P
   CARGO_TARGET_DIR="$PWD/target" \
   cargo vendor --locked target/vendor > target/cargo-vendor-config.toml
 mkdir -p target/cargo-home
+printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "%s/target/vendor"\n' \
+  "$PWD" > target/cargo-home/config.toml
 wheel_dir="$(mktemp -d "$PWD/target/tensor-div-wheels.XXXXXX")"
 printf '%s\n' "$wheel_dir" > target/tensor-div-wheel-dir.txt
 env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
