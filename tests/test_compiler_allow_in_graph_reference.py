@@ -15,7 +15,7 @@ except ImportError:
     reference_torch = None
 
 
-@torch.compiler.assume_constant_result
+@torch.compiler.allow_in_graph
 def _actual_picklable_function(value):
     return value + 1
 
@@ -25,33 +25,48 @@ def _reference_picklable_function(value):
 
 
 if reference_torch is not None:
-    _reference_picklable_function = reference_torch.compiler.assume_constant_result(
+    _reference_picklable_function = reference_torch.compiler.allow_in_graph(
         _reference_picklable_function
     )
 
 
-class _SlotCallable:
-    __slots__ = ()
+SUPPORTED_COMPILER_EXPORTS = {
+    "assume_constant_result",
+    "reset",
+    "allow_in_graph",
+    "list_backends",
+    "disable",
+    "set_default_backend",
+    "get_default_backend",
+    "set_enable_guard_collectives",
+    "is_compiling",
+    "is_dynamo_compiling",
+    "is_exporting",
+    "keep_portable_guards_unsafe",
+    "skip_guard_on_inbuilt_nn_modules_unsafe",
+    "skip_guard_on_all_nn_modules_unsafe",
+    "keep_tensor_guards_unsafe",
+    "skip_guard_on_globals_unsafe",
+    "skip_all_guards_unsafe",
+}
 
-    def __call__(self):
-        return "called"
 
+class _CallableObject:
+    def __init__(self):
+        self.calls = []
 
-class _RejectingCallable:
-    def __setattr__(self, name, value):
-        raise RuntimeError("attribute writes forbidden")
-
-    def __call__(self):
-        return "called"
+    def __call__(self, value):
+        self.calls.append(value)
+        return value
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class CompilerAssumeConstantResultReferenceTests(unittest.TestCase):
+class CompilerAllowInGraphReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "compiler.assume_constant_result differentials require pinned "
+                "compiler.allow_in_graph differentials require pinned "
                 "PyTorch 2.13.0"
             )
 
@@ -76,112 +91,119 @@ class CompilerAssumeConstantResultReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def decorator_outcome(self, module):
+    def callable_outcome(self, module):
         calls = []
 
-        @module.compiler.assume_constant_result
-        def calculate(value, *, scale=1):
+        def calculate(value: int, *, scale: int = 1) -> int:
+            """Calculate eagerly."""
             calls.append((value, scale))
             return value * scale + len(calls)
 
+        marker = object()
+        calculate.custom_attribute = marker
+        before_dict = dict(calculate.__dict__)
+        returned = module.compiler.allow_in_graph(calculate)
+        lambda_function = lambda value: value + 1
+        lambda_returned = module.compiler.allow_in_graph(lambda_function)
+        callable_object = _CallableObject()
+        callable_returned = module.compiler.allow_in_graph(callable_object)
+
         return (
-            calculate._dynamo_marked_constant is True,
+            returned is calculate,
+            calculate.__dict__ == before_dict,
+            calculate.custom_attribute is marker,
+            hasattr(calculate, "_dynamo_marked_constant"),
+            hasattr(calculate, "_torchdynamo_disable"),
+            hasattr(calculate, "__wrapped__"),
             calculate(3, scale=2),
             calculate(3, scale=2),
             calls,
             str(inspect.signature(calculate)),
             calculate.__name__,
-            calculate.__module__,
+            calculate.__doc__,
+            calculate.__annotations__,
+            lambda_returned is lambda_function,
+            lambda_function(4),
+            lambda_function.__name__,
+            lambda_function.__dict__,
+            module.compiler.allow_in_graph(len) is len,
+            len([1, 2, 3]),
+            callable_returned is callable_object,
+            callable_object("value"),
+            callable_object.__dict__,
         )
 
-    def test_decorator_use_and_eager_behavior_match_pytorch_2_13(self):
+    def test_callable_inputs_and_eager_behavior_match_pytorch_2_13(self):
         self.assertEqual(
-            self.decorator_outcome(torch),
-            self.decorator_outcome(reference_torch),
+            self.callable_outcome(torch),
+            self.callable_outcome(reference_torch),
         )
 
-    def test_direct_calls_and_noncallable_targets_match_pytorch_2_13(self):
-        for module in (torch, reference_torch):
-            with self.subTest(module=module.__name__):
-
-                def function(value):
-                    return value + 1
-
-                positional = module.compiler.assume_constant_result(function)
-                keyword = module.compiler.assume_constant_result(fn=function)
-                self.assertIs(positional, function)
-                self.assertIs(keyword, function)
-                self.assertIs(function._dynamo_marked_constant, True)
-                self.assertEqual(function(4), 5)
-
-                target = types.SimpleNamespace(existing="preserved")
-                self.assertIs(module.compiler.assume_constant_result(target), target)
-                self.assertEqual(target.existing, "preserved")
-                self.assertIs(target._dynamo_marked_constant, True)
-
-    def test_repeated_marking_matches_pytorch_2_13(self):
+    def test_list_and_tuple_inputs_match_pytorch_2_13(self):
         outcomes = []
         for module in (torch, reference_torch):
 
-            def function():
-                return "eager"
+            def first(value):
+                return value + 1
 
-            sentinel = object()
-            function._dynamo_marked_constant = sentinel
-            function.other_metadata = "preserved"
-            first = module.compiler.assume_constant_result(function)
-            second = module.compiler.assume_constant_result(first)
+            second = lambda value: value * 2
+            original = (first, [second, len])
+            returned = module.compiler.allow_in_graph(original)
             outcomes.append(
                 (
-                    first is function,
-                    second is function,
-                    function._dynamo_marked_constant is True,
-                    function.other_metadata,
-                    function(),
+                    isinstance(returned, list),
+                    returned is original,
+                    returned[0] is first,
+                    isinstance(returned[1], list),
+                    returned[1] is original[1],
+                    returned[1][0] is second,
+                    returned[1][1] is len,
+                    returned[0](3),
+                    returned[1][0](3),
+                    returned[1][1]([1, 2]),
                 )
             )
 
         self.assertEqual(outcomes[0], outcomes[1])
 
-    def test_invalid_target_errors_match_pytorch_2_13(self):
+    def test_noncallable_errors_match_pytorch_2_13(self):
         target_factories = (
             lambda: None,
             lambda: 1,
-            list,
-            lambda: len,
-            _SlotCallable,
-            _RejectingCallable,
+            object,
+            lambda: "value",
+            lambda: [lambda: None, 1],
         )
         for case, target_factory in enumerate(target_factories):
             with self.subTest(case=case):
                 actual_target = target_factory()
                 expected_target = target_factory()
                 self.assert_error_matches(
-                    lambda: torch.compiler.assume_constant_result(actual_target),
-                    lambda: reference_torch.compiler.assume_constant_result(
-                        expected_target
-                    ),
+                    lambda: torch.compiler.allow_in_graph(actual_target),
+                    lambda: reference_torch.compiler.allow_in_graph(expected_target),
                 )
 
     def test_signature_documentation_and_ownership_match_pytorch_2_13(self):
         actual_compiler = importlib.import_module("torch_rs.compiler")
         expected_compiler = importlib.import_module("torch.compiler")
-        actual = actual_compiler.assume_constant_result
-        expected = expected_compiler.assume_constant_result
+        actual = actual_compiler.allow_in_graph
+        expected = expected_compiler.allow_in_graph
 
         self.assertIs(torch.compiler, actual_compiler)
         self.assertIs(reference_torch.compiler, expected_compiler)
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
-            str(inspect.signature(actual)), str(inspect.signature(expected))
+            str(inspect.signature(actual)),
+            str(inspect.signature(expected)),
         )
         self.assertEqual(actual.__annotations__, expected.__annotations__)
         self.assertEqual(typing.get_type_hints(actual), typing.get_type_hints(expected))
         self.assertEqual(actual.__name__, expected.__name__)
         self.assertEqual(actual.__qualname__, expected.__qualname__)
         self.assertEqual(
-            actual.__module__.replace("torch_rs", "torch"), expected.__module__
+            actual.__module__.replace("torch_rs", "torch"),
+            expected.__module__,
         )
         self.assertIs(inspect.getmodule(actual), actual_compiler)
         self.assertIs(inspect.getmodule(expected), expected_compiler)
@@ -194,85 +216,93 @@ class CompilerAssumeConstantResultReferenceTests(unittest.TestCase):
             hasattr(expected, "__text_signature__"),
         )
 
-    def test_exports_copying_and_pickling_match_pytorch_2_13(self):
+    def test_exports_wildcard_copy_pickle_and_reload_match_pytorch_2_13(self):
         actual_compiler = torch.compiler
         expected_compiler = reference_torch.compiler
-        actual = actual_compiler.assume_constant_result
-        expected = expected_compiler.assume_constant_result
-        supported = {
-            "assume_constant_result",
-            "reset",
-            "allow_in_graph",
-            "list_backends",
-            "disable",
-            "set_default_backend",
-            "get_default_backend",
-            "set_enable_guard_collectives",
-            "is_compiling",
-            "is_dynamo_compiling",
-            "is_exporting",
-            "keep_portable_guards_unsafe",
-            "skip_guard_on_inbuilt_nn_modules_unsafe",
-            "skip_guard_on_all_nn_modules_unsafe",
-            "keep_tensor_guards_unsafe",
-            "skip_guard_on_globals_unsafe",
-            "skip_all_guards_unsafe",
-        }
+        actual = actual_compiler.allow_in_graph
+        expected = expected_compiler.allow_in_graph
 
         self.assertEqual(
             actual_compiler.__all__,
-            [name for name in expected_compiler.__all__ if name in supported],
+            [
+                name
+                for name in expected_compiler.__all__
+                if name in SUPPORTED_COMPILER_EXPORTS
+            ],
         )
         self.assertEqual(
             torch.__all__.count("compiler"),
             reference_torch.__all__.count("compiler"),
         )
         self.assertEqual(
-            torch.__all__.count("assume_constant_result"),
-            reference_torch.__all__.count("assume_constant_result"),
+            torch.__all__.count("allow_in_graph"),
+            reference_torch.__all__.count("allow_in_graph"),
         )
 
-        for module in (actual_compiler, expected_compiler):
-            namespace = {}
-            exec(f"from {module.__name__} import *", namespace)
-            for name in supported:
-                self.assertIs(namespace[name], getattr(module, name))
+        actual_namespace = {}
+        exec("from torch_rs.compiler import *", actual_namespace)
+        self.assertEqual(
+            {name for name in actual_namespace if not name.startswith("__")},
+            SUPPORTED_COMPILER_EXPORTS,
+        )
+        for name in SUPPORTED_COMPILER_EXPORTS:
+            self.assertIs(actual_namespace[name], getattr(actual_compiler, name))
+
+        expected_namespace = {}
+        exec("from torch.compiler import *", expected_namespace)
+        for name in SUPPORTED_COMPILER_EXPORTS:
+            self.assertIs(expected_namespace[name], getattr(expected_compiler, name))
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("compiler", namespace)
-            self.assertNotIn("assume_constant_result", namespace)
+            self.assertNotIn("allow_in_graph", namespace)
 
         for function in (actual, expected):
             self.assertIs(copy.copy(function), function)
             self.assertIs(copy.deepcopy(function), function)
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             with self.subTest(protocol=protocol):
-                self.assertIs(pickle.loads(pickle.dumps(actual, protocol)), actual)
-                self.assertIs(pickle.loads(pickle.dumps(expected, protocol)), expected)
+                actual_payload = pickle.dumps(actual, protocol=protocol)
+                expected_payload = pickle.dumps(expected, protocol=protocol)
+                self.assertIs(pickle.loads(actual_payload), actual)
+                self.assertIs(pickle.loads(expected_payload), expected)
                 self.assertEqual(
                     self.pickle_shape(actual, protocol),
                     self.pickle_shape(expected, protocol),
                 )
 
-        for function in (
-            _actual_picklable_function,
-            _reference_picklable_function,
-        ):
-            self.assertIs(function._dynamo_marked_constant, True)
+        for function in (_actual_picklable_function, _reference_picklable_function):
             self.assertIs(copy.copy(function), function)
             self.assertIs(copy.deepcopy(function), function)
             self.assertEqual(function(4), 5)
             for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
                 with self.subTest(marked=function.__name__, protocol=protocol):
                     self.assertIs(
-                        pickle.loads(pickle.dumps(function, protocol)), function
+                        pickle.loads(pickle.dumps(function, protocol)),
+                        function,
                     )
 
+        old_actual_all = actual_compiler.__all__
+        old_actual = actual_compiler.allow_in_graph
+        self.assertIs(importlib.reload(actual_compiler), actual_compiler)
+        self.assertIs(torch.compiler, actual_compiler)
+        self.assertIs(reference_torch.compiler, expected_compiler)
+        self.assertEqual(old_actual_all is actual_compiler.__all__, False)
+        self.assertEqual(old_actual is actual_compiler.allow_in_graph, False)
+        self.assertEqual(
+            actual_compiler.__all__,
+            [
+                name
+                for name in expected_compiler.__all__
+                if name in SUPPORTED_COMPILER_EXPORTS
+            ],
+        )
+
     def test_call_shape_errors_match_pytorch_2_13(self):
-        actual = torch.compiler.assume_constant_result
-        expected = reference_torch.compiler.assume_constant_result
+        actual = torch.compiler.allow_in_graph
+        expected = reference_torch.compiler.allow_in_graph
         actual_function = lambda: None
         expected_function = lambda: None
         cases = (
@@ -294,8 +324,8 @@ class CompilerAssumeConstantResultReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_state_queries_stay_eager_and_graph_execution_stays_unsupported(self):
-        @torch.compiler.assume_constant_result
+    def test_execution_paths_remain_unsupported(self):
+        @torch.compiler.allow_in_graph
         def function():
             return (
                 torch.compiler.is_compiling(),
@@ -307,8 +337,11 @@ class CompilerAssumeConstantResultReferenceTests(unittest.TestCase):
         self.assertFalse(hasattr(torch, "compile"))
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch.compiler, "compile"))
+        self.assertFalse(hasattr(torch.compiler, "register_backend"))
+        self.assertFalse(hasattr(torch.compiler, "substitute_in_graph"))
+        self.assertFalse(hasattr(torch.compiler, "cudagraph_mark_step_begin"))
         self.assertTrue(callable(reference_torch.compile))
-        self.assertTrue(hasattr(reference_torch, "export"))
+        self.assertTrue(hasattr(reference_torch.compiler, "substitute_in_graph"))
 
 
 if __name__ == "__main__":
