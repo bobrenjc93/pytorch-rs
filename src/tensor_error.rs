@@ -25,6 +25,17 @@ pub enum TensorError {
         elements: usize,
     },
     InvalidScalarIndex,
+    NarrowCannotApplyToScalar,
+    NarrowStartOutOfRange {
+        start: i64,
+        size: usize,
+    },
+    NarrowNegativeLength,
+    NarrowLengthExceedsDimension {
+        start: i64,
+        length: i64,
+        size: usize,
+    },
     SliceCannotApplyToScalar,
     TooManyIndices {
         dimensions: usize,
@@ -132,6 +143,10 @@ impl Display for TensorError {
                 formatter,
                 "invalid index of a 0-dim tensor. Use `tensor.item()` in Python or `tensor.item<T>()` in C++ to convert a 0-dim tensor to a number"
             ),
+            Self::NarrowCannotApplyToScalar
+            | Self::NarrowStartOutOfRange { .. }
+            | Self::NarrowNegativeLength
+            | Self::NarrowLengthExceedsDimension { .. } => format_narrow_error(formatter, self),
             Self::SliceCannotApplyToScalar => {
                 formatter.write_str("slice() cannot be applied to a 0-dim tensor.")
             }
@@ -243,6 +258,37 @@ fn format_matmul_inner_dimension_mismatch(
             formatter,
             "matmul inner dimensions differ for {left:?} and {right:?}"
         ),
+    }
+}
+
+fn format_narrow_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
+    match error {
+        TensorError::NarrowCannotApplyToScalar => {
+            formatter.write_str("narrow() cannot be applied to a 0-dim tensor.")
+        }
+        TensorError::NarrowStartOutOfRange { start, size } => {
+            let lower_bound = if *size == 0 {
+                "0".to_owned()
+            } else {
+                format!("-{size}")
+            };
+            write!(
+                formatter,
+                "start out of range (expected to be in range of [{lower_bound}, {size}], but got {start})"
+            )
+        }
+        TensorError::NarrowNegativeLength => {
+            formatter.write_str("narrow(): length must be non-negative.")
+        }
+        TensorError::NarrowLengthExceedsDimension {
+            start,
+            length,
+            size,
+        } => write!(
+            formatter,
+            "start ({start}) + length ({length}) exceeds dimension size ({size})."
+        ),
+        _ => unreachable!("only narrow errors are formatted here"),
     }
 }
 

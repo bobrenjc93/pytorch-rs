@@ -9,7 +9,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 | Need | Common calls | Contract section |
 | --- | --- | --- |
 | Construction | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.zeros_like`, `torch.ones_like`, `torch.full`, `torch.eye` | [Creation](#creation) |
-| Views and layout | `view`, `reshape`, `permute`, `movedim`, `transpose`, `flatten`, `contiguous`, `cpu` | [Metadata and views](#metadata-and-views) |
+| Views and layout | `view`, `reshape`, `narrow`, `select`, `permute`, `movedim`, `transpose`, `flatten`, `contiguous`, `cpu` | [Metadata and views](#metadata-and-views) |
 | Math | arithmetic operators, `Tensor.add`, `Tensor.div`, `Tensor.divide`, `Tensor.sub`, `Tensor.subtract`, `torch.sub`, `torch.subtract`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` | [Elementwise and reductions](#elementwise-and-reductions) |
 | NN functional | `torch.nn.functional.linear`, `l1_loss`, `mse_loss`, `dropout*`, `sigmoid`, `silu`, `softsign`, `tanh` | [NN/data helpers](#nn-and-data-helpers), [math activations](#elementwise-and-reductions) |
 | Dtype/device metadata | `torch.float32`, `torch.finfo`, `torch.can_cast`, `torch.promote_types`, `Tensor.is_cuda`, `torch.get_device`, `Tensor.cpu` | [tensor metadata](#metadata-and-views), [backend metadata](#backend-and-compiler-metadata) |
@@ -409,6 +409,9 @@ assert torch.moveaxis(batched_matrices, source=0, destination=-1).shape == (2, 3
 matrix_view = batched_matrices.select(dim=-3, index=1)
 assert matrix_view.shape == (2, 3)
 assert torch.select(batched_matrices, dim=-3, index=1).is_set_to(matrix_view)
+narrowed = batched_matrices.narrow(dim=0, start=1, length=2)
+assert narrowed.shape == (2, 2, 3)
+assert torch.narrow(batched_matrices, dim=0, start=-3, length=2).shape == (2, 2, 3)
 
 # PyTorch-compatible view calls use the same conventional alias.
 batched = torch.zeros((1, 2, 1, 3))
@@ -473,7 +476,8 @@ operations, with PyTorch-compatible multi-output indices for grad-tracked
 `torch.chunk` are not exposed).
 
 View and layout coverage includes stride-aware indexing, dimension-zero
-`Tensor.select()`/`torch.select()` single first-axis views and
+`Tensor.select()`/`torch.select()` single first-axis views, dimension-zero
+`Tensor.narrow()`/`torch.narrow()` first-axis range views, and
 `Tensor.unbind()`/`torch.unbind()` first-axis views, `Tensor.view()` and
 `Tensor.view_as()` shared-storage views, arbitrary metadata-only
 `Tensor.permute()` and `torch.permute()` views, integer-axis
@@ -494,6 +498,18 @@ device.
 negative first dimension and delegate values, strides, offsets, aliasing, empty
 views, and autograd to the native leading integer-index engine; other
 dimensions remain unsupported.
+
+`Tensor.narrow(dim, start, length)` and
+`torch.narrow(input, dim, start, length)` are supported only for exact native
+CPU `float32` tensors when `dim` normalizes to `0`. They return metadata-only
+shared-storage views, preserve strides and storage offsets for contiguous,
+offset, noncontiguous, empty-length, and zero-sized-source cases, follow
+PyTorch's signed `start` bounds and non-negative `length` errors, and preserve
+the supported first-order backward-through-`sum` and `no_grad` view behavior.
+Non-leading dimensions, tensor-valued `start`, tensor subclasses,
+`TorchFunctionMode`, dtype/device extensions, `torch.narrow_copy`,
+`Tensor.narrow_copy`, and slice-scatter or mutating slice APIs remain
+unsupported.
 
 `Tensor.view(shape)` accepts one positional integer or `__index__` value, one
 tuple, list, or `torch.Size` (including the sequence `size=` form), or exactly

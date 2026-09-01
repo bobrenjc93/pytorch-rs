@@ -450,6 +450,43 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nnarrow(dimension, start, length) -> Tensor\n\nSee :func:`torch.narrow`.\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn narrow(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        if !slf.as_any().is_exact_instance_of::<PyTensor>() {
+            return Err(narrow_unsupported_native_input("narrow"));
+        }
+        let mut arguments = bind_narrow_arguments(args, kwargs, false)?;
+        if !torch_function_mode_stack::is_empty() {
+            return Err(narrow_unsupported_torch_function_mode("narrow"));
+        }
+
+        let length = arguments
+            .pop()
+            .expect("narrow length is present after binding");
+        let start = arguments
+            .pop()
+            .expect("narrow start is present after binding");
+        let dimension = arguments
+            .pop()
+            .expect("narrow dimension is present after binding");
+        validate_narrow_integer_start(&start)?;
+
+        // Generated bindings convert length before start and dimension after
+        // both slice bounds. Preserve that observable order for __index__.
+        let length = extract_select_index(&length.value)?;
+        let start = extract_select_index(&start.value)?;
+        let dimension = extract_dimension_swap_dimension(&dimension.value)?;
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        narrow_first_dimension(slf.py(), tensor, dimension, start, length, "Tensor.narrow")
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nIs ``True`` if the Tensor is quantized, ``False`` otherwise.\n"]
     #[getter]
     fn is_quantized(slf: &Bound<'_, Self>) -> PyResult<bool> {
@@ -2240,6 +2277,37 @@ pub(crate) fn select_variable_function(
     dispatch_top_level_select(py, &input, &dimension, &index, args, kwargs)
 }
 
+pub(crate) fn narrow_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let mut arguments = bind_narrow_arguments(args, kwargs, true)?;
+    if !torch_function_mode_stack::is_empty() {
+        return Err(narrow_unsupported_torch_function_mode("narrow"));
+    }
+
+    let length = arguments
+        .pop()
+        .expect("narrow length is present after binding");
+    let start = arguments
+        .pop()
+        .expect("narrow start is present after binding");
+    let dimension = arguments
+        .pop()
+        .expect("narrow dimension is present after binding");
+    let input = arguments
+        .pop()
+        .expect("narrow input is present after binding");
+
+    let input = parse_exact_native_narrow_tensor_argument("narrow", "input", &input)?;
+    validate_narrow_integer_start(&start)?;
+    let length = extract_select_index(&length.value)?;
+    let start = extract_select_index(&start.value)?;
+    let dimension = extract_dimension_swap_dimension(&dimension.value)?;
+    narrow_first_dimension(py, &input, dimension, start, length, "torch.narrow")
+}
+
 pub(crate) fn permute_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -3186,6 +3254,53 @@ fn select_first_dimension(
         }
     })?;
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+}
+
+fn narrow_first_dimension(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    dimension: i64,
+    start: i64,
+    length: i64,
+    operation: &str,
+) -> PyResult<Py<PyAny>> {
+    let tensor = tensor.try_borrow()?;
+    validate_narrow_native_metadata(operation, &tensor.inner)?;
+    if tensor.inner.shape().is_empty() {
+        return Err(PyRuntimeError::new_err(
+            TensorError::NarrowCannotApplyToScalar.to_string(),
+        ));
+    }
+    let axis = normalize_dimension(dimension, tensor.inner.shape().len())?;
+    if axis != 0 {
+        return Err(PyRuntimeError::new_err(format!(
+            "{operation} only supports dimension 0"
+        )));
+    }
+    let inner = tensor
+        .inner
+        .narrow_first_dimension(start, length)
+        .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+}
+
+fn validate_narrow_native_metadata(operation: &str, tensor: &CoreTensor) -> PyResult<()> {
+    if tensor.dtype() == DType::Float32 && tensor.device() == Device::Cpu {
+        return Ok(());
+    }
+    Err(narrow_unsupported_native_input(operation))
+}
+
+fn narrow_unsupported_native_input(operation: &str) -> PyErr {
+    PyNotImplementedError::new_err(format!(
+        "{operation}(): only exact native CPU float32 Tensor inputs are supported"
+    ))
+}
+
+fn narrow_unsupported_torch_function_mode(operation: &str) -> PyErr {
+    PyNotImplementedError::new_err(format!(
+        "{operation}(): __torch_function__ modes are not supported"
+    ))
 }
 
 fn dispatch_top_level_unbind(
@@ -9538,6 +9653,249 @@ fn extract_select_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {
     }
     let concrete = call_python_index(index)?;
     extract_dimension_swap_dimension(&concrete)
+}
+
+fn bind_narrow_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+    top_level: bool,
+) -> PyResult<Vec<ParsedCallArgument<'py>>> {
+    let arity = if top_level { 4 } else { 3 };
+    if positional.len() > arity {
+        return Err(narrow_invalid_combination(positional, keywords, top_level)?);
+    }
+
+    let mut arguments = (0..arity).map(|_| None).collect::<Vec<_>>();
+    for (index, value) in positional.iter().enumerate() {
+        arguments[index] = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+    }
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            let Some(index) = narrow_keyword_index(&key, top_level) else {
+                return Err(narrow_invalid_combination(
+                    positional,
+                    Some(keywords),
+                    top_level,
+                )?);
+            };
+            if arguments[index].is_some() {
+                return Err(narrow_invalid_combination(
+                    positional,
+                    Some(keywords),
+                    top_level,
+                )?);
+            }
+            arguments[index] = Some(ParsedCallArgument {
+                value,
+                position: None,
+            });
+        }
+    }
+
+    if arguments.iter().any(Option::is_none) {
+        return Err(narrow_invalid_combination(positional, keywords, top_level)?);
+    }
+
+    let arguments = arguments
+        .into_iter()
+        .map(|argument| argument.expect("every narrow argument was bound"))
+        .collect::<Vec<_>>();
+    if !narrow_arguments_match_any_overload(&arguments, top_level)? {
+        return Err(narrow_invalid_type_combination(
+            positional, keywords, top_level, &arguments,
+        )?);
+    }
+    Ok(arguments)
+}
+
+fn narrow_keyword_index(key: &str, top_level: bool) -> Option<usize> {
+    if top_level {
+        match key {
+            "input" | "x" | "a" | "x1" => Some(0),
+            "dim" => Some(1),
+            "start" => Some(2),
+            "length" => Some(3),
+            _ => None,
+        }
+    } else {
+        match key {
+            "dim" => Some(0),
+            "start" => Some(1),
+            "length" => Some(2),
+            _ => None,
+        }
+    }
+}
+
+fn narrow_arguments_match_any_overload(
+    arguments: &[ParsedCallArgument<'_>],
+    top_level: bool,
+) -> PyResult<bool> {
+    Ok(narrow_arguments_match_overload(arguments, top_level, true)?
+        || narrow_arguments_match_overload(arguments, top_level, false)?)
+}
+
+fn narrow_arguments_match_overload(
+    arguments: &[ParsedCallArgument<'_>],
+    top_level: bool,
+    tensor_start: bool,
+) -> PyResult<bool> {
+    let offset = usize::from(top_level);
+    if top_level && !narrow_input_argument_matches(&arguments[0].value) {
+        return Ok(false);
+    }
+    if !is_dimension_swap_integer(&arguments[offset].value)? {
+        return Ok(false);
+    }
+    if tensor_start {
+        if !arguments[offset + 1].value.is_instance_of::<PyTensor>() {
+            return Ok(false);
+        }
+    } else if !narrow_integer_argument_matches(&arguments[offset + 1].value)? {
+        return Ok(false);
+    }
+    narrow_integer_argument_matches(&arguments[offset + 2].value)
+}
+
+fn narrow_input_argument_matches(input: &Bound<'_, PyAny>) -> bool {
+    input.is_instance_of::<PyTensor>() || probe_torch_function_override(input).is_some()
+}
+
+fn narrow_integer_argument_matches(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    Ok(is_dimension_swap_integer(value)? || probe_select_index(value))
+}
+
+fn narrow_invalid_combination(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    top_level: bool,
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    Ok(PyTypeError::new_err(format!(
+        "narrow() received an invalid combination of arguments - got ({summary}), but expected one of:\n{}",
+        narrow_expected_overloads(top_level)
+    )))
+}
+
+fn narrow_invalid_type_combination(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    top_level: bool,
+    arguments: &[ParsedCallArgument<'_>],
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    let tensor_start_detail = narrow_overload_type_detail(arguments, top_level, true)?;
+    let integer_start_detail = narrow_overload_type_detail(arguments, top_level, false)?;
+    Ok(PyTypeError::new_err(format!(
+        "narrow() received an invalid combination of arguments - got ({summary}), but expected one of:\n{}\n      didn't match because some of the arguments have invalid types: ({tensor_start_detail})\n{}\n      didn't match because some of the arguments have invalid types: ({integer_start_detail})\n",
+        narrow_expected_tensor_start_overload(top_level),
+        narrow_expected_integer_start_overload(top_level),
+    )))
+}
+
+fn narrow_expected_overloads(top_level: bool) -> &'static str {
+    if top_level {
+        " * (Tensor input, int dim, Tensor start, int length)\n * (Tensor input, int dim, int start, int length)"
+    } else {
+        " * (int dim, Tensor start, int length)\n * (int dim, int start, int length)"
+    }
+}
+
+fn narrow_expected_tensor_start_overload(top_level: bool) -> &'static str {
+    if top_level {
+        " * (Tensor input, int dim, Tensor start, int length)"
+    } else {
+        " * (int dim, Tensor start, int length)"
+    }
+}
+
+fn narrow_expected_integer_start_overload(top_level: bool) -> &'static str {
+    if top_level {
+        " * (Tensor input, int dim, int start, int length)"
+    } else {
+        " * (int dim, int start, int length)"
+    }
+}
+
+fn narrow_overload_type_detail(
+    arguments: &[ParsedCallArgument<'_>],
+    top_level: bool,
+    tensor_start: bool,
+) -> PyResult<String> {
+    let names = if top_level {
+        &["input", "dim", "start", "length"][..]
+    } else {
+        &["dim", "start", "length"][..]
+    };
+    let offset = usize::from(top_level);
+    let mut output = String::new();
+    for (index, argument) in arguments.iter().enumerate() {
+        if index != 0 {
+            output.push_str(", ");
+        }
+        let valid = if top_level && index == 0 {
+            narrow_input_argument_matches(&argument.value)
+        } else if index == offset {
+            is_dimension_swap_integer(&argument.value)?
+        } else if index == offset + 1 {
+            if tensor_start {
+                argument.value.is_instance_of::<PyTensor>()
+            } else {
+                narrow_integer_argument_matches(&argument.value)?
+            }
+        } else {
+            narrow_integer_argument_matches(&argument.value)?
+        };
+        if !valid {
+            output.push('!');
+        }
+        let type_name = python_type_name(&argument.value)?;
+        if argument.position.is_none() {
+            output.push_str(names[index]);
+            output.push('=');
+        }
+        output.push_str(&type_name);
+        if !valid {
+            output.push('!');
+        }
+    }
+    if arguments
+        .first()
+        .is_some_and(|argument| argument.position.is_none())
+    {
+        output.push_str(", ");
+    }
+    Ok(output)
+}
+
+fn parse_exact_native_narrow_tensor_argument<'py>(
+    function: &str,
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+) -> PyResult<Bound<'py, PyTensor>> {
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(value.value.cast::<PyTensor>()?.clone());
+    }
+    if value.value.is_instance_of::<PyTensor>()
+        || probe_torch_function_override(&value.value).is_some()
+    {
+        return Err(narrow_unsupported_native_input(function));
+    }
+    parse_tensor_argument(function, argument, value).cloned()
+}
+
+fn validate_narrow_integer_start(start: &ParsedCallArgument<'_>) -> PyResult<()> {
+    if start.value.is_instance_of::<PyTensor>() {
+        return Err(PyNotImplementedError::new_err(
+            "narrow(): tensor-valued start is not supported",
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn bind_size_dimension<'py>(

@@ -14,6 +14,9 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::ItemRequiresOneElement { .. }
         | TensorError::InvalidStorageOffset { .. }
         | TensorError::IndexCalculationOverflow
+        | TensorError::NarrowCannotApplyToScalar
+        | TensorError::NarrowNegativeLength
+        | TensorError::NarrowLengthExceedsDimension { .. }
         | TensorError::ReshapeMultipleInferredDimensions
         | TensorError::ReshapeInvalidDimension { .. }
         | TensorError::ReshapeAmbiguousZeroElements { .. }
@@ -42,6 +45,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::DoesNotRequireGradAt { .. }
         | TensorError::BackwardGraphFreed => PyRuntimeError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex
+        | TensorError::NarrowStartOutOfRange { .. }
         | TensorError::SliceCannotApplyToScalar
         | TensorError::TooManyIndices { .. }
         | TensorError::IndexOutOfBounds { .. }

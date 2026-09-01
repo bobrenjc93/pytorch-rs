@@ -2769,6 +2769,118 @@ impl Tensor {
         self.index_dimensions_impl(indices, true)
     }
 
+    /// Narrows the leading dimension without copying storage.
+    ///
+    /// `start` follows `PyTorch`'s signed bounds for `narrow`: values in
+    /// `[-size, size]` are accepted and negative values wrap from the end.
+    /// `length` must be non-negative, and `start + length` must fit within the
+    /// leading dimension. The resulting tensor preserves strides, dtype,
+    /// device, and storage identity while replacing the leading size.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when this tensor is scalar, bounds are invalid,
+    /// arithmetic overflows, or view metadata allocation fails.
+    pub fn narrow_first_dimension(&self, start: i64, length: i64) -> Result<Self, TensorError> {
+        let Some(&size) = self.shape.first() else {
+            return Err(TensorError::NarrowCannotApplyToScalar);
+        };
+        let signed_size = i64::try_from(size).map_err(|_| TensorError::IndexCalculationOverflow)?;
+        if start < -signed_size || start > signed_size {
+            return Err(TensorError::NarrowStartOutOfRange { start, size });
+        }
+        if length < 0 {
+            return Err(TensorError::NarrowNegativeLength);
+        }
+        let start = if start < 0 {
+            signed_size
+                .checked_add(start)
+                .ok_or(TensorError::IndexCalculationOverflow)?
+        } else {
+            start
+        };
+        let end = start
+            .checked_add(length)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        if end > signed_size {
+            return Err(TensorError::NarrowLengthExceedsDimension {
+                start,
+                length,
+                size,
+            });
+        }
+
+        let start = usize::try_from(start).map_err(|_| TensorError::IndexCalculationOverflow)?;
+        let length = usize::try_from(length).map_err(|_| TensorError::IndexCalculationOverflow)?;
+        let offset = self.checked_narrow_offset(start)?;
+        let mut shape = try_clone_result_shape(&self.shape, self.elements)?;
+        shape[0] = length;
+        let strides = try_clone_result_shape(&self.strides, self.elements)?;
+        let elements = if size == 0 {
+            0
+        } else {
+            self.elements
+                .checked_div(size)
+                .and_then(|row_elements| row_elements.checked_mul(length))
+                .ok_or(TensorError::ElementCountOverflow)?
+        };
+        validate_view_bounds(&shape, &strides, offset, elements, self.storage.len())?;
+        let mut output = Self {
+            storage: Arc::clone(&self.storage),
+            shape,
+            strides,
+            offset,
+            elements,
+            output_nr: 0,
+            view_requires_grad: false,
+            autograd: None,
+        };
+        let input_start = if elements == 0 {
+            0
+        } else {
+            let row_elements = self
+                .elements
+                .checked_div(size)
+                .ok_or(TensorError::ElementCountOverflow)?;
+            start
+                .checked_mul(row_elements)
+                .ok_or(TensorError::IndexCalculationOverflow)?
+        };
+        self.record_view_transform(
+            &mut output,
+            TransformMapping::Index { input_start },
+            AutogradNode::Slice,
+        )?;
+        Ok(output)
+    }
+
+    fn checked_narrow_offset(&self, start: usize) -> Result<usize, TensorError> {
+        if self.elements == 0 {
+            let offset =
+                i64::try_from(self.offset).map_err(|_| TensorError::IndexCalculationOverflow)?;
+            let stride = i64::try_from(self.strides[0])
+                .map_err(|_| TensorError::IndexCalculationOverflow)?;
+            let start = i64::try_from(start).map_err(|_| TensorError::IndexCalculationOverflow)?;
+            let offset = offset.wrapping_add(start.wrapping_mul(stride));
+            return usize::try_from(offset)
+                .map_err(|_| TensorError::InvalidStorageOffset { offset });
+        }
+
+        let contribution = start
+            .checked_mul(self.strides[0])
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let offset = self
+            .offset
+            .checked_add(contribution)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        if i64::try_from(offset).is_err() {
+            let offset =
+                i64::try_from(offset.cast_signed()).expect("an isize offset must fit in i64");
+            return Err(TensorError::InvalidStorageOffset { offset });
+        }
+        Ok(offset)
+    }
+
     #[cfg_attr(not(any(feature = "python-bindings", test)), allow(dead_code))]
     pub(crate) fn unbind_first_dimension(&self) -> Result<Vec<Self>, TensorError> {
         let Some(&output_count) = self.shape.first() else {
@@ -10463,6 +10575,144 @@ mod tests {
         let gradient = signed_source.grad().unwrap().unwrap();
         assert_eq!(gradient.as_slice()[0].to_bits(), (-0.0_f32).to_bits());
         assert_eq!(gradient.as_slice()[1].to_bits(), 1.0_f32.to_bits());
+    }
+
+    #[test]
+    fn first_dimension_narrow_returns_shared_storage_metadata_views() {
+        let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [3, 2, 4]).unwrap();
+        let narrowed = source.narrow_first_dimension(1, 2).unwrap();
+        assert!(narrowed.shares_storage_with(&source));
+        assert_eq!(narrowed.shape(), [2, 2, 4]);
+        assert_eq!(narrowed.stride(), [8, 4, 1]);
+        assert_eq!(narrowed.storage_offset(), 8);
+        assert_eq!(
+            narrowed.try_to_vec().unwrap(),
+            [
+                8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0,
+                22.0, 23.0
+            ]
+        );
+
+        let offset = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4])
+            .unwrap()
+            .index_integer(1)
+            .unwrap();
+        let offset_narrowed = offset.narrow_first_dimension(1, 2).unwrap();
+        assert!(offset_narrowed.shares_storage_with(&offset));
+        assert_eq!(offset_narrowed.shape(), [2, 4]);
+        assert_eq!(offset_narrowed.stride(), [4, 1]);
+        assert_eq!(offset_narrowed.storage_offset(), 16);
+        assert_eq!(
+            offset_narrowed.try_to_vec().unwrap(),
+            [16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0]
+        );
+
+        let noncontiguous = Tensor::from_vec((0_u8..48).map(f32::from).collect(), [2, 2, 3, 4])
+            .unwrap()
+            .index_integer(1)
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let noncontiguous_narrowed = noncontiguous.narrow_first_dimension(1, 2).unwrap();
+        assert!(noncontiguous_narrowed.shares_storage_with(&noncontiguous));
+        assert_eq!(noncontiguous_narrowed.shape(), [2, 2, 4]);
+        assert_eq!(noncontiguous_narrowed.stride(), [4, 12, 1]);
+        assert_eq!(noncontiguous_narrowed.storage_offset(), 28);
+        assert_eq!(
+            noncontiguous_narrowed.try_to_vec().unwrap(),
+            [
+                28.0, 29.0, 30.0, 31.0, 40.0, 41.0, 42.0, 43.0, 32.0, 33.0, 34.0, 35.0, 44.0, 45.0,
+                46.0, 47.0
+            ]
+        );
+
+        let empty_length = source.narrow_first_dimension(1, 0).unwrap();
+        assert!(empty_length.shares_storage_with(&source));
+        assert_eq!(empty_length.shape(), [0, 2, 4]);
+        assert_eq!(empty_length.stride(), source.stride());
+        assert_eq!(empty_length.storage_offset(), 8);
+        assert!(empty_length.try_to_vec().unwrap().is_empty());
+
+        let zero_source = Tensor::zeros([0, 2]).unwrap();
+        let zero_narrowed = zero_source.narrow_first_dimension(0, 0).unwrap();
+        assert!(zero_narrowed.shares_storage_with(&zero_source));
+        assert_eq!(zero_narrowed.shape(), [0, 2]);
+        assert_eq!(zero_narrowed.stride(), [2, 1]);
+        assert_eq!(zero_narrowed.storage_offset(), 0);
+        assert!(zero_narrowed.try_to_vec().unwrap().is_empty());
+
+        let inner_empty = Tensor::zeros([3, 0, 4]).unwrap();
+        let inner_empty_narrowed = inner_empty.narrow_first_dimension(1, 2).unwrap();
+        assert!(inner_empty_narrowed.shares_storage_with(&inner_empty));
+        assert_eq!(inner_empty_narrowed.shape(), [2, 0, 4]);
+        assert_eq!(inner_empty_narrowed.stride(), [4, 4, 1]);
+        assert_eq!(inner_empty_narrowed.storage_offset(), 4);
+        assert!(inner_empty_narrowed.try_to_vec().unwrap().is_empty());
+    }
+
+    #[test]
+    fn first_dimension_narrow_preserves_autograd_mapping_and_no_grad_boundary() {
+        let source = Tensor::from_vec((0_u8..12).map(f32::from).collect(), [3, 4])
+            .unwrap()
+            .with_requires_grad(true);
+        let view = source.narrow_first_dimension(1, 2).unwrap();
+        assert!(view.requires_grad());
+        assert!(!view.is_leaf());
+        #[cfg(feature = "python-bindings")]
+        assert_eq!(view.grad_fn_name(), Some("SliceBackward0"));
+        view.sum().backward().unwrap();
+        assert_eq!(
+            source.grad().unwrap().unwrap().as_slice(),
+            [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        );
+
+        let no_grad_view = {
+            let _guard = crate::no_grad();
+            source.narrow_first_dimension(-1, 1).unwrap()
+        };
+        assert!(no_grad_view.requires_grad());
+        assert!(no_grad_view.is_leaf());
+        #[cfg(feature = "python-bindings")]
+        assert_eq!(no_grad_view.grad_fn_name(), None);
+        assert_eq!(no_grad_view.storage_offset(), 8);
+
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+        empty
+            .narrow_first_dimension(1, 1)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+        assert!(empty.grad().unwrap().unwrap().as_slice().is_empty());
+    }
+
+    #[test]
+    fn first_dimension_narrow_reports_pytorch_compatible_bounds_errors() {
+        let tensor = Tensor::zeros([2, 3]).unwrap();
+        assert_eq!(
+            tensor.narrow_first_dimension(-3, 0),
+            Err(TensorError::NarrowStartOutOfRange { start: -3, size: 2 })
+        );
+        assert_eq!(
+            tensor.narrow_first_dimension(3, 0),
+            Err(TensorError::NarrowStartOutOfRange { start: 3, size: 2 })
+        );
+        assert_eq!(
+            tensor.narrow_first_dimension(0, -1),
+            Err(TensorError::NarrowNegativeLength)
+        );
+        assert_eq!(
+            tensor.narrow_first_dimension(-1, 2),
+            Err(TensorError::NarrowLengthExceedsDimension {
+                start: 1,
+                length: 2,
+                size: 2
+            })
+        );
+        assert_eq!(
+            Tensor::zeros([]).unwrap().narrow_first_dimension(0, 1),
+            Err(TensorError::NarrowCannotApplyToScalar)
+        );
     }
 
     #[test]
