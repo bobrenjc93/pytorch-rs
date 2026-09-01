@@ -644,6 +644,18 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn empty_with_metadata(
+        shape: impl Into<Vec<usize>>,
+        dtype: DType,
+        device: Device,
+    ) -> Result<Self, TensorError> {
+        let shape = shape.into();
+        let (elements, strides) = validated_layout(&shape)?;
+        let data = empty_storage(elements)?;
+        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+    }
+
     /// Creates a one-filled tensor.
     ///
     /// # Errors
@@ -6391,6 +6403,13 @@ fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorEr
         .map_err(|_| TensorError::AllocationFailed { elements })?;
     data.resize(elements, fill_value);
     Ok(data)
+}
+
+#[cfg(feature = "python-bindings")]
+fn empty_storage(elements: usize) -> Result<Vec<f32>, TensorError> {
+    // Rust requires initialized f32 values; empty-like callers must treat the
+    // contents as unspecified and tests intentionally avoid a value contract.
+    filled_storage(elements, 0.0)
 }
 
 fn copied_storage(values: &[f32], elements: usize) -> Result<Vec<f32>, TensorError> {
