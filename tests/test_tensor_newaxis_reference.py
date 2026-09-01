@@ -40,9 +40,14 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
     def layout_cases(self, module):
         values = np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4)
         base = module.tensor(values.tolist(), dtype=module.float32)
+        contiguous_values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         return (
             ("scalar", module.tensor(-0.0, dtype=module.float32)),
             ("empty", module.zeros((2, 0, 3), dtype=module.float32)),
+            (
+                "contiguous",
+                module.tensor(contiguous_values.tolist(), dtype=module.float32),
+            ),
             ("offset", base[1]),
             ("noncontiguous", base.transpose(0, 3)[1]),
         )
@@ -179,6 +184,12 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
                 (2, 0, 3), dtype=module.float32, requires_grad=True
             )
             return leaf, leaf
+        if case == "contiguous":
+            values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+            leaf = module.tensor(
+                values.tolist(), dtype=module.float32, requires_grad=True
+            )
+            return leaf, leaf
 
         values = np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4)
         leaf = module.tensor(
@@ -266,6 +277,137 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
 
     def test_trailing_autograd_and_no_grad_match_pytorch_2_13(self):
         self.assert_autograd_and_no_grad_match_pytorch_2_13(True)
+
+    def public_unsqueeze_contract(self, module, source, dim, form="function"):
+        if form == "method":
+            result = source.unsqueeze(dim)
+        elif form == "method keyword":
+            result = source.unsqueeze(dim=dim)
+        elif form == "function keyword":
+            result = module.unsqueeze(input=source, dim=dim)
+        elif form == "function alias x":
+            result = module.unsqueeze(x=source, dim=dim)
+        elif form == "function alias a":
+            result = module.unsqueeze(a=source, dim=dim)
+        elif form == "function alias x1":
+            result = module.unsqueeze(x1=source, dim=dim)
+        else:
+            result = module.unsqueeze(source, dim)
+        values = np.asarray(result.detach(), dtype=np.float32).reshape(-1)
+        return {
+            "distinct_wrapper": result is not source,
+            "shape": tuple(result.shape),
+            "stride": result.stride(),
+            "storage_offset": result.storage_offset(),
+            "shared_data_pointer": result.data_ptr() == source.data_ptr(),
+            "same_logical_view": result.is_set_to(source),
+            "dtype": str(result.dtype),
+            "device": str(result.device),
+            "requires_grad": result.requires_grad,
+            "is_leaf": result.is_leaf,
+            "values": result.tolist(),
+            "value_bits": tuple(values.view(np.uint32).tolist()),
+        }
+
+    def public_unsqueeze_autograd_contract(self, module, case, trailing=False, method=False):
+        leaf, source = self.make_autograd_case(module, case)
+        dim = -1 if trailing else -(source.dim() + 1)
+        result = source.unsqueeze(dim) if method else module.unsqueeze(source, dim)
+        metadata = (
+            result is not source,
+            result.data_ptr() == source.data_ptr(),
+            result.is_set_to(source),
+            result.requires_grad,
+            result.is_leaf,
+            tuple(result.shape),
+            result.stride(),
+            result.storage_offset(),
+        )
+        result.sum().backward()
+        return metadata, np.asarray(leaf.grad, dtype=np.float32).copy()
+
+    def public_unsqueeze_no_grad_contract(self, module, case, trailing=False, method=False):
+        leaf, source = self.make_autograd_case(module, case)
+        dim = source.dim() if trailing else 0
+        with module.no_grad():
+            result = source.unsqueeze(dim) if method else module.unsqueeze(source, dim)
+        return (
+            result is not source,
+            result.data_ptr() == source.data_ptr(),
+            result.is_set_to(source),
+            result.requires_grad,
+            result.is_leaf,
+            tuple(result.shape),
+            result.stride(),
+            result.storage_offset(),
+            leaf.grad,
+        )
+
+    def test_public_unsqueeze_edge_layouts_match_pytorch_2_13(self):
+        actual_cases = self.layout_cases(torch)
+        expected_cases = self.layout_cases(reference_torch)
+        for (actual_case, actual), (expected_case, expected) in zip(
+            actual_cases, expected_cases, strict=True
+        ):
+            self.assertEqual(actual_case, expected_case)
+            rank = actual.dim()
+            edge_dimensions = (
+                ("front zero", 0),
+                ("front negative", -(rank + 1)),
+                ("back positive", rank),
+                ("back negative", -1),
+            )
+            for edge, dim in edge_dimensions:
+                for form in (
+                    "function",
+                    "function keyword",
+                    "function alias x",
+                    "function alias a",
+                    "function alias x1",
+                    "method",
+                    "method keyword",
+                ):
+                    with self.subTest(case=actual_case, edge=edge, form=form):
+                        self.assertEqual(
+                            self.public_unsqueeze_contract(
+                                torch, actual, dim, form=form
+                            ),
+                            self.public_unsqueeze_contract(
+                                reference_torch, expected, dim, form=form
+                            ),
+                        )
+
+    def test_public_unsqueeze_autograd_no_grad_and_full_sum_match_pytorch_2_13(self):
+        for case in ("scalar", "empty", "contiguous", "offset", "noncontiguous"):
+            for trailing in (False, True):
+                for method in (False, True):
+                    with self.subTest(
+                        case=case, trailing=trailing, method=method, mode="autograd"
+                    ):
+                        actual_metadata, actual_gradient = (
+                            self.public_unsqueeze_autograd_contract(
+                                torch, case, trailing, method
+                            )
+                        )
+                        expected_metadata, expected_gradient = (
+                            self.public_unsqueeze_autograd_contract(
+                                reference_torch, case, trailing, method
+                            )
+                        )
+                        self.assertEqual(actual_metadata, expected_metadata)
+                        np.testing.assert_array_equal(actual_gradient, expected_gradient)
+
+                    with self.subTest(
+                        case=case, trailing=trailing, method=method, mode="no_grad"
+                    ):
+                        self.assertEqual(
+                            self.public_unsqueeze_no_grad_contract(
+                                torch, case, trailing, method
+                            ),
+                            self.public_unsqueeze_no_grad_contract(
+                                reference_torch, case, trailing, method
+                            ),
+                        )
 
     def lifetime_contract(self, module, trailing=False):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
