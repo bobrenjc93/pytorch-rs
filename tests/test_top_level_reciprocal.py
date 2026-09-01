@@ -311,6 +311,28 @@ class TopLevelReciprocalTests(unittest.TestCase):
         ):
             loss.backward()
 
+        tail_input_bits = np.asarray(
+            (0x3F80_0000, 0x3F80_0000, 0x3F80_0000, 0xFFC5_4321),
+            dtype=np.uint32,
+        )
+        tail_weight_bits = np.asarray(
+            (0x3F80_0000, 0x3F80_0000, 0x3F80_0000, 0xFFC0_BBBB),
+            dtype=np.uint32,
+        )
+        tail_expected_gradient_bits = np.asarray(
+            (0xBF80_0000, 0xBF80_0000, 0xBF80_0000, 0x7FC0_BBBB),
+            dtype=np.uint32,
+        )
+        tail_leaf = torch.tensor(
+            memoryview(tail_input_bits.view(np.float32)), requires_grad=True
+        )
+        tail_weights = torch.tensor(memoryview(tail_weight_bits.view(np.float32)))
+        (torch.reciprocal(tail_leaf) * tail_weights).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(tail_leaf.grad, dtype=np.float32).view(np.uint32),
+            tail_expected_gradient_bits,
+        )
+
         accumulated = torch.tensor([1.0, 2.0, -4.0], requires_grad=True)
         torch.reciprocal(accumulated).sum().backward()
         torch.reciprocal(input=accumulated).sum().backward()

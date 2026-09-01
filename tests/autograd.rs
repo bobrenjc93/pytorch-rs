@@ -361,6 +361,41 @@ fn reciprocal_vjp_matches_pytorch_for_signed_zero_non_finites_and_nans() {
         .collect::<Vec<_>>();
     assert_eq!(actual_gradient_bits, expected_gradient_bits);
     assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+
+    let tail_leaf = Tensor::from_vec(
+        [0x3f80_0000, 0x3f80_0000, 0x3f80_0000, 0xffc5_4321]
+            .map(f32::from_bits)
+            .to_vec(),
+        [4],
+    )
+    .unwrap()
+    .with_requires_grad(true);
+    let tail_weights = Tensor::from_vec(
+        [0x3f80_0000, 0x3f80_0000, 0x3f80_0000, 0xffc0_bbbb]
+            .map(f32::from_bits)
+            .to_vec(),
+        [4],
+    )
+    .unwrap();
+    tail_leaf
+        .reciprocal()
+        .unwrap()
+        .mul(&tail_weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    let tail_gradient_bits = tail_leaf
+        .grad()
+        .unwrap()
+        .unwrap()
+        .logical_values()
+        .map(f32::to_bits)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        tail_gradient_bits,
+        [0xbf80_0000, 0xbf80_0000, 0xbf80_0000, 0x7fc0_bbbb]
+    );
 }
 
 #[test]

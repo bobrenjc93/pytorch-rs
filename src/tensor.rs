@@ -4849,16 +4849,22 @@ fn apply_sqrt_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>
 fn apply_reciprocal_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
     // Match PyTorch's float32 operation order: square the independently
     // rounded reciprocal, then multiply by the negated upstream gradient.
+    let elements = input.elements;
     if let Some(saved_values) = input.contiguous_slice() {
         debug_assert_eq!(saved_values.len(), upstream.len());
-        gradient.extend(saved_values.iter().zip(upstream).map(
-            |(&saved_value, &upstream_value)| {
-                reciprocal_backward_value(saved_value, upstream_value)
+        gradient.extend(saved_values.iter().zip(upstream).enumerate().map(
+            |(index, (&saved_value, &upstream_value))| {
+                reciprocal_backward_value(saved_value, upstream_value, index, elements)
             },
         ));
     } else {
-        gradient.extend(upstream.iter().enumerate().map(|(index, &value)| {
-            reciprocal_backward_value(input.value_at_linear_index(index), value)
+        gradient.extend(upstream.iter().enumerate().map(|(index, &upstream_value)| {
+            reciprocal_backward_value(
+                input.value_at_linear_index(index),
+                upstream_value,
+                index,
+                elements,
+            )
         }));
     }
 }
@@ -6300,19 +6306,49 @@ fn sqrt_backward_value(input: f32, upstream: f32) -> f32 {
     upstream / (2.0 * sqrt_value(input))
 }
 
-#[inline]
-fn reciprocal_backward_value(input: f32, upstream: f32) -> f32 {
+fn reciprocal_backward_value(input: f32, upstream: f32, index: usize, elements: usize) -> f32 {
     const QUIET_NAN_MASK: u32 = 0x0040_0000;
 
-    let input_bits = input.to_bits();
-    if input_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
-        // PyTorch's saved-input formula surfaces the NaN produced by the
-        // reciprocal/square path. Make that precedence explicit so optimized
-        // builds cannot select an upstream NaN payload instead.
+    let reciprocal = input.recip();
+    let input_factor = reciprocal * reciprocal;
+    let upstream_factor = negate_value(upstream);
+    let input_bits = input_factor.to_bits();
+    let upstream_bits = upstream_factor.to_bits();
+    let input_is_nan = input_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits();
+    let upstream_is_nan = upstream_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits();
+    if input_is_nan && upstream_is_nan {
+        if reciprocal_backward_prefers_upstream_nan(index, elements) {
+            return f32::from_bits(upstream_bits | QUIET_NAN_MASK);
+        }
         return f32::from_bits(input_bits | QUIET_NAN_MASK);
     }
-    let reciprocal = input.recip();
-    (reciprocal * reciprocal) * (-upstream)
+    if input_is_nan {
+        return f32::from_bits(input_bits | QUIET_NAN_MASK);
+    }
+    if upstream_is_nan {
+        return f32::from_bits(upstream_bits | QUIET_NAN_MASK);
+    }
+    upstream_factor * input_factor
+}
+
+#[inline]
+fn reciprocal_backward_prefers_upstream_nan(index: usize, elements: usize) -> bool {
+    // PyTorch 2.13 CPU evaluates reciprocal backward as a TensorIterator
+    // multiply of (-grad) with reciprocal(input)^2. Its vector tail selects
+    // the upstream NaN payload for these lanes; scalar and full-width vector
+    // lanes select the saved-input NaN payload.
+    let tail = elements % 8;
+    if tail == 0 {
+        return false;
+    }
+    let tail_start = elements - tail;
+    if index < tail_start {
+        return false;
+    }
+    let tail_index = index - tail_start;
+    (tail >= 4 && tail_index < 4)
+        || (tail == 7 && tail_index == 6)
+        || (tail == 3 && (elements / 8) % 2 == 1 && tail_index == 2)
 }
 
 #[inline]

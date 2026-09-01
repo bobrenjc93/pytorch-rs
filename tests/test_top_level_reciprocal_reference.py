@@ -289,6 +289,33 @@ class TopLevelReciprocalReferenceTests(unittest.TestCase):
         self.assert_matches(tensors[0][0], tensors[1][0], case="special forward")
         self.assert_matches(tensors[0][1], tensors[1][1], case="special gradient")
 
+        tail_input_bits = np.asarray(
+            (0x3F800000, 0x3F800000, 0x3F800000, 0xFFC54321),
+            dtype=np.uint32,
+        )
+        tail_weight_bits = np.asarray(
+            (0x3F800000, 0x3F800000, 0x3F800000, 0xFFC0BBBB),
+            dtype=np.uint32,
+        )
+        tail_tensors = []
+        for module in (torch, reference_torch):
+            tail_leaf = module.tensor(
+                memoryview(tail_input_bits.view(np.float32)), requires_grad=True
+            )
+            tail_weights = module.tensor(
+                memoryview(tail_weight_bits.view(np.float32))
+            )
+            tail_output = module.reciprocal(tail_leaf)
+            (tail_output * tail_weights).sum().backward()
+            tail_tensors.append((tail_output, tail_leaf.grad))
+
+        self.assert_matches(
+            tail_tensors[0][0], tail_tensors[1][0], case="tail special forward"
+        )
+        self.assert_matches(
+            tail_tensors[0][1], tail_tensors[1][1], case="tail special gradient"
+        )
+
     def test_autograd_accumulation_and_graph_freeing_match_pytorch_2_13(self):
         snapshots = []
         for module in (torch, reference_torch):
