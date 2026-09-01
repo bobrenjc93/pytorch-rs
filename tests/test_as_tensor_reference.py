@@ -141,6 +141,8 @@ class AsTensorReferenceTests(unittest.TestCase):
             -0.0,
             1.25,
             -3.5,
+            1e39,
+            -1e39,
             float("inf"),
             float("-inf"),
             float("nan"),

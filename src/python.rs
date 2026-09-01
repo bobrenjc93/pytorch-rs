@@ -1554,8 +1554,8 @@ pub(crate) fn as_tensor_variable_function(
     }
     if !data.value.is_exact_instance_of::<PyTensor>() {
         if data.value.is_exact_instance_of::<PyFloat>() {
-            let value =
-                ParsedFillValue::Float(data.value.extract::<f64>()?).into_scalar_tensor_f32()?;
+            #[allow(clippy::cast_possible_truncation)]
+            let value = data.value.extract::<f64>()? as f32;
             let inner = CoreTensor::full_with_metadata(Vec::new(), value, dtype, device)
                 .map_err(|error| tensor_error(&error))?;
             return Ok(Py::new(py, PyTensor::new(inner))?.into_any());

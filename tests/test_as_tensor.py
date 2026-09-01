@@ -101,16 +101,17 @@ class AsTensorTests(unittest.TestCase):
             {"dtype": torch.float32, "device": torch.device("cpu")},
         )
         value_cases = (
-            0.0,
-            -0.0,
-            1.25,
-            -3.5,
-            float("inf"),
-            float("-inf"),
-            float("nan"),
+            (0.0, 0x00000000),
+            (-0.0, 0x80000000),
+            (1.25, 0x3FA00000),
+            (-3.5, 0xC0600000),
+            (1e39, 0x7F800000),
+            (-1e39, 0xFF800000),
+            (float("inf"), 0x7F800000),
+            (float("-inf"), 0xFF800000),
+            (float("nan"), 0x7FC00000),
         )
-        for value in value_cases:
-            expected_bits = np.asarray([value], dtype=np.float32).view(np.uint32).tolist()
+        for value, expected_bits in value_cases:
             for options in option_cases:
                 with self.subTest(value=repr(value), options=options):
                     result = torch.as_tensor(value, **options)
@@ -131,7 +132,7 @@ class AsTensorTests(unittest.TestCase):
                     self.assertTrue(result.is_leaf)
                     self.assertEqual(result.output_nr, 0)
                     self.assertIsNone(result.grad)
-                    self.assertEqual(self.float32_bits(result), expected_bits)
+                    self.assertEqual(self.float32_bits(result), [expected_bits])
 
     def test_identity_preserves_autograd_graph_and_gradient_object(self):
         leaf = torch.tensor(
