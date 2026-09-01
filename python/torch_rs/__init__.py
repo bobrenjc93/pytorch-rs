@@ -350,6 +350,10 @@ def set_default_dtype(d: "torch.dtype", /) -> None:
 # ``torch.__all__``. Bind it explicitly instead of widening wildcard imports.
 strided = _native.strided
 
+# PyTorch exposes this grad-mode selector as ``torch.set_grad_enabled`` while
+# omitting it from top-level wildcard imports.
+set_grad_enabled = _native.set_grad_enabled
+
 
 def _get_layout(name):
     """Return the canonical layout identified by its string representation."""

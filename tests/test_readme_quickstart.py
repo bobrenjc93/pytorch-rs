@@ -173,6 +173,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
             "`Tensor.backward`",
             "`torch.is_grad_enabled`",
             "`torch.no_grad`",
+            "`torch.set_grad_enabled`",
             "`torch.autograd.is_view_replay_enabled`",
         ),
         ("Concrete gradients", "`torch.autograd.grad`", "inference-mode contexts"),

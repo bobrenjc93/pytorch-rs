@@ -4,6 +4,7 @@ import copyreg as _copyreg
 
 from ..torch_rs import enable_grad as enable_grad
 from ..torch_rs import no_grad as no_grad
+from ..torch_rs import set_grad_enabled as set_grad_enabled
 
 
 def _legacy_rebuild_no_grad(context_type):
@@ -12,6 +13,10 @@ def _legacy_rebuild_no_grad(context_type):
 
 def _legacy_rebuild_enable_grad(context_type):
     return enable_grad.__new__(context_type)
+
+
+def _legacy_rebuild_set_grad_enabled(context_type):
+    return set_grad_enabled.__new__(context_type)
 
 
 def _grad_mode_state(context):
@@ -91,4 +96,10 @@ def _reduce_enable_grad(context, protocol):
     return _reduce_grad_mode(context, protocol, _legacy_rebuild_enable_grad)
 
 
-__all__ = ["no_grad", "enable_grad"]
+def _reduce_set_grad_enabled(context, protocol):
+    return _reduce_grad_mode(
+        context, protocol, _legacy_rebuild_set_grad_enabled
+    )
+
+
+__all__ = ["no_grad", "enable_grad", "set_grad_enabled"]
