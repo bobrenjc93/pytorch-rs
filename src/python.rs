@@ -1585,13 +1585,13 @@ pub(crate) fn as_tensor_variable_function(
         ));
     }
     if !data.value.is_exact_instance_of::<PyTensor>() {
-        if let Some(value) = extract_exact_python_float_scalar(&data.value)? {
+        if let Some(value) = extract_python_or_numpy_float_scalar(&data.value)? {
             return Ok(
                 Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
             );
         }
         return Err(PyNotImplementedError::new_err(
-            "as_tensor(): only exact native CPU float32 Tensor inputs or Python float scalars are supported; Python sequences, NumPy arrays, and non-float scalar conversions are not implemented",
+            "as_tensor(): only exact native CPU float32 Tensor inputs, Python float scalars, or NumPy floating scalars are supported; Python sequences, NumPy arrays, and non-floating scalar conversions are not implemented",
         ));
     }
     Ok(data.value.unbind())
@@ -1631,14 +1631,14 @@ pub(crate) fn asarray_variable_function(
         ));
     }
     if !obj.value.is_exact_instance_of::<PyTensor>() {
-        if let Some(value) = extract_exact_python_float_scalar(&obj.value)? {
+        if let Some(value) = extract_python_or_numpy_float_scalar(&obj.value)? {
             validate_asarray_scalar_copy(arguments.copy.as_ref())?;
             return Ok(
                 Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
             );
         }
         return Err(PyNotImplementedError::new_err(
-            "asarray(): only exact native CPU float32 Tensor inputs or Python float scalars are supported; Python sequences, NumPy arrays/scalars, and non-float scalar conversions are not implemented",
+            "asarray(): only exact native CPU float32 Tensor inputs, Python float scalars, or NumPy floating scalars are supported; Python sequences, NumPy arrays, and non-floating scalar conversions are not implemented",
         ));
     }
     let should_warn_requires_grad = {
@@ -6544,6 +6544,19 @@ fn extract_exact_python_float_scalar(value: &Bound<'_, PyAny>) -> PyResult<Optio
     Ok(Some(value))
 }
 
+fn extract_python_or_numpy_float_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<f32>> {
+    if let Some(value) = extract_exact_python_float_scalar(value)? {
+        return Ok(Some(value));
+    }
+    if !is_numpy_scalar_of_types(value, &["floating"])? {
+        return Ok(None);
+    }
+
+    #[allow(clippy::cast_possible_truncation)]
+    let value = value.extract::<f64>()? as f32;
+    Ok(Some(value))
+}
+
 fn rank_zero_scalar_tensor(
     value: f32,
     dtype: DType,
@@ -8365,7 +8378,7 @@ fn validate_asarray_scalar_copy(copy: Option<&Bound<'_, PyAny>>) -> PyResult<()>
         return Ok(());
     }
     Err(PyNotImplementedError::new_err(
-        "asarray(): copy=False for Python float scalar inputs is not supported because scalar conversion requires fresh storage",
+        "asarray(): copy=False for Python or NumPy floating scalar inputs is not supported because scalar conversion requires fresh storage",
     ))
 }
 

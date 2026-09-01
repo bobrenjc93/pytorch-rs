@@ -190,6 +190,64 @@ class AsArrayReferenceTests(unittest.TestCase):
                     )
                     self.assertEqual(actual_contract, expected_contract)
 
+    def test_numpy_float32_scalar_creation_matches_pytorch_2_13(self):
+        values = (
+            np.float32(0.0),
+            np.float32(-0.0),
+            np.float32(1.25),
+            np.float32(-3.5),
+            np.float32(float("inf")),
+            np.float32(float("-inf")),
+            np.float32(float("nan")),
+        )
+        actual_options = self.scalar_option_cases(torch)
+        expected_options = self.scalar_option_cases(reference_torch)
+        for value in values:
+            for actual_kwargs, expected_kwargs in zip(
+                actual_options, expected_options, strict=True
+            ):
+                with self.subTest(value=repr(value), options=actual_kwargs):
+                    actual_contract = self.asarray_float_scalar_contract(
+                        torch, value, actual_kwargs
+                    )
+                    expected_contract = self.asarray_float_scalar_contract(
+                        reference_torch, value, expected_kwargs
+                    )
+                    self.assertEqual(actual_contract, expected_contract)
+
+    def test_numpy_floating_scalar_explicit_float32_matches_pytorch_2_13(self):
+        values = (
+            np.float16(1.25),
+            np.float64(-3.5),
+            np.float64(float("inf")),
+            np.float64(float("-inf")),
+            np.float64(float("nan")),
+        )
+        actual_options = (
+            {"dtype": torch.float32},
+            {"dtype": torch.float},
+            {"dtype": torch.float32, "device": "cpu"},
+            {"dtype": torch.float32, "device": torch.device("cpu")},
+        )
+        expected_options = (
+            {"dtype": reference_torch.float32},
+            {"dtype": reference_torch.float},
+            {"dtype": reference_torch.float32, "device": "cpu"},
+            {"dtype": reference_torch.float32, "device": reference_torch.device("cpu")},
+        )
+        for value in values:
+            for actual_kwargs, expected_kwargs in zip(
+                actual_options, expected_options, strict=True
+            ):
+                with self.subTest(value=repr(value), options=actual_kwargs):
+                    actual_contract = self.asarray_float_scalar_contract(
+                        torch, value, actual_kwargs
+                    )
+                    expected_contract = self.asarray_float_scalar_contract(
+                        reference_torch, value, expected_kwargs
+                    )
+                    self.assertEqual(actual_contract, expected_contract)
+
     def test_autograd_identity_aliasing_matches_pytorch_2_13(self):
         outcomes = []
         for module in (torch, reference_torch):
@@ -288,6 +346,9 @@ class AsArrayReferenceTests(unittest.TestCase):
         elif case == "scalar":
             data = 1.25
             call = lambda: module.asarray(data)
+        elif case == "numpy_scalar":
+            data = np.float32(1.25)
+            call = lambda: module.asarray(data)
         elif case == "sequence":
             data = [1.0, 2.0]
             call = lambda: module.asarray(data)
@@ -355,6 +416,7 @@ class AsArrayReferenceTests(unittest.TestCase):
             "positional",
             "keyword",
             "scalar",
+            "numpy_scalar",
             "sequence",
             "device",
             "copy",
