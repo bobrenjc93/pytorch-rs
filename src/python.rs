@@ -2514,6 +2514,7 @@ struct ProbedTorchFunctionOverride<'py> {
     receiver: Bound<'py, PyAny>,
     dispatch_type: Bound<'py, PyAny>,
     precedence_type: Bound<'py, PyType>,
+    mode_only_default_external_tensor: bool,
 }
 
 enum BoundTensorOrTorchFunction<'py> {
@@ -2993,7 +2994,16 @@ fn probed_torch_function_override<'py>(
         receiver: value.clone(),
         dispatch_type,
         precedence_type,
+        mode_only_default_external_tensor: false,
     }
+}
+
+fn probed_mode_only_default_external_tensor<'py>(
+    value: &Bound<'py, PyAny>,
+) -> ProbedTorchFunctionOverride<'py> {
+    let mut probed = probed_torch_function_override(value);
+    probed.mode_only_default_external_tensor = true;
+    probed
 }
 
 #[allow(
@@ -3726,19 +3736,42 @@ fn apply_top_level_imag(_py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResu
     apply_tensor_imag(tensor)
 }
 
+struct OrderedUnaryOutOverrides<'py> {
+    overrides: Vec<ProbedTorchFunctionOverride<'py>>,
+    has_deferred_unsupported_native_input: bool,
+}
+
+fn unary_out_dispatchable_override<'py>(
+    value: &'py BoundTensorOrTorchFunction<'py>,
+) -> (Option<&'py ProbedTorchFunctionOverride<'py>>, bool) {
+    let BoundTensorOrTorchFunction::Override(probed) = value else {
+        return (None, false);
+    };
+    if probed.mode_only_default_external_tensor {
+        (None, true)
+    } else {
+        (Some(probed), false)
+    }
+}
+
 fn ordered_unary_out_overrides<'py>(
     operation: UnaryOutOperation,
-    call: &BoundUnaryOutCall<'py>,
-) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    call: &'py BoundUnaryOutCall<'py>,
+) -> PyResult<OrderedUnaryOutOverrides<'py>> {
     let input = match &call.input {
-        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
+        BoundTensorOrTorchFunction::Override(_) => Some(&call.input),
         BoundTensorOrTorchFunction::Tensor(_) => None,
     };
     let out = match &call.out {
-        Some(BoundTensorOrTorchFunction::Override(probed)) => Some(probed),
+        Some(BoundTensorOrTorchFunction::Override(_)) => call.out.as_ref(),
         Some(BoundTensorOrTorchFunction::Tensor(_)) | None => None,
     };
-    ordered_binary_overrides(input, out, operation.dispatch_allocation_error)
+    let (input, input_deferred) = input.map_or((None, false), unary_out_dispatchable_override);
+    let (out, out_deferred) = out.map_or((None, false), unary_out_dispatchable_override);
+    Ok(OrderedUnaryOutOverrides {
+        overrides: ordered_binary_overrides(input, out, operation.dispatch_allocation_error)?,
+        has_deferred_unsupported_native_input: input_deferred || out_deferred,
+    })
 }
 
 fn dispatch_top_level_unary_out(
@@ -3748,15 +3781,21 @@ fn dispatch_top_level_unary_out(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let overrides = ordered_unary_out_overrides(operation, call)?;
-    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+    let ordered = ordered_unary_out_overrides(operation, call)?;
+    if torch_function_mode_stack::is_empty() && ordered.overrides.is_empty() {
+        if ordered.has_deferred_unsupported_native_input {
+            return Err(unary_out_unsupported_native_input(operation.name));
+        }
         return apply_top_level_unary_out(operation, py, call);
     }
 
     let function = variable_function(py, operation.name)?;
     let types = PyTuple::new(
         py,
-        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+        ordered
+            .overrides
+            .iter()
+            .map(|probed| probed.dispatch_type.clone()),
     )?;
 
     // Disable the top mode for the complete dispatch attempt. A mode can call
@@ -3771,7 +3810,11 @@ fn dispatch_top_level_unary_out(
         }
     }
 
-    for probed in &overrides {
+    if ordered.has_deferred_unsupported_native_input {
+        return Err(unary_out_unsupported_native_input(operation.name));
+    }
+
+    for probed in &ordered.overrides {
         let handler = resolve_torch_function_override(py, probed)?;
         let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
         if !is_not_implemented(py, &result) {
@@ -3783,7 +3826,7 @@ fn dispatch_top_level_unary_out(
         py,
         operation.qualified_name,
         active_mode.get(),
-        &overrides,
+        &ordered.overrides,
     )?)
 }
 
@@ -12126,7 +12169,9 @@ fn parse_unary_out_tensor_or_torch_function_argument<'py>(
                 .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()));
         }
         if is_default_external_tensor_torch_function_handler(&handler) {
-            return Err(unary_out_unsupported_native_input(function));
+            return Ok(BoundTensorOrTorchFunction::Override(
+                probed_mode_only_default_external_tensor(&value.value),
+            ));
         }
         return Ok(BoundTensorOrTorchFunction::Override(
             probed_torch_function_override(&value.value),

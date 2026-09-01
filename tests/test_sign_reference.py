@@ -321,6 +321,64 @@ print(json.dumps({
             self.mode_dispatch_observation("torch"),
         )
 
+    def test_torch_function_mode_observes_default_foreign_tensors_before_rejection(self):
+        foreign_input = reference_torch.tensor([1.0], dtype=reference_torch.float32)
+        native_input = torch.tensor([1.0], dtype=torch.float32)
+        foreign_out = reference_torch.tensor([0.0], dtype=reference_torch.float32)
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result=marker):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        input_mode = RecordingMode()
+        with input_mode:
+            self.assertIs(torch.sign(foreign_input), marker)
+        self.assertEqual(len(input_mode.calls), 1)
+        function, dispatch_types, args, kwargs = input_mode.calls[0]
+        self.assertIs(function, torch.sign)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(len(args), 1)
+        self.assertIs(args[0], foreign_input)
+        self.assertIsNone(kwargs)
+
+        out_mode = RecordingMode()
+        with out_mode:
+            self.assertIs(torch.sign(native_input, out=foreign_out), marker)
+        self.assertEqual(len(out_mode.calls), 1)
+        function, dispatch_types, args, kwargs = out_mode.calls[0]
+        self.assertIs(function, torch.sign)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(len(args), 1)
+        self.assertIs(args[0], native_input)
+        self.assertEqual(tuple(kwargs), ("out",))
+        self.assertIs(kwargs["out"], foreign_out)
+        self.assertEqual(foreign_out.tolist(), [0.0])
+
+        declining_input = RecordingMode(NotImplemented)
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^sign\(\): only exact native CPU float32 Tensor inputs are supported$",
+        ):
+            with declining_input:
+                torch.sign(foreign_input)
+        self.assertEqual(len(declining_input.calls), 1)
+
+        declining_out = RecordingMode(NotImplemented)
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^sign\(\): only exact native CPU float32 Tensor inputs are supported$",
+        ):
+            with declining_out:
+                torch.sign(native_input, out=foreign_out)
+        self.assertEqual(len(declining_out.calls), 1)
+        self.assertEqual(foreign_out.tolist(), [0.0])
+
     def top_level_callable_contract(self, module):
         function = module.sign
         owner = function.__reduce__()[1][0]
