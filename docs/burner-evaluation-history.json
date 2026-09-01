@@ -8930,6 +8930,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 91
       }
+    },
+    {
+      "key": "pr:1549",
+      "recordedAt": "2026-09-01T07:00:32.503Z",
+      "label": "PR #1549",
+      "kind": "leaf",
+      "prNumber": 1549,
+      "title": "Add first-order autograd for abs",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 92,
+        "eval_39340456": 93.4,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 91
+      }
     }
   ]
 }
