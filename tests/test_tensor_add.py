@@ -350,7 +350,8 @@ class TensorAddMethodTests(unittest.TestCase):
         self.assertIs(reloaded, torch)
         self.assertIs(inspect.getattr_static(torch.Tensor, "add"), descriptor)
         self.assertFalse(hasattr(torch.Tensor, "add_"))
-        self.assertFalse(hasattr(torch, "add"))
+        self.assertIs(type(torch.add), types.BuiltinFunctionType)
+        self.assertEqual(torch.add.__name__, "add")
 
     def test_descriptor_pickle_survives_package_reinitialization(self):
         descriptor = inspect.getattr_static(torch.Tensor, "add")

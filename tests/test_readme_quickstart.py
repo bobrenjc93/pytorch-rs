@@ -92,11 +92,12 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         "Run eager math and reductions",
         (
             "Python `+`, `-`, `*`, and `/` operators",
+            "`torch.add`",
             "`Tensor.add`",
             "`torch.matmul`",
             "`torch.sum`",
         ),
-        ("`torch.add`", "in-place variants", "dimension reductions"),
+        ("Concrete `out` tensors", "in-place variants", "dimension reductions"),
         ("[Elementwise and reductions](#elementwise-and-reductions)",),
     ),
     (

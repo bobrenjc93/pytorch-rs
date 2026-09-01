@@ -2376,6 +2376,14 @@ pub(crate) fn multiply_variable_function(
     multiplication_variable_function(MultiplicationOperation::Multiply, py, args, kwargs)
 }
 
+pub(crate) fn add_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    subtraction_variable_function(SubtractionOperation::Add, py, args, kwargs)
+}
+
 pub(crate) fn sub_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -4969,7 +4977,8 @@ fn apply_top_level_subtraction(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    if call.alpha_is_positional
+    if !matches!(operation, SubtractionOperation::Add)
+        && call.alpha_is_positional
         && !matches!(
             (&call.input, &call.other),
             (BoundSubOperand::Tensor(_), BoundSubOperand::Scalar(_))
@@ -5005,14 +5014,16 @@ fn apply_top_level_subtraction(
     let result = match (&call.input, &call.other) {
         (BoundSubOperand::Tensor(input), BoundSubOperand::Tensor(other)) => {
             let other = other.try_borrow()?;
-            BinaryOperation::Subtract.apply_tensors(&input.try_borrow()?.inner, &other.inner)
+            operation
+                .binary_operation()
+                .apply_tensors(&input.try_borrow()?.inner, &other.inner)
         }
         (BoundSubOperand::Tensor(tensor), BoundSubOperand::Scalar(scalar)) => {
             let scalar = parse_supported_arithmetic_scalar(scalar)?;
-            if scalar.is_python_bool() {
+            if !matches!(operation, SubtractionOperation::Add) && scalar.is_python_bool() {
                 return Err(bool_subtraction_error());
             }
-            BinaryOperation::Subtract.apply_scalar(
+            operation.binary_operation().apply_scalar(
                 &tensor.try_borrow()?.inner,
                 scalar.into_f32(),
                 false,
@@ -5020,10 +5031,10 @@ fn apply_top_level_subtraction(
         }
         (BoundSubOperand::Scalar(scalar), BoundSubOperand::Tensor(tensor)) => {
             let scalar = parse_supported_arithmetic_scalar(scalar)?;
-            if scalar.is_python_bool() {
+            if !matches!(operation, SubtractionOperation::Add) && scalar.is_python_bool() {
                 return Err(bool_subtraction_error());
             }
-            BinaryOperation::Subtract.apply_scalar(
+            operation.binary_operation().apply_scalar(
                 &tensor.try_borrow()?.inner,
                 scalar.into_f32(),
                 true,
@@ -5031,8 +5042,9 @@ fn apply_top_level_subtraction(
         }
         (BoundSubOperand::Scalar(_), BoundSubOperand::Scalar(_)) => {
             return Err(PyTypeError::new_err(format!(
-                "{}(): scalar-scalar subtraction is not supported; at least one operand must be Tensor",
-                operation.name()
+                "{}(): scalar-scalar {} is not supported; at least one operand must be Tensor",
+                operation.name(),
+                operation.scalar_scalar_operation()
             )));
         }
         (BoundSubOperand::Override(_), _) | (_, BoundSubOperand::Override(_)) => {
@@ -5512,6 +5524,7 @@ enum AddSubMethodOperation {
 
 #[derive(Clone, Copy)]
 enum SubtractionOperation {
+    Add,
     Sub,
     Subtract,
 }
@@ -5560,6 +5573,7 @@ impl AddSubMethodOperation {
 impl SubtractionOperation {
     const fn name(self) -> &'static str {
         match self {
+            Self::Add => "add",
             Self::Sub => "sub",
             Self::Subtract => "subtract",
         }
@@ -5567,6 +5581,7 @@ impl SubtractionOperation {
 
     const fn qualified_name(self) -> &'static str {
         match self {
+            Self::Add => "torch.add",
             Self::Sub => "torch.sub",
             Self::Subtract => "torch.subtract",
         }
@@ -5574,6 +5589,7 @@ impl SubtractionOperation {
 
     const fn dispatch_allocation_error(self) -> &'static str {
         match self {
+            Self::Add => "unable to allocate add dispatch operands",
             Self::Sub => "unable to allocate sub dispatch operands",
             Self::Subtract => "unable to allocate subtract dispatch operands",
         }
@@ -5581,6 +5597,7 @@ impl SubtractionOperation {
 
     const fn out_unsupported_error(self) -> &'static str {
         match self {
+            Self::Add => "add(): the 'out' argument is not supported",
             Self::Sub => "sub(): the 'out' argument is not supported",
             Self::Subtract => "subtract(): the 'out' argument is not supported",
         }
@@ -5588,8 +5605,23 @@ impl SubtractionOperation {
 
     const fn alpha_unsupported_error(self) -> &'static str {
         match self {
+            Self::Add => "add(): alpha values other than 1 are not supported",
             Self::Sub => "sub(): alpha values other than 1 are not supported",
             Self::Subtract => "subtract(): alpha values other than 1 are not supported",
+        }
+    }
+
+    const fn binary_operation(self) -> BinaryOperation {
+        match self {
+            Self::Add => BinaryOperation::Add,
+            Self::Sub | Self::Subtract => BinaryOperation::Subtract,
+        }
+    }
+
+    const fn scalar_scalar_operation(self) -> &'static str {
+        match self {
+            Self::Add => "addition",
+            Self::Sub | Self::Subtract => "subtraction",
         }
     }
 }
@@ -13066,7 +13098,26 @@ fn bind_top_level_subtraction_arguments<'py>(
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<BoundTopLevelSubtractionArguments<'py>> {
     let function = operation.name();
-    if matches!(operation, SubtractionOperation::Subtract) {
+    if matches!(operation, SubtractionOperation::Add) {
+        let mut disallowed_three_argument_keyword = false;
+        if positional.len() == 3
+            && let Some(keywords) = keywords
+        {
+            for key in keywords.keys() {
+                let key = key.extract::<String>()?;
+                if key != "out" {
+                    disallowed_three_argument_keyword = true;
+                    break;
+                }
+            }
+        }
+        if positional.len() > 3 || (positional.len() == 3 && disallowed_three_argument_keyword) {
+            return Err(PyTypeError::new_err(format!(
+                "{function}() takes 2 positional arguments but {} were given",
+                positional.len()
+            )));
+        }
+    } else if matches!(operation, SubtractionOperation::Subtract) {
         if positional.len() > 3
             || (positional.len() == 3 && keywords.is_some_and(|keywords| !keywords.is_empty()))
         {
@@ -13082,6 +13133,9 @@ fn bind_top_level_subtraction_arguments<'py>(
         )));
     }
 
+    if matches!(operation, SubtractionOperation::Add) && positional.len() == 3 {
+        return bind_top_level_add_positional_scalar_overload(positional, keywords);
+    }
     if positional.len() == 3 {
         return bind_top_level_subtract_positional_scalar_overload(positional, keywords);
     }
@@ -13163,6 +13217,47 @@ fn bind_top_level_subtraction_arguments<'py>(
     )?;
 
     Ok(([input, other], alpha, out, keyword_error))
+}
+
+fn bind_top_level_add_positional_scalar_overload<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundTopLevelSubtractionArguments<'py>> {
+    let input = ParsedCallArgument {
+        value: positional.get_item(0)?,
+        position: Some(1),
+    };
+    let alpha = ParsedCallArgument {
+        value: positional.get_item(1)?,
+        position: Some(2),
+    };
+    let other = ParsedCallArgument {
+        value: positional.get_item(2)?,
+        position: Some(3),
+    };
+    if probe_torch_function_override(&input.value).is_none()
+        && probe_torch_function_override(&other.value).is_none()
+        && probe_torch_function_override(&alpha.value).is_none()
+        && (!input.value.is_instance_of::<PyTensor>()
+            || !(other.value.is_instance_of::<PyTensor>()
+                || is_real_arithmetic_scalar(&other.value)?)
+            || !is_real_arithmetic_scalar(&alpha.value)?)
+    {
+        return Err(PyTypeError::new_err(format!(
+            "add() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+    let out = if let Some(keywords) = keywords {
+        keywords.get_item("out")?
+    } else {
+        None
+    }
+    .map(|value| ParsedCallArgument {
+        value,
+        position: None,
+    });
+    Ok(([input, other], Some(alpha), out, None))
 }
 
 fn bind_top_level_subtract_positional_scalar_overload<'py>(

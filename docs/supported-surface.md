@@ -10,7 +10,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 | --- | --- | --- |
 | Create CPU `float32` tensors | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.zeros_like`, `torch.ones_like`, `torch.full`, `torch.eye` in [Tensors](#tensors) and [Creation](#creation) | Identity converters reject Python sequences, NumPy arrays, non-float scalars, dtype conversions, accelerator or meta devices, and copy/output requests; factories reject non-`float32` dtypes, non-CPU devices, concrete `out`, pinning, sparse layouts, and backend-specific allocation. |
 | Preserve or change tensor layout | `Tensor.view`, `Tensor.view_as`, `Tensor.reshape`, `Tensor.reshape_as`, `torch.reshape`, `Tensor.permute`, `torch.permute`, `Tensor.movedim`, `Tensor.moveaxis`, `torch.movedim`, `torch.moveaxis`, `Tensor.contiguous`, `Tensor.cpu` in [Metadata and views](#metadata-and-views) | Unsupported edges include non-leading `select`, sequence `movedim` axes, variadic top-level reshape dimensions, seven-or-more variadic view dimensions, cross-dtype views, complex dtypes, and imaginary views. |
-| Run eager math and reductions | Python `+`, `-`, `*`, and `/` operators, `Tensor.add`, `Tensor.sub`, `Tensor.subtract`, `Tensor.mul`, `Tensor.multiply`, `Tensor.div`, `Tensor.divide`, `torch.sub`, `torch.subtract`, `torch.mul`, `torch.multiply`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` in [Elementwise and reductions](#elementwise-and-reductions) | `torch.add`, concrete `out` tensors, in-place variants, nondefault `alpha` or `rounding_mode`, scalar-only multiplication/division, dimension reductions, `keepdim=True`, dtype conversions, and non-CPU/non-`float32` tensors remain outside the contract. |
+| Run eager math and reductions | Python `+`, `-`, `*`, and `/` operators, `Tensor.add`, `torch.add`, `Tensor.sub`, `Tensor.subtract`, `Tensor.mul`, `Tensor.multiply`, `Tensor.div`, `Tensor.divide`, `torch.sub`, `torch.subtract`, `torch.mul`, `torch.multiply`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` in [Elementwise and reductions](#elementwise-and-reductions) | Concrete `out` tensors, in-place variants, nondefault `alpha` or `rounding_mode`, scalar-only multiplication/division, dimension reductions, `keepdim=True`, dtype conversions, and non-CPU/non-`float32` tensors remain outside the contract. |
 | Use functional NN helpers | `torch.nn.functional.linear`, `torch.nn.functional.relu`, `torch.nn.functional.l1_loss`, `torch.nn.functional.mse_loss`, `torch.nn.functional.dropout`, `torch.nn.functional.dropout1d`, `torch.nn.functional.dropout2d`, `torch.nn.functional.dropout3d`, `torch.nn.functional.sigmoid`, `torch.nn.functional.silu`, `torch.nn.functional.softsign`, `torch.nn.functional.tanh`, `torch.nn.init.calculate_gain` in [NN/data helpers](#nn-and-data-helpers) and [math activations](#elementwise-and-reductions) | Module layers, active autograd for loss/softsign paths, loss reductions other than `"none"`, loss `weight` arguments, nondeterministic dropout, nonidentity inplace dropout, and mutating initializers remain unsupported. |
 | Reuse data and state helpers | `torch.utils.data.Dataset`, `torch.utils.data.IterableDataset`, `torch.utils.data.TensorDataset`, `torch.utils.data.StackDataset`, `torch.utils.data.ConcatDataset`, `torch.utils.data.ChainDataset`, `torch.utils.data.Subset`, `torch.utils.data.Sampler`, `torch.utils.data.SequentialSampler`, `torch.utils.data.BatchSampler`, `torch.utils.data.DistributedSampler`, `torch.utils.data.get_worker_info`, `torch.nn.modules.utils.consume_prefix_in_state_dict_if_present`, `torch.serialization.LoadEndianness`, `torch.serialization.get_default_load_endianness`, `torch.serialization.set_default_load_endianness`, `torch.serialization.get_crc32_options`, `torch.serialization.set_crc32_options`, `torch.serialization.get_default_mmap_options`, `torch.serialization.set_default_mmap_options` in [NN/data helpers](#nn-and-data-helpers) | `DataLoader`, worker processes, random or shuffle-backed sampling, `torch.nn.Module`, optimizers, optimizer state serialization, `torch.save`, and `torch.load` remain unsupported. |
 | Check dtype, device, and backend state | `torch.float32`, `torch.float`, `torch.finfo`, `torch.can_cast`, `torch.promote_types`, `Tensor.is_cuda`, `torch.get_device`, `Tensor.cpu`, `torch.cpu.is_available`, `torch.cpu.is_initialized`, `torch.cpu.current_device`, `torch.cpu.device_count`, `torch.cpu.synchronize`, `torch.cpu.set_device`, `torch.cpu.Event`, `torch.cuda.is_available`, `torch.cuda.device_count`, `torch.accelerator.current_accelerator`, `torch.accelerator.current_device_index`, `torch.accelerator.current_device_idx`, `torch.accelerator.is_available`, `torch.accelerator.device_count`, `torch.accelerator.empty_cache`, `torch.accelerator.reset_accumulated_memory_stats`, `torch.accelerator.reset_peak_memory_stats`, `torch.accelerator.memory_stats`, `torch.accelerator.memory_allocated`, `torch.accelerator.max_memory_allocated`, `torch.accelerator.memory_reserved`, `torch.accelerator.max_memory_reserved`, `torch.backends.cpu.get_cpu_capability`, `torch.backends.nnpack.set_flags`, `torch.backends.cuda.enable_flash_sdp`, `torch.backends.cudnn.benchmark_limit`, `torch.backends.mha.get_fastpath_enabled`, `torch.version.cuda` in [tensor metadata](#metadata-and-views) and [backend metadata](#backend-and-compiler-metadata) | Additional dtypes, CUDA tensors/transfers/streams/events/synchronization/runtime/kernels, accelerator selection, accelerator streams/graphs/execution, memory-management APIs outside the named helper set, non-`None` accelerator/CUDA version reporting, and backend APIs outside [Backend and compiler metadata](#backend-and-compiler-metadata) remain unsupported. |
@@ -639,8 +639,9 @@ and `torch.equal()` comparison, identity `Tensor.positive()`/
 `torch.positive()` and unary `+`, unary `-`, `Tensor.neg()`, its
 `Tensor.negative()` alias, `torch.neg()`, and the distinct top-level
 `torch.negative()` builtin. It supports broadcast tensor and real-scalar
-addition through `+` and method-only `Tensor.add()`, subtraction, multiplication
-through `*`, `Tensor.mul()`, `Tensor.multiply()`, `torch.mul()`, and the
+addition through `+`, `Tensor.add()`, and top-level `torch.add()`,
+subtraction, multiplication through `*`, `Tensor.mul()`, `Tensor.multiply()`,
+`torch.mul()`, and the
 distinct top-level `torch.multiply()` builtin, default-alpha
 `Tensor.sub()`/`torch.sub()` and the distinct
 `Tensor.subtract()`/`torch.subtract()` callables, true division through `/`,
@@ -660,19 +661,24 @@ tensor/real-scalar operands in either order and reuse the same broadcast and
 autograd kernels; their `out` forms and scalar-only multiplication remain
 unsupported.
 
-Method-only `Tensor.add(other, *, alpha=1)` accepts exact native CPU float32
-tensor/tensor and tensor/real-scalar operands for default-equivalent alpha
-values and reuses the same addition, broadcasting, and first-order autograd
-paths as Python `+`. The receiver must be the left Tensor operand; top-level
-`torch.add` is not exposed. `Tensor.add` also accepts PyTorch 2.13-compatible
+Top-level `torch.add(input, other, *, alpha=1, out=None)` and
+`Tensor.add(other, *, alpha=1)` accept exact native CPU float32 tensor/tensor
+and tensor/real-scalar operands for default-equivalent alpha values and reuse
+the same addition, broadcasting, and first-order autograd paths as Python `+`.
+Top-level calls accept either scalar/tensor operand order, PyTorch 2.13's
+`input`/`x`/`a`/`x1` and `other`/`x2` aliases, `out=None`, and the
+default-equivalent legacy positional scalar alpha form. The method receiver
+remains the left Tensor operand and also accepts PyTorch 2.13-compatible
 default-equivalent scalar positional alpha forms, including
-`Tensor.add(1, other_tensor)`. It preserves PyTorch 2.13-compatible values,
-layout metadata, empty tensors, offsets, non-contiguous inputs, signed zero,
-NaNs, infinities, `torch.no_grad()`, callable/export/copy/pickle behavior, and
+`Tensor.add(1, other_tensor)`. Both call forms preserve PyTorch
+2.13-compatible values, layout metadata, empty tensors, offsets,
+non-contiguous inputs, signed zero, NaNs, infinities, `torch.no_grad()`,
+callable/export/copy/pickle behavior, and
 `TorchFunctionMode`/`__torch_function__` dispatch before native-only limits.
-Concrete `out` tensors, nondefault numeric or boolean `alpha`, scalar-only
-calls, unsupported operands, tensor subclasses without a handling override,
-dtype/device extension keywords, and in-place `Tensor.add_` remain unsupported.
+Concrete `torch.add` output tensors, method `out` arguments, nondefault numeric
+or boolean `alpha`, scalar-only calls, unsupported operands, tensor subclasses
+without a handling override, dtype/device extension keywords, and in-place
+addition variants remain unsupported.
 
 Top-level `torch.sub(input, other, *, alpha=1, out=None)`/`torch.subtract(...)`
 and method-only `Tensor.sub(other, *, alpha=1)`/`Tensor.subtract(...)` accept
