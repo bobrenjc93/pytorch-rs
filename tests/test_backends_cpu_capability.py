@@ -149,6 +149,7 @@ class CpuCapabilityTests(unittest.TestCase):
                 "m",
                 "mha",
                 "mkl",
+                "mkldnn",
                 "nnpack",
                 "openmp",
             },

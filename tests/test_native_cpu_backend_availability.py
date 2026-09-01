@@ -142,6 +142,7 @@ class NativeCpuBackendAvailabilityTests(unittest.TestCase):
                 "kleidiai",
                 "m",
                 "mha",
+                "mkldnn",
             },
         )
 
@@ -162,6 +163,7 @@ class NativeCpuBackendAvailabilityTests(unittest.TestCase):
                 "kleidiai",
                 "m",
                 "mha",
+                "mkldnn",
             },
         )
         self.assertNotIn("backends", torch.__all__)
@@ -295,7 +297,6 @@ class NativeCpuBackendAvailabilityTests(unittest.TestCase):
                 self.assertFalse(hasattr(backends.mkl, name))
 
         for name in (
-            "mkldnn",
             "mps",
             "quantized",
         ):
@@ -335,22 +336,27 @@ os.environ.update(
     NNPACK_NUM_THREADS="64",
 )
 import torch_rs as torch
-from torch_rs.backends import mkl, nnpack, openmp
+from torch_rs.backends import mkl, mkldnn, nnpack, openmp
 from torch_rs.backends.mkl import is_available as is_mkl_available
+from torch_rs.backends.mkldnn import is_available as is_mkldnn_available
 from torch_rs.backends.nnpack import is_available as is_nnpack_available
 from torch_rs.backends.nnpack import flags as nnpack_flags
 from torch_rs.backends.nnpack import set_flags as set_nnpack_flags
 from torch_rs.backends.openmp import is_available as is_openmp_available
 
 assert torch.backends.mkl is mkl
+assert torch.backends.mkldnn is mkldnn
 assert torch.backends.nnpack is nnpack
 assert torch.backends.openmp is openmp
 assert mkl.is_available is is_mkl_available
+assert mkldnn.is_available == is_mkldnn_available
 assert nnpack.is_available is is_nnpack_available
 assert nnpack.flags is nnpack_flags
 assert nnpack.set_flags is set_nnpack_flags
 assert openmp.is_available is is_openmp_available
 assert mkl.is_available() is torch._C.has_mkl is False
+assert mkldnn.is_available() is torch._C._has_mkldnn is False
+assert torch.has_lapack is torch._C.has_lapack is False
 assert nnpack.is_available() is torch._nnpack_available() is False
 assert nnpack.set_flags(False) == (True,)
 assert nnpack.set_flags(True) == (False,)

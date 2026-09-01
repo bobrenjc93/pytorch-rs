@@ -181,6 +181,7 @@ class MhaFastpathTests(unittest.TestCase):
                 "m",
                 "mha",
                 "mkl",
+                "mkldnn",
                 "nnpack",
                 "openmp",
             },

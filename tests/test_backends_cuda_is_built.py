@@ -111,6 +111,7 @@ class CudaIsBuiltTests(unittest.TestCase):
                 "m",
                 "mha",
                 "mkl",
+                "mkldnn",
                 "nnpack",
                 "openmp",
             },

@@ -173,6 +173,7 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
                 "kleidiai",
                 "m",
                 "mha",
+                "mkldnn",
             }
         }
         self.assertEqual(actual_parent_names, expected_supported_names)
@@ -323,12 +324,12 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
                 "kleidiai",
                 "m",
                 "mha",
+                "mkldnn",
             },
         )
         self.assertTrue(set(BACKENDS).issubset(expected_public))
         self.assertTrue(
             {
-                "mkldnn",
                 "mps",
                 "quantized",
             }.issubset(expected_public - actual_public)

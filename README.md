@@ -46,11 +46,13 @@ functions, and limited first-order autograd. Top-level `torch.cuda` exposes
 CPU-build probes only: `device_count()` is `0`, `is_available()` is `False`,
 and `is_initialized()` is `False`. `torch.backends.cuda` includes preference
 flags such as `enable_flash_sdp(...)` and `enable_cudnn_sdp(...)`, but they do
-not add scaled-dot-product-attention or CUDA execution. CUDA tensors, device
-selection, streams, events, synchronization, allocator APIs, runtime
-initialization, `torch.compile` CUDA execution, additional tensor dtypes, and
-the full module, optimizer, model-serialization, compiler, and distributed
-stacks remain unsupported.
+not add scaled-dot-product-attention or CUDA execution.
+`torch.backends.mkldnn.is_available()` is an importable CPU-build probe that
+returns `False`; oneDNN/MKLDNN tensors, operators, flags, and execution remain
+unsupported. CUDA tensors, device selection, streams, events, synchronization,
+allocator APIs, runtime initialization, `torch.compile` CUDA execution,
+additional tensor dtypes, and the full module, optimizer, model-serialization,
+compiler, and distributed stacks remain unsupported.
 
 See the [exhaustive supported surface](docs/supported-surface.md) for exact API
 and limitation details, [FEATURES.md](FEATURES.md) for the weighted coverage

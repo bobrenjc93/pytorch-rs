@@ -71,24 +71,26 @@ const BROADCAST_TENSORS_EXPANSION_ERROR: &str =
 // These are compile-time facts about the native Cargo build. Keep them native
 // so importing the Python package never probes the host or imports another
 // tensor runtime to infer capabilities.
-const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 9] = [
+const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 10] = [
     ("_GLIBCXX_USE_CXX11_ABI", false),
     ("_has_cudnn", false),
     ("_has_cuda", false),
     ("_has_cusparselt", false),
     ("_has_kleidiai", false),
+    ("_has_mkldnn", false),
     ("has_openmp", false),
     ("has_mkl", false),
     ("has_lapack", false),
     ("has_spectral", false),
 ];
-const PRIVATE_NATIVE_EXPORTS: [&str; 8] = [
+const PRIVATE_NATIVE_EXPORTS: [&str; 9] = [
     "_GLIBCXX_USE_CXX11_ABI",
     "_get_cpu_capability",
     "_has_cudnn",
     "_has_cuda",
     "_has_cusparselt",
     "_has_kleidiai",
+    "_has_mkldnn",
     "_is_ck_sdpa_available",
     "_is_flash_attention_available",
 ];

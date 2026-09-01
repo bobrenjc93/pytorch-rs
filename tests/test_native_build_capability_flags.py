@@ -136,6 +136,7 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
             ("openmp", "has_openmp"),
             ("mkl", "has_mkl"),
             ("nnpack", None),
+            ("mkldnn", "_has_mkldnn"),
         ):
             with self.subTest(backend=backend):
                 module = importlib.import_module(f"torch_rs.backends.{backend}")
@@ -147,10 +148,7 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
                 )
                 self.assertIs(module.is_available(), expected)
 
-        for module_name in (
-            "torch_rs.backends.lapack",
-            "torch_rs.backends.mkldnn",
-        ):
+        for module_name in ("torch_rs.backends.lapack",):
             with self.subTest(module=module_name):
                 with self.assertRaises(ModuleNotFoundError):
                     importlib.import_module(module_name)
@@ -200,6 +198,10 @@ assert not hasattr(torch, "fft")
 assert not hasattr(torch, "stft")
 assert not hasattr(torch, "istft")
 assert not hasattr(torch, "spectral")
+assert torch.backends.mkldnn.is_available() is torch._C._has_mkldnn is False
+assert torch.has_mkl is torch._C.has_mkl is False
+assert torch.has_lapack is torch._C.has_lapack is False
+assert not hasattr(torch, "has_mkldnn")
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked
     for name in sys.modules

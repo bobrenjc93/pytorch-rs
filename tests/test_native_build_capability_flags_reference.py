@@ -141,7 +141,7 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
     def test_backend_availability_namespaces_match_the_supported_scope(self):
         self.assertTrue(hasattr(reference_torch, "backends"))
         self.assertTrue(hasattr(torch, "backends"))
-        for backend in ("openmp", "mkl", "nnpack"):
+        for backend in ("openmp", "mkl", "nnpack", "mkldnn"):
             with self.subTest(backend=backend):
                 actual = getattr(torch.backends, backend)
                 expected = getattr(reference_torch.backends, backend)
@@ -150,12 +150,13 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
                 actual_expected = (
                     torch._nnpack_available()
                     if backend == "nnpack"
+                    else getattr(torch._C, "_has_mkldnn")
+                    if backend == "mkldnn"
                     else getattr(torch._C, f"has_{backend}")
                 )
                 self.assertIs(actual.is_available(), actual_expected)
 
         self.assertFalse(hasattr(torch.backends, "lapack"))
-        self.assertFalse(hasattr(torch.backends, "mkldnn"))
 
 
 if __name__ == "__main__":
