@@ -1,6 +1,7 @@
 import copy
 import importlib
 import inspect
+import math
 import pickle
 import re
 import types
@@ -11,13 +12,17 @@ import torch_rs as torch
 
 
 SUPPORTED_INPUT_ERROR = (
-    "zeros_like(): only exact native CPU float32 row-major contiguous Tensor "
+    "full_like(): only exact native CPU float32 row-major contiguous Tensor "
     "inputs are supported"
 )
 
 
-class ZerosLikeTests(unittest.TestCase):
-    def assert_zeros_like_result(self, source, result, *, requires_grad=False):
+class FullLikeTests(unittest.TestCase):
+    def tensor_bits(self, tensor):
+        source = tensor.detach() if tensor.requires_grad else tensor
+        return np.asarray(source, dtype=np.float32).reshape(-1).view(np.uint32).tolist()
+
+    def assert_full_like_result(self, source, result, fill_value, *, requires_grad=False):
         self.assertIs(type(result), torch.Tensor)
         self.assertIsNot(result, source)
         self.assertFalse(result.is_set_to(source))
@@ -28,7 +33,10 @@ class ZerosLikeTests(unittest.TestCase):
         self.assertEqual(result.device, torch.device("cpu"))
         self.assertEqual(result.requires_grad, requires_grad)
         self.assertTrue(result.is_leaf)
-        self.assertEqual(result.tolist(), torch.zeros(source.shape).tolist())
+        self.assertEqual(
+            self.tensor_bits(result),
+            self.tensor_bits(torch.full(source.shape, fill_value)),
+        )
 
     def supported_sources(self):
         base = torch.tensor(
@@ -67,8 +75,8 @@ class ZerosLikeTests(unittest.TestCase):
             )
             for options in option_cases:
                 with self.subTest(case=case, options=options):
-                    result = torch.zeros_like(source, **options)
-                    self.assert_zeros_like_result(source, result)
+                    result = torch.full_like(source, 1.25, **options)
+                    self.assert_full_like_result(source, result, 1.25)
                     self.assertEqual(
                         (
                             source.shape,
@@ -80,21 +88,48 @@ class ZerosLikeTests(unittest.TestCase):
                         before,
                     )
 
+    def test_fill_value_edge_cases_preserve_float32_bits(self):
+        source = torch.ones((2, 3))
+        fill_values = (
+            -0.0,
+            math.inf,
+            -math.inf,
+            math.nan,
+            3,
+            -(2**63),
+            2**64 - 1,
+            True,
+            False,
+            np.float32(-1.5),
+            np.int64(7),
+            np.bool_(True),
+            torch.tensor(-2.5),
+        )
+        for fill_value in fill_values:
+            with self.subTest(fill_value=repr(fill_value)):
+                self.assert_full_like_result(
+                    source,
+                    torch.full_like(source, fill_value),
+                    fill_value,
+                )
+
     def test_requires_grad_and_no_grad_match_factory_semantics(self):
         leaf = torch.ones((2, 3), requires_grad=True)
         source = leaf * 2.0
 
-        default = torch.zeros_like(source)
-        self.assert_zeros_like_result(source, default)
+        default = torch.full_like(source, 3.25)
+        self.assert_full_like_result(source, default, 3.25)
 
-        tracked = torch.zeros_like(source, requires_grad=True)
-        self.assert_zeros_like_result(source, tracked, requires_grad=True)
+        tracked = torch.full_like(source, 3.25, requires_grad=True)
+        self.assert_full_like_result(source, tracked, 3.25, requires_grad=True)
 
         with torch.no_grad():
-            no_grad_default = torch.zeros_like(source)
-            no_grad_tracked = torch.zeros_like(source, requires_grad=True)
-        self.assert_zeros_like_result(source, no_grad_default)
-        self.assert_zeros_like_result(source, no_grad_tracked, requires_grad=True)
+            no_grad_default = torch.full_like(source, 3.25)
+            no_grad_tracked = torch.full_like(source, 3.25, requires_grad=True)
+        self.assert_full_like_result(source, no_grad_default, 3.25)
+        self.assert_full_like_result(
+            source, no_grad_tracked, 3.25, requires_grad=True
+        )
 
         tracked.sum().backward()
         self.assertEqual(tracked.grad.tolist(), [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]])
@@ -117,16 +152,16 @@ class ZerosLikeTests(unittest.TestCase):
         self.assertEqual(relaxed_empty_contiguous.stride(), (1, 3, 3))
 
         for case, call in (
-            ("noncontiguous", lambda: torch.zeros_like(noncontiguous)),
+            ("noncontiguous", lambda: torch.full_like(noncontiguous, 1.0)),
             (
                 "relaxed singleton contiguous",
-                lambda: torch.zeros_like(relaxed_singleton_contiguous),
+                lambda: torch.full_like(relaxed_singleton_contiguous, 1.0),
             ),
             (
                 "relaxed empty contiguous",
-                lambda: torch.zeros_like(relaxed_empty_contiguous),
+                lambda: torch.full_like(relaxed_empty_contiguous, 1.0),
             ),
-            ("channels last", lambda: torch.zeros_like(channels_last)),
+            ("channels last", lambda: torch.full_like(channels_last, 1.0)),
         ):
             with self.subTest(case=case), self.assertRaisesRegex(
                 NotImplementedError, f"^{re.escape(SUPPORTED_INPUT_ERROR)}$"
@@ -135,49 +170,49 @@ class ZerosLikeTests(unittest.TestCase):
 
         error_cases = (
             (
-                lambda: torch.zeros_like(source, memory_format=torch.channels_last),
+                lambda: torch.full_like(source, 1.0, memory_format=torch.channels_last),
                 NotImplementedError,
-                "zeros_like(): only default-equivalent memory_format is supported",
+                "full_like(): only default-equivalent memory_format is supported",
             ),
             (
-                lambda: torch.zeros_like(source, device="cuda"),
+                lambda: torch.full_like(source, 1.0, device="cuda"),
                 RuntimeError,
-                "zeros_like(): device 'cuda' is not supported; only 'cpu' is implemented",
+                "full_like(): device 'cuda' is not supported; only 'cpu' is implemented",
             ),
             (
-                lambda: torch.zeros_like(source, device=torch.device("cpu", 0)),
+                lambda: torch.full_like(source, 1.0, device=torch.device("cpu", 0)),
                 NotImplementedError,
-                "zeros_like(): indexed CPU devices require a copy and are not supported",
+                "full_like(): indexed CPU devices require a copy and are not supported",
             ),
             (
-                lambda: torch.zeros_like(source, out=None),
+                lambda: torch.full_like(source, 1.0, out=None),
                 TypeError,
-                "zeros_like() got an unexpected keyword argument 'out'",
+                "full_like() got an unexpected keyword argument 'out'",
             ),
             (
-                lambda: torch.zeros_like(source, out=torch.zeros((2, 3))),
+                lambda: torch.full_like(source, 1.0, out=torch.zeros((2, 3))),
                 TypeError,
-                "zeros_like() got an unexpected keyword argument 'out'",
+                "full_like() got an unexpected keyword argument 'out'",
             ),
             (
-                lambda: torch.zeros_like(source, dtype=object()),
+                lambda: torch.full_like(source, 1.0, dtype=object()),
                 TypeError,
-                "zeros_like(): argument 'dtype' must be torch.dtype, not object",
+                "full_like(): argument 'dtype' must be torch.dtype, not object",
             ),
             (
-                lambda: torch.zeros_like(source, layout=object()),
+                lambda: torch.full_like(source, 1.0, layout=object()),
                 TypeError,
-                "zeros_like(): argument 'layout' must be torch.layout, not object",
+                "full_like(): argument 'layout' must be torch.layout, not object",
             ),
             (
-                lambda: torch.zeros_like(source, memory_format=True),
+                lambda: torch.full_like(source, 1.0, memory_format=True),
                 TypeError,
-                "zeros_like(): argument 'memory_format' must be torch.memory_format, not bool",
+                "full_like(): argument 'memory_format' must be torch.memory_format, not bool",
             ),
             (
-                lambda: torch.zeros_like(source, requires_grad=1),
+                lambda: torch.full_like(source, 1.0, requires_grad=1),
                 TypeError,
-                "zeros_like(): argument 'requires_grad' must be bool, not int",
+                "full_like(): argument 'requires_grad' must be bool, not int",
             ),
         )
         for call, error_type, message in error_cases:
@@ -186,7 +221,7 @@ class ZerosLikeTests(unittest.TestCase):
             ):
                 call()
 
-    def test_rejects_bad_input_subclasses_modes_and_bad_call_forms(self):
+    def test_rejects_bad_input_fills_subclasses_modes_and_bad_call_forms(self):
         source = torch.ones((2, 3))
 
         class Override:
@@ -199,29 +234,59 @@ class ZerosLikeTests(unittest.TestCase):
 
         bad_calls = (
             (
-                lambda: torch.zeros_like(),
+                lambda: torch.full_like(),
                 TypeError,
-                'zeros_like() missing 1 required positional arguments: "input"',
+                'full_like() missing 2 required positional argument: "input", "fill_value"',
             ),
             (
-                lambda: torch.zeros_like(source, source),
+                lambda: torch.full_like(source),
                 TypeError,
-                "zeros_like() takes 1 positional argument but 2 were given",
+                'full_like() missing 1 required positional arguments: "fill_value"',
             ),
             (
-                lambda: torch.zeros_like(source, input=source),
+                lambda: torch.full_like(fill_value=1.0),
                 TypeError,
-                "zeros_like() got multiple values for argument 'input'",
+                'full_like() missing 2 required positional argument: "input", "fill_value"',
             ),
             (
-                lambda: torch.zeros_like([1.0]),
+                lambda: torch.full_like(source, 1.0, source),
                 TypeError,
-                "zeros_like(): argument 'input' (position 1) must be Tensor, not list",
+                "full_like() takes 2 positional arguments but 3 were given",
             ),
             (
-                lambda: torch.zeros_like(Override()),
+                lambda: torch.full_like(source, 1.0, input=source),
                 TypeError,
-                "zeros_like(): argument 'input' (position 1) must be Tensor, not Override",
+                "full_like() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.full_like(source, 1.0, fill_value=2.0),
+                TypeError,
+                "full_like() got multiple values for argument 'fill_value'",
+            ),
+            (
+                lambda: torch.full_like([1.0], 1.0),
+                TypeError,
+                "full_like(): argument 'input' (position 1) must be Tensor, not list",
+            ),
+            (
+                lambda: torch.full_like(Override(), 1.0),
+                TypeError,
+                "full_like(): argument 'input' (position 1) must be Tensor, not Override",
+            ),
+            (
+                lambda: torch.full_like(source, torch.tensor([3.0])),
+                TypeError,
+                "full_like(): argument 'fill_value' (position 2) must be Number, not Tensor",
+            ),
+            (
+                lambda: torch.full_like(source, [3.0]),
+                TypeError,
+                "full_like(): argument 'fill_value' (position 2) must be Number, not list",
+            ),
+            (
+                lambda: torch.full_like(source, object()),
+                TypeError,
+                "full_like(): argument 'fill_value' (position 2) must be Number, not object",
             ),
         )
         for call, error_type, message in bad_calls:
@@ -243,32 +308,35 @@ class ZerosLikeTests(unittest.TestCase):
         with mode:
             with self.assertRaisesRegex(
                 NotImplementedError,
-                r"^zeros_like\(\): __torch_function__ modes are not supported$",
+                r"^full_like\(\): __torch_function__ modes are not supported$",
             ):
-                torch.zeros_like(source)
+                torch.full_like(source, 1.0)
         self.assertEqual(mode.calls, [])
         self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
 
-    def test_input_keyword_aliases_match_generated_binding_forms(self):
+    def test_input_keyword_aliases_and_fill_value_keyword_match_generated_binding_forms(self):
         source = torch.ones((2,))
         for keyword in ("input", "x", "a", "x1"):
             with self.subTest(keyword=keyword):
-                result = torch.zeros_like(**{keyword: source})
-                self.assert_zeros_like_result(source, result)
+                result = torch.full_like(**{keyword: source}, fill_value=2.5)
+                self.assert_full_like_result(source, result, 2.5)
+
+        result = torch.full_like(source, fill_value=-1.25)
+        self.assert_full_like_result(source, result, -1.25)
 
     def test_callable_metadata_exports_copy_pickle_and_reload(self):
         package = importlib.import_module("torch_rs")
         native = package._C
-        function = package.zeros_like
+        function = package.full_like
         wildcard_namespace = {}
         exec("from torch_rs import *", wildcard_namespace)
 
         self.assertIs(type(function), types.BuiltinFunctionType)
-        self.assertEqual(function.__name__, "zeros_like")
-        self.assertEqual(function.__qualname__, "_VariableFunctionsClass.zeros_like")
+        self.assertEqual(function.__name__, "full_like")
+        self.assertEqual(function.__qualname__, "_VariableFunctionsClass.full_like")
         self.assertEqual(function.__module__, "torch")
         self.assertIn(
-            "zeros_like(input, *, dtype=None, layout=None, device=None, "
+            "full_like(input, fill_value, *, dtype=None, layout=None, device=None, "
             "requires_grad=False, memory_format=None) -> Tensor",
             function.__doc__,
         )
@@ -278,10 +346,10 @@ class ZerosLikeTests(unittest.TestCase):
 
         owner = function.__reduce__()[1][0]
         self.assertIs(owner, package._C._VariableFunctionsClass)
-        self.assertIs(owner.zeros_like, function)
-        self.assertIs(native.zeros_like, function)
-        self.assertEqual(package.__all__.count("zeros_like"), 1)
-        self.assertIs(wildcard_namespace["zeros_like"], function)
+        self.assertIs(owner.full_like, function)
+        self.assertIs(native.full_like, function)
+        self.assertEqual(package.__all__.count("full_like"), 1)
+        self.assertIs(wildcard_namespace["full_like"], function)
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
@@ -292,10 +360,10 @@ class ZerosLikeTests(unittest.TestCase):
                 )
 
         self.assertIs(importlib.reload(native), native)
-        self.assertIs(native.zeros_like, function)
+        self.assertIs(native.full_like, function)
         self.assertIs(importlib.reload(package), package)
-        self.assertIs(package.zeros_like, function)
-        self.assertEqual(package.__all__.count("zeros_like"), 1)
+        self.assertIs(package.full_like, function)
+        self.assertEqual(package.__all__.count("full_like"), 1)
 
     def test_empty_like_remains_unsupported(self):
         package = importlib.import_module("torch_rs")
