@@ -56,6 +56,8 @@ class OnesTests(unittest.TestCase):
         cases = (
             ("plain", (2, 3), (2, 3)),
             ("zero dimension", (2, 0, 3), (2, 0, 3)),
+            ("python bool false dimension", (2, False), (2, 0)),
+            ("python bool true dimension", (2, True), (2, 1)),
             (
                 "integer protocol",
                 (custom, np.int64(3), np.uint32(1), IntSubclass(2)),
@@ -192,11 +194,6 @@ class OnesTests(unittest.TestCase):
                 lambda: torch.ones(True, 2),
                 TypeError,
                 re.escape("ones() takes 1 positional argument but 2 were given"),
-            ),
-            (
-                lambda: torch.ones(2, False),
-                TypeError,
-                r"pos 2.*bool",
             ),
             (
                 lambda: torch.ones(2, np.bool_(True)),

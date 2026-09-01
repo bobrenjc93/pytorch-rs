@@ -9287,12 +9287,6 @@ fn extract_variadic_creation_dimension(
     position: usize,
     dimension: &Bound<'_, PyAny>,
 ) -> PyResult<i64> {
-    if dimension.is_instance_of::<PyBool>() {
-        return Err(creation_dimension_unpack_type_error(
-            function, position, dimension,
-        )?);
-    }
-
     let indexed = if dimension.is_instance_of::<PyInt>() {
         dimension.clone()
     } else {

@@ -92,6 +92,8 @@ class ZerosReferenceTests(unittest.TestCase):
         dimension_factories = (
             (lambda: 2, lambda: 3),
             (lambda: 2, lambda: 0, lambda: 3),
+            (lambda: 2, lambda: False),
+            (lambda: 2, lambda: True),
             (
                 lambda: IntSubclass(2),
                 lambda: np.int64(3),
