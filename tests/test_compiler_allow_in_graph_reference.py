@@ -41,6 +41,13 @@ class _Callable:
         return value
 
 
+class _SlottedCallable:
+    __slots__ = ()
+
+    def __call__(self):
+        return "called"
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class CompilerAllowInGraphReferenceTests(unittest.TestCase):
     @classmethod
@@ -192,6 +199,31 @@ class CompilerAllowInGraphReferenceTests(unittest.TestCase):
             (
                 lambda: torch.compiler.allow_in_graph((1,)),
                 lambda: reference_torch.compiler.allow_in_graph((1,)),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assert_error_matches(actual_call, expected_call)
+
+    def test_non_weakrefable_callables_match_pytorch_2_13(self):
+        actual_direct = _SlottedCallable()
+        expected_direct = _SlottedCallable()
+        actual_list = [_SlottedCallable()]
+        expected_list = [_SlottedCallable()]
+        actual_tuple = (_SlottedCallable(),)
+        expected_tuple = (_SlottedCallable(),)
+        cases = (
+            (
+                lambda: torch.compiler.allow_in_graph(actual_direct),
+                lambda: reference_torch.compiler.allow_in_graph(expected_direct),
+            ),
+            (
+                lambda: torch.compiler.allow_in_graph(actual_list),
+                lambda: reference_torch.compiler.allow_in_graph(expected_list),
+            ),
+            (
+                lambda: torch.compiler.allow_in_graph(actual_tuple),
+                lambda: reference_torch.compiler.allow_in_graph(expected_tuple),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):

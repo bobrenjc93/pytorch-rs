@@ -125,6 +125,13 @@ class _Callable:
         return value
 
 
+class _SlottedCallable:
+    __slots__ = ()
+
+    def __call__(self):
+        return "called"
+
+
 class CompilerAllowInGraphTests(unittest.TestCase):
     def test_decorator_returns_original_function_and_preserves_eager_calls(self):
         calls = []
@@ -179,6 +186,23 @@ class CompilerAllowInGraphTests(unittest.TestCase):
                 self.assertFalse(hasattr(result, "_torchdynamo_disable"))
 
         self.assertEqual(callable_object.calls, ["value"])
+
+    def test_non_weakrefable_callable_instances_raise_pytorch_2_13_error(self):
+        for target in (_SlottedCallable(), [_SlottedCallable()], (_SlottedCallable(),)):
+            with self.subTest(target=target):
+                with self.assertRaises(TypeError) as raised:
+                    torch.compiler.allow_in_graph(target)
+                self.assertEqual(
+                    str(raised.exception),
+                    "cannot create weak reference to '_SlottedCallable' object",
+                )
+                self.assertEqual(
+                    raised.exception.args,
+                    (
+                        "cannot create weak reference to "
+                        "'_SlottedCallable' object",
+                    ),
+                )
 
     def test_list_and_tuple_inputs_return_new_lists_of_original_callables(self):
         def first():
