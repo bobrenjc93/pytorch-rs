@@ -623,6 +623,19 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
+    pub(crate) fn empty_with_metadata(
+        shape: impl Into<Vec<usize>>,
+        dtype: DType,
+        device: Device,
+    ) -> Result<Self, TensorError> {
+        let shape = shape.into();
+        let (elements, strides) = validated_layout(&shape)?;
+        validate_storage_capacity(elements)?;
+        let mut data = try_result_vector(elements, elements)?;
+        data.resize(elements, 0.0);
+        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+    }
+
     /// Creates a zero-filled tensor.
     ///
     /// # Errors

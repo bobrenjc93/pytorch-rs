@@ -1750,6 +1750,21 @@ pub(crate) fn ones_like_variable_function(
     Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
 }
 
+pub(crate) fn empty_like_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (input, requires_grad) = parse_like_factory_arguments(
+        "empty_like",
+        bind_like_factory_arguments("empty_like", args, kwargs)?,
+    )?;
+    let shape = like_factory_input_shape("empty_like", &input)?;
+    let inner = CoreTensor::empty_with_metadata(shape, DType::Float32, Device::Cpu)
+        .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
+}
+
 pub(crate) fn zeros_like_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
