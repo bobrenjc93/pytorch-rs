@@ -1699,6 +1699,20 @@ pub(crate) fn zeros_like_variable_function(
     Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
 }
 
+pub(crate) fn full_like_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (input, fill_value, requires_grad) =
+        parse_full_like_arguments(bind_full_like_arguments(args, kwargs)?)?;
+    let shape = like_factory_input_shape("full_like", &input)?;
+    let inner =
+        CoreTensor::full_with_metadata(shape, fill_value.into_f32()?, DType::Float32, Device::Cpu)
+            .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
+}
+
 fn dispatch_empty_variadic_tensor_input(
     py: Python<'_>,
     name: &str,
@@ -5433,6 +5447,17 @@ struct LikeFactoryCallArguments<'py> {
     keyword_error: Option<PyErr>,
 }
 
+struct FullLikeCallArguments<'py> {
+    input: Option<ParsedCallArgument<'py>>,
+    fill_value: Option<ParsedCallArgument<'py>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    requires_grad: Option<Bound<'py, PyAny>>,
+    memory_format: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CreationSizeOrigin {
     Positional,
@@ -7730,6 +7755,91 @@ fn bind_like_factory_arguments<'py>(
     Ok(arguments)
 }
 
+fn bind_full_like_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<FullLikeCallArguments<'py>> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "full_like() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments = FullLikeCallArguments {
+        input: if positional.is_empty() {
+            None
+        } else {
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            })
+        },
+        fill_value: if positional.len() < 2 {
+            None
+        } else {
+            Some(ParsedCallArgument {
+                value: positional.get_item(1)?,
+                position: Some(2),
+            })
+        },
+        dtype: None,
+        layout: None,
+        device: None,
+        requires_grad: None,
+        memory_format: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "input" | "x" | "a" | "x1" => {
+                if arguments.input.is_some() {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("full_like() got multiple values for argument 'input'")
+                    });
+                } else {
+                    arguments.input = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            }
+            "fill_value" => {
+                if arguments.fill_value.is_some() {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(
+                            "full_like() got multiple values for argument 'fill_value'",
+                        )
+                    });
+                } else {
+                    arguments.fill_value = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            }
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "layout" => arguments.layout = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            "memory_format" => arguments.memory_format = optional_call_argument(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "full_like() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
+}
+
 fn optional_call_argument(value: Bound<'_, PyAny>) -> Option<Bound<'_, PyAny>> {
     if value.is_none() { None } else { Some(value) }
 }
@@ -8802,6 +8912,59 @@ fn parse_like_factory_arguments<'py>(
         )));
     }
     Ok((input.clone(), requires_grad))
+}
+
+fn parse_full_like_arguments<'py>(
+    arguments: FullLikeCallArguments<'py>,
+) -> PyResult<(Bound<'py, PyTensor>, ParsedFillValue, bool)> {
+    let FullLikeCallArguments {
+        input,
+        fill_value,
+        dtype,
+        layout,
+        device,
+        requires_grad,
+        memory_format,
+        keyword_error,
+    } = arguments;
+
+    let Some(input) = input else {
+        return Err(PyTypeError::new_err(
+            "full_like() missing 2 required positional argument: \"input\", \"fill_value\"",
+        ));
+    };
+    let Some(fill_value) = fill_value else {
+        return Err(PyTypeError::new_err(
+            "full_like() missing 1 required positional arguments: \"fill_value\"",
+        ));
+    };
+
+    let input = parse_exact_native_like_factory_tensor_argument("full_like", "input", &input)?;
+    let fill_value = parse_full_like_fill_value(&fill_value)?;
+    let memory_format = parse_like_factory_memory_format("full_like", memory_format.as_ref())?;
+    parse_identity_dtype("full_like", dtype.as_ref())?;
+    parse_factory_layout("full_like", layout.as_ref())?;
+    validate_as_tensor_device_type("full_like", device.as_ref())?;
+    let requires_grad = parse_factory_requires_grad("full_like", requires_grad.as_ref())?;
+    if let Some(error) = keyword_error {
+        return Err(error);
+    }
+    parse_as_tensor_device("full_like", device.as_ref())?;
+
+    if !matches!(
+        memory_format,
+        MemoryFormat::Preserve | MemoryFormat::Contiguous
+    ) {
+        return Err(PyNotImplementedError::new_err(
+            "full_like(): only default-equivalent memory_format is supported",
+        ));
+    }
+    if !torch_function_mode_stack::is_empty() {
+        return Err(PyNotImplementedError::new_err(
+            "full_like(): __torch_function__ modes are not supported",
+        ));
+    }
+    Ok((input.clone(), fill_value, requires_grad))
 }
 
 fn parse_like_factory_memory_format(
@@ -16390,6 +16553,84 @@ fn parse_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> 
     }
 
     parse_numpy_fill_value(fill_value)
+}
+
+fn parse_full_like_fill_value(fill_value: &ParsedCallArgument<'_>) -> PyResult<ParsedFillValue> {
+    let value = &fill_value.value;
+    if let Ok(tensor) = value.cast::<PyTensor>() {
+        let tensor = tensor.try_borrow()?;
+        if !tensor.inner.shape().is_empty() {
+            return Err(full_like_fill_value_type_error(fill_value)?);
+        }
+        return tensor
+            .inner
+            .item()
+            .map(ParsedFillValue::TensorScalar)
+            .map_err(|error| tensor_error(&error));
+    }
+
+    if value.is_instance_of::<PyInt>() {
+        return parse_full_like_integer_fill_value(value);
+    }
+
+    if value.is_instance_of::<PyFloat>() {
+        return value.extract::<f64>().map(ParsedFillValue::Float);
+    }
+
+    parse_numpy_full_like_fill_value(fill_value)
+}
+
+fn parse_full_like_integer_fill_value(value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
+    if let Ok(value) = value.extract::<i64>() {
+        return Ok(ParsedFillValue::SignedInteger(value));
+    }
+
+    value.extract::<u64>().map(ParsedFillValue::UnsignedInteger)
+}
+
+fn parse_numpy_full_like_fill_value(
+    fill_value: &ParsedCallArgument<'_>,
+) -> PyResult<ParsedFillValue> {
+    let value = &fill_value.value;
+    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
+        return Err(full_like_fill_value_type_error(fill_value)?);
+    };
+    let generic = numpy.getattr("generic")?;
+    if !value.is_instance(&generic)? {
+        return Err(full_like_fill_value_type_error(fill_value)?);
+    }
+
+    let numpy_bool = numpy.getattr("bool_")?;
+    if value.is_instance(&numpy_bool)? {
+        return value
+            .is_truthy()
+            .map(|value| ParsedFillValue::SignedInteger(i64::from(value)));
+    }
+
+    let numpy_integer = numpy.getattr("integer")?;
+    if value.is_instance(&numpy_integer)? {
+        return value
+            .extract::<i64>()
+            .map(ParsedFillValue::SignedInteger)
+            .map_err(|_| PyTypeError::new_err("an integer is required"));
+    }
+
+    let numpy_floating = numpy.getattr("floating")?;
+    if value.is_instance(&numpy_floating)? {
+        return value.extract::<f64>().map(ParsedFillValue::Float);
+    }
+
+    Err(full_like_fill_value_type_error(fill_value)?)
+}
+
+fn full_like_fill_value_type_error(fill_value: &ParsedCallArgument<'_>) -> PyResult<PyErr> {
+    let position = fill_value
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(&fill_value.value)?;
+    Ok(PyTypeError::new_err(format!(
+        "full_like(): argument 'fill_value'{position} must be Number, not {actual}"
+    )))
 }
 
 fn parse_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<ParsedArithmeticScalar>> {
