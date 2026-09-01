@@ -12,9 +12,17 @@ class TensorNewAxisIndexTests(unittest.TestCase):
     def layout_cases(self):
         values = np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4)
         base = torch.tensor(values.tolist())
+        contiguous_values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         return (
             ("scalar", torch.tensor(-0.0), (1,), (1,), 0),
             ("empty", torch.zeros((2, 0, 3)), (1, 2, 0, 3), (6, 3, 3, 1), 0),
+            (
+                "contiguous",
+                torch.tensor(contiguous_values.tolist()),
+                (1, 2, 3, 4),
+                (24, 12, 4, 1),
+                0,
+            ),
             ("offset", base[1], (1, 2, 3, 4), (24, 12, 4, 1), 24),
             (
                 "noncontiguous",
@@ -28,9 +36,17 @@ class TensorNewAxisIndexTests(unittest.TestCase):
     def trailing_layout_cases(self):
         values = np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4)
         base = torch.tensor(values.tolist())
+        contiguous_values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         return (
             ("scalar", torch.tensor(-0.0), (1,), (1,), 0),
             ("empty", torch.zeros((2, 0, 3)), (2, 0, 3, 1), (3, 3, 1, 1), 0),
+            (
+                "contiguous",
+                torch.tensor(contiguous_values.tolist()),
+                (2, 3, 4, 1),
+                (12, 4, 1, 1),
+                0,
+            ),
             ("offset", base[1], (2, 3, 4, 1), (12, 4, 1, 1), 24),
             (
                 "noncontiguous",
@@ -145,6 +161,10 @@ class TensorNewAxisIndexTests(unittest.TestCase):
         if case == "empty":
             leaf = torch.zeros((2, 0, 3), requires_grad=True)
             return leaf, leaf
+        if case == "contiguous":
+            values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+            leaf = torch.tensor(values.tolist(), requires_grad=True)
+            return leaf, leaf
 
         values = np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4)
         leaf = torch.tensor(values.tolist(), requires_grad=True)
@@ -159,6 +179,8 @@ class TensorNewAxisIndexTests(unittest.TestCase):
             return np.asarray(1.0, dtype=np.float32)
         if case == "empty":
             return np.zeros((2, 0, 3), dtype=np.float32)
+        if case == "contiguous":
+            return np.ones((2, 3, 4), dtype=np.float32)
         if case == "offset":
             expected = np.zeros((2, 2, 3, 4), dtype=np.float32)
             expected[1] = 1.0
@@ -424,7 +446,190 @@ class TensorNewAxisIndexTests(unittest.TestCase):
                     source, result, shape, stride, offset
                 )
 
-    def test_other_newaxis_and_public_unsqueeze_forms_remain_unsupported(self):
+    def test_public_unsqueeze_edge_dims_use_shared_storage_views(self):
+        for case, source, shape, stride, offset in self.layout_cases():
+            for dim in (0, -(source.dim() + 1)):
+                calls = (
+                    ("method", lambda: source.unsqueeze(dim)),
+                    ("method keyword", lambda: source.unsqueeze(dim=dim)),
+                    ("function", lambda: torch.unsqueeze(source, dim)),
+                    ("function keywords", lambda: torch.unsqueeze(input=source, dim=dim)),
+                    ("function alias", lambda: torch.unsqueeze(x=source, dim=dim)),
+                )
+                for form, call in calls:
+                    with self.subTest(case=case, form=form, dim=dim):
+                        self.assert_leading_unsqueeze(
+                            source, call(), shape, stride, offset
+                        )
+
+        for case, source, shape, stride, offset in self.trailing_layout_cases():
+            for dim in (source.dim(), -1):
+                calls = (
+                    ("method", lambda: source.unsqueeze(dim)),
+                    ("method keyword", lambda: source.unsqueeze(dim=dim)),
+                    ("function", lambda: torch.unsqueeze(source, dim)),
+                    ("function keywords", lambda: torch.unsqueeze(input=source, dim=dim)),
+                    ("function alias", lambda: torch.unsqueeze(a=source, dim=dim)),
+                )
+                for form, call in calls:
+                    with self.subTest(case=case, form=form, dim=dim):
+                        self.assert_trailing_unsqueeze(
+                            source, call(), shape, stride, offset
+                        )
+
+    def test_public_unsqueeze_no_grad_and_full_sum_backward(self):
+        form_cases = (
+            ("method front", lambda source: source.unsqueeze(0), False),
+            (
+                "function front",
+                lambda source: torch.unsqueeze(source, -(source.dim() + 1)),
+                False,
+            ),
+            ("method back", lambda source: source.unsqueeze(source.dim()), True),
+            ("function back", lambda source: torch.unsqueeze(input=source, dim=-1), True),
+        )
+        leading_metadata = {
+            name: (shape, stride, offset)
+            for name, _, shape, stride, offset in self.layout_cases()
+        }
+        trailing_metadata = {
+            name: (shape, stride, offset)
+            for name, _, shape, stride, offset in self.trailing_layout_cases()
+        }
+        for case in ("scalar", "empty", "contiguous", "offset", "noncontiguous"):
+            for form, call, trailing in form_cases:
+                metadata = trailing_metadata if trailing else leading_metadata
+                shape, stride, offset = metadata[case]
+                assert_view = (
+                    self.assert_trailing_unsqueeze
+                    if trailing
+                    else self.assert_leading_unsqueeze
+                )
+                with self.subTest(case=case, form=form, mode="autograd"):
+                    leaf, source = self.make_autograd_case(case)
+                    result = call(source)
+                    assert_view(source, result, shape, stride, offset)
+                    self.assertTrue(result.requires_grad)
+                    self.assertFalse(result.is_leaf)
+                    result.sum().backward()
+                    np.testing.assert_array_equal(
+                        np.asarray(leaf.grad), self.expected_gradient(case)
+                    )
+
+                with self.subTest(case=case, form=form, mode="no_grad"):
+                    leaf, source = self.make_autograd_case(case)
+                    with torch.no_grad():
+                        result = call(source)
+                    assert_view(source, result, shape, stride, offset)
+                    self.assertTrue(result.requires_grad)
+                    self.assertTrue(result.is_leaf)
+                    self.assertIsNone(leaf.grad)
+
+    def test_public_unsqueeze_metadata_exports_and_unsupported_surface(self):
+        function = torch.unsqueeze
+        descriptor = inspect.getattr_static(torch.Tensor, "unsqueeze")
+        bound = torch.tensor([1.0]).unsqueeze
+
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "unsqueeze")
+        self.assertEqual(function.__qualname__, "_VariableFunctionsClass.unsqueeze")
+        self.assertEqual(function.__module__, "torch")
+        self.assertIn("unsqueeze(input, dim) -> Tensor", function.__doc__)
+        self.assertIn("Middle-dimension insertion", function.__doc__)
+        self.assertIs(torch._C._VariableFunctionsClass.unsqueeze, function)
+        self.assertEqual(torch.__all__.count("unsqueeze"), 1)
+        namespace = {}
+        exec("from torch_rs import *", namespace)
+        self.assertIs(namespace["unsqueeze"], function)
+
+        self.assertIs(type(descriptor), types.MethodDescriptorType)
+        self.assertEqual(descriptor.__name__, "unsqueeze")
+        self.assertEqual(descriptor.__qualname__, "TensorBase.unsqueeze")
+        self.assertIn("unsqueeze(dim) -> Tensor", descriptor.__doc__)
+        self.assertIn("Middle-dimension insertion", bound.__doc__)
+        self.assertNotIn("unsqueeze", torch.Tensor.__dict__)
+
+        tensor = torch.ones((2, 3))
+        for call in (
+            lambda: tensor.unsqueeze(1),
+            lambda: tensor.unsqueeze(-2),
+            lambda: torch.unsqueeze(tensor, 1),
+            lambda: torch.unsqueeze(input=tensor, dim=-2),
+        ):
+            with self.subTest(call=call):
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    r"^unsqueeze\(\): only leading and trailing dimensions are supported; "
+                    r"got normalized dim 1 for input with 2 dimensions$",
+                ):
+                    call()
+
+        for call, error_type, message in (
+            (
+                lambda: tensor.unsqueeze(3),
+                IndexError,
+                r"^Dimension out of range \(expected to be in range of \[-3, 2\], but got 3\)$",
+            ),
+            (
+                lambda: torch.unsqueeze(tensor, -4),
+                IndexError,
+                r"^Dimension out of range \(expected to be in range of \[-3, 2\], but got -4\)$",
+            ),
+            (
+                lambda: tensor.unsqueeze(0, dtype=torch.float32),
+                TypeError,
+                r"^unsqueeze\(\) got an unexpected keyword argument 'dtype'$",
+            ),
+            (
+                lambda: torch.unsqueeze(tensor, 0, device="cpu"),
+                TypeError,
+                r"^unsqueeze\(\) got an unexpected keyword argument 'device'$",
+            ),
+        ):
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(error_type, message):
+                    call()
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return object()
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^unsqueeze\(\): argument 'input' \(position 1\) must be Tensor, not Override$",
+        ):
+            torch.unsqueeze(Override(), 0)
+        self.assertEqual(Override.calls, [])
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return object()
+
+        mode = RecordingMode()
+        for call in (
+            lambda: tensor.unsqueeze(0),
+            lambda: torch.unsqueeze(tensor, 0),
+        ):
+            with self.subTest(mode_call=call):
+                mode.calls.clear()
+                with mode:
+                    with self.assertRaisesRegex(
+                        NotImplementedError,
+                        r"^unsqueeze\(\): __torch_function__ modes are not supported$",
+                    ):
+                        call()
+                self.assertEqual(mode.calls, [])
+                self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+    def test_other_newaxis_forms_remain_unsupported(self):
         tensor = torch.ones((2, 3))
         leading_mixed = (
             (None,),
@@ -448,11 +653,6 @@ class TensorNewAxisIndexTests(unittest.TestCase):
             with self.subTest(index=repr(index)):
                 with self.assertRaises(IndexError):
                     tensor[index]
-
-        self.assertFalse(hasattr(torch, "unsqueeze"))
-        self.assertFalse(hasattr(torch.Tensor, "unsqueeze"))
-        with self.assertRaises(AttributeError):
-            tensor.unsqueeze(0)
 
 
 if __name__ == "__main__":
