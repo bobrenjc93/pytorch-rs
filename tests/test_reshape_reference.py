@@ -408,6 +408,11 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
 
         tensor = module.tensor([1.0, 2.0, 3.0, 4.0])
 
+        def variadic_reshape(*dimensions):
+            if module is torch:
+                return module.reshape(tensor, *dimensions)
+            return tensor.reshape(*dimensions)
+
         dimension = StatefulIndexDimension((1, 2))
         result = module.reshape(tensor, (dimension, 2))
         positional = (tuple(result.shape), dimension.calls, np.asarray(result).tolist())
@@ -415,6 +420,24 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
         dimension = StatefulIndexDimension((1, 2))
         result = module.reshape(input=tensor, shape=[dimension, 2])
         keyword_list = (tuple(result.shape), dimension.calls, np.asarray(result).tolist())
+
+        first = StatefulIndexDimension((2, 1, 2))
+        second = StatefulIndexDimension((2,))
+        result = variadic_reshape(first, second)
+        variadic = (
+            tuple(result.shape),
+            first.calls,
+            second.calls,
+            np.asarray(result).tolist(),
+        )
+
+        first = StatefulIndexDimension((1, 2, 99))
+        try:
+            variadic_reshape(first, 2)
+        except Exception as error:
+            variadic_invalid = (type(error).__name__, str(error), first.calls)
+        else:
+            variadic_invalid = None
 
         dimension = StatefulIndexDimension((2**63, 2))
         result = module.reshape(tensor, (dimension, 2))
@@ -453,6 +476,8 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
         return {
             "positional": positional,
             "keyword_list": keyword_list,
+            "variadic": variadic,
+            "variadic_invalid": variadic_invalid,
             "first_overflow": first_overflow,
             "invalid": invalid,
             "overflow": overflow,

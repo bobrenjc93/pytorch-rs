@@ -16310,6 +16310,7 @@ fn bind_top_level_reshape_shape<'py>(
                 bind_top_level_reshape_dimensions(
                     argument.position,
                     Some(&argument.value),
+                    false,
                     dimensions.len(),
                     dimensions.iter(),
                 )
@@ -16317,6 +16318,7 @@ fn bind_top_level_reshape_shape<'py>(
                 bind_top_level_reshape_dimensions(
                     argument.position,
                     Some(&argument.value),
+                    false,
                     dimensions.len(),
                     dimensions.iter(),
                 )
@@ -16331,6 +16333,7 @@ fn bind_top_level_reshape_shape<'py>(
                 bind_top_level_reshape_dimensions(
                     argument.position,
                     None,
+                    false,
                     1,
                     std::iter::once(argument.value),
                 )
@@ -16347,6 +16350,7 @@ fn bind_top_level_reshape_shape<'py>(
         } => bind_top_level_reshape_dimensions(
             position,
             None,
+            true,
             dimensions.len(),
             dimensions.into_iter(),
         ),
@@ -16378,6 +16382,7 @@ fn parse_reshape_dimensions<'py>(
 fn bind_top_level_reshape_dimensions<'py>(
     argument_position: Option<usize>,
     shape_argument: Option<&Bound<'_, PyAny>>,
+    validate_first_dimension_twice: bool,
     length: usize,
     dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
 ) -> PyResult<BoundTopLevelReshapeShape<'py>> {
@@ -16398,6 +16403,14 @@ fn bind_top_level_reshape_dimensions<'py>(
                 overrides.push(probed);
             }
         } else if index == 0 {
+            if validate_first_dimension_twice {
+                validate_top_level_reshape_dimension(
+                    argument_position,
+                    shape_argument,
+                    index,
+                    &dimension,
+                )?;
+            }
             validate_top_level_reshape_dimension(
                 argument_position,
                 shape_argument,

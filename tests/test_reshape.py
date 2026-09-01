@@ -52,6 +52,17 @@ class IndexDimension:
         return self.value
 
 
+class StatefulIndexDimension:
+    def __init__(self, values):
+        self.values = list(values)
+        self.calls = 0
+
+    def __index__(self):
+        value = self.values[self.calls]
+        self.calls += 1
+        return value
+
+
 class TupleIndexDimension(tuple):
     def __new__(cls, values, index_value):
         instance = super().__new__(cls, values)
@@ -157,7 +168,7 @@ class TopLevelReshapeTests(unittest.TestCase):
                 self.assertEqual(result.shape, (2, 3))
                 self.assertEqual(result.stride(), (3, 1))
                 self.assertEqual(result.data_ptr(), tensor.data_ptr())
-                self.assertEqual(sequence.calls, 2)
+                self.assertEqual(sequence.calls, 3)
 
     def test_inferred_empty_offset_and_shape_errors_match_tensor_reshape(self):
         source = torch.tensor(np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist())
@@ -489,6 +500,18 @@ class TopLevelReshapeTests(unittest.TestCase):
                 torch.reshape(tensor, 2.0, 1)
         self.assertEqual(mode.calls, [])
 
+        stateful_dimension = StatefulIndexDimension((1, 2.0))
+        mode = RecordingMode(marker)
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^reshape\(\): argument 'shape' \(position 2\) must be tuple of ints, "
+            r"but found element of type StatefulIndexDimension at pos 0$",
+        ):
+            with mode:
+                torch.reshape(tensor, stateful_dimension, 2)
+        self.assertEqual(mode.calls, [])
+        self.assertEqual(stateful_dimension.calls, 2)
+
         mode = RecordingMode(marker)
         shape = Override()
         Override.calls.clear()
@@ -758,16 +781,6 @@ for call in cases:
                     call()
 
     def test_stateful_index_dimensions_are_converted_again_by_native_reshape(self):
-        class StatefulIndexDimension:
-            def __init__(self, values):
-                self.values = list(values)
-                self.calls = 0
-
-            def __index__(self):
-                value = self.values[self.calls]
-                self.calls += 1
-                return value
-
         tensor = torch.tensor([1.0, 2.0, 3.0, 4.0])
         dimension = StatefulIndexDimension((1, 2))
         result = torch.reshape(tensor, (dimension, 2))
@@ -779,11 +792,19 @@ for call in cases:
         self.assertEqual(result.shape, (4,))
         self.assertEqual(dimension.calls, 3)
 
-        first = StatefulIndexDimension((2, 2))
+        first = StatefulIndexDimension((2, 1, 2))
         second = StatefulIndexDimension((2,))
         result = torch.reshape(tensor, first, second)
         self.assertEqual(result.shape, (2, 2))
-        self.assertEqual((first.calls, second.calls), (2, 1))
+        self.assertEqual((first.calls, second.calls), (3, 1))
+
+        first = StatefulIndexDimension((1, 2, 99))
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^shape '\[99, 2\]' is invalid for input of size 4$",
+        ):
+            torch.reshape(tensor, first, 2)
+        self.assertEqual(first.calls, 3)
 
         dimension = StatefulIndexDimension((1, 2))
         result = torch.reshape(input=tensor, shape=[dimension, 2])
