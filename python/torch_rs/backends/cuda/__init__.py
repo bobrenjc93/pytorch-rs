@@ -1,7 +1,9 @@
 # mypy: allow-untyped-defs
+from contextlib import contextmanager as _contextmanager
 from typing import Any as _Any
 
 import torch_rs as torch
+from typing_extensions import deprecated as _deprecated
 
 
 __all__ = [
@@ -20,6 +22,7 @@ __all__ = [
     "allow_fp16_bf16_reduction_math_sdp",
     "fp16_bf16_reduction_math_sdp_allowed",
     "is_flash_attention_available",
+    "sdp_kernel",
 ]
 
 
@@ -211,3 +214,59 @@ def is_flash_attention_available() -> bool:
         in non-CUDA environments.
     """
     return torch._C._is_flash_attention_available()
+
+
+def _sdp_kernel_state():
+    return (
+        flash_sdp_enabled(),
+        math_sdp_enabled(),
+        mem_efficient_sdp_enabled(),
+        cudnn_sdp_enabled(),
+    )
+
+
+def _set_sdp_kernel_state(state):
+    flash, math, mem_efficient, cudnn = state
+    enable_cudnn_sdp(cudnn)
+    enable_flash_sdp(flash)
+    enable_mem_efficient_sdp(mem_efficient)
+    enable_math_sdp(math)
+
+
+@_contextmanager
+@_deprecated(
+    (
+        "`torch.backends.cuda.sdp_kernel()` is deprecated. "
+        "In the future, this context manager will be removed. "
+        "Please see `torch.nn.attention.sdpa_kernel()` for the new context manager, "
+        "with updated signature."
+    ),
+    category=FutureWarning,
+)
+def sdp_kernel(
+    enable_flash: bool = True,
+    enable_math: bool = True,
+    enable_mem_efficient: bool = True,
+    enable_cudnn: bool = True,
+):
+    r"""
+    .. warning:: This flag is beta and subject to change.
+
+    This context manager can be used to temporarily enable or disable any of the three backends for scaled dot product attention.
+    Upon exiting the context manager, the previous state of the flags will be restored.
+    """
+    flash = bool(enable_flash)
+    mem_efficient = bool(enable_mem_efficient)
+    math = bool(enable_math)
+    cudnn = bool(enable_cudnn)
+    requested = (flash, math, mem_efficient, cudnn)
+    previous = _sdp_kernel_state()
+    try:
+        _set_sdp_kernel_state(requested)
+    except BaseException:
+        _set_sdp_kernel_state(previous)
+        raise
+    try:
+        yield {}
+    finally:
+        _set_sdp_kernel_state(previous)

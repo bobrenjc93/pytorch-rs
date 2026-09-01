@@ -29,6 +29,7 @@ CUDA_BACKEND_ALL = [
     "allow_fp16_bf16_reduction_math_sdp",
     "fp16_bf16_reduction_math_sdp_allowed",
     "is_flash_attention_available",
+    "sdp_kernel",
 ]
 CUDA_BACKEND_PUBLIC = {
     "allow_fp16_bf16_reduction_math_sdp",
@@ -43,6 +44,7 @@ CUDA_BACKEND_PUBLIC = {
     "is_built",
     "is_ck_sdpa_available",
     "is_flash_attention_available",
+    "sdp_kernel",
     "math_sdp_enabled",
     "matmul",
     "mem_efficient_sdp_enabled",
@@ -158,7 +160,7 @@ print(json.dumps({
                 "cuda_module": True,
                 "cuda_submodule_loaded": True,
                 "cudnn_sdp": True,
-                "sdp_kernel": False,
+                "sdp_kernel": True,
                 "sdpa_execution": False,
                 "compile": False,
                 "reference_torch_loaded": False,
@@ -579,7 +581,6 @@ print(json.dumps({
             "current_stream",
             "device_count",
             "is_available",
-            "sdp_kernel",
             "synchronize",
         ):
             with self.subTest(name=name):
