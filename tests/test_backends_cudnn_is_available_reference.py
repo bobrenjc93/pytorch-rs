@@ -177,6 +177,7 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
                     "m",
                     "mha",
                     "mkl",
+                    "mkldnn",
                     "nnpack",
                     "openmp",
                 }

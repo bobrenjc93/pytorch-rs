@@ -9,7 +9,13 @@ except ImportError:
     reference_torch = None
 
 
-CAPABILITY_NAMES = ("has_openmp", "has_mkl", "has_lapack", "has_spectral")
+CAPABILITY_NAMES = (
+    "has_openmp",
+    "has_mkl",
+    "has_mkldnn",
+    "has_lapack",
+    "has_spectral",
+)
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -65,7 +71,7 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
         native_values = tuple(getattr(native, name) for name in CAPABILITY_NAMES)
         backends = module.backends
         backend_modules = tuple(
-            getattr(backends, name) for name in ("openmp", "mkl", "nnpack")
+            getattr(backends, name) for name in ("openmp", "mkl", "mkldnn", "nnpack")
         )
         backend_functions = tuple(
             backend.is_available for backend in backend_modules
@@ -94,7 +100,7 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
             tuple(
                 getattr(module.backends, name) is backend
                 for name, backend in zip(
-                    ("openmp", "mkl", "nnpack"),
+                    ("openmp", "mkl", "mkldnn", "nnpack"),
                     backend_modules,
                     strict=True,
                 )
@@ -141,10 +147,12 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
     def test_backend_availability_namespaces_match_the_supported_scope(self):
         self.assertTrue(hasattr(reference_torch, "backends"))
         self.assertTrue(hasattr(torch, "backends"))
-        for backend in ("openmp", "mkl", "nnpack"):
+        for backend in ("openmp", "mkl", "mkldnn", "nnpack"):
             with self.subTest(backend=backend):
-                actual = getattr(torch.backends, backend)
-                expected = getattr(reference_torch.backends, backend)
+                actual = importlib.import_module(f"torch_rs.backends.{backend}")
+                expected = importlib.import_module(f"torch.backends.{backend}")
+                self.assertIs(getattr(torch.backends, backend), actual)
+                self.assertIs(getattr(reference_torch.backends, backend), expected)
                 self.assertIs(type(actual.is_available()), bool)
                 self.assertIs(type(expected.is_available()), bool)
                 actual_expected = (
@@ -155,7 +163,6 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
                 self.assertIs(actual.is_available(), actual_expected)
 
         self.assertFalse(hasattr(torch.backends, "lapack"))
-        self.assertFalse(hasattr(torch.backends, "mkldnn"))
 
 
 if __name__ == "__main__":

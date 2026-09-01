@@ -19,6 +19,7 @@ BACKEND_MODULES = {
     "kleidiai",
     "mha",
     "mkl",
+    "mkldnn",
     "nnpack",
     "openmp",
 }

@@ -20,6 +20,7 @@ except ImportError:
 BACKENDS = {
     "openmp": "has_openmp",
     "mkl": "has_mkl",
+    "mkldnn": "has_mkldnn",
     "nnpack": None,
 }
 
@@ -61,8 +62,14 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
     def test_values_are_exact_build_specific_native_flags(self):
         for backend, flag in BACKENDS.items():
             with self.subTest(backend=backend):
-                actual = getattr(torch.backends, backend).is_available()
-                expected = getattr(reference_torch.backends, backend).is_available()
+                actual_module = importlib.import_module(
+                    f"torch_rs.backends.{backend}"
+                )
+                expected_module = importlib.import_module(
+                    f"torch.backends.{backend}"
+                )
+                actual = actual_module.is_available()
+                expected = expected_module.is_available()
                 self.assertIs(type(actual), bool)
                 self.assertIs(type(expected), bool)
                 self.assertIs(actual, False)
@@ -210,7 +217,12 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
                 expected_supported_child_names = {
                     name
                     for name in expected_child_wildcard
-                    if name in {"flags", "is_available", "set_flags", "torch"}
+                    if name
+                    in (
+                        {"flags", "is_available", "set_flags", "torch"}
+                        if backend == "nnpack"
+                        else {"is_available", "torch"}
+                    )
                 }
                 self.assertEqual(
                     actual_child_names,
@@ -238,7 +250,8 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
 
     def reload_contract(self, root, backend):
         parent = root.backends
-        module = getattr(parent, backend)
+        module = importlib.import_module(f"{root.__name__}.backends.{backend}")
+        self.assertIs(getattr(parent, backend), module)
         old_function = module.is_available
         namespace = module.__dict__
         reloaded = importlib.reload(module)
@@ -285,8 +298,12 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
 
     def test_argument_errors_match_pytorch_2_13(self):
         for backend in BACKENDS:
-            actual = getattr(torch.backends, backend).is_available
-            expected = getattr(reference_torch.backends, backend).is_available
+            actual = importlib.import_module(
+                f"torch_rs.backends.{backend}"
+            ).is_available
+            expected = importlib.import_module(
+                f"torch.backends.{backend}"
+            ).is_available
             cases = (
                 (lambda: actual(None), lambda: expected(None)),
                 (lambda: actual(None, None), lambda: expected(None, None)),
@@ -328,7 +345,6 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
         self.assertTrue(set(BACKENDS).issubset(expected_public))
         self.assertTrue(
             {
-                "mkldnn",
                 "mps",
                 "quantized",
             }.issubset(expected_public - actual_public)
@@ -340,6 +356,18 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch.backends.mkl, name))
                 self.assertTrue(hasattr(reference_torch.backends.mkl, name))
+
+        for name in (
+            "VERBOSE_OFF",
+            "VERBOSE_ON",
+            "VERBOSE_ON_CREATION",
+            "enabled",
+            "flags",
+            "set_flags",
+            "verbose",
+        ):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(torch.backends.mkldnn, name))
 
         self.assertEqual(
             torch.backends.nnpack.__all__,

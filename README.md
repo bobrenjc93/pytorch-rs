@@ -46,7 +46,10 @@ functions, and limited first-order autograd. Top-level `torch.cuda` exposes
 CPU-build probes only: `device_count()` is `0`, `is_available()` is `False`,
 and `is_initialized()` is `False`. `torch.backends.cuda` includes preference
 flags such as `enable_flash_sdp(...)` and `enable_cudnn_sdp(...)`, but they do
-not add scaled-dot-product-attention or CUDA execution. CUDA tensors, device
+not add scaled-dot-product-attention or CUDA execution. CPU library backend
+probes include `torch.backends.mkldnn.is_available()`, which reports the
+unsupported oneDNN/MKLDNN build state without adding MKLDNN tensors,
+operators, flags, or execution. CUDA tensors, device
 selection, streams, events, synchronization, allocator APIs, runtime
 initialization, `torch.compile` CUDA execution, additional tensor dtypes, and
 the full module, optimizer, model-serialization, compiler, and distributed
