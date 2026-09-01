@@ -35,6 +35,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-add-release-timings.md",
     ),
     (
+        "`/`, `Tensor.div`, and `Tensor.divide` release timings",
+        "docs/tensor-div-release-timings.md",
+    ),
+    (
         '`torch.nn.functional.mse_loss(reduction="none")` release timings',
         "docs/mse-loss-release-timings.md",
     ),
