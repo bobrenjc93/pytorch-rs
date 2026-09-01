@@ -16,29 +16,29 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
     abs_variable_function, absolute_variable_function, adjoint_variable_function,
-    arange_variable_function, as_tensor_variable_function, asarray_variable_function,
-    atleast_1d_variable_function, atleast_2d_variable_function, atleast_3d_variable_function,
-    broadcast_tensors_variable_function, can_cast_variable_function, ceil_variable_function,
-    conj_variable_function, cos_variable_function, detach_variable_function, exp_variable_function,
-    fix_variable_function, floor_variable_function, get_device_variable_function,
-    imag_variable_function, is_conj_variable_function, is_inference_variable_function,
-    log_variable_function, matmul_variable_function, mean_variable_function,
-    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
-    multiply_variable_function, neg_variable_function, negative_variable_function,
-    ones_like_variable_function, permute_variable_function, positive_variable_function,
-    promote_types_variable_function, ravel_variable_function, real_variable_function,
-    reciprocal_variable_function, reshape_variable_function, resolve_conj_variable_function,
-    resolve_neg_variable_function, rsqrt_variable_function, scalar_tensor_variable_function,
-    select_variable_function, sigmoid_variable_function, sin_variable_function,
-    sqrt_variable_function, square_variable_function, sub_variable_function,
-    subtract_variable_function, sum_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function, unsqueeze_variable_function,
-    zeros_like_variable_function,
+    allclose_variable_function, arange_variable_function, as_tensor_variable_function,
+    asarray_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
+    atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
+    ceil_variable_function, conj_variable_function, cos_variable_function,
+    detach_variable_function, exp_variable_function, fix_variable_function,
+    floor_variable_function, get_device_variable_function, imag_variable_function,
+    is_conj_variable_function, is_inference_variable_function, log_variable_function,
+    matmul_variable_function, mean_variable_function, moveaxis_variable_function,
+    movedim_variable_function, mul_variable_function, multiply_variable_function,
+    neg_variable_function, negative_variable_function, ones_like_variable_function,
+    permute_variable_function, positive_variable_function, promote_types_variable_function,
+    ravel_variable_function, real_variable_function, reciprocal_variable_function,
+    reshape_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
+    rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
+    square_variable_function, sub_variable_function, subtract_variable_function,
+    sum_variable_function, tanh_variable_function, trunc_variable_function,
+    unbind_variable_function, unsqueeze_variable_function, zeros_like_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 57] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 58] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -50,6 +50,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 57] = [
     "atleast_2d",
     "atleast_3d",
     "broadcast_tensors",
+    "allclose",
     "abs",
     "absolute",
     "adjoint",
@@ -186,6 +187,36 @@ zeros_like(input, *, dtype=None, layout=None, device=None, requires_grad=False, 
 
 Returns a tensor filled with the scalar value `0`, with the same size as
 :attr:`input`.
+";
+
+const ALLCLOSE_DOC: &std::ffi::CStr = cr"
+allclose(input: Tensor, other: Tensor, rtol: float = 1e-05, atol: float = 1e-08, equal_nan: bool = False) -> bool
+
+This function checks if :attr:`input` and :attr:`other` satisfy the condition:
+
+.. math::
+    \lvert \text{input}_i - \text{other}_i \rvert \leq \texttt{atol} + \texttt{rtol} \times \lvert \text{other}_i \rvert
+
+elementwise, for all elements of :attr:`input` and :attr:`other`. The behaviour of this function is analogous to
+`numpy.allclose <https://numpy.org/doc/stable/reference/generated/numpy.allclose.html>`_
+
+Args:
+    input (Tensor): first tensor to compare
+    other (Tensor): second tensor to compare
+    atol (float, optional): absolute tolerance. Default: 1e-08
+    rtol (float, optional): relative tolerance. Default: 1e-05
+    equal_nan (bool, optional): if ``True``, then two ``NaN`` s will be considered equal. Default: ``False``
+
+Example::
+
+    >>> torch.allclose(torch.tensor([10000., 1e-07]), torch.tensor([10000.1, 1e-08]))
+    False
+    >>> torch.allclose(torch.tensor([10000., 1e-08]), torch.tensor([10000.1, 1e-09]))
+    True
+    >>> torch.allclose(torch.tensor([1.0, float('nan')]), torch.tensor([1.0, float('nan')]))
+    False
+    >>> torch.allclose(torch.tensor([1.0, float('nan')]), torch.tensor([1.0, float('nan')]), equal_nan=True)
+    True
 ";
 
 const AS_TENSOR_DOC: &std::ffi::CStr = cr#"
@@ -1245,6 +1276,7 @@ variable_function_callback!(
     broadcast_tensors_callback,
     broadcast_tensors_variable_function
 );
+variable_function_callback!(allclose_callback, allclose_variable_function);
 variable_function_callback!(abs_callback, abs_variable_function);
 variable_function_callback!(absolute_callback, absolute_variable_function);
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
@@ -1330,6 +1362,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"atleast_2d", atleast_2d_callback, c""),
         variable_function_method!(c"atleast_3d", atleast_3d_callback, c""),
         variable_function_method!(c"broadcast_tensors", broadcast_tensors_callback, c""),
+        variable_function_method!(c"allclose", allclose_callback, ALLCLOSE_DOC),
         variable_function_method!(c"abs", abs_callback, ABS_DOC),
         variable_function_method!(c"absolute", absolute_callback, ABSOLUTE_DOC),
         variable_function_method!(c"adjoint", adjoint_callback, ADJOINT_DOC),
