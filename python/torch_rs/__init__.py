@@ -50,6 +50,75 @@ def are_deterministic_algorithms_enabled() -> _builtins.bool:
     return False
 
 
+def _deterministic_algorithms_bool_type_name(value):
+    value_type = _builtins.type(value)
+    if value_type is Tensor:
+        return "Tensor"
+    if value_type is dtype:
+        return "torch.dtype"
+    if value_type is device:
+        return "torch.device"
+    if value_type is memory_format:
+        return "torch.memory_format"
+    if value_type is layout:
+        return "torch.layout"
+    if value_type is Size:
+        return "torch.Size"
+    if value_type is finfo:
+        return "torch.finfo"
+
+    name = _builtins.object.__getattribute__(value_type, "__name__")
+    module = _builtins.object.__getattribute__(value_type, "__module__")
+    if module == "numpy":
+        return f"numpy.{name}"
+    return name
+
+
+def use_deterministic_algorithms(
+    mode: _builtins.bool,
+    *,
+    warn_only: _builtins.bool = False,
+) -> None:
+    r"""Sets whether operations must use deterministic algorithms.
+
+    This compatibility entrypoint currently accepts only ``mode=False`` with
+    ``warn_only=False``. Deterministic algorithm enforcement and warning-only
+    enforcement remain unsupported.
+
+    Args:
+        mode (:class:`bool`): If False, leave deterministic enforcement
+            disabled. True is not supported.
+
+    Keyword args:
+        warn_only (:class:`bool`, optional): Must be False. Default: ``False``
+    """
+    if _builtins.type(mode) is not _builtins.bool:
+        type_name = _deterministic_algorithms_bool_type_name(mode)
+        raise TypeError(
+            "_set_deterministic_algorithms(): argument 'mode' "
+            f"(position 1) must be bool, not {type_name}"
+        )
+    if _builtins.type(warn_only) is not _builtins.bool:
+        type_name = _deterministic_algorithms_bool_type_name(warn_only)
+        raise TypeError(
+            "_set_deterministic_algorithms(): argument 'warn_only' "
+            f"must be bool, not {type_name}"
+        )
+    if mode:
+        raise NotImplementedError(
+            "use_deterministic_algorithms(): deterministic algorithm "
+            "enforcement is not supported; only mode=False with "
+            "warn_only=False is implemented"
+        )
+    if warn_only:
+        raise NotImplementedError(
+            "use_deterministic_algorithms(): warning-only deterministic "
+            "enforcement is not supported; only mode=False with "
+            "warn_only=False is implemented"
+        )
+    return None
+
+
 def get_deterministic_debug_mode() -> _builtins.int:
     r"""Returns the current value of the debug mode for deterministic
     operations. Refer to :func:`torch.set_deterministic_debug_mode`
@@ -434,6 +503,7 @@ __doc__ = _native.__doc__
 __all__ = [
     *(name for name in _native.__all__ if name != "__version__"),
     "are_deterministic_algorithms_enabled",
+    "use_deterministic_algorithms",
     "get_deterministic_debug_mode",
     "set_deterministic_debug_mode",
     "is_deterministic_algorithms_warn_only_enabled",
