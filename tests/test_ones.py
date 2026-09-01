@@ -191,7 +191,7 @@ class OnesTests(unittest.TestCase):
             (
                 lambda: torch.ones(True, 2),
                 TypeError,
-                r"pos 1.*bool",
+                re.escape("ones() takes 1 positional argument but 2 were given"),
             ),
             (
                 lambda: torch.ones(2, False),
@@ -286,6 +286,15 @@ class OnesTests(unittest.TestCase):
             re.escape("ones() got multiple values for argument 'size'"),
         ):
             torch.ones(2, 3, size=(2, 3))
+
+        for size in ((1,), [1], range(1)):
+            for competing_keyword in ({"wat": 1}, {"size": (1,)}, {"requires_grad": 1}):
+                with self.subTest(size=size, competing_keyword=competing_keyword):
+                    with self.assertRaisesRegex(
+                        TypeError,
+                        re.escape("ones() takes 1 positional argument but 2 were given"),
+                    ):
+                        torch.ones(size, True, **competing_keyword)
 
     def test_out_tensor_layout_and_pin_memory_remain_unsupported(self):
         with self.assertRaisesRegex(

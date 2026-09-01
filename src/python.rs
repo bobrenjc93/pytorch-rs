@@ -7808,7 +7808,14 @@ fn bind_creation_arguments<'py>(
                 origin: CreationSizeOrigin::Positional,
             }
         }),
-        _ => Some(CreationSizeArgument::Variadic(positional.clone())),
+        length if creation_variadic_size_start(&positional.get_item(0)?) => {
+            Some(CreationSizeArgument::Variadic(positional.clone()))
+        }
+        length => {
+            return Err(PyTypeError::new_err(format!(
+                "{function}() takes 1 positional argument but {length} were given"
+            )));
+        }
     };
     let mut arguments = CreationCallArguments {
         size,
@@ -7856,6 +7863,13 @@ fn bind_creation_arguments<'py>(
         }
     }
     Ok(arguments)
+}
+
+fn creation_variadic_size_start(dimension: &Bound<'_, PyAny>) -> bool {
+    if dimension.is_instance_of::<PyBool>() {
+        return false;
+    }
+    python_number_index(dimension).is_ok()
 }
 
 fn bind_like_factory_arguments<'py>(

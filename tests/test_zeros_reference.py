@@ -329,6 +329,33 @@ class ZerosReferenceTests(unittest.TestCase):
                     expected_message,
                 )
 
+    def test_sequence_size_with_extra_positional_matches_pytorch_2_13(self):
+        cases = (
+            ("tuple and positional bool", lambda module: module.zeros((1,), True)),
+            ("list and positional bool", lambda module: module.zeros([1], True)),
+            ("range and positional bool", lambda module: module.zeros(range(1), True)),
+            (
+                "tuple plus unexpected keyword",
+                lambda module: module.zeros((1,), True, wat=1),
+            ),
+            (
+                "tuple plus duplicate size",
+                lambda module: module.zeros((1,), True, size=(1,)),
+            ),
+            (
+                "tuple plus invalid requires_grad",
+                lambda module: module.zeros((1,), True, requires_grad=1),
+            ),
+        )
+        for case, call in cases:
+            with self.subTest(case=case):
+                actual_type, actual_message = self.capture_error(lambda: call(torch))
+                expected_type, expected_message = self.capture_error(
+                    lambda: call(reference_torch)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(actual_message, expected_message)
+
     def test_out_type_error_order_matches_pytorch_2_13(self):
         cases = (
             ("missing size", lambda module: module.zeros(out=[])),
