@@ -68,15 +68,18 @@ mse_loss(input, target, size_average=None, reduce=None, reduction='mean', weight
 Measures the element-wise mean squared error between ``input`` and ``target``.
 
 The current native implementation requires exact ``torch_rs.Tensor`` operands
-with CPU ``float32`` storage, broadcastable shapes, ``reduction='none'``,
+with CPU ``float32`` storage, broadcastable shapes, ``reduction='none'`` or
+``reduction='mean'``,
 ``size_average=None``, ``reduce=None``, and ``weight=None``. It fuses
-subtraction and square into one native pass and returns a fresh, independent
+subtraction and square into one native pass, then applies a full-tensor mean
+reduction for ``reduction='mean'``. It returns a fresh, independent
 tensor with PyTorch-compatible values, shape, strides, scalar metadata, and
 size-mismatch warning.
 
-Unbroadcastable shapes, reduced outputs, weights, Tensor subclasses, active
-``TorchFunctionMode`` contexts, and active autograd recording are not
-supported. Gradient-requiring operands may be used inside ``torch.no_grad()``.
+Unbroadcastable shapes, ``'sum'`` and legacy reductions, weights, Tensor
+subclasses, active ``TorchFunctionMode`` contexts, dtype/device extensions, and
+active autograd recording are not supported. Gradient-requiring operands may be
+used inside ``torch.no_grad()``.
 """
 
 
