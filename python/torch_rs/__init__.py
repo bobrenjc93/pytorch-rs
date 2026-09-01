@@ -134,6 +134,73 @@ def get_default_device() -> "torch.device":
     return torch.device("cpu")
 
 
+def set_default_device(device: "Device") -> None:
+    r"""Sets the default ``torch.Tensor`` to be allocated on ``device``.  This
+    does not affect factory function calls which are called with an explicit
+    ``device`` argument.  Factory calls will be performed as if they
+    were passed ``device`` as an argument.
+
+    To only temporarily change the default device instead of setting it
+    globally, use ``with torch.device(device):`` instead.
+
+    The default device is initially ``cpu``.  If you set the default tensor
+    device to another device (e.g., ``cuda``) without a device index, tensors
+    will be allocated on whatever the current device for the device type,
+    even after :func:`torch.cuda.set_device` is called.
+
+    .. warning::
+
+        This function imposes a slight performance cost on every Python
+        call to the torch API (not just factory functions).  If this
+        is causing problems for you, please comment on
+        https://github.com/pytorch/pytorch/issues/92701
+
+    .. note::
+
+        This doesn't affect functions that create tensors that share the same memory as the input, like:
+        :func:`torch.from_numpy` and :func:`torch.frombuffer`
+
+    Args:
+        device (device or string): the device to set as default
+
+    Example::
+
+        >>> # xdoctest: +SKIP("requires cuda, changes global state")
+        >>> torch.get_default_device()
+        device(type='cpu')
+        >>> torch.set_default_device('cuda')  # current device is 0
+        >>> torch.get_default_device()
+        device(type='cuda', index=0)
+        >>> torch.set_default_device('cuda')
+        >>> torch.cuda.set_device('cuda:1')  # current device is 1
+        >>> torch.get_default_device()
+        device(type='cuda', index=1)
+        >>> torch.set_default_device('cuda:1')
+        >>> torch.get_default_device()
+        device(type='cuda', index=1)
+
+    """
+    if device is None:
+        return None
+
+    descriptor = _C.device(device)
+    if descriptor.type != "cpu":
+        raise NotImplementedError(
+            "set_default_device(): only the CPU default device is supported"
+        )
+    if (
+        descriptor.index is not None
+        or (
+            _builtins.isinstance(device, _builtins.str)
+            and ":" in _builtins.str.__str__(device)
+        )
+    ):
+        raise NotImplementedError(
+            "set_default_device(): indexed CPU default devices are not supported"
+        )
+    return None
+
+
 @_functools.cache
 def get_device_module(device: torch.device | str | None = None):
     """
@@ -438,6 +505,7 @@ __all__ = [
     "set_deterministic_debug_mode",
     "is_deterministic_algorithms_warn_only_enabled",
     "get_default_device",
+    "set_default_device",
     "get_device_module",
     "get_float32_matmul_precision",
     "set_float32_matmul_precision",
