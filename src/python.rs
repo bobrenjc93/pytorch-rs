@@ -13552,6 +13552,7 @@ fn bind_top_level_reshape_arguments<'py>(
         Ok(None)
     };
 
+    let positional_count = positional.len();
     let input = if positional.is_empty() {
         keyword_argument(&["input", "x", "a", "x1"])?.map(|value| ParsedCallArgument {
             value,
@@ -13564,27 +13565,27 @@ fn bind_top_level_reshape_arguments<'py>(
         })
     };
     let keyword_shape = keyword_argument(&["shape"])?;
-    let shape_from_keyword = positional.len() < 2 && keyword_shape.is_some();
-    let shape = if positional.len() < 2 {
-        keyword_shape.map(|value| {
+    let shape_from_keyword = positional_count < 2 && keyword_shape.is_some();
+    let shape = match positional_count.cmp(&2) {
+        std::cmp::Ordering::Less => keyword_shape.map(|value| {
             TopLevelReshapeShapeArgument::Single(ParsedCallArgument {
                 value,
                 position: None,
             })
-        })
-    } else if positional.len() == 2 {
-        Some(TopLevelReshapeShapeArgument::Single(ParsedCallArgument {
-            value: positional.get_item(1)?,
-            position: Some(2),
-        }))
-    } else {
-        Some(TopLevelReshapeShapeArgument::Variadic {
+        }),
+        std::cmp::Ordering::Equal => {
+            Some(TopLevelReshapeShapeArgument::Single(ParsedCallArgument {
+                value: positional.get_item(1)?,
+                position: Some(2),
+            }))
+        }
+        std::cmp::Ordering::Greater => Some(TopLevelReshapeShapeArgument::Variadic {
             first: ParsedCallArgument {
                 value: positional.get_item(1)?,
                 position: Some(2),
             },
             arguments: positional.clone(),
-        })
+        }),
     };
 
     let Some(input) = input else {
@@ -13616,7 +13617,7 @@ fn bind_top_level_reshape_arguments<'py>(
                         break;
                     }
                 };
-                if position < positional.len() {
+                if position < positional_count {
                     keyword_error = Some(PyTypeError::new_err(format!(
                         "reshape() got multiple values for argument '{key}'"
                     )));
