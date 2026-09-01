@@ -75,58 +75,128 @@ SUPPORTED_SURFACE_INDEX_SUMMARIES = (
     "eager JIT helper decorators and state queries",
     "Explicit unsupported APIs",
 )
-SUPPORTED_SURFACE_COMMON_CALL_ROWS = (
+SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
     (
-        "Construction",
+        "Create CPU `float32` tensors",
         ("`torch.tensor`", "`torch.as_tensor`", "`torch.zeros`"),
-        ("[Creation](#creation)",),
+        ("dtype conversions", "accelerator or meta devices", "concrete `out`"),
+        ("[Tensors](#tensors)", "[Creation](#creation)"),
     ),
     (
-        "Views and layout",
-        ("`view`", "`reshape`", "`permute`", "`contiguous`"),
+        "Preserve or change tensor layout",
+        ("`Tensor.view`", "`Tensor.reshape`", "`torch.reshape`", "`Tensor.cpu`"),
+        ("non-leading `select`", "sequence `movedim` axes", "cross-dtype views"),
         ("[Metadata and views](#metadata-and-views)",),
     ),
     (
-        "Math",
-        ("arithmetic operators", "`torch.matmul`", "`torch.sum`"),
+        "Run eager math and reductions",
+        (
+            "Python `+`, `-`, `*`, and `/` operators",
+            "`Tensor.add`",
+            "`torch.matmul`",
+            "`torch.sum`",
+        ),
+        ("`torch.add`", "in-place variants", "dimension reductions"),
         ("[Elementwise and reductions](#elementwise-and-reductions)",),
     ),
     (
-        "NN functional",
-        ("`torch.nn.functional.linear`", "`dropout*`", "`softsign`"),
+        "Use functional NN helpers",
+        (
+            "`torch.nn.functional.linear`",
+            "`torch.nn.functional.dropout1d`",
+            "`torch.nn.functional.softsign`",
+        ),
+        (
+            "Module layers",
+            "loss `weight` arguments",
+            "mutating initializers",
+        ),
         (
             "[NN/data helpers](#nn-and-data-helpers)",
             "[math activations](#elementwise-and-reductions)",
         ),
     ),
     (
-        "Dtype/device metadata",
-        ("`torch.float32`", "`torch.finfo`", "`torch.get_device`"),
+        "Reuse data and state helpers",
+        (
+            "`torch.utils.data.TensorDataset`",
+            "`torch.utils.data.DistributedSampler`",
+            "`torch.serialization.get_default_load_endianness`",
+        ),
+        ("`DataLoader`", "worker processes", "`torch.load`"),
+        ("[NN/data helpers](#nn-and-data-helpers)",),
+    ),
+    (
+        "Check dtype, device, and backend state",
+        (
+            "`torch.float32`",
+            "`torch.finfo`",
+            "`torch.get_device`",
+            "`torch.cpu.current_device`",
+            "`torch.cpu.synchronize`",
+            "`torch.cpu.set_device`",
+            "`torch.accelerator.empty_cache`",
+            "`torch.accelerator.reset_accumulated_memory_stats`",
+            "`torch.accelerator.reset_peak_memory_stats`",
+            "`torch.accelerator.memory_allocated`",
+            "`torch.accelerator.max_memory_allocated`",
+            "`torch.accelerator.memory_reserved`",
+            "`torch.accelerator.max_memory_reserved`",
+            "`torch.backends.nnpack.set_flags`",
+            "`torch.backends.cuda.enable_flash_sdp`",
+            "`torch.backends.cudnn.benchmark_limit`",
+            "`torch.backends.mha.get_fastpath_enabled`",
+        ),
+        (
+            "Additional dtypes",
+            "CUDA tensors/transfers/streams/events/synchronization/runtime/kernels",
+            "memory-management APIs outside the named helper set",
+            "backend APIs outside [Backend and compiler metadata]",
+        ),
         (
             "[tensor metadata](#metadata-and-views)",
             "[backend metadata](#backend-and-compiler-metadata)",
         ),
     ),
     (
-        "Autograd state",
+        "Control eager autograd state",
         (
+            "`Tensor.backward`",
             "`torch.is_grad_enabled`",
             "`torch.no_grad`",
-            "`torch.is_inference_mode_enabled`",
-            "`torch.is_anomaly_enabled`",
-            "`torch.is_anomaly_check_nan_enabled`",
             "`torch.autograd.is_view_replay_enabled`",
         ),
-        ("[Backend and compiler metadata](#backend-and-compiler-metadata)",),
+        ("Concrete gradients", "`torch.autograd.grad`", "inference-mode contexts"),
+        (
+            "[Metadata and views](#metadata-and-views)",
+            "[Backend and compiler metadata](#backend-and-compiler-metadata)",
+        ),
     ),
     (
-        "Compiler helpers",
-        ("`torch.compiler.disable`", "guard filters", "eager JIT decorators/state"),
-        ("[Backend and compiler metadata](#backend-and-compiler-metadata)",),
-    ),
-    (
-        "Backend capabilities",
-        ("`torch.cpu`", "`torch.accelerator`", "`torch.backends.*`"),
+        "Integrate eager compiler, JIT, and distributed probes",
+        (
+            "`torch.compiler.disable`",
+            "`torch.jit.annotate`",
+            "`torch.distributed.is_available`",
+            "`torch.distributed.is_gloo_available`",
+            "`torch.distributed.is_mpi_available`",
+            "`torch.distributed.is_nccl_available`",
+            "`torch.distributed.is_ucc_available`",
+            "`torch.distributed.is_xccl_available`",
+            "`torch.distributed.get_backend_config`",
+            "`torch.distributed.get_backend`",
+            "`torch.distributed.get_rank`",
+            "`torch.distributed.get_world_size`",
+            "`torch.distributed.get_process_group_ranks`",
+            "`torch.distributed.get_node_local_rank`",
+        ),
+        (
+            "Actual `torch.compile`",
+            "TorchScript compilation",
+            "process-group creation",
+            "initialized backend/config/rank/world-size access",
+            "distributed APIs outside [Backend and compiler metadata]",
+        ),
         ("[Backend and compiler metadata](#backend-and-compiler-metadata)",),
     ),
 )
@@ -277,11 +347,11 @@ class ReadmeQuickstartTests(unittest.TestCase):
         self.assertTrue(SUPPORTED_SURFACE.is_file())
 
         supported = SUPPORTED_SURFACE.read_text(encoding="utf-8")
-        self.assertIn("## Common calls quick index", supported)
+        self.assertIn("## Common adopter task quick index", supported)
         self.assertIn("## Category index", supported)
         self.assertIn("## Current baseline", supported)
         self.assertLess(
-            supported.index("## Common calls quick index"),
+            supported.index("## Common adopter task quick index"),
             supported.index("## Category index"),
         )
         self.assertLess(
@@ -289,23 +359,28 @@ class ReadmeQuickstartTests(unittest.TestCase):
             supported.index("## Current baseline"),
         )
 
-        common_calls_index = supported[
-            supported.index("## Common calls quick index") : supported.index(
+        task_index = supported[
+            supported.index("## Common adopter task quick index") : supported.index(
                 "## Category index"
             )
         ]
         self.assertIn(
-            "| Need | Common calls | Contract section |",
-            common_calls_index,
+            "| Adopter task | Supported APIs | Unsupported boundaries to verify |",
+            task_index,
         )
-        self.assertIn("| --- | --- | --- |", common_calls_index)
-        for label, calls, links in SUPPORTED_SURFACE_COMMON_CALL_ROWS:
-            with self.subTest(common_call_row=label):
-                self.assertIn(f"| {label} |", common_calls_index)
+        self.assertIn("| --- | --- | --- |", task_index)
+        self.assertNotIn("other accelerator memory-management APIs", task_index)
+        self.assertNotIn("unlisted backend APIs", task_index)
+        self.assertNotIn("remaining distributed APIs", task_index)
+        for label, calls, boundaries, links in SUPPORTED_SURFACE_TASK_INDEX_ROWS:
+            with self.subTest(task_index_row=label):
+                self.assertIn(f"| {label} |", task_index)
                 for call in calls:
-                    self.assertIn(call, common_calls_index)
+                    self.assertIn(call, task_index)
+                for boundary in boundaries:
+                    self.assertIn(boundary, task_index)
                 for link in links:
-                    self.assertIn(link, common_calls_index)
+                    self.assertIn(link, task_index)
 
         category_index = supported[
             supported.index("## Category index") : supported.index(
