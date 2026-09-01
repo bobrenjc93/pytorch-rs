@@ -261,7 +261,12 @@ class JitStrictFusionTests(unittest.TestCase):
         )
         self.assertEqual(
             {name for name in vars(jit) if not name.startswith("_")},
-            {*supported, "is_scripting", "is_tracing"},
+            {
+                *supported,
+                "is_scripting",
+                "is_tracing",
+                "optimized_execution",
+            },
         )
         namespace = {}
         exec("from torch_rs.jit import *", namespace)
