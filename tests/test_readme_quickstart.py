@@ -48,6 +48,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-sqrt-release-timings.md",
     ),
     (
+        "Rank-2 `@`, `Tensor.matmul`, and `torch.matmul` release timings",
+        "docs/rank2-matmul-release-timings.md",
+    ),
+    (
         "`Tensor.view`, reshape, flatten, ravel, and edge-unsqueeze release timings",
         "docs/tensor-view-release-timings.md",
     ),
