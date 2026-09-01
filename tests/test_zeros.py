@@ -52,6 +52,16 @@ class ZerosTests(unittest.TestCase):
                 self.calls += 1
                 return self.value
 
+        class StatefulIndexDimension:
+            def __init__(self, values):
+                self.values = values
+                self.calls = 0
+
+            def __index__(self):
+                value = self.values[min(self.calls, len(self.values) - 1)]
+                self.calls += 1
+                return value
+
         custom = IndexDimension(2)
         cases = (
             ("plain", (2, 3), (2, 3)),
@@ -76,6 +86,11 @@ class ZerosTests(unittest.TestCase):
                 self.assert_tensor_matches(tensor, torch.zeros(expected_shape, **keywords))
                 self.assertEqual(tensor.numel(), int(np.prod(expected_shape)))
         self.assertGreater(custom.calls, 0)
+
+        stateful = StatefulIndexDimension((2, 3, 4))
+        stateful_tensor = torch.zeros(stateful, 3)
+        self.assertEqual(stateful_tensor.shape, (4, 3))
+        self.assertEqual(stateful.calls, 3)
 
     def test_out_none_uses_default_fresh_allocation(self):
         cases = (
@@ -231,6 +246,25 @@ class ZerosTests(unittest.TestCase):
             def __getitem__(self, index):
                 return self.values[index]
 
+        class TupleIndex(tuple):
+            def __new__(cls, values):
+                instance = super().__new__(cls, values)
+                instance.calls = 0
+                return instance
+
+            def __index__(self):
+                self.calls += 1
+                return 2
+
+        class ListIndex(list):
+            def __init__(self, values):
+                super().__init__(values)
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return 2
+
         for size, expected_shape in (
             ((2,), (2,)),
             ([2], (2,)),
@@ -275,6 +309,15 @@ class ZerosTests(unittest.TestCase):
             re.escape("zeros() got multiple values for argument 'size'"),
         ):
             torch.zeros(2, 3, size=(2, 3))
+
+        for size in (TupleIndex((4,)), ListIndex([4])):
+            with self.subTest(size=type(size).__name__):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    re.escape("zeros() takes 1 positional argument but 2 were given"),
+                ):
+                    torch.zeros(size, 3)
+                self.assertEqual(size.calls, 1)
 
         for size in ((1,), [1], range(1)):
             for competing_keyword in ({"wat": 1}, {"size": (1,)}, {"requires_grad": 1}):

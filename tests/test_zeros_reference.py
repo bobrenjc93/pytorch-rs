@@ -22,6 +22,38 @@ class IndexDimension:
         return self.value
 
 
+class StatefulIndexDimension:
+    def __init__(self, values):
+        self.values = values
+        self.calls = 0
+
+    def __index__(self):
+        value = self.values[min(self.calls, len(self.values) - 1)]
+        self.calls += 1
+        return value
+
+
+class TupleIndex(tuple):
+    def __new__(cls, values):
+        instance = super().__new__(cls, values)
+        instance.calls = 0
+        return instance
+
+    def __index__(self):
+        self.calls += 1
+        return 2
+
+
+class ListIndex(list):
+    def __init__(self, values):
+        super().__init__(values)
+        self.calls = 0
+
+    def __index__(self):
+        self.calls += 1
+        return 2
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class ZerosReferenceTests(unittest.TestCase):
     @classmethod
@@ -133,6 +165,19 @@ class ZerosReferenceTests(unittest.TestCase):
                         self.tensor_observation(torch, actual),
                         self.tensor_observation(reference_torch, expected),
                     )
+
+    def test_variadic_leading_index_provider_calls_match_pytorch_2_13(self):
+        actual_dimension = StatefulIndexDimension((2, 3, 4))
+        expected_dimension = StatefulIndexDimension((2, 3, 4))
+
+        actual = torch.zeros(actual_dimension, 3)
+        expected = reference_torch.zeros(expected_dimension, 3)
+
+        self.assertEqual(
+            self.tensor_observation(torch, actual),
+            self.tensor_observation(reference_torch, expected),
+        )
+        self.assertEqual(actual_dimension.calls, expected_dimension.calls)
 
     def test_out_none_results_and_storage_freshness_match_pytorch_2_13(self):
         cases = (
@@ -357,6 +402,27 @@ class ZerosReferenceTests(unittest.TestCase):
                 )
                 self.assertIs(actual_type, expected_type)
                 self.assertEqual(actual_message, expected_message)
+
+    def test_sequence_subclass_with_index_and_extra_positional_matches_pytorch_2_13(
+        self,
+    ):
+        cases = (
+            ("tuple subclass", lambda: TupleIndex((4,))),
+            ("list subclass", lambda: ListIndex([4])),
+        )
+        for case, factory in cases:
+            with self.subTest(case=case):
+                actual_dimension = factory()
+                expected_dimension = factory()
+                actual_type, actual_message = self.capture_error(
+                    lambda: torch.zeros(actual_dimension, 3)
+                )
+                expected_type, expected_message = self.capture_error(
+                    lambda: reference_torch.zeros(expected_dimension, 3)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(actual_message, expected_message)
+                self.assertEqual(actual_dimension.calls, expected_dimension.calls)
 
     def test_out_type_error_order_matches_pytorch_2_13(self):
         cases = (

@@ -7808,13 +7808,15 @@ fn bind_creation_arguments<'py>(
                 origin: CreationSizeOrigin::Positional,
             }
         }),
-        length if creation_variadic_size_start(&positional.get_item(0)?) => {
-            Some(CreationSizeArgument::Variadic(positional.clone()))
-        }
         length => {
-            return Err(PyTypeError::new_err(format!(
-                "{function}() takes 1 positional argument but {length} were given"
-            )));
+            let first = positional.get_item(0)?;
+            if creation_variadic_size_start(function, &first)? {
+                Some(CreationSizeArgument::Variadic(positional.clone()))
+            } else {
+                return Err(PyTypeError::new_err(format!(
+                    "{function}() takes 1 positional argument but {length} were given"
+                )));
+            }
         }
     };
     let mut arguments = CreationCallArguments {
@@ -7865,11 +7867,23 @@ fn bind_creation_arguments<'py>(
     Ok(arguments)
 }
 
-fn creation_variadic_size_start(dimension: &Bound<'_, PyAny>) -> bool {
+fn creation_variadic_size_start(function: &str, dimension: &Bound<'_, PyAny>) -> PyResult<bool> {
     if dimension.is_instance_of::<PyBool>() {
-        return false;
+        return Ok(false);
     }
-    python_number_index(dimension).is_ok()
+    if python_number_index(dimension).is_err() {
+        return Ok(false);
+    }
+    if dimension.is_instance_of::<PyTuple>() || dimension.is_instance_of::<PyList>() {
+        return Ok(false);
+    }
+
+    // PyTorch's SymInt argument parser probes an arbitrary leading __index__
+    // provider once more before the variadic dimensions are unpacked.
+    if !dimension.is_instance_of::<PyInt>() && python_number_index(dimension).is_err() {
+        return Err(creation_sequence_dimension_type_error(function, dimension)?);
+    }
+    Ok(true)
 }
 
 fn bind_like_factory_arguments<'py>(
@@ -9309,6 +9323,16 @@ fn creation_dimension_type_error(function: &str, dimension: &Bound<'_, PyAny>) -
     let type_name = python_type_name(dimension)?;
     Ok(PyTypeError::new_err(format!(
         "{function}(): argument 'size' (position 1) must be tuple of ints, not {type_name}"
+    )))
+}
+
+fn creation_sequence_dimension_type_error(
+    function: &str,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    let type_name = python_type_name(dimension)?;
+    Ok(PyTypeError::new_err(format!(
+        "{function}(): argument 'size' (position 1) must be tuple of ints, but found element of type {type_name} at pos 0"
     )))
 }
 
