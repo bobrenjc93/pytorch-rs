@@ -1821,16 +1821,22 @@ fn scalar_arithmetic_supports_both_operand_orders_and_signed_zero() {
 }
 
 #[test]
-fn reflected_scalar_division_uses_float32_reciprocal_multiplication() {
+fn reflected_scalar_division_uses_float32_direct_division() {
     let ordinary_denominator = Tensor::from_vec(vec![f32::from_bits(0xc27c_80a7)], [1]).unwrap();
     let ordinary = ordinary_denominator
         .scalar_div(f32::from_bits(0xc25f_b64c))
         .unwrap();
-    assert_eq!(ordinary.as_slice()[0].to_bits(), 0x3f62_cf8f);
+    assert_eq!(ordinary.as_slice()[0].to_bits(), 0x3f62_cf8e);
 
     let subnormal = Tensor::from_vec(vec![1.0e-39_f32], [1]).unwrap();
-    assert!(subnormal.scalar_div(1.0e-38).unwrap().as_slice()[0].is_infinite());
-    assert!(subnormal.scalar_div(0.0).unwrap().as_slice()[0].is_nan());
+    assert_eq!(
+        subnormal.scalar_div(1.0e-38).unwrap().as_slice()[0].to_bits(),
+        0x411f_fffd
+    );
+    assert_eq!(
+        subnormal.scalar_div(0.0).unwrap().as_slice()[0].to_bits(),
+        0.0_f32.to_bits()
+    );
 }
 
 #[test]

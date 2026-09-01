@@ -3522,8 +3522,7 @@ impl Tensor {
         self.finish_negate_vjp(output, AutogradNode::ReflectedSubtract)
     }
 
-    /// Divides a scalar by every element using `PyTorch`'s float32 reciprocal
-    /// multiplication semantics.
+    /// Divides a scalar by every element using IEEE 754 true division.
     ///
     /// # Errors
     ///
@@ -3585,7 +3584,7 @@ impl Tensor {
         shape: Vec<usize>,
         strides: Vec<usize>,
     ) -> Result<Self, TensorError> {
-        let data = self.materialize_with_strides(&strides, |value| scalar * value.recip())?;
+        let data = self.materialize_with_strides(&strides, |value| scalar / value)?;
         Ok(Self::from_owned_parts(
             data,
             shape,
