@@ -182,6 +182,23 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             0,
             1,
         )
+        noncontiguous_accumulation_values = np.ones((512, 256), dtype=np.float32)
+        noncontiguous_accumulation_values[1, 0] = np.float32(1e8)
+        noncontiguous_accumulation_input = module.tensor(
+            noncontiguous_accumulation_values.tolist(),
+            dtype=module.float32,
+        ).transpose(0, 1)
+        noncontiguous_accumulation_target = module.zeros(
+            (512, 256),
+            dtype=module.float32,
+        ).transpose(0, 1)
+        accumulation_values = np.ones(100_000, dtype=np.float32)
+        accumulation_values[0] = np.float32(1e8)
+        accumulation_input = module.tensor(
+            memoryview(accumulation_values),
+            dtype=module.float32,
+        )
+        accumulation_target = module.zeros((100_000,), dtype=module.float32)
         matrix = self.tensor(
             module,
             np.arange(6, dtype=np.float32).reshape(2, 3).tolist(),
@@ -197,6 +214,18 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             ),
             ("offset", offset_input_base[1], offset_target_base[0], False),
             ("noncontiguous", noncontiguous_input, noncontiguous_target, False),
+            (
+                "noncontiguous accumulation order",
+                noncontiguous_accumulation_input,
+                noncontiguous_accumulation_target,
+                False,
+            ),
+            (
+                "accumulation order",
+                accumulation_input,
+                accumulation_target,
+                False,
+            ),
             (
                 "signed zero",
                 self.tensor_from_bits(

@@ -14,6 +14,16 @@ use crate::tensor_error::TensorError;
 const F32_SIGN_MASK: u32 = 0x8000_0000;
 #[cfg(feature = "python-bindings")]
 const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
+#[cfg(feature = "python-bindings")]
+const PYTORCH_FLOAT_SUM_GRAIN_SIZE: usize = 32_768;
+#[cfg(feature = "python-bindings")]
+const PYTORCH_FLOAT_SUM_ILP_FACTOR: usize = 4;
+#[cfg(feature = "python-bindings")]
+const PYTORCH_FLOAT_SUM_LEVELS: usize = 4;
+#[cfg(feature = "python-bindings")]
+const PYTORCH_FLOAT_SUM_MIN_LEVEL_POWER: usize = 4;
+#[cfg(feature = "python-bindings")]
+const PYTORCH_FLOAT_SUM_VECTOR_WIDTH: usize = 8;
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
 // Keep latency-sized products on the smaller single-row loop.
 const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 4 * 1024;
@@ -23,6 +33,191 @@ static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 #[allow(clippy::cast_precision_loss)]
 fn full_reduction_mean_divisor(elements: usize) -> f32 {
     elements as f32
+}
+
+// Mirrors PyTorch 2.13's CPU float32 `cascade_sum` path for L1 sum without
+// changing this crate's existing scalar-order `Tensor::sum()` contract.
+#[cfg(feature = "python-bindings")]
+fn pytorch_2_13_float_sum(values: &[f32]) -> f32 {
+    if values.is_empty() {
+        return 0.0;
+    }
+
+    let max_threads = pytorch_2_13_initial_thread_count();
+    if values.len() < PYTORCH_FLOAT_SUM_GRAIN_SIZE || max_threads == 1 {
+        return pytorch_2_13_float_sum_chunk(values);
+    }
+
+    let active_threads = max_threads.min(values.len().div_ceil(PYTORCH_FLOAT_SUM_GRAIN_SIZE));
+    let chunk_size = values.len().div_ceil(active_threads);
+    let mut partials = vec![0.0; max_threads];
+    for (thread_id, partial) in partials.iter_mut().take(active_threads).enumerate() {
+        let begin = thread_id * chunk_size;
+        if begin >= values.len() {
+            break;
+        }
+        let end = values.len().min(begin + chunk_size);
+        *partial = pytorch_2_13_float_sum_chunk(&values[begin..end]);
+    }
+    pytorch_2_13_float_sum_chunk(&partials)
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_2_13_initial_thread_count() -> usize {
+    pytorch_thread_env_count("MKL_NUM_THREADS")
+        .or_else(|| pytorch_thread_env_count("OMP_NUM_THREADS"))
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map_or(1, |threads| threads.get().saturating_div(2).max(1))
+        })
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_thread_env_count(name: &str) -> Option<usize> {
+    let value = std::env::var(name).ok()?;
+    let first = value.split(',').next()?.trim();
+    first.parse::<usize>().ok().filter(|&count| count > 0)
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_2_13_float_sum_chunk(values: &[f32]) -> f32 {
+    if values.len() >= PYTORCH_FLOAT_SUM_VECTOR_WIDTH {
+        pytorch_2_13_vectorized_inner_sum(values)
+    } else {
+        pytorch_2_13_scalar_inner_sum(values, 0, 1, values.len())
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+#[allow(clippy::needless_range_loop)]
+fn pytorch_2_13_vectorized_inner_sum(values: &[f32]) -> f32 {
+    let vector_count = values.len() / PYTORCH_FLOAT_SUM_VECTOR_WIDTH;
+    let vector_blocks = vector_count / PYTORCH_FLOAT_SUM_ILP_FACTOR;
+    let mut partials = pytorch_2_13_multi_row_sum::<PYTORCH_FLOAT_SUM_VECTOR_WIDTH>(
+        values,
+        0,
+        PYTORCH_FLOAT_SUM_VECTOR_WIDTH * PYTORCH_FLOAT_SUM_ILP_FACTOR,
+        PYTORCH_FLOAT_SUM_VECTOR_WIDTH,
+        vector_blocks,
+    );
+
+    for vector_index in vector_blocks * PYTORCH_FLOAT_SUM_ILP_FACTOR..vector_count {
+        let base = vector_index * PYTORCH_FLOAT_SUM_VECTOR_WIDTH;
+        for lane in 0..PYTORCH_FLOAT_SUM_VECTOR_WIDTH {
+            partials[0][lane] += values[base + lane];
+        }
+    }
+    for row in 1..PYTORCH_FLOAT_SUM_ILP_FACTOR {
+        for lane in 0..PYTORCH_FLOAT_SUM_VECTOR_WIDTH {
+            partials[0][lane] += partials[row][lane];
+        }
+    }
+
+    let mut total = 0.0;
+    for value in &values[vector_count * PYTORCH_FLOAT_SUM_VECTOR_WIDTH..] {
+        total += *value;
+    }
+    for lane in 0..PYTORCH_FLOAT_SUM_VECTOR_WIDTH {
+        total += partials[0][lane];
+    }
+    total
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_2_13_scalar_inner_sum(values: &[f32], start: usize, stride: usize, size: usize) -> f32 {
+    let scalar_blocks = size / PYTORCH_FLOAT_SUM_ILP_FACTOR;
+    let mut partials = pytorch_2_13_multi_row_sum::<1>(
+        values,
+        start,
+        stride * PYTORCH_FLOAT_SUM_ILP_FACTOR,
+        stride,
+        scalar_blocks,
+    );
+    for index in scalar_blocks * PYTORCH_FLOAT_SUM_ILP_FACTOR..size {
+        partials[0][0] += values[start + stride * index];
+    }
+    for row in 1..PYTORCH_FLOAT_SUM_ILP_FACTOR {
+        partials[0][0] += partials[row][0];
+    }
+    partials[0][0]
+}
+
+#[cfg(feature = "python-bindings")]
+#[allow(clippy::needless_range_loop)]
+fn pytorch_2_13_multi_row_sum<const LANES: usize>(
+    values: &[f32],
+    start: usize,
+    row_stride: usize,
+    col_stride: usize,
+    size: usize,
+) -> [[f32; LANES]; PYTORCH_FLOAT_SUM_ILP_FACTOR] {
+    let (level_step, level_mask, level_power) = pytorch_2_13_sum_level_plan(size);
+    let mut acc = [[[0.0; LANES]; PYTORCH_FLOAT_SUM_ILP_FACTOR]; PYTORCH_FLOAT_SUM_LEVELS];
+    let mut index = 0;
+
+    if size >= level_step {
+        while index <= size - level_step {
+            for _ in 0..level_step {
+                let base = start + index * row_stride;
+                for row in 0..PYTORCH_FLOAT_SUM_ILP_FACTOR {
+                    let row_base = base + row * col_stride;
+                    for lane in 0..LANES {
+                        acc[0][row][lane] += values[row_base + lane];
+                    }
+                }
+                index += 1;
+            }
+            for level in 1..PYTORCH_FLOAT_SUM_LEVELS {
+                for row in 0..PYTORCH_FLOAT_SUM_ILP_FACTOR {
+                    for lane in 0..LANES {
+                        acc[level][row][lane] += acc[level - 1][row][lane];
+                        acc[level - 1][row][lane] = 0.0;
+                    }
+                }
+                let mask = level_mask << (level * level_power);
+                if (index & mask) != 0 {
+                    break;
+                }
+            }
+        }
+    }
+
+    while index < size {
+        let base = start + index * row_stride;
+        for row in 0..PYTORCH_FLOAT_SUM_ILP_FACTOR {
+            let row_base = base + row * col_stride;
+            for lane in 0..LANES {
+                acc[0][row][lane] += values[row_base + lane];
+            }
+        }
+        index += 1;
+    }
+
+    for level in 1..PYTORCH_FLOAT_SUM_LEVELS {
+        for row in 0..PYTORCH_FLOAT_SUM_ILP_FACTOR {
+            for lane in 0..LANES {
+                acc[0][row][lane] += acc[level][row][lane];
+            }
+        }
+    }
+    acc[0]
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_2_13_sum_level_plan(size: usize) -> (usize, usize, usize) {
+    let level_power =
+        PYTORCH_FLOAT_SUM_MIN_LEVEL_POWER.max(ceil_log2_usize(size) / PYTORCH_FLOAT_SUM_LEVELS);
+    let level_step = 1_usize << level_power;
+    (level_step, level_step - 1, level_power)
+}
+
+#[cfg(feature = "python-bindings")]
+fn ceil_log2_usize(value: usize) -> usize {
+    if value <= 1 {
+        return 0;
+    }
+    usize::try_from(usize::BITS - (value - 1).leading_zeros())
+        .expect("usize bit width fits in usize")
 }
 
 struct AutogradMeta {
@@ -3729,6 +3924,19 @@ impl Tensor {
             }));
         }
         output
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn sum_pytorch_2_13_cpu_float32(&self) -> Result<Self, TensorError> {
+        let total = if let Some(values) = self.contiguous_slice() {
+            pytorch_2_13_float_sum(values)
+        } else if let Some(values) = self.dense_physical_slice() {
+            pytorch_2_13_float_sum(values)
+        } else {
+            let values = self.try_to_vec()?;
+            pytorch_2_13_float_sum(&values)
+        };
+        Ok(Self::from_scalar(total, self.dtype(), self.device()))
     }
 
     /// Computes the arithmetic mean of every element.

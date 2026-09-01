@@ -593,7 +593,9 @@ fn _nn_functional_l1_loss(
         .map_err(|error| tensor_error(&error))?;
     let output = match reduction_kind {
         LossReduction::None => output,
-        LossReduction::Sum => output.sum(),
+        LossReduction::Sum => output
+            .sum_pytorch_2_13_cpu_float32()
+            .map_err(|error| tensor_error(&error))?,
     };
     PyTensor::new(output).into_py_any(py)
 }
