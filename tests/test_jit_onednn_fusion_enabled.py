@@ -141,7 +141,12 @@ class JitOnednnFusionEnabledTests(unittest.TestCase):
         )
         self.assertEqual(
             {name for name in vars(jit) if not name.startswith("_")},
-            {*wildcard_supported, "is_scripting", "is_tracing"},
+            {
+                *wildcard_supported,
+                "is_scripting",
+                "is_tracing",
+                "optimized_execution",
+            },
         )
 
         explicit_namespace = {}
