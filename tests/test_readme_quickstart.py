@@ -185,6 +185,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         "Integrate eager compiler, JIT, and distributed probes",
         (
             "`torch.compiler.disable`",
+            "`torch.compiler.allow_in_graph`",
             "`torch.jit.annotate`",
             "`torch.distributed.is_available`",
             "`torch.distributed.is_gloo_available`",
@@ -201,6 +202,10 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         ),
         (
             "Actual `torch.compile`",
+            "backend registration",
+            "`torch.compiler.substitute_in_graph`",
+            "Dynamo execution state",
+            "compiler CUDA behavior",
             "TorchScript compilation",
             "process-group creation",
             "initialized backend/config/rank/world-size access",
