@@ -3,6 +3,7 @@
 #[derive(Clone, Copy)]
 #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
 pub(crate) enum AutogradNode {
+    Abs,
     Add,
     Alias,
     Ceil,
@@ -40,6 +41,7 @@ pub(crate) enum AutogradNode {
 impl AutogradNode {
     pub(crate) const fn python_name(self) -> &'static str {
         match self {
+            Self::Abs => "AbsBackward0",
             Self::Add => "AddBackward0",
             Self::Alias => "AliasBackward0",
             Self::Ceil => "CeilBackward0",

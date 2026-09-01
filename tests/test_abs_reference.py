@@ -137,6 +137,93 @@ class TensorAbsReferenceTests(unittest.TestCase):
         )
 
     @staticmethod
+    def tensor_from_float32_array(module, values, *, requires_grad=False):
+        if module is torch:
+            return module.tensor(memoryview(values), requires_grad=requires_grad)
+        return module.tensor(
+            values, dtype=module.float32, requires_grad=requires_grad
+        )
+
+    @classmethod
+    def autograd_case(cls, module, case):
+        if case == "scalar":
+            leaf = module.tensor(
+                -3.0, dtype=module.float32, requires_grad=True
+            )
+            return leaf, leaf, None
+        if case == "empty":
+            leaf = module.zeros(
+                (2, 0, 3), dtype=module.float32, requires_grad=True
+            )
+            return leaf, leaf.transpose(0, 2)[1], None
+        if case == "offset":
+            leaf = module.tensor(
+                [[-2.0, -0.0, 1.0], [2.0, -4.0, 8.0]],
+                dtype=module.float32,
+                requires_grad=True,
+            )
+            return leaf, leaf.transpose(0, 1)[1], None
+        if case == "noncontiguous":
+            values = np.asarray(
+                [[-3.0, -0.0, 2.0], [4.0, -5.0, 0.0]], dtype=np.float32
+            )
+            leaf = module.tensor(
+                values.tolist(), dtype=module.float32, requires_grad=True
+            )
+            return leaf, leaf.transpose(0, 1), None
+        if case == "weighted edge":
+            input_bits = np.asarray(
+                (
+                    0x0000_0000,
+                    0x8000_0000,
+                    0x0000_0001,
+                    0x8000_0001,
+                    0x0080_0000,
+                    0x8080_0000,
+                    0x3F80_0000,
+                    0xBF80_0000,
+                    0x7F7F_FFFF,
+                    0xFF7F_FFFF,
+                    0x7F80_0000,
+                    0xFF80_0000,
+                    0x7F81_2345,
+                    0xFF81_2345,
+                    0x7FC1_2345,
+                    0xFFC5_4321,
+                ),
+                dtype=np.uint32,
+            )
+            weight_bits = np.asarray(
+                (
+                    0x3F80_0000,
+                    0xBF80_0000,
+                    0x3F00_0000,
+                    0x3F00_0000,
+                    0x0000_0001,
+                    0x0000_0001,
+                    0x3F80_0000,
+                    0xBF80_0000,
+                    0x3E80_0000,
+                    0x3E80_0000,
+                    0x3F80_0000,
+                    0xBF80_0000,
+                    0x3F80_0000,
+                    0xBF80_0000,
+                    0x7FC0_1234,
+                    0xFFC0_5678,
+                ),
+                dtype=np.uint32,
+            )
+            leaf = cls.tensor_from_float32_array(
+                module, input_bits.view(np.float32), requires_grad=True
+            )
+            weights = cls.tensor_from_float32_array(
+                module, weight_bits.view(np.float32)
+            )
+            return leaf, leaf, weights
+        raise AssertionError(f"unknown abs autograd case: {case}")
+
+    @staticmethod
     def supported_calls(tensor):
         return (
             ("abs", tensor.abs),
@@ -214,11 +301,52 @@ class TensorAbsReferenceTests(unittest.TestCase):
                     )
                     self.assertFalse(actual_output.is_set_to(actual))
                     self.assertFalse(expected_output.is_set_to(expected))
-                    if actual.numel():
-                        self.assertNotEqual(actual_output.data_ptr(), actual.data_ptr())
-                        self.assertNotEqual(
-                            expected_output.data_ptr(), expected.data_ptr()
-                        )
+                if actual.numel():
+                    self.assertNotEqual(actual_output.data_ptr(), actual.data_ptr())
+                    self.assertNotEqual(
+                        expected_output.data_ptr(), expected.data_ptr()
+                    )
+
+    def test_autograd_scalar_empty_offset_and_noncontiguous_match_pytorch_2_13(self):
+        for case in ("scalar", "empty", "offset", "noncontiguous"):
+            actual_leaf, actual_input, actual_weights = self.autograd_case(torch, case)
+            expected_leaf, expected_input, expected_weights = self.autograd_case(
+                reference_torch, case
+            )
+            actual_output = actual_input.abs()
+            expected_output = expected_input.abs()
+            self.assert_tensor_matches(
+                actual_output, expected_output, case=(case, "forward")
+            )
+
+            if actual_weights is None:
+                actual_loss = actual_output if case == "scalar" else actual_output.sum()
+                expected_loss = (
+                    expected_output if case == "scalar" else expected_output.sum()
+                )
+            else:
+                actual_loss = (actual_output * actual_weights).sum()
+                expected_loss = (expected_output * expected_weights).sum()
+            actual_loss.backward()
+            expected_loss.backward()
+            self.assert_tensor_matches(
+                actual_leaf.grad, expected_leaf.grad, case=(case, "gradient")
+            )
+
+    def test_abs_backward_signed_zero_nan_and_infinity_bits_match_pytorch_2_13(self):
+        results = []
+        for module in (torch, reference_torch):
+            leaf, source, weights = self.autograd_case(module, "weighted edge")
+            output = source.abs()
+            (output * weights).sum().backward()
+            results.append((output, leaf.grad))
+
+        self.assert_tensor_matches(
+            results[0][0], results[1][0], case="edge forward", raw_bits=True
+        )
+        self.assert_tensor_matches(
+            results[0][1], results[1][1], case="edge gradient", raw_bits=True
+        )
 
     @staticmethod
     def error(action):
@@ -772,7 +900,7 @@ print(json.dumps(observations, sort_keys=True))
             self.mode_dispatch_observation("torch"),
         )
 
-    def test_inference_boundary_and_unsupported_surface_are_explicit(self):
+    def test_autograd_no_grad_detach_and_unsupported_surface_match_pytorch_2_13(self):
         actual = torch.tensor([-2.0, -0.0, 3.0], requires_grad=True)
         expected = reference_torch.tensor(
             [-2.0, -0.0, 3.0], dtype=reference_torch.float32, requires_grad=True
@@ -787,7 +915,15 @@ print(json.dumps(observations, sort_keys=True))
                     ),
                 )
                 for name in ("abs", "absolute")
-                for form in ("positional", "input", "out none")
+                for form in (
+                    "positional",
+                    "input",
+                    "x",
+                    "a",
+                    "x1",
+                    "out none",
+                    "alias and out none",
+                )
             ),
         )
         expected_calls = (
@@ -800,7 +936,15 @@ print(json.dumps(observations, sort_keys=True))
                     ),
                 )
                 for name in ("abs", "absolute")
-                for form in ("positional", "input", "out none")
+                for form in (
+                    "positional",
+                    "input",
+                    "x",
+                    "a",
+                    "x1",
+                    "out none",
+                    "alias and out none",
+                )
             ),
         )
         for (form, actual_call), (expected_form, expected_call) in zip(
@@ -808,12 +952,16 @@ print(json.dumps(observations, sort_keys=True))
         ):
             self.assertEqual(form, expected_form)
             with self.subTest(form=form, mode="recording"):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    r"^abs\(\): autograd recording is not supported$",
-                ):
-                    actual_call()
-                self.assertTrue(expected_call().requires_grad)
+                actual_output = actual_call()
+                expected_output = expected_call()
+                self.assert_tensor_matches(
+                    actual_output, expected_output, case=(form, "recording")
+                )
+                actual_output.sum().backward()
+                expected_output.sum().backward()
+                self.assert_tensor_matches(
+                    actual.grad, expected.grad, case=(form, "accumulated gradient")
+                )
 
             with torch.no_grad():
                 actual_no_grad = actual_call()
@@ -835,7 +983,15 @@ print(json.dumps(observations, sort_keys=True))
                     ),
                 )
                 for name in ("abs", "absolute")
-                for form in ("positional", "input", "out none")
+                for form in (
+                    "positional",
+                    "input",
+                    "x",
+                    "a",
+                    "x1",
+                    "out none",
+                    "alias and out none",
+                )
             ),
         )
         expected_detached_calls = (
@@ -848,7 +1004,15 @@ print(json.dumps(observations, sort_keys=True))
                     ),
                 )
                 for name in ("abs", "absolute")
-                for form in ("positional", "input", "out none")
+                for form in (
+                    "positional",
+                    "input",
+                    "x",
+                    "a",
+                    "x1",
+                    "out none",
+                    "alias and out none",
+                )
             ),
         )
         for (form, actual_call), (expected_form, expected_call) in zip(
