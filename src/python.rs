@@ -2935,6 +2935,13 @@ struct BoundTopLevelDivisionCall<'py> {
     out: Option<BoundTensorOrTorchFunction<'py>>,
 }
 
+type BoundTopLevelDivisionArguments<'py> = (
+    [ParsedCallArgument<'py>; 2],
+    Option<ParsedCallArgument<'py>>,
+    Option<ParsedCallArgument<'py>>,
+    Option<PyErr>,
+);
+
 type BoundTopLevelSubtractionArguments<'py> = (
     [ParsedCallArgument<'py>; 2],
     Option<ParsedCallArgument<'py>>,
@@ -13706,12 +13713,7 @@ fn bind_top_level_division_arguments<'py>(
     operation: DivisionOperation,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-) -> PyResult<(
-    [ParsedCallArgument<'py>; 2],
-    Option<ParsedCallArgument<'py>>,
-    Option<ParsedCallArgument<'py>>,
-    Option<PyErr>,
-)> {
+) -> PyResult<BoundTopLevelDivisionArguments<'py>> {
     let function = operation.name();
     if positional.len() > 2 {
         return Err(PyTypeError::new_err(format!(
