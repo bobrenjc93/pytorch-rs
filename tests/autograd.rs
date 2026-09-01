@@ -3613,6 +3613,62 @@ fn sine_preserves_scalar_empty_and_strided_autograd_history() {
 }
 
 #[test]
+fn cosine_preserves_scalar_empty_and_strided_autograd_history() {
+    let scalar = Tensor::from_vec(vec![1.5], [])
+        .unwrap()
+        .with_requires_grad(true);
+    let scalar_output = scalar.cos().unwrap();
+    assert!(scalar_output.requires_grad());
+    assert!(scalar_output.shape().is_empty());
+    assert!(scalar_output.stride().is_empty());
+    assert_eq!(scalar_output.storage_offset(), 0);
+    scalar_output.backward().unwrap();
+    assert_eq!(
+        scalar.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        (-1.5_f32.sin()).to_bits()
+    );
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let empty_output = empty.cos().unwrap();
+    assert!(empty_output.requires_grad());
+    assert_eq!(empty_output.shape(), [2, 0, 3]);
+    assert_eq!(empty_output.stride(), [3, 3, 1]);
+    assert_eq!(empty_output.storage_offset(), 0);
+    assert_eq!(empty_output.dtype(), empty.dtype());
+    assert_eq!(empty_output.device(), empty.device());
+    empty_output.sum().backward().unwrap();
+    let empty_gradient = empty.grad().unwrap().unwrap();
+    assert_eq!(empty_gradient.shape(), [2, 0, 3]);
+    assert_eq!(empty_gradient.stride(), [3, 3, 1]);
+    assert!(values(&empty_gradient).is_empty());
+
+    let leaf = Tensor::from_vec(vec![-2.0, 0.0, 1.0, 2.0, 4.0, 6.0], [2, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    let view = leaf.transpose(0, 1).unwrap();
+    let weights = Tensor::from_vec(vec![1.0, -2.0, 3.0, -4.0, 5.0, -6.0], [3, 2]).unwrap();
+    let output = view.cos().unwrap();
+    assert!(output.requires_grad());
+    assert_eq!(output.shape(), [3, 2]);
+    assert_eq!(output.stride(), [1, 3]);
+    assert_eq!(output.storage_offset(), 0);
+    assert_eq!(output.dtype(), view.dtype());
+    assert_eq!(output.device(), view.device());
+    output.mul(&weights).unwrap().sum().backward().unwrap();
+    assert_eq!(
+        values(&leaf.grad().unwrap().unwrap()),
+        [
+            -(-2.0_f32).sin(),
+            3.0 * -0.0_f32.sin(),
+            5.0 * -1.0_f32.sin(),
+            -2.0 * -2.0_f32.sin(),
+            -4.0 * -4.0_f32.sin(),
+            -6.0 * -6.0_f32.sin(),
+        ]
+    );
+}
+
+#[test]
 fn sine_vjp_uses_saved_input_for_signed_zero_non_finites_and_nans() {
     let input_bits = [
         0x0000_0000,
@@ -3924,6 +3980,61 @@ fn exponential_composes_accumulates_and_obeys_detach_and_no_grad() {
         assert_eq!(output.storage_offset(), 0);
     }
     assert!(accumulated.exp().unwrap().requires_grad());
+}
+
+#[test]
+fn cosine_vjp_uses_saved_input_for_signed_zero_non_finites_and_nans() {
+    let input_bits = [
+        0x0000_0000,
+        0x8000_0000,
+        0x3f00_0000,
+        0xbf00_0000,
+        0x3f80_0000,
+        0xc000_0000,
+        0x4049_0fdb,
+        0x5015_02f9,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let weight_bits = [
+        0x3f80_0000,
+        0xbf80_0000,
+        0x0000_0000,
+        0x8000_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x3f00_0000,
+        0xbf00_0000,
+        0x0000_0000,
+        0x7f80_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+    ];
+    let input_values = input_bits.map(f32::from_bits);
+    let weight_values = weight_bits.map(f32::from_bits);
+    let expected_bits = input_values
+        .iter()
+        .zip(weight_values)
+        .map(|(&input, upstream)| (upstream * -input.sin()).to_bits())
+        .collect::<Vec<_>>();
+    let leaf = Tensor::from_vec(input_values.to_vec(), [input_bits.len()])
+        .unwrap()
+        .with_requires_grad(true);
+    let weights = Tensor::from_vec(weight_values.to_vec(), [weight_bits.len()]).unwrap();
+    let loss = leaf.cos().unwrap().mul(&weights).unwrap().sum();
+
+    loss.backward().unwrap();
+    assert!(
+        leaf.grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .eq(expected_bits)
+    );
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
 }
 
 #[test]
