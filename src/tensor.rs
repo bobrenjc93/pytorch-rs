@@ -665,6 +665,18 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn empty_with_metadata(
+        shape: impl Into<Vec<usize>>,
+        dtype: DType,
+        device: Device,
+    ) -> Result<Self, TensorError> {
+        let shape = shape.into();
+        let (elements, strides) = validated_layout(&shape)?;
+        let data = unspecified_storage(elements)?;
+        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+    }
+
     /// Creates the default float32 CPU range `0, 1, ..., elements - 1`.
     ///
     /// # Errors
@@ -6367,6 +6379,13 @@ fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorEr
         .map_err(|_| TensorError::AllocationFailed { elements })?;
     data.resize(elements, fill_value);
     Ok(data)
+}
+
+#[cfg(feature = "python-bindings")]
+fn unspecified_storage(elements: usize) -> Result<Vec<f32>, TensorError> {
+    // The Python `empty_like` contract leaves values unspecified, but this safe
+    // storage representation must still contain initialized floats.
+    filled_storage(elements, 0.0)
 }
 
 fn copied_storage(values: &[f32], elements: usize) -> Result<Vec<f32>, TensorError> {
