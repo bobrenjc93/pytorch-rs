@@ -596,15 +596,20 @@ its implementation engine.
 #### Creation
 
 `torch.as_tensor(data, dtype=None, device=None)` is exposed as a
-PyTorch-style top-level builtin for identity conversion only. When `data` is an
-exact native CPU `float32` tensor and `dtype` and `device` are omitted, `None`,
-or the unindexed CPU/`torch.float32` defaults, the exact same Python Tensor
-object is returned with unchanged storage, shape, stride, storage offset, dtype,
-device, layout, autograd history, leaf state, and output number. Python
-sequences, NumPy arrays, scalars, tensor subclasses, dtype conversions,
-accelerator or meta devices, indexed CPU devices that would require a copy,
-pinned-memory options, concrete or `None` `out` arguments, and explicit copy
-requests remain unsupported.
+PyTorch-style top-level builtin for identity conversion and Python float scalar
+creation only. When `data` is an exact native CPU `float32` tensor and `dtype`
+and `device` are omitted, `None`, or the unindexed CPU/`torch.float32` defaults,
+the exact same Python Tensor object is returned with unchanged storage, shape,
+stride, storage offset, dtype, device, layout, autograd history, leaf state, and
+output number. When `data` is a Python float scalar with the same
+default-equivalent metadata, a fresh rank-0 CPU `float32` leaf tensor is
+created, preserving finite values, signed zero, infinities, and NaNs through
+the existing tensor scalar conversion path. Python sequences, NumPy
+arrays and scalars, integer or boolean scalar dtype inference, tensor
+subclasses, dtype conversions, accelerator or meta devices, indexed CPU devices
+that would require a copy, pinned-memory options, concrete or `None` `out`
+arguments, explicit copy requests, and `requires_grad` keyword requests remain
+unsupported.
 
 `torch.asarray(obj, *, dtype=None, device=None, copy=None, requires_grad=None)`
 is exposed as the matching identity-only array conversion sibling. Exact native
