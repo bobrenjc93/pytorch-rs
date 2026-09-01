@@ -117,6 +117,58 @@ class CompilerAllowInGraphTests(unittest.TestCase):
         ):
             torch.compiler.allow_in_graph([lambda: None, 1])
 
+    def test_non_callable_rejection_survives_optimized_python(self):
+        script = r"""
+import sys
+
+class RejectPytorchImport:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "torch" or fullname.startswith("torch."):
+            raise RuntimeError(f"PyTorch import was attempted: {fullname}")
+        return None
+
+sys.meta_path.insert(0, RejectPytorchImport())
+import torch_rs as torch
+
+if sys.flags.optimize <= 0:
+    raise AssertionError("subprocess did not run with optimization enabled")
+
+for target in (None, 1, "not callable"):
+    try:
+        torch.compiler.allow_in_graph(target)
+    except AssertionError as error:
+        if str(error) != "allow_in_graph expects a callable":
+            raise AssertionError(str(error))
+        if error.args != ("allow_in_graph expects a callable",):
+            raise AssertionError(error.args)
+    else:
+        raise AssertionError(f"optimized mode accepted {target!r}")
+
+try:
+    torch.compiler.allow_in_graph([lambda: None, 1])
+except AssertionError as error:
+    if str(error) != "allow_in_graph expects a callable":
+        raise AssertionError(str(error))
+else:
+    raise AssertionError("optimized mode accepted a non-callable sequence entry")
+
+if torch.compiler.allow_in_graph(len) is not len:
+    raise AssertionError("callable identity was not preserved")
+if any(name == "torch" or name.startswith("torch.") for name in sys.modules):
+    raise AssertionError("PyTorch was imported")
+"""
+        completed = subprocess.run(
+            [sys.executable, "-O", "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+
     def test_signature_documentation_and_module_identity(self):
         compiler = importlib.import_module("torch_rs.compiler")
         function = compiler.allow_in_graph

@@ -72,7 +72,8 @@ def allow_in_graph(fn):
     """
     if isinstance(fn, (list, tuple)):
         return [allow_in_graph(entry) for entry in fn]
-    assert callable(fn), "allow_in_graph expects a callable"
+    if not callable(fn):
+        raise AssertionError("allow_in_graph expects a callable")
     return fn
 
 
