@@ -21,9 +21,15 @@ class SetDefaultDeviceReferenceTests(unittest.TestCase):
                 "set_default_device differentials require pinned PyTorch 2.13.0"
             )
 
+    def setUp(self):
+        # In PyTorch 2.13, "cpu" installs a DeviceContext mode; None clears it.
+        torch.set_default_device(None)
+        reference_torch.set_default_device(None)
+
     def tearDown(self):
-        torch.set_default_device("cpu")
-        reference_torch.set_default_device("cpu")
+        # Do not leave PyTorch's default-device mode on the global stack.
+        torch.set_default_device(None)
+        reference_torch.set_default_device(None)
 
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
