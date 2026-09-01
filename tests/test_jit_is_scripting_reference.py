@@ -155,7 +155,12 @@ class JitIsScriptingReferenceTests(unittest.TestCase):
             "strict_fusion",
             "unused",
         }
-        public_supported = {*wildcard_supported, "is_scripting", "is_tracing"}
+        public_supported = {
+            *wildcard_supported,
+            "is_scripting",
+            "is_tracing",
+            "optimized_execution",
+        }
 
         self.assertEqual(
             actual_jit.__all__,

@@ -169,6 +169,7 @@ class JitIsTracingReferenceTests(unittest.TestCase):
             *wildcard_supported,
             "is_scripting",
             "is_tracing",
+            "optimized_execution",
         }
 
         self.assertEqual(

@@ -3,6 +3,7 @@ from typing import Any as _Any
 
 import torch_rs._jit_internal as _jit_internal
 from torch_rs._jit_internal import _isinstance, export, ignore, is_scripting, unused
+from torch_rs.jit._fuser import optimized_execution
 from torch_rs.jit._script import Attribute
 from torch_rs.jit._trace import _script_if_tracing, is_tracing
 

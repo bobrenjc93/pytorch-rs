@@ -204,6 +204,7 @@ class JitAnnotateTests(unittest.TestCase):
                 "onednn_fusion_enabled",
                 "is_scripting",
                 "is_tracing",
+                "optimized_execution",
                 "script_if_tracing",
                 "strict_fusion",
                 "unused",
