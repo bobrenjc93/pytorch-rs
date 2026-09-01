@@ -90,6 +90,11 @@ class AsTensorReferenceTests(unittest.TestCase):
         state.pop("data_ptr")
         return state
 
+    def scalar_state(self, module, tensor):
+        state = self.comparable_tensor_state(module, tensor)
+        state["grad_is_none"] = tensor.grad is None
+        return state
+
     def as_tensor_identity_contract(self, module, tensor, options):
         before = self.tensor_state(module, tensor)
         result = module.as_tensor(tensor, **options)
@@ -100,6 +105,16 @@ class AsTensorReferenceTests(unittest.TestCase):
             "same_logical_storage": result.is_set_to(tensor),
             "result_state": self.comparable_tensor_state(module, result),
             "source_unchanged": before == after,
+        }
+
+    def as_tensor_scalar_contract(self, module, value, options):
+        first = module.as_tensor(value, **options)
+        second = module.as_tensor(value, **options)
+        return {
+            "fresh_object": first is not second,
+            "fresh_storage": not first.is_set_to(second),
+            "first": self.scalar_state(module, first),
+            "second": self.scalar_state(module, second),
         }
 
     def test_identity_aliasing_and_metadata_match_pytorch_2_13(self):
@@ -120,6 +135,35 @@ class AsTensorReferenceTests(unittest.TestCase):
                     )
                     expected_contract = self.as_tensor_identity_contract(
                         reference_torch, expected, expected_kwargs
+                    )
+                    self.assertEqual(actual_contract, expected_contract)
+
+    def test_python_float_scalar_creation_matches_pytorch_2_13(self):
+        values = (
+            ("finite positive", 1.25),
+            ("finite negative", -3.5),
+            ("largest finite", 3.4028234663852886e38),
+            ("positive finite overflow", 3.5e38),
+            ("negative finite overflow", -3.5e38),
+            ("positive zero", 0.0),
+            ("negative zero", -0.0),
+            ("positive infinity", float("inf")),
+            ("negative infinity", float("-inf")),
+            ("nan", float("nan")),
+        )
+        actual_options = self.option_cases(torch)
+        expected_options = self.option_cases(reference_torch)
+
+        for case, value in values:
+            for actual_kwargs, expected_kwargs in zip(
+                actual_options, expected_options, strict=True
+            ):
+                with self.subTest(case=case, options=actual_kwargs):
+                    actual_contract = self.as_tensor_scalar_contract(
+                        torch, value, actual_kwargs
+                    )
+                    expected_contract = self.as_tensor_scalar_contract(
+                        reference_torch, value, expected_kwargs
                     )
                     self.assertEqual(actual_contract, expected_contract)
 
@@ -219,6 +263,9 @@ class AsTensorReferenceTests(unittest.TestCase):
         elif case == "sequence":
             data = [1.0, 2.0]
             call = lambda: module.as_tensor(data)
+        elif case == "float scalar":
+            data = 1.0
+            call = lambda: module.as_tensor(data)
         else:
             data = [1.0]
             call = lambda: module.as_tensor(data, device="cuda")
@@ -273,7 +320,7 @@ class AsTensorReferenceTests(unittest.TestCase):
         }
 
     def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
-        for case in ("positional", "keyword", "sequence", "device"):
+        for case in ("positional", "keyword", "sequence", "float scalar", "device"):
             with self.subTest(case=case):
                 self.assertEqual(
                     self.mode_dispatch_observation(torch, case),
@@ -304,6 +351,10 @@ class AsTensorReferenceTests(unittest.TestCase):
             (
                 lambda: torch.as_tensor(actual, copy=False),
                 lambda: reference_torch.as_tensor(expected, copy=False),
+            ),
+            (
+                lambda: torch.as_tensor(actual, requires_grad=True),
+                lambda: reference_torch.as_tensor(expected, requires_grad=True),
             ),
             (
                 lambda: torch.as_tensor(actual, dtype=1),
