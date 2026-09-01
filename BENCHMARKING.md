@@ -44,6 +44,7 @@ do not replace the benchmark policy or Burner-managed evaluation progress.
 - [Rank-11 `Tensor.sum` release timings](docs/rank11-sum-release-timings.md)
 - [Rank-12 `Tensor.sum` release timings](docs/rank12-sum-release-timings.md)
 - [`+` and `Tensor.add` release timings](docs/tensor-add-release-timings.md)
+- [`/`, `Tensor.div`, and `Tensor.divide` release timings](docs/tensor-div-release-timings.md)
 - [`torch.nn.functional.mse_loss(reduction="none")` release timings](docs/mse-loss-release-timings.md)
 - [`torch.nn.functional.l1_loss(reduction="none")` release timings](docs/l1-loss-release-timings.md)
 
