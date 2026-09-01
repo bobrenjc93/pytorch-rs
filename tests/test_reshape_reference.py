@@ -17,6 +17,18 @@ except ImportError:
     reference_torch = None
 
 
+class IntSubclass(int):
+    pass
+
+
+class IndexDimension:
+    def __init__(self, value):
+        self.value = value
+
+    def __index__(self):
+        return self.value
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class TopLevelReshapeReferenceTests(unittest.TestCase):
     @classmethod
@@ -124,6 +136,63 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
             np.asarray(retained[4][0]), retained[4][1].detach().cpu().numpy()
         )
 
+    def test_variadic_semantics_match_pytorch_2_13_sequence_reshape(self):
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        actual_base = torch.tensor(values.tolist(), requires_grad=True)
+        expected_base = reference_torch.tensor(values, requires_grad=True)
+        actual_noncontiguous = actual_base.transpose(0, 1)
+        expected_noncontiguous = expected_base.transpose(0, 1)
+        cases = (
+            ("single-inferred", actual_base, expected_base, (-1,)),
+            ("contiguous", actual_base, expected_base, (6, 4)),
+            ("inferred", actual_base, expected_base, (2, -1, 2)),
+            (
+                "offset",
+                actual_base[1],
+                expected_base[1],
+                (IntSubclass(2), np.int64(6)),
+            ),
+            (
+                "empty",
+                torch.zeros((2, 0, 3)).transpose(0, 2)[1],
+                reference_torch.zeros((2, 0, 3)).transpose(0, 2)[1],
+                (IndexDimension(2), 0),
+            ),
+            (
+                "noncontiguous-compatible",
+                actual_noncontiguous,
+                expected_noncontiguous,
+                (3, 2, 2, 2),
+            ),
+            (
+                "noncontiguous-copy",
+                actual_base.transpose(0, 2),
+                expected_base.transpose(0, 2),
+                (6, 4),
+            ),
+        )
+
+        retained = []
+        for case, actual_source, expected_source, dimensions in cases:
+            with self.subTest(case=case):
+                actual = torch.reshape(actual_source, *dimensions)
+                expected = reference_torch.reshape(expected_source, tuple(dimensions))
+                self.assertIsNot(actual, actual_source)
+                self.assertIsNot(expected, expected_source)
+                self.assert_matches(
+                    actual, expected, actual_source, expected_source, case
+                )
+                retained.append((actual, expected))
+
+        del actual_base, expected_base, cases
+        gc.collect()
+        np.testing.assert_array_equal(
+            np.asarray(retained[3][0]), retained[3][1].detach().cpu().numpy()
+        )
+        np.testing.assert_array_equal(
+            np.asarray(retained[6][0]), retained[6][1].detach().cpu().numpy()
+        )
+
     def test_inferred_empty_and_errors_match_pytorch_2_13(self):
         actual_source = torch.tensor(
             np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
@@ -159,6 +228,20 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
                         reference_torch.zeros((6,)), shape
                     ),
                 )
+
+        for shape in ((2, 2), (-1, -1), (2, -2)):
+            with self.subTest(variadic_shape=shape):
+                self.assert_error_matches(
+                    lambda shape=shape: torch.reshape(torch.zeros((6,)), *shape),
+                    lambda shape=shape: reference_torch.reshape(
+                        reference_torch.zeros((6,)), tuple(shape)
+                    ),
+                )
+
+        self.assert_error_matches(
+            lambda: torch.reshape(torch.zeros((0,)), 0, -1),
+            lambda: reference_torch.reshape(reference_torch.zeros((0,)), (0, -1)),
+        )
 
     def test_autograd_repeated_backward_and_no_grad_match_pytorch_2_13(self):
         gradients = []
@@ -210,16 +293,42 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
         np.testing.assert_array_equal(gradients[2], gradients[5])
         self.assertEqual(states[:3], states[3:])
 
+    def test_variadic_full_sum_backward_matches_pytorch_2_13_sequence_reshape(self):
+        gradients = []
+        states = []
+        for module in (torch, reference_torch):
+            leaf = module.tensor(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+            )
+            if module is torch:
+                view = module.reshape(leaf, 3, 2)
+            else:
+                view = module.reshape(leaf, (3, 2))
+            view.sum().backward()
+            states.append((view.requires_grad, view.is_leaf))
+            gradients.append(np.asarray(leaf.grad).copy())
+
+            copy_leaf = module.tensor(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+            )
+            if module is torch:
+                copied = module.reshape(copy_leaf.transpose(0, 1), 6)
+            else:
+                copied = module.reshape(copy_leaf.transpose(0, 1), (6,))
+            copied.sum().backward()
+            states.append((copied.requires_grad, copied.is_leaf))
+            gradients.append(np.asarray(copy_leaf.grad).copy())
+
+        np.testing.assert_array_equal(gradients[0], gradients[2])
+        np.testing.assert_array_equal(gradients[1], gradients[3])
+        self.assertEqual(states[:2], states[2:])
+
     def test_binding_and_type_errors_match_pytorch_2_13(self):
         actual = torch.tensor([1.0, 2.0, 3.0, 4.0])
         expected = reference_torch.tensor([1.0, 2.0, 3.0, 4.0])
         cases = (
             (lambda: torch.reshape(), lambda: reference_torch.reshape()),
             (lambda: torch.reshape(actual), lambda: reference_torch.reshape(expected)),
-            (
-                lambda: torch.reshape(actual, (2, 2), (4,)),
-                lambda: reference_torch.reshape(expected, (2, 2), (4,)),
-            ),
             (
                 lambda: torch.reshape(actual, (2, 2), input=actual),
                 lambda: reference_torch.reshape(expected, (2, 2), input=expected),
@@ -236,7 +345,6 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
                 lambda: torch.reshape(shape=(2, 2)),
                 lambda: reference_torch.reshape(shape=(2, 2)),
             ),
-            (lambda: torch.reshape(actual, 4), lambda: reference_torch.reshape(expected, 4)),
             (
                 lambda: torch.reshape(actual, torch.float32),
                 lambda: reference_torch.reshape(expected, reference_torch.float32),
@@ -266,8 +374,61 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
                 lambda: reference_torch.reshape(expected, (2, 2), extra=True),
             ),
             (
+                lambda: torch.reshape(actual, (2, 2), dtype=torch.float32),
+                lambda: reference_torch.reshape(
+                    expected, (2, 2), dtype=reference_torch.float32
+                ),
+            ),
+            (
+                lambda: torch.reshape(actual, (2, 2), device=torch.device("cpu")),
+                lambda: reference_torch.reshape(
+                    expected, (2, 2), device=reference_torch.device("cpu")
+                ),
+            ),
+            (
                 lambda: torch.reshape(x=actual, a=actual, shape=(2, 2)),
                 lambda: reference_torch.reshape(x=expected, a=expected, shape=(2, 2)),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assert_error_matches(actual_call, expected_call)
+
+    def test_variadic_errors_match_pytorch_2_13_sequence_reshape(self):
+        actual = torch.tensor([1.0, 2.0, 3.0, 4.0])
+        expected = reference_torch.tensor([1.0, 2.0, 3.0, 4.0])
+        cases = (
+            (
+                lambda: torch.reshape(actual, (2, 2), 1),
+                lambda: reference_torch.reshape(expected, ((2, 2), 1)),
+            ),
+            (
+                lambda: torch.reshape(actual, True, 4),
+                lambda: reference_torch.reshape(expected, (True, 4)),
+            ),
+            (
+                lambda: torch.reshape(actual, 2.0, 2),
+                lambda: reference_torch.reshape(expected, (2.0, 2)),
+            ),
+            (
+                lambda: torch.reshape(actual, 2, 2.0),
+                lambda: reference_torch.reshape(expected, (2, 2.0)),
+            ),
+            (
+                lambda: torch.reshape(torch.zeros((6,)), 2, 2),
+                lambda: reference_torch.reshape(reference_torch.zeros((6,)), (2, 2)),
+            ),
+            (
+                lambda: torch.reshape(torch.zeros((6,)), -1, -1),
+                lambda: reference_torch.reshape(reference_torch.zeros((6,)), (-1, -1)),
+            ),
+            (
+                lambda: torch.reshape(torch.zeros((6,)), 2, -2),
+                lambda: reference_torch.reshape(reference_torch.zeros((6,)), (2, -2)),
+            ),
+            (
+                lambda: torch.reshape(torch.zeros((0,)), 0, -1),
+                lambda: reference_torch.reshape(reference_torch.zeros((0,)), (0, -1)),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
@@ -309,6 +470,18 @@ class TopLevelReshapeReferenceTests(unittest.TestCase):
                 lambda: torch.reshape(actual, (np.uint64(too_large),)),
                 lambda: reference_torch.reshape(expected, (np.uint64(too_large),)),
                 1,
+            ),
+            (
+                "variadic-first",
+                lambda: torch.reshape(actual, too_large),
+                lambda: reference_torch.reshape(expected, (too_large,)),
+                1,
+            ),
+            (
+                "variadic-second",
+                lambda: torch.reshape(actual, 1, too_large),
+                lambda: reference_torch.reshape(expected, (1, too_large)),
+                2,
             ),
         )
         for name, actual_call, expected_call, position in cases:
