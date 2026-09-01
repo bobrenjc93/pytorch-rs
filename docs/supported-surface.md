@@ -17,6 +17,78 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 | Control eager autograd state | `requires_grad`, `Tensor.retain_grad`, `Tensor.backward`, `torch.autograd.backward`, `torch.autograd.is_multithreading_enabled`, `torch.is_grad_enabled`, `torch.no_grad`, `torch.enable_grad`, `torch.is_inference_mode_enabled`, `torch.is_anomaly_enabled`, `torch.is_anomaly_check_nan_enabled`, `torch.autograd.is_view_replay_enabled` in [Metadata and views](#metadata-and-views) and [Backend and compiler metadata](#backend-and-compiler-metadata) | Concrete gradients, retained or higher-order graphs, explicit backward inputs, `torch.autograd.grad`, broader grad-mode mutation, inference-mode contexts, anomaly mutation/context APIs, and broader autograd APIs remain unsupported. |
 | Integrate eager compiler, JIT, and distributed probes | `torch.compiler.disable`, `torch.compiler.assume_constant_result`, `torch.compiler.get_default_backend`, `torch.compiler.set_default_backend`, `torch.compiler.keep_portable_guards_unsafe`, `torch.compiler.skip_all_guards_unsafe`, `torch.jit.Attribute`, `torch.jit.annotate`, `torch.jit.isinstance`, `torch.jit.export`, `torch.jit.ignore`, `torch.jit.is_scripting`, `torch.jit.is_tracing`, `torch.jit.optimized_execution`, `torch.distributed.is_available`, `torch.distributed.is_gloo_available`, `torch.distributed.is_mpi_available`, `torch.distributed.is_nccl_available`, `torch.distributed.is_ucc_available`, `torch.distributed.is_xccl_available`, `torch.distributed.is_initialized`, `torch.distributed.get_pg_count`, `torch.distributed.get_process_group_ranks`, `torch.distributed.get_backend_config`, `torch.distributed.get_backend`, `torch.distributed.get_rank`, `torch.distributed.get_world_size`, `torch.distributed.get_node_local_rank` in [Backend and compiler metadata](#backend-and-compiler-metadata) | Actual `torch.compile`, `torch.export`, compiler graph execution, TorchScript compilation/tracing execution, graph executor optimization, `torch.jit.script`, `torch.jit.trace`, `torch.jit.fork`, `torch.jit.wait`, distributed tensor types, distributed backend initialization/execution, process-group creation, initialized backend/config/rank/world-size access, collectives, and distributed APIs outside [Backend and compiler metadata](#backend-and-compiler-metadata) remain unsupported. |
 
+## Namespace summary
+
+These tables are navigation aids only. The detailed contract and unsupported
+boundaries in [Current baseline](#current-baseline) remain authoritative.
+
+### torch
+
+| Focus | APIs at a glance | Detailed contract |
+| --- | --- | --- |
+| Creation and dtype metadata | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.zeros_like`, `torch.ones_like`, `torch.full`, `torch.eye`, `torch.float32`/`torch.float`, `torch.finfo`, `torch.can_cast`, `torch.promote_types`, `torch.Size` | [Tensors](#tensors), [Creation](#creation), [Metadata and views](#metadata-and-views) |
+| Views and layout helpers | `torch.select`, `torch.reshape`, `torch.unsqueeze`, `torch.permute`, `torch.movedim`, `torch.moveaxis`, `torch.transpose`, `torch.swapdims`, `torch.swapaxes`, `torch.squeeze`, `torch.flatten`, `torch.ravel`, `torch.adjoint`, `torch.t`, `torch.real`, `torch.imag`, `torch.conj`, `torch.positive` | [Metadata and views](#metadata-and-views) |
+| Math, reductions, and predicates | `torch.sub`, `torch.subtract`, `torch.mul`, `torch.multiply`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.absolute`, `torch.neg`, `torch.negative`, `torch.cos`, `torch.exp`, `torch.log`, `torch.sin`, `torch.sqrt`, `torch.square`, `torch.floor`, `torch.ceil`, `torch.trunc`, `torch.fix`, `torch.sigmoid`, `torch.tanh`, `torch.equal`, `torch.numel`, `torch.is_nonzero`, `torch.is_complex`, `torch.is_floating_point`, `torch.is_signed`, `torch.get_device`, `torch.broadcast_shapes`, `torch.broadcast_tensors` | [Elementwise and reductions](#elementwise-and-reductions), [Metadata and views](#metadata-and-views) |
+| Eager process state | `torch.no_grad`, `torch.enable_grad`, `torch.is_grad_enabled`, `torch.autograd.backward`, autocast-cache helpers, deterministic/debug-mode helpers, warning-policy helpers, thread-count queries, matmul-precision helpers, build flags, `torch.__future__`, `torch.version` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
+
+### Tensor
+
+| Focus | APIs at a glance | Detailed contract |
+| --- | --- | --- |
+| Metadata and predicates | `Tensor.shape`, `Tensor.stride`, `Tensor.dense_dim`, `Tensor.sparse_dim`, `Tensor.is_pinned`, `Tensor.is_distributed`, `Tensor.is_sparse`, `Tensor.is_sparse_csr`, `Tensor.is_cpu`, `Tensor.is_cuda`, `Tensor.is_quantized`, `Tensor.is_signed`, `Tensor.dim`, `Tensor.ndimension`, `Tensor.numel`, `Tensor.nelement`, `Tensor.element_size`, `Tensor.nbytes`, `Tensor.is_nonzero`, `Tensor.is_complex`, `Tensor.is_floating_point`, `Tensor.is_shared`, `Tensor.grad_dtype`, `Tensor.output_nr`, `Tensor.retains_grad` | [Metadata and views](#metadata-and-views) |
+| Views and layout transforms | `Tensor.select`, `Tensor.unbind`, `Tensor.view`, `Tensor.view_as`, `Tensor.unsqueeze`, `Tensor.permute`, `Tensor.movedim`, `Tensor.moveaxis`, `Tensor.T`, `Tensor.H`, `Tensor.mT`, `Tensor.mH`, `Tensor.adjoint`, `Tensor.t`, `Tensor.swapdims`, `Tensor.swapaxes`, `Tensor.squeeze`, `Tensor.reshape`, `Tensor.reshape_as`, `Tensor.flatten`, `Tensor.ravel`, `Tensor.contiguous`, `Tensor.cpu`, `Tensor.type`, `Tensor.type_as`, `Tensor.real`, `Tensor.imag`, `Tensor.conj`, `Tensor.positive`, `Tensor.__format__` | [Metadata and views](#metadata-and-views) |
+| Math and autograd methods | `Tensor.clone`, `Tensor.equal`, `Tensor.add`, `Tensor.sub`, `Tensor.subtract`, `Tensor.mul`, `Tensor.multiply`, `Tensor.div`, `Tensor.divide`, `Tensor.abs`, `Tensor.absolute`, `Tensor.neg`, `Tensor.negative`, `Tensor.exp`, `Tensor.cos`, `Tensor.sin`, `Tensor.sqrt`, `Tensor.square`, `Tensor.log`, `Tensor.sum`, `Tensor.mean`, `Tensor.relu`, `Tensor.floor`, `Tensor.ceil`, `Tensor.trunc`, `Tensor.fix`, `Tensor.sigmoid`, `Tensor.tanh`, `Tensor.matmul`, `Tensor.backward`, `Tensor.retain_grad` | [Elementwise and reductions](#elementwise-and-reductions), [Backend and compiler metadata](#backend-and-compiler-metadata) |
+
+### torch.nn.functional
+
+| Focus | APIs at a glance | Detailed contract |
+| --- | --- | --- |
+| Linear and losses | `torch.nn.functional.linear`, `torch.nn.functional.l1_loss`, `torch.nn.functional.mse_loss` | [NN and data helpers](#nn-and-data-helpers) |
+| Activations | `torch.nn.functional.relu`, `torch.nn.functional.sigmoid`, `torch.nn.functional.silu`, `torch.nn.functional.tanh`, `torch.nn.functional.softsign` | [Elementwise and reductions](#elementwise-and-reductions), [NN and data helpers](#nn-and-data-helpers) |
+| Dropout helpers | `torch.nn.functional.dropout`, `torch.nn.functional.dropout1d`, `torch.nn.functional.dropout2d`, `torch.nn.functional.dropout3d` | [NN and data helpers](#nn-and-data-helpers) |
+
+### torch.cuda
+
+| Focus | APIs at a glance | Detailed contract |
+| --- | --- | --- |
+| CPU-build CUDA probes | `torch.cuda.device_count`, `torch.cuda.is_available`, `torch.cuda.is_initialized` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
+
+### torch.backends
+
+| Focus | APIs at a glance | Detailed contract |
+| --- | --- | --- |
+| CPU and native build metadata | `torch.backends.cpu.get_cpu_capability`, `torch.backends.openmp.is_available`, `torch.backends.mkl.is_available`, `torch.backends.nnpack.is_available`, `torch.backends.kleidiai.is_available`, `torch.backends.cusparselt.is_available` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
+| Backend preferences | `torch.backends.nnpack.set_flags`, `torch.backends.nnpack.flags`, `torch.backends.cuda.matmul.allow_tf32`, `torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction`, `torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction`, `torch.backends.cuda.enable_flash_sdp`, `torch.backends.cuda.enable_math_sdp`, `torch.backends.cuda.enable_mem_efficient_sdp`, `torch.backends.cuda.enable_cudnn_sdp`, `torch.backends.cuda.sdp_kernel`, `torch.backends.cuda.allow_fp16_bf16_reduction_math_sdp`, `torch.backends.cudnn.enabled`, `torch.backends.cudnn.benchmark`, `torch.backends.cudnn.benchmark_limit`, `torch.backends.cudnn.deterministic`, `torch.backends.mha.get_fastpath_enabled`, `torch.backends.mha.set_fastpath_enabled` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
+| CUDA and cuDNN build metadata | `torch.backends.cuda.is_built`, `torch.backends.cuda.is_ck_sdpa_available`, `torch.backends.cuda.is_flash_attention_available`, `torch.backends.cudnn.is_available`, `torch.backends.cudnn.version` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
+
+### torch.compiler
+
+| Focus | APIs at a glance | Detailed contract |
+| --- | --- | --- |
+| Eager compiler state helpers | `torch.compiler.disable`, `torch.compiler.assume_constant_result`, `torch.compiler.get_default_backend`, `torch.compiler.set_default_backend`, `torch.compiler.set_enable_guard_collectives`, `torch.compiler.reset`, `torch.compiler.is_compiling`, `torch.compiler.is_dynamo_compiling`, `torch.compiler.is_exporting` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
+| Guard filters | `torch.compiler.keep_portable_guards_unsafe`, `torch.compiler.keep_tensor_guards_unsafe`, `torch.compiler.skip_guard_on_inbuilt_nn_modules_unsafe`, `torch.compiler.skip_guard_on_all_nn_modules_unsafe`, `torch.compiler.skip_guard_on_globals_unsafe`, `torch.compiler.skip_all_guards_unsafe` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
+
+### torch.jit
+
+| Focus | APIs at a glance | Detailed contract |
+| --- | --- | --- |
+| Eager annotation and type helpers | `torch.jit.Attribute`, `torch.jit.annotate`, `torch.jit.isinstance` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
+| Eager decorators and state queries | `torch.jit.export`, `torch.jit.ignore`, `torch.jit.unused`, `torch.jit.script_if_tracing`, `torch.jit.strict_fusion`, `torch.jit.optimized_execution`, `torch.jit.onednn_fusion_enabled`, `torch.jit.is_scripting`, `torch.jit.is_tracing` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
+
+### torch.distributed
+
+| Focus | APIs at a glance | Detailed contract |
+| --- | --- | --- |
+| Availability and default-group probes | `torch.distributed.is_available`, `torch.distributed.is_gloo_available`, `torch.distributed.is_mpi_available`, `torch.distributed.is_nccl_available`, `torch.distributed.is_ucc_available`, `torch.distributed.is_xccl_available`, `torch.distributed.is_initialized`, `torch.distributed.get_pg_count` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
+| Uninitialized accessors | `torch.distributed.get_process_group_ranks`, `torch.distributed.get_backend_config`, `torch.distributed.get_backend`, `torch.distributed.get_rank`, `torch.distributed.get_world_size`, `torch.distributed.get_node_local_rank` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
+
+### torch.utils.data
+
+| Focus | APIs at a glance | Detailed contract |
+| --- | --- | --- |
+| Dataset containers | `torch.utils.data.Dataset`, `torch.utils.data.IterableDataset`, `torch.utils.data.TensorDataset`, `torch.utils.data.StackDataset`, `torch.utils.data.ConcatDataset`, `torch.utils.data.ChainDataset`, `torch.utils.data.Subset`, `torch.utils.data.DataChunk` | [NN and data helpers](#nn-and-data-helpers) |
+| Samplers and worker metadata | `torch.utils.data.Sampler`, `torch.utils.data.SequentialSampler`, `torch.utils.data.BatchSampler`, `torch.utils.data.DistributedSampler`, `torch.utils.data.get_worker_info` | [NN and data helpers](#nn-and-data-helpers) |
+
 ## Category index
 
 | Surface area | Supported summary | Contract section |

@@ -87,6 +87,79 @@ SUPPORTED_SURFACE_INDEX_SUMMARIES = (
     "eager JIT helper decorators and state queries",
     "Explicit unsupported APIs",
 )
+SUPPORTED_SURFACE_NAMESPACE_SUMMARIES = (
+    (
+        "torch",
+        (
+            "`torch.tensor`",
+            "`torch.sum`",
+            "`torch.autograd.backward`",
+            "[Creation](#creation)",
+            "[Backend and compiler metadata](#backend-and-compiler-metadata)",
+        ),
+    ),
+    (
+        "Tensor",
+        (
+            "`Tensor.view`",
+            "`Tensor.backward`",
+            "[Metadata and views](#metadata-and-views)",
+        ),
+    ),
+    (
+        "torch.nn.functional",
+        (
+            "`torch.nn.functional.linear`",
+            "`torch.nn.functional.dropout3d`",
+            "`torch.nn.functional.softsign`",
+        ),
+    ),
+    (
+        "torch.cuda",
+        (
+            "`torch.cuda.device_count`",
+            "`torch.cuda.is_available`",
+            "`torch.cuda.is_initialized`",
+        ),
+    ),
+    (
+        "torch.backends",
+        (
+            "`torch.backends.cpu.get_cpu_capability`",
+            "`torch.backends.cuda.sdp_kernel`",
+            "`torch.backends.mha.get_fastpath_enabled`",
+        ),
+    ),
+    (
+        "torch.compiler",
+        (
+            "`torch.compiler.disable`",
+            "`torch.compiler.skip_all_guards_unsafe`",
+        ),
+    ),
+    (
+        "torch.jit",
+        (
+            "`torch.jit.Attribute`",
+            "`torch.jit.optimized_execution`",
+        ),
+    ),
+    (
+        "torch.distributed",
+        (
+            "`torch.distributed.is_available`",
+            "`torch.distributed.get_node_local_rank`",
+        ),
+    ),
+    (
+        "torch.utils.data",
+        (
+            "`torch.utils.data.TensorDataset`",
+            "`torch.utils.data.DistributedSampler`",
+            "`torch.utils.data.get_worker_info`",
+        ),
+    ),
+)
 SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
     (
         "Create CPU `float32` tensors",
@@ -374,10 +447,15 @@ class ReadmeQuickstartTests(unittest.TestCase):
 
         supported = SUPPORTED_SURFACE.read_text(encoding="utf-8")
         self.assertIn("## Common adopter task quick index", supported)
+        self.assertIn("## Namespace summary", supported)
         self.assertIn("## Category index", supported)
         self.assertIn("## Current baseline", supported)
         self.assertLess(
             supported.index("## Common adopter task quick index"),
+            supported.index("## Namespace summary"),
+        )
+        self.assertLess(
+            supported.index("## Namespace summary"),
             supported.index("## Category index"),
         )
         self.assertLess(
@@ -387,7 +465,7 @@ class ReadmeQuickstartTests(unittest.TestCase):
 
         task_index = supported[
             supported.index("## Common adopter task quick index") : supported.index(
-                "## Category index"
+                "## Namespace summary"
             )
         ]
         self.assertIn(
@@ -407,6 +485,30 @@ class ReadmeQuickstartTests(unittest.TestCase):
                     self.assertIn(boundary, task_index)
                 for link in links:
                     self.assertIn(link, task_index)
+
+        namespace_summary = supported[
+            supported.index("## Namespace summary") : supported.index(
+                "## Category index"
+            )
+        ]
+        self.assertIn(
+            "| Focus | APIs at a glance | Detailed contract |",
+            namespace_summary,
+        )
+        self.assertEqual(
+            namespace_summary.count(
+                "| Focus | APIs at a glance | Detailed contract |"
+            ),
+            len(SUPPORTED_SURFACE_NAMESPACE_SUMMARIES),
+        )
+        for title, snippets in SUPPORTED_SURFACE_NAMESPACE_SUMMARIES:
+            with self.subTest(namespace_summary=title):
+                self.assertRegex(
+                    namespace_summary,
+                    rf"(?m)^### {re.escape(title)}$",
+                )
+                for snippet in snippets:
+                    self.assertIn(snippet, namespace_summary)
 
         category_index = supported[
             supported.index("## Category index") : supported.index(
