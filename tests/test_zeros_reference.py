@@ -88,14 +88,61 @@ class ZerosReferenceTests(unittest.TestCase):
                         self.tensor_observation(reference_torch, expected),
                     )
 
+    def test_variadic_results_and_metadata_match_pytorch_2_13(self):
+        dimension_factories = (
+            (lambda: 2, lambda: 3),
+            (lambda: 2, lambda: 0, lambda: 3),
+            (
+                lambda: IntSubclass(2),
+                lambda: np.int64(3),
+                lambda: np.uint32(1),
+                lambda: IndexDimension(2),
+            ),
+        )
+        metadata_factories = (
+            lambda module: {},
+            lambda module: {"out": None},
+            lambda module: {"dtype": module.float32},
+            lambda module: {"device": "cpu"},
+            lambda module: {"device": module.device("cpu")},
+            lambda module: {
+                "out": None,
+                "dtype": module.float32,
+                "device": module.device("cpu"),
+                "requires_grad": True,
+            },
+        )
+
+        for dimension_factory in dimension_factories:
+            for metadata_factory in metadata_factories:
+                actual_dimensions = tuple(factory() for factory in dimension_factory)
+                expected_dimensions = tuple(factory() for factory in dimension_factory)
+                actual_keywords = metadata_factory(torch)
+                expected_keywords = metadata_factory(reference_torch)
+                with self.subTest(
+                    dimensions=actual_dimensions,
+                    keywords=actual_keywords,
+                ):
+                    actual = torch.zeros(*actual_dimensions, **actual_keywords)
+                    expected = reference_torch.zeros(
+                        *expected_dimensions, **expected_keywords
+                    )
+                    self.assertEqual(
+                        self.tensor_observation(torch, actual),
+                        self.tensor_observation(reference_torch, expected),
+                    )
+
     def test_out_none_results_and_storage_freshness_match_pytorch_2_13(self):
         cases = (
             ("scalar", lambda module: module.zeros(2, out=None)),
+            ("variadic", lambda module: module.zeros(2, 3, out=None)),
+            ("variadic empty", lambda module: module.zeros(2, 0, 3, out=None)),
             ("tuple", lambda module: module.zeros((2, 3), out=None)),
+            ("list", lambda module: module.zeros([2, 3], out=None)),
             ("size keyword", lambda module: module.zeros(size=(2,), out=None)),
             (
                 "requires grad",
-                lambda module: module.zeros((2,), out=None, requires_grad=True),
+                lambda module: module.zeros(2, 3, out=None, requires_grad=True),
             ),
             ("empty", lambda module: module.zeros((0,), out=None)),
             ("scalar tensor", lambda module: module.zeros((), out=None)),
@@ -162,6 +209,43 @@ class ZerosReferenceTests(unittest.TestCase):
                 self.assertIn("Overflow when unpacking long long", actual_message)
                 self.assertIn("Overflow when unpacking long long", expected_message)
 
+        variadic_exact_cases = (
+            (2, -1),
+            (2, IndexDimension(-1)),
+            (2, np.bool_(True)),
+            (sys.maxsize, 2),
+        )
+        for dimensions in variadic_exact_cases:
+            with self.subTest(dimensions=dimensions):
+                actual_type, actual_message = self.capture_error(
+                    lambda dimensions=dimensions: torch.zeros(*dimensions)
+                )
+                expected_type, expected_message = self.capture_error(
+                    lambda dimensions=dimensions: reference_torch.zeros(*dimensions)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(actual_message, expected_message)
+
+        variadic_overflow_cases = (
+            (2, 2**63),
+            (2, np.uint64(2**63)),
+            (2, IndexDimension(2**63)),
+        )
+        for dimensions in variadic_overflow_cases:
+            with self.subTest(dimensions=dimensions):
+                actual_type, actual_message = self.capture_error(
+                    lambda dimensions=dimensions: torch.zeros(*dimensions)
+                )
+                expected_type, expected_message = self.capture_error(
+                    lambda dimensions=dimensions: reference_torch.zeros(*dimensions)
+                )
+                self.assertIs(actual_type, expected_type)
+                marker = "failed to unpack the object at pos 2 with error"
+                self.assertIn(marker, actual_message)
+                self.assertIn(marker, expected_message)
+                self.assertIn("Overflow when unpacking long long", actual_message)
+                self.assertIn("Overflow when unpacking long long", expected_message)
+
     def test_mixed_invalid_scalar_validation_order_matches_pytorch_2_13(self):
         cases = (
             (
@@ -212,6 +296,26 @@ class ZerosReferenceTests(unittest.TestCase):
                 "boolean type before requires_grad",
                 lambda module: module.zeros(True, requires_grad=1),
             ),
+            (
+                "variadic negative and invalid dtype",
+                lambda module: module.zeros(2, -1, dtype=object()),
+            ),
+            (
+                "variadic overflow and invalid dtype",
+                lambda module: module.zeros(2, 2**63, dtype=object()),
+            ),
+            (
+                "variadic negative and invalid requires_grad",
+                lambda module: module.zeros(2, -1, requires_grad=1),
+            ),
+            (
+                "variadic duplicate size",
+                lambda module: module.zeros(2, 3, size=(2, 3)),
+            ),
+            (
+                "variadic negative and unknown keyword",
+                lambda module: module.zeros(2, IndexDimension(-1), unexpected=True),
+            ),
         )
         for case, call in cases:
             with self.subTest(case=case):
@@ -233,6 +337,14 @@ class ZerosReferenceTests(unittest.TestCase):
             ("unknown keyword", lambda module: module.zeros(2, unexpected=True, out=[])),
             ("duplicate size", lambda module: module.zeros(2, size=(2,), out=[])),
             ("bool dimension", lambda module: module.zeros(True, out=[])),
+            (
+                "variadic duplicate size",
+                lambda module: module.zeros(2, 3, size=(2, 3), out=[]),
+            ),
+            (
+                "variadic bad out",
+                lambda module: module.zeros(2, 3, out=[]),
+            ),
         )
         for case, call in cases:
             with self.subTest(case=case):
