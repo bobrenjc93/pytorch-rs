@@ -927,6 +927,27 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nlog() -> Tensor\n\nSee :func:`torch.log`\n"]
+    #[pyo3(text_signature = None)]
+    fn log(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let receiver = slf.as_any();
+        let tensor = receiver.cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "log")? {
+            return Ok(result);
+        }
+        if !receiver.is_exact_instance_of::<PyTensor>() {
+            return Err(log_unsupported_native_input());
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor.inner.log().map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\ntrunc() -> Tensor\n\nSee :func:`torch.trunc`\n"]
     #[pyo3(text_signature = None)]
     fn trunc(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
@@ -2069,6 +2090,14 @@ pub(crate) fn ceil_variable_function(
     unary_out_variable_function(UnaryOutOperation::CEIL, py, args, kwargs)
 }
 
+pub(crate) fn log_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::LOG, py, args, kwargs)
+}
+
 pub(crate) fn trunc_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2645,6 +2674,7 @@ struct UnaryOutOperation {
     qualified_name: &'static str,
     dispatch_allocation_error: &'static str,
     out_unsupported_error: &'static str,
+    exact_native_input: bool,
     apply: UnaryOutApplication,
 }
 
@@ -2654,6 +2684,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.abs",
         dispatch_allocation_error: "unable to allocate abs dispatch operands",
         out_unsupported_error: "abs(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::abs,
     };
 
@@ -2662,6 +2693,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.absolute",
         dispatch_allocation_error: "unable to allocate absolute dispatch operands",
         out_unsupported_error: "absolute(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::abs,
     };
 
@@ -2670,6 +2702,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.neg",
         dispatch_allocation_error: "unable to allocate neg dispatch operands",
         out_unsupported_error: "neg(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::negate,
     };
 
@@ -2678,6 +2711,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.negative",
         dispatch_allocation_error: "unable to allocate negative dispatch operands",
         out_unsupported_error: "negative(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::negate,
     };
 
@@ -2686,6 +2720,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.exp",
         dispatch_allocation_error: "unable to allocate exp dispatch operands",
         out_unsupported_error: "exp(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::exp,
     };
 
@@ -2694,6 +2729,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.floor",
         dispatch_allocation_error: "unable to allocate floor dispatch operands",
         out_unsupported_error: "floor(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::floor,
     };
 
@@ -2702,7 +2738,17 @@ impl UnaryOutOperation {
         qualified_name: "torch.ceil",
         dispatch_allocation_error: "unable to allocate ceil dispatch operands",
         out_unsupported_error: "ceil(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::ceil,
+    };
+
+    const LOG: Self = Self {
+        name: "log",
+        qualified_name: "torch.log",
+        dispatch_allocation_error: "unable to allocate log dispatch operands",
+        out_unsupported_error: "log(): the 'out' argument is not supported",
+        exact_native_input: true,
+        apply: CoreTensor::log,
     };
 
     const TRUNC: Self = Self {
@@ -2710,6 +2756,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.trunc",
         dispatch_allocation_error: "unable to allocate trunc dispatch operands",
         out_unsupported_error: "trunc(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::trunc,
     };
 
@@ -2718,6 +2765,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.fix",
         dispatch_allocation_error: "unable to allocate fix dispatch operands",
         out_unsupported_error: "fix(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::trunc,
     };
 
@@ -2726,6 +2774,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.reciprocal",
         dispatch_allocation_error: "unable to allocate reciprocal dispatch operands",
         out_unsupported_error: "reciprocal(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::reciprocal,
     };
 
@@ -2734,6 +2783,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.rsqrt",
         dispatch_allocation_error: "unable to allocate rsqrt dispatch operands",
         out_unsupported_error: "rsqrt(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::rsqrt,
     };
 
@@ -2742,6 +2792,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.sin",
         dispatch_allocation_error: "unable to allocate sin dispatch operands",
         out_unsupported_error: "sin(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::sin,
     };
 
@@ -2750,6 +2801,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.sqrt",
         dispatch_allocation_error: "unable to allocate sqrt dispatch operands",
         out_unsupported_error: "sqrt(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::sqrt,
     };
 
@@ -2758,6 +2810,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.sigmoid",
         dispatch_allocation_error: "unable to allocate sigmoid dispatch operands",
         out_unsupported_error: "sigmoid(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::sigmoid,
     };
 
@@ -2766,6 +2819,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.square",
         dispatch_allocation_error: "unable to allocate square dispatch operands",
         out_unsupported_error: "square(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::square,
     };
 
@@ -2774,6 +2828,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.tanh",
         dispatch_allocation_error: "unable to allocate tanh dispatch operands",
         out_unsupported_error: "tanh(): the 'out' argument is not supported",
+        exact_native_input: false,
         apply: CoreTensor::tanh,
     };
 }
@@ -3148,6 +3203,7 @@ fn dispatch_tensorbase_mode(
                     | "exp"
                     | "fix"
                     | "floor"
+                    | "log"
                     | "reciprocal"
                     | "rsqrt"
                     | "sigmoid"
@@ -3256,6 +3312,12 @@ fn normalize_unsqueeze_dimension(dimension: i64, rank: usize) -> PyResult<usize>
 fn unsqueeze_unsupported_native_input() -> PyErr {
     PyNotImplementedError::new_err(
         "unsqueeze(): only exact native CPU float32 Tensor inputs are supported",
+    )
+}
+
+fn log_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "log(): only exact native CPU float32 Tensor inputs are supported",
     )
 }
 
@@ -12324,7 +12386,7 @@ fn bind_unary_out_arguments<'py>(
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<BoundUnaryOutCall<'py>> {
     let selection = select_legacy_single_argument(operation.name, positional, keywords)?;
-    let input = parse_tensor_or_torch_function_argument(operation.name, "input", &selection.input)?;
+    let input = parse_unary_out_input(operation, &selection.input)?;
     let out = match keywords
         .map(|values| values.get_item("out"))
         .transpose()?
@@ -12342,6 +12404,28 @@ fn bind_unary_out_arguments<'py>(
     };
     validate_unary_out_keywords(operation, &selection, keywords)?;
     Ok(BoundUnaryOutCall { input, out })
+}
+
+fn parse_unary_out_input<'py>(
+    operation: UnaryOutOperation,
+    input: &ParsedCallArgument<'py>,
+) -> PyResult<BoundTensorOrTorchFunction<'py>> {
+    if !operation.exact_native_input {
+        return parse_tensor_or_torch_function_argument(operation.name, "input", input);
+    }
+    if input.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundTensorOrTorchFunction::Tensor(
+            input.value.cast::<PyTensor>()?.clone(),
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&input.value) {
+        return Ok(BoundTensorOrTorchFunction::Override(probed));
+    }
+    if input.value.is_instance_of::<PyTensor>() {
+        return Err(log_unsupported_native_input());
+    }
+    parse_tensor_argument(operation.name, "input", input)
+        .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
 }
 
 fn validate_unary_out_keywords(

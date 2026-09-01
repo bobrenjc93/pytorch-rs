@@ -3570,6 +3570,20 @@ impl Tensor {
         self.unary_map(rsqrt_value)
     }
 
+    /// Computes the natural logarithm of every element using unary output
+    /// layout planning.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    pub fn log(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "log" });
+        }
+        self.unary_map(log_value)
+    }
+
     fn scalar_div_with_output_layout(
         &self,
         scalar: f32,
@@ -6251,6 +6265,23 @@ fn rsqrt_value(value: f32) -> f32 {
         return f32::from_bits(F32_SIGN_MASK | f32::NAN.to_bits());
     }
     1.0 / value.sqrt()
+}
+
+fn log_value(value: f32) -> f32 {
+    const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+    let bits = value.to_bits();
+    let magnitude = bits & !F32_SIGN_MASK;
+    if magnitude > f32::INFINITY.to_bits() {
+        // Quiet NaN inputs while retaining their sign and payload.
+        return f32::from_bits(bits | QUIET_NAN_MASK);
+    }
+    if bits & F32_SIGN_MASK != 0 && magnitude != 0 {
+        // PyTorch's CPU log kernel returns a canonical positive quiet NaN for
+        // negative nonzero finite values and negative infinity.
+        return f32::NAN;
+    }
+    value.ln()
 }
 
 fn tanh_value(value: f32) -> f32 {
@@ -12943,6 +12974,10 @@ mod tests {
         );
         assert_eq!(
             tensor.rsqrt(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.log(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(

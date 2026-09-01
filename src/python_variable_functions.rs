@@ -21,23 +21,23 @@ use crate::python::{
     broadcast_tensors_variable_function, can_cast_variable_function, ceil_variable_function,
     conj_variable_function, detach_variable_function, exp_variable_function, fix_variable_function,
     floor_variable_function, get_device_variable_function, imag_variable_function,
-    is_conj_variable_function, is_inference_variable_function, matmul_variable_function,
-    mean_variable_function, moveaxis_variable_function, movedim_variable_function,
-    mul_variable_function, multiply_variable_function, neg_variable_function,
-    negative_variable_function, ones_like_variable_function, permute_variable_function,
-    positive_variable_function, promote_types_variable_function, ravel_variable_function,
-    real_variable_function, reciprocal_variable_function, reshape_variable_function,
-    resolve_conj_variable_function, resolve_neg_variable_function, rsqrt_variable_function,
-    scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
-    sin_variable_function, sqrt_variable_function, square_variable_function, sub_variable_function,
-    subtract_variable_function, sum_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function, unsqueeze_variable_function,
-    zeros_like_variable_function,
+    is_conj_variable_function, is_inference_variable_function, log_variable_function,
+    matmul_variable_function, mean_variable_function, moveaxis_variable_function,
+    movedim_variable_function, mul_variable_function, multiply_variable_function,
+    neg_variable_function, negative_variable_function, ones_like_variable_function,
+    permute_variable_function, positive_variable_function, promote_types_variable_function,
+    ravel_variable_function, real_variable_function, reciprocal_variable_function,
+    reshape_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
+    rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
+    square_variable_function, sub_variable_function, subtract_variable_function,
+    sum_variable_function, tanh_variable_function, trunc_variable_function,
+    unbind_variable_function, unsqueeze_variable_function, zeros_like_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 55] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 56] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -66,6 +66,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 55] = [
     "exp",
     "floor",
     "ceil",
+    "log",
     "trunc",
     "fix",
     "sin",
@@ -569,6 +570,31 @@ Example::
     tensor([-0.6341, -1.4208, -1.0900,  0.5826])
     >>> torch.ceil(a)
     tensor([-0., -1., -1.,  1.])
+";
+
+const LOG_DOC: &std::ffi::CStr = cr"
+log(input, *, out=None) -> Tensor
+
+Returns a new tensor with the natural logarithm of the elements
+of :attr:`input`.
+
+.. math::
+    y_{i} = \log_{e} (x_{i})
+
+
+Args:
+    input (Tensor): the input tensor.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> a = torch.rand(5) * 5
+    >>> a
+    tensor([4.7767, 4.3234, 1.2156, 0.2411, 4.5739])
+    >>> torch.log(a)
+    tensor([ 1.5637,  1.4640,  0.1952, -1.4226,  1.5204])
 ";
 
 const TRUNC_DOC: &std::ffi::CStr = cr"
@@ -1209,6 +1235,7 @@ variable_function_callback!(negative_callback, negative_variable_function);
 variable_function_callback!(exp_callback, exp_variable_function);
 variable_function_callback!(floor_callback, floor_variable_function);
 variable_function_callback!(ceil_callback, ceil_variable_function);
+variable_function_callback!(log_callback, log_variable_function);
 variable_function_callback!(trunc_callback, trunc_variable_function);
 variable_function_callback!(fix_callback, fix_variable_function);
 variable_function_callback!(sin_callback, sin_variable_function);
@@ -1292,6 +1319,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"exp", exp_callback, EXP_DOC),
         variable_function_method!(c"floor", floor_callback, FLOOR_DOC),
         variable_function_method!(c"ceil", ceil_callback, CEIL_DOC),
+        variable_function_method!(c"log", log_callback, LOG_DOC),
         variable_function_method!(c"trunc", trunc_callback, TRUNC_DOC),
         variable_function_method!(c"fix", fix_callback, FIX_DOC),
         variable_function_method!(c"sin", sin_callback, SIN_DOC),
