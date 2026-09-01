@@ -3,6 +3,8 @@ import importlib
 import inspect
 import pickle
 import pickletools
+import subprocess
+import sys
 import types
 import typing
 import unittest
@@ -182,6 +184,55 @@ class CompilerAllowInGraphReferenceTests(unittest.TestCase):
                     lambda: torch.compiler.allow_in_graph(actual_target),
                     lambda: reference_torch.compiler.allow_in_graph(expected_target),
                 )
+
+    def test_nonweakrefable_callable_errors_match_pytorch_2_13(self):
+        script = r"""
+import torch as reference_torch
+import torch_rs as torch
+
+class SlotCallable:
+    __slots__ = ()
+
+    def __call__(self):
+        return "called"
+
+def function():
+    return None
+
+def outcome(module, target):
+    try:
+        module.compiler.allow_in_graph(target)
+    except Exception as error:
+        return (type(error).__name__, str(error), error.args)
+    return ("OK",)
+
+target_factories = (
+    lambda: str.lower,
+    lambda: SlotCallable(),
+    lambda: [function, str.upper],
+    lambda: (SlotCallable(),),
+)
+
+actual_outcomes = []
+expected_outcomes = []
+for target_factory in target_factories:
+    actual_outcomes.append(outcome(torch, target_factory()))
+    expected_outcomes.append(outcome(reference_torch, target_factory()))
+
+if actual_outcomes != expected_outcomes:
+    raise AssertionError((actual_outcomes, expected_outcomes))
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
 
     def test_signature_documentation_and_ownership_match_pytorch_2_13(self):
         actual_compiler = importlib.import_module("torch_rs.compiler")

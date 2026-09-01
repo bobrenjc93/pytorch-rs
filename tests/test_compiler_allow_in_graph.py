@@ -46,6 +46,13 @@ class _CallableObject:
         return value
 
 
+class _SlotCallable:
+    __slots__ = ()
+
+    def __call__(self):
+        return "called"
+
+
 class CompilerAllowInGraphTests(unittest.TestCase):
     def test_callable_inputs_return_exact_objects_and_preserve_eager_calls(self):
         calls = []
@@ -134,6 +141,33 @@ class CompilerAllowInGraphTests(unittest.TestCase):
                     ("allow_in_graph expects a callable",),
                 )
 
+    def test_nonweakrefable_callables_raise_pytorch_2_13_type_errors(self):
+        valid_function = lambda: None
+        cases = (
+            (
+                str.lower,
+                "cannot create weak reference to 'method_descriptor' object",
+            ),
+            (
+                _SlotCallable(),
+                "cannot create weak reference to '_SlotCallable' object",
+            ),
+            (
+                [valid_function, str.upper],
+                "cannot create weak reference to 'method_descriptor' object",
+            ),
+            (
+                (_SlotCallable(),),
+                "cannot create weak reference to '_SlotCallable' object",
+            ),
+        )
+        for target, message in cases:
+            with self.subTest(target=target):
+                with self.assertRaises(TypeError) as raised:
+                    torch.compiler.allow_in_graph(target)
+                self.assertEqual(str(raised.exception), message)
+                self.assertEqual(raised.exception.args, (message,))
+
     def test_noncallable_validation_survives_optimized_python(self):
         script = r"""
 import torch_rs as torch
@@ -151,6 +185,60 @@ for target in (None, 1, object(), "value", [function, 1]):
             raise AssertionError(error.args)
     else:
         raise AssertionError(f"accepted non-callable target: {target!r}")
+"""
+        completed = subprocess.run(
+            [sys.executable, "-O", "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+
+    def test_nonweakrefable_callable_validation_survives_optimized_python(self):
+        script = r"""
+import torch_rs as torch
+
+class SlotCallable:
+    __slots__ = ()
+
+    def __call__(self):
+        return "called"
+
+def function():
+    return None
+
+cases = (
+    (
+        str.lower,
+        "cannot create weak reference to 'method_descriptor' object",
+    ),
+    (
+        SlotCallable(),
+        "cannot create weak reference to 'SlotCallable' object",
+    ),
+    (
+        [function, str.upper],
+        "cannot create weak reference to 'method_descriptor' object",
+    ),
+    (
+        (SlotCallable(),),
+        "cannot create weak reference to 'SlotCallable' object",
+    ),
+)
+for target, message in cases:
+    try:
+        torch.compiler.allow_in_graph(target)
+    except TypeError as error:
+        if str(error) != message:
+            raise AssertionError(str(error))
+        if error.args != (message,):
+            raise AssertionError(error.args)
+    else:
+        raise AssertionError(f"accepted non-weakrefable callable: {target!r}")
 """
         completed = subprocess.run(
             [sys.executable, "-O", "-c", script],

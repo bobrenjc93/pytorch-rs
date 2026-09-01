@@ -2,6 +2,7 @@ from collections.abc import Callable
 import functools
 import sys
 import types
+import weakref
 from typing import Any
 
 from .. import _compiler_state as _state
@@ -131,6 +132,7 @@ def allow_in_graph(fn):
         return [allow_in_graph(item) for item in fn]
     if not callable(fn):
         raise AssertionError("allow_in_graph expects a callable")
+    weakref.ref(fn)
     return fn
 
 
