@@ -244,6 +244,89 @@ class TensorToReferenceTests(unittest.TestCase):
             with self.subTest(call=actual_call):
                 self.assert_error_matches(actual_call, expected_call)
 
+    def mode_dispatch_observation(self, module):
+        tensor = module.tensor([1.0], dtype=module.float32)
+        other = module.tensor([2.0], dtype=module.float32)
+        marker = object()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        def argument_tag(value):
+            if value is tensor:
+                return "self"
+            if value is other:
+                return "other"
+            return type(value).__name__, value
+
+        observations = []
+        for label, call in (
+            ("device conversion", lambda: tensor.to("cuda")),
+            ("copy request", lambda: tensor.to(copy=True)),
+            ("tensor overload", lambda: tensor.to(other)),
+        ):
+            mode = RecordingMode()
+            with mode:
+                result = call()
+            self.assertIs(result, marker)
+            self.assertEqual(len(mode.calls), 1)
+            function, types, args, kwargs = mode.calls[0]
+            observations.append(
+                (
+                    label,
+                    function.__name__,
+                    function.__qualname__,
+                    tuple(type_.__name__ for type_ in types),
+                    tuple(argument_tag(value) for value in args),
+                    None if kwargs is None else dict(kwargs),
+                )
+            )
+        return observations
+
+    def override_argument_dispatch_observation(self, module):
+        tensor = module.tensor([1.0], dtype=module.float32)
+        descriptor = inspect.getattr_static(module.Tensor, "to")
+        marker = object()
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        argument = Override()
+        result = tensor.to(argument)
+        self.assertIs(result, marker)
+        self.assertEqual(len(Override.calls), 1)
+        function, types, args, kwargs = Override.calls[0]
+        self.assertEqual(function, descriptor)
+        self.assertIs(args[0], tensor)
+        self.assertIs(args[1], argument)
+        return (
+            function.__name__,
+            function.__qualname__,
+            tuple(type_.__name__ for type_ in types),
+            len(args),
+            kwargs,
+        )
+
+    def test_torch_function_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_dispatch_observation(torch),
+            self.mode_dispatch_observation(reference_torch),
+        )
+        self.assertEqual(
+            self.override_argument_dispatch_observation(torch),
+            self.override_argument_dispatch_observation(reference_torch),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

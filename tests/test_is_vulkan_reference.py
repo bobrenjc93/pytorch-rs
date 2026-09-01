@@ -257,6 +257,7 @@ print(json.dumps({
         )
 
     def test_vulkan_backend_surface_remains_intentionally_unsupported(self):
+        tensor = torch.tensor([1.0])
         self.assertFalse(hasattr(torch, "vulkan"))
         self.assertFalse(hasattr(reference_torch, "vulkan"))
         self.assertEqual(reference_torch.device("vulkan").type, "vulkan")
@@ -272,8 +273,13 @@ print(json.dumps({
                     RuntimeError, r"only 'cpu' is implemented"
                 ):
                     torch.tensor([1.0], device=specification)
+            with self.subTest(specification=specification, action="to"):
+                with self.assertRaisesRegex(
+                    NotImplementedError, r"device conversions are not supported"
+                ):
+                    tensor.to(specification)
 
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+        self.assertTrue(hasattr(torch.Tensor, "to"))
         self.assertFalse(hasattr(torch.Tensor, "vulkan"))
 
 

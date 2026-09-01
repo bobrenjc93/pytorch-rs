@@ -139,6 +139,7 @@ class TensorIsMpsReferenceTests(unittest.TestCase):
         "requires a host without an available MPS backend",
     )
     def test_mps_creation_and_transfer_remain_unsupported(self):
+        actual_cpu = torch.tensor([1.0])
         reference_cpu = reference_torch.tensor([1.0])
         self.assertEqual(reference_torch.device("mps").type, "mps")
         for specification in ("mps", "mps:0"):
@@ -153,8 +154,13 @@ class TensorIsMpsReferenceTests(unittest.TestCase):
                     RuntimeError, r"only 'cpu' is implemented"
                 ):
                     torch.tensor([1.0], device=specification)
+            with self.subTest(actual_action="transfer", device=specification):
+                with self.assertRaisesRegex(
+                    NotImplementedError, r"device conversions are not supported"
+                ):
+                    actual_cpu.to(specification)
 
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+        self.assertTrue(hasattr(torch.Tensor, "to"))
 
     def error(self, action):
         try:

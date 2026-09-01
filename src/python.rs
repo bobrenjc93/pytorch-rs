@@ -515,22 +515,20 @@ impl PyTensorBase {
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
         let call = bind_tensor_to_arguments(args, kwargs)?;
+        validate_tensor_to_generated_parser_request(args, kwargs, &call)?;
+
+        if let Some(result) =
+            dispatch_tensor_to_method(slf.py(), slf.as_any(), &call, args, kwargs)?
+        {
+            return Ok(result);
+        }
+
         validate_tensor_to_identity_request(args, kwargs, &call)?;
 
         if !slf.as_any().is_exact_instance_of::<PyTensor>() {
             return Err(tensor_to_unsupported_native_input());
         }
         let tensor = slf.as_any().cast::<PyTensor>()?;
-        if let Some(result) = dispatch_tensorbase_method_mode(
-            slf.py(),
-            tensor,
-            "to",
-            "torch.Tensor.to",
-            args,
-            kwargs,
-        )? {
-            return Ok(result);
-        }
 
         // The native engine currently only owns CPU float32 tensors. Accepted
         // `to` calls are therefore metadata validation followed by the exact
@@ -7733,6 +7731,182 @@ fn classify_tensor_to_first_argument(value: &Bound<'_, PyAny>) -> Option<TensorT
         return Some(TensorToOverload::Tensor);
     }
     None
+}
+
+fn validate_tensor_to_generated_parser_request(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    arguments: &TensorToCallArguments<'_>,
+) -> PyResult<()> {
+    if let Some(dtype) = arguments.dtype.as_ref() {
+        validate_tensor_to_parser_dtype(positional, keywords, dtype)?;
+    }
+    if let Some(device) = arguments.device.as_ref() {
+        validate_tensor_to_parser_device(positional, keywords, device)?;
+    }
+    if let Some(non_blocking) = arguments.non_blocking.as_ref() {
+        validate_tensor_to_parser_bool(positional, keywords, non_blocking)?;
+    }
+    if let Some(copy) = arguments.copy.as_ref() {
+        validate_tensor_to_parser_bool(positional, keywords, copy)?;
+    }
+    if let Some(memory_format) = arguments.memory_format.as_ref() {
+        validate_tensor_to_parser_memory_format(positional, keywords, memory_format)?;
+    }
+    Ok(())
+}
+
+fn validate_tensor_to_parser_dtype(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    dtype: &ParsedCallArgument<'_>,
+) -> PyResult<()> {
+    let value = &dtype.value;
+    if value.is_none()
+        || value.cast::<PyDType>().is_ok()
+        || is_tensor_to_supported_python_dtype_conversion(dtype)
+        || probe_torch_function_override(value).is_some()
+    {
+        return Ok(());
+    }
+    Err(tensor_to_invalid_combination_error(positional, keywords)?)
+}
+
+fn validate_tensor_to_parser_device(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    device: &ParsedCallArgument<'_>,
+) -> PyResult<()> {
+    let value = &device.value;
+    if value.is_none()
+        || value.cast::<PyDevice>().is_ok()
+        || value.cast::<PyString>().is_ok()
+        || is_tensor_to_device_index(value)
+        || probe_torch_function_override(value).is_some()
+    {
+        return Ok(());
+    }
+    Err(tensor_to_invalid_combination_error(positional, keywords)?)
+}
+
+fn validate_tensor_to_parser_bool(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    argument: &ParsedCallArgument<'_>,
+) -> PyResult<()> {
+    if argument.value.is_exact_instance_of::<PyBool>()
+        || probe_torch_function_override(&argument.value).is_some()
+    {
+        return Ok(());
+    }
+    Err(tensor_to_invalid_combination_error(positional, keywords)?)
+}
+
+fn validate_tensor_to_parser_memory_format(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    argument: &ParsedCallArgument<'_>,
+) -> PyResult<()> {
+    let value = &argument.value;
+    if value.is_none()
+        || value.cast::<PyMemoryFormat>().is_ok()
+        || probe_torch_function_override(value).is_some()
+    {
+        return Ok(());
+    }
+    Err(tensor_to_invalid_combination_error(positional, keywords)?)
+}
+
+fn ordered_tensor_to_method_overrides<'py>(
+    receiver: &Bound<'py, PyAny>,
+    arguments: &TensorToCallArguments<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(6)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate Tensor.to dispatch operands"))?;
+
+    if !receiver.is_exact_instance_of::<PyTensor>()
+        && let Some(probed) = probe_torch_function_override(receiver)
+    {
+        insert_ordered_torch_function_override(&mut overrides, &probed)?;
+    }
+    for argument in [
+        arguments.device.as_ref(),
+        arguments.dtype.as_ref(),
+        arguments.tensor.as_ref(),
+        arguments.non_blocking.as_ref(),
+        arguments.copy.as_ref(),
+        arguments.memory_format.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if argument.value.is_exact_instance_of::<PyTensor>() {
+            continue;
+        }
+        if let Some(probed) = probe_torch_function_override(&argument.value) {
+            insert_ordered_torch_function_override(&mut overrides, &probed)?;
+        }
+    }
+    Ok(overrides)
+}
+
+fn dispatch_tensor_to_method(
+    py: Python<'_>,
+    receiver: &Bound<'_, PyAny>,
+    arguments: &TensorToCallArguments<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    let overrides = ordered_tensor_to_method_overrides(receiver, arguments)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return Ok(None);
+    }
+
+    let function = py.get_type::<PyTensorBase>().getattr("to")?.unbind();
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+    let argument_count = args
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("to dispatch argument count overflowed"))?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate Tensor.to dispatch arguments"))?;
+    call_arguments.push(receiver.clone());
+    call_arguments.extend(args.iter());
+    let call_args = PyTuple::new(py, call_arguments)?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.Tensor.to",
+        active_mode.get(),
+        &overrides,
+    )?)
 }
 
 fn validate_tensor_to_identity_request(

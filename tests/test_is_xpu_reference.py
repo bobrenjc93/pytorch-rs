@@ -273,6 +273,7 @@ print(json.dumps({
         )
 
     def test_xpu_backend_surface_remains_intentionally_unsupported(self):
+        tensor = torch.tensor([1.0])
         self.assertTrue(hasattr(reference_torch, "xpu"))
         self.assertFalse(hasattr(torch, "xpu"))
 
@@ -288,8 +289,13 @@ print(json.dumps({
                     RuntimeError, r"only 'cpu' is implemented"
                 ):
                     torch.tensor([1.0], device=specification)
+            with self.subTest(specification=specification, action="to"):
+                with self.assertRaisesRegex(
+                    NotImplementedError, r"device conversions are not supported"
+                ):
+                    tensor.to(specification)
 
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+        self.assertTrue(hasattr(torch.Tensor, "to"))
 
 
 if __name__ == "__main__":

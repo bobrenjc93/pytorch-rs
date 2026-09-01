@@ -289,6 +289,7 @@ print(json.dumps({
         )
 
     def test_xla_backend_surface_remains_intentionally_unsupported(self):
+        tensor = torch.tensor([1.0])
         self.assertFalse(hasattr(reference_torch, "xla"))
         self.assertFalse(hasattr(torch, "xla"))
 
@@ -311,8 +312,13 @@ print(json.dumps({
                             function([1.0], device=specification)
                         else:
                             function((1,), device=specification)
+            with self.subTest(specification=specification, action="to"):
+                with self.assertRaisesRegex(
+                    NotImplementedError, r"device conversions are not supported"
+                ):
+                    tensor.to(specification)
 
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+        self.assertTrue(hasattr(torch.Tensor, "to"))
 
 
 if __name__ == "__main__":

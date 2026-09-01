@@ -508,7 +508,8 @@ storage offsets, dtype/device/layout metadata, autograd history, leaf state,
 gradients, and output numbers. Actual dtype conversion, Python built-in dtype
 shorthand conversion, accelerator or meta devices, indexed CPU devices such as
 `"cpu:0"` or `torch.device("cpu", 0)`, `copy=True`, non-preserve
-memory-format requests, tensor-argument overloads, and native Tensor subclass
+memory-format requests, tensor-argument overloads after
+`TorchFunctionMode`/`__torch_function__` dispatch, and native Tensor subclass
 expansion remain unsupported.
 
 `Tensor.select(dim, index)` and `torch.select(input, dim, index)` normalize the

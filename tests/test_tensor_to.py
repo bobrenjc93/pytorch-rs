@@ -331,21 +331,127 @@ class TensorToTests(unittest.TestCase):
                 with self.assertRaisesRegex(NotImplementedError, message):
                     call()
 
-    def test_torch_function_like_argument_does_not_expand_tensor_overload(self):
+    def test_torch_function_mode_dispatches_before_native_rejections(self):
         tensor = torch.tensor([1.0])
-        calls = []
+        other = torch.tensor([2.0])
+        descriptor = inspect.getattr_static(torch.Tensor, "to")
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        cases = (
+            (
+                "device conversion",
+                lambda: tensor.to("cuda"),
+                (tensor, "cuda"),
+                None,
+            ),
+            (
+                "copy request",
+                lambda: tensor.to(copy=True),
+                (tensor,),
+                {"copy": True},
+            ),
+            (
+                "tensor overload",
+                lambda: tensor.to(other),
+                (tensor, other),
+                None,
+            ),
+        )
+        for case, call, expected_args, expected_kwargs in cases:
+            with self.subTest(case=case):
+                mode = RecordingMode(marker)
+                with mode:
+                    result = call()
+
+                self.assertIs(result, marker)
+                self.assertEqual(len(mode.calls), 1)
+                function, types, args, kwargs = mode.calls[0]
+                self.assertEqual(function, descriptor)
+                self.assertEqual(types, ())
+                self.assertEqual(len(args), len(expected_args))
+                for actual, expected in zip(args, expected_args, strict=True):
+                    if isinstance(expected, torch.Tensor):
+                        self.assertIs(actual, expected)
+                    else:
+                        self.assertEqual(actual, expected)
+                self.assertEqual(kwargs, expected_kwargs)
+
+        declining = RecordingMode(NotImplemented)
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^Multiple dispatch failed for 'torch\.Tensor\.to'; all "
+            r"__torch_function__ handlers returned NotImplemented:",
+        ):
+            with declining:
+                tensor.to("cuda")
+        self.assertEqual(len(declining.calls), 1)
+
+    def test_torch_function_override_arguments_dispatch_before_native_rejections(self):
+        tensor = torch.tensor([1.0])
+        descriptor = inspect.getattr_static(torch.Tensor, "to")
+        marker = object()
 
         class Override:
+            calls = []
+
             @classmethod
             def __torch_function__(cls, func, types, args=(), kwargs=None):
-                calls.append((func, types, args, kwargs))
-                return object()
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        cases = (
+            ("tensor overload", lambda argument: tensor.to(argument), None),
+            ("dtype keyword", lambda argument: tensor.to(dtype=argument), "dtype"),
+            ("device keyword", lambda argument: tensor.to(device=argument), "device"),
+            (
+                "non blocking keyword",
+                lambda argument: tensor.to(non_blocking=argument),
+                "non_blocking",
+            ),
+            ("copy keyword", lambda argument: tensor.to(copy=argument), "copy"),
+            (
+                "memory format keyword",
+                lambda argument: tensor.to(memory_format=argument),
+                "memory_format",
+            ),
+        )
+        for case, call, keyword in cases:
+            with self.subTest(case=case):
+                Override.calls = []
+                argument = Override()
+                self.assertIs(call(argument), marker)
+                self.assertEqual(len(Override.calls), 1)
+                function, types, args, kwargs = Override.calls[0]
+                self.assertEqual(function, descriptor)
+                self.assertEqual(types, (Override,))
+                self.assertIs(args[0], tensor)
+                if keyword is None:
+                    self.assertIs(args[1], argument)
+                    self.assertIsNone(kwargs)
+                else:
+                    self.assertEqual(len(args), 1)
+                    self.assertIs(kwargs[keyword], argument)
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return NotImplemented
 
         with self.assertRaisesRegex(
-            NotImplementedError, "Tensor argument overload is not supported"
+            TypeError,
+            r"^Multiple dispatch failed for 'torch\.Tensor\.to'; all "
+            r"__torch_function__ handlers returned NotImplemented:",
         ):
-            tensor.to(Override())
-        self.assertEqual(calls, [])
+            tensor.to(DecliningOverride())
 
 
 if __name__ == "__main__":
