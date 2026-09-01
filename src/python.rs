@@ -1663,16 +1663,27 @@ pub(crate) fn ones_like_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let (input, requires_grad) =
-        parse_ones_like_arguments(bind_ones_like_arguments(args, kwargs)?)?;
-    let shape = {
-        let tensor = input.try_borrow()?;
-        validate_ones_like_native_input(&tensor.inner)?;
-        let mut shape = try_size_vector(tensor.inner.shape().len())?;
-        shape.extend_from_slice(tensor.inner.shape());
-        shape
-    };
+    let (input, requires_grad) = parse_like_factory_arguments(
+        "ones_like",
+        bind_like_factory_arguments("ones_like", args, kwargs)?,
+    )?;
+    let shape = like_factory_input_shape("ones_like", &input)?;
     let inner = CoreTensor::ones_with_metadata(shape, DType::Float32, Device::Cpu)
+        .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
+}
+
+pub(crate) fn zeros_like_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (input, requires_grad) = parse_like_factory_arguments(
+        "zeros_like",
+        bind_like_factory_arguments("zeros_like", args, kwargs)?,
+    )?;
+    let shape = like_factory_input_shape("zeros_like", &input)?;
+    let inner = CoreTensor::zeros_with_metadata(shape, DType::Float32, Device::Cpu)
         .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
 }
@@ -5401,7 +5412,7 @@ struct CreationCallArguments<'py> {
     keyword_error: Option<PyErr>,
 }
 
-struct OnesLikeCallArguments<'py> {
+struct LikeFactoryCallArguments<'py> {
     input: Option<ParsedCallArgument<'py>>,
     dtype: Option<Bound<'py, PyAny>>,
     layout: Option<Bound<'py, PyAny>>,
@@ -7623,18 +7634,19 @@ fn bind_creation_arguments<'py>(
     Ok(arguments)
 }
 
-fn bind_ones_like_arguments<'py>(
+fn bind_like_factory_arguments<'py>(
+    function: &str,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-) -> PyResult<OnesLikeCallArguments<'py>> {
+) -> PyResult<LikeFactoryCallArguments<'py>> {
     if positional.len() > 1 {
         return Err(PyTypeError::new_err(format!(
-            "ones_like() takes 1 positional argument but {} were given",
+            "{function}() takes 1 positional argument but {} were given",
             positional.len()
         )));
     }
 
-    let mut arguments = OnesLikeCallArguments {
+    let mut arguments = LikeFactoryCallArguments {
         input: if positional.is_empty() {
             None
         } else {
@@ -7660,7 +7672,9 @@ fn bind_ones_like_arguments<'py>(
             "input" | "x" | "a" | "x1" => {
                 if arguments.input.is_some() {
                     arguments.keyword_error.get_or_insert_with(|| {
-                        PyTypeError::new_err("ones_like() got multiple values for argument 'input'")
+                        PyTypeError::new_err(format!(
+                            "{function}() got multiple values for argument 'input'"
+                        ))
                     });
                 } else {
                     arguments.input = Some(ParsedCallArgument {
@@ -7677,7 +7691,7 @@ fn bind_ones_like_arguments<'py>(
             _ => {
                 arguments.keyword_error.get_or_insert_with(|| {
                     PyTypeError::new_err(format!(
-                        "ones_like() got an unexpected keyword argument '{key}'"
+                        "{function}() got an unexpected keyword argument '{key}'"
                     ))
                 });
             }
@@ -8705,10 +8719,11 @@ fn parse_creation_arguments(
     Ok((size, dtype, device, requires_grad))
 }
 
-fn parse_ones_like_arguments(
-    arguments: OnesLikeCallArguments<'_>,
-) -> PyResult<(Bound<'_, PyTensor>, bool)> {
-    let OnesLikeCallArguments {
+fn parse_like_factory_arguments<'py>(
+    function: &str,
+    arguments: LikeFactoryCallArguments<'py>,
+) -> PyResult<(Bound<'py, PyTensor>, bool)> {
+    let LikeFactoryCallArguments {
         input,
         dtype,
         layout,
@@ -8719,38 +8734,39 @@ fn parse_ones_like_arguments(
     } = arguments;
 
     let Some(input) = input else {
-        return Err(PyTypeError::new_err(
-            "ones_like() missing 1 required positional arguments: \"input\"",
-        ));
+        return Err(PyTypeError::new_err(format!(
+            "{function}() missing 1 required positional arguments: \"input\""
+        )));
     };
-    let input = parse_exact_native_tensor_argument("ones_like", "input", &input)?;
-    let memory_format = parse_ones_like_memory_format(memory_format.as_ref())?;
-    parse_identity_dtype("ones_like", dtype.as_ref())?;
-    parse_factory_layout("ones_like", layout.as_ref())?;
-    validate_as_tensor_device_type("ones_like", device.as_ref())?;
-    let requires_grad = parse_factory_requires_grad("ones_like", requires_grad.as_ref())?;
+    let input = parse_exact_native_like_factory_tensor_argument(function, "input", &input)?;
+    let memory_format = parse_like_factory_memory_format(function, memory_format.as_ref())?;
+    parse_identity_dtype(function, dtype.as_ref())?;
+    parse_factory_layout(function, layout.as_ref())?;
+    validate_as_tensor_device_type(function, device.as_ref())?;
+    let requires_grad = parse_factory_requires_grad(function, requires_grad.as_ref())?;
     if let Some(error) = keyword_error {
         return Err(error);
     }
-    parse_as_tensor_device("ones_like", device.as_ref())?;
+    parse_as_tensor_device(function, device.as_ref())?;
 
     if !matches!(
         memory_format,
         MemoryFormat::Preserve | MemoryFormat::Contiguous
     ) {
-        return Err(PyNotImplementedError::new_err(
-            "ones_like(): only default-equivalent memory_format is supported",
-        ));
+        return Err(PyNotImplementedError::new_err(format!(
+            "{function}(): only default-equivalent memory_format is supported"
+        )));
     }
     if !torch_function_mode_stack::is_empty() {
-        return Err(PyNotImplementedError::new_err(
-            "ones_like(): __torch_function__ modes are not supported",
-        ));
+        return Err(PyNotImplementedError::new_err(format!(
+            "{function}(): __torch_function__ modes are not supported"
+        )));
     }
     Ok((input.clone(), requires_grad))
 }
 
-fn parse_ones_like_memory_format(
+fn parse_like_factory_memory_format(
+    function: &str,
     memory_format: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<MemoryFormat> {
     let Some(memory_format) = memory_format else {
@@ -8762,7 +8778,7 @@ fn parse_ones_like_memory_format(
 
     let actual = python_type_name(memory_format)?;
     Err(PyTypeError::new_err(format!(
-        "ones_like(): argument 'memory_format' must be torch.memory_format, not {actual}"
+        "{function}(): argument 'memory_format' must be torch.memory_format, not {actual}"
     )))
 }
 
@@ -13423,33 +13439,41 @@ fn parse_tensor_argument<'a, 'py>(
     Ok(tensor)
 }
 
-fn parse_exact_native_tensor_argument<'a, 'py>(
+fn parse_exact_native_like_factory_tensor_argument<'a, 'py>(
     function: &str,
     argument: &str,
     value: &'a ParsedCallArgument<'py>,
 ) -> PyResult<&'a Bound<'py, PyTensor>> {
     if !value.value.is_exact_instance_of::<PyTensor>() {
         if value.value.is_instance_of::<PyTensor>() {
-            return Err(ones_like_unsupported_native_input());
+            return Err(like_factory_unsupported_native_input(function));
         }
         return parse_tensor_argument(function, argument, value);
     }
     Ok(value.value.cast::<PyTensor>()?)
 }
 
-fn validate_ones_like_native_input(input: &CoreTensor) -> PyResult<()> {
+fn like_factory_input_shape(function: &str, input: &Bound<'_, PyTensor>) -> PyResult<Vec<usize>> {
+    let tensor = input.try_borrow()?;
+    validate_like_factory_native_input(function, &tensor.inner)?;
+    let mut shape = try_size_vector(tensor.inner.shape().len())?;
+    shape.extend_from_slice(tensor.inner.shape());
+    Ok(shape)
+}
+
+fn validate_like_factory_native_input(function: &str, input: &CoreTensor) -> PyResult<()> {
     if input.dtype() == DType::Float32
         && input.device() == Device::Cpu
         && input.is_contiguous_with_memory_format(MemoryFormat::Contiguous)
-        && ones_like_has_canonical_row_major_strides(input)
+        && like_factory_has_canonical_row_major_strides(input)
         && input.suggested_memory_format() == MemoryFormat::Contiguous
     {
         return Ok(());
     }
-    Err(ones_like_unsupported_native_input())
+    Err(like_factory_unsupported_native_input(function))
 }
 
-fn ones_like_has_canonical_row_major_strides(input: &CoreTensor) -> bool {
+fn like_factory_has_canonical_row_major_strides(input: &CoreTensor) -> bool {
     let shape = input.shape();
     let strides = input.stride();
     if shape.len() != strides.len() {
@@ -13474,10 +13498,10 @@ fn ones_like_has_canonical_row_major_strides(input: &CoreTensor) -> bool {
     true
 }
 
-fn ones_like_unsupported_native_input() -> PyErr {
-    PyNotImplementedError::new_err(
-        "ones_like(): only exact native CPU float32 row-major contiguous Tensor inputs are supported",
-    )
+fn like_factory_unsupported_native_input(function: &str) -> PyErr {
+    PyNotImplementedError::new_err(format!(
+        "{function}(): only exact native CPU float32 row-major contiguous Tensor inputs are supported"
+    ))
 }
 
 fn parse_tensor_or_torch_function_argument<'py>(
