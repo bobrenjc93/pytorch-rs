@@ -465,7 +465,7 @@ class ReadmeQuickstartTests(unittest.TestCase):
 
         task_index = supported[
             supported.index("## Common adopter task quick index") : supported.index(
-                "## Category index"
+                "## Namespace summary"
             )
         ]
         self.assertIn(
