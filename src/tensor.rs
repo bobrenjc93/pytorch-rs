@@ -6302,6 +6302,15 @@ fn sqrt_backward_value(input: f32, upstream: f32) -> f32 {
 
 #[inline]
 fn reciprocal_backward_value(input: f32, upstream: f32) -> f32 {
+    const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+    let input_bits = input.to_bits();
+    if input_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        // PyTorch's saved-input formula surfaces the NaN produced by the
+        // reciprocal/square path. Make that precedence explicit so optimized
+        // builds cannot select an upstream NaN payload instead.
+        return f32::from_bits(input_bits | QUIET_NAN_MASK);
+    }
     let reciprocal = input.recip();
     (reciprocal * reciprocal) * (-upstream)
 }
