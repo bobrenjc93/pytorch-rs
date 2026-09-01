@@ -27,6 +27,10 @@ def float32_bits(tensor):
     return int(np.asarray(tensor).view(np.uint32).item())
 
 
+class FloatSubclass(float):
+    pass
+
+
 class AsTensorTests(unittest.TestCase):
     def assert_error(self, call, error_type, message):
         with self.assertRaisesRegex(error_type, f"^{re.escape(message)}$"):
@@ -118,6 +122,7 @@ class AsTensorTests(unittest.TestCase):
             (0.0, 0x00000000),
             (-0.0, 0x80000000),
             (1.25, 0x3FA00000),
+            (FloatSubclass(1.25), 0x3FA00000),
             (-2.5, 0xC0200000),
             (1.0e38, 0x7E967699),
             (3.5e38, 0x7F800000),
@@ -136,8 +141,12 @@ class AsTensorTests(unittest.TestCase):
             {"dtype": torch.float},
             {"device": None},
             {"device": "cpu"},
+            {"device": "cpu:0"},
+            {"device": "cpu:1"},
             {"device": torch.device("cpu")},
+            {"device": torch.device("cpu", 1)},
             {"dtype": torch.float32, "device": torch.device("cpu")},
+            {"dtype": torch.float32, "device": "cpu:0"},
         )
 
         for value, expected_bits in scalar_cases:
@@ -408,17 +417,7 @@ class AsTensorTests(unittest.TestCase):
                 "as_tensor(): explicit indexed CPU devices require a copy and are not supported",
             ),
             (
-                lambda: torch.as_tensor(1.0, device="cpu:0"),
-                NotImplementedError,
-                "as_tensor(): explicit indexed CPU devices require a copy and are not supported",
-            ),
-            (
                 lambda: torch.as_tensor(tensor, device=torch.device("cpu", 1)),
-                NotImplementedError,
-                "as_tensor(): indexed CPU devices require a copy and are not supported",
-            ),
-            (
-                lambda: torch.as_tensor(1.0, device=torch.device("cpu", 1)),
                 NotImplementedError,
                 "as_tensor(): indexed CPU devices require a copy and are not supported",
             ),

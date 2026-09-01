@@ -20,6 +20,10 @@ def float64_from_bits(bits):
     return struct.unpack(">d", bits.to_bytes(8, "big"))[0]
 
 
+class FloatSubclass(float):
+    pass
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class AsTensorReferenceTests(unittest.TestCase):
     @classmethod
@@ -158,6 +162,7 @@ class AsTensorReferenceTests(unittest.TestCase):
             0.0,
             -0.0,
             1.25,
+            FloatSubclass(1.25),
             -2.5,
             1.0e38,
             3.5e38,
@@ -176,9 +181,15 @@ class AsTensorReferenceTests(unittest.TestCase):
             ({"dtype": torch.float}, {"dtype": reference_torch.float}),
             ({"device": None}, {"device": None}),
             ({"device": "cpu"}, {"device": "cpu"}),
+            ({"device": "cpu:0"}, {"device": "cpu:0"}),
+            ({"device": "cpu:1"}, {"device": "cpu:1"}),
             (
                 {"device": torch.device("cpu")},
                 {"device": reference_torch.device("cpu")},
+            ),
+            (
+                {"device": torch.device("cpu", 1)},
+                {"device": reference_torch.device("cpu", 1)},
             ),
             (
                 {"dtype": torch.float32, "device": torch.device("cpu")},
@@ -186,6 +197,10 @@ class AsTensorReferenceTests(unittest.TestCase):
                     "dtype": reference_torch.float32,
                     "device": reference_torch.device("cpu"),
                 },
+            ),
+            (
+                {"dtype": torch.float32, "device": "cpu:0"},
+                {"dtype": reference_torch.float32, "device": "cpu:0"},
             ),
         )
 

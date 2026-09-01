@@ -1550,7 +1550,12 @@ pub(crate) fn as_tensor_variable_function(
     if let Some(result) = dispatch_as_tensor_mode(py, args, kwargs)? {
         return Ok(result);
     }
-    let device = parse_as_tensor_device("as_tensor", arguments.device.as_ref())?;
+    let is_python_float = is_python_float_scalar(&data.value)?;
+    let device = if is_python_float {
+        parse_as_tensor_scalar_device("as_tensor", arguments.device.as_ref())?
+    } else {
+        parse_as_tensor_device("as_tensor", arguments.device.as_ref())?
+    };
 
     if dtype != DType::Float32 || !device.is_cpu() {
         return Err(PyNotImplementedError::new_err(
@@ -1560,7 +1565,7 @@ pub(crate) fn as_tensor_variable_function(
     if data.value.is_exact_instance_of::<PyTensor>() {
         return Ok(data.value.unbind());
     }
-    if data.value.is_exact_instance_of::<PyFloat>() {
+    if is_python_float {
         let value = data.value.extract::<f64>()?;
         #[allow(clippy::cast_possible_truncation)]
         let value = value as f32;
@@ -8122,6 +8127,29 @@ fn parse_as_tensor_device(function: &str, device: Option<&Bound<'_, PyAny>>) -> 
     Err(PyNotImplementedError::new_err(format!(
         "{function}(): explicit indexed CPU devices require a copy and are not supported"
     )))
+}
+
+fn parse_as_tensor_scalar_device(
+    function: &str,
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Device> {
+    let Some(device) = device else {
+        return Ok(Device::Cpu);
+    };
+    if device.cast::<PyDevice>().is_ok() {
+        return parse_device_value(function, device);
+    }
+
+    let specification = device.cast::<PyString>()?.to_str()?;
+    validate_as_tensor_device_string(specification)?;
+    parse_device_value(function, device)
+}
+
+fn is_python_float_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if !value.is_instance_of::<PyFloat>() {
+        return Ok(false);
+    }
+    is_numpy_scalar_of_types(value, &["floating"]).map(|is_numpy| !is_numpy)
 }
 
 fn validate_as_tensor_device_string(specification: &str) -> PyResult<()> {
