@@ -43,6 +43,7 @@ do not replace the benchmark policy or Burner-managed evaluation progress.
 - [Rank-10 `Tensor.sum` release timings](docs/rank10-sum-release-timings.md)
 - [Rank-11 `Tensor.sum` release timings](docs/rank11-sum-release-timings.md)
 - [Rank-12 `Tensor.sum` release timings](docs/rank12-sum-release-timings.md)
+- [Rank-2 matmul release timings](docs/rank2-matmul-release-timings.md)
 - [`+` and `Tensor.add` release timings](docs/tensor-add-release-timings.md)
 - [`*`, `Tensor.mul`/`Tensor.multiply`, and `torch.mul`/`torch.multiply` release timings](docs/tensor-mul-release-timings.md)
 - [`Tensor.abs` and `torch.abs` release timings](docs/tensor-abs-release-timings.md)
