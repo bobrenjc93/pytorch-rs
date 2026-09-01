@@ -15158,7 +15158,7 @@ fn bind_view_argument<'py>(
         return Err(unsupported_view_call_error(positional, keywords)?);
     }
 
-    if matches!(positional.len(), 2..=6) {
+    if positional.len() >= 2 {
         let first = positional.get_item(0)?;
         if !is_view_shape_dimension(&first) {
             return Err(unsupported_view_call_error(positional, keywords)?);
@@ -15191,16 +15191,13 @@ fn bind_view_argument<'py>(
         )));
     }
 
-    let (value, positional_dimension) = match positional.len() {
-        0 => (
+    let (value, positional_dimension) = if positional.is_empty() {
+        (
             keyword_shape.ok_or_else(unsupported_view_argument_error)?,
             false,
-        ),
-        1 => (positional.get_item(0)?, true),
-        _ if keyword_error.is_some() => {
-            return Err(unsupported_view_call_error(positional, keywords)?);
-        }
-        _ => return Err(unsupported_seven_or_more_view_dimensions_error()),
+        )
+    } else {
+        (positional.get_item(0)?, true)
     };
     let shape = if let Ok(shape) = value.cast::<PyTuple>() {
         ViewShapeArgument::Tuple(shape.clone())
@@ -15365,12 +15362,6 @@ fn unsupported_view_size_dtype_error(
     Ok(PyTypeError::new_err(format!(
         "view() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (torch.dtype dtype)\n      didn't match because some of the keywords were incorrect: size\n * (tuple of ints size)\n      didn't match because some of the arguments have invalid types: (!size={actual}!, )\n"
     )))
-}
-
-fn unsupported_seven_or_more_view_dimensions_error() -> PyErr {
-    PyTypeError::new_err(
-        "view(): seven or more positional dimensions are not supported; pass a tuple, list, or torch.Size",
-    )
 }
 
 fn unsupported_view_dtype_error() -> PyErr {
