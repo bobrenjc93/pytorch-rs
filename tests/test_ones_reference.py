@@ -22,6 +22,15 @@ class IndexDimension:
         return self.value
 
 
+class CountingBadIndex:
+    def __init__(self):
+        self.calls = 0
+
+    def __index__(self):
+        self.calls += 1
+        raise AssertionError("__index__ should not be called")
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class OnesReferenceTests(unittest.TestCase):
     @classmethod
@@ -53,6 +62,8 @@ class OnesReferenceTests(unittest.TestCase):
             lambda: IntSubclass(2),
             lambda: np.int64(2),
             lambda: np.uint32(2),
+            lambda: np.bool_(True),
+            lambda: np.bool_(False),
             lambda: IndexDimension(2),
         )
         metadata_factories = (
@@ -92,6 +103,10 @@ class OnesReferenceTests(unittest.TestCase):
         cases = (
             ("matrix", lambda module: module.ones(2, 3)),
             ("zero size", lambda module: module.ones(2, 3, 0)),
+            ("bool true", lambda module: module.ones(2, True)),
+            ("bool false", lambda module: module.ones(2, False)),
+            ("numpy bool first", lambda module: module.ones(np.bool_(True), 2)),
+            ("numpy bool second", lambda module: module.ones(2, np.bool_(False))),
             (
                 "integer protocol",
                 lambda module: module.ones(
@@ -213,6 +228,86 @@ class OnesReferenceTests(unittest.TestCase):
                 self.assertIn(marker, expected_message)
                 self.assertIn("Overflow when unpacking long long", actual_message)
                 self.assertIn("Overflow when unpacking long long", expected_message)
+
+        for case, call in (
+            ("leading true", lambda module: module.ones(True, 2)),
+            ("leading false", lambda module: module.ones(False, 2)),
+        ):
+            with self.subTest(case=case):
+                actual_type, actual_message = self.capture_error(lambda: call(torch))
+                expected_type, expected_message = self.capture_error(
+                    lambda: call(reference_torch)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(actual_message, expected_message)
+
+    def test_variadic_validation_order_matches_pytorch_2_13(self):
+        cases = (
+            (
+                "out",
+                lambda module, dimension: module.ones(2, dimension, out=[]),
+            ),
+            (
+                "dtype",
+                lambda module, dimension: module.ones(2, dimension, dtype=object()),
+            ),
+            (
+                "device",
+                lambda module, dimension: module.ones(2, dimension, device=object()),
+            ),
+            (
+                "requires_grad",
+                lambda module, dimension: module.ones(
+                    2, dimension, requires_grad=1
+                ),
+            ),
+            (
+                "unexpected",
+                lambda module, dimension: module.ones(
+                    2, dimension, unexpected=True
+                ),
+            ),
+        )
+        for case, call in cases:
+            with self.subTest(case=case):
+                actual_dimension = CountingBadIndex()
+                expected_dimension = CountingBadIndex()
+                actual_type, actual_message = self.capture_error(
+                    lambda: call(torch, actual_dimension)
+                )
+                expected_type, expected_message = self.capture_error(
+                    lambda: call(reference_torch, expected_dimension)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(
+                    actual_message.replace("torch.device or str", "torch.device"),
+                    expected_message,
+                )
+                self.assertEqual(actual_dimension.calls, expected_dimension.calls)
+                self.assertEqual(actual_dimension.calls, 0)
+
+        actual_type, actual_message = self.capture_error(
+            lambda: torch.ones(2, 3.0, dtype=object())
+        )
+        expected_type, expected_message = self.capture_error(
+            lambda: reference_torch.ones(2, 3.0, dtype=object())
+        )
+        self.assertIs(actual_type, expected_type)
+        self.assertEqual(actual_message, expected_message)
+
+    def test_variadic_resource_limit_errors_match_pytorch_2_13(self):
+        cases = (
+            ("tail overflow", lambda module: module.ones(2, sys.maxsize)),
+            ("head overflow", lambda module: module.ones(sys.maxsize, 2)),
+        )
+        for case, call in cases:
+            with self.subTest(case=case):
+                actual_type, actual_message = self.capture_error(lambda: call(torch))
+                expected_type, expected_message = self.capture_error(
+                    lambda: call(reference_torch)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(actual_message, expected_message)
 
     def test_mixed_invalid_scalar_validation_order_matches_pytorch_2_13(self):
         cases = (

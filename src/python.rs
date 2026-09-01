@@ -6666,13 +6666,10 @@ fn flatten(
 fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("zeros", args, kwargs)?;
     let (size, dtype, device, requires_grad) = parse_creation_arguments("zeros", arguments)?;
-    let ParsedCreationSize {
-        dimensions,
-        scalar_dimension,
-    } = size;
+    let dimensions = size.dimensions.clone();
     CoreTensor::zeros_with_metadata(dimensions, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-        .map_err(|error| scalar_creation_error(&error, scalar_dimension))
+        .map_err(|error| creation_size_error(&error, &size))
 }
 
 #[pyfunction(
@@ -6682,13 +6679,10 @@ fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
 fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("ones", args, kwargs)?;
     let (size, dtype, device, requires_grad) = parse_creation_arguments("ones", arguments)?;
-    let ParsedCreationSize {
-        dimensions,
-        scalar_dimension,
-    } = size;
+    let dimensions = size.dimensions.clone();
     CoreTensor::ones_with_metadata(dimensions, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-        .map_err(|error| scalar_creation_error(&error, scalar_dimension))
+        .map_err(|error| creation_size_error(&error, &size))
 }
 
 #[pyfunction(
@@ -9005,7 +8999,15 @@ fn parse_creation_size<'py>(
             bind_creation_positional_dimension(function, &value, sequence_error)
         }
         CreationSizeArgument::PositionalDimensions(dimensions) => {
-            bind_creation_positional_dimensions(function, dimensions)
+            if let Some(dimension) = dimensions.first()
+                && dimension.is_exact_instance_of::<PyBool>()
+            {
+                return Err(creation_leading_bool_variadic_size_error(
+                    function,
+                    dimensions.len(),
+                ));
+            }
+            Ok(PendingCreationSize::PositionalDimensions(dimensions))
         }
     }
 }
@@ -9015,7 +9017,7 @@ fn bind_creation_positional_dimension<'py>(
     dimension: &Bound<'py, PyAny>,
     sequence_error: PyErr,
 ) -> PyResult<PendingCreationSize<'py>> {
-    if is_creation_bool_dimension(dimension)? {
+    if dimension.is_exact_instance_of::<PyBool>() {
         return Err(creation_dimension_type_error(function, dimension)?);
     }
 
@@ -9031,46 +9033,9 @@ fn bind_creation_positional_dimension<'py>(
             }
             return Err(creation_dimension_type_error(function, dimension)?);
         };
-        if is_creation_bool_dimension(&indexed)? {
-            return Err(creation_dimension_type_error(function, &indexed)?);
-        }
         indexed
     };
     Ok(PendingCreationSize::PositionalScalar(indexed))
-}
-
-fn bind_creation_positional_dimensions<'py>(
-    function: &str,
-    dimensions: Vec<Bound<'py, PyAny>>,
-) -> PyResult<PendingCreationSize<'py>> {
-    let mut indexed_dimensions = try_size_vector(dimensions.len())?;
-    for (index, dimension) in dimensions.into_iter().enumerate() {
-        let position = index + 1;
-        if is_creation_bool_dimension(&dimension)? {
-            return Err(creation_dimension_type_error(function, &dimension)?);
-        }
-
-        let indexed = if dimension.is_instance_of::<PyInt>() {
-            dimension
-        } else {
-            let indexed = PyModule::import(dimension.py(), "operator")
-                .and_then(|operator| operator.getattr("index"))
-                .and_then(|index| index.call1((&dimension,)));
-            let Ok(indexed) = indexed else {
-                return Err(creation_dimension_unpack_type_error(
-                    function, &dimension, position,
-                )?);
-            };
-            if is_creation_bool_dimension(&indexed)? {
-                return Err(creation_dimension_type_error(function, &indexed)?);
-            }
-            indexed
-        };
-        try_push_size(&mut indexed_dimensions, indexed)?;
-    }
-    Ok(PendingCreationSize::PositionalDimensions(
-        indexed_dimensions,
-    ))
 }
 
 fn finish_creation_size(
@@ -9113,9 +9078,11 @@ fn finish_creation_positional_dimensions(
 ) -> PyResult<ParsedCreationSize> {
     let mut signed_dimensions = try_size_vector(dimensions.len())?;
     for (index, dimension) in dimensions.iter().enumerate() {
+        let position = index + 1;
+        let dimension = index_creation_dimension(function, dimension, position)?;
         try_push_size(
             &mut signed_dimensions,
-            extract_creation_dimension(function, dimension, index + 1)?,
+            extract_creation_dimension(function, &dimension, position)?,
         )?;
     }
 
@@ -9143,6 +9110,25 @@ fn finish_creation_positional_dimensions(
     })
 }
 
+fn index_creation_dimension<'py>(
+    function: &str,
+    dimension: &Bound<'py, PyAny>,
+    position: usize,
+) -> PyResult<Bound<'py, PyAny>> {
+    if dimension.is_instance_of::<PyInt>() {
+        return Ok(dimension.clone());
+    }
+    let indexed = PyModule::import(dimension.py(), "operator")
+        .and_then(|operator| operator.getattr("index"))
+        .and_then(|index| index.call1((dimension,)));
+    match indexed {
+        Ok(indexed) => Ok(indexed),
+        Err(_) => Err(creation_dimension_unpack_type_error(
+            function, dimension, position,
+        )?),
+    }
+}
+
 fn extract_creation_dimension(
     function: &str,
     dimension: &Bound<'_, PyAny>,
@@ -9160,20 +9146,10 @@ fn creation_dimension_type_error(function: &str, dimension: &Bound<'_, PyAny>) -
     )))
 }
 
-fn is_creation_bool_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<bool> {
-    if dimension.is_instance_of::<PyBool>() {
-        return Ok(true);
-    }
-    if dimension.is_instance_of::<PyInt>() {
-        return Ok(false);
-    }
-    let Ok(numpy) = PyModule::import(dimension.py(), "numpy") else {
-        return Ok(false);
-    };
-    let Ok(numpy_bool) = numpy.getattr("bool_") else {
-        return Ok(false);
-    };
-    dimension.is_instance(&numpy_bool)
+fn creation_leading_bool_variadic_size_error(function: &str, count: usize) -> PyErr {
+    PyTypeError::new_err(format!(
+        "{function}() takes 1 positional argument but {count} were given"
+    ))
 }
 
 fn creation_dimension_unpack_type_error(
@@ -16720,6 +16696,14 @@ fn scalar_creation_error(error: &TensorError, scalar_dimension: Option<usize>) -
         ))
     } else {
         tensor_error(error)
+    }
+}
+
+fn creation_size_error(error: &TensorError, size: &ParsedCreationSize) -> PyErr {
+    if size.scalar_dimension.is_some() {
+        scalar_creation_error(error, size.scalar_dimension)
+    } else {
+        creation_shape_error(error, &size.dimensions)
     }
 }
 

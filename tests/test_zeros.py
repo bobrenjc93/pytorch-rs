@@ -90,12 +90,19 @@ class ZerosTests(unittest.TestCase):
                 return self.value
 
         custom = IndexDimension(2)
-        dimensions = (IntSubclass(2), np.int64(2), np.uint32(2), custom)
-        for dimension in dimensions:
+        dimensions = (
+            (IntSubclass(2), (2,)),
+            (np.int64(2), (2,)),
+            (np.uint32(2), (2,)),
+            (np.bool_(True), (1,)),
+            (np.bool_(False), (0,)),
+            (custom, (2,)),
+        )
+        for dimension, expected_shape in dimensions:
             with self.subTest(dimension=dimension):
                 self.assert_tensor_matches(
                     torch.zeros(dimension),
-                    torch.zeros((2,)),
+                    torch.zeros(expected_shape),
                 )
         self.assert_tensor_matches(
             torch.zeros(IntSubclass(2), np.int64(3), custom),
@@ -142,11 +149,7 @@ class ZerosTests(unittest.TestCase):
                 ):
                     call()
 
-        for dimension, type_name in (
-            (True, "bool"),
-            (False, "bool"),
-            (np.bool_(True), "numpy.bool"),
-        ):
+        for dimension, type_name in ((True, "bool"), (False, "bool")):
             with self.subTest(dimension=dimension):
                 with self.assertRaisesRegex(
                     TypeError,
@@ -154,12 +157,22 @@ class ZerosTests(unittest.TestCase):
                 ):
                     torch.zeros(dimension)
 
-        for call in (
-            lambda: torch.zeros(2, True),
-            lambda: torch.zeros(2, np.bool_(True)),
+        for call, expected in (
+            (lambda: torch.zeros(2, True), torch.zeros((2, 1))),
+            (lambda: torch.zeros(2, False), torch.zeros((2, 0))),
+            (lambda: torch.zeros(2, 3, True), torch.zeros((2, 3, 1))),
+            (lambda: torch.zeros(np.bool_(True), 2), torch.zeros((1, 2))),
+            (lambda: torch.zeros(2, np.bool_(False)), torch.zeros((2, 0))),
         ):
             with self.subTest(call=call):
-                with self.assertRaises(TypeError):
+                self.assert_tensor_matches(call(), expected)
+
+        for call in (lambda: torch.zeros(True, 2), lambda: torch.zeros(False, 2)):
+            with self.subTest(call=call):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    re.escape("zeros() takes 1 positional argument but 2 were given"),
+                ):
                     call()
 
         for dimension in (
@@ -188,6 +201,20 @@ class ZerosTests(unittest.TestCase):
             ),
         ):
             torch.zeros(sys.maxsize)
+
+        for call, message in (
+            (
+                lambda: torch.zeros(2, sys.maxsize),
+                f"Storage size calculation overflowed with sizes=[2, {sys.maxsize}]",
+            ),
+            (
+                lambda: torch.zeros(sys.maxsize, 2),
+                f"Storage size calculation overflowed with sizes=[{sys.maxsize}, 2]",
+            ),
+        ):
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(RuntimeError, re.escape(message)):
+                    call()
 
     def test_existing_sequence_and_keyword_forms_are_unchanged(self):
         class CustomSequence(Sequence):
@@ -273,6 +300,55 @@ class ZerosTests(unittest.TestCase):
             with self.subTest(message=message):
                 with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
                     call()
+
+    def test_variadic_factory_options_are_validated_before_dimensions(self):
+        class BadIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                raise AssertionError("__index__ should not be called")
+
+        cases = (
+            (
+                "out",
+                lambda dimension: torch.zeros(2, dimension, out=[]),
+                "zeros(): argument 'out' must be Tensor, not list",
+            ),
+            (
+                "dtype",
+                lambda dimension: torch.zeros(2, dimension, dtype=object()),
+                "zeros(): argument 'dtype' must be torch.dtype, not object",
+            ),
+            (
+                "device",
+                lambda dimension: torch.zeros(2, dimension, device=object()),
+                "zeros(): argument 'device' must be torch.device or str, not object",
+            ),
+            (
+                "requires_grad",
+                lambda dimension: torch.zeros(2, dimension, requires_grad=1),
+                "zeros(): argument 'requires_grad' must be bool, not int",
+            ),
+            (
+                "unexpected",
+                lambda dimension: torch.zeros(2, dimension, unexpected=True),
+                "zeros() got an unexpected keyword argument 'unexpected'",
+            ),
+        )
+        for case, call, message in cases:
+            with self.subTest(case=case):
+                dimension = BadIndex()
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    call(dimension)
+                self.assertEqual(dimension.calls, 0)
+
+        with self.assertRaisesRegex(
+            TypeError,
+            re.escape("zeros(): argument 'dtype' must be torch.dtype, not object"),
+        ):
+            torch.zeros(2, 3.0, dtype=object())
 
 
 if __name__ == "__main__":
