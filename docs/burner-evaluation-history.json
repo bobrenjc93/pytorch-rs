@@ -9044,6 +9044,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 92
       }
+    },
+    {
+      "key": "pr:1572",
+      "recordedAt": "2026-09-01T13:13:07.896Z",
+      "label": "PR #1572",
+      "kind": "leaf",
+      "prNumber": 1572,
+      "title": "Support middle-dimension public unsqueeze views",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 94,
+        "eval_39340456": 94.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 92
+      }
     }
   ]
 }
