@@ -34,6 +34,7 @@ def _backend_preferences():
         backend.flash_sdp_enabled(),
         backend.math_sdp_enabled(),
         backend.mem_efficient_sdp_enabled(),
+        backend.cudnn_sdp_enabled(),
         backend.fp16_bf16_reduction_math_sdp_allowed(),
     )
 
@@ -47,6 +48,7 @@ def _restore_backend_preferences(snapshot):
         flash_sdp,
         math_sdp,
         mem_efficient_sdp,
+        cudnn_sdp,
         fp16_bf16_reduction,
     ) = snapshot
     backend.matmul.allow_tf32 = allow_tf32
@@ -55,6 +57,7 @@ def _restore_backend_preferences(snapshot):
     backend.enable_flash_sdp(flash_sdp)
     backend.enable_math_sdp(math_sdp)
     backend.enable_mem_efficient_sdp(mem_efficient_sdp)
+    backend.enable_cudnn_sdp(cudnn_sdp)
     backend.allow_fp16_bf16_reduction_math_sdp(fp16_bf16_reduction)
 
 
@@ -306,8 +309,9 @@ class CudaProbeTests(unittest.TestCase):
         backend.enable_flash_sdp(False)
         backend.enable_math_sdp(False)
         backend.enable_mem_efficient_sdp(False)
+        backend.enable_cudnn_sdp(False)
         backend.allow_fp16_bf16_reduction_math_sdp(True)
-        expected = (True, False, False, False, False, False, True)
+        expected = (True, False, False, False, False, False, False, True)
         self.assertEqual(_backend_preferences(), expected)
 
         self.assertIs(torch.cuda.is_available(), False)

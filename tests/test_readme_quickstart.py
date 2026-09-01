@@ -144,6 +144,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
             "`torch.accelerator.max_memory_reserved`",
             "`torch.backends.nnpack.set_flags`",
             "`torch.backends.cuda.enable_flash_sdp`",
+            "`torch.backends.cuda.enable_cudnn_sdp`",
             "`torch.backends.cudnn.benchmark_limit`",
             "`torch.backends.mha.get_fastpath_enabled`",
         ),
