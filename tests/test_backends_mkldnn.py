@@ -3,18 +3,22 @@ import importlib
 import inspect
 import os
 import pickle
-import re
 import subprocess
 import sys
 import threading
 import types
 import unittest
+import warnings
 from unittest import mock
 
 import torch_rs as torch
 
 
 FUNCTION_DOC = "Return whether PyTorch is built with MKL-DNN support."
+DEPRECATED_HAS_MKLDNN_WARNING = (
+    "'has_mkldnn' is deprecated, please use "
+    "'torch_rs.backends.mkldnn.is_available()'"
+)
 BACKEND_MODULES = {
     "cpu",
     "cuda",
@@ -34,11 +38,15 @@ class MkldnnAvailabilityTests(unittest.TestCase):
     def test_returns_exact_false_native_build_flag_without_probes(self):
         function = torch.backends.mkldnn.is_available
         self.assertEqual(
-            function.__code__.co_names,
-            ("torch", "_C", "has_mkldnn"),
+            function.__func__.__code__.co_names,
+            ("is_available",),
         )
-        self.assertEqual(function.__code__.co_freevars, ())
-        self.assertEqual(function.__code__.co_cellvars, ())
+        self.assertEqual(
+            torch.backends.mkldnn.m.is_available.__code__.co_names,
+            ("torch", "_C", "_has_mkldnn"),
+        )
+        self.assertEqual(function.__func__.__code__.co_freevars, ())
+        self.assertEqual(function.__func__.__code__.co_cellvars, ())
 
         environments = (
             {},
@@ -60,15 +68,21 @@ class MkldnnAvailabilityTests(unittest.TestCase):
                     result = function()
                     self.assertIs(type(result), bool)
                     self.assertIs(result, False)
-                    self.assertIs(result, torch._C.has_mkldnn)
-                    self.assertIs(result, torch.has_mkldnn)
+                    self.assertIs(result, torch._C._has_mkldnn)
 
         self.assertIs(torch.has_mkl, False)
         self.assertIs(torch._C.has_mkl, torch.has_mkl)
         self.assertIs(torch.has_lapack, False)
         self.assertIs(torch._C.has_lapack, torch.has_lapack)
-        self.assertEqual(torch._C.__all__.count("has_mkldnn"), 1)
-        self.assertEqual(torch.__all__.count("has_mkldnn"), 1)
+        self.assertFalse(hasattr(torch._C, "has_mkldnn"))
+        self.assertEqual(torch._C.__all__.count("_has_mkldnn"), 0)
+        self.assertNotIn("has_mkldnn", torch.__all__)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            self.assertIs(torch.has_mkldnn, False)
+        self.assertEqual([str(warning.message) for warning in caught], [
+            DEPRECATED_HAS_MKLDNN_WARNING
+        ])
 
     def test_signature_documentation_and_module_identity_match_pytorch_2_13(self):
         mkldnn = importlib.import_module("torch_rs.backends.mkldnn")
@@ -76,24 +90,28 @@ class MkldnnAvailabilityTests(unittest.TestCase):
 
         self.assertIs(torch.backends.mkldnn, mkldnn)
         self.assertIs(sys.modules["torch_rs.backends.mkldnn"], mkldnn)
-        self.assertIs(type(mkldnn), types.ModuleType)
+        self.assertIsInstance(mkldnn, types.ModuleType)
+        self.assertEqual(type(mkldnn).__name__, "MkldnnModule")
         self.assertIsNone(mkldnn.__doc__)
         self.assertFalse(hasattr(mkldnn, "__all__"))
         self.assertEqual(
             {name for name in vars(mkldnn) if not name.startswith("_")},
-            {"is_available", "torch"},
+            {"m"},
         )
-        self.assertIs(mkldnn.torch, torch)
-        self.assertIs(type(function), types.FunctionType)
+        self.assertIs(mkldnn.m.torch, torch)
+        self.assertIs(type(mkldnn.m.is_available), types.FunctionType)
+        self.assertEqual(mkldnn.m.is_available.__doc__, FUNCTION_DOC)
+        self.assertIs(type(function), types.MethodType)
+        self.assertIs(function.__self__, mkldnn)
         self.assertEqual(str(inspect.signature(function)), "()")
         self.assertEqual(inspect.get_annotations(function), {})
         self.assertEqual(function.__name__, "is_available")
-        self.assertEqual(function.__qualname__, "is_available")
+        self.assertEqual(function.__qualname__, "MkldnnModule.is_available")
         self.assertEqual(function.__module__, "torch_rs.backends.mkldnn")
         self.assertIs(inspect.getmodule(function), mkldnn)
-        self.assertEqual(function.__doc__, FUNCTION_DOC)
-        self.assertIsNone(function.__defaults__)
-        self.assertIsNone(function.__kwdefaults__)
+        self.assertIsNone(function.__doc__)
+        self.assertIsNone(function.__func__.__defaults__)
+        self.assertIsNone(function.__func__.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
         self.assertFalse(hasattr(function, "__text_signature__"))
 
@@ -127,27 +145,31 @@ class MkldnnAvailabilityTests(unittest.TestCase):
 
         self.assertIs(package_import["backends"], backends)
         self.assertIs(backend_import["mkldnn"], mkldnn)
-        self.assertIs(function_import["is_available"], function)
+        self.assertEqual(function_import["is_available"], function)
+        self.assertIs(function_import["is_available"].__self__, mkldnn)
         self.assertIs(parent_wildcard["mkldnn"], mkldnn)
         self.assertEqual(
             {name for name in child_wildcard if not name.startswith("__")},
-            {"is_available", "torch"},
+            {"m"},
         )
-        self.assertIs(child_wildcard["is_available"], function)
-        self.assertIs(child_wildcard["torch"], torch)
+        self.assertIs(child_wildcard["m"], mkldnn.m)
         self.assertNotIn("backends", torch.__all__)
         self.assertNotIn("mkldnn", torch.__all__)
+        self.assertNotIn("has_mkldnn", torch.__all__)
         self.assertNotIn("backends", top_level_wildcard)
         self.assertNotIn("mkldnn", top_level_wildcard)
-        self.assertIs(top_level_wildcard["has_mkldnn"], torch.has_mkldnn)
+        self.assertNotIn("has_mkldnn", top_level_wildcard)
 
-        self.assertIs(copy.copy(function), function)
-        self.assertIs(copy.deepcopy(function), function)
+        copied = copy.copy(function)
+        self.assertEqual(copied, function)
+        self.assertIsNot(copied, function)
+        self.assertIs(copied.__self__, mkldnn)
+        with self.assertRaisesRegex(TypeError, "MkldnnModule"):
+            copy.deepcopy(function)
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             with self.subTest(protocol=protocol):
-                payload = pickle.dumps(function, protocol=protocol)
-                self.assertIn(b"torch_rs.backends.mkldnn", payload)
-                self.assertIs(pickle.loads(payload), function)
+                with self.assertRaisesRegex(TypeError, "MkldnnModule"):
+                    pickle.dumps(function, protocol=protocol)
 
     def test_value_and_identity_are_stable_across_threads(self):
         function = torch.backends.mkldnn.is_available
@@ -163,8 +185,8 @@ class MkldnnAvailabilityTests(unittest.TestCase):
                 results[index] = (
                     value,
                     type(value) is bool,
-                    value is torch._C.has_mkldnn,
-                    function is torch.backends.mkldnn.is_available,
+                    value is torch._C._has_mkldnn,
+                    function == torch.backends.mkldnn.is_available,
                 )
             except BaseException as error:
                 errors.append(error)
@@ -187,62 +209,61 @@ class MkldnnAvailabilityTests(unittest.TestCase):
         native = torch._C
         backends = torch.backends
         mkldnn = backends.mkldnn
-        namespace = mkldnn.__dict__
         old_function = mkldnn.is_available
 
         reloaded = importlib.reload(mkldnn)
-        function = mkldnn.is_available
+        function = reloaded.is_available
 
-        self.assertIs(reloaded, mkldnn)
-        self.assertIs(mkldnn.__dict__, namespace)
-        self.assertIs(backends.mkldnn, mkldnn)
-        self.assertIs(sys.modules[mkldnn.__name__], mkldnn)
+        self.assertIsNot(reloaded, mkldnn)
+        self.assertIs(backends.mkldnn, reloaded)
+        self.assertIs(sys.modules[reloaded.__name__], reloaded)
         self.assertIsNot(function, old_function)
-        self.assertIs(function(), native.has_mkldnn)
+        self.assertEqual(function, reloaded.is_available)
+        self.assertIs(function(), native._has_mkldnn)
         self.assertIs(function(), False)
-        self.assertIs(copy.copy(function), function)
-        self.assertIs(copy.deepcopy(function), function)
-        self.assertIs(pickle.loads(pickle.dumps(function)), function)
-        with self.assertRaises(pickle.PicklingError) as raised:
+        copied = copy.copy(function)
+        self.assertEqual(copied, function)
+        self.assertIsNot(copied, function)
+        self.assertIs(copied.__self__, reloaded)
+        with self.assertRaisesRegex(TypeError, "MkldnnModule"):
+            copy.deepcopy(function)
+        with self.assertRaisesRegex(TypeError, "MkldnnModule"):
+            pickle.dumps(function)
+        with self.assertRaisesRegex(TypeError, "MkldnnModule"):
             pickle.dumps(old_function)
-        message = re.sub(r"0x[0-9a-fA-F]+", "0x...", str(raised.exception))
-        self.assertEqual(
-            message,
-            "Can't pickle <function is_available at 0x...>: "
-            "it's not the same object as "
-            "torch_rs.backends.mkldnn.is_available",
-        )
 
         self.assertIs(importlib.reload(package), package)
         self.assertIs(package._C, native)
         self.assertIs(package.backends, backends)
-        self.assertIs(backends.mkldnn, mkldnn)
-        self.assertIs(mkldnn.is_available, function)
-        self.assertIs(mkldnn.is_available(), False)
+        self.assertIs(backends.mkldnn.is_available(), False)
 
         self.assertIs(importlib.reload(native), native)
         self.assertIs(package._C, native)
-        self.assertIs(native.has_mkldnn, False)
-        self.assertIs(mkldnn.is_available(), native.has_mkldnn)
+        self.assertIs(native._has_mkldnn, False)
+        self.assertIs(backends.mkldnn.is_available(), native._has_mkldnn)
 
     def test_rejects_arguments_with_pytorch_2_13_errors(self):
         function = torch.backends.mkldnn.is_available
         cases = (
             (
                 lambda: function(None),
-                "is_available() takes 0 positional arguments but 1 was given",
+                "MkldnnModule.is_available() takes 1 positional argument but "
+                "2 were given",
             ),
             (
                 lambda: function(None, None),
-                "is_available() takes 0 positional arguments but 2 were given",
+                "MkldnnModule.is_available() takes 1 positional argument but "
+                "3 were given",
             ),
             (
                 lambda: function(enabled=True),
-                "is_available() got an unexpected keyword argument 'enabled'",
+                "MkldnnModule.is_available() got an unexpected keyword "
+                "argument 'enabled'",
             ),
             (
                 lambda: function(None, enabled=True),
-                "is_available() got an unexpected keyword argument 'enabled'",
+                "MkldnnModule.is_available() got an unexpected keyword "
+                "argument 'enabled'",
             ),
         )
         for call, message in cases:
@@ -327,9 +348,12 @@ from torch_rs.backends import mkldnn
 from torch_rs.backends.mkldnn import is_available
 
 assert torch.backends.mkldnn is mkldnn
-assert mkldnn.is_available is is_available
-assert is_available.__code__.co_names == ("torch", "_C", "has_mkldnn")
-assert is_available() is torch._C.has_mkldnn is torch.has_mkldnn is False
+assert mkldnn.is_available == is_available
+assert is_available.__func__.__code__.co_names == ("is_available",)
+assert mkldnn.m.is_available.__code__.co_names == ("torch", "_C", "_has_mkldnn")
+assert is_available() is torch._C._has_mkldnn is False
+assert not hasattr(torch._C, "has_mkldnn")
+assert "has_mkldnn" not in torch.__all__
 assert torch.has_mkl is torch._C.has_mkl is False
 assert torch.has_lapack is torch._C.has_lapack is False
 assert not hasattr(mkldnn, "enabled")

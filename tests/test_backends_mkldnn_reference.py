@@ -2,12 +2,11 @@ import copy
 import importlib
 import inspect
 import pickle
-import pickletools
-import re
 import sys
 import types
 import typing
 import unittest
+import warnings
 
 import torch_rs as torch
 
@@ -36,17 +35,38 @@ class MkldnnAvailabilityReferenceTests(unittest.TestCase):
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
-    def pickle_shape(self, function, protocol):
-        shape = []
-        for opcode, argument, _ in pickletools.genops(
-            pickle.dumps(function, protocol=protocol)
-        ):
-            if opcode.name == "FRAME":
-                argument = "<frame length>"
-            elif isinstance(argument, str):
-                argument = argument.replace("torch_rs", "torch")
-            shape.append((opcode.name, argument))
-        return shape
+    def normalize(self, value):
+        return str(value).replace("torch_rs", "torch")
+
+    def exception_contract(self, callback):
+        try:
+            callback()
+        except Exception as error:
+            return type(error).__name__, self.normalize(error)
+        self.fail("expected an exception")
+
+    def copy_contract(self, function):
+        copied = copy.copy(function)
+        return (
+            copied == function,
+            copied is function,
+            copied.__self__ is function.__self__,
+            type(copied).__name__,
+        )
+
+    def deprecated_has_mkldnn_contract(self, root):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            value = root.has_mkldnn
+        return (
+            type(value).__name__,
+            name := "has_mkldnn",
+            name in vars(root),
+            root.__all__.count(name),
+            len(caught),
+            type(caught[0].message).__name__,
+            self.normalize(caught[0].message),
+        )
 
     def test_value_and_native_flag_match_pytorch_2_13_shape(self):
         actual_module = importlib.import_module("torch_rs.backends.mkldnn")
@@ -56,11 +76,28 @@ class MkldnnAvailabilityReferenceTests(unittest.TestCase):
 
         self.assertIs(type(actual), bool)
         self.assertIs(type(expected), bool)
-        self.assertIs(actual, torch._C.has_mkldnn)
-        self.assertIs(expected, reference_torch._C.has_mkldnn)
+        self.assertIs(actual, torch._C._has_mkldnn)
+        self.assertIs(expected, reference_torch._C._has_mkldnn)
         self.assertIs(actual, False)
         self.assertIs(torch.has_mkl, False)
         self.assertIs(torch.has_lapack, False)
+        self.assertEqual(
+            self.deprecated_has_mkldnn_contract(torch),
+            (
+                "bool",
+                "has_mkldnn",
+                False,
+                0,
+                1,
+                "UserWarning",
+                "'has_mkldnn' is deprecated, please use "
+                "'torch.backends.mkldnn.is_available()'",
+            ),
+        )
+        self.assertEqual(
+            self.deprecated_has_mkldnn_contract(torch),
+            self.deprecated_has_mkldnn_contract(reference_torch),
+        )
 
     def test_signature_documentation_and_identity_match_pytorch_2_13(self):
         actual_module = importlib.import_module("torch_rs.backends.mkldnn")
@@ -72,8 +109,9 @@ class MkldnnAvailabilityReferenceTests(unittest.TestCase):
         self.assertIs(reference_torch.backends.mkldnn, expected_module)
         self.assertIs(sys.modules[actual_module.__name__], actual_module)
         self.assertIs(sys.modules[expected_module.__name__], expected_module)
-        self.assertIs(type(actual_module), types.ModuleType)
-        self.assertIs(type(expected_module), types.ModuleType)
+        self.assertIsInstance(actual_module, types.ModuleType)
+        self.assertIsInstance(expected_module, types.ModuleType)
+        self.assertEqual(type(actual_module).__name__, type(expected_module).__name__)
         self.assertEqual(actual_module.__doc__, expected_module.__doc__)
         self.assertEqual(
             hasattr(actual_module, "__all__"),
@@ -81,12 +119,19 @@ class MkldnnAvailabilityReferenceTests(unittest.TestCase):
         )
         self.assertEqual(
             {name for name in vars(actual_module) if not name.startswith("_")},
-            {"is_available", "torch"},
+            {
+                name
+                for name in vars(expected_module)
+                if not name.startswith("_") and name in {"m"}
+            },
         )
-        self.assertIs(actual_module.torch, torch)
+        self.assertIs(actual_module.m.torch, torch)
+        self.assertIs(expected_module.m.torch, reference_torch)
 
-        self.assertIs(type(actual), types.FunctionType)
-        self.assertIs(type(expected), types.FunctionType)
+        self.assertIs(type(actual), types.MethodType)
+        self.assertIs(type(expected), types.MethodType)
+        self.assertIs(actual.__self__, actual_module)
+        self.assertIs(expected.__self__, expected_module)
         self.assertEqual(str(inspect.signature(actual)), str(inspect.signature(expected)))
         self.assertEqual(inspect.get_annotations(actual), inspect.get_annotations(expected))
         self.assertEqual(typing.get_type_hints(actual), typing.get_type_hints(expected))
@@ -106,9 +151,15 @@ class MkldnnAvailabilityReferenceTests(unittest.TestCase):
             hasattr(actual, "__text_signature__"),
             hasattr(expected, "__text_signature__"),
         )
-        self.assertEqual(actual.__code__.co_names, expected.__code__.co_names)
-        self.assertEqual(actual.__code__.co_freevars, expected.__code__.co_freevars)
-        self.assertEqual(actual.__code__.co_cellvars, expected.__code__.co_cellvars)
+        self.assertEqual(actual.__func__.__code__.co_names, expected.__func__.__code__.co_names)
+        self.assertEqual(
+            actual.__func__.__code__.co_freevars,
+            expected.__func__.__code__.co_freevars,
+        )
+        self.assertEqual(
+            actual.__func__.__code__.co_cellvars,
+            expected.__func__.__code__.co_cellvars,
+        )
 
     def test_imports_wildcards_copying_and_pickling_match_supported_scope(self):
         actual_backends = importlib.import_module("torch_rs.backends")
@@ -143,7 +194,8 @@ class MkldnnAvailabilityReferenceTests(unittest.TestCase):
                 function_import,
             )
             self.assertIs(backend_import["mkldnn"], module)
-            self.assertIs(function_import["is_available"], function)
+            self.assertEqual(function_import["is_available"], function)
+            self.assertIs(function_import["is_available"].__self__, module)
 
         actual_parent_wildcard = {}
         expected_parent_wildcard = {}
@@ -171,33 +223,29 @@ class MkldnnAvailabilityReferenceTests(unittest.TestCase):
             {
                 name
                 for name in expected_child_wildcard
-                if name in {"is_available", "torch"}
+                if name in {"m"}
             },
         )
-        self.assertIs(actual_child_wildcard["is_available"], actual)
-        self.assertIs(actual_child_wildcard["torch"], torch)
+        self.assertIs(actual_child_wildcard["m"], actual_module.m)
 
         for root in (torch, reference_torch):
             namespace = {}
             exec(f"from {root.__name__} import *", namespace)
             self.assertNotIn("backends", namespace)
             self.assertNotIn("mkldnn", namespace)
+            self.assertNotIn("has_mkldnn", namespace)
             self.assertFalse(hasattr(root, "mkldnn"))
 
-        self.assertIs(copy.copy(actual), actual)
-        self.assertIs(copy.copy(expected), expected)
-        self.assertIs(copy.deepcopy(actual), actual)
-        self.assertIs(copy.deepcopy(expected), expected)
+        self.assertEqual(self.copy_contract(actual), self.copy_contract(expected))
+        self.assertEqual(
+            self.exception_contract(lambda: copy.deepcopy(actual)),
+            self.exception_contract(lambda: copy.deepcopy(expected)),
+        )
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             with self.subTest(protocol=protocol):
-                self.assertIs(pickle.loads(pickle.dumps(actual, protocol)), actual)
-                self.assertIs(
-                    pickle.loads(pickle.dumps(expected, protocol)),
-                    expected,
-                )
                 self.assertEqual(
-                    self.pickle_shape(actual, protocol),
-                    self.pickle_shape(expected, protocol),
+                    self.exception_contract(lambda: pickle.dumps(actual, protocol)),
+                    self.exception_contract(lambda: pickle.dumps(expected, protocol)),
                 )
 
     def reload_contract(self, root):
@@ -205,33 +253,21 @@ class MkldnnAvailabilityReferenceTests(unittest.TestCase):
         module = importlib.import_module(f"{root.__name__}.backends.mkldnn")
         self.assertIs(parent.mkldnn, module)
         old_function = module.is_available
-        namespace = module.__dict__
         reloaded = importlib.reload(module)
-        new_function = module.is_available
-
-        try:
-            pickle.dumps(old_function)
-        except Exception as error:
-            stale_pickle_error = (
-                type(error).__name__,
-                re.sub(r"0x[0-9a-fA-F]+", "0x...", str(error)).replace(
-                    "torch_rs", "torch"
-                ),
-            )
-        else:
-            self.fail("a stale MKLDNN availability query remained pickleable")
+        current_module = importlib.import_module(f"{root.__name__}.backends.mkldnn")
+        setattr(parent, "mkldnn", current_module)
+        new_function = current_module.is_available
+        native_flag = root._C._has_mkldnn
 
         return (
-            reloaded is module,
-            module.__dict__ is namespace,
-            parent.mkldnn is module,
-            sys.modules[module.__name__] is module,
+            reloaded is current_module,
+            sys.modules[current_module.__name__] is current_module,
             old_function is not new_function,
-            new_function() is root._C.has_mkldnn,
-            copy.copy(new_function) is new_function,
-            copy.deepcopy(new_function) is new_function,
-            pickle.loads(pickle.dumps(new_function)) is new_function,
-            stale_pickle_error,
+            new_function() is native_flag,
+            type(new_function).__name__,
+            type(current_module).__name__,
+            self.exception_contract(lambda: pickle.dumps(old_function)),
+            self.exception_contract(lambda: pickle.dumps(new_function)),
         )
 
     def test_reload_behavior_matches_pytorch_2_13(self):
@@ -244,8 +280,8 @@ class MkldnnAvailabilityReferenceTests(unittest.TestCase):
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             with self.subTest(protocol=protocol):
                 self.assertEqual(
-                    self.pickle_shape(actual, protocol),
-                    self.pickle_shape(expected, protocol),
+                    self.exception_contract(lambda: pickle.dumps(actual, protocol)),
+                    self.exception_contract(lambda: pickle.dumps(expected, protocol)),
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
@@ -270,9 +306,13 @@ class MkldnnAvailabilityReferenceTests(unittest.TestCase):
 
         self.assertEqual(
             {name for name in vars(actual) if not name.startswith("_")},
-            {"is_available", "torch"},
+            {
+                name
+                for name in vars(expected)
+                if not name.startswith("_") and name in {"m"}
+            },
         )
-        self.assertIn("is_available", vars(expected))
+        self.assertIn("is_available", vars(expected.m))
         for name in (
             "VERBOSE_OFF",
             "VERBOSE_ON",

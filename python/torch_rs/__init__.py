@@ -6,6 +6,7 @@ import functools as _functools
 import multiprocessing.reduction as _multiprocessing_reduction
 import sys as _sys
 import types as _types
+import warnings as _warnings
 from math import e, inf, nan, pi
 
 from . import torch_rs as _native
@@ -546,6 +547,23 @@ from .functional import atleast_2d as atleast_2d
 from .functional import atleast_3d as atleast_3d
 from .functional import broadcast_shapes as broadcast_shapes
 from .functional import broadcast_tensors as broadcast_tensors
+
+_deprecated_attrs = {
+    "has_mkldnn": backends.mkldnn.is_available,
+}
+
+
+def __getattr__(name):
+    replacement = _deprecated_attrs.get(name)
+    if replacement is not None:
+        _warnings.warn(
+            f"'{name}' is deprecated, please use "
+            f"'{replacement.__module__}.{replacement.__name__}()'",
+            stacklevel=2,
+        )
+        return replacement()
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
 
 del (
     _copyreg,

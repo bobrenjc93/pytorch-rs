@@ -1,5 +1,6 @@
 import importlib
 import unittest
+import warnings
 
 import torch_rs as torch
 
@@ -12,7 +13,6 @@ except ImportError:
 CAPABILITY_NAMES = (
     "has_openmp",
     "has_mkl",
-    "has_mkldnn",
     "has_lapack",
     "has_spectral",
 )
@@ -26,6 +26,9 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
             raise AssertionError(
                 "native build capability differentials require pinned PyTorch 2.13.0"
             )
+
+    def normalize(self, value):
+        return str(value).replace("torch_rs", "torch")
 
     def metadata_contract(self, module):
         native = module._C
@@ -62,6 +65,43 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
                 self.assertIs(actual, False)
                 self.assertIs(type(actual), bool)
                 self.assertIs(type(expected), bool)
+
+    def deprecated_has_mkldnn_contract(self, module):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            value = module.has_mkldnn
+        return (
+            type(value).__name__,
+            "has_mkldnn" in vars(module),
+            module.__all__.count("has_mkldnn"),
+            hasattr(module._C, "has_mkldnn"),
+            hasattr(module._C, "_has_mkldnn"),
+            len(caught),
+            type(caught[0].message).__name__,
+            self.normalize(caught[0].message),
+        )
+
+    def test_deprecated_has_mkldnn_alias_matches_pytorch_2_13_shape(self):
+        self.assertIs(torch.backends.mkldnn.is_available(), False)
+        self.assertIs(torch._C._has_mkldnn, False)
+        self.assertEqual(
+            self.deprecated_has_mkldnn_contract(torch),
+            (
+                "bool",
+                False,
+                0,
+                False,
+                True,
+                1,
+                "UserWarning",
+                "'has_mkldnn' is deprecated, please use "
+                "'torch.backends.mkldnn.is_available()'",
+            ),
+        )
+        self.assertEqual(
+            self.deprecated_has_mkldnn_contract(torch),
+            self.deprecated_has_mkldnn_contract(reference_torch),
+        )
 
     def native_reload_contract(self, module):
         native = module._C
@@ -158,6 +198,8 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
                 actual_expected = (
                     torch._nnpack_available()
                     if backend == "nnpack"
+                    else torch._C._has_mkldnn
+                    if backend == "mkldnn"
                     else getattr(torch._C, f"has_{backend}")
                 )
                 self.assertIs(actual.is_available(), actual_expected)

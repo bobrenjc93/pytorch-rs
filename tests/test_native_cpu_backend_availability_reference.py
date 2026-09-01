@@ -20,7 +20,7 @@ except ImportError:
 BACKENDS = {
     "openmp": "has_openmp",
     "mkl": "has_mkl",
-    "mkldnn": "has_mkldnn",
+    "mkldnn": "_has_mkldnn",
     "nnpack": None,
 }
 
@@ -59,6 +59,28 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
+    def exception_contract(self, callback):
+        try:
+            callback()
+        except Exception as error:
+            return type(error).__name__, self.normalize(error)
+        self.fail("expected an exception")
+
+    def copy_contract(self, value):
+        copied = copy.copy(value)
+        return (
+            copied == value,
+            copied is value,
+            copied.__self__ is value.__self__,
+            type(copied).__name__,
+        )
+
+    def assert_deepcopy_error(self, value):
+        return self.exception_contract(lambda: copy.deepcopy(value))
+
+    def assert_pickle_error(self, value, protocol):
+        return self.exception_contract(lambda: pickle.dumps(value, protocol))
+
     def test_values_are_exact_build_specific_native_flags(self):
         for backend, flag in BACKENDS.items():
             with self.subTest(backend=backend):
@@ -78,7 +100,8 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
                     self.assertIs(expected, reference_torch._nnpack_available())
                 else:
                     self.assertIs(actual, getattr(torch._C, flag))
-                    self.assertIs(actual, getattr(torch, flag))
+                    if not flag.startswith("_"):
+                        self.assertIs(actual, getattr(torch, flag))
                     self.assertIs(expected, getattr(reference_torch._C, flag))
 
     def test_signature_documentation_and_ownership_match_pytorch_2_13(self):
@@ -99,6 +122,62 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
                     hasattr(actual_module, "__all__"),
                     hasattr(expected_module, "__all__"),
                 )
+
+                if backend == "mkldnn":
+                    self.assertIsInstance(actual_module, types.ModuleType)
+                    self.assertIsInstance(expected_module, types.ModuleType)
+                    self.assertEqual(
+                        type(actual_module).__name__,
+                        type(expected_module).__name__,
+                    )
+                    self.assertEqual(
+                        {name for name in vars(actual_module) if not name.startswith("_")},
+                        {
+                            name
+                            for name in vars(expected_module)
+                            if not name.startswith("_") and name in {"m"}
+                        },
+                    )
+                    self.assertIs(actual_module.m.torch, torch)
+                    self.assertIs(expected_module.m.torch, reference_torch)
+                    self.assertIs(type(actual), types.MethodType)
+                    self.assertIs(type(expected), types.MethodType)
+                    self.assertIs(actual.__self__, actual_module)
+                    self.assertIs(expected.__self__, expected_module)
+                    self.assertEqual(
+                        str(inspect.signature(actual)),
+                        str(inspect.signature(expected)),
+                    )
+                    self.assertEqual(
+                        inspect.get_annotations(actual),
+                        inspect.get_annotations(expected),
+                    )
+                    self.assertEqual(
+                        typing.get_type_hints(actual),
+                        typing.get_type_hints(expected),
+                    )
+                    self.assertEqual(actual.__name__, expected.__name__)
+                    self.assertEqual(actual.__qualname__, expected.__qualname__)
+                    self.assertEqual(
+                        actual.__module__.replace("torch_rs", "torch"),
+                        expected.__module__,
+                    )
+                    self.assertIs(inspect.getmodule(actual), actual_module)
+                    self.assertIs(inspect.getmodule(expected), expected_module)
+                    self.assertEqual(actual.__doc__, expected.__doc__)
+                    self.assertEqual(actual.__defaults__, expected.__defaults__)
+                    self.assertEqual(actual.__kwdefaults__, expected.__kwdefaults__)
+                    self.assertEqual(actual.__dict__, expected.__dict__)
+                    self.assertEqual(
+                        hasattr(actual, "__text_signature__"),
+                        hasattr(expected, "__text_signature__"),
+                    )
+                    self.assertEqual(
+                        actual.__func__.__code__.co_names,
+                        expected.__func__.__code__.co_names,
+                    )
+                    continue
+
                 self.assertIs(type(actual), types.FunctionType)
                 self.assertIs(type(expected), types.FunctionType)
                 self.assertEqual(
@@ -221,6 +300,8 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
                     in (
                         {"flags", "is_available", "set_flags", "torch"}
                         if backend == "nnpack"
+                        else {"m"}
+                        if backend == "mkldnn"
                         else {"is_available", "torch"}
                     )
                 }
@@ -229,19 +310,34 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
                     expected_supported_child_names,
                 )
 
-                self.assertIs(copy.copy(actual), actual)
-                self.assertIs(copy.copy(expected), expected)
-                self.assertIs(copy.deepcopy(actual), actual)
-                self.assertIs(copy.deepcopy(expected), expected)
-                for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
-                    self.assertIs(pickle.loads(pickle.dumps(actual, protocol)), actual)
-                    self.assertIs(
-                        pickle.loads(pickle.dumps(expected, protocol)), expected
+                if backend == "mkldnn":
+                    self.assertEqual(
+                        self.copy_contract(actual),
+                        self.copy_contract(expected),
                     )
                     self.assertEqual(
-                        self.pickle_shape(actual, protocol),
-                        self.pickle_shape(expected, protocol),
+                        self.assert_deepcopy_error(actual),
+                        self.assert_deepcopy_error(expected),
                     )
+                    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                        self.assertEqual(
+                            self.assert_pickle_error(actual, protocol),
+                            self.assert_pickle_error(expected, protocol),
+                        )
+                else:
+                    self.assertIs(copy.copy(actual), actual)
+                    self.assertIs(copy.copy(expected), expected)
+                    self.assertIs(copy.deepcopy(actual), actual)
+                    self.assertIs(copy.deepcopy(expected), expected)
+                    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                        self.assertIs(pickle.loads(pickle.dumps(actual, protocol)), actual)
+                        self.assertIs(
+                            pickle.loads(pickle.dumps(expected, protocol)), expected
+                        )
+                        self.assertEqual(
+                            self.pickle_shape(actual, protocol),
+                            self.pickle_shape(expected, protocol),
+                        )
 
         for module in (torch, reference_torch):
             namespace = {}
@@ -253,6 +349,23 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
         module = importlib.import_module(f"{root.__name__}.backends.{backend}")
         self.assertIs(getattr(parent, backend), module)
         old_function = module.is_available
+
+        if backend == "mkldnn":
+            reloaded = importlib.reload(module)
+            current_module = importlib.import_module(f"{root.__name__}.backends.{backend}")
+            setattr(parent, backend, current_module)
+            new_function = current_module.is_available
+            return (
+                reloaded is current_module,
+                sys.modules[current_module.__name__] is current_module,
+                old_function is not new_function,
+                new_function() is root._C._has_mkldnn,
+                type(new_function).__name__,
+                type(current_module).__name__,
+                self.exception_contract(lambda: pickle.dumps(old_function)),
+                self.exception_contract(lambda: pickle.dumps(new_function)),
+            )
+
         namespace = module.__dict__
         reloaded = importlib.reload(module)
         new_function = module.is_available
@@ -291,10 +404,16 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
                 actual = getattr(torch.backends, backend).is_available
                 expected = getattr(reference_torch.backends, backend).is_available
                 for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
-                    self.assertEqual(
-                        self.pickle_shape(actual, protocol),
-                        self.pickle_shape(expected, protocol),
-                    )
+                    if backend == "mkldnn":
+                        self.assertEqual(
+                            self.assert_pickle_error(actual, protocol),
+                            self.assert_pickle_error(expected, protocol),
+                        )
+                    else:
+                        self.assertEqual(
+                            self.pickle_shape(actual, protocol),
+                            self.pickle_shape(expected, protocol),
+                        )
 
     def test_argument_errors_match_pytorch_2_13(self):
         for backend in BACKENDS:

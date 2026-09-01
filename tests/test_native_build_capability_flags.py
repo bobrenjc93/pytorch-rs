@@ -11,7 +11,6 @@ import torch_rs as torch
 CAPABILITY_NAMES = (
     "has_openmp",
     "has_mkl",
-    "has_mkldnn",
     "has_lapack",
     "has_spectral",
 )
@@ -119,13 +118,22 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
                 self.assertIs(getattr(torch._C, name), False)
                 self.assertEqual(torch.__all__.count(name), 1)
                 self.assertEqual(torch._C.__all__.count(name), 1)
+            self.assertIs(torch._C._has_mkldnn, False)
+            self.assertFalse(hasattr(torch._C, "has_mkldnn"))
+            self.assertNotIn("_has_mkldnn", torch._C.__all__)
+            self.assertNotIn("has_mkldnn", torch.__all__)
             self.assertIs(torch.backends, backends)
             for name, module in backend_modules.items():
                 self.assertIs(getattr(torch.backends, name), module)
-                self.assertIs(module.is_available, backend_functions[name])
+                if name == "mkldnn":
+                    self.assertEqual(module.is_available, backend_functions[name])
+                else:
+                    self.assertIs(module.is_available, backend_functions[name])
                 expected = (
                     torch._nnpack_available()
                     if name == "nnpack"
+                    else torch._C._has_mkldnn
+                    if name == "mkldnn"
                     else getattr(torch._C, f"has_{name}")
                 )
                 self.assertIs(module.is_available(), expected)
@@ -142,7 +150,7 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
         for backend, flag in (
             ("openmp", "has_openmp"),
             ("mkl", "has_mkl"),
-            ("mkldnn", "has_mkldnn"),
+            ("mkldnn", "_has_mkldnn"),
             ("nnpack", None),
         ):
             with self.subTest(backend=backend):
@@ -192,12 +200,15 @@ package_wildcard = {}
 native_wildcard = {}
 exec("from torch_rs import *", package_wildcard)
 exec("from torch_rs._C import *", native_wildcard)
-for name in ("has_openmp", "has_mkl", "has_mkldnn", "has_lapack", "has_spectral"):
+for name in ("has_openmp", "has_mkl", "has_lapack", "has_spectral"):
     package_value = getattr(torch, name)
     native_value = getattr(torch._C, name)
     assert package_value is native_value is False
     assert package_wildcard[name] is package_value
     assert native_wildcard[name] is native_value
+assert torch.backends.mkldnn.is_available() is torch._C._has_mkldnn is False
+assert not hasattr(torch._C, "has_mkldnn")
+assert "has_mkldnn" not in torch.__all__
 package = torch
 native = torch._C
 assert importlib.reload(package) is package
