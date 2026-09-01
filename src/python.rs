@@ -1891,6 +1891,23 @@ pub(crate) fn broadcast_tensors_variable_function(
     Ok(inputs.clone().into_any().unbind())
 }
 
+pub(crate) fn allclose_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let call = bind_allclose_arguments(args, kwargs)?;
+    let input = call.input.try_borrow()?;
+    let other = call.other.try_borrow()?;
+    validate_allclose_native_input(&input.inner)?;
+    validate_allclose_native_input(&other.inner)?;
+    let result = input
+        .inner
+        .allclose(&other.inner, call.rtol, call.atol, call.equal_nan)
+        .map_err(|error| tensor_error(&error))?;
+    result.into_py_any(py)
+}
+
 pub(crate) fn adjoint_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2494,6 +2511,23 @@ struct ProbedTorchFunctionOverride<'py> {
 enum BoundTensorOrTorchFunction<'py> {
     Tensor(Bound<'py, PyTensor>),
     Override(ProbedTorchFunctionOverride<'py>),
+}
+
+struct BoundAllcloseCall<'py> {
+    input: Bound<'py, PyTensor>,
+    other: Bound<'py, PyTensor>,
+    rtol: f64,
+    atol: f64,
+    equal_nan: bool,
+}
+
+struct AllcloseCallArguments<'py> {
+    input: ParsedCallArgument<'py>,
+    other: ParsedCallArgument<'py>,
+    rtol: Option<ParsedCallArgument<'py>>,
+    atol: Option<ParsedCallArgument<'py>>,
+    equal_nan: Option<ParsedCallArgument<'py>>,
+    keyword_error: Option<PyErr>,
 }
 
 struct BoundTopLevelNativeReshapeShape<'py> {
@@ -12595,6 +12629,229 @@ fn bind_legacy_binary_arguments<'py>(
     }
 
     Ok(([input, other], keyword_error))
+}
+
+fn bind_allclose_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundAllcloseCall<'py>> {
+    let arguments = bind_allclose_call_arguments(positional, keywords)?;
+    let input = parse_allclose_tensor_argument("input", &arguments.input)?;
+    let other = parse_allclose_tensor_argument("other", &arguments.other)?;
+    let rtol = parse_allclose_tolerance("rtol", arguments.rtol.as_ref(), 1.0e-5)?;
+    let atol = parse_allclose_tolerance("atol", arguments.atol.as_ref(), 1.0e-8)?;
+    let equal_nan = parse_allclose_equal_nan(arguments.equal_nan.as_ref())?;
+    if let Some(keyword_error) = arguments.keyword_error {
+        return Err(keyword_error);
+    }
+    Ok(BoundAllcloseCall {
+        input,
+        other,
+        rtol,
+        atol,
+        equal_nan,
+    })
+}
+
+fn bind_allclose_call_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<AllcloseCallArguments<'py>> {
+    const NAMES: [&str; 5] = ["input", "other", "rtol", "atol", "equal_nan"];
+
+    if positional.len() > NAMES.len() {
+        return Err(PyTypeError::new_err(format!(
+            "allclose() takes from 2 to 5 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments: [Option<ParsedCallArgument<'py>>; 5] = std::array::from_fn(|_| None);
+    let mut positional_arguments = [false; 5];
+    for (index, value) in positional.iter().enumerate() {
+        arguments[index] = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+        positional_arguments[index] = true;
+    }
+
+    let mut consumed_keywords = Vec::new();
+    if let Some(keywords) = keywords {
+        for (index, names) in [
+            &["input", "x", "a", "x1"][..],
+            &["other", "x2"][..],
+            &["rtol"][..],
+            &["atol"][..],
+            &["equal_nan"][..],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if arguments[index].is_some() {
+                continue;
+            }
+            for name in names {
+                if let Some(value) = keywords.get_item(*name)? {
+                    arguments[index] = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                    consumed_keywords.push(*name);
+                    break;
+                }
+            }
+        }
+    }
+
+    let Some(input) = arguments[0].take() else {
+        return Err(PyTypeError::new_err(
+            "allclose() missing 2 required positional argument: \"input\", \"other\"",
+        ));
+    };
+    let Some(other) = arguments[1].take() else {
+        parse_allclose_tensor_argument("input", &input)?;
+        return Err(PyTypeError::new_err(
+            "allclose() missing 1 required positional arguments: \"other\"",
+        ));
+    };
+
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for key in keywords.keys() {
+            let key = key.extract::<String>()?;
+            if consumed_keywords.contains(&key.as_str()) {
+                continue;
+            }
+            let Some(index) = NAMES.iter().position(|name| *name == key) else {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "allclose() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+                continue;
+            };
+            if positional_arguments[index] || arguments[index].is_some() {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "allclose() got multiple values for argument '{}'",
+                        NAMES[index]
+                    ))
+                });
+            }
+        }
+    }
+
+    let [_, _, rtol, atol, equal_nan] = arguments;
+    Ok(AllcloseCallArguments {
+        input,
+        other,
+        rtol,
+        atol,
+        equal_nan,
+        keyword_error,
+    })
+}
+
+fn parse_allclose_tensor_argument<'py>(
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+) -> PyResult<Bound<'py, PyTensor>> {
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(value.value.cast::<PyTensor>()?.clone());
+    }
+    if value.value.is_instance_of::<PyTensor>() {
+        return Err(allclose_unsupported_native_input());
+    }
+    parse_tensor_argument("allclose", argument, value).cloned()
+}
+
+fn validate_allclose_native_input(input: &CoreTensor) -> PyResult<()> {
+    if input.dtype() == DType::Float32 && input.device() == Device::Cpu {
+        return Ok(());
+    }
+    Err(allclose_unsupported_native_input())
+}
+
+fn allclose_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "allclose(): only exact native CPU float32 same-shape Tensor inputs are supported",
+    )
+}
+
+fn parse_allclose_tolerance(
+    argument: &str,
+    value: Option<&ParsedCallArgument<'_>>,
+    default: f64,
+) -> PyResult<f64> {
+    let value = match value {
+        Some(argument_value) => {
+            if argument_value.value.is_exact_instance_of::<PyBool>() {
+                f64::from(u8::from(argument_value.value.extract::<bool>()?))
+            } else {
+                match argument_value.value.extract::<f64>() {
+                    Ok(value) => value,
+                    Err(error) => {
+                        if error.is_instance_of::<PyOverflowError>(argument_value.value.py()) {
+                            return Err(error);
+                        }
+                        let position = argument_value
+                            .position
+                            .map_or_else(String::new, |position| format!(" (position {position})"));
+                        let actual = python_type_name(&argument_value.value)?;
+                        return Err(PyTypeError::new_err(format!(
+                            "allclose(): argument '{argument}'{position} must be float, not {actual}"
+                        )));
+                    }
+                }
+            }
+        }
+        None => default,
+    };
+
+    if value.is_nan() || value < 0.0 {
+        return Err(PyRuntimeError::new_err(format!(
+            "{argument} must be greater than or equal to zero, but got {}",
+            format_allclose_tolerance(value)
+        )));
+    }
+    Ok(value)
+}
+
+fn parse_allclose_equal_nan(value: Option<&ParsedCallArgument<'_>>) -> PyResult<bool> {
+    let Some(value) = value else {
+        return Ok(false);
+    };
+    if value.value.is_exact_instance_of::<PyBool>() {
+        return value.value.extract::<bool>();
+    }
+    let position = value
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(&value.value)?;
+    Err(PyTypeError::new_err(format!(
+        "allclose(): argument 'equal_nan'{position} must be bool, not {actual}"
+    )))
+}
+
+fn format_allclose_tolerance(value: f64) -> String {
+    if value.is_nan() {
+        if value.is_sign_negative() {
+            return "-nan".to_owned();
+        }
+        return "nan".to_owned();
+    }
+    if value.is_infinite() {
+        if value.is_sign_negative() {
+            return "-inf".to_owned();
+        }
+        return "inf".to_owned();
+    }
+    if value.fract() == 0.0 {
+        format!("{value:.0}")
+    } else {
+        value.to_string()
+    }
 }
 
 fn bind_tensor_add_sub_method_arguments<'py>(

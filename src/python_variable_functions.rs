@@ -16,27 +16,28 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
     abs_variable_function, absolute_variable_function, adjoint_variable_function,
-    arange_variable_function, as_tensor_variable_function, asarray_variable_function,
-    atleast_1d_variable_function, atleast_2d_variable_function, atleast_3d_variable_function,
-    broadcast_tensors_variable_function, can_cast_variable_function, ceil_variable_function,
-    conj_variable_function, detach_variable_function, exp_variable_function, fix_variable_function,
-    floor_variable_function, get_device_variable_function, imag_variable_function,
-    is_conj_variable_function, is_inference_variable_function, matmul_variable_function,
-    mean_variable_function, moveaxis_variable_function, movedim_variable_function,
-    mul_variable_function, multiply_variable_function, neg_variable_function,
-    negative_variable_function, ones_like_variable_function, permute_variable_function,
-    positive_variable_function, promote_types_variable_function, ravel_variable_function,
-    real_variable_function, reciprocal_variable_function, reshape_variable_function,
-    resolve_conj_variable_function, resolve_neg_variable_function, rsqrt_variable_function,
-    scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
-    sin_variable_function, sqrt_variable_function, square_variable_function, sub_variable_function,
+    allclose_variable_function, arange_variable_function, as_tensor_variable_function,
+    asarray_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
+    atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
+    ceil_variable_function, conj_variable_function, detach_variable_function,
+    exp_variable_function, fix_variable_function, floor_variable_function,
+    get_device_variable_function, imag_variable_function, is_conj_variable_function,
+    is_inference_variable_function, matmul_variable_function, mean_variable_function,
+    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
+    multiply_variable_function, neg_variable_function, negative_variable_function,
+    ones_like_variable_function, permute_variable_function, positive_variable_function,
+    promote_types_variable_function, ravel_variable_function, real_variable_function,
+    reciprocal_variable_function, reshape_variable_function, resolve_conj_variable_function,
+    resolve_neg_variable_function, rsqrt_variable_function, scalar_tensor_variable_function,
+    select_variable_function, sigmoid_variable_function, sin_variable_function,
+    sqrt_variable_function, square_variable_function, sub_variable_function,
     subtract_variable_function, sum_variable_function, tanh_variable_function,
     trunc_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 53] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 54] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -47,6 +48,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 53] = [
     "atleast_2d",
     "atleast_3d",
     "broadcast_tensors",
+    "allclose",
     "abs",
     "absolute",
     "adjoint",
@@ -340,6 +342,15 @@ Example::
     >>> scalar = numpy.float64(0.5)
     >>> torch.asarray(scalar)
     tensor(0.5000, dtype=torch.float64)
+";
+
+const ALLCLOSE_DOC: &std::ffi::CStr = cr"
+allclose(input, other, rtol=1e-05, atol=1e-08, equal_nan=False) -> bool
+
+This native backend supports exact CPU float32 tensors with identical shapes.
+It returns ``True`` if every element pair satisfies
+``abs(input - other) <= atol + rtol * abs(other)``. NaN pairs compare equal
+only when ``equal_nan=True``.
 ";
 
 const POSITIVE_DOC: &std::ffi::CStr = c"\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n";
@@ -1172,6 +1183,7 @@ variable_function_callback!(
     broadcast_tensors_callback,
     broadcast_tensors_variable_function
 );
+variable_function_callback!(allclose_callback, allclose_variable_function);
 variable_function_callback!(abs_callback, abs_variable_function);
 variable_function_callback!(absolute_callback, absolute_variable_function);
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
@@ -1253,6 +1265,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"atleast_2d", atleast_2d_callback, c""),
         variable_function_method!(c"atleast_3d", atleast_3d_callback, c""),
         variable_function_method!(c"broadcast_tensors", broadcast_tensors_callback, c""),
+        variable_function_method!(c"allclose", allclose_callback, ALLCLOSE_DOC),
         variable_function_method!(c"abs", abs_callback, ABS_DOC),
         variable_function_method!(c"absolute", absolute_callback, ABSOLUTE_DOC),
         variable_function_method!(c"adjoint", adjoint_callback, ADJOINT_DOC),

@@ -595,6 +595,21 @@ fn contiguous_values_equal(left: &[f32], right: &[f32]) -> bool {
         .all(|(left, right)| left == right)
 }
 
+#[allow(clippy::float_cmp)]
+fn allclose_values(left: f32, right: f32, rtol: f64, atol: f64, equal_nan: bool) -> bool {
+    if left == right {
+        return true;
+    }
+    if equal_nan && left.is_nan() && right.is_nan() {
+        return true;
+    }
+    if !left.is_finite() || !right.is_finite() {
+        return false;
+    }
+
+    (f64::from(left) - f64::from(right)).abs() <= atol + rtol * f64::from(absolute_value(right))
+}
+
 impl Tensor {
     /// Creates a tensor after validating that `shape` describes `data`.
     ///
@@ -859,6 +874,32 @@ impl Tensor {
     #[must_use]
     pub fn is_same_size(&self, other: &Self) -> bool {
         self.shape() == other.shape()
+    }
+
+    /// Reports whether every same-shaped element pair is close under
+    /// `atol + rtol * abs(other)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the tensor shapes differ.
+    pub fn allclose(
+        &self,
+        other: &Self,
+        rtol: f64,
+        atol: f64,
+        equal_nan: bool,
+    ) -> Result<bool, TensorError> {
+        if self.shape != other.shape {
+            return Err(TensorError::ShapeMismatch {
+                left: self.shape.clone(),
+                right: other.shape.clone(),
+            });
+        }
+
+        Ok(self
+            .logical_values()
+            .zip(other.logical_values())
+            .all(|(left, right)| allclose_values(left, right, rtol, atol, equal_nan)))
     }
 
     /// Reports whether two tensors point to the exact same logical view.

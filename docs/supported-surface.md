@@ -10,7 +10,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 | --- | --- | --- |
 | Construction | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.full`, `torch.eye` | [Creation](#creation) |
 | Views and layout | `view`, `reshape`, `permute`, `movedim`, `transpose`, `flatten`, `contiguous`, `cpu` | [Metadata and views](#metadata-and-views) |
-| Math | arithmetic operators, `Tensor.add`, `Tensor.div`, `Tensor.divide`, `Tensor.sub`, `Tensor.subtract`, `torch.sub`, `torch.subtract`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh` | [Elementwise and reductions](#elementwise-and-reductions) |
+| Math | arithmetic operators, `Tensor.add`, `Tensor.div`, `Tensor.divide`, `Tensor.sub`, `Tensor.subtract`, `torch.sub`, `torch.subtract`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.exp`, `torch.sin`, `torch.sqrt`, `torch.sigmoid`, `torch.tanh`, `torch.allclose` | [Elementwise and reductions](#elementwise-and-reductions) |
 | NN functional | `torch.nn.functional.linear`, `l1_loss`, `mse_loss`, `dropout*`, `sigmoid`, `silu`, `softsign`, `tanh` | [NN/data helpers](#nn-and-data-helpers), [math activations](#elementwise-and-reductions) |
 | Dtype/device metadata | `torch.float32`, `torch.finfo`, `torch.can_cast`, `torch.promote_types`, `Tensor.is_cuda`, `torch.get_device`, `Tensor.cpu` | [tensor metadata](#metadata-and-views), [backend metadata](#backend-and-compiler-metadata) |
 | Autograd state | `torch.is_grad_enabled`, `torch.no_grad`, `torch.enable_grad`, `torch.is_inference_mode_enabled`, `torch.is_anomaly_enabled`, `torch.is_anomaly_check_nan_enabled`, `torch.autograd.is_view_replay_enabled` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
@@ -47,6 +47,7 @@ filled = torch.full((2, 2), -0.0)
 assert filled.tolist() == [[-0.0, -0.0], [-0.0, -0.0]]
 result = torch.relu(x + y)
 assert result.tolist() == [[0.0, 3.0], [4.0, 0.0]]
+assert torch.allclose(result, torch.tensor([[0.0, 3.0], [4.0, 0.0]]))
 product = torch.matmul(input=x, other=y)
 assert product.tolist() == [[1.0, 1.0], [-1.0, -1.0]]
 assert torch.set_float32_matmul_precision("highest") is None
@@ -628,7 +629,8 @@ indexed CPU devices that would require a copy, pinned-memory options, `out`,
 #### Elementwise and reductions
 
 The eager math surface includes independent deep cloning, exact `Tensor.equal()`
-and `torch.equal()` comparison, identity `Tensor.positive()`/
+and `torch.equal()` comparison, same-shape tolerant `torch.allclose()`
+comparison, identity `Tensor.positive()`/
 `torch.positive()` and unary `+`, unary `-`, `Tensor.neg()`, its
 `Tensor.negative()` alias, `torch.neg()`, and the distinct top-level
 `torch.negative()` builtin. It supports broadcast tensor and real-scalar
@@ -642,6 +644,18 @@ distinct top-level `torch.multiply()` builtin, default-alpha
 `Tensor.mean(dim=None)`, `torch.mean(input, dim=None, *, dtype=None)`,
 `Tensor.relu()`, `torch.relu()`, and rank-2 matrix multiplication through `@`,
 `Tensor.matmul()`, and `torch.matmul()`.
+
+`torch.allclose(input, other, rtol=1e-05, atol=1e-08, equal_nan=False)`
+returns a Python `bool` for exact native CPU float32 tensors with identical
+shapes. It reads scalar, empty, contiguous, noncontiguous, and offset tensors
+in logical order, preserves signed-zero equality, handles infinities and NaNs
+like PyTorch for supported same-shape cases, accepts positional or keyword
+nonnegative numeric tolerances (including bool values for `rtol`/`atol`) and a
+strict boolean `equal_nan`, and does not mutate inputs or add autograd edges.
+Shape mismatch (including otherwise broadcastable shapes), non-tensor
+operands, tensor subclasses, dtype/device extension keywords, `out`,
+`torch.isclose`, and Tensor method variants such as `Tensor.allclose()` remain
+unsupported.
 
 Top-level `torch.neg()` and `torch.negative()` share the same layout-preserving
 float32 CPU negation and autograd path while remaining distinct builtins; their
