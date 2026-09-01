@@ -73,6 +73,25 @@ class AsArrayReferenceTests(unittest.TestCase):
             },
         )
 
+    def scalar_option_cases(self, module):
+        return (
+            {},
+            {"dtype": None},
+            {"dtype": module.float32},
+            {"dtype": module.float},
+            {"device": None},
+            {"device": "cpu"},
+            {"device": module.device("cpu")},
+            {"copy": None},
+            {"requires_grad": None},
+            {
+                "dtype": module.float32,
+                "device": module.device("cpu"),
+                "copy": None,
+                "requires_grad": None,
+            },
+        )
+
     def tensor_state(self, module, tensor):
         if module is reference_torch:
             values = tensor.detach().cpu().numpy().reshape(-1).view(np.uint32).tolist()
@@ -111,6 +130,18 @@ class AsArrayReferenceTests(unittest.TestCase):
             "source_unchanged": before == after,
         }
 
+    def asarray_float_scalar_contract(self, module, value, options):
+        first = module.asarray(value, **options)
+        second = module.asarray(value, **options)
+        return {
+            "fresh_object": first is not second,
+            "fresh_storage": first.data_ptr() != second.data_ptr(),
+            "not_set_to_duplicate": not first.is_set_to(second),
+            "state": self.comparable_tensor_state(module, first),
+            "numel": first.numel(),
+            "grad_is_none": first.grad is None,
+        }
+
     def test_identity_aliasing_and_metadata_match_pytorch_2_13(self):
         actual_cases = self.tensor_cases(torch)
         expected_cases = self.tensor_cases(reference_torch)
@@ -129,6 +160,33 @@ class AsArrayReferenceTests(unittest.TestCase):
                     )
                     expected_contract = self.asarray_identity_contract(
                         reference_torch, expected, expected_kwargs
+                    )
+                    self.assertEqual(actual_contract, expected_contract)
+
+    def test_python_float_scalar_creation_matches_pytorch_2_13(self):
+        values = (
+            0.0,
+            -0.0,
+            1.25,
+            -3.5,
+            1e39,
+            -1e39,
+            float("inf"),
+            float("-inf"),
+            float("nan"),
+        )
+        actual_options = self.scalar_option_cases(torch)
+        expected_options = self.scalar_option_cases(reference_torch)
+        for value in values:
+            for actual_kwargs, expected_kwargs in zip(
+                actual_options, expected_options, strict=True
+            ):
+                with self.subTest(value=repr(value), options=actual_kwargs):
+                    actual_contract = self.asarray_float_scalar_contract(
+                        torch, value, actual_kwargs
+                    )
+                    expected_contract = self.asarray_float_scalar_contract(
+                        reference_torch, value, expected_kwargs
                     )
                     self.assertEqual(actual_contract, expected_contract)
 
@@ -227,6 +285,9 @@ class AsArrayReferenceTests(unittest.TestCase):
             call = lambda: module.asarray(tensor)
         elif case == "keyword":
             call = lambda: module.asarray(obj=tensor, dtype=module.float32)
+        elif case == "scalar":
+            data = 1.25
+            call = lambda: module.asarray(data)
         elif case == "sequence":
             data = [1.0, 2.0]
             call = lambda: module.asarray(data)
@@ -290,7 +351,15 @@ class AsArrayReferenceTests(unittest.TestCase):
         }
 
     def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
-        for case in ("positional", "keyword", "sequence", "device", "copy", "requires_grad"):
+        for case in (
+            "positional",
+            "keyword",
+            "scalar",
+            "sequence",
+            "device",
+            "copy",
+            "requires_grad",
+        ):
             with self.subTest(case=case):
                 self.assertEqual(
                     self.mode_dispatch_observation(torch, case),

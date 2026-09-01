@@ -73,6 +73,9 @@ class AsArrayTests(unittest.TestCase):
             tensor.output_nr,
         )
 
+    def float32_bits(self, tensor):
+        return np.asarray(tensor).reshape(-1).view(np.uint32).tolist()
+
     def test_exact_native_cpu_float32_tensors_return_identical_object(self):
         option_cases = (
             {},
@@ -102,6 +105,58 @@ class AsArrayTests(unittest.TestCase):
                     self.assertIs(result, tensor)
                     self.assertEqual(result.data_ptr(), before[4])
                     self.assertEqual(self.tensor_state(tensor), before)
+
+    def test_python_float_scalars_create_fresh_cpu_float32_leaves(self):
+        option_cases = (
+            {},
+            {"dtype": None},
+            {"dtype": torch.float32},
+            {"dtype": torch.float},
+            {"device": None},
+            {"device": "cpu"},
+            {"device": torch.device("cpu")},
+            {"copy": None},
+            {"requires_grad": None},
+            {
+                "dtype": torch.float32,
+                "device": torch.device("cpu"),
+                "copy": None,
+                "requires_grad": None,
+            },
+        )
+        value_cases = (
+            (0.0, 0x00000000),
+            (-0.0, 0x80000000),
+            (1.25, 0x3FA00000),
+            (-3.5, 0xC0600000),
+            (1e39, 0x7F800000),
+            (-1e39, 0xFF800000),
+            (float("inf"), 0x7F800000),
+            (float("-inf"), 0xFF800000),
+            (float("nan"), 0x7FC00000),
+        )
+        for value, expected_bits in value_cases:
+            for options in option_cases:
+                with self.subTest(value=repr(value), options=options):
+                    result = torch.asarray(value, **options)
+                    duplicate = torch.asarray(value, **options)
+
+                    self.assertIsInstance(result, torch.Tensor)
+                    self.assertIsNot(result, duplicate)
+                    self.assertNotEqual(result.data_ptr(), duplicate.data_ptr())
+                    self.assertFalse(result.is_set_to(duplicate))
+                    self.assertEqual(result.shape, ())
+                    self.assertEqual(result.stride(), ())
+                    self.assertEqual(result.storage_offset(), 0)
+                    self.assertEqual(result.numel(), 1)
+                    self.assertIs(result.dtype, torch.float32)
+                    self.assertEqual(result.device, torch.device("cpu"))
+                    self.assertIs(result.layout, torch.strided)
+                    self.assertFalse(result.requires_grad)
+                    self.assertTrue(result.is_leaf)
+                    self.assertEqual(result.output_nr, 0)
+                    self.assertIsNone(result.grad)
+                    self.assertEqual(self.float32_bits(result), [expected_bits])
 
     def test_identity_preserves_autograd_graph_and_gradient_object(self):
         leaf = torch.tensor(
@@ -206,6 +261,7 @@ class AsArrayTests(unittest.TestCase):
                 ([1.0, 2.0],),
                 None,
             ),
+            ("python float scalar", lambda: torch.asarray(1.25), (1.25,), None),
             (
                 "unsupported device string",
                 lambda: torch.asarray([1.0], device="cuda"),
@@ -272,8 +328,9 @@ class AsArrayTests(unittest.TestCase):
     def test_binding_errors_and_unsupported_scope_are_explicit(self):
         tensor = torch.tensor([1.0], dtype=torch.float32)
         unsupported_conversion = (
-            "asarray(): only exact native CPU float32 Tensor inputs are supported; "
-            "Python sequences, NumPy arrays, and scalar conversions are not implemented"
+            "asarray(): only exact native CPU float32 Tensor inputs or Python "
+            "float scalars are supported; Python sequences, NumPy arrays/scalars, "
+            "and non-float scalar conversions are not implemented"
         )
         explicit_requires_grad = (
             "asarray(): explicit requires_grad changes are not supported; "
@@ -368,12 +425,33 @@ class AsArrayTests(unittest.TestCase):
                 "asarray(): copy=True requires a copy and is not supported",
             ),
             (
+                lambda: torch.asarray(1.0, copy=True),
+                NotImplementedError,
+                "asarray(): copy=True requires a copy and is not supported",
+            ),
+            (
+                lambda: torch.asarray(1.0, copy=False),
+                NotImplementedError,
+                "asarray(): copy=False for Python float scalar inputs is not "
+                "supported because scalar conversion requires fresh storage",
+            ),
+            (
                 lambda: torch.asarray(tensor, requires_grad=False),
                 NotImplementedError,
                 explicit_requires_grad,
             ),
             (
                 lambda: torch.asarray(tensor, requires_grad=True),
+                NotImplementedError,
+                explicit_requires_grad,
+            ),
+            (
+                lambda: torch.asarray(1.0, requires_grad=False),
+                NotImplementedError,
+                explicit_requires_grad,
+            ),
+            (
+                lambda: torch.asarray(1.0, requires_grad=True),
                 NotImplementedError,
                 explicit_requires_grad,
             ),
@@ -384,11 +462,26 @@ class AsArrayTests(unittest.TestCase):
                 NotImplementedError,
                 unsupported_conversion,
             ),
-            (lambda: torch.asarray(1.0), NotImplementedError, unsupported_conversion),
+            (
+                lambda: torch.asarray(np.float32(1.0)),
+                NotImplementedError,
+                unsupported_conversion,
+            ),
+            (lambda: torch.asarray(1), NotImplementedError, unsupported_conversion),
+            (lambda: torch.asarray(True), NotImplementedError, unsupported_conversion),
         )
         for call, error_type, message in cases:
             with self.subTest(message=message):
                 self.assert_error(call, error_type, message)
+
+        class FloatSubclass(float):
+            pass
+
+        self.assert_error(
+            lambda: torch.asarray(FloatSubclass(1.0)),
+            NotImplementedError,
+            unsupported_conversion,
+        )
 
         class Override:
             calls = []
