@@ -35,6 +35,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/rank2-matmul-release-timings.md",
     ),
     (
+        "Arbitrary-dimension `Tensor.unbind` and `torch.unbind` release timings",
+        "docs/tensor-unbind-release-timings.md",
+    ),
+    (
         "`+` and `Tensor.add` release timings",
         "docs/tensor-add-release-timings.md",
     ),

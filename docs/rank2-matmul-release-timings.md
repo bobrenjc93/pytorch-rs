@@ -2,9 +2,12 @@
 
 Date: 2026-09-01
 
-Candidate provenance: source snapshot based on
-`0a6fe63470fd7787b226c1a1384e185d7e7d00a4`. This branch adds timing evidence
-only; it does not change the runtime implementation.
+Candidate provenance: original timing snapshot based on
+`0a6fe63470fd7787b226c1a1384e185d7e7d00a4`. That branch added timing evidence
+only and did not change the runtime implementation. A post-review composite
+change added a large strided-input materialization fast path; see
+[Post-Review Targeted Retest](#post-review-targeted-retest) for the affected
+current-worktree measurements.
 
 Exact setup, build, check, and timing commands were run from the repository
 root. The timing driver was a one-off file under ignored `target/` storage and
@@ -199,3 +202,21 @@ removed from the evidence set.
 | `operator_rank1_dot_17` | `RuntimeError: matmul currently requires two rank-2 tensors, got [17] and [17]` | supported output `()` | zero |
 | `tensor_matmul_rank3_by_rank2` | `RuntimeError: matmul currently requires two rank-2 tensors, got [2, 3, 4] and [4, 5]` | supported output `(2, 3, 5)` | zero |
 | `torch_matmul_out_keyword` | `TypeError: matmul() got an unexpected keyword argument 'out'` | supported output `(2, 2)` | zero |
+
+## Post-Review Targeted Retest
+
+After review noted the noncontiguous transpose and rectangular contiguous
+rank-2 gaps, the composite added a large strided-input materialization path
+for non-contiguous, non-overlapping dense matrix operands. The targeted release
+retest used the same pinned CPU/thread settings, current optimized wheel, 15
+warmup blocks, 81 measured blocks, and the original repeats for these cells.
+
+The noncontiguous transpose cell improved from the original 26.29x category
+geomean to 4.86x for the retested `Tensor.matmul` form. The rectangular
+contiguous cell still measures at 4.42x, so a BLAS-class contiguous kernel
+remains future work before claiming broader linear-algebra parity.
+
+| Workload | Category | API | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `rectangular_contiguous_257x129_by_129x263` | rectangular contiguous | `Tensor.matmul` | 3 | 918.232 us +/- 8.162 us, var 5007.544 | 207.965 us +/- 3.585 us, var 19.158 | 4.42x |
+| `noncontig_transposed_257x129_by_129x263` | noncontiguous transpose | `Tensor.matmul` | 2 | 1022.562 us +/- 6.215 us, var 141.867 | 210.489 us +/- 3.054 us, var 49.892 | 4.86x |

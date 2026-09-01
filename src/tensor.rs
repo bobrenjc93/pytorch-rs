@@ -17,6 +17,7 @@ const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
 // Keep latency-sized products on the smaller single-row loop.
 const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 4 * 1024;
+const STRIDED_MATMUL_MATERIALIZE_MIN_OUTPUT_ELEMENTS: usize = 4 * 1024;
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
@@ -3951,6 +3952,20 @@ impl Tensor {
             accumulate_contiguous_matmul(left_data, right_data, &mut output, rows, inner, columns);
         } else if output_elements != 0
             && inner != 0
+            && should_materialize_strided_matmul(self, other, output_elements)
+        {
+            let left_data = self.try_to_vec()?;
+            let right_data = other.try_to_vec()?;
+            accumulate_contiguous_matmul(
+                &left_data,
+                &right_data,
+                &mut output,
+                rows,
+                inner,
+                columns,
+            );
+        } else if output_elements != 0
+            && inner != 0
             && let (Some(left_data), Some(right_data)) =
                 (self.storage.owned_values(), other.storage.owned_values())
         {
@@ -5826,6 +5841,18 @@ fn checked_matrix_offset(tensor: &Tensor, row: usize, column: usize) -> Result<u
         .ok_or(TensorError::IndexCalculationOverflow)
 }
 
+fn should_materialize_strided_matmul(
+    left: &Tensor,
+    right: &Tensor,
+    output_elements: usize,
+) -> bool {
+    output_elements >= STRIDED_MATMUL_MATERIALIZE_MIN_OUTPUT_ELEMENTS
+        && left.storage.owned_values().is_some()
+        && right.storage.owned_values().is_some()
+        && left.is_non_overlapping_and_dense()
+        && right.is_non_overlapping_and_dense()
+}
+
 // Isolate contiguous code generation from the unchanged strided dispatch.
 #[inline(never)]
 fn accumulate_contiguous_matmul(
@@ -6677,8 +6704,8 @@ mod tests {
         MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor,
         TensorError, contiguous_values_equal, full_reduction_mean_divisor,
         l1_loss_difference_value, log_value, logical_offset_for_linear_index,
-        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
-        validate_view_bounds,
+        materialize_contiguous_trailing_broadcast, rsqrt_value, should_materialize_strided_matmul,
+        sqrt_value, try_result_vector, validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -12399,6 +12426,67 @@ mod tests {
                     .eq(expected.logical_values().map(f32::to_bits))
             );
         }
+    }
+
+    #[test]
+    fn materialized_strided_matmul_preserves_fallback_bit_patterns() {
+        let rows = 65;
+        let inner = 67;
+        let columns = 71;
+        let finite_bits = [
+            0x60ad_78ec,
+            0xe0ad_78ec,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+        ];
+        let left = Tensor::from_vec(
+            (0..rows * inner)
+                .map(|index| f32::from_bits(finite_bits[(index * 5 + index / rows) % 8]))
+                .collect(),
+            [inner, rows],
+        )
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+        let right = Tensor::from_vec(
+            (0..inner * columns)
+                .map(|index| {
+                    let depth = index % inner;
+                    let column = index / inner;
+                    let bits = match column % 8 {
+                        3 if depth == 7 => 0x7f80_0000,
+                        4 if depth == 11 => 0xff80_0000,
+                        5 if depth == 13 => 0x7fc1_2345,
+                        _ => finite_bits[(depth * 3 + column) % 8],
+                    };
+                    f32::from_bits(bits)
+                })
+                .collect(),
+            [columns, inner],
+        )
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+
+        assert!(should_materialize_strided_matmul(
+            &left,
+            &right,
+            rows * columns
+        ));
+        let expected = shared_gradient_copy(&left)
+            .matmul(&shared_gradient_copy(&right))
+            .unwrap();
+        let actual = left.matmul(&right).unwrap();
+        assert!(
+            actual
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(expected.logical_values().map(f32::to_bits))
+        );
     }
 
     #[test]
