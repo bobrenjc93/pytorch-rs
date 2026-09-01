@@ -93,6 +93,7 @@ SUPPORTED_SURFACE_NAMESPACE_SUMMARIES = (
         (
             "`torch.tensor`",
             "`torch.sum`",
+            "`torch.unbind`",
             "`torch.autograd.backward`",
             "[Creation](#creation)",
             "[Backend and compiler metadata](#backend-and-compiler-metadata)",
@@ -172,6 +173,8 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         (
             "`Tensor.select`",
             "`torch.select`",
+            "`Tensor.unbind`",
+            "`torch.unbind`",
             "`Tensor.view`",
             "`Tensor.reshape`",
             "`torch.reshape`",
@@ -180,7 +183,6 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         (
             "range slicing",
             "advanced indexing",
-            "arbitrary-dimension `unbind`",
             "sequence `movedim` axes",
             "cross-dtype views",
         ),
