@@ -50,12 +50,14 @@ class CudaMemEfficientSdpTests(unittest.TestCase):
         self.original = torch._C._get_mem_efficient_sdp_enabled()
         self.original_flash = torch._C._get_flash_sdp_enabled()
         self.original_math = torch._C._get_math_sdp_enabled()
+        self.original_cudnn = torch._C._get_cudnn_sdp_enabled()
         self.cuda.enable_mem_efficient_sdp(True)
 
     def tearDown(self):
         self.cuda.enable_mem_efficient_sdp(self.original)
         self.cuda.enable_flash_sdp(self.original_flash)
         self.cuda.enable_math_sdp(self.original_math)
+        self.cuda.enable_cudnn_sdp(self.original_cudnn)
 
     def test_fresh_process_defaults_to_exact_true_without_sdpa_execution(self):
         script = r'''
@@ -66,6 +68,7 @@ import torch_rs as torch
 cuda = torch.backends.cuda
 initial = cuda.mem_efficient_sdp_enabled()
 math_before = cuda.math_sdp_enabled()
+cudnn_before = cuda.cudnn_sdp_enabled()
 first = cuda.enable_mem_efficient_sdp(False)
 disabled = cuda.mem_efficient_sdp_enabled()
 second = cuda.enable_mem_efficient_sdp(True)
@@ -77,6 +80,7 @@ print(json.dumps({
     "second": second,
     "restored": cuda.mem_efficient_sdp_enabled(),
     "math_unchanged": cuda.math_sdp_enabled() is math_before,
+    "cudnn_unchanged": cuda.cudnn_sdp_enabled() is cudnn_before,
     "built": cuda.is_built(),
     "ck_available": cuda.is_ck_sdpa_available(),
     "flash_available": cuda.is_flash_attention_available(),
@@ -105,6 +109,7 @@ print(json.dumps({
                 "second": None,
                 "restored": True,
                 "math_unchanged": True,
+                "cudnn_unchanged": True,
                 "built": False,
                 "ck_available": False,
                 "flash_available": False,
@@ -117,6 +122,7 @@ print(json.dumps({
         cuda = self.cuda
         flash_state = cuda.flash_sdp_enabled()
         math_state = cuda.math_sdp_enabled()
+        cudnn_state = cuda.cudnn_sdp_enabled()
 
         self.assertIs(cuda.mem_efficient_sdp_enabled(), True)
         self.assertIs(type(cuda.mem_efficient_sdp_enabled()), bool)
@@ -127,6 +133,7 @@ print(json.dumps({
                 self.assertIs(torch._C._get_mem_efficient_sdp_enabled(), enabled)
                 self.assertIs(cuda.flash_sdp_enabled(), flash_state)
                 self.assertIs(cuda.math_sdp_enabled(), math_state)
+                self.assertIs(cuda.cudnn_sdp_enabled(), cudnn_state)
                 self.assertIs(cuda.is_built(), False)
                 self.assertIs(cuda.is_ck_sdpa_available(), False)
                 self.assertIs(cuda.is_flash_attention_available(), False)
@@ -265,6 +272,8 @@ print(json.dumps({
                 "cuBLASModule",
                 "is_ck_sdpa_available",
                 "matmul",
+                "enable_cudnn_sdp",
+                "cudnn_sdp_enabled",
                 "enable_flash_sdp",
                 "flash_sdp_enabled",
                 "enable_mem_efficient_sdp",
@@ -281,6 +290,8 @@ print(json.dumps({
             {
                 "allow_fp16_bf16_reduction_math_sdp",
                 "cuBLASModule",
+                "cudnn_sdp_enabled",
+                "enable_cudnn_sdp",
                 "enable_flash_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
@@ -361,6 +372,8 @@ print(json.dumps({
             {
                 "allow_fp16_bf16_reduction_math_sdp",
                 "cuBLASModule",
+                "cudnn_sdp_enabled",
+                "enable_cudnn_sdp",
                 "enable_flash_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
@@ -448,12 +461,9 @@ print(json.dumps({
         self.assertIs(self.cuda.is_built(), False)
         self.assertIs(self.cuda.is_ck_sdpa_available(), False)
         self.assertIs(self.cuda.is_flash_attention_available(), False)
-        for name in (
-            "cudnn_sdp_enabled",
-            "enable_cudnn_sdp",
-        ):
-            with self.subTest(unsupported_preference=name):
-                self.assertFalse(hasattr(self.cuda, name))
+        cudnn_state = self.cuda.cudnn_sdp_enabled()
+        self.assertIs(self.cuda.enable_cudnn_sdp(not cudnn_state), None)
+        self.assertIs(self.cuda.mem_efficient_sdp_enabled(), False)
         self.assertFalse(
             hasattr(torch.nn.functional, "scaled_dot_product_attention")
         )

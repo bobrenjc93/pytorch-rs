@@ -99,6 +99,8 @@ class CudaCkSdpaAvailabilityReferenceTests(unittest.TestCase):
                 in {
                     "allow_fp16_bf16_reduction_math_sdp",
                     "cuBLASModule",
+                    "cudnn_sdp_enabled",
+                    "enable_cudnn_sdp",
                     "enable_flash_sdp",
                     "enable_math_sdp",
                     "enable_mem_efficient_sdp",
@@ -285,7 +287,6 @@ class CudaCkSdpaAvailabilityReferenceTests(unittest.TestCase):
             "can_use_cudnn_attention",
             "can_use_efficient_attention",
             "can_use_flash_attention",
-            "enable_cudnn_sdp",
             "sdp_kernel",
         ):
             with self.subTest(name=name):
