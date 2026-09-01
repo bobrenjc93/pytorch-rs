@@ -473,7 +473,8 @@ operations, with PyTorch-compatible multi-output indices for grad-tracked
 `torch.chunk` are not exposed).
 
 View and layout coverage includes stride-aware indexing, dimension-zero
-`Tensor.select()`/`torch.select()` single first-axis views and
+`Tensor.select()`/`torch.select()` single first-axis views,
+`Tensor.narrow()`/`torch.narrow()` first-axis range views, and
 `Tensor.unbind()`/`torch.unbind()` first-axis views, `Tensor.view()` and
 `Tensor.view_as()` shared-storage views, arbitrary metadata-only
 `Tensor.permute()` and `torch.permute()` views, integer-axis
@@ -494,6 +495,15 @@ device.
 negative first dimension and delegate values, strides, offsets, aliasing, empty
 views, and autograd to the native leading integer-index engine; other
 dimensions remain unsupported.
+
+`Tensor.narrow(dim, start, length)` and `torch.narrow(input, dim, start,
+length)` normalize the first dimension and return metadata-only shared-storage
+views for exact native CPU float32 tensors, including negative integer starts,
+empty-length views, zero-sized sources, `no_grad` leaf views, and first-order
+backward through full-tensor reductions. Non-leading dimensions,
+tensor-valued `start`, negative lengths, tensor subclasses,
+active `TorchFunctionMode` contexts, dtype/device extensions, `narrow_copy`,
+and mutating slice/scatter APIs remain unsupported.
 
 `Tensor.view(shape)` accepts one positional integer or `__index__` value, one
 tuple, list, or `torch.Size` (including the sequence `size=` form), or exactly

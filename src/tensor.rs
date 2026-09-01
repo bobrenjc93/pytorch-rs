@@ -2765,6 +2765,98 @@ impl Tensor {
         self.index_dimensions(indices.as_ref())
     }
 
+    /// Narrows the leading dimension, returning a shared-storage view.
+    ///
+    /// Negative starts wrap from the end of the dimension. The source rank is
+    /// preserved and only dimension zero is supported by the public Python
+    /// surface.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when this tensor is scalar, the start or length is out
+    /// of bounds, offset arithmetic overflows, or view metadata allocation
+    /// fails.
+    pub fn narrow_first_dimension(&self, start: i64, length: i64) -> Result<Self, TensorError> {
+        let Some(&size) = self.shape.first() else {
+            return Err(TensorError::NarrowCannotApplyToScalar);
+        };
+        if length < 0 {
+            return Err(TensorError::NarrowNegativeLength);
+        }
+
+        let signed_size = i64::try_from(size).map_err(|_| TensorError::IndexCalculationOverflow)?;
+        if start < -signed_size || start > signed_size {
+            return Err(TensorError::NarrowStartOutOfRange {
+                start,
+                dimension: 0,
+                size,
+            });
+        }
+        let normalized_start = if start < 0 {
+            signed_size
+                .checked_add(start)
+                .ok_or(TensorError::IndexCalculationOverflow)?
+        } else {
+            start
+        };
+        let normalized_start =
+            usize::try_from(normalized_start).map_err(|_| TensorError::IndexCalculationOverflow)?;
+        let length = usize::try_from(length).map_err(|_| TensorError::IndexCalculationOverflow)?;
+        if normalized_start
+            .checked_add(length)
+            .ok_or(TensorError::IndexCalculationOverflow)?
+            > size
+        {
+            return Err(TensorError::NarrowLengthOutOfRange {
+                start: i64::try_from(normalized_start)
+                    .map_err(|_| TensorError::IndexCalculationOverflow)?,
+                length: i64::try_from(length).map_err(|_| TensorError::IndexCalculationOverflow)?,
+                dimension: 0,
+                size,
+            });
+        }
+
+        let contribution = normalized_start
+            .checked_mul(self.strides[0])
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let offset = self
+            .offset
+            .checked_add(contribution)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        if i64::try_from(offset).is_err() {
+            let offset = i64::try_from(offset.cast_signed())
+                .expect("an isize storage offset must fit in i64");
+            return Err(TensorError::InvalidStorageOffset { offset });
+        }
+
+        let mut shape = try_clone_result_shape(&self.shape, self.elements)?;
+        shape[0] = length;
+        let strides = try_clone_result_shape(&self.strides, self.elements)?;
+        let elements = element_count(&shape)?;
+        validate_view_bounds(&shape, &strides, offset, elements, self.storage.len())?;
+
+        let mut output = Self {
+            storage: Arc::clone(&self.storage),
+            shape,
+            strides,
+            offset,
+            elements,
+            output_nr: 0,
+            view_requires_grad: self.requires_grad(),
+            autograd: None,
+        };
+        let row_elements = element_count(&self.shape[1..])?;
+        let input_start = normalized_start
+            .checked_mul(row_elements)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        self.record_view_transform(
+            &mut output,
+            TransformMapping::Index { input_start },
+            AutogradNode::Slice,
+        )?;
+        Ok(output)
+    }
+
     fn index_dimensions(&self, indices: &[i64]) -> Result<Self, TensorError> {
         self.index_dimensions_impl(indices, true)
     }

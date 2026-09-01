@@ -32,6 +32,9 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::MatrixTransposeRequiresMatrix { .. }
         | TensorError::DuplicateDimension { .. }
         | TensorError::SqueezeDimensionsRankLimit
+        | TensorError::NarrowCannotApplyToScalar
+        | TensorError::NarrowNegativeLength
+        | TensorError::NarrowLengthOutOfRange { .. }
         | TensorError::FlattenStartAfterEnd
         | TensorError::FlattenNonConcreteInteger
         | TensorError::NonConcreteInteger
@@ -45,6 +48,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::SliceCannotApplyToScalar
         | TensorError::TooManyIndices { .. }
         | TensorError::IndexOutOfBounds { .. }
+        | TensorError::NarrowStartOutOfRange { .. }
         | TensorError::DimensionOutOfRange { .. } => PyIndexError::new_err(error.to_string()),
     }
 }

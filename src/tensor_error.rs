@@ -26,6 +26,19 @@ pub enum TensorError {
     },
     InvalidScalarIndex,
     SliceCannotApplyToScalar,
+    NarrowCannotApplyToScalar,
+    NarrowNegativeLength,
+    NarrowStartOutOfRange {
+        start: i64,
+        dimension: usize,
+        size: usize,
+    },
+    NarrowLengthOutOfRange {
+        start: i64,
+        length: i64,
+        dimension: usize,
+        size: usize,
+    },
     TooManyIndices {
         dimensions: usize,
     },
@@ -135,6 +148,30 @@ impl Display for TensorError {
             Self::SliceCannotApplyToScalar => {
                 formatter.write_str("slice() cannot be applied to a 0-dim tensor.")
             }
+            Self::NarrowCannotApplyToScalar => {
+                formatter.write_str("narrow() cannot be applied to a 0-dim tensor.")
+            }
+            Self::NarrowNegativeLength => {
+                formatter.write_str("narrow(): length must be non-negative.")
+            }
+            Self::NarrowStartOutOfRange { start, size, .. } => write!(
+                formatter,
+                "start out of range (expected to be in range of [{}, {size}], but got {start})",
+                if *size == 0 {
+                    "0".to_owned()
+                } else {
+                    format!("-{size}")
+                }
+            ),
+            Self::NarrowLengthOutOfRange {
+                start,
+                length,
+                size,
+                ..
+            } => write!(
+                formatter,
+                "start ({start}) + length ({length}) exceeds dimension size ({size})."
+            ),
             Self::TooManyIndices { dimensions } => {
                 write!(
                     formatter,

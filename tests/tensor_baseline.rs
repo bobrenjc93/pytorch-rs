@@ -3866,6 +3866,92 @@ fn integer_indexing_uses_checked_offset_arithmetic() {
 }
 
 #[test]
+fn narrow_first_dimension_returns_shared_metadata_views() {
+    let source = Tensor::from_vec((0_u16..48).map(f32::from).collect(), [2, 2, 3, 4])
+        .unwrap()
+        .index_integer(1)
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+    let view = source.narrow_first_dimension(1, 2).unwrap();
+
+    assert_eq!(view.shape(), [2, 2, 4]);
+    assert_eq!(view.stride(), [4, 12, 1]);
+    assert_eq!(view.storage_offset(), 28);
+    assert!(view.shares_storage_with(&source));
+    assert_eq!(
+        view.logical_values().collect::<Vec<_>>(),
+        vec![
+            28.0, 29.0, 30.0, 31.0, 40.0, 41.0, 42.0, 43.0, 32.0, 33.0, 34.0, 35.0, 44.0, 45.0,
+            46.0, 47.0,
+        ]
+    );
+
+    let empty_length = source.narrow_first_dimension(2, 0).unwrap();
+    assert_eq!(empty_length.shape(), [0, 2, 4]);
+    assert_eq!(empty_length.stride(), [4, 12, 1]);
+    assert_eq!(empty_length.storage_offset(), 32);
+    assert!(empty_length.shares_storage_with(&source));
+    assert!(empty_length.logical_values().next().is_none());
+
+    let empty_inner = Tensor::zeros([2, 0, 3])
+        .unwrap()
+        .narrow_first_dimension(1, 1)
+        .unwrap();
+    assert_eq!(empty_inner.shape(), [1, 0, 3]);
+    assert_eq!(empty_inner.stride(), [3, 3, 1]);
+    assert_eq!(empty_inner.storage_offset(), 3);
+    assert!(empty_inner.logical_values().next().is_none());
+
+    let zero_sized_source = Tensor::zeros([0, 2]).unwrap();
+    let zero_sized_view = zero_sized_source.narrow_first_dimension(0, 0).unwrap();
+    assert_eq!(zero_sized_view.shape(), [0, 2]);
+    assert_eq!(zero_sized_view.stride(), [2, 1]);
+    assert_eq!(zero_sized_view.storage_offset(), 0);
+    assert!(zero_sized_view.shares_storage_with(&zero_sized_source));
+}
+
+#[test]
+fn narrow_first_dimension_reports_bounds_errors() {
+    let tensor = Tensor::zeros([2, 3, 4]).unwrap();
+    assert_eq!(
+        tensor.narrow_first_dimension(0, -1),
+        Err(TensorError::NarrowNegativeLength)
+    );
+    assert_eq!(
+        tensor.narrow_first_dimension(3, 0),
+        Err(TensorError::NarrowStartOutOfRange {
+            start: 3,
+            dimension: 0,
+            size: 2,
+        })
+    );
+    assert_eq!(
+        tensor.narrow_first_dimension(-3, 1),
+        Err(TensorError::NarrowStartOutOfRange {
+            start: -3,
+            dimension: 0,
+            size: 2,
+        })
+    );
+    assert_eq!(
+        tensor.narrow_first_dimension(1, 2),
+        Err(TensorError::NarrowLengthOutOfRange {
+            start: 1,
+            length: 2,
+            dimension: 0,
+            size: 2,
+        })
+    );
+    assert_eq!(
+        Tensor::from_vec(vec![1.0], [])
+            .unwrap()
+            .narrow_first_dimension(0, 0),
+        Err(TensorError::NarrowCannotApplyToScalar)
+    );
+}
+
+#[test]
 fn reshape_infers_one_dimension_and_handles_scalars_and_empty_tensors() {
     let tensor = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [6]).unwrap();
     assert_eq!(tensor.reshape([2, -1]).unwrap().shape(), [2, 3]);
