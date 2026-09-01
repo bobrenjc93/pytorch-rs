@@ -711,6 +711,78 @@ class TensorViewReferenceTests(unittest.TestCase):
             )
         self.assertEqual(outcomes[0], outcomes[1])
 
+    def high_rank_view_cases(self, module):
+        base = module.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            dtype=module.float32,
+        )
+        return (
+            ("contiguous-seven", base, (2, 3, 1, 1, 1, 1, 4)),
+            ("contiguous-eight", base, (1, 2, 3, 1, 1, 1, 1, 4)),
+            ("contiguous-inferred", base, (2, -1, 1, 1, 1, 1, 4)),
+            ("contiguous-offset", base[1], (1, 3, 1, 1, 1, 1, 4)),
+            ("empty", module.zeros((0,), dtype=module.float32), (2, 0, 3, 1, 1, 1, 1)),
+            (
+                "integer-protocol",
+                base,
+                (
+                    IntSubclass(2),
+                    np.int64(3),
+                    np.uint32(1),
+                    IndexDimension(1),
+                    1,
+                    1,
+                    IndexDimension(4),
+                ),
+            ),
+        )
+
+    def test_seven_or_more_positional_dimensions_match_pytorch_2_13(self):
+        actual_cases = self.high_rank_view_cases(torch)
+        expected_cases = self.high_rank_view_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases, expected_cases, strict=True
+        ):
+            case, actual_source, actual_dimensions = actual_case
+            expected_name, expected_source, expected_dimensions = expected_case
+            self.assertEqual(case, expected_name)
+            with self.subTest(case=case):
+                actual = self.positional_view_observation(
+                    torch, actual_source, actual_dimensions
+                )
+                expected = self.positional_view_observation(
+                    reference_torch, expected_source, expected_dimensions
+                )
+                self.assertEqual(actual[:-1], expected[:-1])
+                np.testing.assert_array_equal(actual[-1], expected[-1])
+
+        outcomes = []
+        for module in (torch, reference_torch):
+            first = StatefulIndexDimension((2, 1, 2))
+            second = StatefulIndexDimension((3,))
+            third = StatefulIndexDimension((1,))
+            fourth = StatefulIndexDimension((1,))
+            fifth = StatefulIndexDimension((1,))
+            sixth = StatefulIndexDimension((1,))
+            seventh = StatefulIndexDimension((4,))
+            result = module.zeros((24,), dtype=module.float32).view(
+                first, second, third, fourth, fifth, sixth, seventh
+            )
+            outcomes.append(
+                (
+                    tuple(result.shape),
+                    result.stride(),
+                    first.calls,
+                    second.calls,
+                    third.calls,
+                    fourth.calls,
+                    fifth.calls,
+                    sixth.calls,
+                    seventh.calls,
+                )
+            )
+        self.assertEqual(outcomes[0], outcomes[1])
+
     def test_dual_sequence_index_overload_resolution_matches_pytorch_2_13(self):
         for dimension_type in (TupleIndexDimension, ListIndexDimension):
             outcomes = []
@@ -919,6 +991,47 @@ class TensorViewReferenceTests(unittest.TestCase):
                     six_dimension_fallback_outcomes[1],
                 )
 
+            high_rank_outcomes = []
+            for module in (torch, reference_torch):
+                source = module.zeros((24,), dtype=module.float32)
+                sequence = dimension_type((24,), 2)
+                result = source.view(sequence, 3, 1, 1, 1, 1, 4)
+                high_rank_outcomes.append(
+                    (
+                        tuple(result.shape),
+                        result.stride(),
+                        result.storage_offset(),
+                        result.data_ptr() == source.data_ptr(),
+                        sequence.calls,
+                    )
+                )
+            with self.subTest(
+                high_rank_type=dimension_type.__name__
+            ):
+                self.assertEqual(high_rank_outcomes[0], high_rank_outcomes[1])
+
+            high_rank_fallback_outcomes = []
+            for module in (torch, reference_torch):
+                source = module.zeros((24,), dtype=module.float32)
+                sequence = dimension_type((2.0, 3), 2)
+                result = source.view(sequence, 3, 1, 1, 1, 1, 4)
+                high_rank_fallback_outcomes.append(
+                    (
+                        tuple(result.shape),
+                        result.stride(),
+                        result.storage_offset(),
+                        result.data_ptr() == source.data_ptr(),
+                        sequence.calls,
+                    )
+                )
+            with self.subTest(
+                high_rank_fallback_type=dimension_type.__name__
+            ):
+                self.assertEqual(
+                    high_rank_fallback_outcomes[0],
+                    high_rank_fallback_outcomes[1],
+                )
+
     def test_inference_extreme_empty_and_view_errors_match_pytorch_2_13(self):
         actual_source = torch.tensor(
             np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
@@ -1048,6 +1161,14 @@ class TensorViewReferenceTests(unittest.TestCase):
                 ).view(1, 1, 1, 2, 2, 2),
             ),
             (
+                lambda: torch.zeros((6,), dtype=torch.float32).view(
+                    1, 1, 1, 1, 1, 2, 2
+                ),
+                lambda: reference_torch.zeros(
+                    (6,), dtype=reference_torch.float32
+                ).view(1, 1, 1, 1, 1, 2, 2),
+            ),
+            (
                 lambda: torch.zeros((6,), dtype=torch.float32).view((2, 2)),
                 lambda: reference_torch.zeros(
                     (6,), dtype=reference_torch.float32
@@ -1090,6 +1211,14 @@ class TensorViewReferenceTests(unittest.TestCase):
                 ).view(-1, 1, 1, 1, 1, -1),
             ),
             (
+                lambda: torch.zeros((6,), dtype=torch.float32).view(
+                    -1, 1, 1, 1, 1, 1, -1
+                ),
+                lambda: reference_torch.zeros(
+                    (6,), dtype=reference_torch.float32
+                ).view(-1, 1, 1, 1, 1, 1, -1),
+            ),
+            (
                 lambda: torch.zeros((6,), dtype=torch.float32).view((-1, -1)),
                 lambda: reference_torch.zeros(
                     (6,), dtype=reference_torch.float32
@@ -1130,6 +1259,14 @@ class TensorViewReferenceTests(unittest.TestCase):
                 ).view(1, -2, 1, 1, 1, 3),
             ),
             (
+                lambda: torch.zeros((6,), dtype=torch.float32).view(
+                    1, -2, 1, 1, 1, 1, 3
+                ),
+                lambda: reference_torch.zeros(
+                    (6,), dtype=reference_torch.float32
+                ).view(1, -2, 1, 1, 1, 1, 3),
+            ),
+            (
                 lambda: torch.zeros((6,), dtype=torch.float32).view((2, -2)),
                 lambda: reference_torch.zeros(
                     (6,), dtype=reference_torch.float32
@@ -1168,6 +1305,14 @@ class TensorViewReferenceTests(unittest.TestCase):
                 lambda: reference_torch.zeros(
                     (0,), dtype=reference_torch.float32
                 ).view(2, 0, 1, 1, 1, -1),
+            ),
+            (
+                lambda: torch.zeros((0,), dtype=torch.float32).view(
+                    2, 0, 1, 1, 1, 1, -1
+                ),
+                lambda: reference_torch.zeros(
+                    (0,), dtype=reference_torch.float32
+                ).view(2, 0, 1, 1, 1, 1, -1),
             ),
             (
                 lambda: torch.zeros((0,), dtype=torch.float32).view((0, -1)),
@@ -1317,6 +1462,24 @@ class TensorViewReferenceTests(unittest.TestCase):
         (result * weights).sum().backward()
         return metadata, self.tensor_array(leaf.grad, module).copy()
 
+    def high_rank_sum_autograd_outcome(self, module):
+        leaf = module.tensor(
+            np.arange(24, dtype=np.float32).tolist(),
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        result = leaf.view(2, 3, 1, 1, 1, 1, 4)
+        metadata = (
+            tuple(result.shape),
+            result.stride(),
+            result.storage_offset(),
+            result.requires_grad,
+            result.is_leaf,
+            result.data_ptr() == leaf.data_ptr(),
+        )
+        result.sum().backward()
+        return metadata, self.tensor_array(leaf.grad, module).copy()
+
     def repeated_backward_outcome(self, module):
         leaf = module.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
@@ -1405,6 +1568,14 @@ class TensorViewReferenceTests(unittest.TestCase):
         )
         self.assertEqual(actual_six_metadata, expected_six_metadata)
         np.testing.assert_array_equal(actual_six_grad, expected_six_grad)
+        actual_high_rank_metadata, actual_high_rank_grad = (
+            self.high_rank_sum_autograd_outcome(torch)
+        )
+        expected_high_rank_metadata, expected_high_rank_grad = (
+            self.high_rank_sum_autograd_outcome(reference_torch)
+        )
+        self.assertEqual(actual_high_rank_metadata, expected_high_rank_metadata)
+        np.testing.assert_array_equal(actual_high_rank_grad, expected_high_rank_grad)
         np.testing.assert_array_equal(
             self.repeated_backward_outcome(torch),
             self.repeated_backward_outcome(reference_torch),
@@ -1461,6 +1632,7 @@ class TensorViewReferenceTests(unittest.TestCase):
             tuple(descriptor(tensor, 1, 1, 1, 2).shape),
             tuple(descriptor(tensor, 1, 1, 1, 1, 2).shape),
             tuple(descriptor(tensor, 1, 1, 1, 1, 1, 2).shape),
+            tuple(descriptor(tensor, 1, 1, 1, 1, 1, 1, 2).shape),
             tuple(descriptor(tensor, size=[2, 1]).shape),
         )
 
@@ -1522,6 +1694,7 @@ class TensorViewReferenceTests(unittest.TestCase):
             lambda: tensor.view(1, 1, 2, 3),
             lambda: tensor.view(1, 1, 1, 2, 3),
             lambda: tensor.view(1, 1, 1, 1, 2, 3),
+            lambda: tensor.view(1, 1, 1, 1, 1, 2, 3),
             lambda: tensor.view(tuple_index, 3),
             lambda: tensor.view(list_index, 3),
             lambda: tensor.view(size=(2, 3)),
@@ -1559,6 +1732,12 @@ class TensorViewReferenceTests(unittest.TestCase):
         six_variadic_deferred = RecordingMode(marker)
         with six_variadic_deferred:
             six_variadic_deferred_result = tensor.view(1, 1, 1, 1, 2, 3.0)
+
+        seven_variadic_deferred = RecordingMode(marker)
+        with seven_variadic_deferred:
+            seven_variadic_deferred_result = tensor.view(
+                1, 1, 1, 1, 1, 2, 3.0
+            )
 
         invalid = RecordingMode(marker)
         try:
@@ -1642,6 +1821,12 @@ class TensorViewReferenceTests(unittest.TestCase):
         order.clear()
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
+                seven_variadic_forwarded = tensor.view(1, 1, 1, 1, 1, 2, 3)
+        seven_variadic_order = tuple(order)
+
+        order.clear()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
                 dtype_forwarded = tensor.view(dtype=module.float)
         dtype_order = tuple(order)
 
@@ -1683,6 +1868,10 @@ class TensorViewReferenceTests(unittest.TestCase):
             "six_variadic_deferred": (
                 six_variadic_deferred_result is marker,
                 tuple(map(normalize_call, six_variadic_deferred.calls)),
+            ),
+            "seven_variadic_deferred": (
+                seven_variadic_deferred_result is marker,
+                tuple(map(normalize_call, seven_variadic_deferred.calls)),
             ),
             "invalid": invalid_error,
             "invalid_calls": len(invalid.calls),
@@ -1760,6 +1949,16 @@ class TensorViewReferenceTests(unittest.TestCase):
                 six_variadic_forwarded.stride(),
                 six_variadic_forwarded.storage_offset(),
                 six_variadic_forwarded.data_ptr() == tensor.data_ptr(),
+            ),
+            "seven_variadic_forwarding": tuple(
+                (label, normalize_call((func, dispatch_types, args, kwargs)))
+                for label, func, dispatch_types, args, kwargs in seven_variadic_order
+            ),
+            "seven_variadic_forwarded": (
+                tuple(seven_variadic_forwarded.shape),
+                seven_variadic_forwarded.stride(),
+                seven_variadic_forwarded.storage_offset(),
+                seven_variadic_forwarded.data_ptr() == tensor.data_ptr(),
             ),
             "dtype_forwarding": tuple(
                 (label, normalize_call((func, dispatch_types, args, kwargs)))
@@ -2247,6 +2446,67 @@ class TensorViewReferenceTests(unittest.TestCase):
                 )
                 self.assertIn("Overflow when unpacking long long", str(error))
 
+    def test_seven_or_more_positional_dimension_conversion_matches_pytorch_2_13(self):
+        actual = torch.zeros((24,), dtype=torch.float32)
+        expected = reference_torch.zeros(
+            (24,), dtype=reference_torch.float32
+        )
+        dimension_factories = (
+            lambda: (
+                IntSubclass(2),
+                np.int64(3),
+                np.uint32(1),
+                IndexDimension(1),
+                1,
+                1,
+                IndexDimension(4),
+            ),
+            lambda: (IndexDimension(2), 3, 1, 1, 1, 1, np.int64(4)),
+        )
+        for factory in dimension_factories:
+            actual_dimensions = factory()
+            expected_dimensions = factory()
+            actual_result = actual.view(*actual_dimensions)
+            expected_result = expected.view(*expected_dimensions)
+            self.assertEqual(
+                (
+                    tuple(actual_result.shape),
+                    actual_result.stride(),
+                    actual_result.data_ptr() == actual.data_ptr(),
+                ),
+                (
+                    tuple(expected_result.shape),
+                    expected_result.stride(),
+                    expected_result.data_ptr() == expected.data_ptr(),
+                ),
+            )
+
+        actual_bool = torch.zeros((1,), dtype=torch.float32).view(
+            1, True, 1, 1, 1, 1, 1
+        )
+        expected_bool = reference_torch.zeros(
+            (1,), dtype=reference_torch.float32
+        ).view(1, True, 1, 1, 1, 1, 1)
+        self.assertEqual(
+            (tuple(actual_bool.shape), actual_bool.stride()),
+            (tuple(expected_bool.shape), expected_bool.stride()),
+        )
+        self.assert_error_matches(
+            lambda: actual.view(True, 1, 1, 1, 1, 1, 24),
+            lambda: expected.view(True, 1, 1, 1, 1, 1, 24),
+        )
+        self.assert_error_matches(
+            lambda: actual.view(2, 3, 1, 1, 1, 1, 4.0),
+            lambda: expected.view(2, 3, 1, 1, 1, 1, 4.0),
+        )
+        with self.assertRaises(TypeError) as actual_overflow:
+            actual.view(2, 3, 1, 1, 1, 1, 2**63)
+        with self.assertRaises(TypeError) as expected_overflow:
+            expected.view(2, 3, 1, 1, 1, 1, 2**63)
+        for error in (actual_overflow.exception, expected_overflow.exception):
+            self.assertIn("failed to unpack the object at pos 7", str(error))
+            self.assertIn("Overflow when unpacking long long", str(error))
+
     def test_operator_index_poisoning_matches_pytorch_2_13(self):
         actual = torch.zeros((6,), dtype=torch.float32)
         expected = reference_torch.zeros((6,), dtype=reference_torch.float32)
@@ -2330,6 +2590,22 @@ class TensorViewReferenceTests(unittest.TestCase):
                     expected_six_variadic.stride(),
                 ),
             )
+            actual_seven_variadic = torch.zeros(
+                (24,), dtype=torch.float32
+            ).view(2, 3, 1, 1, 1, 1, 4)
+            expected_seven_variadic = reference_torch.zeros(
+                (24,), dtype=reference_torch.float32
+            ).view(2, 3, 1, 1, 1, 1, 4)
+            self.assertEqual(
+                (
+                    tuple(actual_seven_variadic.shape),
+                    actual_seven_variadic.stride(),
+                ),
+                (
+                    tuple(expected_seven_variadic.shape),
+                    expected_seven_variadic.stride(),
+                ),
+            )
             self.assert_error_matches(
                 lambda: actual.view((2, 3.0)),
                 lambda: expected.view((2, 3.0)),
@@ -2354,20 +2630,6 @@ class TensorViewReferenceTests(unittest.TestCase):
     def test_deliberately_unsupported_overloads_remain_outside_the_binding(self):
         actual = torch.zeros((6,), dtype=torch.float32)
         expected = reference_torch.zeros((6,), dtype=reference_torch.float32)
-        for actual_call, expected_call in (
-            (
-                lambda: actual.view(1, 1, 1, 1, 1, 2, 3),
-                lambda: expected.view(1, 1, 1, 1, 1, 2, 3),
-            ),
-            (
-                lambda: actual.view(1, 1, 1, 1, 1, 1, 2, 3),
-                lambda: expected.view(1, 1, 1, 1, 1, 1, 2, 3),
-            ),
-        ):
-            with self.assertRaises(TypeError):
-                actual_call()
-            self.assertEqual(expected_call().numel(), 6)
-
         mixed_calls = (
             (
                 lambda: actual.view(size=torch.float32),
@@ -2419,6 +2681,14 @@ class TensorViewReferenceTests(unittest.TestCase):
                 ),
                 lambda: expected.view(
                     1, 1, 1, 1, 2, 3, size=(1, 1, 1, 1, 2, 3)
+                ),
+            ),
+            (
+                lambda: actual.view(
+                    1, 1, 1, 1, 1, 2, 3, size=(1, 1, 1, 1, 1, 2, 3)
+                ),
+                lambda: expected.view(
+                    1, 1, 1, 1, 1, 2, 3, size=(1, 1, 1, 1, 1, 2, 3)
                 ),
             ),
         )
