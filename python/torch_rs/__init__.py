@@ -203,6 +203,63 @@ def get_default_device() -> "torch.device":
     return torch.device("cpu")
 
 
+def set_default_device(device: "Device") -> None:
+    r"""Sets the default ``torch.Tensor`` to be allocated on ``device``.  This
+    CPU-only compatibility entrypoint accepts only default-equivalent CPU
+    requests: ``None``, ``"cpu"``, and unindexed ``torch.device("cpu")``
+    values. It returns ``None`` and leaves factory output on the unindexed CPU
+    device. Mutable default-device routing, CUDA/meta defaults, indexed CPU
+    defaults, and ``with torch.device(...)`` device-context behavior remain
+    unsupported.
+    """
+    if device is None:
+        return None
+
+    if _builtins.isinstance(device, torch.device):
+        if device.type == "cpu" and device.index is None:
+            return None
+        if device.type == "cpu":
+            raise NotImplementedError(
+                "set_default_device(): indexed CPU default devices are not "
+                "supported; only the unindexed CPU default is implemented"
+            )
+        raise RuntimeError(
+            f"set_default_device(): device '{device}' is not supported; "
+            "only the unindexed CPU default is implemented"
+        )
+
+    if _builtins.isinstance(device, str):
+        if device == "cpu":
+            return None
+        if (
+            device == "cuda"
+            or device.startswith("cuda:")
+            or device == "meta"
+            or device.startswith("meta:")
+        ):
+            raise RuntimeError(
+                f"set_default_device(): device '{device}' is not supported; "
+                "only the unindexed CPU default is implemented"
+            )
+        parsed_device = torch.device(device)
+        if parsed_device.type == "cpu" and parsed_device.index is not None:
+            raise NotImplementedError(
+                "set_default_device(): indexed CPU default devices are not "
+                "supported; only the unindexed CPU default is implemented"
+            )
+        raise RuntimeError(
+            f"set_default_device(): device '{parsed_device}' is not supported; "
+            "only the unindexed CPU default is implemented"
+        )
+
+    device_type = _builtins.type(device)
+    type_name = _builtins.object.__getattribute__(device_type, "__name__")
+    raise TypeError(
+        "set_default_device(): argument 'device' must be torch.device, str, "
+        f"or None, not {type_name}"
+    )
+
+
 @_functools.cache
 def get_device_module(device: torch.device | str | None = None):
     """
@@ -508,6 +565,7 @@ __all__ = [
     "set_deterministic_debug_mode",
     "is_deterministic_algorithms_warn_only_enabled",
     "get_default_device",
+    "set_default_device",
     "get_device_module",
     "get_float32_matmul_precision",
     "set_float32_matmul_precision",
