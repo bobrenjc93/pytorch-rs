@@ -531,6 +531,27 @@ class FunctionalMseLossTests(unittest.TestCase):
                     self.tensor_state(target)[-1], target_state[-1]
                 )
 
+    def test_sum_reduction_no_grad_view_repeated_backward_reports_freed_graph(self):
+        leaf = torch.tensor(
+            [[1.0, -2.0], [3.0, -4.0]],
+            requires_grad=True,
+        )
+        with torch.no_grad():
+            view = leaf[0]
+
+        self.assertTrue(view.requires_grad)
+        self.assertTrue(view.is_leaf)
+        loss = functional.mse_loss(view, view, reduction="sum")
+        self.assertTrue(loss.requires_grad)
+        self.assertFalse(loss.is_leaf)
+
+        loss.backward()
+        self.assertIsNone(leaf.grad)
+        with self.assertRaisesRegex(
+            RuntimeError, "backward through the graph a second time"
+        ):
+            loss.backward()
+
     @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
     def test_high_rank_scalar_broadcast_warning_is_fallible(self):
         script = textwrap.dedent(

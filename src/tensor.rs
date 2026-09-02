@@ -197,9 +197,7 @@ impl GradFn {
             }
             #[cfg(any(feature = "python-bindings", test))]
             Self::SquaredDifference { left, right, .. } => {
-                if (left.autograd.is_some() || right.autograd.is_some())
-                    && (left.storage.is_none() || right.storage.is_none())
-                {
+                if left.storage.is_none() || right.storage.is_none() {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
@@ -4777,6 +4775,17 @@ fn apply_squared_difference_grad_fn(
     } else {
         None
     };
+    if left_gradient.is_none() && right_gradient.is_none() {
+        return Ok(());
+    }
+    let left_storage = left
+        .storage
+        .as_ref()
+        .ok_or(TensorError::BackwardGraphFreed)?;
+    let right_storage = right
+        .storage
+        .as_ref()
+        .ok_or(TensorError::BackwardGraphFreed)?;
     let mut coordinates = try_result_vector(output_shape.len(), output_elements)?;
     coordinates.resize(output_shape.len(), 0_usize);
 
@@ -4788,16 +4797,10 @@ fn apply_squared_difference_grad_fn(
         }
         let (left_index, left_offset) = left.broadcast_position(output_shape, &coordinates);
         let (right_index, right_offset) = right.broadcast_position(output_shape, &coordinates);
-        let left_value = left
-            .storage
-            .as_ref()
-            .expect("squared-difference derivative must save left operand values")
+        let left_value = left_storage
             .value(left_offset)
             .expect("saved left operand offset must address storage");
-        let right_value = right
-            .storage
-            .as_ref()
-            .expect("squared-difference derivative must save right operand values")
+        let right_value = right_storage
             .value(right_offset)
             .expect("saved right operand offset must address storage");
         if let Some(gradient) = &mut left_gradient {

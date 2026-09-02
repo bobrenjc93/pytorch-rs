@@ -1156,6 +1156,47 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 max_value_ulp=1,
             )
 
+    def test_sum_reduction_no_grad_view_repeated_backward_matches_pytorch_2_13(self):
+        actual_leaf = torch.tensor(
+            [[1.0, -2.0], [3.0, -4.0]],
+            requires_grad=True,
+        )
+        expected_leaf = reference_torch.tensor(
+            [[1.0, -2.0], [3.0, -4.0]],
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        with torch.no_grad():
+            actual_view = actual_leaf[0]
+        with reference_torch.no_grad():
+            expected_view = expected_leaf[0]
+
+        actual_loss = functional.mse_loss(actual_view, actual_view, reduction="sum")
+        expected_loss = reference_functional.mse_loss(
+            expected_view,
+            expected_view,
+            reduction="sum",
+        )
+        self.assert_matches(
+            actual_loss,
+            expected_loss,
+            case="no_grad view",
+            max_value_ulp=1,
+        )
+
+        actual_loss.backward()
+        expected_loss.backward()
+        self.assertIsNone(actual_leaf.grad)
+        self.assertIsNone(expected_leaf.grad)
+        with self.assertRaisesRegex(
+            RuntimeError, "backward through the graph a second time"
+        ):
+            actual_loss.backward()
+        with self.assertRaisesRegex(
+            RuntimeError, "backward through the graph a second time"
+        ):
+            expected_loss.backward()
+
     def test_sum_reduction_first_order_backward_matches_pytorch_2_13(self):
         def assert_grads_match(actual_sources, expected_sources, *, case):
             for actual, expected in zip(actual_sources, expected_sources, strict=True):
