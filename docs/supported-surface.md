@@ -724,6 +724,19 @@ its implementation engine.
 
 #### Creation
 
+`torch.tensor(data, *, dtype=None, device=None, requires_grad=False, pin_memory=False)`
+creates fresh CPU `float32` tensors from Python scalar data, rectangular Python
+sequences, and the supported one-dimensional buffer formats. Supported dtype
+forms are omitted, `None`, `torch.float32`, and `torch.float`; supported device
+forms are omitted, `None`, CPU strings, and `torch.device("cpu")` values, all
+normalized to the CPU device. `pin_memory=None` and `pin_memory=False` are
+accepted as default-equivalent unpinned allocation metadata and always produce
+pageable storage. `requires_grad=True` creates a leaf tensor even under
+`torch.no_grad()`, while omitted and `False` leave gradient tracking disabled.
+`pin_memory=True`, non-bool `pin_memory` values, non-float32 dtype conversion,
+non-CPU devices, pinned allocators, and backend-specific allocation behavior
+remain unsupported.
+
 `torch.as_tensor(data, dtype=None, device=None)` is exposed as a
 PyTorch-style top-level builtin for exact native CPU `float32` tensor identity
 conversion, exact Python `float` scalar construction, and exact Python

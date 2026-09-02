@@ -220,11 +220,15 @@ class TensorIsPinnedReferenceTests(unittest.TestCase):
         for call in (
             lambda: tensor.is_pinned(None),
             lambda: tensor.is_pinned(device=None),
-            lambda: torch.tensor([1.0], pin_memory=True),
         ):
             with self.subTest(call=call):
                 with self.assertRaises(TypeError):
                     call()
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^tensor\(\): pin_memory=True is not supported; only unpinned CPU storage is implemented$",
+        ):
+            torch.tensor([1.0], pin_memory=True)
 
         for function in (torch.zeros, torch.ones):
             with self.subTest(function=function.__name__):

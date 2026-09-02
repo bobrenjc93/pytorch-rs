@@ -2632,17 +2632,6 @@ enum ParsedArithmeticScalar {
     WideNumpyUnsigned,
 }
 
-#[derive(Clone, Copy)]
-struct StrictBool(bool);
-
-impl<'a, 'py> FromPyObject<'a, 'py> for StrictBool {
-    type Error = PyErr;
-
-    fn extract(object: pyo3::Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        parse_requires_grad("tensor", &object.to_owned()).map(Self)
-    }
-}
-
 pub(crate) struct ParsedCallArgument<'py> {
     pub(crate) value: Bound<'py, PyAny>,
     position: Option<usize>,
@@ -5763,6 +5752,15 @@ struct AsTensorCallArguments<'py> {
     keyword_error: Option<PyErr>,
 }
 
+struct TensorConstructorCallArguments<'py> {
+    data: Option<ParsedCallArgument<'py>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    requires_grad: Option<Bound<'py, PyAny>>,
+    pin_memory: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
 struct AsArrayCallArguments<'py> {
     obj: Option<ParsedCallArgument<'py>>,
     dtype: Option<Bound<'py, PyAny>>,
@@ -6751,37 +6749,63 @@ impl BinaryOperation {
 }
 
 #[pyfunction(
-    signature = (data, *, dtype=None, device=None, requires_grad=StrictBool(false)),
-    text_signature = "(data, *, dtype=None, device=None, requires_grad=False)"
+    signature = (*args, **kwargs),
+    text_signature = "(data, *, dtype=None, device=None, requires_grad=False, pin_memory=False)"
 )]
-fn tensor(
-    data: &Bound<'_, PyAny>,
-    dtype: Option<&Bound<'_, PyAny>>,
-    device: Option<&Bound<'_, PyAny>>,
-    requires_grad: StrictBool,
-) -> PyResult<PyTensor> {
-    let requires_grad = requires_grad.0;
+fn tensor(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let arguments = bind_tensor_constructor_arguments(args, kwargs)?;
+    let TensorConstructorCallArguments {
+        data,
+        dtype,
+        device,
+        requires_grad,
+        pin_memory,
+        keyword_error,
+    } = arguments;
+
+    let Some(data) = data else {
+        return Err(PyTypeError::new_err(
+            "tensor() missing 1 required positional arguments: \"data\"",
+        ));
+    };
     let dtype_was_explicit = dtype.is_some();
-    let (dtype, device) = parse_metadata("tensor", dtype, device)?;
-    let (flattened, shape) = if let Ok(scalar) = data.extract::<f32>() {
+    let dtype = parse_dtype("tensor", dtype.as_ref())?;
+    validate_device_argument_type("tensor", device.as_ref())?;
+    let pin_memory = parse_tensor_pin_memory(pin_memory.as_ref())?;
+    let requires_grad = parse_tensor_requires_grad(requires_grad.as_ref())?;
+    if let Some(error) = keyword_error {
+        return Err(error);
+    }
+    let device = parse_device("tensor", device.as_ref())?;
+
+    let (flattened, shape) = if let Ok(scalar) = data.value.extract::<f32>() {
         (vec![scalar], Vec::new())
-    } else if data.cast::<PyBytes>().is_ok() {
+    } else if data.value.cast::<PyBytes>().is_ok() {
         return Err(PyTypeError::new_err("new(): invalid data type 'bytes'"));
-    } else if data.cast::<PyMemoryView>().is_ok() {
-        if let Some(buffer) = flatten_buffer(data, dtype_was_explicit)? {
+    } else if data.value.cast::<PyMemoryView>().is_ok() {
+        if let Some(buffer) = flatten_buffer(&data.value, dtype_was_explicit)? {
             buffer
         } else {
             let mut flattened = Vec::new();
-            let shape = flatten_rectangular(data, &mut flattened)?;
+            let shape = flatten_rectangular(&data.value, &mut flattened)?;
             (flattened, shape)
         }
-    } else if is_sequence_input(data)? {
+    } else if is_sequence_input(&data.value)? {
         let mut flattened = Vec::new();
-        let shape = flatten_rectangular(data, &mut flattened)?;
+        let shape = flatten_rectangular(&data.value, &mut flattened)?;
         (flattened, shape)
     } else {
-        return Err(unsupported_tensor_data_error(data, dtype_was_explicit)?);
+        return Err(unsupported_tensor_data_error(
+            &data.value,
+            dtype_was_explicit,
+        )?);
     };
+
+    if pin_memory {
+        return Err(PyRuntimeError::new_err(
+            "tensor(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
+        ));
+    }
     CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| tensor_error(&error))
@@ -8597,6 +8621,82 @@ fn arange_overload_unsupported() -> PyErr {
     )
 }
 
+fn bind_tensor_constructor_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<TensorConstructorCallArguments<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "tensor() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments = TensorConstructorCallArguments {
+        data: if positional.is_empty() {
+            None
+        } else {
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            })
+        },
+        dtype: None,
+        device: None,
+        requires_grad: None,
+        pin_memory: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "data" => {
+                if arguments.data.is_some() {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("tensor() got multiple values for argument 'data'")
+                    });
+                } else {
+                    arguments.data = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            }
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            "requires_grad" => arguments.requires_grad = Some(value),
+            "pin_memory" => arguments.pin_memory = Some(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "tensor() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
+}
+
+fn parse_tensor_pin_memory(value: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+    match value {
+        None => Ok(false),
+        Some(value) if value.is_none() => Ok(false),
+        Some(value) => parse_factory_bool("tensor", "pin_memory", Some(value)),
+    }
+}
+
+fn parse_tensor_requires_grad(value: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+    match value {
+        None => Ok(false),
+        Some(value) => parse_requires_grad("tensor", value),
+    }
+}
+
 fn bind_as_tensor_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
@@ -9854,17 +9954,6 @@ fn creation_negative_dimension_error(function: &str, dimension: i64, shape: &[i6
             "Trying to create tensor with negative dimension {dimension}: {shape:?}"
         ))
     }
-}
-
-fn parse_metadata(
-    function: &str,
-    dtype: Option<&Bound<'_, PyAny>>,
-    device: Option<&Bound<'_, PyAny>>,
-) -> PyResult<(DType, Device)> {
-    Ok((
-        parse_dtype(function, dtype)?,
-        parse_device(function, device)?,
-    ))
 }
 
 fn parse_dtype(function: &str, dtype: Option<&Bound<'_, PyAny>>) -> PyResult<DType> {
