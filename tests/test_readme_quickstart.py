@@ -40,6 +40,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-mul-release-timings.md",
     ),
     (
+        "`torch.div` and `torch.divide` release timings",
+        "docs/top-level-division-release-timings.md",
+    ),
+    (
         "Rank-2 `@`, `Tensor.matmul`, and `torch.matmul` release timings",
         "docs/rank2-matmul-release-timings.md",
     ),
