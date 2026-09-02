@@ -124,6 +124,73 @@ class TopLevelAddReferenceTests(unittest.TestCase):
             case="signed zero and non-finites",
         )
 
+    def test_scalar_other_values_layouts_empty_and_ieee_match_pytorch_2_13(self):
+        actual_base = torch.tensor(
+            [[1.0, -2.0, 0.0], [4.5, -6.0, 3.5]]
+        )
+        expected_base = reference_torch.tensor(
+            [[1.0, -2.0, 0.0], [4.5, -6.0, 3.5]]
+        )
+        for case, scalar in (
+            ("python bool", True),
+            ("python int", -2),
+            ("python float", 2.5),
+            ("numpy bool", np.bool_(True)),
+            ("numpy int", np.int64(3)),
+            ("numpy float signed zero", np.float32(-0.0)),
+            ("python inf", float("inf")),
+            ("python nan", float("nan")),
+        ):
+            self.assert_matches(
+                torch.add(actual_base, scalar),
+                reference_torch.add(expected_base, scalar),
+                case=("positional scalar", case),
+            )
+            self.assert_matches(
+                torch.add(input=actual_base, other=scalar),
+                reference_torch.add(input=expected_base, other=scalar),
+                case=("keyword scalar", case),
+            )
+
+        actual_offset = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+        ).transpose(0, 1)[1]
+        expected_offset = reference_torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+        ).transpose(0, 1)[1]
+        self.assert_matches(
+            torch.add(actual_offset, -3.25),
+            reference_torch.add(expected_offset, -3.25),
+            case="offset noncontiguous scalar",
+        )
+
+        actual_empty = torch.zeros((2, 0, 3)).transpose(0, 2)
+        expected_empty = reference_torch.zeros((2, 0, 3)).transpose(0, 2)
+        self.assert_matches(
+            torch.add(actual_empty, 4.0),
+            reference_torch.add(expected_empty, 4.0),
+            case="strided empty scalar",
+        )
+
+        special_bits = np.asarray(
+            (0x0000_0000, 0x8000_0000, 0x7F80_0000, 0xFF80_0000, 0x7FC1_2345),
+            dtype=np.uint32,
+        )
+        actual_special = torch.tensor(memoryview(special_bits.view(np.float32)))
+        expected_special = reference_torch.tensor(
+            memoryview(special_bits.view(np.float32))
+        )
+        for case, scalar in (
+            ("positive zero", np.float32(0.0)),
+            ("negative zero", np.float32(-0.0)),
+            ("negative infinity", float("-inf")),
+        ):
+            self.assert_matches(
+                torch.add(actual_special, scalar),
+                reference_torch.add(expected_special, scalar),
+                case=("signed zero nan infinity scalar", case),
+            )
+
     def test_autograd_empties_shared_operands_and_no_grad_match_pytorch_2_13(self):
         actual_left = torch.tensor([[2.0, 3.0]], requires_grad=True)
         expected_left = reference_torch.tensor([[2.0, 3.0]], requires_grad=True)
@@ -156,6 +223,14 @@ class TopLevelAddReferenceTests(unittest.TestCase):
             actual_shared.grad, expected_shared.grad, case="shared operand gradient"
         )
 
+        actual_scalar = torch.tensor([[2.0, -3.0]], requires_grad=True)
+        expected_scalar = reference_torch.tensor([[2.0, -3.0]], requires_grad=True)
+        torch.add(actual_scalar.transpose(0, 1), 4.0).sum().backward()
+        reference_torch.add(expected_scalar.transpose(0, 1), 4.0).sum().backward()
+        self.assert_matches(
+            actual_scalar.grad, expected_scalar.grad, case="scalar other gradient"
+        )
+
         actual_empty = torch.zeros((2, 0, 3), requires_grad=True)
         expected_empty = reference_torch.zeros((2, 0, 3), requires_grad=True)
         torch.add(actual_empty, torch.ones((1, 1, 3))).sum().backward()
@@ -169,15 +244,28 @@ class TopLevelAddReferenceTests(unittest.TestCase):
         actual_no_grad = torch.tensor([[1.0, 2.0]], requires_grad=True)
         expected_no_grad = reference_torch.tensor([[1.0, 2.0]], requires_grad=True)
         with torch.no_grad():
-            actual_untracked = torch.add(
+            actual_tensor_untracked = torch.add(
                 actual_no_grad.transpose(0, 1), torch.tensor([[3.0, 4.0]])
             )
+            actual_scalar_untracked = torch.add(
+                actual_no_grad.transpose(0, 1), 2.0
+            )
         with reference_torch.no_grad():
-            expected_untracked = reference_torch.add(
+            expected_tensor_untracked = reference_torch.add(
                 expected_no_grad.transpose(0, 1),
                 reference_torch.tensor([[3.0, 4.0]]),
             )
-        self.assert_matches(actual_untracked, expected_untracked, case="no_grad view")
+            expected_scalar_untracked = reference_torch.add(
+                expected_no_grad.transpose(0, 1), 2.0
+            )
+        self.assert_matches(
+            actual_tensor_untracked, expected_tensor_untracked, case="no_grad view"
+        )
+        self.assert_matches(
+            actual_scalar_untracked,
+            expected_scalar_untracked,
+            case="scalar no_grad view",
+        )
         self.assertTrue(
             torch.add(actual_no_grad, torch.tensor([[3.0], [4.0]])).requires_grad
         )
@@ -313,6 +401,20 @@ class TopLevelAddReferenceTests(unittest.TestCase):
         with declining_mode:
             fallback_result = function(input=left, other=FallbackOverride(), alpha=2)
 
+        scalar_fallback_order = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                scalar_fallback_order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                scalar_fallback = function(input=left, other=4.0, alpha=1)
+
         invalid_observations = []
         for call in (
             lambda: function([], right),
@@ -338,6 +440,8 @@ class TopLevelAddReferenceTests(unittest.TestCase):
             fallback_result is marker,
             len(declining_mode.calls),
             fallback_events,
+            scalar_fallback_order,
+            tuple(np.asarray(scalar_fallback).reshape(-1).view(np.uint32)),
             invalid_observations,
         )
 

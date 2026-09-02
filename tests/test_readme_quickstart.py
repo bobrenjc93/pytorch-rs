@@ -200,7 +200,11 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
             "`torch.matmul`",
             "`torch.sum`",
         ),
-        ("scalar `torch.add` operands", "in-place variants", "dimension reductions"),
+        (
+            "scalar-left and scalar-only `torch.add` calls",
+            "in-place variants",
+            "dimension reductions",
+        ),
         ("[Elementwise and reductions](#elementwise-and-reductions)",),
     ),
     (
