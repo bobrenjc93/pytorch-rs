@@ -591,6 +591,19 @@ impl PartialEq for Tensor {
     }
 }
 
+#[cfg(any(feature = "python-bindings", test))]
+#[allow(clippy::float_cmp)]
+fn values_allclose(left: f32, right: f32, rtol: f32, atol: f32, equal_nan: bool) -> bool {
+    if left == right {
+        return true;
+    }
+    if equal_nan && left.is_nan() && right.is_nan() {
+        return true;
+    }
+    let difference = (left - right).abs();
+    difference.is_finite() && difference <= atol + rtol * right.abs()
+}
+
 #[allow(clippy::float_cmp)]
 fn contiguous_values_equal(left: &[f32], right: &[f32]) -> bool {
     if left.len() != right.len() {
@@ -901,6 +914,88 @@ impl Tensor {
             && self.shape() == other.shape()
             && self.stride() == other.stride()
             && self.shares_storage_with(other)
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn allclose(
+        &self,
+        other: &Self,
+        rtol: f32,
+        atol: f32,
+        equal_nan: bool,
+    ) -> Result<bool, TensorError> {
+        let plan = BroadcastPlan::new(self, other)?;
+        if plan.elements == 0 {
+            return Ok(true);
+        }
+
+        if self.shape == other.shape
+            && let (Some(left), Some(right)) = (self.contiguous_slice(), other.contiguous_slice())
+        {
+            return Ok(left
+                .iter()
+                .copied()
+                .zip(right.iter().copied())
+                .all(|(left, right)| values_allclose(left, right, rtol, atol, equal_nan)));
+        }
+
+        let left_values = self.storage.owned_values();
+        let right_values = other.storage.owned_values();
+        let mut coordinates = try_result_vector(plan.shape.len(), plan.elements)?;
+        coordinates.resize(plan.shape.len(), 0_usize);
+        let mut left_offset = self.offset;
+        let mut right_offset = other.offset;
+
+        for output_index in 0..plan.elements {
+            let left = left_values.map_or_else(
+                || {
+                    self.storage
+                        .value(left_offset)
+                        .expect("validated broadcast offset must address left storage")
+                },
+                |values| values[left_offset],
+            );
+            let right = right_values.map_or_else(
+                || {
+                    other
+                        .storage
+                        .value(right_offset)
+                        .expect("validated broadcast offset must address right storage")
+                },
+                |values| values[right_offset],
+            );
+            if !values_allclose(left, right, rtol, atol, equal_nan) {
+                return Ok(false);
+            }
+            if output_index + 1 == plan.elements {
+                break;
+            }
+
+            for axis in (0..plan.shape.len()).rev() {
+                coordinates[axis] = coordinates[axis]
+                    .checked_add(1)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+                if coordinates[axis] < plan.shape[axis] {
+                    left_offset = left_offset
+                        .checked_add(plan.dimensions[axis].left_step)
+                        .ok_or(TensorError::StrideCalculationOverflow)?;
+                    right_offset = right_offset
+                        .checked_add(plan.dimensions[axis].right_step)
+                        .ok_or(TensorError::StrideCalculationOverflow)?;
+                    break;
+                }
+
+                coordinates[axis] = 0;
+                left_offset = left_offset
+                    .checked_sub(plan.dimensions[axis].left_rewind)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+                right_offset = right_offset
+                    .checked_sub(plan.dimensions[axis].right_rewind)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+            }
+        }
+
+        Ok(true)
     }
 
     /// Returns the scalar type physically represented by this tensor's storage.
