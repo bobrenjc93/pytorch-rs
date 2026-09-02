@@ -3552,6 +3552,17 @@ impl Tensor {
         self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Add)
     }
 
+    /// Adds every element to a scalar with the scalar as the left operand.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn scalar_add(&self, scalar: f32) -> Result<Self, TensorError> {
+        let output = self.map_scalar(scalar, |value, scalar| scalar + value)?;
+        self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Add)
+    }
+
     /// Subtracts a scalar from every element.
     ///
     /// # Errors

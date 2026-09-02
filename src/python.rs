@@ -4902,7 +4902,7 @@ fn dispatch_top_level_addition(
     )?;
 
     // Generated variable functions validate their schema before dispatch, but
-    // delay native-only unsupported cases such as scalar-left operands,
+    // delay native-only unsupported cases such as scalar-scalar operands,
     // concrete out tensors, and nondefault alpha until active handlers can override.
     let active_mode = torch_function_mode_stack::pop();
     if let Some(mode) = active_mode.get() {
@@ -4974,7 +4974,13 @@ fn apply_top_level_addition(
             let scalar = parse_supported_arithmetic_scalar(scalar)?;
             BinaryOperation::Add.apply_scalar(&input.inner, scalar.into_f32(), false)
         }
-        (BoundAddOperand::Scalar(_), BoundAddOperand::Tensor(_) | BoundAddOperand::Scalar(_)) => {
+        (BoundAddOperand::Scalar(scalar), BoundAddOperand::Tensor(other)) => {
+            let other = other.try_borrow()?;
+            validate_top_level_add_tensor(&other)?;
+            let scalar = parse_supported_arithmetic_scalar(scalar)?;
+            other.inner.scalar_add(scalar.into_f32())
+        }
+        (BoundAddOperand::Scalar(_), BoundAddOperand::Scalar(_)) => {
             return Err(addition_unsupported_native_input());
         }
         (BoundAddOperand::Override(_), _) | (_, BoundAddOperand::Override(_)) => {
@@ -14511,7 +14517,7 @@ fn subtraction_unsupported_native_input(operation: SubtractionOperation) -> PyEr
 
 fn addition_unsupported_native_input() -> PyErr {
     PyNotImplementedError::new_err(
-        "add(): only exact native CPU float32 Tensor input with Tensor or real-number other operands is supported",
+        "add(): only exact native CPU float32 Tensor/Tensor operands, exact native CPU float32 Tensor input with real-number other, and real-number scalar input with exact native CPU float32 Tensor other are supported",
     )
 }
 
@@ -15219,7 +15225,7 @@ fn top_level_add_binding_error(
     try_push_string_with(&mut message, &summary, &allocation)?;
     try_push_string_with(
         &mut message,
-        "), but expected (Tensor input, Tensor or Number other, *, Number alpha = 1, Tensor out = None)",
+        "), but expected (Tensor or Number input, Tensor or Number other, *, Number alpha = 1, Tensor out = None)",
         &allocation,
     )?;
     if let Some(nul) = message.find('\0') {
