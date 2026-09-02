@@ -2972,7 +2972,7 @@ enum BoundSubAlpha<'py> {
 
 enum BoundAddOperand<'py> {
     Tensor(Bound<'py, PyTensor>),
-    Scalar,
+    Scalar(Bound<'py, PyAny>),
     Override(ProbedTorchFunctionOverride<'py>),
 }
 
@@ -4858,11 +4858,11 @@ fn ordered_addition_overrides<'py>(
     call: &BoundTopLevelAdditionCall<'py>,
 ) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
     let input = match &call.input {
-        BoundAddOperand::Tensor(_) | BoundAddOperand::Scalar => None,
+        BoundAddOperand::Tensor(_) | BoundAddOperand::Scalar(_) => None,
         BoundAddOperand::Override(probed) => Some(probed),
     };
     let other = match &call.other {
-        BoundAddOperand::Tensor(_) | BoundAddOperand::Scalar => None,
+        BoundAddOperand::Tensor(_) | BoundAddOperand::Scalar(_) => None,
         BoundAddOperand::Override(probed) => Some(probed),
     };
     let alpha = match &call.alpha {
@@ -4902,8 +4902,8 @@ fn dispatch_top_level_addition(
     )?;
 
     // Generated variable functions validate their schema before dispatch, but
-    // delay native-only unsupported cases such as scalar operands, concrete
-    // out tensors, and nondefault alpha until active handlers can override.
+    // delay native-only unsupported cases such as scalar-left operands,
+    // concrete out tensors, and nondefault alpha until active handlers can override.
     let active_mode = torch_function_mode_stack::pop();
     if let Some(mode) = active_mode.get() {
         validate_torch_function_mode_handler(mode.bind(py))?;
@@ -4968,8 +4968,13 @@ fn apply_top_level_addition(
             validate_top_level_add_tensor(&other)?;
             BinaryOperation::Add.apply_tensors(&input.inner, &other.inner)
         }
-        (BoundAddOperand::Tensor(_) | BoundAddOperand::Scalar, BoundAddOperand::Scalar)
-        | (BoundAddOperand::Scalar, BoundAddOperand::Tensor(_)) => {
+        (BoundAddOperand::Tensor(input), BoundAddOperand::Scalar(scalar)) => {
+            let input = input.try_borrow()?;
+            validate_top_level_add_tensor(&input)?;
+            let scalar = parse_supported_arithmetic_scalar(scalar)?;
+            BinaryOperation::Add.apply_scalar(&input.inner, scalar.into_f32(), false)
+        }
+        (BoundAddOperand::Scalar(_), BoundAddOperand::Tensor(_) | BoundAddOperand::Scalar(_)) => {
             return Err(addition_unsupported_native_input());
         }
         (BoundAddOperand::Override(_), _) | (_, BoundAddOperand::Override(_)) => {
@@ -14327,7 +14332,7 @@ fn parse_top_level_add_operand<'py>(
         return Err(addition_unsupported_native_input());
     }
     if is_real_arithmetic_scalar(&value.value)? {
-        return Ok(BoundAddOperand::Scalar);
+        return Ok(BoundAddOperand::Scalar(value.value.clone()));
     }
     parse_tensor_argument("add", argument, value)?;
     unreachable!("unsupported addition operands were rejected by parse_tensor_argument")
@@ -14491,7 +14496,7 @@ fn subtraction_unsupported_native_input(operation: SubtractionOperation) -> PyEr
 
 fn addition_unsupported_native_input() -> PyErr {
     PyNotImplementedError::new_err(
-        "add(): only exact native CPU float32 Tensor/Tensor operands are supported",
+        "add(): only exact native CPU float32 Tensor input with Tensor or real-number other operands is supported",
     )
 }
 
@@ -15199,7 +15204,7 @@ fn top_level_add_binding_error(
     try_push_string_with(&mut message, &summary, &allocation)?;
     try_push_string_with(
         &mut message,
-        "), but expected (Tensor input, Tensor other, *, Number alpha = 1, Tensor out = None)",
+        "), but expected (Tensor input, Tensor or Number other, *, Number alpha = 1, Tensor out = None)",
         &allocation,
     )?;
     if let Some(nul) = message.find('\0') {
