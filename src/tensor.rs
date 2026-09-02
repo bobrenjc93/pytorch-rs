@@ -3739,8 +3739,8 @@ impl Tensor {
         self.scalar_div_with_output_layout(scalar, shape, strides)
     }
 
-    /// Divides a scalar by every element using the top-level binary-op output
-    /// layout while sharing reflected scalar division materialization.
+    /// Divides a scalar by every element using top-level true-division
+    /// arithmetic and the tensor operand's binary-op output layout.
     ///
     /// # Errors
     ///
@@ -3758,7 +3758,14 @@ impl Tensor {
         let shape = try_clone_result_shape(&self.shape, elements)?;
         let strides =
             elementwise_output_strides(&shape, &[ElementwiseLayout::from_tensor(self)], elements)?;
-        self.scalar_div_with_output_layout(scalar, shape, strides)
+        let data = self.materialize_with_strides(&strides, |value| scalar / value)?;
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        ))
     }
 
     /// Computes the reciprocal of every element using unary output layout planning.

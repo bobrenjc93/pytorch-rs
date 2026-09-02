@@ -15,6 +15,11 @@ except ImportError:
     reference_torch = None
 
 
+def tensor_from_float32_bits(module, *values):
+    bits = np.asarray(values, dtype=np.uint32)
+    return module.tensor(memoryview(bits.view(np.float32)))
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class TopLevelDivReferenceTests(unittest.TestCase):
     @classmethod
@@ -197,6 +202,30 @@ class TopLevelDivReferenceTests(unittest.TestCase):
                     expected_function(scalar, expected_divisors),
                     case=(name, "scalar-left signed zero nan infinity", scalar),
                 )
+
+            actual_subnormal_denominator = tensor_from_float32_bits(
+                torch, 0x0000_0001
+            )
+            expected_subnormal_denominator = tensor_from_float32_bits(
+                reference_torch, 0x0000_0001
+            )
+            self.assert_matches(
+                actual_function(1e-30, actual_subnormal_denominator),
+                expected_function(1e-30, expected_subnormal_denominator),
+                case=(name, "scalar-left subnormal denominator"),
+            )
+
+            actual_payload_nan_denominator = tensor_from_float32_bits(
+                torch, 0x7FC1_2345
+            )
+            expected_payload_nan_denominator = tensor_from_float32_bits(
+                reference_torch, 0x7FC1_2345
+            )
+            self.assert_matches(
+                actual_function(float("nan"), actual_payload_nan_denominator),
+                expected_function(float("nan"), expected_payload_nan_denominator),
+                case=(name, "scalar-left nan numerator payload"),
+            )
 
     def test_no_grad_operands_match_pytorch_2_13(self):
         for name in ("div", "divide"):

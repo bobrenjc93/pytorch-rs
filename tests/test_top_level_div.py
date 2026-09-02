@@ -77,6 +77,11 @@ Examples::
 DIVIDE_DOC = "\ndivide(input, other, *, rounding_mode=None, out=None) -> Tensor\n\nAlias for :func:`torch.div`.\n"
 
 
+def tensor_from_float32_bits(*values):
+    bits = np.asarray(values, dtype=np.uint32)
+    return torch.tensor(memoryview(bits.view(np.float32)))
+
+
 class TopLevelDivTests(unittest.TestCase):
     def assert_tensor_matches(self, actual, expected, *, case):
         with self.subTest(case=case, metadata=True):
@@ -219,6 +224,20 @@ class TopLevelDivTests(unittest.TestCase):
                 self.assertFalse(scalar_result.is_set_to(divisors))
                 if scalar_result.numel():
                     self.assertNotEqual(scalar_result.data_ptr(), divisors.data_ptr())
+
+            subnormal_denominator = tensor_from_float32_bits(0x0000_0001)
+            self.assert_tensor_matches(
+                function(1e-30, subnormal_denominator),
+                tensor_from_float32_bits(0x5822_4260),
+                case=(name, "scalar-left subnormal denominator"),
+            )
+
+            payload_nan_denominator = tensor_from_float32_bits(0x7FC1_2345)
+            self.assert_tensor_matches(
+                function(float("nan"), payload_nan_denominator),
+                tensor_from_float32_bits(0x7FC0_0000),
+                case=(name, "scalar-left nan numerator payload"),
+            )
 
     def test_active_autograd_is_rejected_but_no_grad_uses_native_division(self):
         for name in ("div", "divide"):

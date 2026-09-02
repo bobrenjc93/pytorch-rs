@@ -851,10 +851,11 @@ real-scalar/tensor operands, with PyTorch
 2.13-compatible broadcasting, noncontiguous and offset inputs, empty tensors,
 signed zero, NaNs, infinities, fresh output storage, callable metadata,
 copy/pickle/reload behavior, and `TorchFunctionMode`/`__torch_function__`
-dispatch for supported signatures. They reuse the same true-division path as
-Python `/` and only support `rounding_mode=None`; top-level scalar-left calls
-reuse the reflected scalar division engine. Active autograd recording is
-rejected until a division VJP exists; operands that require gradients remain
+dispatch for supported signatures. Tensor-left forms reuse the same
+true-division path as Python `/`; top-level scalar-left forms use direct
+scalar/tensor true division with top-level binary-op output layout. Only
+`rounding_mode=None` is supported. Active autograd recording is rejected until a
+division VJP exists; operands that require gradients remain
 usable under `torch.no_grad()`. Scalar-only calls, concrete `out` tensors,
 non-`None` `rounding_mode` values including integer floor/truncation semantics,
 Tensor method scalar-left expansion, unsupported dtype/device/subclass
