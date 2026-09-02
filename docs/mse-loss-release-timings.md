@@ -1,9 +1,60 @@
-# `torch.nn.functional.mse_loss(reduction="none")` Release Timings
+# `torch.nn.functional.mse_loss` Release Timings
 
 Date: 2026-08-30
 
+Review update: 2026-09-01
+
 Candidate provenance: source snapshot based on
 `2231dec5e208f3545c05484d497b32b3981f640d`
+
+## Review Update: `reduction="sum"`
+
+The 2026-09-01 review rerun used the current composite worktree's release
+wheel, built and installed under `target/review-wheels`, and the ignored
+one-off timing driver `target/review_release_timings.py`. The driver emitted
+JSON under `target/review-release-timings-pass*.json`.
+
+The same run also refreshed rank-2 matmul and generalized `unbind` evidence.
+For `mse_loss(reduction="sum")`, it used CPU `float32` inputs created outside
+the timed region with NumPy seed `20260901`, `CUDA_VISIBLE_DEVICES=`, one
+PyTorch thread, one `torch_rs` thread, `taskset -c 24`, 15 warmup blocks, and
+81 measured blocks in each of two process passes. The first pass measured
+`torch_rs` before PyTorch; the second pass reversed that order. Values below
+are medians of the two per-process medians.
+
+Correctness was checked against PyTorch 2.13 before timing for output shape,
+stride, storage offset, contiguity, dtype, device, `requires_grad`, leaf
+status, NaN classifications, sign bits, and values. Larger reduction timing
+inputs used `rtol=1e-4`, `atol=1e-4`, and `equal_nan=True` to allow equivalent
+float32 sums with different accumulation grouping; the focused reference tests
+continue to check the smaller semantic contract within one ULP.
+
+Focused checks for this update:
+
+```bash
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest \
+  tests.test_nn_functional_mse_loss \
+  tests.test_nn_functional_mse_loss_reference
+```
+
+Result: the focused MSE Python implementation and PyTorch 2.13 differential
+tests passed 37 tests.
+
+Geometric mean `torch_rs / PyTorch` slowdown for the supported
+`reduction="sum"` cells:
+
+- Uncapped: 1.05x
+- Capped to `[0.10x, 10.00x]` per cell: 1.05x
+
+| Workload | Category | Output | Repeats | `torch_rs` median +/- MAD | PyTorch median +/- MAD | `torch_rs` / PyTorch |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `mse_sum_scalar` | scalar | `()`, stride `()`, offset 0, requires_grad=False | 10000 | 1.957 +/- 0.012 us | 6.727 +/- 0.040 us | 0.29x |
+| `mse_sum_empty_transposed` | empty | `()`, stride `()`, offset 0, requires_grad=False | 5000 | 1.982 +/- 0.009 us | 6.941 +/- 0.072 us | 0.29x |
+| `mse_sum_broadcasted_256x384_by_384` | broadcasted | `()`, stride `()`, offset 0, requires_grad=False | 8 | 96.266 +/- 0.476 us | 28.698 +/- 0.578 us | 3.35x |
+| `mse_sum_offset_96x80` | offset | `()`, stride `()`, offset 0, requires_grad=False | 16 | 9.486 +/- 0.027 us | 8.439 +/- 0.067 us | 1.12x |
+| `mse_sum_noncontig_transpose_256x512` | noncontiguous | `()`, stride `()`, offset 0, requires_grad=False | 4 | 137.977 +/- 2.332 us | 34.458 +/- 0.168 us | 4.00x |
 
 Command shape: from the repository root, `uv venv --clear --python 3.12`,
 locked `uv sync --locked --no-install-project --group dev --group reference`,

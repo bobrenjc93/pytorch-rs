@@ -52,11 +52,11 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-sqrt-release-timings.md",
     ),
     (
-        "`Tensor.view`, reshape, flatten, ravel, and edge-unsqueeze release timings",
+        "`Tensor.view`, reshape, flatten, ravel, unbind, and edge-unsqueeze release timings",
         "docs/tensor-view-release-timings.md",
     ),
     (
-        '`torch.nn.functional.mse_loss(reduction="none")` release timings',
+        "`torch.nn.functional.mse_loss` release timings",
         "docs/mse-loss-release-timings.md",
     ),
     (

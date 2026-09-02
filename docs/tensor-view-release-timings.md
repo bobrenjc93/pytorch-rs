@@ -3,8 +3,54 @@
 Date: 2026-09-01
 
 Candidate provenance: source snapshot based on
-`46710a4ee8d14f3f305df16fe7851786d38a3e97`. This branch adds timing evidence
-only; it does not change the runtime implementation.
+`46710a4ee8d14f3f305df16fe7851786d38a3e97`. The original section records
+view, reshape, flatten, ravel, and edge-unsqueeze evidence. The review update
+below adds current release timing evidence for generalized `unbind`.
+
+## Review Update: Generalized `unbind`
+
+The 2026-09-01 review rerun used the current composite worktree's release
+wheel, built and installed under `target/review-wheels`, and the ignored
+one-off timing driver `target/review_release_timings.py`. The driver emitted
+JSON under `target/review-release-timings-pass*.json`.
+
+Inputs were created outside the timed region with NumPy seed `20260901`. Each
+implementation used CPU `float32`, `CUDA_VISIBLE_DEVICES=`, one PyTorch thread,
+one `torch_rs` thread, and `taskset -c 24`. Each cell used 15 untimed warmup
+blocks and 81 measured blocks in two process passes, first `torch_rs` before
+PyTorch and then reversed. Values below are medians of the two per-process
+medians.
+
+Before timing each cell, the driver checked tuple length and each output
+tensor's shape, stride, storage offset, contiguity, dtype, device,
+`requires_grad`, leaf status, and bitwise logical values against PyTorch 2.13.
+After every warmup and measured block, the driver consumed the output tuple as
+a BLAKE2b checksum over tensor metadata and logical bytes.
+
+Focused checks for this update:
+
+```bash
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest tests.test_unbind tests.test_unbind_reference
+```
+
+Result: the focused unbind Python implementation and PyTorch 2.13 differential
+tests passed 30 tests.
+
+Geometric mean `torch_rs / PyTorch` slowdown for the supported generalized
+`unbind` cells:
+
+- Uncapped: 0.37x
+- Capped to `[0.10x, 10.00x]` per cell: 0.37x
+
+| Workload | Category | API | Output | Repeats | `torch_rs` median +/- MAD | PyTorch median +/- MAD | `torch_rs` / PyTorch |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: |
+| `unbind_first_dim_method_16x32x8` | first dimension | `Tensor.unbind(0)` | 16 outputs; first shape `(32, 8)`; first/last offset 0/3840 | 2000 | 2.956 +/- 0.023 us | 7.279 +/- 0.091 us | 0.41x |
+| `unbind_middle_dim_method_16x32x8` | middle dimension | `Tensor.unbind(1)` | 32 outputs; first shape `(16, 8)`; first/last offset 0/248 | 2000 | 5.303 +/- 0.032 us | 14.950 +/- 0.078 us | 0.35x |
+| `unbind_negative_last_top_level_16x32x8` | negative last dimension | `torch.unbind(input, -1)` | 8 outputs; first shape `(16, 32)`; first/last offset 0/7 | 3000 | 1.326 +/- 0.007 us | 4.276 +/- 0.048 us | 0.31x |
+| `unbind_offset_noncontig_middle_48x64x32` | offset noncontiguous | `Tensor.unbind(1)` | 64 outputs; first shape `(48, 32)`; first/last offset 98304/195072 | 512 | 10.787 +/- 0.072 us | 26.868 +/- 0.099 us | 0.40x |
+| `unbind_empty_middle_top_level_2x0x128` | empty dimension | `torch.unbind(input, 1)` | 0 outputs | 10000 | 0.199 +/- 0.001 us | 0.500 +/- 0.002 us | 0.40x |
 
 Exact setup, build, check, and timing commands were run from the repository
 root. The timing driver was a one-off file under ignored `target/` storage and

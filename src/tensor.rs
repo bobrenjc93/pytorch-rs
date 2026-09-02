@@ -15,8 +15,9 @@ const F32_SIGN_MASK: u32 = 0x8000_0000;
 #[cfg(feature = "python-bindings")]
 const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
-// Keep latency-sized products on the smaller single-row loop.
-const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 4 * 1024;
+// Keep tiny latency cases on the single-row loop while still row-blocking the
+// 8x64 skinny-RHS workload from the release timing matrix.
+const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 512;
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
@@ -4002,33 +4003,10 @@ impl Tensor {
             accumulate_contiguous_matmul(left_data, right_data, &mut output, rows, inner, columns);
         } else if output_elements != 0
             && inner != 0
-            && let (Some(left_data), Some(right_data)) =
-                (self.storage.owned_values(), other.storage.owned_values())
+            && self.storage.owned_values().is_some()
+            && other.storage.owned_values().is_some()
         {
-            // Immutable owned storage can be borrowed for the whole kernel.
-            // Check each monotonic row span once before incrementing within it.
-            let left_depth_stride = self.strides[1];
-            let right_column_stride = other.strides[1];
-            for (row, output_row) in output.chunks_exact_mut(columns).enumerate() {
-                let mut left_offset = checked_matrix_row_base(self, row, inner, left_data.len())?;
-                for depth in 0..inner {
-                    let left = left_data[left_offset];
-                    let mut right_offset =
-                        checked_matrix_row_base(other, depth, columns, right_data.len())?;
-                    let mut column = 0;
-                    loop {
-                        output_row[column] += left * right_data[right_offset];
-                        column += 1;
-                        if column == columns {
-                            break;
-                        }
-                        right_offset += right_column_stride;
-                    }
-                    if depth + 1 != inner {
-                        left_offset += left_depth_stride;
-                    }
-                }
-            }
+            accumulate_packed_matmul(self, other, &mut output)?;
         } else {
             for row in 0..rows {
                 for depth in 0..inner {
@@ -6073,32 +6051,52 @@ fn contiguous_matmul_row_blocked(
     }
 }
 
-fn checked_matrix_row_base(
-    tensor: &Tensor,
-    row: usize,
-    columns: usize,
-    storage_elements: usize,
-) -> Result<usize, TensorError> {
-    debug_assert_ne!(columns, 0);
-    let row_offset = row
-        .checked_mul(tensor.strides[0])
-        .ok_or(TensorError::IndexCalculationOverflow)?;
-    let base = tensor
-        .offset
-        .checked_add(row_offset)
-        .ok_or(TensorError::IndexCalculationOverflow)?;
-    let final_column = columns
-        .checked_sub(1)
-        .ok_or(TensorError::IndexCalculationOverflow)?;
-    let final_column_offset = final_column
-        .checked_mul(tensor.strides[1])
-        .ok_or(TensorError::IndexCalculationOverflow)?;
-    // Strides are non-negative, so a valid final address covers every
-    // increment from the base as well.
-    base.checked_add(final_column_offset)
-        .filter(|offset| *offset < storage_elements)
-        .map(|_| base)
-        .ok_or(TensorError::IndexCalculationOverflow)
+// Pack non-contiguous owned operands to reuse the contiguous matmul kernel
+// without changing each output element's depth-major accumulation order.
+#[inline(never)]
+fn accumulate_packed_matmul(
+    left_tensor: &Tensor,
+    right_tensor: &Tensor,
+    output: &mut [f32],
+) -> Result<(), TensorError> {
+    let (rows, inner) = (left_tensor.shape[0], left_tensor.shape[1]);
+    let columns = right_tensor.shape[1];
+    if output.is_empty() || inner == 0 {
+        return Ok(());
+    }
+
+    validate_view_bounds(
+        &left_tensor.shape,
+        &left_tensor.strides,
+        left_tensor.offset,
+        left_tensor.elements,
+        left_tensor.storage.len(),
+    )?;
+    validate_view_bounds(
+        &right_tensor.shape,
+        &right_tensor.strides,
+        right_tensor.offset,
+        right_tensor.elements,
+        right_tensor.storage.len(),
+    )?;
+
+    let left_packed;
+    let left = if let Some(values) = left_tensor.contiguous_slice() {
+        values
+    } else {
+        left_packed = left_tensor.try_to_vec()?;
+        &left_packed
+    };
+    let right_packed;
+    let right = if let Some(values) = right_tensor.contiguous_slice() {
+        values
+    } else {
+        right_packed = right_tensor.try_to_vec()?;
+        &right_packed
+    };
+
+    accumulate_contiguous_matmul(left, right, output, rows, inner, columns);
+    Ok(())
 }
 
 fn compute_reshape_view_strides(
