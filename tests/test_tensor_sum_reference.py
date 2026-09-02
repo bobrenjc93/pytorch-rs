@@ -57,6 +57,7 @@ class TensorSumReferenceTests(unittest.TestCase):
                 "empty",
                 module.zeros((2, 0, 3), dtype=module.float32).transpose(0, 2)[1],
             ),
+            ("singleton", module.tensor([[[7.0]]], dtype=module.float32)[0]),
             ("contiguous offset", dense[1]),
             ("offset", noncontiguous[1]),
             ("noncontiguous", noncontiguous),
@@ -80,6 +81,16 @@ class TensorSumReferenceTests(unittest.TestCase):
             return source.sum(dtype=module.float)
         if form == "none dim dtype float32":
             return source.sum(dim=None, keepdim=False, dtype=module.float32)
+        if form == "positional none dim keepdim true":
+            return source.sum(None, True)
+        if form == "keyword none dim keepdim true":
+            return source.sum(dim=None, keepdim=True)
+        if form == "keepdim dtype none":
+            return source.sum(dim=None, keepdim=True, dtype=None)
+        if form == "keepdim dtype float32":
+            return source.sum(dim=None, keepdim=True, dtype=module.float32)
+        if form == "keepdim dtype float alias":
+            return source.sum(dim=None, keepdim=True, dtype=module.float)
         raise AssertionError(f"unknown sum form: {form}")
 
     @staticmethod
@@ -104,6 +115,11 @@ class TensorSumReferenceTests(unittest.TestCase):
             "dtype float32",
             "dtype float alias",
             "none dim dtype float32",
+            "positional none dim keepdim true",
+            "keyword none dim keepdim true",
+            "keepdim dtype none",
+            "keepdim dtype float32",
+            "keepdim dtype float alias",
         )
         actual_cases = self.make_cases(torch)
         expected_cases = self.make_cases(reference_torch)
@@ -126,16 +142,21 @@ class TensorSumReferenceTests(unittest.TestCase):
         expected_leaf = reference_torch.tensor(
             values, dtype=reference_torch.float32, requires_grad=True
         )
-        actual_loss = actual_leaf.transpose(0, 1).sum(
-            dim=None, keepdim=False, dtype=torch.float32
-        )
-        expected_loss = expected_leaf.transpose(0, 1).sum(
-            dim=None, keepdim=False, dtype=reference_torch.float32
-        )
-        self.assert_scalar_matches(actual_loss, expected_loss, case="tracked")
-        for _ in range(2):
-            actual_loss.backward()
-            expected_loss.backward()
+        for keepdim in (False, True):
+            actual_loss = actual_leaf.transpose(0, 1).sum(
+                dim=None, keepdim=keepdim, dtype=torch.float32
+            )
+            expected_loss = expected_leaf.transpose(0, 1).sum(
+                dim=None, keepdim=keepdim, dtype=reference_torch.float32
+            )
+            self.assert_scalar_matches(
+                actual_loss, expected_loss, case=("tracked", keepdim)
+            )
+            for _ in range(2):
+                actual_root = actual_loss.sum() if keepdim else actual_loss
+                expected_root = expected_loss.sum() if keepdim else expected_loss
+                actual_root.backward()
+                expected_root.backward()
         np.testing.assert_array_equal(
             np.asarray(actual_leaf.grad), expected_leaf.grad.cpu().numpy()
         )
@@ -144,18 +165,20 @@ class TensorSumReferenceTests(unittest.TestCase):
         expected_empty = reference_torch.zeros(
             (2, 0, 3), dtype=reference_torch.float32, requires_grad=True
         )
-        actual_empty.transpose(0, 2).sum(None, False, dtype=None).backward()
-        expected_empty.transpose(0, 2).sum(None, False, dtype=None).backward()
+        actual_empty.transpose(0, 2).sum(None, True, dtype=None).sum().backward()
+        expected_empty.transpose(0, 2).sum(None, True, dtype=None).sum().backward()
         self.assertEqual(actual_empty.grad.shape, tuple(expected_empty.grad.shape))
         np.testing.assert_array_equal(
             np.asarray(actual_empty.grad), expected_empty.grad.cpu().numpy()
         )
 
         with torch.no_grad():
-            actual_untracked = actual_leaf.sum(dim=None, dtype=torch.float)
+            actual_untracked = actual_leaf.sum(
+                dim=None, keepdim=True, dtype=torch.float
+            )
         with reference_torch.no_grad():
             expected_untracked = expected_leaf.sum(
-                dim=None, dtype=reference_torch.float
+                dim=None, keepdim=True, dtype=reference_torch.float
             )
         self.assert_scalar_matches(actual_untracked, expected_untracked, case="no_grad")
 
@@ -719,10 +742,6 @@ class TensorSumReferenceTests(unittest.TestCase):
             (
                 lambda: actual.sum(dim=0, keepdim=True),
                 lambda: expected.sum(dim=0, keepdim=True),
-            ),
-            (
-                lambda: actual.sum(dim=None, keepdim=True),
-                lambda: expected.sum(dim=None, keepdim=True),
             ),
             (
                 lambda: actual.sum(dtype=reference_torch.float64),

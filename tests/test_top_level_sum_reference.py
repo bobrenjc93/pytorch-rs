@@ -71,6 +71,7 @@ class TopLevelSumReferenceTests(unittest.TestCase):
                 "empty",
                 module.zeros((2, 0, 3), dtype=module.float32).transpose(0, 2)[1],
             ),
+            ("singleton", module.tensor([[[7.0]]], dtype=module.float32)[0]),
             ("contiguous offset", dense[1]),
             ("offset", noncontiguous[1]),
             ("noncontiguous", noncontiguous),
@@ -88,6 +89,12 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             return module.sum(source, None, False)
         if form == "none dim out none":
             return module.sum(source, dim=None, out=None)
+        if form == "positional none dim keepdim true":
+            return module.sum(source, None, True)
+        if form == "keyword none dim keepdim true":
+            return module.sum(source, dim=None, keepdim=True)
+        if form == "keepdim out none":
+            return module.sum(source, dim=None, keepdim=True, out=None)
         if form == "dtype none":
             return module.sum(source, dtype=None)
         if form == "dtype float32":
@@ -99,6 +106,16 @@ class TopLevelSumReferenceTests(unittest.TestCase):
         if form == "none dim dtype out none":
             return module.sum(
                 input=source, dim=None, keepdim=False, dtype=module.float32, out=None
+            )
+        if form == "keepdim dtype none":
+            return module.sum(source, dim=None, keepdim=True, dtype=None)
+        if form == "keepdim dtype float32":
+            return module.sum(source, dim=None, keepdim=True, dtype=module.float32)
+        if form == "keepdim dtype float alias":
+            return module.sum(source, dim=None, keepdim=True, dtype=module.float)
+        if form == "keepdim all keyword defaults":
+            return module.sum(
+                input=source, dim=None, keepdim=True, dtype=module.float32, out=None
             )
         return module.sum(**{form: source})
 
@@ -145,6 +162,9 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             "keyword none dim",
             "none dim keepdim false",
             "none dim out none",
+            "positional none dim keepdim true",
+            "keyword none dim keepdim true",
+            "keepdim out none",
             "input",
             "x",
             "a",
@@ -154,6 +174,10 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             "dtype float alias",
             "alias and dtype",
             "none dim dtype out none",
+            "keepdim dtype none",
+            "keepdim dtype float32",
+            "keepdim dtype float alias",
+            "keepdim all keyword defaults",
         )
         for actual_case, expected_case in zip(
             actual_cases, expected_cases, strict=True
@@ -182,6 +206,13 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             "dtype float alias",
             "alias and dtype",
             "none dim dtype out none",
+            "positional none dim keepdim true",
+            "keyword none dim keepdim true",
+            "keepdim out none",
+            "keepdim dtype none",
+            "keepdim dtype float32",
+            "keepdim dtype float alias",
+            "keepdim all keyword defaults",
         )
         for case in ("scalar", "empty", "offset", "noncontiguous"):
             for form in forms:
@@ -199,10 +230,19 @@ class TopLevelSumReferenceTests(unittest.TestCase):
                     case=(case, form),
                 )
 
-                actual_loss.backward()
-                actual_loss.backward()
-                expected_loss.backward()
-                expected_loss.backward()
+                for _ in range(2):
+                    actual_root = (
+                        actual_loss.sum()
+                        if "keepdim true" in form or form.startswith("keepdim")
+                        else actual_loss
+                    )
+                    expected_root = (
+                        expected_loss.sum()
+                        if "keepdim true" in form or form.startswith("keepdim")
+                        else expected_loss
+                    )
+                    actual_root.backward()
+                    expected_root.backward()
                 np.testing.assert_array_equal(
                     np.asarray(actual_leaf.grad),
                     expected_leaf.grad.detach().cpu().numpy(),
@@ -222,6 +262,24 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             )
         self.assert_scalar_matches(
             actual, expected, actual_leaf, expected_leaf, case="no_grad"
+        )
+        with torch.no_grad():
+            actual_keepdim = torch.sum(
+                input=actual_leaf, dim=None, keepdim=True, dtype=torch.float
+            )
+        with reference_torch.no_grad():
+            expected_keepdim = reference_torch.sum(
+                input=expected_leaf,
+                dim=None,
+                keepdim=True,
+                dtype=reference_torch.float,
+            )
+        self.assert_scalar_matches(
+            actual_keepdim,
+            expected_keepdim,
+            actual_leaf,
+            expected_leaf,
+            case="no_grad keepdim",
         )
         self.assertIsNone(actual_leaf.grad)
 
@@ -614,12 +672,11 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             reference_torch.sum(expected, (0, 1)),
             reference_torch.sum(expected, [0, 1]),
             reference_torch.sum(expected, 0, keepdim=True),
-            reference_torch.sum(expected, None, keepdim=True),
             reference_torch.sum(expected, 0, dtype=reference_torch.float32),
         )
         self.assertEqual(
             [tuple(result.shape) for result in expected_dim_results],
-            [(3,), (3,), (), (), (1, 3), (1, 1), (3,)],
+            [(3,), (3,), (), (), (1, 3), (3,)],
         )
 
         actual_dim_calls = (
@@ -628,7 +685,6 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             lambda: torch.sum(actual, (0, 1)),
             lambda: torch.sum(actual, [0, 1]),
             lambda: torch.sum(actual, 0, keepdim=True),
-            lambda: torch.sum(actual, None, keepdim=True),
             lambda: torch.sum(actual, 0, dtype=torch.float32),
         )
         for case, call in enumerate(actual_dim_calls):

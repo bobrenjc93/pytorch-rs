@@ -3831,6 +3831,21 @@ impl Tensor {
 
     #[must_use]
     pub fn sum(&self) -> Self {
+        self.sum_with_metadata(Vec::new(), Vec::new())
+    }
+
+    /// Computes the sum of every element while preserving rank with size-one dimensions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when output shape or stride metadata allocation fails.
+    pub fn sum_keepdim(&self) -> Result<Self, TensorError> {
+        let shape = self.full_reduction_keepdim_shape()?;
+        let strides = contiguous_strides(&shape, 1)?;
+        Ok(self.sum_with_metadata(shape, strides))
+    }
+
+    fn sum_with_metadata(&self, shape: Vec<usize>, strides: Vec<usize>) -> Self {
         let contiguous_values = self.contiguous_slice();
         let total = if let Some(values) = contiguous_values {
             values
@@ -3848,6 +3863,8 @@ impl Tensor {
             })
         };
         let mut output = Self::from_scalar(total, self.dtype(), self.device());
+        output.shape = shape;
+        output.strides = strides;
         if self.requires_grad() && is_grad_enabled() {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
@@ -3860,6 +3877,12 @@ impl Tensor {
         output
     }
 
+    fn full_reduction_keepdim_shape(&self) -> Result<Vec<usize>, TensorError> {
+        let mut shape = try_result_vector(self.shape.len(), 1)?;
+        shape.resize(self.shape.len(), 1);
+        Ok(shape)
+    }
+
     /// Computes the arithmetic mean of every element.
     ///
     /// Empty tensors follow the same IEEE 754 path as `PyTorch`'s full reduction:
@@ -3870,8 +3893,30 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn mean(&self) -> Result<Self, TensorError> {
+        self.mean_with_keepdim(false)
+    }
+
+    /// Computes the arithmetic mean of every element while preserving rank with size-one dimensions.
+    ///
+    /// Empty tensors follow the same IEEE 754 path as `PyTorch`'s full reduction:
+    /// `sum(input) / 0`, which materializes a NaN in a rank-preserving output
+    /// and leaves the empty gradient shape intact.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    pub fn mean_keepdim(&self) -> Result<Self, TensorError> {
+        self.mean_with_keepdim(true)
+    }
+
+    fn mean_with_keepdim(&self, keepdim: bool) -> Result<Self, TensorError> {
         let divisor = full_reduction_mean_divisor(self.elements);
-        let mut output = self.sum().div_scalar_values(divisor)?;
+        let sum = if keepdim {
+            self.sum_keepdim()?
+        } else {
+            self.sum()
+        };
+        let mut output = sum.div_scalar_values(divisor)?;
         if self.requires_grad() && is_grad_enabled() {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {

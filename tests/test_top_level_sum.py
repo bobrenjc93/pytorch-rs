@@ -37,6 +37,27 @@ class TopLevelSumTests(unittest.TestCase):
                 np.float32(expected.item()).view(np.uint32).item(),
             )
 
+    def assert_keepdim(self, actual, expected, source, *, case):
+        expected_shape = (1,) * len(source.shape)
+        with self.subTest(case=case, metadata=True):
+            self.assertEqual(actual.shape, expected_shape)
+            self.assertEqual(actual.stride(), expected_shape)
+            self.assertEqual(actual.storage_offset(), 0)
+            self.assertEqual(actual.numel(), 1)
+            self.assertTrue(actual.is_contiguous())
+            self.assertIs(actual.dtype, torch.float32)
+            self.assertEqual(actual.device, torch.device("cpu"))
+            self.assertEqual(actual.requires_grad, expected.requires_grad)
+            self.assertEqual(actual.is_leaf, expected.is_leaf)
+            self.assertFalse(actual.is_set_to(source))
+            if source.numel():
+                self.assertNotEqual(actual.data_ptr(), source.data_ptr())
+        with self.subTest(case=case, value=True):
+            self.assertEqual(
+                np.float32(actual.item()).view(np.uint32).item(),
+                np.float32(expected.item()).view(np.uint32).item(),
+            )
+
     @staticmethod
     def value_cases():
         dense = torch.tensor(
@@ -47,6 +68,7 @@ class TopLevelSumTests(unittest.TestCase):
             ("scalar", torch.tensor(-3.5)),
             ("negative zero", torch.tensor(-0.0)),
             ("empty", torch.zeros((2, 0, 3)).transpose(0, 2)[1]),
+            ("singleton", torch.tensor([[[7.0]]])[0]),
             ("contiguous offset", dense[1]),
             ("offset", noncontiguous[1]),
             ("noncontiguous", noncontiguous),
@@ -72,6 +94,32 @@ class TopLevelSumTests(unittest.TestCase):
                 "none dim dtype out none",
                 lambda: torch.sum(
                     input=source, dim=None, keepdim=False, dtype=torch.float32, out=None
+                ),
+            ),
+        )
+
+    @staticmethod
+    def supported_keepdim_calls(source):
+        return (
+            ("positional", lambda: torch.sum(source, None, True)),
+            ("keyword", lambda: torch.sum(source, dim=None, keepdim=True)),
+            (
+                "none dim out none",
+                lambda: torch.sum(source, dim=None, keepdim=True, out=None),
+            ),
+            ("dtype none", lambda: torch.sum(source, dim=None, keepdim=True, dtype=None)),
+            (
+                "dtype float32",
+                lambda: torch.sum(source, dim=None, keepdim=True, dtype=torch.float32),
+            ),
+            (
+                "dtype float alias",
+                lambda: torch.sum(source, dim=None, keepdim=True, dtype=torch.float),
+            ),
+            (
+                "all keyword defaults",
+                lambda: torch.sum(
+                    input=source, dim=None, keepdim=True, dtype=torch.float32, out=None
                 ),
             ),
         )
@@ -119,6 +167,11 @@ class TopLevelSumTests(unittest.TestCase):
             expected = source.sum()
             for form, call in self.supported_calls(source):
                 self.assert_scalar_matches(call(), expected, source, case=(case, form))
+            expected_keepdim = source.sum(None, True)
+            for form, call in self.supported_keepdim_calls(source):
+                self.assert_keepdim(
+                    call(), expected_keepdim, source, case=(case, form)
+                )
 
     def test_supported_forms_preserve_autograd_accumulation_and_no_grad(self):
         forms = tuple(form for form, _ in self.supported_calls(torch.tensor(1.0)))
@@ -141,6 +194,28 @@ class TopLevelSumTests(unittest.TestCase):
                     np.asarray(function_leaf.grad), np.asarray(method_leaf.grad)
                 )
 
+        keepdim_forms = tuple(
+            form for form, _ in self.supported_keepdim_calls(torch.tensor(1.0))
+        )
+        for case in ("scalar", "empty", "offset", "noncontiguous"):
+            for form in keepdim_forms:
+                function_leaf, function_input = self.autograd_case(case)
+                method_leaf, method_input = self.autograd_case(case)
+                output = dict(self.supported_keepdim_calls(function_input))[form]()
+                expected = method_input.sum(None, True)
+                self.assert_keepdim(
+                    output, expected, function_input, case=(case, form, "forward")
+                )
+
+                output.sum().backward()
+                output.sum().backward()
+                expected.sum().backward()
+                expected.sum().backward()
+                self.assertEqual(function_leaf.grad.shape, method_leaf.grad.shape)
+                np.testing.assert_array_equal(
+                    np.asarray(function_leaf.grad), np.asarray(method_leaf.grad)
+                )
+
         leaf = torch.tensor([1.0, -2.0, 3.0], requires_grad=True)
         with torch.no_grad():
             untracked = torch.sum(leaf, dim=None, dtype=torch.float)
@@ -148,6 +223,18 @@ class TopLevelSumTests(unittest.TestCase):
         self.assertTrue(untracked.is_leaf)
         self.assertIsNone(leaf.grad)
         self.assertTrue(torch.sum(leaf, None, dtype=torch.float32).requires_grad)
+
+        with torch.no_grad():
+            untracked_keepdim = torch.sum(
+                leaf, dim=None, keepdim=True, dtype=torch.float
+            )
+            expected_keepdim = leaf.sum(None, True)
+        self.assert_keepdim(
+            untracked_keepdim, expected_keepdim, leaf, case="no_grad keepdim"
+        )
+        self.assertFalse(untracked_keepdim.requires_grad)
+        self.assertTrue(untracked_keepdim.is_leaf)
+        self.assertTrue(torch.sum(leaf, None, True, dtype=torch.float32).requires_grad)
 
     def test_rank_one_transpose_selected_offset_sum_edges(self):
         cases = (
@@ -477,7 +564,6 @@ class TopLevelSumTests(unittest.TestCase):
             ("tuple dim", lambda: torch.sum(tensor, (0, 1))),
             ("list dim", lambda: torch.sum(tensor, [0, 1])),
             ("keepdim", lambda: torch.sum(tensor, 0, keepdim=True)),
-            ("none dim keepdim true", lambda: torch.sum(tensor, None, keepdim=True)),
             ("out", lambda: torch.sum(tensor, 0, out=destination)),
             ("none dim concrete out", lambda: torch.sum(tensor, None, out=destination)),
             ("dtype plus dim", lambda: torch.sum(tensor, 0, dtype=torch.float32)),
