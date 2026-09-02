@@ -146,6 +146,11 @@ class GetDefaultDeviceReferenceTests(unittest.TestCase):
             "get_default_device" in reference_torch.__all__,
         )
         self.assertEqual(torch.__all__.count("get_default_device"), 1)
+        self.assertEqual(
+            "set_default_device" in torch.__all__,
+            "set_default_device" in reference_torch.__all__,
+        )
+        self.assertEqual(torch.__all__.count("set_default_device"), 1)
 
     def test_no_argument_errors_match_pytorch_2_13(self):
         cases = (
