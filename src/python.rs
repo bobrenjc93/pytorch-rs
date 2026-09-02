@@ -8547,6 +8547,13 @@ struct ToCallArguments<'py> {
     overrides: Vec<ProbedTorchFunctionOverride<'py>>,
 }
 
+struct ToPositionalArguments<'py> {
+    target: ToTarget<'py>,
+    non_blocking_was_provided: bool,
+    copy_was_provided: bool,
+    copy: Option<bool>,
+}
+
 fn bind_to_arguments<'py>(
     args: &Bound<'py, PyTuple>,
     kwargs: Option<&Bound<'py, PyDict>>,
@@ -8559,20 +8566,20 @@ fn bind_to_arguments<'py>(
     }
 
     let mut overrides = Vec::new();
-    let (mut target, mut non_blocking_was_provided, mut copy) =
-        bind_to_positional_arguments(args, kwargs, &mut overrides)?;
+    let mut bound_positionals = bind_to_positional_arguments(args, kwargs, &mut overrides)?;
     let memory_format = bind_to_keyword_arguments(
         args,
         kwargs,
-        &mut target,
-        &mut non_blocking_was_provided,
-        &mut copy,
+        &mut bound_positionals.target,
+        &mut bound_positionals.non_blocking_was_provided,
+        &mut bound_positionals.copy_was_provided,
+        &mut bound_positionals.copy,
         &mut overrides,
     )?;
 
     Ok(ToCallArguments {
-        target,
-        copy: copy.unwrap_or(false),
+        target: bound_positionals.target,
+        copy: bound_positionals.copy.unwrap_or(false),
         memory_format,
         overrides,
     })
@@ -8582,12 +8589,13 @@ fn bind_to_positional_arguments<'py>(
     args: &Bound<'py, PyTuple>,
     kwargs: Option<&Bound<'py, PyDict>>,
     overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
-) -> PyResult<(ToTarget<'py>, bool, Option<bool>)> {
+) -> PyResult<ToPositionalArguments<'py>> {
     let mut target = ToTarget::DeviceDType {
         device: None,
         dtype: None,
     };
     let mut non_blocking_was_provided = false;
+    let mut copy_was_provided = false;
     let mut copy = None;
 
     if !args.is_empty() {
@@ -8599,6 +8607,7 @@ fn bind_to_positional_arguments<'py>(
                 non_blocking_was_provided = true;
             }
             if args.len() >= 3 {
+                copy_was_provided = true;
                 copy = bind_to_bool_argument(&args.get_item(2)?, args, kwargs, overrides)?;
             }
             if args.len() >= 4 {
@@ -8611,6 +8620,7 @@ fn bind_to_positional_arguments<'py>(
                 non_blocking_was_provided = true;
             }
             if args.len() >= 3 {
+                copy_was_provided = true;
                 copy = bind_to_bool_argument(&args.get_item(2)?, args, kwargs, overrides)?;
             }
             if args.len() >= 4 {
@@ -8632,6 +8642,7 @@ fn bind_to_positional_arguments<'py>(
                 non_blocking_was_provided = true;
             }
             if args.len() >= 4 {
+                copy_was_provided = true;
                 copy = bind_to_bool_argument(&args.get_item(3)?, args, kwargs, overrides)?;
             }
             target = ToTarget::DeviceDType { device, dtype };
@@ -8642,6 +8653,7 @@ fn bind_to_positional_arguments<'py>(
                 kwargs,
                 overrides,
                 &mut non_blocking_was_provided,
+                &mut copy_was_provided,
                 &mut copy,
             )?;
         } else {
@@ -8649,7 +8661,12 @@ fn bind_to_positional_arguments<'py>(
         }
     }
 
-    Ok((target, non_blocking_was_provided, copy))
+    Ok(ToPositionalArguments {
+        target,
+        non_blocking_was_provided,
+        copy_was_provided,
+        copy,
+    })
 }
 
 fn bind_to_positional_override_target<'py>(
@@ -8658,6 +8675,7 @@ fn bind_to_positional_override_target<'py>(
     kwargs: Option<&Bound<'py, PyDict>>,
     overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
     non_blocking_was_provided: &mut bool,
+    copy_was_provided: &mut bool,
     copy: &mut Option<bool>,
 ) -> PyResult<ToTarget<'py>> {
     if args.len() == 1 {
@@ -8674,6 +8692,7 @@ fn bind_to_positional_override_target<'py>(
             *non_blocking_was_provided = true;
         }
         if args.len() >= 4 {
+            *copy_was_provided = true;
             *copy = bind_to_bool_argument(&args.get_item(3)?, args, kwargs, overrides)?;
         }
         return Ok(ToTarget::DeviceDType {
@@ -8686,6 +8705,7 @@ fn bind_to_positional_override_target<'py>(
         bind_to_bool_argument(&second, args, kwargs, overrides)?;
         *non_blocking_was_provided = true;
         if args.len() >= 3 {
+            *copy_was_provided = true;
             *copy = bind_to_bool_argument(&args.get_item(2)?, args, kwargs, overrides)?;
         }
         return Ok(ToTarget::DType(first));
@@ -8699,6 +8719,7 @@ fn bind_to_keyword_arguments<'py>(
     kwargs: Option<&Bound<'py, PyDict>>,
     target: &mut ToTarget<'py>,
     non_blocking_was_provided: &mut bool,
+    copy_was_provided: &mut bool,
     copy: &mut Option<bool>,
     overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
 ) -> PyResult<MemoryFormat> {
@@ -8754,9 +8775,14 @@ fn bind_to_keyword_arguments<'py>(
                     *non_blocking_was_provided = true;
                 }
                 "copy" => {
-                    if copy.is_some() {
-                        return Err(invalid_to_arguments_error(args, Some(kwargs))?);
+                    if *copy_was_provided {
+                        return Err(duplicate_to_copy_argument_error(
+                            target,
+                            args,
+                            Some(kwargs),
+                        )?);
                     }
+                    *copy_was_provided = true;
                     *copy = bind_to_bool_argument(&value, args, Some(kwargs), overrides)?;
                 }
                 "memory_format" => {
@@ -8776,6 +8802,19 @@ fn bind_to_keyword_arguments<'py>(
     }
 
     Ok(memory_format)
+}
+
+fn duplicate_to_copy_argument_error(
+    target: &ToTarget<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    if matches!(target, ToTarget::DeviceDType { .. }) {
+        return Ok(PyTypeError::new_err(
+            "to() got multiple values for argument 'copy'",
+        ));
+    }
+    invalid_to_arguments_error(args, kwargs)
 }
 
 fn bind_to_override_argument<'py>(

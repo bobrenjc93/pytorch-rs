@@ -397,6 +397,43 @@ class TensorToTests(unittest.TestCase):
             tensor.to(unexpected=Override())
         self.assertEqual(override_calls, [])
 
+        other_tensor = torch.tensor([2.0])
+        generic_duplicate_copy_cases = (
+            (
+                "dtype",
+                lambda: tensor.to(torch.float32, False, Override(), copy=False),
+            ),
+            (
+                "tensor",
+                lambda: tensor.to(other_tensor, False, Override(), copy=False),
+            ),
+        )
+        for name, call in generic_duplicate_copy_cases:
+            with self.subTest(duplicate_copy=name):
+                override_calls.clear()
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^to\(\) received an invalid combination of arguments",
+                ):
+                    call()
+                self.assertEqual(override_calls, [])
+
+        duplicate_device_copy_cases = (
+            (
+                "device",
+                lambda: tensor.to("cpu", torch.float32, False, Override(), copy=False),
+            ),
+        )
+        for name, call in duplicate_device_copy_cases:
+            with self.subTest(duplicate_copy=name):
+                override_calls.clear()
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^to\(\) got multiple values for argument 'copy'$",
+                ):
+                    call()
+                self.assertEqual(override_calls, [])
+
         class DecliningOverride:
             @classmethod
             def __torch_function__(cls, func, types, args=(), kwargs=None):

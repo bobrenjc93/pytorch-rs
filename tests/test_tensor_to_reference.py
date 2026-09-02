@@ -307,6 +307,23 @@ class TensorToReferenceTests(unittest.TestCase):
         else:
             unexpected_keyword_error = None
 
+        other_tensor = module.tensor([2.0], dtype=module.float32)
+        duplicate_copy_errors = []
+        for call in (
+            lambda: tensor.to(module.float32, False, Override(), copy=False),
+            lambda: tensor.to(other_tensor, False, Override(), copy=False),
+            lambda: tensor.to("cpu", module.float32, False, Override(), copy=False),
+        ):
+            override_calls.clear()
+            try:
+                call()
+            except Exception as error:
+                duplicate_copy_errors.append(
+                    (type(error).__name__, str(error).splitlines()[0], len(override_calls))
+                )
+            else:
+                duplicate_copy_errors.append(None)
+
         rejected_before_dispatch = RecordingMode(marker)
         try:
             with rejected_before_dispatch:
@@ -396,6 +413,7 @@ class TensorToReferenceTests(unittest.TestCase):
             ),
             "unexpected_keyword_error": unexpected_keyword_error,
             "unexpected_keyword_calls": len(override_calls),
+            "duplicate_copy_errors": duplicate_copy_errors,
             "strict_bool_error": strict_bool_error,
             "strict_bool_call_count": len(rejected_before_dispatch.calls),
             "forwarding_order": order,
