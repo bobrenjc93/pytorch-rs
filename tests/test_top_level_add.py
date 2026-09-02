@@ -82,6 +82,62 @@ class TopLevelAddTests(unittest.TestCase):
             self.assertNotEqual(result.data_ptr(), special.data_ptr())
             self.assertNotEqual(result.data_ptr(), zeros.data_ptr())
 
+    def test_tensor_scalar_right_values_empty_offsets_and_special_bits(self):
+        left = torch.tensor(
+            [[[1.0, -0.0], [2.0, float("inf")], [3.0, -6.0]]]
+        ).transpose(0, 2)
+        calls = (
+            ("positional python bool", lambda: torch.add(left, True), left + True),
+            ("positional python int", lambda: torch.add(left, -2), left + -2),
+            ("positional python float", lambda: torch.add(left, 2.5), left + 2.5),
+            (
+                "canonical keywords",
+                lambda: torch.add(input=left, other=np.float32(3.0)),
+                left + np.float32(3.0),
+            ),
+            (
+                "default alpha",
+                lambda: torch.add(left, np.float64(-1.5), alpha=np.int64(1)),
+                left + np.float64(-1.5),
+            ),
+            (
+                "explicit out none",
+                lambda: torch.add(left, np.bool_(True), out=None),
+                left + np.bool_(True),
+            ),
+        )
+        for case, call, expected in calls:
+            self.assert_tensor_matches(call(), expected, case=case)
+
+        offset_noncontiguous = left[1]
+        self.assertGreater(offset_noncontiguous.storage_offset(), 0)
+        self.assertFalse(offset_noncontiguous.is_contiguous())
+        self.assert_tensor_matches(
+            torch.add(offset_noncontiguous, np.float32(-0.0)),
+            offset_noncontiguous + np.float32(-0.0),
+            case="offset noncontiguous signed-zero scalar",
+        )
+
+        empty = torch.zeros((2, 0, 3)).transpose(0, 2)
+        self.assert_tensor_matches(
+            torch.add(empty, -3.5),
+            empty + -3.5,
+            case="strided empty scalar",
+        )
+
+        special_bits = np.asarray(
+            (0x0000_0000, 0x8000_0000, 0x7F80_0000, 0xFF80_0000, 0x7FC1_2345),
+            dtype=np.uint32,
+        )
+        special = torch.tensor(memoryview(special_bits.view(np.float32)))
+        result = torch.add(special, np.float32(0.0))
+        self.assert_tensor_matches(
+            result, special + np.float32(0.0), case="signed zero nan infinity"
+        )
+        self.assertFalse(result.is_set_to(special))
+        if result.numel():
+            self.assertNotEqual(result.data_ptr(), special.data_ptr())
+
     def test_autograd_no_grad_and_full_sum_backward_reuse_tensor_add(self):
         function_left = torch.tensor([[2.0, 3.0]], requires_grad=True)
         function_right = torch.tensor([[5.0], [7.0], [11.0]], requires_grad=True)
@@ -114,6 +170,16 @@ class TopLevelAddTests(unittest.TestCase):
             case="shared operand gradient",
         )
 
+        scalar_function = torch.tensor([2.0, -3.0], requires_grad=True)
+        scalar_operator = torch.tensor([2.0, -3.0], requires_grad=True)
+        torch.add(scalar_function, 4.0).sum().backward()
+        (scalar_operator + 4.0).sum().backward()
+        self.assert_tensor_matches(
+            scalar_function.grad,
+            scalar_operator.grad,
+            case="scalar right gradient",
+        )
+
         empty_function = torch.zeros((2, 0, 3), requires_grad=True)
         empty_operator = torch.zeros((2, 0, 3), requires_grad=True)
         torch.add(empty_function, torch.ones((1, 1, 3))).sum().backward()
@@ -126,8 +192,11 @@ class TopLevelAddTests(unittest.TestCase):
         right = torch.tensor([[3.0], [4.0]], requires_grad=True)
         with torch.no_grad():
             tensor_output = torch.add(left.transpose(0, 1), right.transpose(0, 1))
+            scalar_output = torch.add(left, 2.0)
         self.assertFalse(tensor_output.requires_grad)
+        self.assertFalse(scalar_output.requires_grad)
         self.assertTrue(torch.add(left, right.transpose(0, 1)).requires_grad)
+        self.assertTrue(torch.add(left, 2.0).requires_grad)
 
     def test_torch_function_modes_and_overrides_observe_original_calls(self):
         left = torch.tensor([2.0])
@@ -187,6 +256,13 @@ class TopLevelAddTests(unittest.TestCase):
                 actual = torch.add(input=left, other=right, alpha=1)
         self.assertEqual(order, ["upper", "lower"])
         self.assert_tensor_matches(actual, left + right, case="forwarded modes")
+
+        order.clear()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                actual = torch.add(input=left, other=4.0, alpha=1)
+        self.assertEqual(order, ["upper", "lower"])
+        self.assert_tensor_matches(actual, left + 4.0, case="forwarded scalar")
 
         for call in (
             lambda: torch.add([], right),
@@ -251,10 +327,9 @@ class TopLevelAddTests(unittest.TestCase):
         other = torch.tensor([3.0])
         unsupported_operand = (
             r"^add\(\): only exact native CPU float32 Tensor/Tensor operands "
-            r"are supported$"
+            r"or Tensor input with real-number other are supported$"
         )
         for call in (
-            lambda: torch.add(tensor, 2.0),
             lambda: torch.add(2.0, tensor),
             lambda: torch.add(2, 3),
         ):
@@ -267,6 +342,11 @@ class TopLevelAddTests(unittest.TestCase):
             r"^add\(\): alpha values other than 1 are not supported$",
         ):
             torch.add(tensor, other, alpha=2)
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^add\(\): alpha values other than 1 are not supported$",
+        ):
+            torch.add(tensor, 2.0, alpha=2)
         for alpha in (True, np.bool_(True)):
             with self.subTest(alpha=type(alpha).__name__):
                 with self.assertRaisesRegex(
@@ -274,6 +354,11 @@ class TopLevelAddTests(unittest.TestCase):
                     r"^Boolean alpha only supported for Boolean results\.$",
                 ):
                     torch.add(tensor, other, alpha=alpha)
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^Boolean alpha only supported for Boolean results\.$",
+                ):
+                    torch.add(tensor, 2.0, alpha=alpha)
 
         destination = torch.tensor([17.0])
         with self.assertRaisesRegex(
@@ -281,19 +366,24 @@ class TopLevelAddTests(unittest.TestCase):
         ):
             torch.add(tensor, other, out=destination)
         self.assertEqual(destination.tolist(), [17.0])
+        with self.assertRaisesRegex(
+            RuntimeError, r"^add\(\): the 'out' argument is not supported$"
+        ):
+            torch.add(tensor, 2.0, out=destination)
+        self.assertEqual(destination.tolist(), [17.0])
 
         for call, message in (
             (
                 lambda: torch.add(),
                 "add() received an invalid combination of arguments - got (), "
-                "but expected (Tensor input, Tensor other, *, Number alpha = 1, "
-                "Tensor out = None)",
+                "but expected (Tensor input, Tensor or Number other, *, "
+                "Number alpha = 1, Tensor out = None)",
             ),
             (
                 lambda: torch.add(tensor),
                 "add() received an invalid combination of arguments - got "
-                "(Tensor), but expected (Tensor input, Tensor other, *, Number "
-                "alpha = 1, Tensor out = None)",
+                "(Tensor), but expected (Tensor input, Tensor or Number other, "
+                "*, Number alpha = 1, Tensor out = None)",
             ),
             (
                 lambda: torch.add(tensor, other, other),

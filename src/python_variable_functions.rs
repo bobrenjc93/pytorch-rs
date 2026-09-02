@@ -918,14 +918,15 @@ Adds :attr:`other`, scaled by :attr:`alpha`, to :attr:`input`.
 
 
 This compatibility layer supports exact native CPU ``float32`` Tensor/Tensor
-operands, broadcasting, default-equivalent ``alpha`` values, and omitted or
-``None`` ``out`` only. Scalar operands, scalar-only calls, concrete ``out``
-tensors, nondefault or boolean ``alpha``, unsupported dtype/device/subclass
-paths, and in-place variants remain unsupported.
+operands and exact native CPU ``float32`` Tensor input plus real-number scalar
+``other``, broadcasting, default-equivalent ``alpha`` values, and omitted or
+``None`` ``out`` only. Scalar-left operands, scalar-only calls, concrete
+``out`` tensors, nondefault or boolean ``alpha``, unsupported
+dtype/device/subclass paths, and in-place variants remain unsupported.
 
 Args:
     input (Tensor): the input tensor.
-    other (Tensor): the tensor to add to input.
+    other (Tensor or Number): the tensor or number to add to input.
 
 Keyword args:
     alpha (Number): the multiplier for :attr:`other`.
