@@ -115,6 +115,13 @@ class TensorDivisionMethodTests(unittest.TestCase):
         ).transpose(0, 1)[1]
         self.assertGreater(offset_noncontiguous.storage_offset(), 0)
         self.assertFalse(offset_noncontiguous.is_contiguous())
+        near_integer_left = torch.tensor(
+            [173204.765625, -173204.765625, 173204.765625, -173204.765625]
+        )
+        near_integer_right = torch.tensor(
+            [11260.0244140625, 11260.0244140625, -11260.0244140625, -11260.0244140625]
+        )
+        near_integer_floor = torch.tensor([15.0, -16.0, -16.0, 15.0])
 
         special_bits = np.asarray(
             (
@@ -181,6 +188,21 @@ class TensorDivisionMethodTests(unittest.TestCase):
                     getattr(offset_noncontiguous / torch.tensor([2.0, -2.0]), mode)(),
                     case=(name, mode, "offset noncontiguous"),
                 )
+                if mode == "floor":
+                    self.assert_tensor_matches(
+                        getattr(near_integer_left, name)(
+                            near_integer_right, rounding_mode=mode
+                        ),
+                        near_integer_floor,
+                        case=(name, mode, "near-integer tensor quotient"),
+                    )
+                    self.assert_tensor_matches(
+                        getattr(torch.tensor([173204.765625]), name)(
+                            11260.0244140625, rounding_mode=mode
+                        ),
+                        torch.tensor([15.0]),
+                        case=(name, mode, "near-integer scalar quotient"),
+                    )
 
                 for scalar in (-2.0, np.float32(-0.0)):
                     self.assert_tensor_matches(

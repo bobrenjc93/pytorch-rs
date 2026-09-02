@@ -152,6 +152,18 @@ class TensorDivisionMethodReferenceTests(unittest.TestCase):
         ).transpose(0, 1)[1]
         self.assertGreater(actual_offset_noncontiguous.storage_offset(), 0)
         self.assertFalse(actual_offset_noncontiguous.is_contiguous())
+        actual_near_integer_left = torch.tensor(
+            [173204.765625, -173204.765625, 173204.765625, -173204.765625]
+        )
+        expected_near_integer_left = reference_torch.tensor(
+            [173204.765625, -173204.765625, 173204.765625, -173204.765625]
+        )
+        actual_near_integer_right = torch.tensor(
+            [11260.0244140625, 11260.0244140625, -11260.0244140625, -11260.0244140625]
+        )
+        expected_near_integer_right = reference_torch.tensor(
+            [11260.0244140625, 11260.0244140625, -11260.0244140625, -11260.0244140625]
+        )
 
         special_bits = np.asarray(
             (
@@ -199,6 +211,25 @@ class TensorDivisionMethodReferenceTests(unittest.TestCase):
                     ),
                     case=(name, mode, "offset noncontiguous"),
                 )
+                if mode == "floor":
+                    self.assert_matches(
+                        getattr(actual_near_integer_left, name)(
+                            actual_near_integer_right, rounding_mode=mode
+                        ),
+                        getattr(expected_near_integer_left, name)(
+                            expected_near_integer_right, rounding_mode=mode
+                        ),
+                        case=(name, mode, "near-integer tensor quotient"),
+                    )
+                    self.assert_matches(
+                        getattr(torch.tensor([173204.765625]), name)(
+                            11260.0244140625, rounding_mode=mode
+                        ),
+                        getattr(reference_torch.tensor([173204.765625]), name)(
+                            11260.0244140625, rounding_mode=mode
+                        ),
+                        case=(name, mode, "near-integer scalar quotient"),
+                    )
                 for actual_scalar, expected_scalar in (
                     (-2.0, -2.0),
                     (np.float32(-0.0), np.float32(-0.0)),

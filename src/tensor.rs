@@ -6690,7 +6690,12 @@ fn floor_divide_value(left: f32, right: f32) -> f32 {
             floor_value(division)
         };
     }
-    floor_value(quotient)
+    let floor_quotient = floor_value(quotient);
+    if quotient - floor_quotient > 0.5 {
+        floor_quotient + 1.0
+    } else {
+        floor_quotient
+    }
 }
 
 fn ceil_value(value: f32) -> f32 {
