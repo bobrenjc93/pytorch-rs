@@ -37,6 +37,27 @@ class TopLevelSumTests(unittest.TestCase):
                 np.float32(expected.item()).view(np.uint32).item(),
             )
 
+    def assert_keepdim_matches(self, actual, expected, source, *, case):
+        expected_shape = (1,) * len(source.shape)
+        with self.subTest(case=case, metadata=True):
+            self.assertEqual(actual.shape, expected_shape)
+            self.assertEqual(actual.stride(), (1,) * len(expected_shape))
+            self.assertEqual(actual.storage_offset(), 0)
+            self.assertEqual(actual.numel(), 1)
+            self.assertTrue(actual.is_contiguous())
+            self.assertIs(actual.dtype, torch.float32)
+            self.assertEqual(actual.device, torch.device("cpu"))
+            self.assertEqual(actual.requires_grad, expected.requires_grad)
+            self.assertEqual(actual.is_leaf, expected.is_leaf)
+            self.assertFalse(actual.is_set_to(source))
+            if source.numel():
+                self.assertNotEqual(actual.data_ptr(), source.data_ptr())
+        with self.subTest(case=case, value=True):
+            self.assertEqual(
+                np.float32(actual.item()).view(np.uint32).item(),
+                np.float32(expected.item()).view(np.uint32).item(),
+            )
+
     @staticmethod
     def value_cases():
         dense = torch.tensor(
@@ -47,6 +68,7 @@ class TopLevelSumTests(unittest.TestCase):
             ("scalar", torch.tensor(-3.5)),
             ("negative zero", torch.tensor(-0.0)),
             ("empty", torch.zeros((2, 0, 3)).transpose(0, 2)[1]),
+            ("singleton", torch.tensor([[[7.0]]])[0]),
             ("contiguous offset", dense[1]),
             ("offset", noncontiguous[1]),
             ("noncontiguous", noncontiguous),
@@ -72,6 +94,38 @@ class TopLevelSumTests(unittest.TestCase):
                 "none dim dtype out none",
                 lambda: torch.sum(
                     input=source, dim=None, keepdim=False, dtype=torch.float32, out=None
+                ),
+            ),
+        )
+
+    @staticmethod
+    def supported_keepdim_calls(source):
+        return (
+            ("positional none dim keepdim true", lambda: torch.sum(source, None, True)),
+            (
+                "mixed none dim keepdim true",
+                lambda: torch.sum(source, None, keepdim=True),
+            ),
+            (
+                "keyword none dim keepdim true",
+                lambda: torch.sum(source, dim=None, keepdim=True),
+            ),
+            (
+                "input keyword keepdim true",
+                lambda: torch.sum(input=source, dim=None, keepdim=True),
+            ),
+            (
+                "keepdim true dtype none",
+                lambda: torch.sum(source, dim=None, keepdim=True, dtype=None),
+            ),
+            (
+                "keepdim true dtype float32",
+                lambda: torch.sum(
+                    input=source,
+                    dim=None,
+                    keepdim=True,
+                    dtype=torch.float32,
+                    out=None,
                 ),
             ),
         )
@@ -120,6 +174,12 @@ class TopLevelSumTests(unittest.TestCase):
             for form, call in self.supported_calls(source):
                 self.assert_scalar_matches(call(), expected, source, case=(case, form))
 
+    def test_keepdim_full_reduction_preserves_rank_values_and_metadata(self):
+        for case, source in self.value_cases():
+            expected = source.sum()
+            for form, call in self.supported_keepdim_calls(source):
+                self.assert_keepdim_matches(call(), expected, source, case=(case, form))
+
     def test_supported_forms_preserve_autograd_accumulation_and_no_grad(self):
         forms = tuple(form for form, _ in self.supported_calls(torch.tensor(1.0)))
         for case in ("scalar", "empty", "offset", "noncontiguous"):
@@ -148,6 +208,33 @@ class TopLevelSumTests(unittest.TestCase):
         self.assertTrue(untracked.is_leaf)
         self.assertIsNone(leaf.grad)
         self.assertTrue(torch.sum(leaf, None, dtype=torch.float32).requires_grad)
+
+    def test_keepdim_full_reduction_preserves_no_grad_and_final_scalar_backward(self):
+        for case in ("scalar", "empty", "offset", "noncontiguous"):
+            function_leaf, function_input = self.autograd_case(case)
+            baseline_leaf, baseline_input = self.autograd_case(case)
+            kept = torch.sum(function_input, dim=None, keepdim=True)
+            expected = baseline_input.sum()
+            self.assert_keepdim_matches(
+                kept, expected, function_input, case=(case, "forward")
+            )
+
+            kept.sum().backward()
+            expected.backward()
+            self.assertEqual(function_leaf.grad.shape, baseline_leaf.grad.shape)
+            np.testing.assert_array_equal(
+                np.asarray(function_leaf.grad), np.asarray(baseline_leaf.grad)
+            )
+
+        leaf = torch.tensor([1.0, -2.0, 3.0], requires_grad=True)
+        with torch.no_grad():
+            untracked = torch.sum(leaf, dim=None, keepdim=True, dtype=torch.float)
+        self.assert_keepdim_matches(
+            untracked, leaf.detach().sum(), leaf, case="no_grad"
+        )
+        self.assertFalse(untracked.requires_grad)
+        self.assertTrue(untracked.is_leaf)
+        self.assertIsNone(leaf.grad)
 
     def test_rank_one_transpose_selected_offset_sum_edges(self):
         cases = (
@@ -477,7 +564,10 @@ class TopLevelSumTests(unittest.TestCase):
             ("tuple dim", lambda: torch.sum(tensor, (0, 1))),
             ("list dim", lambda: torch.sum(tensor, [0, 1])),
             ("keepdim", lambda: torch.sum(tensor, 0, keepdim=True)),
-            ("none dim keepdim true", lambda: torch.sum(tensor, None, keepdim=True)),
+            (
+                "none dim keepdim true concrete out",
+                lambda: torch.sum(tensor, None, keepdim=True, out=destination),
+            ),
             ("out", lambda: torch.sum(tensor, 0, out=destination)),
             ("none dim concrete out", lambda: torch.sum(tensor, None, out=destination)),
             ("dtype plus dim", lambda: torch.sum(tensor, 0, dtype=torch.float32)),
@@ -486,7 +576,7 @@ class TopLevelSumTests(unittest.TestCase):
             with self.subTest(case=case):
                 with self.assertRaisesRegex(
                     NotImplementedError,
-                    r"^sum\(\): dim, keepdim, and out reductions are not supported$",
+                    r"^sum\(\): only full reductions with dim=None support keepdim; dim and out reductions are not supported$",
                 ):
                     call()
         self.assertEqual(destination.tolist(), [17.0, 19.0, 23.0])
