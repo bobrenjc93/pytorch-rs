@@ -129,22 +129,76 @@ class TopLevelReciprocalTests(unittest.TestCase):
                 if source.numel():
                     self.assertNotEqual(output.data_ptr(), source.data_ptr())
 
-    def test_autograd_is_rejected_before_output_planning_and_no_grad_is_allowed(self):
-        leaf = torch.tensor(
-            [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True
-        )
-        source = leaf.transpose(0, 1)[1]
-
-        for form, call in self.supported_calls(source):
+    def test_autograd_vjp_accumulation_and_no_grad_are_supported(self):
+        for form in (
+            "positional",
+            "input",
+            "x",
+            "a",
+            "x1",
+            "out none",
+            "alias and out none",
+        ):
             with self.subTest(form=form, mode="recording"):
+                leaf = torch.tensor(
+                    [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]],
+                    requires_grad=True,
+                )
+                source = leaf.transpose(0, 1)[1]
+                output = dict(self.supported_calls(source))[form]()
+                self.assertTrue(output.requires_grad)
+                self.assertFalse(output.is_leaf)
+                self.assertEqual(output.stride(), (1,))
+
+                (output * torch.tensor([2.0, -3.0])).sum().backward()
+                first_grad = np.asarray(leaf.grad).copy()
+                np.testing.assert_array_equal(
+                    first_grad.reshape(-1).view(np.uint32),
+                    np.asarray(
+                        [
+                            0.0,
+                            -np.inf,
+                            0.0,
+                            0.0,
+                            np.float32(3.0 / 16.0),
+                            0.0,
+                        ],
+                        dtype=np.float32,
+                    ).view(np.uint32),
+                )
+                dict(self.supported_calls(source))[form]().sum().backward()
+                np.testing.assert_array_equal(
+                    np.asarray(leaf.grad),
+                    first_grad
+                    + np.asarray(
+                        [
+                            [0.0, -np.inf, 0.0],
+                            [0.0, np.float32(-1.0 / 16.0), 0.0],
+                        ],
+                        dtype=np.float32,
+                    ),
+                )
+
+                probability = dict(
+                    self.supported_calls(
+                        torch.tensor([-1.0], requires_grad=True)
+                    )
+                )[form]()
                 with self.assertRaisesRegex(
-                    RuntimeError,
-                    r"^reciprocal\(\): autograd recording is not supported$",
+                    ValueError, r"grad_fn=<ReciprocalBackward0>"
                 ):
-                    call()
+                    torch.nn.functional.dropout(
+                        torch.tensor([1.0]), p=probability, training=False
+                    )
+
             with self.subTest(form=form, mode="no_grad"):
+                leaf = torch.tensor(
+                    [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]],
+                    requires_grad=True,
+                )
+                source = leaf.transpose(0, 1)[1]
                 with torch.no_grad():
-                    actual = call()
+                    actual = dict(self.supported_calls(source))[form]()
                     expected = 1.0 / source
                 self.assert_matches_division(
                     actual, expected, case=(form, "no_grad")
@@ -155,7 +209,7 @@ class TopLevelReciprocalTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             RuntimeError,
-            r"^reciprocal\(\): autograd recording is not supported$",
+            "Stride calculation overflowed",
         ):
             torch.reciprocal(extreme)
         with torch.no_grad():

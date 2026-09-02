@@ -83,24 +83,45 @@ class TensorReciprocalTests(unittest.TestCase):
             self.assertFalse(function_output.is_set_to(source))
             self.assertFalse(method_output.is_set_to(function_output))
 
-    def test_grad_recording_is_rejected_before_planning_and_no_grad_is_allowed(self):
+    def test_autograd_records_vjp_and_no_grad_is_allowed(self):
         leaf = torch.tensor(
             [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True
         )
         source = leaf.transpose(0, 1)[1]
+        weights = torch.tensor([2.0, -3.0])
 
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^reciprocal\(\): autograd recording is not supported$",
-        ):
-            source.reciprocal()
+        output = source.reciprocal()
+        self.assertTrue(output.requires_grad)
+        self.assertFalse(output.is_leaf)
+        self.assertEqual(output.stride(), (1,))
+        (output * weights).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad).reshape(-1).view(np.uint32),
+            np.asarray(
+                [
+                    0.0,
+                    -np.inf,
+                    0.0,
+                    0.0,
+                    np.float32(3.0 / 16.0),
+                    0.0,
+                ],
+                dtype=np.float32,
+            ).view(np.uint32),
+        )
+
+        probability = torch.tensor([-1.0], requires_grad=True).reciprocal()
+        with self.assertRaisesRegex(ValueError, r"grad_fn=<ReciprocalBackward0>"):
+            torch.nn.functional.dropout(
+                torch.tensor([1.0]), p=probability, training=False
+            )
 
         extreme = torch.zeros((0,), requires_grad=True).reshape(
             (0, sys.maxsize, 3)
         )
         with self.assertRaisesRegex(
             RuntimeError,
-            r"^reciprocal\(\): autograd recording is not supported$",
+            "Stride calculation overflowed",
         ):
             extreme.reciprocal()
 
@@ -250,14 +271,12 @@ class TensorReciprocalTests(unittest.TestCase):
         self.assertEqual(forwarded.tolist(), [0.25])
 
         order.clear()
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^reciprocal\(\): autograd recording is not supported$",
-        ):
-            with ForwardingMode("lower"):
-                with ForwardingMode("upper"):
-                    tensor.reciprocal()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                tracked = tensor.reciprocal()
         self.assertEqual(order, ["upper", "lower"])
+        self.assertTrue(tracked.requires_grad)
+        self.assertEqual(tracked.tolist(), [0.25])
 
         invalid_mode = RecordingMode()
         with self.assertRaises(TypeError):
