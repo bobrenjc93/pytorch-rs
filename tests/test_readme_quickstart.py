@@ -215,14 +215,17 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         "Use functional NN helpers",
         (
             "`torch.nn.functional.linear`",
+            "`torch.nn.functional.l1_loss`",
             "`torch.nn.functional.mse_loss`",
             "`torch.nn.functional.dropout1d`",
             "`torch.nn.functional.softsign`",
         ),
         (
             "Module layers",
+            '`l1_loss` reductions other than `"none"`/`"sum"`',
             '`mse_loss` reductions other than `"none"`/`"mean"`/`"sum"`',
             "loss `weight` arguments",
+            "legacy loss reduction arguments",
             "mutating initializers",
         ),
         (
