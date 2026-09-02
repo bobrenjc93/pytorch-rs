@@ -52,6 +52,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-sqrt-release-timings.md",
     ),
     (
+        "`Tensor.reciprocal` and `torch.reciprocal` release timings",
+        "docs/tensor-reciprocal-release-timings.md",
+    ),
+    (
         "`Tensor.view`, reshape, flatten, ravel, unbind, and edge-unsqueeze release timings",
         "docs/tensor-view-release-timings.md",
     ),
