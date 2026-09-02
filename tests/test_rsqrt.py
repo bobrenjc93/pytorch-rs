@@ -57,6 +57,21 @@ class TensorRsqrtTests(unittest.TestCase):
                 np.asarray(expected_bits, dtype=np.uint32),
             )
 
+    def assert_tensor_matches(self, actual, expected, *, case):
+        with self.subTest(case=case, metadata=True):
+            self.assertEqual(actual.shape, expected.shape)
+            self.assertEqual(actual.stride(), expected.stride())
+            self.assertEqual(actual.storage_offset(), expected.storage_offset())
+            self.assertEqual(actual.requires_grad, expected.requires_grad)
+            self.assertEqual(actual.is_leaf, expected.is_leaf)
+            self.assertIs(actual.dtype, expected.dtype)
+            self.assertEqual(actual.device, expected.device)
+        with self.subTest(case=case, values=True):
+            np.testing.assert_array_equal(
+                np.asarray(actual, dtype=np.float32).reshape(-1).view(np.uint32),
+                np.asarray(expected, dtype=np.float32).reshape(-1).view(np.uint32),
+            )
+
     def test_ieee_values_layouts_and_fresh_storage(self):
         base = torch.tensor(
             np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4).tolist()
@@ -182,26 +197,27 @@ class TensorRsqrtTests(unittest.TestCase):
                 source_bits,
             )
 
-    def test_grad_recording_is_rejected_before_planning_and_no_grad_is_allowed(self):
+    def test_autograd_records_saved_input_vjp_and_no_grad_detach_boundaries(self):
+        tracked = torch.tensor([4.0], requires_grad=True)
+        output = tracked.rsqrt()
+        self.assertTrue(output.requires_grad)
+        self.assertFalse(output.is_leaf)
+        output.sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(tracked.grad, dtype=np.float32).view(np.uint32),
+            np.asarray([0xBD80_0000], dtype=np.uint32),
+        )
+
         leaf = torch.tensor(
             [[-4.0, -0.0, 1.0], [4.0, 9.0, 16.0]], requires_grad=True
         )
         source = leaf.transpose(0, 1)[1]
         source_bits = np.asarray(source, dtype=np.float32).view(np.uint32).copy()
 
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^rsqrt\(\): autograd recording is not supported$",
-        ):
-            source.rsqrt()
-
         extreme = torch.zeros((0,), requires_grad=True).reshape(
             (0, sys.maxsize, 3)
         )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^rsqrt\(\): autograd recording is not supported$",
-        ):
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             extreme.rsqrt()
 
         with torch.no_grad():
@@ -344,14 +360,15 @@ class TensorRsqrtTests(unittest.TestCase):
         self.assertEqual(forwarded.tolist(), [0.5])
 
         order.clear()
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^rsqrt\(\): autograd recording is not supported$",
-        ):
-            with ForwardingMode("lower"):
-                with ForwardingMode("upper"):
-                    tensor.rsqrt()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                tracked = tensor.rsqrt()
         self.assertEqual(order, ["upper", "lower"])
+        tracked.sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(tensor.grad, dtype=np.float32).view(np.uint32),
+            np.asarray([0xBD80_0000], dtype=np.uint32),
+        )
 
         invalid_mode = RecordingMode()
         with self.assertRaises(TypeError):
@@ -396,6 +413,33 @@ class TopLevelRsqrtTests(unittest.TestCase):
             ("out none", lambda: torch.rsqrt(source, out=None)),
             ("alias and out none", lambda: torch.rsqrt(x=source, out=None)),
         )
+
+    @staticmethod
+    def make_autograd_case(case):
+        if case == "scalar":
+            leaf = torch.tensor(4.0, requires_grad=True)
+            return leaf, leaf, None
+        if case == "empty":
+            leaf = torch.zeros((2, 0, 3), requires_grad=True)
+            return leaf, leaf.transpose(0, 2)[1], None
+
+        leaf = torch.tensor(
+            np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            requires_grad=True,
+        )
+        if case == "offset":
+            source = leaf[1]
+            weights = torch.tensor(
+                np.arange(1, 13, dtype=np.float32).reshape(3, 4).tolist()
+            )
+            return leaf, source, weights
+        if case == "noncontiguous":
+            source = leaf.transpose(0, 2)[1]
+            weights = torch.tensor(
+                np.arange(1, 7, dtype=np.float32).reshape(3, 2).tolist()
+            )
+            return leaf, source, weights
+        raise AssertionError(f"unknown rsqrt autograd case: {case}")
 
     def test_supported_calls_reuse_tensor_kernel_and_unary_layouts(self):
         base = torch.tensor(
@@ -449,36 +493,53 @@ class TopLevelRsqrtTests(unittest.TestCase):
                 source_bits,
             )
 
-    def test_autograd_and_non_none_out_boundaries_remain_explicit(self):
-        leaf = torch.tensor(
-            [[-4.0, -0.0, 1.0], [4.0, 9.0, 16.0]], requires_grad=True
+    def test_autograd_reuses_tensor_vjp_and_out_boundary_remains_explicit(self):
+        forms = (
+            "positional",
+            "input",
+            "x",
+            "a",
+            "x1",
+            "out none",
+            "alias and out none",
         )
-        source = leaf.transpose(0, 1)[1]
-        for form, call in self.supported_calls(source):
-            with self.subTest(form=form, mode="recording"):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    r"^rsqrt\(\): autograd recording is not supported$",
-                ):
-                    call()
-            with self.subTest(form=form, mode="no_grad"):
-                with torch.no_grad():
-                    actual = call()
-                    expected = source.rsqrt()
-                self.assert_matches_method(actual, expected, case=(form, "no_grad"))
+        for case in ("scalar", "empty", "offset", "noncontiguous"):
+            for form in forms:
+                function_leaf, function_source, function_weights = (
+                    self.make_autograd_case(case)
+                )
+                method_leaf, method_source, method_weights = self.make_autograd_case(
+                    case
+                )
+                output = dict(self.supported_calls(function_source))[form]()
+                method_output = method_source.rsqrt()
+                self.assert_matches_method(
+                    output, method_output, case=(case, form, "output")
+                )
+
+                if function_weights is None:
+                    function_loss = output if case == "scalar" else output.sum()
+                    method_loss = (
+                        method_output if case == "scalar" else method_output.sum()
+                    )
+                else:
+                    function_loss = (output * function_weights).sum()
+                    method_loss = (method_output * method_weights).sum()
+                function_loss.backward()
+                method_loss.backward()
+                self.assert_matches_method(
+                    function_leaf.grad,
+                    method_leaf.grad,
+                    case=(case, form, "gradient"),
+                )
 
         extreme = torch.zeros((0,), requires_grad=True).reshape(
             (0, sys.maxsize, 3)
         )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^rsqrt\(\): autograd recording is not supported$",
-        ):
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             torch.rsqrt(extreme)
-        with torch.no_grad():
-            with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
-                torch.rsqrt(extreme)
 
+        source = torch.tensor([4.0, 9.0], requires_grad=True)
         destination = torch.tensor([17.0, 19.0])
         for form, call in (
             ("positional", lambda: torch.rsqrt(source, out=destination)),
@@ -492,6 +553,134 @@ class TopLevelRsqrtTests(unittest.TestCase):
                 ):
                     call()
                 self.assertEqual(destination.tolist(), [17.0, 19.0])
+
+    def test_special_value_gradients_reuse_tensor_vjp_bitwise(self):
+        input_bits = np.asarray(
+            (
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x0080_0000,
+                0x8080_0000,
+                0x3E80_0000,
+                0x3EAA_AAAB,
+                0xBEAA_AAAB,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x4080_0000,
+                0xC080_0000,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7F81_2345,
+                0xFF81_2345,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ),
+            dtype=np.uint32,
+        )
+        weight_bits = np.asarray(
+            (
+                0x3F80_0000,
+                0xBF80_0000,
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x3F00_0000,
+                0xBF00_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7FC0_1234,
+                0xFFC0_5678,
+            ),
+            dtype=np.uint32,
+        )
+        function_leaf = torch.tensor(
+            memoryview(input_bits.view(np.float32)), requires_grad=True
+        )
+        method_leaf = torch.tensor(
+            memoryview(input_bits.view(np.float32)), requires_grad=True
+        )
+        function_output = torch.rsqrt(function_leaf, out=None)
+        method_output = method_leaf.rsqrt()
+        weights = torch.tensor(memoryview(weight_bits.view(np.float32)))
+        (function_output * weights).sum().backward()
+        (method_output * weights).sum().backward()
+        self.assert_matches_method(
+            function_leaf.grad, method_leaf.grad, case="special gradient"
+        )
+
+    def test_accumulation_graph_freeing_no_grad_and_detach_reuse_method_path(self):
+        function_leaf = torch.tensor([1.0, 4.0, 9.0], requires_grad=True)
+        method_leaf = torch.tensor([1.0, 4.0, 9.0], requires_grad=True)
+        torch.rsqrt(function_leaf).sum().backward()
+        method_leaf.rsqrt().sum().backward()
+        self.assert_matches_method(
+            function_leaf.grad, method_leaf.grad, case="first gradient"
+        )
+        torch.rsqrt(input=function_leaf).sum().backward()
+        method_leaf.rsqrt().sum().backward()
+        self.assert_matches_method(
+            function_leaf.grad, method_leaf.grad, case="accumulated gradient"
+        )
+
+        function_freed = torch.tensor([1.0, 4.0, 9.0], requires_grad=True)
+        method_freed = torch.tensor([1.0, 4.0, 9.0], requires_grad=True)
+        function_loss = torch.rsqrt(function_freed).sum()
+        method_loss = method_freed.rsqrt().sum()
+        function_loss.backward()
+        method_loss.backward()
+        with self.assertRaises(RuntimeError) as function_raised:
+            function_loss.backward()
+        with self.assertRaises(RuntimeError) as method_raised:
+            method_loss.backward()
+        self.assertEqual(str(function_raised.exception), str(method_raised.exception))
+
+        no_grad_function_leaf = torch.tensor(
+            [[1.0, 4.0, 9.0], [16.0, 25.0, 36.0]], requires_grad=True
+        )
+        no_grad_method_leaf = torch.tensor(
+            [[1.0, 4.0, 9.0], [16.0, 25.0, 36.0]], requires_grad=True
+        )
+        with torch.no_grad():
+            function_output = torch.rsqrt(
+                no_grad_function_leaf.transpose(0, 1)[1], out=None
+            )
+            method_output = no_grad_method_leaf.transpose(0, 1)[1].rsqrt()
+        self.assert_matches_method(
+            function_output, method_output, case="no_grad output"
+        )
+        self.assertIsNone(no_grad_function_leaf.grad)
+        self.assertTrue(torch.rsqrt(no_grad_function_leaf).requires_grad)
+
+        detached = no_grad_function_leaf.detach().transpose(0, 1)[1]
+        self.assert_matches_method(
+            torch.rsqrt(detached), detached.rsqrt(), case="detached input"
+        )
+
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            "torch_rs.Tensor.backward does not support create_graph=True",
+        ):
+            torch.rsqrt(torch.tensor([4.0], requires_grad=True)).sum().backward(
+                create_graph=True
+            )
 
     def test_modes_and_overrides_observe_calls_before_native_boundaries(self):
         tensor = torch.tensor([4.0], requires_grad=True)
