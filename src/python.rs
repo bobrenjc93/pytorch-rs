@@ -1681,8 +1681,18 @@ pub(crate) fn asarray_variable_function(
                 Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
             );
         }
+        if let Some((flattened, shape)) = as_tensor_float_sequence(&obj.value)? {
+            validate_asarray_sequence_copy(arguments.copy.as_ref())?;
+            return Ok(Py::new(
+                py,
+                CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
+                    .map(PyTensor::new)
+                    .map_err(|error| tensor_error(&error))?,
+            )?
+            .into_any());
+        }
         return Err(PyNotImplementedError::new_err(
-            "asarray(): only exact native CPU float32 Tensor inputs or Python float scalars are supported; Python sequences, NumPy arrays/scalars, and non-float scalar conversions are not implemented",
+            "asarray(): only exact native CPU float32 Tensor inputs, Python float scalars, or exact list/tuple sequences of Python floats are supported; NumPy arrays/scalars, integer and boolean inference, and other conversions are not implemented",
         ));
     }
     let should_warn_requires_grad = {
@@ -8877,6 +8887,15 @@ fn validate_asarray_scalar_copy(copy: Option<&Bound<'_, PyAny>>) -> PyResult<()>
     }
     Err(PyNotImplementedError::new_err(
         "asarray(): copy=False for Python float scalar inputs is not supported because scalar conversion requires fresh storage",
+    ))
+}
+
+fn validate_asarray_sequence_copy(copy: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    if copy.is_none() {
+        return Ok(());
+    }
+    Err(PyValueError::new_err(
+        "can't alias arbitrary sequence into a tensor.",
     ))
 }
 
