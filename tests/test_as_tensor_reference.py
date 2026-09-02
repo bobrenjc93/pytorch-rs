@@ -66,6 +66,11 @@ class AsTensorReferenceTests(unittest.TestCase):
             {"dtype": module.float32, "device": module.device("cpu")},
         )
 
+    def nested_singleton(self, value, depth, container):
+        for _ in range(depth):
+            value = [value] if container is list else (value,)
+        return value
+
     def tensor_state(self, module, tensor):
         if module is reference_torch:
             values = tensor.detach().cpu().numpy().reshape(-1).view(np.uint32).tolist()
@@ -113,6 +118,27 @@ class AsTensorReferenceTests(unittest.TestCase):
             "numel": first.numel(),
             "grad_is_none": first.grad is None,
         }
+
+    def as_tensor_rank_contract(self, module, data):
+        result = module.as_tensor(data)
+        return {
+            "shape": tuple(result.shape),
+            "stride": result.stride(),
+            "numel": result.numel(),
+            "dtype": str(result.dtype),
+            "device": str(result.device),
+            "layout": str(result.layout),
+            "requires_grad": result.requires_grad,
+            "is_leaf": result.is_leaf,
+            "output_nr": result.output_nr,
+        }
+
+    def error_observation(self, call):
+        try:
+            call()
+        except Exception as error:
+            return (type(error).__name__, str(error))
+        return None
 
     def as_tensor_float_sequence_contract(self, module, data, options, no_grad=False):
         if no_grad:
@@ -215,6 +241,32 @@ class AsTensorReferenceTests(unittest.TestCase):
                 reference_torch, data, {}, no_grad=True
             ),
         )
+
+    def test_recursive_and_overdeep_sequence_errors_match_pytorch_2_13(self):
+        recursive_list = []
+        recursive_list.append(recursive_list)
+        recursive_tuple = ([],)
+        recursive_tuple[0].append(recursive_tuple)
+        cases = (
+            ("recursive list", recursive_list),
+            ("recursive tuple", recursive_tuple),
+            ("overdeep list", self.nested_singleton(1.0, 129, list)),
+            ("overdeep tuple", self.nested_singleton(1.0, 129, tuple)),
+        )
+        for case, data in cases:
+            with self.subTest(case=case):
+                self.assertEqual(
+                    self.error_observation(lambda: torch.as_tensor(data)),
+                    self.error_observation(lambda: reference_torch.as_tensor(data)),
+                )
+
+        for container in (list, tuple):
+            with self.subTest(max_rank=container.__name__):
+                data = self.nested_singleton(1.0, 128, container)
+                self.assertEqual(
+                    self.as_tensor_rank_contract(torch, data),
+                    self.as_tensor_rank_contract(reference_torch, data),
+                )
 
     def test_autograd_identity_aliasing_matches_pytorch_2_13(self):
         outcomes = []
@@ -379,6 +431,8 @@ class AsTensorReferenceTests(unittest.TestCase):
     def test_binding_errors_match_pytorch_2_13_for_exposed_schema(self):
         actual = torch.tensor([1.0], dtype=torch.float32)
         expected = reference_torch.tensor([1.0], dtype=reference_torch.float32)
+        recursive = []
+        recursive.append(recursive)
         cases = (
             (lambda: torch.as_tensor(), lambda: reference_torch.as_tensor()),
             (
@@ -424,6 +478,10 @@ class AsTensorReferenceTests(unittest.TestCase):
             (
                 lambda: torch.as_tensor([object()], dtype=1),
                 lambda: reference_torch.as_tensor([object()], dtype=1),
+            ),
+            (
+                lambda: torch.as_tensor(recursive, dtype=1),
+                lambda: reference_torch.as_tensor(recursive, dtype=1),
             ),
             (
                 lambda: torch.as_tensor([object()], device=1.5),

@@ -59,6 +59,7 @@ static CUBLAS_ALLOW_BF16_REDUCED_PRECISION_REDUCTION_SPLIT_K: AtomicBool = Atomi
 static FLASH_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
 static MEM_EFFICIENT_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
 static MATH_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
+const AS_TENSOR_MAX_SEQUENCE_DIMENSIONS: usize = 128;
 static CUDNN_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
 static MATH_SDP_ALLOW_FP16_BF16_REDUCTION: AtomicBool = AtomicBool::new(false);
 static NNPACK_ENABLED: AtomicBool = AtomicBool::new(true);
@@ -6830,7 +6831,10 @@ fn as_tensor_float_sequence(value: &Bound<'_, PyAny>) -> PyResult<Option<(Vec<f3
     }
 
     let mut flattened = Vec::new();
-    let Some(shape) = flatten_as_tensor_float_sequence(value, &mut flattened)? else {
+    let mut active_containers = Vec::new();
+    let Some(shape) =
+        flatten_as_tensor_float_sequence(value, &mut flattened, &mut active_containers, 0)?
+    else {
         return Ok(None);
     };
     Ok(Some((flattened, shape)))
@@ -6839,6 +6843,8 @@ fn as_tensor_float_sequence(value: &Bound<'_, PyAny>) -> PyResult<Option<(Vec<f3
 fn flatten_as_tensor_float_sequence(
     value: &Bound<'_, PyAny>,
     output: &mut Vec<f32>,
+    active_containers: &mut Vec<*mut ffi::PyObject>,
+    depth: usize,
 ) -> PyResult<Option<Vec<usize>>> {
     if let Some(scalar) = extract_exact_python_float_scalar(value)? {
         output.push(scalar);
@@ -6848,19 +6854,47 @@ fn flatten_as_tensor_float_sequence(
     if !is_exact_list_or_tuple(value) {
         return Ok(None);
     }
+    if depth >= AS_TENSOR_MAX_SEQUENCE_DIMENSIONS {
+        return Err(as_tensor_too_many_dimensions_error(value));
+    }
+    let pointer = value.as_ptr();
+    if active_containers
+        .iter()
+        .any(|seen| std::ptr::addr_eq(*seen, pointer))
+    {
+        return Err(as_tensor_too_many_dimensions_error(value));
+    }
+    active_containers.push(pointer);
+
     let length = value.len()?;
     if length == 0 {
+        active_containers.pop();
         return Ok(Some(vec![0]));
     }
 
-    let Some(first_shape) = flatten_as_tensor_float_sequence(&value.get_item(0)?, output)? else {
+    let Some(first_shape) = flatten_as_tensor_float_sequence(
+        &value.get_item(0)?,
+        output,
+        active_containers,
+        depth + 1,
+    )?
+    else {
+        active_containers.pop();
         return Ok(None);
     };
     for index in 1..length {
-        let Some(shape) = flatten_as_tensor_float_sequence(&value.get_item(index)?, output)? else {
+        let Some(shape) = flatten_as_tensor_float_sequence(
+            &value.get_item(index)?,
+            output,
+            active_containers,
+            depth + 1,
+        )?
+        else {
+            active_containers.pop();
             return Ok(None);
         };
         if shape != first_shape {
+            active_containers.pop();
             return Err(PyValueError::new_err(
                 "expected a rectangular sequence, but nested shapes differ",
             ));
@@ -6870,11 +6904,21 @@ fn flatten_as_tensor_float_sequence(
     let mut shape = Vec::with_capacity(first_shape.len() + 1);
     shape.push(length);
     shape.extend(first_shape);
+    active_containers.pop();
     Ok(Some(shape))
 }
 
 fn is_exact_list_or_tuple(value: &Bound<'_, PyAny>) -> bool {
     value.is_exact_instance_of::<PyList>() || value.is_exact_instance_of::<PyTuple>()
+}
+
+fn as_tensor_too_many_dimensions_error(value: &Bound<'_, PyAny>) -> PyErr {
+    let container = if value.is_exact_instance_of::<PyList>() {
+        "list"
+    } else {
+        "tuple"
+    };
+    PyValueError::new_err(format!("too many dimensions '{container}'"))
 }
 
 fn rank_zero_scalar_tensor(

@@ -56,6 +56,11 @@ class AsTensorTests(unittest.TestCase):
         self.assertIsNone(result.grad)
         self.assertEqual(self.float32_bits(result), expected_bits)
 
+    def nested_singleton(self, value, depth, container):
+        for _ in range(depth):
+            value = [value] if container is list else (value,)
+        return value
+
     def tensor_cases(self):
         leaf = torch.tensor(
             [[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32, requires_grad=True
@@ -226,6 +231,39 @@ class AsTensorTests(unittest.TestCase):
         self.assertTrue(result.is_leaf)
         self.assertEqual(result.output_nr, 0)
         self.assertEqual(self.float32_bits(result), [0x3F800000, 0x80000000])
+
+    def test_recursive_and_overdeep_float_sequences_raise_value_error(self):
+        recursive_list = []
+        recursive_list.append(recursive_list)
+        self.assert_error(
+            lambda: torch.as_tensor(recursive_list),
+            ValueError,
+            "too many dimensions 'list'",
+        )
+
+        recursive_tuple = ([],)
+        recursive_tuple[0].append(recursive_tuple)
+        self.assert_error(
+            lambda: torch.as_tensor(recursive_tuple),
+            ValueError,
+            "too many dimensions 'tuple'",
+        )
+
+        max_rank = self.nested_singleton(1.0, 128, list)
+        result = torch.as_tensor(max_rank)
+        self.assertEqual(result.shape, (1,) * 128)
+        self.assertEqual(result.stride(), (1,) * 128)
+        self.assertEqual(result.numel(), 1)
+        self.assertEqual(float(result.reshape(())), 1.0)
+
+        for container, type_name in ((list, "list"), (tuple, "tuple")):
+            with self.subTest(container=type_name):
+                overdeep = self.nested_singleton(1.0, 129, container)
+                self.assert_error(
+                    lambda: torch.as_tensor(overdeep),
+                    ValueError,
+                    f"too many dimensions '{type_name}'",
+                )
 
     def test_identity_preserves_autograd_graph_and_gradient_object(self):
         leaf = torch.tensor(
@@ -538,8 +576,15 @@ class AsTensorTests(unittest.TestCase):
         )
 
     def test_error_ordering_still_validates_schema_before_sequence_conversion(self):
+        recursive_list = []
+        recursive_list.append(recursive_list)
         self.assert_error(
             lambda: torch.as_tensor([object()], dtype=1),
+            TypeError,
+            "as_tensor(): argument 'dtype' must be torch.dtype, not int",
+        )
+        self.assert_error(
+            lambda: torch.as_tensor(recursive_list, dtype=1),
             TypeError,
             "as_tensor(): argument 'dtype' must be torch.dtype, not int",
         )
