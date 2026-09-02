@@ -66,6 +66,12 @@ class AsTensorReferenceTests(unittest.TestCase):
             {"dtype": module.float32, "device": module.device("cpu")},
         )
 
+    def nested_sequence(self, constructor, depth):
+        value = 1.0
+        for _ in range(depth):
+            value = constructor((value,))
+        return value
+
     def tensor_state(self, module, tensor):
         if module is reference_torch:
             values = tensor.detach().cpu().numpy().reshape(-1).view(np.uint32).tolist()
@@ -184,6 +190,8 @@ class AsTensorReferenceTests(unittest.TestCase):
             ("nested rectangular", [[1.0, 2.0], [3.5, -4.0]]),
             ("tuple list mixed", ([1.0, 2.0], (3.0, 4.0))),
             ("special values", [-0.0, float("nan"), float("inf"), float("-inf")]),
+            ("leading empty", [[], 1.0]),
+            ("nested leading empty", [[[]], [[1.0]]]),
         )
         actual_options = self.option_cases(torch)
         expected_options = self.option_cases(reference_torch)
@@ -464,6 +472,14 @@ class AsTensorReferenceTests(unittest.TestCase):
                 lambda: reference_torch.as_tensor(
                     [[1.0], [2.0, 3.0]], requires_grad=True
                 ),
+            ),
+            (
+                lambda: torch.as_tensor(self.nested_sequence(list, 129)),
+                lambda: reference_torch.as_tensor(self.nested_sequence(list, 129)),
+            ),
+            (
+                lambda: torch.as_tensor(self.nested_sequence(tuple, 129)),
+                lambda: reference_torch.as_tensor(self.nested_sequence(tuple, 129)),
             ),
         )
         for actual_call, expected_call in cases:

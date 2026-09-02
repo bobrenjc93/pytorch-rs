@@ -6848,6 +6848,8 @@ fn is_exact_python_list_or_tuple(value: &Bound<'_, PyAny>) -> bool {
     value.is_exact_instance_of::<PyList>() || value.is_exact_instance_of::<PyTuple>()
 }
 
+const MAX_EXACT_PYTHON_FLOAT_SEQUENCE_DIMENSIONS: usize = 128;
+
 fn flatten_exact_python_float_sequence(
     value: &Bound<'_, PyAny>,
     output: &mut Vec<f32>,
@@ -6861,6 +6863,9 @@ fn flatten_exact_python_float_sequence(
     if !is_exact_python_list_or_tuple(value) {
         return Ok(None);
     }
+    if dimension >= MAX_EXACT_PYTHON_FLOAT_SEQUENCE_DIMENSIONS {
+        return Err(too_many_sequence_dimensions(value));
+    }
     let length = value.len()?;
     if length == 0 {
         return Ok(Some(vec![0]));
@@ -6871,6 +6876,19 @@ fn flatten_exact_python_float_sequence(
     else {
         return Ok(None);
     };
+    if first_shape.contains(&0) {
+        for index in 1..length {
+            if !validate_exact_python_float_sequence_values(&value.get_item(index)?, dimension + 1)?
+            {
+                return Ok(None);
+            }
+        }
+
+        let mut shape = Vec::with_capacity(first_shape.len() + 1);
+        shape.push(length);
+        shape.extend(first_shape);
+        return Ok(Some(shape));
+    }
     for index in 1..length {
         let item = value.get_item(index)?;
         let Some(shape) = flatten_exact_python_float_sequence(&item, output, dimension + 1)? else {
@@ -6883,6 +6901,37 @@ fn flatten_exact_python_float_sequence(
     shape.push(length);
     shape.extend(first_shape);
     Ok(Some(shape))
+}
+
+fn validate_exact_python_float_sequence_values(
+    value: &Bound<'_, PyAny>,
+    dimension: usize,
+) -> PyResult<bool> {
+    if extract_exact_python_float_scalar(value)?.is_some() {
+        return Ok(true);
+    }
+    if !is_exact_python_list_or_tuple(value) {
+        return Ok(false);
+    }
+    if dimension >= MAX_EXACT_PYTHON_FLOAT_SEQUENCE_DIMENSIONS {
+        return Err(too_many_sequence_dimensions(value));
+    }
+
+    for index in 0..value.len()? {
+        if !validate_exact_python_float_sequence_values(&value.get_item(index)?, dimension + 1)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn too_many_sequence_dimensions(value: &Bound<'_, PyAny>) -> PyErr {
+    let container = if value.is_exact_instance_of::<PyTuple>() {
+        "tuple"
+    } else {
+        "list"
+    };
+    PyValueError::new_err(format!("too many dimensions '{container}'"))
 }
 
 fn validate_exact_float_sequence_shape(

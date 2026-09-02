@@ -3,6 +3,8 @@ import importlib
 import inspect
 import pickle
 import re
+import subprocess
+import sys
 import types
 import unittest
 
@@ -22,6 +24,12 @@ class AsTensorTests(unittest.TestCase):
     def assert_error(self, call, error_type, message):
         with self.assertRaisesRegex(error_type, f"^{re.escape(message)}$"):
             call()
+
+    def nested_sequence(self, constructor, depth):
+        value = 1.0
+        for _ in range(depth):
+            value = constructor((value,))
+        return value
 
     def float32_bits(self, tensor):
         return np.asarray(tensor).reshape(-1).view(np.uint32).tolist()
@@ -94,6 +102,14 @@ class AsTensorTests(unittest.TestCase):
                 (4,),
                 (1,),
                 [0x80000000, 0x7FC00000, 0x7F800000, 0xFF800000],
+            ),
+            ("leading empty", [[], 1.0], (2, 0), (1, 1), []),
+            (
+                "nested leading empty",
+                [[[]], [[1.0]]],
+                (2, 1, 0),
+                (1, 1, 1),
+                [],
             ),
         )
 
@@ -556,10 +572,47 @@ class AsTensorTests(unittest.TestCase):
                 RuntimeError,
                 "as_tensor(): device 'cuda' is not supported; only 'cpu' is implemented",
             ),
+            (
+                lambda: torch.as_tensor(self.nested_sequence(list, 129)),
+                ValueError,
+                "too many dimensions 'list'",
+            ),
+            (
+                lambda: torch.as_tensor(self.nested_sequence(tuple, 129)),
+                ValueError,
+                "too many dimensions 'tuple'",
+            ),
         )
         for call, error_type, message in cases:
             with self.subTest(message=message):
                 self.assert_error(call, error_type, message)
+
+    def test_deep_float_sequence_depth_error_does_not_crash(self):
+        script = """
+import torch_rs as torch
+
+value = 1.0
+for _ in range(50_000):
+    value = [value]
+
+try:
+    torch.as_tensor(value)
+except ValueError as error:
+    raise SystemExit(0 if str(error) == "too many dimensions 'list'" else 2)
+else:
+    raise SystemExit(3)
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            completed.stdout + completed.stderr,
+        )
 
 
 if __name__ == "__main__":

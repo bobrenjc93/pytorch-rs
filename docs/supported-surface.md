@@ -733,9 +733,11 @@ offset, dtype, device, layout, autograd history, leaf state, and output number.
 When `data` is an exact Python `float` with the same default-equivalent
 metadata, a fresh rank-0 CPU `float32` leaf tensor is allocated with
 `requires_grad=False`, including finite values, signed zero, infinities, and
-NaN. Exact Python float sequences cover empty, flat, nested rectangular, and
-mixed list/tuple containers, preserve signed zero, infinities, and NaN, and
-allocate fresh leaf storage even under `torch.no_grad()`. NumPy arrays, NumPy
+NaN. Exact Python float sequences cover empty, flat, nested rectangular,
+leading zero-dimension, and mixed list/tuple containers, preserve signed zero,
+infinities, and NaN, and allocate fresh leaf storage even under
+`torch.no_grad()`. Nesting beyond PyTorch's 128-dimension sequence limit is
+rejected before recursion can exhaust the native stack. NumPy arrays, NumPy
 scalar values, integer and boolean scalar inference, integer-containing
 sequences, tuple/list subclasses, tensor subclasses, dtype conversions,
 accelerator or meta devices, indexed CPU devices that would require a copy,
