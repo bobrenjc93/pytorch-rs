@@ -370,12 +370,7 @@ fn linear_bias_size_error(rows: usize, out_features: usize, bias_features: usize
     ))
 }
 
-fn validate_linear_bias(input_rank: usize, bias: Option<&PyTensor>) -> PyResult<()> {
-    if bias.is_some() && !matches!(input_rank, 1 | 2) {
-        return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.linear only supports bias for rank-1 or rank-2 input",
-        ));
-    }
+fn validate_linear_bias(bias: Option<&PyTensor>) -> PyResult<()> {
     if bias.is_some_and(|bias| bias.inner().shape().len() != 1) {
         return Err(PyNotImplementedError::new_err(
             "torch_rs.nn.functional.linear only supports a rank-1 bias tensor",
@@ -415,6 +410,7 @@ fn linear_rank_three(
     input: &Tensor,
     weight: &Tensor,
     transposed_weight: &Tensor,
+    bias: Option<&PyTensor>,
 ) -> PyResult<Result<Tensor, TensorError>> {
     let input_shape = input.shape();
     let weight_shape = weight.shape();
@@ -441,7 +437,12 @@ fn linear_rank_three(
     ];
     Ok(input
         .flatten(0, 1)
-        .and_then(|input| input.matmul(transposed_weight))
+        .and_then(|input| {
+            bias.map_or_else(
+                || input.matmul(transposed_weight),
+                |bias| input.matmul_with_row_bias(transposed_weight, bias.inner()),
+            )
+        })
         .and_then(|output| output.reshape(output_shape)))
 }
 
@@ -459,7 +460,13 @@ fn resolve_linear_output(
                 .expect("only biased linear can report a bias shape mismatch")
                 .inner()
                 .shape()[0];
-            let target_rows = if input_rank == 1 { 1 } else { input.shape()[0] };
+            let target_rows = match input_rank {
+                1 => 1,
+                3 => input.shape()[0]
+                    .checked_mul(input.shape()[1])
+                    .ok_or_else(|| tensor_error(&TensorError::ElementCountOverflow))?,
+                _ => input.shape()[0],
+            };
             Err(linear_bias_size_error(
                 target_rows,
                 weight.shape()[0],
@@ -497,7 +504,7 @@ fn _nn_functional_linear(
             "torch_rs.nn.functional.linear only supports rank-1, rank-2, or rank-3 input and rank-2 weight tensors",
         ));
     }
-    validate_linear_bias(input_rank, bias.as_deref())?;
+    validate_linear_bias(bias.as_deref())?;
     if is_grad_enabled()
         && (input.inner().requires_grad()
             || weight.inner().requires_grad()
@@ -517,7 +524,12 @@ fn _nn_functional_linear(
     let output = match input_rank {
         1 => linear_rank_one(input.inner(), &transposed_weight, bias.as_deref()),
         2 => linear_rank_two(input.inner(), &transposed_weight, bias.as_deref()),
-        3 => linear_rank_three(input.inner(), weight.inner(), &transposed_weight)?,
+        3 => linear_rank_three(
+            input.inner(),
+            weight.inner(),
+            &transposed_weight,
+            bias.as_deref(),
+        )?,
         _ => unreachable!("linear input rank was validated above"),
     };
     let output = resolve_linear_output(
