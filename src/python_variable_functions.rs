@@ -20,18 +20,18 @@ use crate::python::{
     asarray_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
     atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
     ceil_variable_function, conj_variable_function, cos_variable_function,
-    detach_variable_function, exp_variable_function, fix_variable_function,
-    floor_variable_function, full_like_variable_function, get_device_variable_function,
-    imag_variable_function, is_conj_variable_function, is_inference_variable_function,
-    log_variable_function, matmul_variable_function, mean_variable_function,
-    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
-    multiply_variable_function, neg_variable_function, negative_variable_function,
-    ones_like_variable_function, permute_variable_function, positive_variable_function,
-    promote_types_variable_function, ravel_variable_function, real_variable_function,
-    reciprocal_variable_function, reshape_variable_function, resolve_conj_variable_function,
-    resolve_neg_variable_function, rsqrt_variable_function, scalar_tensor_variable_function,
-    select_variable_function, sigmoid_variable_function, sin_variable_function,
-    sqrt_variable_function, square_variable_function, sub_variable_function,
+    detach_variable_function, empty_like_variable_function, exp_variable_function,
+    fix_variable_function, floor_variable_function, full_like_variable_function,
+    get_device_variable_function, imag_variable_function, is_conj_variable_function,
+    is_inference_variable_function, log_variable_function, matmul_variable_function,
+    mean_variable_function, moveaxis_variable_function, movedim_variable_function,
+    mul_variable_function, multiply_variable_function, neg_variable_function,
+    negative_variable_function, ones_like_variable_function, permute_variable_function,
+    positive_variable_function, promote_types_variable_function, ravel_variable_function,
+    real_variable_function, reciprocal_variable_function, reshape_variable_function,
+    resolve_conj_variable_function, resolve_neg_variable_function, rsqrt_variable_function,
+    scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
+    sin_variable_function, sqrt_variable_function, square_variable_function, sub_variable_function,
     subtract_variable_function, sum_variable_function, tanh_variable_function,
     trunc_variable_function, unbind_variable_function, unsqueeze_variable_function,
     zeros_like_variable_function,
@@ -39,12 +39,13 @@ use crate::python::{
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 59] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 60] = [
     "get_device",
     "as_tensor",
     "asarray",
     "scalar_tensor",
     "arange",
+    "empty_like",
     "full_like",
     "ones_like",
     "zeros_like",
@@ -175,6 +176,12 @@ Example::
     tensor([ 1,  2,  3])
     >>> torch.arange(1, 2.5, 0.5)
     tensor([ 1.0000,  1.5000,  2.0000])
+";
+
+const EMPTY_LIKE_DOC: &std::ffi::CStr = cr"
+empty_like(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=torch.preserve_format) -> Tensor
+
+Returns an uninitialized tensor with the same size as :attr:`input`.
 ";
 
 const ONES_LIKE_DOC: &std::ffi::CStr = cr"
@@ -1292,6 +1299,7 @@ variable_function_callback!(as_tensor_callback, as_tensor_variable_function);
 variable_function_callback!(asarray_callback, asarray_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
 variable_function_callback!(arange_callback, arange_variable_function);
+variable_function_callback!(empty_like_callback, empty_like_variable_function);
 variable_function_callback!(full_like_callback, full_like_variable_function);
 variable_function_callback!(ones_like_callback, ones_like_variable_function);
 variable_function_callback!(zeros_like_callback, zeros_like_variable_function);
@@ -1382,6 +1390,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"asarray", asarray_callback, ASARRAY_DOC),
         variable_function_method!(c"scalar_tensor", scalar_tensor_callback, c""),
         variable_function_method!(c"arange", arange_callback, ARANGE_DOC),
+        variable_function_method!(c"empty_like", empty_like_callback, EMPTY_LIKE_DOC),
         variable_function_method!(c"full_like", full_like_callback, FULL_LIKE_DOC),
         variable_function_method!(c"ones_like", ones_like_callback, ONES_LIKE_DOC),
         variable_function_method!(c"zeros_like", zeros_like_callback, ZEROS_LIKE_DOC),

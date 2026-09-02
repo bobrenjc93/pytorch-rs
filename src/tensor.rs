@@ -669,6 +669,20 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
+        // API-visible values are unspecified; safe Vec<f32> storage is still
+        // initialized internally.
+        let data = filled_storage(elements, 0.0)?;
+        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn empty_with_metadata(
+        shape: impl Into<Vec<usize>>,
+        dtype: DType,
+        device: Device,
+    ) -> Result<Self, TensorError> {
+        let shape = shape.into();
+        let (elements, strides) = validated_layout(&shape)?;
         let data = filled_storage(elements, 0.0)?;
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }

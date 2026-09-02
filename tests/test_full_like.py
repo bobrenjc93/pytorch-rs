@@ -378,14 +378,5 @@ class FullLikeTests(unittest.TestCase):
         self.assertIs(package.full_like, function)
         self.assertEqual(package.__all__.count("full_like"), 1)
 
-    def test_empty_like_remains_unsupported(self):
-        package = importlib.import_module("torch_rs")
-        native = package._C
-        self.assertFalse(hasattr(package, "empty_like"))
-        self.assertFalse(hasattr(native, "empty_like"))
-        self.assertNotIn("empty_like", package.__all__)
-        self.assertNotIn("empty_like", native.__all__)
-
-
 if __name__ == "__main__":
     unittest.main()
