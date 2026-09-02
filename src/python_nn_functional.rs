@@ -594,13 +594,15 @@ fn _nn_functional_l1_loss(
         ));
     }
 
-    let output = input
-        .inner()
-        .absolute_difference(target.inner())
-        .map_err(|error| tensor_error(&error))?;
     let output = match reduction {
-        L1LossReduction::None => output,
-        L1LossReduction::Sum => output.sum(),
+        L1LossReduction::None => input
+            .inner()
+            .absolute_difference(target.inner())
+            .map_err(|error| tensor_error(&error))?,
+        L1LossReduction::Sum => input
+            .inner()
+            .absolute_difference_sum(target.inner())
+            .map_err(|error| tensor_error(&error))?,
     };
     PyTensor::new(output).into_py_any(py)
 }
