@@ -67,6 +67,10 @@ HISTORICAL_TIMING_REPORTS = (
         '`torch.nn.functional.l1_loss(reduction="none")` release timings',
         "docs/l1-loss-release-timings.md",
     ),
+    (
+        '`torch.nn.functional.l1_loss(reduction="sum")` release timings',
+        "docs/l1-loss-sum-release-timings.md",
+    ),
 )
 SUPPORTED_SURFACE_ANCHORS = (
     ("Tensors", "tensors"),
