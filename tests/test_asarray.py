@@ -271,11 +271,12 @@ class AsArrayTests(unittest.TestCase):
             {"device": "cpu"},
             {"device": torch.device("cpu")},
             {"copy": None},
+            {"copy": True},
             {"requires_grad": None},
             {
                 "dtype": torch.float32,
                 "device": torch.device("cpu"),
-                "copy": None,
+                "copy": True,
                 "requires_grad": None,
             },
         )
@@ -362,11 +363,12 @@ class AsArrayTests(unittest.TestCase):
             {"device": "cpu"},
             {"device": torch.device("cpu")},
             {"copy": None},
+            {"copy": True},
             {"requires_grad": None},
             {
                 "dtype": torch.float32,
                 "device": torch.device("cpu"),
-                "copy": None,
+                "copy": True,
                 "requires_grad": None,
             },
         )
@@ -381,14 +383,19 @@ class AsArrayTests(unittest.TestCase):
                         **options,
                     )
 
-    def test_python_float_sequence_construction_ignores_no_grad(self):
+    def test_python_float_literal_construction_ignores_no_grad(self):
         with torch.no_grad():
-            result = torch.asarray([1.0, -0.0])
+            scalar = torch.asarray(-0.0, copy=True)
+            sequence = torch.asarray([1.0, -0.0], copy=True)
 
-        self.assertFalse(result.requires_grad)
-        self.assertTrue(result.is_leaf)
-        self.assertEqual(result.output_nr, 0)
-        self.assertEqual(self.float32_bits(result), [0x3F800000, 0x80000000])
+        self.assertFalse(scalar.requires_grad)
+        self.assertTrue(scalar.is_leaf)
+        self.assertEqual(scalar.output_nr, 0)
+        self.assertEqual(self.float32_bits(scalar), [0x80000000])
+        self.assertFalse(sequence.requires_grad)
+        self.assertTrue(sequence.is_leaf)
+        self.assertEqual(sequence.output_nr, 0)
+        self.assertEqual(self.float32_bits(sequence), [0x3F800000, 0x80000000])
 
     def test_recursive_and_overdeep_float_sequences_raise_value_error(self):
         recursive_list = []
@@ -698,6 +705,16 @@ class AsArrayTests(unittest.TestCase):
                 "asarray(): argument 'copy' must be bool, not int",
             ),
             (
+                lambda: torch.asarray(1.0, copy=0),
+                TypeError,
+                "asarray(): argument 'copy' must be bool, not int",
+            ),
+            (
+                lambda: torch.asarray([1.0], copy=1),
+                TypeError,
+                "asarray(): argument 'copy' must be bool, not int",
+            ),
+            (
                 lambda: torch.asarray(tensor, requires_grad=0),
                 TypeError,
                 "asarray(): argument 'requires_grad' must be bool, not int",
@@ -760,17 +777,17 @@ class AsArrayTests(unittest.TestCase):
                 "asarray(): indexed CPU devices require a copy and are not supported",
             ),
             (
-                lambda: torch.asarray(1.0, copy=True),
-                NotImplementedError,
-                "asarray(): copy=True requires a copy and is not supported",
-            ),
-            (
-                lambda: torch.asarray([1.0], copy=True),
-                NotImplementedError,
-                "asarray(): copy=True requires a copy and is not supported",
-            ),
-            (
                 lambda: torch.asarray(np.asarray([1.0], dtype=np.float32), copy=True),
+                NotImplementedError,
+                "asarray(): copy=True requires a copy and is not supported",
+            ),
+            (
+                lambda: torch.asarray([1], copy=True),
+                NotImplementedError,
+                "asarray(): copy=True requires a copy and is not supported",
+            ),
+            (
+                lambda: torch.asarray([[1.0], [2.0, 3.0]], copy=True),
                 NotImplementedError,
                 "asarray(): copy=True requires a copy and is not supported",
             ),
@@ -884,9 +901,19 @@ class AsArrayTests(unittest.TestCase):
             UNSUPPORTED_ASARRAY_CONVERSION,
         )
         self.assert_error(
+            lambda: torch.asarray(ListSubclass([1.0]), copy=True),
+            NotImplementedError,
+            "asarray(): copy=True requires a copy and is not supported",
+        )
+        self.assert_error(
             lambda: torch.asarray(TupleSubclass((1.0,))),
             NotImplementedError,
             UNSUPPORTED_ASARRAY_CONVERSION,
+        )
+        self.assert_error(
+            lambda: torch.asarray(TupleSubclass((1.0,)), copy=True),
+            NotImplementedError,
+            "asarray(): copy=True requires a copy and is not supported",
         )
 
         class FloatSubclass(float):
@@ -896,6 +923,11 @@ class AsArrayTests(unittest.TestCase):
             lambda: torch.asarray(FloatSubclass(1.0)),
             NotImplementedError,
             UNSUPPORTED_ASARRAY_CONVERSION,
+        )
+        self.assert_error(
+            lambda: torch.asarray(object(), copy=True),
+            NotImplementedError,
+            "asarray(): copy=True requires a copy and is not supported",
         )
 
         class Override:

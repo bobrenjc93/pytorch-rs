@@ -148,11 +148,12 @@ class AsArrayReferenceTests(unittest.TestCase):
             {"device": "cpu"},
             {"device": module.device("cpu")},
             {"copy": None},
+            {"copy": True},
             {"requires_grad": None},
             {
                 "dtype": module.float32,
                 "device": module.device("cpu"),
-                "copy": None,
+                "copy": True,
                 "requires_grad": None,
             },
         )
@@ -167,11 +168,12 @@ class AsArrayReferenceTests(unittest.TestCase):
             {"device": "cpu"},
             {"device": module.device("cpu")},
             {"copy": None},
+            {"copy": True},
             {"requires_grad": None},
             {
                 "dtype": module.float32,
                 "device": module.device("cpu"),
-                "copy": None,
+                "copy": True,
                 "requires_grad": None,
             },
         )
@@ -238,8 +240,12 @@ class AsArrayReferenceTests(unittest.TestCase):
             "source_unchanged": before == after,
         }
 
-    def asarray_float_scalar_contract(self, module, value, options):
-        first = module.asarray(value, **options)
+    def asarray_float_scalar_contract(self, module, value, options, no_grad=False):
+        if no_grad:
+            with module.no_grad():
+                first = module.asarray(value, **options)
+        else:
+            first = module.asarray(value, **options)
         second = module.asarray(value, **options)
         return {
             "fresh_object": first is not second,
@@ -288,6 +294,8 @@ class AsArrayReferenceTests(unittest.TestCase):
         return {
             "fresh_object": first is not second,
             "fresh_storage": not first.is_set_to(second),
+            "distinct_data_ptr_if_nonempty": first.numel() == 0
+            or first.data_ptr() != second.data_ptr(),
             "state": self.comparable_tensor_state(module, first),
             "numel": first.numel(),
             "grad_is_none": first.grad is None,
@@ -443,10 +451,27 @@ class AsArrayReferenceTests(unittest.TestCase):
 
     def test_python_float_sequence_no_grad_matches_pytorch_2_13(self):
         data = [1.0, -0.0, float("inf")]
+        for actual_kwargs, expected_kwargs in (
+            ({}, {}),
+            ({"copy": True}, {"copy": True}),
+        ):
+            with self.subTest(options=actual_kwargs):
+                self.assertEqual(
+                    self.asarray_float_sequence_contract(
+                        torch, data, actual_kwargs, no_grad=True
+                    ),
+                    self.asarray_float_sequence_contract(
+                        reference_torch, data, expected_kwargs, no_grad=True
+                    ),
+                )
+
+    def test_python_float_scalar_copy_true_no_grad_matches_pytorch_2_13(self):
         self.assertEqual(
-            self.asarray_float_sequence_contract(torch, data, {}, no_grad=True),
-            self.asarray_float_sequence_contract(
-                reference_torch, data, {}, no_grad=True
+            self.asarray_float_scalar_contract(
+                torch, -0.0, {"copy": True}, no_grad=True
+            ),
+            self.asarray_float_scalar_contract(
+                reference_torch, -0.0, {"copy": True}, no_grad=True
             ),
         )
 
@@ -750,6 +775,14 @@ class AsArrayReferenceTests(unittest.TestCase):
             (
                 lambda: torch.asarray(actual, copy=0),
                 lambda: reference_torch.asarray(expected, copy=0),
+            ),
+            (
+                lambda: torch.asarray(1.0, copy=0),
+                lambda: reference_torch.asarray(1.0, copy=0),
+            ),
+            (
+                lambda: torch.asarray([1.0], copy=1),
+                lambda: reference_torch.asarray([1.0], copy=1),
             ),
             (
                 lambda: torch.asarray(actual, requires_grad=0),
