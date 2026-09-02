@@ -1664,10 +1664,11 @@ pub(crate) fn asarray_variable_function(
         return Ok(result);
     }
 
+    let dtype = parse_identity_dtype("asarray", arguments.dtype.as_ref())?;
+    validate_asarray_device_string_syntax(arguments.device.as_ref())?;
     if is_exact_list_or_tuple(&obj.value) {
         validate_asarray_sequence_copy(arguments.copy.as_ref())?;
     }
-    let dtype = parse_identity_dtype("asarray", arguments.dtype.as_ref())?;
     let device = parse_as_tensor_device("asarray", arguments.device.as_ref())?;
     validate_asarray_copy(arguments.copy.as_ref())?;
     validate_asarray_requires_grad(arguments.requires_grad.as_ref())?;
@@ -8902,6 +8903,16 @@ fn validate_asarray_sequence_copy(copy: Option<&Bound<'_, PyAny>>) -> PyResult<(
     Err(PyValueError::new_err(
         "can't alias arbitrary sequence into a tensor.",
     ))
+}
+
+fn validate_asarray_device_string_syntax(device: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    let Some(device) = device else {
+        return Ok(());
+    };
+    if let Ok(device) = device.cast::<PyString>() {
+        validate_as_tensor_device_string(device.to_str()?)?;
+    }
+    Ok(())
 }
 
 fn validate_asarray_requires_grad(requires_grad: Option<&Bound<'_, PyAny>>) -> PyResult<()> {

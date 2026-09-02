@@ -355,6 +355,40 @@ class AsArrayReferenceTests(unittest.TestCase):
                     ),
                 )
 
+        actual_device_cases = (
+            ("empty device string", {"device": ""}),
+            ("unknown device string", {"device": "banana"}),
+            ("unsupported cuda string", {"device": "cuda"}),
+            ("indexed cpu string", {"device": "cpu:0"}),
+            ("indexed cpu device", {"device": torch.device("cpu", 1)}),
+        )
+        expected_device_cases = (
+            ("empty device string", {"device": ""}),
+            ("unknown device string", {"device": "banana"}),
+            ("unsupported cuda string", {"device": "cuda"}),
+            ("indexed cpu string", {"device": "cpu:0"}),
+            (
+                "indexed cpu device",
+                {"device": reference_torch.device("cpu", 1)},
+            ),
+        )
+        for (case, actual_kwargs), (_, expected_kwargs) in zip(
+            actual_device_cases, expected_device_cases, strict=True
+        ):
+            with self.subTest(case=case):
+                self.assertEqual(
+                    self.error_observation(
+                        lambda actual_kwargs=actual_kwargs: torch.asarray(
+                            [1.0], copy=False, **actual_kwargs
+                        )
+                    ),
+                    self.error_observation(
+                        lambda expected_kwargs=expected_kwargs: reference_torch.asarray(
+                            [1.0], copy=False, **expected_kwargs
+                        )
+                    ),
+                )
+
     def test_autograd_identity_aliasing_matches_pytorch_2_13(self):
         outcomes = []
         for module in (torch, reference_torch):

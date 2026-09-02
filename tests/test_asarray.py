@@ -328,6 +328,32 @@ class AsArrayTests(unittest.TestCase):
                     SEQUENCE_COPY_FALSE_ERROR,
                 )
 
+        self.assert_error(
+            lambda: torch.asarray([1.0], device="", copy=False),
+            RuntimeError,
+            "Device string must not be empty",
+        )
+        self.assert_error(
+            lambda: torch.asarray([1.0], device="banana", copy=False),
+            RuntimeError,
+            "Expected one of cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, "
+            "ideep, hip, ve, fpga, maia, xla, lazy, vulkan, mps, meta, hpu, "
+            "mtia, privateuseone device type at start of device string: banana",
+        )
+        for case, device in (
+            ("cuda string", "cuda"),
+            ("indexed cpu string", "cpu:0"),
+            ("indexed cpu device", torch.device("cpu", 1)),
+        ):
+            with self.subTest(case=case):
+                self.assert_error(
+                    lambda device=device: torch.asarray(
+                        [1.0], device=device, copy=False
+                    ),
+                    ValueError,
+                    SEQUENCE_COPY_FALSE_ERROR,
+                )
+
     def test_identity_preserves_autograd_graph_and_gradient_object(self):
         leaf = torch.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
