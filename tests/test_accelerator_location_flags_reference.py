@@ -303,7 +303,7 @@ print(json.dumps(observations))
         )
 
     def test_ipu_mtia_and_maia_backends_remain_intentionally_unsupported(self):
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+        tensor = torch.tensor([1.0])
 
         for backend in ("ipu", "mtia", "maia"):
             self.assertFalse(hasattr(torch, backend))
@@ -331,6 +331,15 @@ print(json.dumps(observations))
                         RuntimeError, r"only 'cpu' is implemented"
                     ):
                         torch.tensor([1.0], device=specification)
+                with self.subTest(
+                    backend=backend,
+                    specification=specification,
+                    surface="transfer",
+                ):
+                    with self.assertRaisesRegex(
+                        RuntimeError, r"only 'cpu' is implemented"
+                    ):
+                        tensor.to(specification)
 
 
 if __name__ == "__main__":

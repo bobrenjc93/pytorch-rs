@@ -289,7 +289,11 @@ print(json.dumps({
                 ):
                     torch.tensor([1.0], device=specification)
 
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+            with self.subTest(specification=specification, action="transfer"):
+                with self.assertRaisesRegex(
+                    RuntimeError, r"only 'cpu' is implemented"
+                ):
+                    torch.tensor([1.0]).to(specification)
 
 
 if __name__ == "__main__":

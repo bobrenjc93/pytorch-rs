@@ -210,7 +210,6 @@ class TensorAcceleratorLocationFlagsTests(unittest.TestCase):
 
     def test_ipu_mtia_and_maia_backends_remain_unsupported(self):
         tensor = torch.tensor([1.0])
-        self.assertFalse(hasattr(torch.Tensor, "to"))
 
         for backend in ("ipu", "mtia", "maia"):
             with self.subTest(backend=backend, surface="namespace"):
@@ -245,6 +244,15 @@ class TensorAcceleratorLocationFlagsTests(unittest.TestCase):
                                 function([1.0], device=specification)
                             else:
                                 function((1,), device=specification)
+                with self.subTest(
+                    backend=backend,
+                    specification=specification,
+                    surface="to",
+                ):
+                    with self.assertRaisesRegex(
+                        RuntimeError, r"only 'cpu' is implemented"
+                    ):
+                        tensor.to(specification)
 
 
 if __name__ == "__main__":
