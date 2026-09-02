@@ -29,6 +29,7 @@ const MSE_LOSS_EXACT_TENSORS_ERROR: &str =
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MseLossReduction {
     None,
+    Mean,
     Sum,
 }
 
@@ -616,12 +617,13 @@ fn _nn_functional_mse_loss(
         .and_then(|reduction| reduction.to_str().ok())
         .and_then(|reduction| match reduction {
             "none" => Some(MseLossReduction::None),
+            "mean" => Some(MseLossReduction::Mean),
             "sum" => Some(MseLossReduction::Sum),
             _ => None,
         });
     let Some(reduction) = reduction else {
         return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.mse_loss only supports reduction='none' or reduction='sum'",
+            "torch_rs.nn.functional.mse_loss only supports reduction='none', reduction='mean', or reduction='sum'",
         ));
     };
     if !weight.is_none() {
@@ -661,10 +663,10 @@ fn _nn_functional_mse_loss(
         .inner()
         .squared_difference(target.inner())
         .map_err(|error| tensor_error(&error))?;
-    let output = if reduction == MseLossReduction::Sum {
-        output.sum()
-    } else {
-        output
+    let output = match reduction {
+        MseLossReduction::None => output,
+        MseLossReduction::Mean => output.mean().map_err(|error| tensor_error(&error))?,
+        MseLossReduction::Sum => output.sum(),
     };
     PyTensor::new(output).into_py_any(py)
 }
