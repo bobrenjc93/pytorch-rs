@@ -371,7 +371,7 @@ Computes the absolute value of each element in :attr:`input`.
     \text{out}_{i} = |\text{input}_{i}|
 
 Args:
-    input (Tensor or Number): the input tensor or number.
+    input (Tensor): the input tensor.
 
 Keyword args:
     out (Tensor, optional): the output tensor.
