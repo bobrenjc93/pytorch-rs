@@ -43,15 +43,16 @@ assert ratio.tolist() == [[-1.0, 2.0], [3.0, -4.0]]
 The current native backend supports eager CPU `float32` tensors, core
 construction and layout/view operations, selected math and neural-network
 functions, and limited first-order autograd. Top-level `torch.cuda` exposes
-CPU-build probes only: `device_count()` is `0`, `is_available()` is `False`,
-and `is_initialized()` is `False`. Top-level `torch.set_default_device(...)`
-is present only as a CPU-equivalent no-op for requests such as `None` or
-`"cpu"`. `torch.backends.cuda` includes preference
+CPU-build probes only: `device_count()` and `max_memory_allocated(...)` are
+`0`, while `is_available()` and `is_initialized()` are `False`. Top-level
+`torch.set_default_device(...)` is present only as a CPU-equivalent no-op for
+requests such as `None` or `"cpu"`. `torch.backends.cuda` includes preference
 flags such as `enable_flash_sdp(...)`, `enable_cudnn_sdp(...)`, and the
 `sdp_kernel(...)` context manager/decorator, but they do not add
 `torch.nn.functional.scaled_dot_product_attention`, CUDA tensors, actual
 attention-kernel dispatch, or CUDA `torch.compile` execution. Device selection,
-mutable default-device routing, streams, events, synchronization, allocator APIs, runtime initialization,
+mutable default-device routing, streams, events, synchronization, other
+allocator APIs, runtime initialization,
 additional tensor dtypes, and the full module, optimizer, model-serialization,
 compiler, and distributed stacks remain unsupported.
 
