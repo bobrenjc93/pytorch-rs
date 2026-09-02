@@ -93,10 +93,197 @@ class CudaReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
+    def test_memory_allocated_signature_and_errors_match_pytorch_2_13(self):
+        actual_module = importlib.import_module("torch_rs.cuda")
+        expected_module = importlib.import_module("torch.cuda")
+        actual = actual_module.memory_allocated
+        expected = expected_module.memory_allocated
+
+        self.assertIs(torch.cuda, actual_module)
+        self.assertIs(reference_torch.cuda, expected_module)
+        self.assertIs(sys.modules["torch_rs.cuda"], actual_module)
+        self.assertIs(sys.modules["torch.cuda"], expected_module)
+        self.assertIs(type(actual), types.FunctionType)
+        self.assertIs(type(expected), types.FunctionType)
+        self.assertEqual(
+            str(inspect.signature(actual)), str(inspect.signature(expected))
+        )
+        self.assertEqual(actual.__annotations__, expected.__annotations__)
+        self.assert_error_matches(
+            lambda: typing.get_type_hints(actual),
+            lambda: typing.get_type_hints(expected),
+        )
+        self.assertEqual(actual.__name__, expected.__name__)
+        self.assertEqual(actual.__qualname__, expected.__qualname__)
+        self.assertEqual(
+            actual.__module__.replace("torch_rs", "torch"), expected.__module__
+        )
+        self.assertIs(inspect.getmodule(actual), actual_module.memory)
+        self.assertIs(inspect.getmodule(expected), expected_module.memory)
+        self.assertIs(actual_module.memory_allocated, actual_module.memory.memory_allocated)
+        self.assertIs(expected_module.memory_allocated, expected_module.memory.memory_allocated)
+        self.assertEqual(actual.__doc__, expected.__doc__)
+        self.assertEqual(actual.__defaults__, expected.__defaults__)
+        self.assertEqual(actual.__kwdefaults__, expected.__kwdefaults__)
+        self.assertEqual(actual.__dict__, expected.__dict__)
+        self.assertEqual(
+            hasattr(actual, "__text_signature__"),
+            hasattr(expected, "__text_signature__"),
+        )
+
+        cases = (
+            (lambda: actual(None, None), lambda: expected(None, None)),
+            (lambda: actual(enabled=True), lambda: expected(enabled=True)),
+            (
+                lambda: actual(None, device=0),
+                lambda: expected(None, device=0),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assert_error_matches(actual_call, expected_call)
+
+    def test_memory_allocated_cpu_build_device_short_circuit_matches_pytorch_2_13(self):
+        script = r"""
+import torch as reference_torch
+import torch_rs as actual_torch
+
+assert reference_torch.__version__.split("+")[0] == "2.13.0"
+assert reference_torch.cuda.is_initialized() is False
+assert actual_torch.cuda.is_initialized() is False
+
+class ExplodingDeviceToken:
+    def __getattribute__(self, name):
+        raise AssertionError(f"device token attribute was inspected: {name}")
+
+    def __repr__(self):
+        raise AssertionError("device token repr was inspected")
+
+cases = (
+    (
+        "omitted",
+        lambda: actual_torch.cuda.memory_allocated(),
+        lambda: reference_torch.cuda.memory_allocated(),
+    ),
+    (
+        "none_positional",
+        lambda: actual_torch.cuda.memory_allocated(None),
+        lambda: reference_torch.cuda.memory_allocated(None),
+    ),
+    (
+        "none_keyword",
+        lambda: actual_torch.cuda.memory_allocated(device=None),
+        lambda: reference_torch.cuda.memory_allocated(device=None),
+    ),
+    (
+        "zero_index",
+        lambda: actual_torch.cuda.memory_allocated(0),
+        lambda: reference_torch.cuda.memory_allocated(0),
+    ),
+    (
+        "negative_index",
+        lambda: actual_torch.cuda.memory_allocated(-1),
+        lambda: reference_torch.cuda.memory_allocated(-1),
+    ),
+    (
+        "bool_index",
+        lambda: actual_torch.cuda.memory_allocated(True),
+        lambda: reference_torch.cuda.memory_allocated(True),
+    ),
+    (
+        "cuda_string",
+        lambda: actual_torch.cuda.memory_allocated("cuda"),
+        lambda: reference_torch.cuda.memory_allocated("cuda"),
+    ),
+    (
+        "cuda_index_string",
+        lambda: actual_torch.cuda.memory_allocated("cuda:0"),
+        lambda: reference_torch.cuda.memory_allocated("cuda:0"),
+    ),
+    (
+        "cuda_device",
+        lambda: actual_torch.cuda.memory_allocated(reference_torch.device("cuda")),
+        lambda: reference_torch.cuda.memory_allocated(reference_torch.device("cuda")),
+    ),
+    (
+        "cuda_index_device",
+        lambda: actual_torch.cuda.memory_allocated(reference_torch.device("cuda:0")),
+        lambda: reference_torch.cuda.memory_allocated(reference_torch.device("cuda:0")),
+    ),
+    (
+        "cpu_string",
+        lambda: actual_torch.cuda.memory_allocated("cpu"),
+        lambda: reference_torch.cuda.memory_allocated("cpu"),
+    ),
+    (
+        "cpu_device",
+        lambda: actual_torch.cuda.memory_allocated(actual_torch.device("cpu")),
+        lambda: reference_torch.cuda.memory_allocated(reference_torch.device("cpu")),
+    ),
+    (
+        "meta_string",
+        lambda: actual_torch.cuda.memory_allocated("meta"),
+        lambda: reference_torch.cuda.memory_allocated("meta"),
+    ),
+    (
+        "meta_device",
+        lambda: actual_torch.cuda.memory_allocated(reference_torch.device("meta")),
+        lambda: reference_torch.cuda.memory_allocated(reference_torch.device("meta")),
+    ),
+    (
+        "unknown_device_string",
+        lambda: actual_torch.cuda.memory_allocated("banana"),
+        lambda: reference_torch.cuda.memory_allocated("banana"),
+    ),
+    (
+        "malformed_cuda_string",
+        lambda: actual_torch.cuda.memory_allocated("cuda:bad"),
+        lambda: reference_torch.cuda.memory_allocated("cuda:bad"),
+    ),
+    (
+        "object_token",
+        lambda: actual_torch.cuda.memory_allocated(object()),
+        lambda: reference_torch.cuda.memory_allocated(object()),
+    ),
+    (
+        "exploding_device_token",
+        lambda: actual_torch.cuda.memory_allocated(ExplodingDeviceToken()),
+        lambda: reference_torch.cuda.memory_allocated(ExplodingDeviceToken()),
+    ),
+)
+
+for label, actual_call, expected_call in cases:
+    actual = actual_call()
+    expected = expected_call()
+    assert type(actual) is int, label
+    assert type(expected) is int, label
+    assert actual == expected == 0, label
+    assert actual_torch.cuda.is_available() is False, label
+    assert actual_torch.cuda.device_count() == 0, label
+    assert actual_torch.cuda.is_initialized() is False, label
+    assert reference_torch.cuda.is_initialized() is False, label
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+
     def test_imports_wildcards_copy_pickle_and_reload_match_supported_scope(self):
         actual_cuda = torch.cuda
         expected_cuda = reference_torch.cuda
-        supported = {"device_count", "is_available", "is_initialized"}
+        supported = {
+            "device_count",
+            "is_available",
+            "is_initialized",
+            "memory_allocated",
+        }
 
         self.assertEqual(
             actual_cuda.__all__,
@@ -118,11 +305,11 @@ class CudaReferenceTests(unittest.TestCase):
         actual_direct_import = {}
         expected_direct_import = {}
         exec(
-            "from torch_rs.cuda import device_count, is_available, is_initialized",
+            "from torch_rs.cuda import device_count, is_available, is_initialized, memory_allocated",
             actual_direct_import,
         )
         exec(
-            "from torch.cuda import device_count, is_available, is_initialized",
+            "from torch.cuda import device_count, is_available, is_initialized, memory_allocated",
             expected_direct_import,
         )
         for name in supported:
@@ -143,47 +330,69 @@ class CudaReferenceTests(unittest.TestCase):
                 self.assertIs(actual_wildcard[name], getattr(actual_cuda, name))
                 self.assertIs(expected_wildcard[name], getattr(expected_cuda, name))
 
-        for module, function in (
-            (torch, actual_cuda.is_initialized),
-            (reference_torch, expected_cuda.is_initialized),
+        for module, functions in (
+            (torch, (actual_cuda.is_initialized, actual_cuda.memory_allocated)),
+            (
+                reference_torch,
+                (expected_cuda.is_initialized, expected_cuda.memory_allocated),
+            ),
         ):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("cuda", namespace)
             self.assertNotIn("is_initialized", namespace)
-            self.assertIs(copy.copy(function), function)
-            self.assertIs(copy.deepcopy(function), function)
+            self.assertNotIn("memory_allocated", namespace)
+            for function in functions:
+                self.assertIs(copy.copy(function), function)
+                self.assertIs(copy.deepcopy(function), function)
 
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             with self.subTest(protocol=protocol):
-                self.assertIs(
-                    pickle.loads(pickle.dumps(actual_cuda.is_initialized, protocol)),
-                    actual_cuda.is_initialized,
-                )
-                self.assertIs(
-                    pickle.loads(pickle.dumps(expected_cuda.is_initialized, protocol)),
-                    expected_cuda.is_initialized,
-                )
-                self.assertEqual(
-                    self.pickle_shape(actual_cuda.is_initialized, protocol),
-                    self.pickle_shape(expected_cuda.is_initialized, protocol),
-                )
+                for actual_function, expected_function in (
+                    (actual_cuda.is_initialized, expected_cuda.is_initialized),
+                    (actual_cuda.memory_allocated, expected_cuda.memory_allocated),
+                ):
+                    self.assertIs(
+                        pickle.loads(pickle.dumps(actual_function, protocol)),
+                        actual_function,
+                    )
+                    self.assertIs(
+                        pickle.loads(pickle.dumps(expected_function, protocol)),
+                        expected_function,
+                    )
+                    self.assertEqual(
+                        self.pickle_shape(actual_function, protocol),
+                        self.pickle_shape(expected_function, protocol),
+                    )
 
         actual_old = actual_cuda.is_initialized
         expected_old = expected_cuda.is_initialized
+        actual_old_memory_allocated = actual_cuda.memory_allocated
+        expected_old_memory_allocated = expected_cuda.memory_allocated
         self.assertIs(importlib.reload(actual_cuda), actual_cuda)
         self.assertIs(importlib.reload(expected_cuda), expected_cuda)
         self.assertIsNot(actual_cuda.is_initialized, actual_old)
         self.assertIsNot(expected_cuda.is_initialized, expected_old)
+        self.assertIs(actual_cuda.memory_allocated, actual_old_memory_allocated)
+        self.assertIs(expected_cuda.memory_allocated, expected_old_memory_allocated)
         self.assertIs(torch.cuda, actual_cuda)
         self.assertIs(reference_torch.cuda, expected_cuda)
         self.assertIs(sys.modules["torch_rs.cuda"], actual_cuda)
         self.assertIs(sys.modules["torch.cuda"], expected_cuda)
         self.assertIs(actual_cuda.is_initialized(), False)
+        self.assertEqual(actual_cuda.memory_allocated(), 0)
         with self.assertRaises(pickle.PicklingError):
             pickle.dumps(actual_old)
         with self.assertRaises(pickle.PicklingError):
             pickle.dumps(expected_old)
+        self.assertIs(
+            pickle.loads(pickle.dumps(actual_old_memory_allocated)),
+            actual_old_memory_allocated,
+        )
+        self.assertIs(
+            pickle.loads(pickle.dumps(expected_old_memory_allocated)),
+            expected_old_memory_allocated,
+        )
 
     def test_cpu_build_probe_values_are_static_without_changing_cuda_runtime_state(self):
         cuda = torch.cuda
