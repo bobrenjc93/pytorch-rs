@@ -3092,8 +3092,16 @@ enum BoundDivOperand<'py> {
 
 enum BoundDivisionRoundingMode<'py> {
     TrueDivision,
-    Rounding,
+    Rounding(DivisionRoundingMode),
+    UnsupportedRounding,
+    InvalidString(String),
     Override(ProbedTorchFunctionOverride<'py>),
+}
+
+#[derive(Clone, Copy)]
+enum DivisionRoundingMode {
+    Floor,
+    Trunc,
 }
 
 enum BoundMulOperand<'py> {
@@ -5129,7 +5137,10 @@ fn ordered_top_level_division_overrides<'py>(
     };
     let rounding_mode = match &call.rounding_mode {
         BoundDivisionRoundingMode::Override(probed) => Some(probed),
-        BoundDivisionRoundingMode::TrueDivision | BoundDivisionRoundingMode::Rounding => None,
+        BoundDivisionRoundingMode::TrueDivision
+        | BoundDivisionRoundingMode::Rounding(_)
+        | BoundDivisionRoundingMode::UnsupportedRounding
+        | BoundDivisionRoundingMode::InvalidString(_) => None,
     };
     let out = match &call.out {
         Some(BoundTensorOrTorchFunction::Override(probed)) => Some(probed),
@@ -5208,7 +5219,9 @@ fn apply_top_level_division(
     }
     match &call.rounding_mode {
         BoundDivisionRoundingMode::TrueDivision => {}
-        BoundDivisionRoundingMode::Rounding => {
+        BoundDivisionRoundingMode::Rounding(_)
+        | BoundDivisionRoundingMode::UnsupportedRounding
+        | BoundDivisionRoundingMode::InvalidString(_) => {
             return Err(PyNotImplementedError::new_err(
                 operation.rounding_mode_unsupported_error(),
             ));
@@ -5353,8 +5366,19 @@ fn parse_tensor_division_rounding_mode<'py>(
     if let Some(probed) = probe_torch_function_override(&value.value) {
         return Ok(BoundDivisionRoundingMode::Override(probed));
     }
-    if value.value.cast::<PyString>().is_ok() {
-        return Ok(BoundDivisionRoundingMode::Rounding);
+    if let Ok(rounding_mode) = value.value.cast::<PyString>() {
+        return match rounding_mode.to_str()? {
+            "trunc" => Ok(BoundDivisionRoundingMode::Rounding(
+                DivisionRoundingMode::Trunc,
+            )),
+            "floor" => Ok(BoundDivisionRoundingMode::Rounding(
+                DivisionRoundingMode::Floor,
+            )),
+            _ => {
+                let found = value.value.repr()?.extract::<String>()?;
+                Ok(BoundDivisionRoundingMode::InvalidString(found))
+            }
+        };
     }
     Err(tensor_division_method_binding_error(
         operation, positional, keywords,
@@ -5377,7 +5401,7 @@ fn parse_top_level_division_rounding_mode<'py>(
         return Ok(BoundDivisionRoundingMode::Override(probed));
     }
     if value.value.cast::<PyString>().is_ok() {
-        return Ok(BoundDivisionRoundingMode::Rounding);
+        return Ok(BoundDivisionRoundingMode::UnsupportedRounding);
     }
     Err(top_level_division_binding_error(
         operation, positional, keywords,
@@ -5398,7 +5422,10 @@ fn ordered_tensor_division_method_overrides<'py>(
     };
     let rounding_mode = match &call.rounding_mode {
         BoundDivisionRoundingMode::Override(probed) => Some(probed),
-        BoundDivisionRoundingMode::TrueDivision | BoundDivisionRoundingMode::Rounding => None,
+        BoundDivisionRoundingMode::TrueDivision
+        | BoundDivisionRoundingMode::Rounding(_)
+        | BoundDivisionRoundingMode::UnsupportedRounding
+        | BoundDivisionRoundingMode::InvalidString(_) => None,
     };
 
     let mut overrides = Vec::new();
@@ -5485,11 +5512,16 @@ fn apply_tensor_division_method(
     call: &BoundTensorMethodDivisionCall<'_>,
 ) -> PyResult<Py<PyAny>> {
     match &call.rounding_mode {
-        BoundDivisionRoundingMode::TrueDivision => {}
-        BoundDivisionRoundingMode::Rounding => {
+        BoundDivisionRoundingMode::TrueDivision | BoundDivisionRoundingMode::Rounding(_) => {}
+        BoundDivisionRoundingMode::UnsupportedRounding => {
             return Err(PyNotImplementedError::new_err(
                 operation.rounding_mode_unsupported_error(),
             ));
+        }
+        BoundDivisionRoundingMode::InvalidString(found) => {
+            return Err(PyRuntimeError::new_err(format!(
+                "div expected rounding_mode to be one of None, 'trunc', or 'floor' but found {found}",
+            )));
         }
         BoundDivisionRoundingMode::Override(_) => {
             unreachable!("division rounding_mode overrides were dispatched before the native path")
@@ -5505,7 +5537,22 @@ fn apply_tensor_division_method(
                     operation.autograd_unsupported_error(),
                 ));
             }
-            BinaryOperation::Divide.apply_tensors(&input.inner, &other.inner)
+            match &call.rounding_mode {
+                BoundDivisionRoundingMode::TrueDivision => {
+                    BinaryOperation::Divide.apply_tensors(&input.inner, &other.inner)
+                }
+                BoundDivisionRoundingMode::Rounding(DivisionRoundingMode::Trunc) => {
+                    input.inner.div_trunc(&other.inner)
+                }
+                BoundDivisionRoundingMode::Rounding(DivisionRoundingMode::Floor) => {
+                    input.inner.div_floor(&other.inner)
+                }
+                BoundDivisionRoundingMode::UnsupportedRounding
+                | BoundDivisionRoundingMode::InvalidString(_)
+                | BoundDivisionRoundingMode::Override(_) => {
+                    unreachable!("unsupported Tensor.div rounding modes returned before division")
+                }
+            }
         }
         (BoundDivOperand::Tensor(tensor), BoundDivOperand::Scalar(scalar)) => {
             let tensor = tensor.try_borrow()?;
@@ -5515,7 +5562,22 @@ fn apply_tensor_division_method(
                 ));
             }
             let scalar = parse_top_level_mul_scalar(scalar)?;
-            BinaryOperation::Divide.apply_scalar(&tensor.inner, scalar, false)
+            match &call.rounding_mode {
+                BoundDivisionRoundingMode::TrueDivision => {
+                    BinaryOperation::Divide.apply_scalar(&tensor.inner, scalar, false)
+                }
+                BoundDivisionRoundingMode::Rounding(DivisionRoundingMode::Trunc) => {
+                    tensor.inner.div_scalar_trunc(scalar)
+                }
+                BoundDivisionRoundingMode::Rounding(DivisionRoundingMode::Floor) => {
+                    tensor.inner.div_scalar_floor(scalar)
+                }
+                BoundDivisionRoundingMode::UnsupportedRounding
+                | BoundDivisionRoundingMode::InvalidString(_)
+                | BoundDivisionRoundingMode::Override(_) => {
+                    unreachable!("unsupported Tensor.div rounding modes returned before division")
+                }
+            }
         }
         (BoundDivOperand::Override(_), _) | (_, BoundDivOperand::Override(_)) => {
             unreachable!("division operand overrides were dispatched before the native path")

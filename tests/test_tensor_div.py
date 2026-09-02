@@ -101,6 +101,106 @@ class TensorDivisionMethodTests(unittest.TestCase):
                 self.assertNotEqual(result.data_ptr(), special.data_ptr())
                 self.assertNotEqual(result.data_ptr(), divisors.data_ptr())
 
+    def test_rounding_modes_reuse_division_and_unary_rounding_edges(self):
+        rounding_modes = ("trunc", "floor")
+
+        finite_left = torch.tensor(
+            [[-3.75], [-2.5], [-1.25], [-0.0], [0.0], [1.25], [2.5], [3.75]]
+        )
+        finite_right = torch.tensor([[2.0, -2.0]])
+        empty = torch.zeros((2, 0, 3)).transpose(0, 2)
+        empty_other = torch.tensor([[[2.0, -2.0]]])
+        offset_noncontiguous = torch.tensor(
+            [[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0]]
+        ).transpose(0, 1)[1]
+        self.assertGreater(offset_noncontiguous.storage_offset(), 0)
+        self.assertFalse(offset_noncontiguous.is_contiguous())
+
+        special_bits = np.asarray(
+            (
+                0x0000_0000,
+                0x8000_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+            ),
+            dtype=np.uint32,
+        )
+        special = torch.tensor(memoryview(special_bits.view(np.float32)))
+        divisors = torch.tensor(
+            [1.0, -1.0, float("inf"), float("-inf"), 2.0, 2.0, 2.0]
+        )
+        expected_special_bits = {
+            "trunc": np.asarray(
+                (
+                    0x0000_0000,
+                    0x0000_0000,
+                    0x8000_0000,
+                    0x8000_0000,
+                    0x7F80_0000,
+                    0xFF80_0000,
+                    0x7FC1_2345,
+                ),
+                dtype=np.uint32,
+            ),
+            "floor": np.asarray(
+                (
+                    0x0000_0000,
+                    0x0000_0000,
+                    0xBF80_0000,
+                    0xBF80_0000,
+                    0xFFC0_0000,
+                    0xFFC0_0000,
+                    0x7FC1_2345,
+                ),
+                dtype=np.uint32,
+            ),
+        }
+
+        for name in ("div", "divide"):
+            for mode in rounding_modes:
+                round_expected = getattr(finite_left / finite_right, mode)()
+                self.assert_tensor_matches(
+                    getattr(finite_left, name)(finite_right, rounding_mode=mode),
+                    round_expected,
+                    case=(name, mode, "negative finite broadcast"),
+                )
+
+                self.assert_tensor_matches(
+                    getattr(empty, name)(empty_other, rounding_mode=mode),
+                    empty / empty_other,
+                    case=(name, mode, "empty broadcast"),
+                )
+
+                self.assert_tensor_matches(
+                    getattr(offset_noncontiguous, name)(
+                        torch.tensor([2.0, -2.0]), rounding_mode=mode
+                    ),
+                    getattr(offset_noncontiguous / torch.tensor([2.0, -2.0]), mode)(),
+                    case=(name, mode, "offset noncontiguous"),
+                )
+
+                for scalar in (-2.0, np.float32(-0.0)):
+                    self.assert_tensor_matches(
+                        getattr(offset_noncontiguous, name)(scalar, rounding_mode=mode),
+                        getattr(offset_noncontiguous / scalar, mode)(),
+                        case=(name, mode, "scalar", type(scalar).__name__, scalar),
+                    )
+
+                result = getattr(special, name)(divisors, rounding_mode=mode)
+                self.assert_tensor_matches(
+                    result,
+                    torch.tensor(memoryview(expected_special_bits[mode].view(np.float32))),
+                    case=(name, mode, "signed zero nan infinity"),
+                )
+                self.assertFalse(result.is_set_to(special))
+                self.assertFalse(result.is_set_to(divisors))
+                if result.numel():
+                    self.assertNotEqual(result.data_ptr(), special.data_ptr())
+                    self.assertNotEqual(result.data_ptr(), divisors.data_ptr())
+
     def test_active_autograd_is_rejected_but_no_grad_uses_native_division(self):
         for name in ("div", "divide"):
             left = torch.tensor([[2.0, 3.0]], requires_grad=True)
@@ -121,15 +221,39 @@ class TensorDivisionMethodTests(unittest.TestCase):
                 ):
                     getattr(left, name)(2.0)
 
+            for mode in ("trunc", "floor"):
+                with self.subTest(name=name, case="tensor operands", rounding_mode=mode):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        rf"^{name}\(\): autograd recording is not supported$",
+                    ):
+                        getattr(left.transpose(0, 1), name)(
+                            right.transpose(0, 1), rounding_mode=mode
+                        )
+                with self.subTest(name=name, case="scalar operand", rounding_mode=mode):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        rf"^{name}\(\): autograd recording is not supported$",
+                    ):
+                        getattr(left, name)(2.0, rounding_mode=mode)
+
             with self.subTest(name=name, case="no_grad"):
                 with torch.no_grad():
                     tensor_output = getattr(left.transpose(0, 1), name)(
                         right.transpose(0, 1)
                     )
                     scalar_output = getattr(left, name)(2.0)
+                    rounded_tensor_output = getattr(left.transpose(0, 1), name)(
+                        right.transpose(0, 1), rounding_mode="floor"
+                    )
+                    rounded_scalar_output = getattr(left, name)(
+                        2.0, rounding_mode="trunc"
+                    )
                     expected_tensor_output = left.transpose(0, 1) / right.transpose(
                         0, 1
                     )
+                    expected_rounded_tensor = expected_tensor_output.floor()
+                    expected_rounded_scalar = (left / 2.0).trunc()
                 self.assertFalse(tensor_output.requires_grad)
                 self.assertTrue(tensor_output.is_leaf)
                 self.assert_tensor_matches(
@@ -139,6 +263,20 @@ class TensorDivisionMethodTests(unittest.TestCase):
                 )
                 self.assertFalse(scalar_output.requires_grad)
                 self.assertTrue(scalar_output.is_leaf)
+                self.assertFalse(rounded_tensor_output.requires_grad)
+                self.assertTrue(rounded_tensor_output.is_leaf)
+                self.assert_tensor_matches(
+                    rounded_tensor_output,
+                    expected_rounded_tensor,
+                    case=(name, "no_grad rounded tensor"),
+                )
+                self.assertFalse(rounded_scalar_output.requires_grad)
+                self.assertTrue(rounded_scalar_output.is_leaf)
+                self.assert_tensor_matches(
+                    rounded_scalar_output,
+                    expected_rounded_scalar,
+                    case=(name, "no_grad rounded scalar"),
+                )
 
         active = torch.tensor([2.0], requires_grad=True)
         with self.assertRaisesRegex(
@@ -315,22 +453,11 @@ class TensorDivisionMethodTests(unittest.TestCase):
 
         for name in ("div", "divide"):
             method = getattr(tensor, name)
-            with self.subTest(name=name, boundary="rounding floor"):
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    rf"^{name}\(\): non-None rounding_mode is not supported$",
-                ):
-                    method(torch.tensor([2.0]), rounding_mode="floor")
-            with self.subTest(name=name, boundary="rounding trunc"):
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    rf"^{name}\(\): non-None rounding_mode is not supported$",
-                ):
-                    method(2, rounding_mode="trunc")
             with self.subTest(name=name, boundary="rounding bad string"):
                 with self.assertRaisesRegex(
-                    NotImplementedError,
-                    rf"^{name}\(\): non-None rounding_mode is not supported$",
+                    RuntimeError,
+                    r"^div expected rounding_mode to be one of None, 'trunc', "
+                    r"or 'floor' but found 'bad'$",
                 ):
                     method(2, rounding_mode="bad")
             with self.subTest(name=name, boundary="out"):

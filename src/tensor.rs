@@ -3594,6 +3594,22 @@ impl Tensor {
         self.zip_map(other, |left, right| left / right)
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn div_trunc(&self, other: &Self) -> Result<Self, TensorError> {
+        if self.records_grad() || other.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
+        }
+        self.zip_map(other, trunc_divide_value)
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn div_floor(&self, other: &Self) -> Result<Self, TensorError> {
+        if self.records_grad() || other.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
+        }
+        self.zip_map(other, floor_divide_value)
+    }
+
     /// Adds a scalar to every element.
     ///
     /// # Errors
@@ -3670,6 +3686,22 @@ impl Tensor {
 
     fn div_scalar_values(&self, scalar: f32) -> Result<Self, TensorError> {
         self.map_scalar(scalar, |value, scalar| value / scalar)
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn div_scalar_trunc(&self, scalar: f32) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
+        }
+        self.map_scalar(scalar, trunc_divide_value)
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn div_scalar_floor(&self, scalar: f32) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
+        }
+        self.map_scalar(scalar, floor_divide_value)
     }
 
     /// Subtracts every element from a scalar.
@@ -6622,6 +6654,43 @@ fn round_value(value: f32, operation: fn(f32) -> f32) -> f32 {
 
 fn floor_value(value: f32) -> f32 {
     round_value(value, f32::floor)
+}
+
+#[cfg(feature = "python-bindings")]
+fn trunc_divide_value(left: f32, right: f32) -> f32 {
+    trunc_value(left / right)
+}
+
+#[cfg(feature = "python-bindings")]
+fn floor_divide_value(left: f32, right: f32) -> f32 {
+    let division = left / right;
+    let right_is_zero = right.to_bits() & !F32_SIGN_MASK == 0;
+    if right_is_zero
+        || left.is_nan()
+        || right.is_nan()
+        || (left.is_infinite() && right.is_infinite())
+    {
+        return floor_value(division);
+    }
+    if left.is_infinite() {
+        return f32::from_bits(F32_SIGN_MASK | f32::NAN.to_bits());
+    }
+
+    let remainder = left % right;
+    let mut quotient = (left - remainder) / right;
+    if remainder != 0.0
+        && (remainder.to_bits() & F32_SIGN_MASK != 0) != (right.to_bits() & F32_SIGN_MASK != 0)
+    {
+        quotient -= 1.0;
+    }
+    if quotient == 0.0 {
+        return if division == 0.0 {
+            division
+        } else {
+            floor_value(division)
+        };
+    }
+    floor_value(quotient)
 }
 
 fn ceil_value(value: f32) -> f32 {

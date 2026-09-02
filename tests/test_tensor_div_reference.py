@@ -128,6 +128,105 @@ class TensorDivisionMethodReferenceTests(unittest.TestCase):
                 case=(name, "signed zero nan infinity"),
             )
 
+    def test_rounding_modes_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual_left = torch.tensor(
+            [[-3.75], [-2.5], [-1.25], [-0.0], [0.0], [1.25], [2.5], [3.75]]
+        )
+        expected_left = reference_torch.tensor(
+            [[-3.75], [-2.5], [-1.25], [-0.0], [0.0], [1.25], [2.5], [3.75]]
+        )
+        actual_right = torch.tensor([[2.0, -2.0]])
+        expected_right = reference_torch.tensor([[2.0, -2.0]])
+
+        actual_empty = torch.zeros((2, 0, 3)).transpose(0, 2)
+        expected_empty = reference_torch.zeros((2, 0, 3)).transpose(0, 2)
+        actual_empty_other = torch.tensor([[[2.0, -2.0]]])
+        expected_empty_other = reference_torch.tensor([[[2.0, -2.0]]])
+
+        actual_offset_noncontiguous = torch.tensor(
+            [[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0]]
+        ).transpose(0, 1)[1]
+        expected_offset_noncontiguous = reference_torch.tensor(
+            [[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0]]
+        ).transpose(0, 1)[1]
+        self.assertGreater(actual_offset_noncontiguous.storage_offset(), 0)
+        self.assertFalse(actual_offset_noncontiguous.is_contiguous())
+
+        special_bits = np.asarray(
+            (
+                0x0000_0000,
+                0x8000_0000,
+                0x3FC0_0000,
+                0xBFC0_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+            ),
+            dtype=np.uint32,
+        )
+        actual_special = torch.tensor(memoryview(special_bits.view(np.float32)))
+        expected_special = reference_torch.tensor(memoryview(special_bits.view(np.float32)))
+        actual_divisors = torch.tensor(
+            [1.0, -1.0, 2.0, -2.0, float("inf"), float("-inf"), 2.0]
+        )
+        expected_divisors = reference_torch.tensor(
+            [1.0, -1.0, 2.0, -2.0, float("inf"), float("-inf"), 2.0]
+        )
+
+        for name in ("div", "divide"):
+            for mode in ("trunc", "floor"):
+                self.assert_matches(
+                    getattr(actual_left, name)(actual_right, rounding_mode=mode),
+                    getattr(expected_left, name)(expected_right, rounding_mode=mode),
+                    case=(name, mode, "negative finite broadcast"),
+                )
+                self.assert_matches(
+                    getattr(actual_empty, name)(
+                        actual_empty_other, rounding_mode=mode
+                    ),
+                    getattr(expected_empty, name)(
+                        expected_empty_other, rounding_mode=mode
+                    ),
+                    case=(name, mode, "empty broadcast"),
+                )
+                self.assert_matches(
+                    getattr(actual_offset_noncontiguous, name)(
+                        torch.tensor([2.0, -2.0]), rounding_mode=mode
+                    ),
+                    getattr(expected_offset_noncontiguous, name)(
+                        reference_torch.tensor([2.0, -2.0]), rounding_mode=mode
+                    ),
+                    case=(name, mode, "offset noncontiguous"),
+                )
+                for actual_scalar, expected_scalar in (
+                    (-2.0, -2.0),
+                    (np.float32(-0.0), np.float32(-0.0)),
+                    (float("inf"), float("inf")),
+                ):
+                    self.assert_matches(
+                        getattr(actual_offset_noncontiguous, name)(
+                            actual_scalar, rounding_mode=mode
+                        ),
+                        getattr(expected_offset_noncontiguous, name)(
+                            expected_scalar, rounding_mode=mode
+                        ),
+                        case=(
+                            name,
+                            mode,
+                            "scalar",
+                            type(actual_scalar).__name__,
+                            actual_scalar,
+                        ),
+                    )
+                self.assert_matches(
+                    getattr(actual_special, name)(actual_divisors, rounding_mode=mode),
+                    getattr(expected_special, name)(
+                        expected_divisors, rounding_mode=mode
+                    ),
+                    case=(name, mode, "signed zero nan infinity"),
+                )
+
     def test_no_grad_matches_pytorch_2_13_for_autograd_operands(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         for name in ("div", "divide"):
@@ -140,13 +239,35 @@ class TensorDivisionMethodReferenceTests(unittest.TestCase):
                     actual_right.transpose(0, 1)
                 )
                 actual_scalar = getattr(actual_left, name)(2.0)
+                actual_rounded_output = getattr(actual_left.transpose(0, 1), name)(
+                    actual_right.transpose(0, 1), rounding_mode="floor"
+                )
+                actual_rounded_scalar = getattr(actual_left, name)(
+                    2.0, rounding_mode="trunc"
+                )
             with reference_torch.no_grad():
                 expected_output = getattr(expected_left.transpose(0, 1), name)(
                     expected_right.transpose(0, 1)
                 )
                 expected_scalar = getattr(expected_left, name)(2.0)
+                expected_rounded_output = getattr(expected_left.transpose(0, 1), name)(
+                    expected_right.transpose(0, 1), rounding_mode="floor"
+                )
+                expected_rounded_scalar = getattr(expected_left, name)(
+                    2.0, rounding_mode="trunc"
+                )
             self.assert_matches(actual_output, expected_output, case=(name, "no_grad tensor"))
             self.assert_matches(actual_scalar, expected_scalar, case=(name, "no_grad scalar"))
+            self.assert_matches(
+                actual_rounded_output,
+                expected_rounded_output,
+                case=(name, "no_grad rounded tensor"),
+            )
+            self.assert_matches(
+                actual_rounded_scalar,
+                expected_rounded_scalar,
+                case=(name, "no_grad rounded scalar"),
+            )
 
     def test_descriptor_metadata_copy_pickle_and_reload_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
@@ -238,6 +359,10 @@ class TensorDivisionMethodReferenceTests(unittest.TestCase):
                 lambda: actual.div(other=None),
                 lambda: expected.div(other=None),
             ),
+            (
+                lambda: actual.div(actual, rounding_mode="bad"),
+                lambda: expected.div(expected, rounding_mode="bad"),
+            ),
             (lambda: actual.div([]), lambda: expected.div([])),
             (lambda: actual.divide(), lambda: expected.divide()),
             (
@@ -247,6 +372,10 @@ class TensorDivisionMethodReferenceTests(unittest.TestCase):
             (
                 lambda: actual.divide(actual, other=actual),
                 lambda: expected.divide(expected, other=expected),
+            ),
+            (
+                lambda: actual.divide(actual, rounding_mode="bad"),
+                lambda: expected.divide(expected, rounding_mode="bad"),
             ),
         )
         for index, (actual_call, expected_call) in enumerate(cases):
