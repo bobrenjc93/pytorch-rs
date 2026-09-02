@@ -1803,6 +1803,24 @@ pub(crate) fn empty_like_variable_function(
     Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
 }
 
+pub(crate) fn empty_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let arguments = bind_creation_arguments("empty", args, kwargs)?;
+    let (size, dtype, device, requires_grad) = parse_creation_arguments("empty", arguments)?;
+    let ParsedCreationSize {
+        dimensions,
+        scalar_dimension,
+    } = size;
+    let shape = dimensions.clone();
+    let tensor = CoreTensor::empty_with_metadata(dimensions, dtype, device)
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
+        .map_err(|error| creation_factory_error(&error, &shape, scalar_dimension))?;
+    Ok(Py::new(py, tensor)?.into_any())
+}
+
 pub(crate) fn full_like_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -8491,7 +8509,17 @@ fn bind_creation_arguments<'py>(
                         });
                 }
             }
-            "shape" => arguments.shape = optional_call_argument(value),
+            "shape" => {
+                if function == "empty" {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "{function}() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                } else {
+                    arguments.shape = optional_call_argument(value);
+                }
+            }
             "out" => arguments.out = optional_call_argument(value),
             "dtype" => arguments.dtype = optional_call_argument(value),
             "layout" => arguments.layout = optional_call_argument(value),
@@ -10012,7 +10040,7 @@ fn parse_creation_size<'py>(
         Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
         Err(error) => error,
     };
-    if !matches!(function, "zeros" | "ones") || origin != CreationSizeOrigin::Positional {
+    if !matches!(function, "zeros" | "ones" | "empty") || origin != CreationSizeOrigin::Positional {
         return Err(sequence_error);
     }
 
@@ -10179,7 +10207,7 @@ fn creation_negative_dimension_error(function: &str, dimension: i64, shape: &[i6
     if function == "zeros" {
         PyRuntimeError::new_err("zeros: Dimension size must be non-negative.")
     } else {
-        debug_assert_eq!(function, "ones");
+        debug_assert!(matches!(function, "ones" | "empty"));
         PyRuntimeError::new_err(format!(
             "Trying to create tensor with negative dimension {dimension}: {shape:?}"
         ))
