@@ -173,6 +173,11 @@ class TensorToTests(unittest.TestCase):
             with self.subTest(memory_format=memory_format):
                 self.assertTrue(tensor.is_contiguous(memory_format=memory_format))
                 self.assertIs(tensor.to(memory_format=memory_format), tensor)
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    "^torch_rs\\.Tensor\\.to only supports no-copy CPU float32 identity conversions$",
+                ):
+                    tensor.to(memory_format=torch.contiguous_format)
 
     def test_copying_or_non_identity_requests_are_rejected(self):
         tensor = torch.zeros((2, 3, 4, 5))
@@ -308,6 +313,101 @@ class TensorToTests(unittest.TestCase):
             ):
                 tensor.to(non_blocking=0)
         self.assertEqual(len(recording.calls), 1)
+
+        override_calls = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                override_calls.append((func, types, args, kwargs))
+                return marker
+
+        positional = Override()
+        device = Override()
+        dtype = Override()
+        other = Override()
+        memory_format = Override()
+        non_blocking = Override()
+        copy = Override()
+        override_cases = (
+            (
+                "positional",
+                lambda: tensor.to(positional),
+                (tensor, positional),
+                None,
+            ),
+            (
+                "device keyword",
+                lambda: tensor.to(device=device),
+                (tensor,),
+                {"device": device},
+            ),
+            (
+                "dtype keyword",
+                lambda: tensor.to(dtype=dtype),
+                (tensor,),
+                {"dtype": dtype},
+            ),
+            (
+                "tensor keyword",
+                lambda: tensor.to(tensor=other),
+                (tensor,),
+                {"tensor": other},
+            ),
+            (
+                "memory_format keyword",
+                lambda: tensor.to(memory_format=memory_format),
+                (tensor,),
+                {"memory_format": memory_format},
+            ),
+            (
+                "bool option keywords",
+                lambda: tensor.to(
+                    torch.float32,
+                    non_blocking=non_blocking,
+                    copy=copy,
+                ),
+                (tensor, torch.float32),
+                {"non_blocking": non_blocking, "copy": copy},
+            ),
+        )
+        for name, call, expected_args, expected_kwargs in override_cases:
+            with self.subTest(override=name):
+                override_calls.clear()
+                self.assertIs(call(), marker)
+                self.assertEqual(len(override_calls), 1)
+                function, dispatch_types, args, kwargs = override_calls[0]
+                self.assertIs(function, descriptor)
+                self.assertEqual(dispatch_types, (Override,))
+                self.assertEqual(len(args), len(expected_args))
+                for actual, expected in zip(args, expected_args, strict=True):
+                    self.assertIs(actual, expected)
+                if expected_kwargs is None:
+                    self.assertIsNone(kwargs)
+                else:
+                    self.assertEqual(tuple(kwargs), tuple(expected_kwargs))
+                    for key, expected in expected_kwargs.items():
+                        self.assertIs(kwargs[key], expected)
+
+        override_calls.clear()
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^to\(\) received an invalid combination of arguments",
+        ):
+            tensor.to(unexpected=Override())
+        self.assertEqual(override_calls, [])
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^Multiple dispatch failed for 'torch\.Tensor\.to'; all "
+            r"__torch_function__ handlers returned NotImplemented:",
+        ):
+            tensor.to(DecliningOverride())
 
         order = []
 

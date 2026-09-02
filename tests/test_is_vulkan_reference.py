@@ -273,7 +273,10 @@ print(json.dumps({
                 ):
                     torch.tensor([1.0], device=specification)
 
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+        tensor = torch.tensor([1.0])
+        self.assertIs(tensor.to(), tensor)
+        with self.assertRaisesRegex(RuntimeError, r"only 'cpu' is implemented"):
+            tensor.to("vulkan")
         self.assertFalse(hasattr(torch.Tensor, "vulkan"))
 
 

@@ -553,11 +553,12 @@ impl PyTensorBase {
         let arguments = bind_to_arguments(args, kwargs)?;
 
         let tensor = slf.as_any().cast::<PyTensor>()?;
-        if let Some(result) = dispatch_tensorbase_method_mode(
+        if let Some(result) = dispatch_tensorbase_method_with_overrides(
             slf.py(),
             tensor,
             "to",
             "torch.Tensor.to",
+            &arguments.overrides,
             args,
             kwargs,
         )? {
@@ -3742,6 +3743,72 @@ pub(crate) fn dispatch_tensorbase_method_mode(
         qualified_method,
         Some(mode),
         None,
+    )?)
+}
+
+fn dispatch_tensorbase_method_with_overrides(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    method: &'static str,
+    qualified_method: &'static str,
+    overrides: &[ProbedTorchFunctionOverride<'_>],
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return Ok(None);
+    }
+
+    let function = py.get_type::<PyTensorBase>().getattr(method)?.unbind();
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+    let argument_count = args.len().checked_add(1).ok_or_else(|| {
+        PyMemoryError::new_err(format!("{method} dispatch argument count overflowed"))
+    })?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| {
+            PyMemoryError::new_err(format!("unable to allocate {method} dispatch arguments"))
+        })?;
+    call_arguments.push(tensor.clone().into_any());
+    call_arguments.extend(args.iter());
+    let call_args = PyTuple::new(py, call_arguments)?;
+
+    // Keep the top mode disabled for the entire attempt. Forwarding through
+    // the descriptor then reaches lower modes, operand overrides, and finally
+    // the native path with the same public arguments.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    for probed in overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return Ok(None);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        qualified_method,
+        active_mode.get(),
+        overrides,
     )?)
 }
 
@@ -8477,6 +8544,7 @@ struct ToCallArguments<'py> {
     target: ToTarget<'py>,
     copy: bool,
     memory_format: MemoryFormat,
+    overrides: Vec<ProbedTorchFunctionOverride<'py>>,
 }
 
 fn bind_to_arguments<'py>(
@@ -8490,26 +8558,30 @@ fn bind_to_arguments<'py>(
         )));
     }
 
+    let mut overrides = Vec::new();
     let (mut target, mut non_blocking_was_provided, mut copy) =
-        bind_to_positional_arguments(args, kwargs)?;
+        bind_to_positional_arguments(args, kwargs, &mut overrides)?;
     let memory_format = bind_to_keyword_arguments(
         args,
         kwargs,
         &mut target,
         &mut non_blocking_was_provided,
         &mut copy,
+        &mut overrides,
     )?;
 
     Ok(ToCallArguments {
         target,
         copy: copy.unwrap_or(false),
         memory_format,
+        overrides,
     })
 }
 
 fn bind_to_positional_arguments<'py>(
     args: &Bound<'py, PyTuple>,
     kwargs: Option<&Bound<'py, PyDict>>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
 ) -> PyResult<(ToTarget<'py>, bool, Option<bool>)> {
     let mut target = ToTarget::DeviceDType {
         device: None,
@@ -8523,11 +8595,11 @@ fn bind_to_positional_arguments<'py>(
         if first.cast::<PyDType>().is_ok() {
             target = ToTarget::DType(first);
             if args.len() >= 2 {
-                parse_to_bool_argument(&args.get_item(1)?, args, kwargs)?;
+                bind_to_bool_argument(&args.get_item(1)?, args, kwargs, overrides)?;
                 non_blocking_was_provided = true;
             }
             if args.len() >= 3 {
-                copy = Some(parse_to_bool_argument(&args.get_item(2)?, args, kwargs)?);
+                copy = bind_to_bool_argument(&args.get_item(2)?, args, kwargs, overrides)?;
             }
             if args.len() >= 4 {
                 return Err(invalid_to_arguments_error(args, kwargs)?);
@@ -8535,11 +8607,11 @@ fn bind_to_positional_arguments<'py>(
         } else if first.cast::<PyTensor>().is_ok() {
             target = ToTarget::Tensor(first);
             if args.len() >= 2 {
-                parse_to_bool_argument(&args.get_item(1)?, args, kwargs)?;
+                bind_to_bool_argument(&args.get_item(1)?, args, kwargs, overrides)?;
                 non_blocking_was_provided = true;
             }
             if args.len() >= 3 {
-                copy = Some(parse_to_bool_argument(&args.get_item(2)?, args, kwargs)?);
+                copy = bind_to_bool_argument(&args.get_item(2)?, args, kwargs, overrides)?;
             }
             if args.len() >= 4 {
                 return Err(invalid_to_arguments_error(args, kwargs)?);
@@ -8548,7 +8620,7 @@ fn bind_to_positional_arguments<'py>(
             let device = Some(first);
             let dtype = if args.len() >= 2 {
                 let dtype = args.get_item(1)?;
-                if !is_to_dtype_argument(&dtype) {
+                if !bind_to_dtype_argument(&dtype, overrides)? {
                     return Err(invalid_to_arguments_error(args, kwargs)?);
                 }
                 Some(dtype)
@@ -8556,13 +8628,22 @@ fn bind_to_positional_arguments<'py>(
                 None
             };
             if args.len() >= 3 {
-                parse_to_bool_argument(&args.get_item(2)?, args, kwargs)?;
+                bind_to_bool_argument(&args.get_item(2)?, args, kwargs, overrides)?;
                 non_blocking_was_provided = true;
             }
             if args.len() >= 4 {
-                copy = Some(parse_to_bool_argument(&args.get_item(3)?, args, kwargs)?);
+                copy = bind_to_bool_argument(&args.get_item(3)?, args, kwargs, overrides)?;
             }
             target = ToTarget::DeviceDType { device, dtype };
+        } else if bind_to_override_argument(&first, overrides)? {
+            target = bind_to_positional_override_target(
+                first,
+                args,
+                kwargs,
+                overrides,
+                &mut non_blocking_was_provided,
+                &mut copy,
+            )?;
         } else {
             return Err(invalid_to_arguments_error(args, kwargs)?);
         }
@@ -8571,12 +8652,55 @@ fn bind_to_positional_arguments<'py>(
     Ok((target, non_blocking_was_provided, copy))
 }
 
+fn bind_to_positional_override_target<'py>(
+    first: Bound<'py, PyAny>,
+    args: &Bound<'py, PyTuple>,
+    kwargs: Option<&Bound<'py, PyDict>>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+    non_blocking_was_provided: &mut bool,
+    copy: &mut Option<bool>,
+) -> PyResult<ToTarget<'py>> {
+    if args.len() == 1 {
+        return Ok(ToTarget::DeviceDType {
+            device: Some(first),
+            dtype: None,
+        });
+    }
+
+    let second = args.get_item(1)?;
+    if bind_to_dtype_argument(&second, overrides)? {
+        if args.len() >= 3 {
+            bind_to_bool_argument(&args.get_item(2)?, args, kwargs, overrides)?;
+            *non_blocking_was_provided = true;
+        }
+        if args.len() >= 4 {
+            *copy = bind_to_bool_argument(&args.get_item(3)?, args, kwargs, overrides)?;
+        }
+        return Ok(ToTarget::DeviceDType {
+            device: Some(first),
+            dtype: Some(second),
+        });
+    }
+
+    if args.len() <= 3 {
+        bind_to_bool_argument(&second, args, kwargs, overrides)?;
+        *non_blocking_was_provided = true;
+        if args.len() >= 3 {
+            *copy = bind_to_bool_argument(&args.get_item(2)?, args, kwargs, overrides)?;
+        }
+        return Ok(ToTarget::DType(first));
+    }
+
+    Err(invalid_to_arguments_error(args, kwargs)?)
+}
+
 fn bind_to_keyword_arguments<'py>(
     args: &Bound<'py, PyTuple>,
     kwargs: Option<&Bound<'py, PyDict>>,
     target: &mut ToTarget<'py>,
     non_blocking_was_provided: &mut bool,
     copy: &mut Option<bool>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
 ) -> PyResult<MemoryFormat> {
     let mut memory_format = MemoryFormat::Preserve;
     let mut memory_format_was_provided = false;
@@ -8585,7 +8709,7 @@ fn bind_to_keyword_arguments<'py>(
             let key = key.extract::<String>()?;
             match key.as_str() {
                 "device" => {
-                    if !is_to_device_argument(&value) {
+                    if !bind_to_device_argument(&value, overrides)? {
                         return Err(invalid_to_arguments_error(args, Some(kwargs))?);
                     }
                     let ToTarget::DeviceDType { device, .. } = target else {
@@ -8597,7 +8721,7 @@ fn bind_to_keyword_arguments<'py>(
                     *device = Some(value);
                 }
                 "dtype" => {
-                    if !is_to_dtype_argument(&value) {
+                    if !bind_to_dtype_argument(&value, overrides)? {
                         return Err(invalid_to_arguments_error(args, Some(kwargs))?);
                     }
                     let ToTarget::DeviceDType { dtype, .. } = target else {
@@ -8609,7 +8733,7 @@ fn bind_to_keyword_arguments<'py>(
                     *dtype = Some(value);
                 }
                 "tensor" => {
-                    if value.cast::<PyTensor>().is_err() {
+                    if !bind_to_tensor_argument(&value, overrides)? {
                         return Err(invalid_to_arguments_error(args, Some(kwargs))?);
                     }
                     match &target {
@@ -8626,20 +8750,24 @@ fn bind_to_keyword_arguments<'py>(
                     if *non_blocking_was_provided {
                         return Err(invalid_to_arguments_error(args, Some(kwargs))?);
                     }
-                    parse_to_bool_argument(&value, args, Some(kwargs))?;
+                    bind_to_bool_argument(&value, args, Some(kwargs), overrides)?;
                     *non_blocking_was_provided = true;
                 }
                 "copy" => {
                     if copy.is_some() {
                         return Err(invalid_to_arguments_error(args, Some(kwargs))?);
                     }
-                    *copy = Some(parse_to_bool_argument(&value, args, Some(kwargs))?);
+                    *copy = bind_to_bool_argument(&value, args, Some(kwargs), overrides)?;
                 }
                 "memory_format" => {
-                    if memory_format_was_provided || !is_to_memory_format_argument(&value) {
+                    if memory_format_was_provided {
                         return Err(invalid_to_arguments_error(args, Some(kwargs))?);
                     }
-                    memory_format = parse_to_memory_format(&value)?;
+                    if let Some(format) =
+                        bind_to_memory_format_argument(&value, args, Some(kwargs), overrides)?
+                    {
+                        memory_format = format;
+                    }
                     memory_format_was_provided = true;
                 }
                 _ => return Err(invalid_to_arguments_error(args, Some(kwargs))?),
@@ -8648,6 +8776,77 @@ fn bind_to_keyword_arguments<'py>(
     }
 
     Ok(memory_format)
+}
+
+fn bind_to_override_argument<'py>(
+    value: &Bound<'py, PyAny>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+) -> PyResult<bool> {
+    if let Some(probed) = probe_torch_function_override(value) {
+        insert_ordered_torch_function_override(overrides, &probed)?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+fn bind_to_device_argument<'py>(
+    value: &Bound<'py, PyAny>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+) -> PyResult<bool> {
+    if is_to_device_argument(value) {
+        return Ok(true);
+    }
+    bind_to_override_argument(value, overrides)
+}
+
+fn bind_to_dtype_argument<'py>(
+    value: &Bound<'py, PyAny>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+) -> PyResult<bool> {
+    if is_to_dtype_argument(value) {
+        return Ok(true);
+    }
+    bind_to_override_argument(value, overrides)
+}
+
+fn bind_to_tensor_argument<'py>(
+    value: &Bound<'py, PyAny>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+) -> PyResult<bool> {
+    if value.cast::<PyTensor>().is_ok() {
+        return Ok(true);
+    }
+    bind_to_override_argument(value, overrides)
+}
+
+fn bind_to_bool_argument<'py>(
+    value: &Bound<'py, PyAny>,
+    args: &Bound<'py, PyTuple>,
+    kwargs: Option<&Bound<'py, PyDict>>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+) -> PyResult<Option<bool>> {
+    if value.is_exact_instance_of::<PyBool>() {
+        return value.is_truthy().map(Some);
+    }
+    if bind_to_override_argument(value, overrides)? {
+        return Ok(None);
+    }
+    Err(invalid_to_arguments_error(args, kwargs)?)
+}
+
+fn bind_to_memory_format_argument<'py>(
+    value: &Bound<'py, PyAny>,
+    args: &Bound<'py, PyTuple>,
+    kwargs: Option<&Bound<'py, PyDict>>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+) -> PyResult<Option<MemoryFormat>> {
+    if is_to_memory_format_argument(value) {
+        return parse_to_memory_format(value).map(Some);
+    }
+    if bind_to_override_argument(value, overrides)? {
+        return Ok(None);
+    }
+    Err(invalid_to_arguments_error(args, kwargs)?)
 }
 
 fn is_to_device_argument(value: &Bound<'_, PyAny>) -> bool {
@@ -8660,17 +8859,6 @@ fn is_to_dtype_argument(value: &Bound<'_, PyAny>) -> bool {
 
 fn is_to_memory_format_argument(value: &Bound<'_, PyAny>) -> bool {
     value.is_none() || value.cast::<PyMemoryFormat>().is_ok()
-}
-
-fn parse_to_bool_argument(
-    value: &Bound<'_, PyAny>,
-    args: &Bound<'_, PyTuple>,
-    kwargs: Option<&Bound<'_, PyDict>>,
-) -> PyResult<bool> {
-    if !value.is_exact_instance_of::<PyBool>() {
-        return Err(invalid_to_arguments_error(args, kwargs)?);
-    }
-    value.is_truthy()
 }
 
 fn parse_to_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<MemoryFormat> {
@@ -8746,8 +8934,8 @@ fn validate_to_identity_memory_format(
     memory_format: MemoryFormat,
 ) -> PyResult<()> {
     match memory_format {
-        MemoryFormat::Preserve | MemoryFormat::Contiguous => Ok(()),
-        MemoryFormat::ChannelsLast | MemoryFormat::ChannelsLast3d => {
+        MemoryFormat::Preserve => Ok(()),
+        MemoryFormat::Contiguous | MemoryFormat::ChannelsLast | MemoryFormat::ChannelsLast3d => {
             let tensor = tensor.try_borrow()?;
             if tensor.inner.suggested_memory_format() == memory_format {
                 Ok(())

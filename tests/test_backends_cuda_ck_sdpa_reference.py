@@ -294,7 +294,10 @@ class CudaCkSdpaAvailabilityReferenceTests(unittest.TestCase):
         self.assertTrue(hasattr(torch.backends.cuda, "cudnn_sdp_enabled"))
         self.assertTrue(hasattr(torch.backends.cuda, "enable_cudnn_sdp"))
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+        tensor = torch.tensor([1.0])
+        self.assertIs(tensor.to(), tensor)
+        with self.assertRaises(RuntimeError):
+            tensor.to("cuda:0")
         with self.assertRaises(RuntimeError):
             torch.tensor([1.0], device="cuda:0")
 

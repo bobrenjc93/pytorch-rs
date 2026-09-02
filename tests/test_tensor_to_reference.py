@@ -146,6 +146,19 @@ class TensorToReferenceTests(unittest.TestCase):
                 )
                 self.assertEqual(actual_result.stride(), expected_result.stride())
 
+    def test_channels_last_contiguous_format_request_is_an_unsupported_copy(self):
+        for shape, memory_format in (
+            ((2, 3, 4, 5), torch.channels_last),
+            ((2, 3, 4, 5, 6), torch.channels_last_3d),
+        ):
+            with self.subTest(shape=shape, memory_format=memory_format):
+                tensor = torch.ones(shape).clone(memory_format=memory_format)
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    "^torch_rs\\.Tensor\\.to only supports no-copy CPU float32 identity conversions$",
+                ):
+                    tensor.to(memory_format=torch.contiguous_format)
+
     def test_descriptor_documentation_and_binding_match_pytorch_2_13(self):
         actual = torch.tensor([1.0])
         expected = reference_torch.tensor([1.0], dtype=reference_torch.float32)
@@ -243,6 +256,57 @@ class TensorToReferenceTests(unittest.TestCase):
             intercepted = tensor.to(module.float32, copy=True)
         function, dispatch_types, args, kwargs = recording.calls[0]
 
+        override_calls = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                override_calls.append((func, types, args, kwargs))
+                return marker
+
+        positional_override = Override()
+        positional_result = tensor.to(positional_override)
+        positional_call_count = len(override_calls)
+        positional_function, positional_types, positional_args, positional_kwargs = (
+            override_calls[0]
+        )
+
+        override_calls.clear()
+        keyword_override = Override()
+        keyword_result = tensor.to(device=keyword_override)
+        keyword_call_count = len(override_calls)
+        keyword_function, keyword_types, keyword_args, keyword_kwargs = override_calls[0]
+
+        override_calls.clear()
+        memory_format_override = Override()
+        memory_format_result = tensor.to(memory_format=memory_format_override)
+        memory_format_call_count = len(override_calls)
+        (
+            memory_format_function,
+            memory_format_types,
+            memory_format_args,
+            memory_format_kwargs,
+        ) = override_calls[0]
+
+        mode_with_override = RecordingMode(marker)
+        mode_override = Override()
+        with mode_with_override:
+            mode_override_result = tensor.to(dtype=mode_override)
+        (
+            mode_override_function,
+            mode_override_types,
+            mode_override_args,
+            mode_override_kwargs,
+        ) = mode_with_override.calls[0]
+
+        override_calls.clear()
+        try:
+            tensor.to(unexpected=Override())
+        except Exception as error:
+            unexpected_keyword_error = (type(error).__name__, str(error).splitlines()[0])
+        else:
+            unexpected_keyword_error = None
+
         rejected_before_dispatch = RecordingMode(marker)
         try:
             with rejected_before_dispatch:
@@ -294,6 +358,44 @@ class TensorToReferenceTests(unittest.TestCase):
                 if kwargs is None
                 else tuple((key, repr(value)) for key, value in kwargs.items())
             ),
+            "positional_override": (
+                positional_result is marker,
+                positional_call_count,
+                positional_function is descriptor,
+                positional_types == (Override,),
+                len(positional_args) == 2
+                and positional_args[0] is tensor
+                and isinstance(positional_args[1], Override),
+                positional_kwargs is None,
+            ),
+            "keyword_override": (
+                keyword_result is marker,
+                keyword_call_count,
+                keyword_function is descriptor,
+                keyword_types == (Override,),
+                len(keyword_args) == 1 and keyword_args[0] is tensor,
+                tuple(keyword_kwargs) == ("device",),
+                keyword_kwargs["device"] is keyword_override,
+            ),
+            "memory_format_override": (
+                memory_format_result is marker,
+                memory_format_call_count,
+                memory_format_function is descriptor,
+                memory_format_types == (Override,),
+                len(memory_format_args) == 1 and memory_format_args[0] is tensor,
+                tuple(memory_format_kwargs) == ("memory_format",),
+                memory_format_kwargs["memory_format"] is memory_format_override,
+            ),
+            "mode_override": (
+                mode_override_result is marker,
+                mode_override_function is descriptor,
+                mode_override_types == (Override,),
+                len(mode_override_args) == 1 and mode_override_args[0] is tensor,
+                tuple(mode_override_kwargs) == ("dtype",),
+                mode_override_kwargs["dtype"] is mode_override,
+            ),
+            "unexpected_keyword_error": unexpected_keyword_error,
+            "unexpected_keyword_calls": len(override_calls),
             "strict_bool_error": strict_bool_error,
             "strict_bool_call_count": len(rejected_before_dispatch.calls),
             "forwarding_order": order,

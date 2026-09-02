@@ -343,7 +343,10 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+        tensor = torch.tensor([1.0])
+        self.assertIs(tensor.to(), tensor)
+        with self.assertRaises(RuntimeError):
+            tensor.to("cuda:0")
         with self.assertRaises(RuntimeError):
             torch.tensor([1.0], device="cuda:0")
 
