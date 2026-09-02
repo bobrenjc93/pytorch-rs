@@ -863,6 +863,254 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                     reference_torch.equal(expected_target, expected_target_before)
                 )
 
+    def test_same_shape_contiguous_sum_edges_metadata_and_nonmutation_match_pytorch_2_13(
+        self,
+    ):
+        def actual_bits(tensor):
+            return np.asarray(tensor).reshape(-1).view(np.uint32).copy()
+
+        def expected_bits(tensor):
+            return tensor.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+
+        def assert_scalar_matches(actual, expected, *, case, allow_nan=False):
+            with self.subTest(case=case, metadata=True):
+                self.assertEqual(actual.shape, tuple(expected.shape))
+                self.assertEqual(actual.stride(), expected.stride())
+                self.assertEqual(actual.storage_offset(), expected.storage_offset())
+                self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+                self.assertFalse(actual.requires_grad)
+                self.assertEqual(actual.is_leaf, expected.is_leaf)
+                self.assertIs(actual.dtype, torch.float32)
+                self.assertEqual(actual.device, torch.device("cpu"))
+                self.assertEqual(actual.numel(), expected.numel())
+
+            actual_values = np.asarray(actual).reshape(-1)
+            expected_values = expected.detach().cpu().numpy().reshape(-1)
+            with self.subTest(case=case, values=True):
+                if allow_nan:
+                    actual_nan = np.isnan(actual_values)
+                    expected_nan = np.isnan(expected_values)
+                    np.testing.assert_array_equal(actual_nan, expected_nan)
+                    non_nan = ~expected_nan
+                    if np.any(non_nan):
+                        np.testing.assert_array_max_ulp(
+                            actual_values[non_nan],
+                            expected_values[non_nan],
+                            maxulp=1,
+                        )
+                else:
+                    np.testing.assert_array_max_ulp(
+                        actual_values,
+                        expected_values,
+                        maxulp=1,
+                    )
+
+        edge_input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F81_2345,
+            ],
+            dtype=np.uint32,
+        )
+        edge_target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xFF86_789A,
+            ],
+            dtype=np.uint32,
+        )
+        inf_input_bits = np.asarray(
+            [0x7F80_0000, 0xFF80_0000, 0x3F80_0000, 0xBF80_0000],
+            dtype=np.uint32,
+        )
+        inf_target_bits = np.asarray(
+            [0xFF80_0000, 0x7F80_0000, 0xBF80_0000, 0x3F80_0000],
+            dtype=np.uint32,
+        )
+        large_values = np.ones(1024 * 1024, dtype=np.float32)
+        mixed_values = np.full(1024, 100_000.0, dtype=np.float32)
+        mixed_values[:31] = 100.0
+        actual_cases = (
+            (
+                "scalar signed zero",
+                torch.tensor(-0.0),
+                torch.tensor(0.0),
+                False,
+            ),
+            (
+                "empty",
+                torch.zeros((5, 0, 7), dtype=torch.float32),
+                torch.ones((5, 0, 7), dtype=torch.float32),
+                False,
+            ),
+            (
+                "large contiguous",
+                torch.tensor(memoryview(large_values)).view(1024, 1024),
+                torch.zeros((1024, 1024), dtype=torch.float32),
+                False,
+            ),
+            (
+                "mixed magnitudes",
+                torch.tensor(memoryview(mixed_values)),
+                torch.zeros((1024,), dtype=torch.float32),
+                False,
+            ),
+            (
+                "inf edge bits",
+                torch.tensor(memoryview(inf_input_bits.view(np.float32))),
+                torch.tensor(memoryview(inf_target_bits.view(np.float32))),
+                False,
+            ),
+            (
+                "nan edge bits",
+                torch.tensor(memoryview(edge_input_bits.view(np.float32))),
+                torch.tensor(memoryview(edge_target_bits.view(np.float32))),
+                True,
+            ),
+        )
+        expected_cases = (
+            (
+                "scalar signed zero",
+                reference_torch.tensor(-0.0, dtype=reference_torch.float32),
+                reference_torch.tensor(0.0, dtype=reference_torch.float32),
+                False,
+            ),
+            (
+                "empty",
+                reference_torch.zeros((5, 0, 7), dtype=reference_torch.float32),
+                reference_torch.ones((5, 0, 7), dtype=reference_torch.float32),
+                False,
+            ),
+            (
+                "large contiguous",
+                reference_torch.tensor(
+                    memoryview(large_values),
+                    dtype=reference_torch.float32,
+                ).view(1024, 1024),
+                reference_torch.zeros(
+                    (1024, 1024),
+                    dtype=reference_torch.float32,
+                ),
+                False,
+            ),
+            (
+                "mixed magnitudes",
+                reference_torch.tensor(
+                    memoryview(mixed_values),
+                    dtype=reference_torch.float32,
+                ),
+                reference_torch.zeros((1024,), dtype=reference_torch.float32),
+                False,
+            ),
+            (
+                "inf edge bits",
+                reference_torch.tensor(
+                    memoryview(inf_input_bits.view(np.float32)),
+                    dtype=reference_torch.float32,
+                ),
+                reference_torch.tensor(
+                    memoryview(inf_target_bits.view(np.float32)),
+                    dtype=reference_torch.float32,
+                ),
+                False,
+            ),
+            (
+                "nan edge bits",
+                reference_torch.tensor(
+                    memoryview(edge_input_bits.view(np.float32)),
+                    dtype=reference_torch.float32,
+                ),
+                reference_torch.tensor(
+                    memoryview(edge_target_bits.view(np.float32)),
+                    dtype=reference_torch.float32,
+                ),
+                True,
+            ),
+        )
+
+        for actual_case, expected_case in zip(actual_cases, expected_cases, strict=True):
+            case, actual_input, actual_target, allow_nan = actual_case
+            expected_name, expected_input, expected_target, expected_allow_nan = expected_case
+            self.assertEqual(case, expected_name)
+            self.assertEqual(allow_nan, expected_allow_nan)
+            self.assertEqual(actual_input.shape, tuple(expected_input.shape))
+            self.assertEqual(actual_target.shape, tuple(expected_target.shape))
+            self.assertTrue(actual_input.is_contiguous())
+            self.assertTrue(actual_target.is_contiguous())
+            self.assertTrue(expected_input.is_contiguous())
+            self.assertTrue(expected_target.is_contiguous())
+
+            actual_input_before = actual_bits(actual_input)
+            actual_target_before = actual_bits(actual_target)
+            expected_input_before = expected_bits(expected_input)
+            expected_target_before = expected_bits(expected_target)
+
+            with warnings.catch_warnings(record=True) as actual_warnings:
+                warnings.simplefilter("always")
+                actual = functional.l1_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="sum",
+                )
+            with warnings.catch_warnings(record=True) as expected_warnings:
+                warnings.simplefilter("always")
+                expected = reference_functional.l1_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="sum",
+                )
+
+            self.assertEqual(actual_warnings, [])
+            self.assertEqual(expected_warnings, [])
+            assert_scalar_matches(
+                actual,
+                expected,
+                case=case,
+                allow_nan=allow_nan,
+            )
+            if case == "mixed magnitudes":
+                self.assertEqual(int(actual_bits(actual)[0]), 0x4CBD_67D8)
+                self.assertEqual(int(expected_bits(expected)[0]), 0x4CBD_67D8)
+
+            actual_repeat = functional.l1_loss(
+                actual_input,
+                actual_target,
+                reduction="sum",
+            )
+            expected_repeat = reference_functional.l1_loss(
+                expected_input,
+                expected_target,
+                reduction="sum",
+            )
+            with self.subTest(case=case, storage=True):
+                self.assertFalse(actual.is_set_to(actual_repeat))
+                self.assertFalse(expected.is_set_to(expected_repeat))
+                self.assertFalse(actual.is_set_to(actual_input))
+                self.assertFalse(expected.is_set_to(expected_input))
+                self.assertFalse(actual.is_set_to(actual_target))
+                self.assertFalse(expected.is_set_to(expected_target))
+                self.assertNotEqual(actual.data_ptr(), actual_repeat.data_ptr())
+                self.assertNotEqual(expected.data_ptr(), expected_repeat.data_ptr())
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(actual_bits(actual_input), actual_input_before)
+                np.testing.assert_array_equal(actual_bits(actual_target), actual_target_before)
+                np.testing.assert_array_equal(expected_bits(expected_input), expected_input_before)
+                np.testing.assert_array_equal(
+                    expected_bits(expected_target),
+                    expected_target_before,
+                )
+
     def test_unbroadcastable_shape_warning_and_error_match_pytorch_2_13(self):
         actual_input = torch.ones((2, 3))
         actual_target = torch.zeros((2, 2))
