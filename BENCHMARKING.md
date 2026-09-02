@@ -52,6 +52,7 @@ do not replace the benchmark policy or Burner-managed evaluation progress.
 - [`Tensor.view`, reshape, flatten, ravel, unbind, and edge-unsqueeze release timings](docs/tensor-view-release-timings.md)
 - [`torch.nn.functional.mse_loss` release timings](docs/mse-loss-release-timings.md)
 - [`torch.nn.functional.l1_loss(reduction="none")` release timings](docs/l1-loss-release-timings.md)
+- [`torch.nn.functional.l1_loss(reduction="sum")` release timings](docs/l1-loss-sum-release-timings.md)
 
 ## Workload matrix
 
