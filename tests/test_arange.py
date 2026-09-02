@@ -65,6 +65,9 @@ class ArangeTests(unittest.TestCase):
         self.assertTrue(tensor.is_leaf)
         self.assertIsNone(tensor.grad)
 
+    def tensor_bits(self, tensor):
+        return np.asarray(tensor).reshape(-1).view(np.uint32).tolist()
+
     def assert_error(self, call, error_type, message):
         with self.assertRaisesRegex(error_type, f"^{re.escape(message)}$"):
             call()
@@ -193,6 +196,73 @@ class ArangeTests(unittest.TestCase):
                         start=start, end=end, dtype=dtype, form=form
                     ):
                         self.assert_default_tensor(call(), expected)
+
+    def test_two_bound_large_integer_endpoints_match_pytorch_float32_rounding(
+        self,
+    ):
+        short_scalar_path = torch.arange(
+            16_777_217, 16_777_232, dtype=torch.float32
+        )
+        self.assertEqual(
+            self.tensor_bits(short_scalar_path),
+            [
+                0x4B80_0000,
+                0x4B80_0001,
+                0x4B80_0002,
+                0x4B80_0002,
+                0x4B80_0002,
+                0x4B80_0003,
+                0x4B80_0004,
+                0x4B80_0004,
+                0x4B80_0004,
+                0x4B80_0005,
+                0x4B80_0006,
+                0x4B80_0006,
+                0x4B80_0006,
+                0x4B80_0007,
+                0x4B80_0008,
+            ],
+        )
+
+        vectorized_path = torch.arange(
+            16_777_217, 16_777_248, dtype=torch.float32
+        )
+        self.assertEqual(
+            self.tensor_bits(vectorized_path),
+            [
+                0x4B80_0000,
+                0x4B80_0000,
+                0x4B80_0001,
+                0x4B80_0002,
+                0x4B80_0002,
+                0x4B80_0002,
+                0x4B80_0003,
+                0x4B80_0004,
+                0x4B80_0004,
+                0x4B80_0004,
+                0x4B80_0005,
+                0x4B80_0006,
+                0x4B80_0006,
+                0x4B80_0006,
+                0x4B80_0007,
+                0x4B80_0008,
+                0x4B80_0008,
+                0x4B80_0009,
+                0x4B80_000A,
+                0x4B80_000A,
+                0x4B80_000A,
+                0x4B80_000B,
+                0x4B80_000C,
+                0x4B80_000C,
+                0x4B80_000C,
+                0x4B80_000D,
+                0x4B80_000E,
+                0x4B80_000E,
+                0x4B80_000E,
+                0x4B80_000F,
+                0x4B80_0010,
+            ],
+        )
 
     def test_two_bound_numpy_integer_endpoints_support_implicit_step(self):
         cases = tuple(

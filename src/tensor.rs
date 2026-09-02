@@ -726,10 +726,28 @@ impl Tensor {
     #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
     #[cfg(feature = "python-bindings")]
     pub(crate) fn arange_float32_from(start: f64, elements: usize) -> Result<Self, TensorError> {
+        // PyTorch 2.13's CPU float32 arange uses complete 16-element vector
+        // blocks made from two 8-lane vectors; incomplete tails keep the
+        // scalar double-to-float path.
+        const PYTORCH_FLOAT32_ARANGE_VECTOR_BLOCK: usize = 16;
+        const PYTORCH_FLOAT32_ARANGE_VECTOR_LANES: usize = 8;
+
         validate_storage_capacity(elements)?;
 
         let mut data = try_result_vector(elements, elements)?;
-        for index in 0..elements {
+        let mut index = 0;
+        while index + PYTORCH_FLOAT32_ARANGE_VECTOR_BLOCK <= elements {
+            for lane_block_start in (0..PYTORCH_FLOAT32_ARANGE_VECTOR_BLOCK)
+                .step_by(PYTORCH_FLOAT32_ARANGE_VECTOR_LANES)
+            {
+                let base = (start + (index + lane_block_start) as f64) as f32;
+                for lane in 0..PYTORCH_FLOAT32_ARANGE_VECTOR_LANES {
+                    data.push(base + lane as f32);
+                }
+            }
+            index += PYTORCH_FLOAT32_ARANGE_VECTOR_BLOCK;
+        }
+        for index in index..elements {
             data.push((start + index as f64) as f32);
         }
 
