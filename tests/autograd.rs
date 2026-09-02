@@ -181,15 +181,46 @@ fn absolute_value_records_saved_input_vjp_for_views_and_honors_no_grad() {
 }
 
 #[test]
-fn reciprocal_rejects_recording_before_planning_and_honors_no_grad() {
+fn reciprocal_records_saved_input_vjp_for_views_and_honors_no_grad() {
     let leaf = Tensor::from_vec(vec![-2.0, -0.0, 1.0, 4.0], [2, 2])
         .unwrap()
         .with_requires_grad(true);
+    let output = leaf.transpose(0, 1).unwrap().reciprocal().unwrap();
+    assert_eq!(output.shape(), [2, 2]);
+    assert_eq!(output.stride(), [1, 2]);
+    assert_eq!(output.storage_offset(), 0);
+    assert!(output.requires_grad());
+    assert!(!output.is_leaf());
+    assert!(!output.shares_storage_with(&leaf));
     assert_eq!(
-        leaf.reciprocal(),
-        Err(TensorError::AutogradRecordingUnsupported {
-            operation: "reciprocal",
-        })
+        output
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        [
+            (-0.5_f32).to_bits(),
+            1.0_f32.to_bits(),
+            f32::NEG_INFINITY.to_bits(),
+            0.25_f32.to_bits()
+        ]
+    );
+
+    let loss = output.sum();
+    loss.backward().unwrap();
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+    assert_eq!(
+        leaf.grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        [
+            (-0.25_f32).to_bits(),
+            f32::NEG_INFINITY.to_bits(),
+            (-1.0_f32).to_bits(),
+            (-0.0625_f32).to_bits(),
+        ]
     );
 
     let extreme = Tensor::zeros([0])
@@ -199,9 +230,7 @@ fn reciprocal_rejects_recording_before_planning_and_honors_no_grad() {
         .with_requires_grad(true);
     assert_eq!(
         extreme.reciprocal(),
-        Err(TensorError::AutogradRecordingUnsupported {
-            operation: "reciprocal",
-        })
+        Err(TensorError::StrideCalculationOverflow)
     );
 
     {

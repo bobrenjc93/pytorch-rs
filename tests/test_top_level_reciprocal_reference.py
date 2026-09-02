@@ -146,6 +146,84 @@ class TopLevelReciprocalReferenceTests(unittest.TestCase):
                         expected.data_ptr(), expected_input.data_ptr()
                     )
 
+    @staticmethod
+    def autograd_case(module, case):
+        if case == "scalar":
+            leaf = module.tensor(-4.0, dtype=module.float32, requires_grad=True)
+            return leaf, leaf, None
+        if case == "empty":
+            leaf = module.zeros(
+                (2, 0, 3), dtype=module.float32, requires_grad=True
+            )
+            return leaf, leaf.transpose(0, 2)[1], None
+
+        leaf = module.tensor(
+            np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        if case == "offset":
+            input = leaf[1]
+            weights = module.tensor(
+                np.arange(1, 13, dtype=np.float32).reshape(3, 4).tolist(),
+                dtype=module.float32,
+            )
+            return leaf, input, weights
+        if case == "noncontiguous":
+            input = leaf.transpose(0, 2)[1]
+            weights = module.tensor(
+                np.arange(1, 7, dtype=np.float32).reshape(3, 2).tolist(),
+                dtype=module.float32,
+            )
+            return leaf, input, weights
+        raise AssertionError(f"unknown reciprocal autograd case: {case}")
+
+    def test_autograd_supported_forms_match_pytorch_2_13(self):
+        forms = (
+            "positional",
+            "input",
+            "x",
+            "a",
+            "x1",
+            "out none",
+            "alias and out none",
+        )
+        for case in ("scalar", "empty", "offset", "noncontiguous"):
+            for form in forms:
+                actual_leaf, actual_input, actual_weights = self.autograd_case(
+                    torch, case
+                )
+                expected_leaf, expected_input, expected_weights = self.autograd_case(
+                    reference_torch, case
+                )
+                actual_output = self.call_reciprocal(torch, actual_input, form)
+                expected_output = self.call_reciprocal(
+                    reference_torch, expected_input, form
+                )
+                self.assert_matches(
+                    actual_output,
+                    expected_output,
+                    case=(case, form, "forward"),
+                )
+
+                if actual_weights is None:
+                    actual_loss = (
+                        actual_output if case == "scalar" else actual_output.sum()
+                    )
+                    expected_loss = (
+                        expected_output if case == "scalar" else expected_output.sum()
+                    )
+                else:
+                    actual_loss = (actual_output * actual_weights).sum()
+                    expected_loss = (expected_output * expected_weights).sum()
+                actual_loss.backward()
+                expected_loss.backward()
+                self.assert_matches(
+                    actual_leaf.grad,
+                    expected_leaf.grad,
+                    case=(case, form, "gradient"),
+                )
+
     def test_requires_grad_inputs_match_inside_no_grad(self):
         actual_leaf = torch.tensor(
             [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True
@@ -458,14 +536,17 @@ class TopLevelReciprocalReferenceTests(unittest.TestCase):
 
     def test_deliberately_unsupported_surface_remains_narrow(self):
         actual = torch.tensor([2.0], requires_grad=True)
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^reciprocal\(\): autograd recording is not supported$",
-        ):
-            torch.reciprocal(actual)
+        self.assertTrue(torch.reciprocal(actual).requires_grad)
 
         expected = reference_torch.tensor([2.0], requires_grad=True)
         self.assertTrue(reference_torch.reciprocal(expected).requires_grad)
+
+        higher_order_loss = torch.reciprocal(actual).sum()
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^torch_rs\.Tensor\.backward does not support create_graph=True$",
+        ):
+            higher_order_loss.backward(create_graph=True)
 
         destination = torch.tensor([17.0])
         with self.assertRaisesRegex(
