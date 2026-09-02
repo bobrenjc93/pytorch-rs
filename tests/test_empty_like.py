@@ -318,13 +318,13 @@ class EmptyLikeTests(unittest.TestCase):
         self.assertIs(package.empty_like, function)
         self.assertEqual(package.__all__.count("empty_like"), 1)
 
-    def test_top_level_empty_remains_out_of_scope(self):
+    def test_top_level_empty_is_separately_exported(self):
         package = importlib.import_module("torch_rs")
         native = package._C
-        self.assertFalse(hasattr(package, "empty"))
-        self.assertFalse(hasattr(native, "empty"))
-        self.assertNotIn("empty", package.__all__)
-        self.assertNotIn("empty", native.__all__)
+        self.assertIs(package.empty, native.empty)
+        self.assertIsNot(package.empty, package.empty_like)
+        self.assertEqual(package.__all__.count("empty"), 1)
+        self.assertEqual(native.__all__.count("empty"), 1)
 
 
 if __name__ == "__main__":
