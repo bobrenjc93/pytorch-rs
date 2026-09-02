@@ -39,14 +39,13 @@ class TopLevelSumTests(unittest.TestCase):
 
     @staticmethod
     def value_cases():
-        dense = torch.tensor(
-            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
-        )
+        dense = torch.tensor(np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist())
         noncontiguous = dense.transpose(0, 2)
         return (
             ("scalar", torch.tensor(-3.5)),
             ("negative zero", torch.tensor(-0.0)),
             ("empty", torch.zeros((2, 0, 3)).transpose(0, 2)[1]),
+            ("singleton", torch.tensor([[[7.0]]])[0]),
             ("contiguous offset", dense[1]),
             ("offset", noncontiguous[1]),
             ("noncontiguous", noncontiguous),
@@ -77,6 +76,32 @@ class TopLevelSumTests(unittest.TestCase):
         )
 
     @staticmethod
+    def supported_keepdim_calls(source):
+        return (
+            ("positional none keepdim true", lambda: torch.sum(source, None, True)),
+            (
+                "keyword none keepdim true",
+                lambda: torch.sum(source, dim=None, keepdim=True),
+            ),
+            (
+                "positional none keyword keepdim true",
+                lambda: torch.sum(source, None, keepdim=True),
+            ),
+            (
+                "keepdim dtype none",
+                lambda: torch.sum(source, dim=None, keepdim=True, dtype=None),
+            ),
+            (
+                "keepdim dtype float32",
+                lambda: torch.sum(source, dim=None, keepdim=True, dtype=torch.float32),
+            ),
+            (
+                "keepdim out none",
+                lambda: torch.sum(source, dim=None, keepdim=True, out=None),
+            ),
+        )
+
+    @staticmethod
     def rank_one_strided_vector(values, *, requires_grad=False):
         rows = len(values)
         columns = 5
@@ -86,7 +111,11 @@ class TopLevelSumTests(unittest.TestCase):
         source = torch.tensor(
             matrix.tolist(), dtype=torch.float32, requires_grad=requires_grad
         )
-        return source, source.transpose(0, 1)[selected_column], matrix[:, selected_column]
+        return (
+            source,
+            source.transpose(0, 1)[selected_column],
+            matrix[:, selected_column],
+        )
 
     @staticmethod
     def sequential_float32_sum(values):
@@ -119,6 +148,54 @@ class TopLevelSumTests(unittest.TestCase):
             expected = source.sum()
             for form, call in self.supported_calls(source):
                 self.assert_scalar_matches(call(), expected, source, case=(case, form))
+
+    def test_keepdim_full_reductions_delegate_to_tensor_sum(self):
+        for case, source in self.value_cases():
+            expected = source.sum(dim=None, keepdim=True)
+            for form, call in self.supported_keepdim_calls(source):
+                self.assert_scalar_matches(call(), expected, source, case=(case, form))
+
+    def test_keepdim_full_reduction_no_grad_and_backward_through_final_scalar_sum(
+        self,
+    ):
+        scalar = torch.tensor(-3.0, requires_grad=True)
+        torch.sum(scalar, dim=None, keepdim=True).sum().backward()
+        self.assertEqual(scalar.grad.item(), 1.0)
+
+        singleton = torch.tensor([[[7.0]]], requires_grad=True)
+        torch.sum(singleton[0], dim=None, keepdim=True).sum().backward()
+        self.assertEqual(singleton.grad.tolist(), [[[1.0]]])
+
+        empty = torch.zeros((2, 0, 3), requires_grad=True)
+        torch.sum(empty.transpose(0, 2)[1], dim=None, keepdim=True).sum().backward()
+        self.assertEqual(empty.grad.shape, empty.shape)
+        self.assertEqual(empty.grad.tolist(), [[], []])
+
+        offset = torch.tensor(
+            np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            requires_grad=True,
+        )
+        torch.sum(offset[1], dim=None, keepdim=True).sum().backward()
+        expected_offset_grad = np.zeros((2, 3, 4), dtype=np.float32)
+        expected_offset_grad[1] = 1.0
+        np.testing.assert_array_equal(np.asarray(offset.grad), expected_offset_grad)
+
+        noncontiguous = torch.tensor(
+            [[1.0, -2.0, 3.0], [4.0, 5.0, -6.0]], requires_grad=True
+        )
+        torch.sum(
+            noncontiguous.transpose(0, 1), dim=None, keepdim=True
+        ).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(noncontiguous.grad),
+            np.ones((2, 3), dtype=np.float32),
+        )
+
+        with torch.no_grad():
+            untracked = torch.sum(noncontiguous.transpose(0, 1), dim=None, keepdim=True)
+        self.assertEqual(untracked.shape, (1, 1))
+        self.assertFalse(untracked.requires_grad)
+        self.assertTrue(untracked.is_leaf)
 
     def test_supported_forms_preserve_autograd_accumulation_and_no_grad(self):
         forms = tuple(form for form, _ in self.supported_calls(torch.tensor(1.0)))
@@ -477,16 +554,19 @@ class TopLevelSumTests(unittest.TestCase):
             ("tuple dim", lambda: torch.sum(tensor, (0, 1))),
             ("list dim", lambda: torch.sum(tensor, [0, 1])),
             ("keepdim", lambda: torch.sum(tensor, 0, keepdim=True)),
-            ("none dim keepdim true", lambda: torch.sum(tensor, None, keepdim=True)),
             ("out", lambda: torch.sum(tensor, 0, out=destination)),
             ("none dim concrete out", lambda: torch.sum(tensor, None, out=destination)),
+            (
+                "none dim keepdim concrete out",
+                lambda: torch.sum(tensor, None, keepdim=True, out=destination),
+            ),
             ("dtype plus dim", lambda: torch.sum(tensor, 0, dtype=torch.float32)),
         )
         for case, call in cases:
             with self.subTest(case=case):
                 with self.assertRaisesRegex(
                     NotImplementedError,
-                    r"^sum\(\): dim, keepdim, and out reductions are not supported$",
+                    r"^sum\(\): dimension reductions and concrete out reductions are not supported$",
                 ):
                     call()
         self.assertEqual(destination.tolist(), [17.0, 19.0, 23.0])
