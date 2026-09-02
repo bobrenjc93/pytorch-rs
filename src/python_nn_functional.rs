@@ -26,6 +26,12 @@ const L1_LOSS_EXACT_TENSORS_ERROR: &str =
 const MSE_LOSS_EXACT_TENSORS_ERROR: &str =
     "mse_loss() only supports exact native Tensor input and target operands";
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MseLossReduction {
+    None,
+    Sum,
+}
+
 const DROPOUT_METADATA: [DropoutMetadata; 6] = [
     DropoutMetadata {
         public_function: "dropout",
@@ -604,16 +610,20 @@ fn _nn_functional_mse_loss(
             "torch_rs.nn.functional.mse_loss only supports size_average=None and reduce=None",
         ));
     }
-    let supports_reduction = reduction
+    let reduction = reduction
         .cast::<PyString>()
         .ok()
         .and_then(|reduction| reduction.to_str().ok())
-        .is_some_and(|reduction| reduction == "none");
-    if !supports_reduction {
+        .and_then(|reduction| match reduction {
+            "none" => Some(MseLossReduction::None),
+            "sum" => Some(MseLossReduction::Sum),
+            _ => None,
+        });
+    let Some(reduction) = reduction else {
         return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.mse_loss only supports reduction='none'",
+            "torch_rs.nn.functional.mse_loss only supports reduction='none' or reduction='sum'",
         ));
-    }
+    };
     if !weight.is_none() {
         return Err(PyNotImplementedError::new_err(
             "torch_rs.nn.functional.mse_loss only supports weight=None",
@@ -638,7 +648,10 @@ fn _nn_functional_mse_loss(
     if input_shape != target_shape {
         warn_loss_broadcast(py, "mse_loss", input_shape, target_shape)?;
     }
-    if is_grad_enabled() && (input.inner().requires_grad() || target.inner().requires_grad()) {
+    if reduction == MseLossReduction::None
+        && is_grad_enabled()
+        && (input.inner().requires_grad() || target.inner().requires_grad())
+    {
         return Err(PyRuntimeError::new_err(
             "mse_loss(): autograd recording is not supported",
         ));
@@ -648,6 +661,11 @@ fn _nn_functional_mse_loss(
         .inner()
         .squared_difference(target.inner())
         .map_err(|error| tensor_error(&error))?;
+    let output = if reduction == MseLossReduction::Sum {
+        output.sum()
+    } else {
+        output
+    };
     PyTensor::new(output).into_py_any(py)
 }
 
