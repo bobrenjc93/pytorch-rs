@@ -54,6 +54,11 @@ class FullLikeReferenceTests(unittest.TestCase):
             tensor.is_contiguous(),
         )
 
+    def capture_error(self, call):
+        with self.assertRaises(Exception) as raised:
+            call()
+        return type(raised.exception), str(raised.exception)
+
     def test_supported_metadata_and_values_match_pytorch_2_13(self):
         actual_sources = self.source_cases(torch)
         expected_sources = self.source_cases(reference_torch)
@@ -128,6 +133,46 @@ class FullLikeReferenceTests(unittest.TestCase):
             }
 
         self.assertEqual(contract(torch), contract(reference_torch))
+
+    def test_tensor_fill_value_boundary_matches_pytorch_2_13(self):
+        actual_source = torch.ones((2,), dtype=torch.float32)
+        expected_source = reference_torch.ones((2,), dtype=reference_torch.float32)
+
+        actual_scalar = torch.tensor(-0.0)
+        expected_scalar = reference_torch.tensor(-0.0)
+        self.assertEqual(
+            self.tensor_observation(
+                torch, torch.full_like(actual_source, actual_scalar)
+            ),
+            self.tensor_observation(
+                reference_torch,
+                reference_torch.full_like(expected_source, expected_scalar),
+            ),
+        )
+
+        error_cases = (
+            (
+                lambda: torch.full_like(
+                    actual_source, torch.tensor(2.0, requires_grad=True)
+                ),
+                lambda: reference_torch.full_like(
+                    expected_source,
+                    reference_torch.tensor(2.0, requires_grad=True),
+                ),
+            ),
+            (
+                lambda: torch.full_like(actual_source, torch.tensor([2.0])),
+                lambda: reference_torch.full_like(
+                    expected_source, reference_torch.tensor([2.0])
+                ),
+            ),
+        )
+        for actual_call, expected_call in error_cases:
+            with self.subTest(actual_call=actual_call):
+                self.assertEqual(
+                    self.capture_error(actual_call),
+                    self.capture_error(expected_call),
+                )
 
     def test_no_grad_requires_grad_behavior_matches_pytorch_2_13(self):
         actual_source = torch.ones((2, 3), dtype=torch.float32, requires_grad=True) * 2.0

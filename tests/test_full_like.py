@@ -113,10 +113,16 @@ class FullLikeTests(unittest.TestCase):
         result = torch.full_like(input=source, fill_value=torch.tensor(-0.0))
         self.assert_full_like_result(source, result, -0.0)
 
-        with self.assertRaisesRegex(
-            TypeError, r"^full_like\(\): fill_value tensor must be zero-dimensional$"
+        for fill_value in (
+            torch.tensor(2.0, requires_grad=True),
+            torch.tensor([1.0]),
         ):
-            torch.full_like(source, torch.tensor([1.0]))
+            with self.subTest(fill_value=fill_value), self.assertRaisesRegex(
+                TypeError,
+                r"^full_like\(\): argument 'fill_value' \(position 2\) "
+                r"must be Number, not Tensor$",
+            ):
+                torch.full_like(source, fill_value)
 
     def test_returns_fresh_storage(self):
         source = torch.ones((2, 3))

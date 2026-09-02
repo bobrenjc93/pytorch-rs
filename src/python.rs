@@ -17494,10 +17494,8 @@ fn invalid_size_dimension(index: usize, reason: &str) -> PyErr {
 fn parse_fill_value(function: &str, fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
     if let Ok(tensor) = fill_value.cast::<PyTensor>() {
         let tensor = tensor.try_borrow()?;
-        if !tensor.inner.shape().is_empty() {
-            return Err(PyTypeError::new_err(format!(
-                "{function}(): fill_value tensor must be zero-dimensional"
-            )));
+        if tensor.inner.requires_grad() || !tensor.inner.shape().is_empty() {
+            return Err(tensor_fill_value_type_error(function));
         }
         return tensor
             .inner
@@ -17652,6 +17650,12 @@ fn parse_integer_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFil
 fn invalid_fill_value(function: &str) -> PyErr {
     PyTypeError::new_err(format!(
         "{function}(): fill_value must be a number or zero-dimensional tensor"
+    ))
+}
+
+fn tensor_fill_value_type_error(function: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "{function}(): argument 'fill_value' (position 2) must be Number, not Tensor"
     ))
 }
 
