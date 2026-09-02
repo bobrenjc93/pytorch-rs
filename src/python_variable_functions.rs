@@ -15,30 +15,30 @@ use pyo3::types::{PyDict, PyModule, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
-    abs_variable_function, absolute_variable_function, adjoint_variable_function,
-    arange_variable_function, as_tensor_variable_function, asarray_variable_function,
-    atleast_1d_variable_function, atleast_2d_variable_function, atleast_3d_variable_function,
-    broadcast_tensors_variable_function, can_cast_variable_function, ceil_variable_function,
-    conj_variable_function, cos_variable_function, detach_variable_function, exp_variable_function,
-    fix_variable_function, floor_variable_function, get_device_variable_function,
-    imag_variable_function, is_conj_variable_function, is_inference_variable_function,
-    log_variable_function, matmul_variable_function, mean_variable_function,
-    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
-    multiply_variable_function, neg_variable_function, negative_variable_function,
-    ones_like_variable_function, permute_variable_function, positive_variable_function,
-    promote_types_variable_function, ravel_variable_function, real_variable_function,
-    reciprocal_variable_function, reshape_variable_function, resolve_conj_variable_function,
-    resolve_neg_variable_function, rsqrt_variable_function, scalar_tensor_variable_function,
-    select_variable_function, sigmoid_variable_function, sin_variable_function,
-    sqrt_variable_function, square_variable_function, sub_variable_function,
-    subtract_variable_function, sum_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function, unsqueeze_variable_function,
-    zeros_like_variable_function,
+    abs_variable_function, absolute_variable_function, add_variable_function,
+    adjoint_variable_function, arange_variable_function, as_tensor_variable_function,
+    asarray_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
+    atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
+    ceil_variable_function, conj_variable_function, cos_variable_function,
+    detach_variable_function, exp_variable_function, fix_variable_function,
+    floor_variable_function, get_device_variable_function, imag_variable_function,
+    is_conj_variable_function, is_inference_variable_function, log_variable_function,
+    matmul_variable_function, mean_variable_function, moveaxis_variable_function,
+    movedim_variable_function, mul_variable_function, multiply_variable_function,
+    neg_variable_function, negative_variable_function, ones_like_variable_function,
+    permute_variable_function, positive_variable_function, promote_types_variable_function,
+    ravel_variable_function, real_variable_function, reciprocal_variable_function,
+    reshape_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
+    rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
+    square_variable_function, sub_variable_function, subtract_variable_function,
+    sum_variable_function, tanh_variable_function, trunc_variable_function,
+    unbind_variable_function, unsqueeze_variable_function, zeros_like_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 57] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 58] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -78,6 +78,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 57] = [
     "sum",
     "mean",
     "tanh",
+    "add",
     "is_vulkan_available",
     "is_conj",
     "is_inference",
@@ -907,6 +908,19 @@ multiply(input, other, *, out=None)
 Alias for :func:`torch.mul`.
 ";
 
+const ADD_DOC: &std::ffi::CStr = cr"
+add(input, other, *, alpha=1, out=None) -> Tensor
+
+Adds :attr:`other`, scaled by :attr:`alpha`, to :attr:`input`.
+
+The native implementation currently supports only exact native CPU float32
+Tensor/Tensor operands with omitted or default-equivalent ``alpha`` and omitted
+or ``None`` ``out``. Scalar operands, scalar-only calls, nondefault or boolean
+``alpha``, concrete ``out`` tensors, dtype/device extension keywords, tensor
+subclasses without ``__torch_function__`` handling, and in-place variants remain
+unsupported.
+";
+
 const SUB_DOC: &std::ffi::CStr = cr"
 sub(input, other, *, alpha=1, out=None) -> Tensor
 
@@ -1270,6 +1284,7 @@ variable_function_callback!(square_callback, square_variable_function);
 variable_function_callback!(sum_callback, sum_variable_function);
 variable_function_callback!(mean_callback, mean_variable_function);
 variable_function_callback!(tanh_callback, tanh_variable_function);
+variable_function_callback!(add_callback, add_variable_function);
 variable_function_callback!(sub_callback, sub_variable_function);
 variable_function_callback!(subtract_callback, subtract_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
@@ -1355,6 +1370,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"sum", sum_callback, SUM_DOC),
         variable_function_method!(c"mean", mean_callback, MEAN_DOC),
         variable_function_method!(c"tanh", tanh_callback, TANH_DOC),
+        variable_function_method!(c"add", add_callback, ADD_DOC),
         variable_function_method!(c"sub", sub_callback, SUB_DOC),
         variable_function_method!(c"subtract", subtract_callback, SUBTRACT_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),

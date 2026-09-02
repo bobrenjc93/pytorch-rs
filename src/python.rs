@@ -2465,6 +2465,28 @@ pub(crate) fn matmul_variable_function(
     dispatch_top_level_matmul(py, &input, &other, args, kwargs)
 }
 
+pub(crate) fn add_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (arguments, alpha, out, keyword_error) = bind_top_level_addition_arguments(args, kwargs)?;
+    let input = parse_top_level_addition_operand("input", &arguments[0], args, kwargs)?;
+    let other = parse_top_level_addition_operand("other", &arguments[1], args, kwargs)?;
+    let alpha = parse_top_level_addition_alpha(alpha.as_ref())?;
+    let out = parse_top_level_addition_out(out)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    let call = BoundTopLevelAdditionCall {
+        input,
+        other,
+        alpha,
+        out,
+    };
+    dispatch_top_level_addition(py, &call, args, kwargs)
+}
+
 pub(crate) fn mul_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2881,6 +2903,13 @@ struct BoundTopLevelSubtractionCall<'py> {
     alpha_is_positional: bool,
 }
 
+struct BoundTopLevelAdditionCall<'py> {
+    input: BoundSubOperand<'py>,
+    other: BoundSubOperand<'py>,
+    alpha: BoundSubAlpha<'py>,
+    out: Option<BoundTensorOrTorchFunction<'py>>,
+}
+
 struct BoundTensorMethodDivisionCall<'py> {
     input: BoundDivOperand<'py>,
     other: BoundDivOperand<'py>,
@@ -2893,6 +2922,8 @@ type BoundTopLevelSubtractionArguments<'py> = (
     Option<ParsedCallArgument<'py>>,
     Option<PyErr>,
 );
+
+type BoundTopLevelAdditionArguments<'py> = BoundTopLevelSubtractionArguments<'py>;
 
 type BoundTensorMethodDivisionArguments<'py> = (
     ParsedCallArgument<'py>,
@@ -4712,6 +4743,125 @@ fn dispatch_top_level_matmul(
         active_mode.get(),
         &overrides,
     )?)
+}
+
+fn ordered_addition_overrides<'py>(
+    call: &BoundTopLevelAdditionCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let input = match &call.input {
+        BoundSubOperand::Tensor(_) | BoundSubOperand::Scalar(_) => None,
+        BoundSubOperand::Override(probed) => Some(probed),
+    };
+    let other = match &call.other {
+        BoundSubOperand::Tensor(_) | BoundSubOperand::Scalar(_) => None,
+        BoundSubOperand::Override(probed) => Some(probed),
+    };
+    let alpha = match &call.alpha {
+        BoundSubAlpha::Default | BoundSubAlpha::PythonBool | BoundSubAlpha::NonDefault => None,
+        BoundSubAlpha::Override(probed) => Some(probed),
+    };
+    let out = match &call.out {
+        Some(BoundTensorOrTorchFunction::Override(probed)) => Some(probed),
+        Some(BoundTensorOrTorchFunction::Tensor(_)) | None => None,
+    };
+
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(4)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate add dispatch operands"))?;
+    for probed in [input, other, alpha, out].into_iter().flatten() {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
+fn dispatch_top_level_addition(
+    py: Python<'_>,
+    call: &BoundTopLevelAdditionCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_addition_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_addition(py, call);
+    }
+
+    let function = variable_function(py, "add")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Disable the top mode for the complete dispatch attempt. A mode can call
+    // the public function explicitly to forward to the next mode.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_top_level_addition(py, call);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.add",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_addition(
+    py: Python<'_>,
+    call: &BoundTopLevelAdditionCall<'_>,
+) -> PyResult<Py<PyAny>> {
+    if call.out.is_some() {
+        return Err(PyRuntimeError::new_err(
+            "add(): the 'out' argument is not supported",
+        ));
+    }
+    match &call.alpha {
+        BoundSubAlpha::Default => {}
+        BoundSubAlpha::PythonBool => {
+            return Err(PyRuntimeError::new_err(
+                "Boolean alpha only supported for Boolean results.",
+            ));
+        }
+        BoundSubAlpha::NonDefault => {
+            return Err(PyNotImplementedError::new_err(
+                "add(): alpha values other than 1 are not supported",
+            ));
+        }
+        BoundSubAlpha::Override(_) => {
+            unreachable!("addition alpha overrides were dispatched before the native path")
+        }
+    }
+
+    let (BoundSubOperand::Tensor(input), BoundSubOperand::Tensor(other)) =
+        (&call.input, &call.other)
+    else {
+        return Err(addition_unsupported_native_input());
+    };
+    let other = other.try_borrow()?;
+    let result = BinaryOperation::Add.apply_tensors(&input.try_borrow()?.inner, &other.inner);
+    Ok(Py::new(
+        py,
+        PyTensor::new(result.map_err(|error| tensor_error(&error))?),
+    )?
+    .into_any())
 }
 
 fn dispatch_top_level_multiplication(
@@ -13497,6 +13647,111 @@ fn bind_tensor_subtract_method_positional_arguments<'py>(
     }
 }
 
+fn bind_top_level_addition_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundTopLevelAdditionArguments<'py>> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "add() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let keyword_argument = |names: &[&str]| -> PyResult<Option<Bound<'py, PyAny>>> {
+        let Some(keywords) = keywords else {
+            return Ok(None);
+        };
+        for name in names {
+            if let Some(value) = keywords.get_item(*name)? {
+                return Ok(Some(value));
+            }
+        }
+        Ok(None)
+    };
+
+    let input = if positional.is_empty() {
+        keyword_argument(&["input", "x", "a", "x1"])?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let other = if positional.len() < 2 {
+        keyword_argument(&["other", "x2"])?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    };
+    let alpha = keyword_argument(&["alpha"])?.map(|value| ParsedCallArgument {
+        value,
+        position: None,
+    });
+    let out = keyword_argument(&["out"])?.map(|value| ParsedCallArgument {
+        value,
+        position: None,
+    });
+
+    let Some(input) = input else {
+        return Err(top_level_add_binding_error(positional, keywords)?);
+    };
+    let Some(other) = other else {
+        parse_top_level_addition_operand("input", &input, positional, keywords)?;
+        return Err(top_level_add_binding_error(positional, keywords)?);
+    };
+
+    let bound_keyword_count = usize::from(input.position.is_none())
+        + usize::from(other.position.is_none())
+        + usize::from(alpha.is_some())
+        + usize::from(out.is_some());
+    let keyword_error =
+        bind_top_level_addition_keyword_error(positional, keywords, bound_keyword_count)?;
+
+    Ok(([input, other], alpha, out, keyword_error))
+}
+
+fn bind_top_level_addition_keyword_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    bound_keyword_count: usize,
+) -> PyResult<Option<PyErr>> {
+    let Some(keywords) = keywords else {
+        return Ok(None);
+    };
+    if keywords.len() <= bound_keyword_count {
+        return Ok(None);
+    }
+
+    for key in keywords.keys() {
+        let key = key.extract::<String>()?;
+        let position = match key.as_str() {
+            "input" => 0,
+            "other" => 1,
+            "alpha" | "out" => usize::MAX,
+            _ => {
+                return Ok(Some(PyTypeError::new_err(format!(
+                    "add() got an unexpected keyword argument '{key}'"
+                ))));
+            }
+        };
+        if position < positional.len() {
+            return Ok(Some(PyTypeError::new_err(format!(
+                "add() got multiple values for argument '{key}'"
+            ))));
+        }
+    }
+    Ok(None)
+}
+
 fn bind_top_level_subtraction_arguments<'py>(
     operation: SubtractionOperation,
     positional: &Bound<'py, PyTuple>,
@@ -13983,6 +14238,80 @@ fn parse_exact_native_tensor_or_torch_function_argument<'py>(
         .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
 }
 
+fn parse_top_level_addition_operand<'py>(
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+    _positional: &Bound<'py, PyTuple>,
+    _keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundSubOperand<'py>> {
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundSubOperand::Tensor(
+            value.value.cast::<PyTensor>()?.clone(),
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundSubOperand::Override(probed));
+    }
+    if value.value.is_instance_of::<PyTensor>() {
+        return Err(addition_unsupported_native_input());
+    }
+    if is_real_arithmetic_scalar(&value.value)? {
+        return Ok(BoundSubOperand::Scalar(value.value.clone()));
+    }
+
+    parse_tensor_argument("add", argument, value)?;
+    unreachable!("unsupported addition operands were rejected by parse_tensor_argument")
+}
+
+fn parse_top_level_addition_alpha<'py>(
+    alpha: Option<&ParsedCallArgument<'py>>,
+) -> PyResult<BoundSubAlpha<'py>> {
+    let Some(alpha) = alpha else {
+        return Ok(BoundSubAlpha::Default);
+    };
+    if let Some(probed) = probe_torch_function_override(&alpha.value) {
+        return Ok(BoundSubAlpha::Override(probed));
+    }
+    if is_boolean_arithmetic_scalar(&alpha.value)? {
+        return Ok(BoundSubAlpha::PythonBool);
+    }
+    let Some(scalar) = parse_arithmetic_scalar(&alpha.value)? else {
+        let actual = python_type_name(&alpha.value)?;
+        return Err(PyTypeError::new_err(format!(
+            "add(): argument 'alpha' must be Number, not {actual}"
+        )));
+    };
+    if scalar.is_one() {
+        Ok(BoundSubAlpha::Default)
+    } else {
+        Ok(BoundSubAlpha::NonDefault)
+    }
+}
+
+fn parse_top_level_addition_out(
+    out: Option<ParsedCallArgument<'_>>,
+) -> PyResult<Option<BoundTensorOrTorchFunction<'_>>> {
+    let Some(out) = out else {
+        return Ok(None);
+    };
+    if out.value.is_none() {
+        return Ok(None);
+    }
+    if out.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(Some(BoundTensorOrTorchFunction::Tensor(
+            out.value.cast::<PyTensor>()?.clone(),
+        )));
+    }
+    if let Some(probed) = probe_torch_function_override(&out.value) {
+        return Ok(Some(BoundTensorOrTorchFunction::Override(probed)));
+    }
+    if out.value.is_instance_of::<PyTensor>() {
+        return Err(addition_unsupported_native_input());
+    }
+    parse_tensor_argument("add", "out", &out)
+        .map(|tensor| Some(BoundTensorOrTorchFunction::Tensor(tensor.clone())))
+}
+
 fn parse_top_level_subtraction_input<'py>(
     operation: SubtractionOperation,
     value: &ParsedCallArgument<'py>,
@@ -14109,11 +14438,29 @@ fn add_sub_method_unsupported_native_input(operation: AddSubMethodOperation) -> 
     ))
 }
 
+fn addition_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "add(): only exact native CPU float32 Tensor input and Tensor other operands are supported",
+    )
+}
+
 fn division_unsupported_native_input(operation: DivisionOperation) -> PyErr {
     PyNotImplementedError::new_err(format!(
         "{}(): only exact native CPU float32 Tensor input and Tensor or real-number other operands with rounding_mode=None are supported",
         operation.name()
     ))
+}
+
+fn is_boolean_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if value.is_exact_instance_of::<PyBool>() {
+        return Ok(true);
+    }
+
+    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
+        return Ok(false);
+    };
+    let numpy_bool = numpy.getattr("bool_")?;
+    value.is_instance(&numpy_bool)
 }
 
 fn is_real_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
@@ -14583,6 +14930,42 @@ fn top_level_subtraction_binding_error(
     )?;
 
     let mut message = try_string_from_str_with(operation.name(), &allocation)?;
+    try_push_string_with(
+        &mut message,
+        "() received an invalid combination of arguments - got (",
+        &allocation,
+    )?;
+    try_push_string_with(&mut message, &summary, &allocation)?;
+    try_push_string_with(
+        &mut message,
+        "), but expected (Tensor input, Tensor other, *, Number alpha = 1, Tensor out = None)",
+        &allocation,
+    )?;
+    if let Some(nul) = message.find('\0') {
+        message.truncate(nul);
+    }
+    let py = positional.py();
+    let message = PyString::from_bytes(py, message.as_bytes()).map_err(|_| allocation.error())?;
+    let exception = py
+        .get_type::<PyTypeError>()
+        .call1((message,))
+        .map_err(|_| allocation.error())?;
+    Ok(PyErr::from_value(exception))
+}
+
+fn top_level_add_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let allocation = PythonAllocationFallback::new(positional.py());
+    let summary = call_type_summary_with(
+        positional,
+        keywords,
+        CallKeywordOrder::PyTorchUnorderedMap,
+        &allocation,
+    )?;
+
+    let mut message = try_string_from_str_with("add", &allocation)?;
     try_push_string_with(
         &mut message,
         "() received an invalid combination of arguments - got (",
