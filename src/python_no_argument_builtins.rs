@@ -3,14 +3,14 @@
 use std::{cell::Cell, ffi::CStr};
 
 use pyo3::IntoPyObjectExt;
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyBool, PyCFunction, PyDict, PyModule, PyTuple};
+use pyo3::types::{PyAny, PyBool, PyCFunction, PyDict, PyInt, PyModule, PyTuple};
 
 use crate::{
     DType, is_grad_enabled as core_is_grad_enabled,
-    python::python_type_name,
+    python::{has_numpy_integer_ancestry, python_type_name},
     python_dtype::{PyDType, dtype_object},
 };
 
@@ -269,6 +269,76 @@ fn get_num_interop_threads(
     Ok(1)
 }
 
+#[allow(
+    unsafe_code,
+    reason = "PyLong_AsLongLongAndOverflow mirrors PyTorch's native integer unpacking boundary"
+)]
+fn set_single_worker_threads(
+    function_name: &str,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<()> {
+    if kwargs.is_some_and(|values| !values.is_empty()) {
+        return Err(PyTypeError::new_err(format!(
+            "torch.{function_name}() takes no keyword arguments"
+        )));
+    }
+    if args.len() != 1 {
+        return Err(PyTypeError::new_err(format!(
+            "torch.{function_name}() takes exactly one argument ({} given)",
+            args.len()
+        )));
+    }
+
+    let threads = args.get_item(0)?;
+    let is_integer = !threads.is_instance_of::<PyBool>()
+        && (threads.is_instance_of::<PyInt>() || has_numpy_integer_ancestry(&threads)?);
+    if !is_integer {
+        let type_name = python_type_name(&threads)?;
+        return Err(PyRuntimeError::new_err(format!(
+            "{function_name} expects an int, but got {type_name}"
+        )));
+    }
+
+    let mut overflow = 0;
+    let value = unsafe { ffi::PyLong_AsLongLongAndOverflow(threads.as_ptr(), &raw mut overflow) };
+    if PyErr::occurred(threads.py()) {
+        return Err(PyErr::fetch(threads.py()));
+    }
+    if overflow != 0 {
+        return Err(PyValueError::new_err("Overflow when unpacking long long"));
+    }
+    if value <= 0 {
+        return Err(PyRuntimeError::new_err(format!(
+            "{function_name} expects a positive integer"
+        )));
+    }
+    if value != 1 {
+        return Err(PyNotImplementedError::new_err(format!(
+            "{function_name}(): mutable thread pools are not supported; only 1 worker is implemented"
+        )));
+    }
+
+    Ok(())
+}
+
+// Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+#[allow(clippy::doc_markdown)]
+#[doc = "\nset_num_threads(int)\n\nSets the number of threads used for intraop parallelism on CPU.\n\n.. warning::\n    To ensure that the correct number of threads is used, set_num_threads\n    must be called before running eager, JIT or autograd code.\n"]
+fn set_num_threads(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
+    set_single_worker_threads("set_num_threads", args, kwargs)
+}
+
+// Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+#[allow(clippy::doc_markdown)]
+#[doc = "\nset_num_interop_threads(int)\n\nSets the number of threads used for interop parallelism\n(e.g. in JIT interpreter) on CPU.\n\n.. warning::\n    Can only be called once and before any inter-op parallel work\n    is started (e.g. JIT execution).\n"]
+fn set_num_interop_threads(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<()> {
+    set_single_worker_threads("set_num_interop_threads", args, kwargs)
+}
+
 const IS_GRAD_ENABLED_DOC: &CStr =
     c"\nis_grad_enabled() -> (bool)\n\nReturns True if grad mode is currently enabled.\n";
 const IS_GRAD_ENABLED_SIGNATURE_DOC: &CStr = c"is_grad_enabled($self, /)\n--\n\n\nis_grad_enabled() -> (bool)\n\nReturns True if grad mode is currently enabled.\n";
@@ -299,6 +369,8 @@ const GET_NUM_THREADS_DOC: &CStr = c"\nget_num_threads() -> int\n\nReturns the n
 const GET_NUM_THREADS_SIGNATURE_DOC: &CStr = c"get_num_threads($self, /)\n--\n\n\nget_num_threads() -> int\n\nReturns the number of threads used for parallelizing CPU operations\n";
 const GET_NUM_INTEROP_THREADS_DOC: &CStr = c"\nget_num_interop_threads() -> int\n\nReturns the number of threads used for inter-op parallelism on CPU\n(e.g. in JIT interpreter)\n";
 const GET_NUM_INTEROP_THREADS_SIGNATURE_DOC: &CStr = c"get_num_interop_threads($self, /)\n--\n\n\nget_num_interop_threads() -> int\n\nReturns the number of threads used for inter-op parallelism on CPU\n(e.g. in JIT interpreter)\n";
+const SET_NUM_THREADS_DOC: &CStr = c"\nset_num_threads(int)\n\nSets the number of threads used for intraop parallelism on CPU.\n\n.. warning::\n    To ensure that the correct number of threads is used, set_num_threads\n    must be called before running eager, JIT or autograd code.\n";
+const SET_NUM_INTEROP_THREADS_DOC: &CStr = c"\nset_num_interop_threads(int)\n\nSets the number of threads used for interop parallelism\n(e.g. in JIT interpreter) on CPU.\n\n.. warning::\n    Can only be called once and before any inter-op parallel work\n    is started (e.g. JIT execution).\n";
 
 #[allow(
     unsafe_code,
@@ -519,6 +591,38 @@ unsafe fn get_num_interop_threads_callback(
         .map(Py::into_ptr)
 }
 
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn set_num_threads_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    args: *mut ffi::PyObject,
+    kwargs: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
+    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    set_num_threads(&args, kwargs.as_ref())?;
+    Ok(py.None().into_ptr())
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn set_num_interop_threads_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    args: *mut ffi::PyObject,
+    kwargs: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
+    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    set_num_interop_threads(&args, kwargs.as_ref())?;
+    Ok(py.None().into_ptr())
+}
+
 fn add_autocast_cache_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     let (is_autocast_cache_enabled_doc, clear_autocast_cache_doc, set_autocast_cache_enabled_doc) =
@@ -635,6 +739,55 @@ fn add_anomaly_builtins(
     Ok(())
 }
 
+fn add_thread_count_builtins(
+    module: &Bound<'_, PyModule>,
+    get_num_threads_doc: &'static CStr,
+    get_num_interop_threads_doc: &'static CStr,
+) -> PyResult<()> {
+    let py = module.py();
+    module.add_function(PyCFunction::new_with_keywords(
+        py,
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            cfunction_with_keywords,
+            get_num_threads_callback
+        ),
+        c"get_num_threads",
+        get_num_threads_doc,
+        Some(module),
+    )?)?;
+    module.add_function(PyCFunction::new_with_keywords(
+        py,
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            cfunction_with_keywords,
+            get_num_interop_threads_callback
+        ),
+        c"get_num_interop_threads",
+        get_num_interop_threads_doc,
+        Some(module),
+    )?)?;
+    module.add_function(PyCFunction::new_with_keywords(
+        py,
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            cfunction_with_keywords,
+            set_num_threads_callback
+        ),
+        c"set_num_threads",
+        SET_NUM_THREADS_DOC,
+        Some(module),
+    )?)?;
+    module.add_function(PyCFunction::new_with_keywords(
+        py,
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            cfunction_with_keywords,
+            set_num_interop_threads_callback
+        ),
+        c"set_num_interop_threads",
+        SET_NUM_INTEROP_THREADS_DOC,
+        Some(module),
+    )?)?;
+    Ok(())
+}
+
 pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     let (
@@ -710,25 +863,6 @@ pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult
         get_default_dtype_doc,
         Some(module),
     )?)?;
-    module.add_function(PyCFunction::new_with_keywords(
-        py,
-        pyo3::impl_::trampoline::get_trampoline_function!(
-            cfunction_with_keywords,
-            get_num_threads_callback
-        ),
-        c"get_num_threads",
-        get_num_threads_doc,
-        Some(module),
-    )?)?;
-    module.add_function(PyCFunction::new_with_keywords(
-        py,
-        pyo3::impl_::trampoline::get_trampoline_function!(
-            cfunction_with_keywords,
-            get_num_interop_threads_callback
-        ),
-        c"get_num_interop_threads",
-        get_num_interop_threads_doc,
-        Some(module),
-    )?)?;
+    add_thread_count_builtins(module, get_num_threads_doc, get_num_interop_threads_doc)?;
     Ok(())
 }

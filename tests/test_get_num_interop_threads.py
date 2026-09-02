@@ -159,16 +159,19 @@ class GetNumInteropThreadsTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_thread_setters_remain_unsupported_and_intraop_is_unchanged(self):
+    def test_thread_setters_are_exposed_single_worker_noops(self):
         for name in ("set_num_threads", "set_num_interop_threads"):
             with self.subTest(name=name):
-                self.assertFalse(hasattr(torch, name))
-                self.assertFalse(hasattr(torch._C, name))
-                self.assertNotIn(name, torch.__all__)
+                function = getattr(torch, name)
+                self.assertIs(getattr(torch._C, name), function)
+                self.assertEqual(torch.__all__.count(name), 1)
+                self.assertIs(function(1), None)
 
         self.assertIs(torch._C.get_num_threads, torch.get_num_threads)
         self.assertIs(type(torch.get_num_threads()), int)
         self.assertIs(torch.get_num_threads(), 1)
+        self.assertIs(type(torch.get_num_interop_threads()), int)
+        self.assertIs(torch.get_num_interop_threads(), 1)
 
     def test_importing_and_calling_does_not_import_pytorch(self):
         script = r"""
@@ -193,8 +196,10 @@ result = torch.get_num_interop_threads()
 assert type(result) is int
 assert result == 1
 assert torch.get_num_threads() == 1
-assert not hasattr(torch, "set_num_threads")
-assert not hasattr(torch, "set_num_interop_threads")
+assert torch.set_num_threads(1) is None
+assert torch.set_num_interop_threads(1) is None
+assert torch.get_num_threads() == 1
+assert torch.get_num_interop_threads() == 1
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(

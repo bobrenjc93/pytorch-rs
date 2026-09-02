@@ -46,7 +46,10 @@ functions, and limited first-order autograd. Top-level `torch.cuda` exposes
 CPU-build probes only: `device_count()` is `0`, `is_available()` is `False`,
 and `is_initialized()` is `False`. Top-level `torch.set_default_device(...)`
 is present only as a CPU-equivalent no-op for requests such as `None` or
-`"cpu"`. `torch.backends.cuda` includes preference
+`"cpu"`. Thread-count setters accept the only supported single-worker setting:
+`torch.set_num_threads(1)` and `torch.set_num_interop_threads(1)` are no-ops
+that leave both getters at `1`; mutable pools and actual parallel execution
+control remain unsupported. `torch.backends.cuda` includes preference
 flags such as `enable_flash_sdp(...)`, `enable_cudnn_sdp(...)`, and the
 `sdp_kernel(...)` context manager/decorator, but they do not add
 `torch.nn.functional.scaled_dot_product_attention`, CUDA tensors, actual
