@@ -9,7 +9,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyModule};
 
 use crate::{
-    enter_enable_grad, enter_no_grad, exit_grad_mode, grad_mode::GradModeToken, is_grad_enabled,
+    enter_enable_grad, enter_no_grad, exit_grad_mode, grad_mode::GradModeToken,
     set_grad_enabled_state,
 };
 
@@ -141,14 +141,14 @@ def _make_set_grad_enabled(context_base):
 
         def __init__(self, mode: bool) -> None:
             mode = _require_set_grad_enabled_bool(mode)
-            self.prev = self._push_initial_mode(mode)
+            self.prev = self._set_mode(mode)
             self.mode = mode
 
         def __enter__(self) -> None:
-            self._enter_mode(self.mode)
+            self._set_mode(self.mode)
 
         def __exit__(self, exc_type, exc_value, traceback) -> None:
-            self._exit_mode()
+            self._set_mode(self.prev)
 
         def __call__(self, function):
             self.__exit__(None, None, None)
@@ -207,63 +207,6 @@ fn pop_context_token(
         tokens_by_thread.remove(&thread_id);
     }
     token
-}
-
-#[derive(Clone, Copy)]
-struct SetGradEnabledState {
-    previous_enabled: bool,
-    pending_enter: bool,
-}
-
-fn push_set_grad_enabled_state(
-    states_by_thread: &Mutex<HashMap<ThreadId, Vec<SetGradEnabledState>>>,
-    previous_enabled: bool,
-    pending_enter: bool,
-) {
-    states_by_thread
-        .lock()
-        .expect("grad-mode context token mutex is poisoned")
-        .entry(thread::current().id())
-        .or_default()
-        .push(SetGradEnabledState {
-            previous_enabled,
-            pending_enter,
-        });
-}
-
-fn pop_set_grad_enabled_state(
-    states_by_thread: &Mutex<HashMap<ThreadId, Vec<SetGradEnabledState>>>,
-) -> Option<bool> {
-    let mut states_by_thread = states_by_thread
-        .lock()
-        .expect("grad-mode context token mutex is poisoned");
-    let thread_id = thread::current().id();
-    let states = states_by_thread.get_mut(&thread_id)?;
-    let previous = states.pop().map(|entry| entry.previous_enabled);
-    if states.is_empty() {
-        states_by_thread.remove(&thread_id);
-    }
-    previous
-}
-
-fn consume_pending_set_grad_enabled_state(
-    states_by_thread: &Mutex<HashMap<ThreadId, Vec<SetGradEnabledState>>>,
-    enabled: bool,
-) -> bool {
-    let mut states_by_thread = states_by_thread
-        .lock()
-        .expect("grad-mode context token mutex is poisoned");
-    let Some(states) = states_by_thread.get_mut(&thread::current().id()) else {
-        return false;
-    };
-    let Some(state) = states.last_mut() else {
-        return false;
-    };
-    if !state.pending_enter || is_grad_enabled() != enabled {
-        return false;
-    }
-    state.pending_enter = false;
-    true
 }
 
 /// Thread-local autograd recording guard underlying the Python `torch.no_grad` class.
@@ -351,37 +294,18 @@ impl PyEnableGrad {
     subclass,
     skip_from_py_object
 )]
-struct PySetGradEnabled {
-    states_by_thread: Mutex<HashMap<ThreadId, Vec<SetGradEnabledState>>>,
-}
+struct PySetGradEnabled;
 
 #[pymethods]
 impl PySetGradEnabled {
     #[new]
     fn new() -> Self {
-        Self {
-            states_by_thread: Mutex::new(HashMap::new()),
-        }
+        Self
     }
 
-    fn _push_initial_mode(&self, enabled: bool) -> bool {
-        let previous = set_grad_enabled_state(enabled);
-        push_set_grad_enabled_state(&self.states_by_thread, previous, true);
-        previous
-    }
-
-    fn _enter_mode(&self, enabled: bool) {
-        if consume_pending_set_grad_enabled_state(&self.states_by_thread, enabled) {
-            return;
-        }
-        let previous = set_grad_enabled_state(enabled);
-        push_set_grad_enabled_state(&self.states_by_thread, previous, false);
-    }
-
-    fn _exit_mode(&self) {
-        if let Some(previous) = pop_set_grad_enabled_state(&self.states_by_thread) {
-            set_grad_enabled_state(previous);
-        }
+    #[allow(clippy::unused_self)] // Python's context-manager protocol requires an instance method.
+    fn _set_mode(&self, enabled: bool) -> bool {
+        set_grad_enabled_state(enabled)
     }
 }
 

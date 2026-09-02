@@ -37,6 +37,20 @@ class StatefulEnableGrad(torch.enable_grad):
         self.required = required
 
 
+class DefaultSetGradEnabled(torch.set_grad_enabled):
+    init_calls = 0
+    new_calls = 0
+
+    def __new__(cls):
+        cls.new_calls += 1
+        return super().__new__(cls)
+
+    def __init__(self):
+        type(self).init_calls += 1
+        super().__init__(False)
+        self.payload = {"state": [9, 10]}
+
+
 class NewArgsNoGrad(torch.no_grad):
     __slots__ = ("constructed",)
     init_calls = 0
@@ -106,6 +120,19 @@ if reference_torch is not None:
             super().__init__()
             self.required = required
 
+    class ReferenceDefaultSetGradEnabled(reference_torch.set_grad_enabled):
+        init_calls = 0
+        new_calls = 0
+
+        def __new__(cls):
+            cls.new_calls += 1
+            return super().__new__(cls)
+
+        def __init__(self):
+            type(self).init_calls += 1
+            super().__init__(False)
+            self.payload = {"state": [9, 10]}
+
     class ReferenceNewArgsNoGrad(reference_torch.no_grad):
         __slots__ = ("constructed",)
         init_calls = 0
@@ -155,6 +182,7 @@ else:
     ReferenceNewArgsNoGrad = None
     ReferenceStatefulEnableGrad = None
     ReferenceNewArgsEnableGrad = None
+    ReferenceDefaultSetGradEnabled = None
 
 
 class NoGradNamespaceTests(unittest.TestCase):
@@ -223,11 +251,16 @@ class NoGradNamespaceTests(unittest.TestCase):
 
     def test_metadata_copy_and_pickle_resolve_through_grad_mode(self):
         grad_mode = torch.autograd.grad_mode
-        for context_type, args, enabled_inside_disabled in (
-            (torch.no_grad, (), False),
-            (torch.enable_grad, (), True),
-            (torch.set_grad_enabled, (False,), False),
-            (torch.set_grad_enabled, (True,), True),
+        for (
+            context_type,
+            args,
+            enabled_inside_disabled,
+            enabled_after_restored_exit_inside_disabled,
+        ) in (
+            (torch.no_grad, (), False, False),
+            (torch.enable_grad, (), True, False),
+            (torch.set_grad_enabled, (False,), False, True),
+            (torch.set_grad_enabled, (True,), True, True),
         ):
             with self.subTest(context=context_type.__name__, args=args):
                 self.assertEqual(context_type.__name__, context_type.__qualname__)
@@ -255,7 +288,10 @@ class NoGradNamespaceTests(unittest.TestCase):
                                 self.assertIs(
                                     torch.is_grad_enabled(), enabled_inside_disabled
                                 )
-                            self.assertFalse(torch.is_grad_enabled())
+                            self.assertIs(
+                                torch.is_grad_enabled(),
+                                enabled_after_restored_exit_inside_disabled,
+                            )
                         self.assertTrue(torch.is_grad_enabled())
 
                 canonical_path = b"torch_rs.autograd.grad_mode"
@@ -286,7 +322,10 @@ class NoGradNamespaceTests(unittest.TestCase):
                                 self.assertIs(
                                     torch.is_grad_enabled(), enabled_inside_disabled
                                 )
-                            self.assertFalse(torch.is_grad_enabled())
+                            self.assertIs(
+                                torch.is_grad_enabled(),
+                                enabled_after_restored_exit_inside_disabled,
+                            )
                         self.assertTrue(torch.is_grad_enabled())
 
         old_autograd_exports = torch.autograd.__all__
@@ -299,6 +338,77 @@ class NoGradNamespaceTests(unittest.TestCase):
         self.assertIs(torch.set_grad_enabled, grad_mode.set_grad_enabled)
         self.assertEqual(torch.autograd.__all__, old_autograd_exports)
         self.assertEqual(grad_mode.__all__, old_grad_mode_exports)
+
+    def test_set_grad_enabled_active_copy_and_pickle_restore_prev(self):
+        for initial, mode in ((True, False), (False, True)):
+            for operation in (copy.copy, copy.deepcopy):
+                with self.subTest(
+                    initial=initial, mode=mode, operation=operation.__name__
+                ):
+                    torch.set_grad_enabled(initial)
+                    active = torch.set_grad_enabled(mode)
+                    try:
+                        restored = operation(active)
+                        self.assertIs(torch.is_grad_enabled(), mode)
+                        self.assertEqual(
+                            restored.__dict__, {"prev": initial, "mode": mode}
+                        )
+                        restored.__exit__(None, None, None)
+                        self.assertIs(torch.is_grad_enabled(), initial)
+                    finally:
+                        torch.set_grad_enabled(True)
+
+            for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                with self.subTest(initial=initial, mode=mode, protocol=protocol):
+                    torch.set_grad_enabled(initial)
+                    active = torch.set_grad_enabled(mode)
+                    try:
+                        restored = pickle.loads(
+                            pickle.dumps(active, protocol=protocol)
+                        )
+                        self.assertIs(torch.is_grad_enabled(), mode)
+                        self.assertEqual(
+                            restored.__dict__, {"prev": initial, "mode": mode}
+                        )
+                        restored.__exit__(None, None, None)
+                        self.assertIs(torch.is_grad_enabled(), initial)
+                    finally:
+                        torch.set_grad_enabled(True)
+
+    def test_set_grad_enabled_subclass_copy_and_pickle_do_not_inject_mode(self):
+        for operation in (copy.copy, copy.deepcopy):
+            with self.subTest(operation=operation.__name__):
+                torch.set_grad_enabled(True)
+                DefaultSetGradEnabled.init_calls = 0
+                instance = DefaultSetGradEnabled()
+                try:
+                    restored = operation(instance)
+                    self.assertIs(type(restored), DefaultSetGradEnabled)
+                    self.assertEqual(restored.payload, instance.payload)
+                    self.assertIs(torch.is_grad_enabled(), False)
+                    restored.__exit__(None, None, None)
+                    self.assertIs(torch.is_grad_enabled(), True)
+                    self.assertEqual(DefaultSetGradEnabled.init_calls, 1)
+                finally:
+                    torch.set_grad_enabled(True)
+
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                torch.set_grad_enabled(True)
+                DefaultSetGradEnabled.init_calls = 0
+                instance = DefaultSetGradEnabled()
+                try:
+                    restored = pickle.loads(
+                        pickle.dumps(instance, protocol=protocol)
+                    )
+                    self.assertIs(type(restored), DefaultSetGradEnabled)
+                    self.assertEqual(restored.payload, instance.payload)
+                    self.assertIs(torch.is_grad_enabled(), False)
+                    restored.__exit__(None, None, None)
+                    self.assertIs(torch.is_grad_enabled(), True)
+                    self.assertEqual(DefaultSetGradEnabled.init_calls, 1)
+                finally:
+                    torch.set_grad_enabled(True)
 
     def test_copy_and_pickle_preserve_instance_and_subclass_state(self):
         for context_type, subclass_type, enabled_inside_disabled in (
@@ -647,6 +757,54 @@ class NoGradNamespaceReferenceTests(unittest.TestCase):
             "new_calls": subclass_type.new_calls,
         }
 
+    def set_grad_enabled_subclass_contract(self, module, subclass_type):
+        results = []
+        for operation in (copy.copy, copy.deepcopy):
+            module.set_grad_enabled(True)
+            subclass_type.init_calls = 0
+            subclass_type.new_calls = 0
+            instance = subclass_type()
+            try:
+                restored = operation(instance)
+                results.append(
+                    (
+                        operation.__name__,
+                        module.is_grad_enabled(),
+                        dict(restored.__dict__),
+                        subclass_type.init_calls,
+                        subclass_type.new_calls,
+                    )
+                )
+                restored.__exit__(None, None, None)
+                results.append(
+                    (operation.__name__, "after_exit", module.is_grad_enabled())
+                )
+            finally:
+                module.set_grad_enabled(True)
+
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            module.set_grad_enabled(True)
+            subclass_type.init_calls = 0
+            subclass_type.new_calls = 0
+            instance = subclass_type()
+            try:
+                restored = pickle.loads(pickle.dumps(instance, protocol=protocol))
+                results.append(
+                    (
+                        protocol,
+                        module.is_grad_enabled(),
+                        dict(restored.__dict__),
+                        subclass_type.init_calls,
+                        subclass_type.new_calls,
+                    )
+                )
+                restored.__exit__(None, None, None)
+                results.append((protocol, "after_exit", module.is_grad_enabled()))
+            finally:
+                module.set_grad_enabled(True)
+
+        return tuple(results)
+
     def test_namespace_metadata_copy_and_pickle_match_pytorch_2_13(self):
         for context_name, args in (
             ("enable_grad", ()),
@@ -683,6 +841,16 @@ class NoGradNamespaceReferenceTests(unittest.TestCase):
                     self.newargs_contract(native_subclass),
                     self.newargs_contract(reference_subclass),
                 )
+
+    def test_set_grad_enabled_subclass_copy_and_pickle_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.set_grad_enabled_subclass_contract(
+                torch, DefaultSetGradEnabled
+            ),
+            self.set_grad_enabled_subclass_contract(
+                reference_torch, ReferenceDefaultSetGradEnabled
+            ),
+        )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
+import copy
 import gc
 import inspect
+import pickle
 import statistics
 import threading
 import time
@@ -201,6 +203,26 @@ class AutogradApiTests(unittest.TestCase):
         self.assertIs(torch.is_grad_enabled(), False)
         torch.set_grad_enabled(True)
         self.assertIs(torch.is_grad_enabled(), True)
+
+        precreated_enabled = torch.set_grad_enabled(True)
+        try:
+            torch.set_grad_enabled(False)
+            self.assertIs(torch.is_grad_enabled(), False)
+            with precreated_enabled:
+                self.assertIs(torch.is_grad_enabled(), True)
+            self.assertIs(torch.is_grad_enabled(), True)
+        finally:
+            torch.set_grad_enabled(True)
+
+        precreated_disabled = torch.set_grad_enabled(False)
+        try:
+            torch.set_grad_enabled(True)
+            self.assertIs(torch.is_grad_enabled(), True)
+            with precreated_disabled:
+                self.assertIs(torch.is_grad_enabled(), False)
+            self.assertIs(torch.is_grad_enabled(), True)
+        finally:
+            torch.set_grad_enabled(True)
 
         with torch.set_grad_enabled(False) as entered:
             self.assertIsNone(entered)
@@ -1455,6 +1477,20 @@ class AutogradReferenceTests(unittest.TestCase):
             module.set_grad_enabled(True)
             states.append(module.is_grad_enabled())
 
+            precreated_enabled = module.set_grad_enabled(True)
+            module.set_grad_enabled(False)
+            states.append(module.is_grad_enabled())
+            with precreated_enabled:
+                states.append(module.is_grad_enabled())
+            states.append(module.is_grad_enabled())
+
+            precreated_disabled = module.set_grad_enabled(False)
+            module.set_grad_enabled(True)
+            states.append(module.is_grad_enabled())
+            with precreated_disabled:
+                states.append(module.is_grad_enabled())
+            states.append(module.is_grad_enabled())
+
             with module.set_grad_enabled(False) as entered:
                 states.append(entered)
                 states.append(module.is_grad_enabled())
@@ -1538,6 +1574,40 @@ class AutogradReferenceTests(unittest.TestCase):
             generator_results.append(generator.close())
             generator_results.append(module.is_grad_enabled())
 
+            reconstructed_states = []
+            for operation in (copy.copy, copy.deepcopy):
+                module.set_grad_enabled(True)
+                active = module.set_grad_enabled(False)
+                restored = operation(active)
+                reconstructed_states.append(
+                    (
+                        operation.__name__,
+                        module.is_grad_enabled(),
+                        dict(restored.__dict__),
+                    )
+                )
+                restored.__exit__(None, None, None)
+                reconstructed_states.append(
+                    (operation.__name__, "after_exit", module.is_grad_enabled())
+                )
+
+            for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                module.set_grad_enabled(True)
+                active = module.set_grad_enabled(False)
+                restored = pickle.loads(pickle.dumps(active, protocol=protocol))
+                reconstructed_states.append(
+                    (
+                        protocol,
+                        module.is_grad_enabled(),
+                        dict(restored.__dict__),
+                    )
+                )
+                restored.__exit__(None, None, None)
+                reconstructed_states.append(
+                    (protocol, "after_exit", module.is_grad_enabled())
+                )
+            module.set_grad_enabled(True)
+
             truthy = Truthy()
             invalid_modes = (
                 np.bool_(True),
@@ -1592,6 +1662,7 @@ class AutogradReferenceTests(unittest.TestCase):
                     inspect.isgeneratorfunction(generate),
                     generator_results,
                     events,
+                    reconstructed_states,
                     errors,
                     truthy.calls,
                     worker_states,
