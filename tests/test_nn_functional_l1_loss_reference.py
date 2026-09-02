@@ -116,6 +116,101 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             ("same operand", same, same),
         )
 
+    def make_matching_dense_cases(self, module):
+        input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x0080_0000,
+                0x8080_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+            ],
+            dtype=np.uint32,
+        )
+        target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0001,
+                0x0000_0001,
+                0x807F_FFFF,
+                0x007F_FFFF,
+                0x8080_0000,
+                0x0080_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+                0x0000_0000,
+                0x8000_0000,
+            ],
+            dtype=np.uint32,
+        )
+        input_values = input_bits.view(np.float32)
+        target_values = target_bits.view(np.float32)
+        transposed_input = module.tensor(
+            memoryview(input_values),
+            dtype=module.float32,
+        ).view(3, 6)
+        transposed_target = module.tensor(
+            memoryview(target_values),
+            dtype=module.float32,
+        ).view(3, 6)
+
+        input_padding = np.linspace(
+            -11.0, 11.0, input_values.size, dtype=np.float32
+        )
+        target_padding = np.linspace(
+            13.0, -13.0, target_values.size, dtype=np.float32
+        )
+        offset_input_base = module.tensor(
+            memoryview(np.concatenate([input_padding, input_values])),
+            dtype=module.float32,
+        ).view(2, 3, 6)
+        offset_target_base = module.tensor(
+            memoryview(np.concatenate([target_padding, target_values])),
+            dtype=module.float32,
+        ).view(2, 3, 6)
+        empty_input = module.zeros(
+            (2, 0, 3),
+            dtype=module.float32,
+        ).transpose(0, 2)
+        empty_target = module.ones(
+            (2, 0, 3),
+            dtype=module.float32,
+        ).transpose(0, 2)
+
+        return (
+            (
+                "transposed edge bits",
+                transposed_input.transpose(0, 1),
+                transposed_target.transpose(0, 1),
+            ),
+            (
+                "offset transposed edge bits",
+                offset_input_base[1].transpose(0, 1),
+                offset_target_base[1].transpose(0, 1),
+            ),
+            ("empty transposed", empty_input, empty_target),
+        )
+
     def make_broadcast_cases(self, module):
         scalar = self.tensor(module, -0.0)
         offset_scalar = self.tensor(module, [17.0, 0.5])[1]
@@ -448,6 +543,110 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 )
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
+                )
+
+    def test_matching_dense_transposed_offset_empty_none_sum_match_pytorch_2_13(self):
+        actual_cases = self.make_matching_dense_cases(torch)
+        expected_cases = self.make_matching_dense_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            self.assertEqual(actual_input.shape, tuple(expected_input.shape))
+            self.assertEqual(actual_target.shape, tuple(expected_target.shape))
+            self.assertEqual(actual_input.stride(), expected_input.stride())
+            self.assertEqual(actual_target.stride(), expected_target.stride())
+            self.assertEqual(actual_input.stride(), actual_target.stride())
+            if actual_input.numel() != 0:
+                self.assertFalse(actual_input.is_contiguous())
+                self.assertFalse(actual_target.is_contiguous())
+                self.assertFalse(expected_input.is_contiguous())
+                self.assertFalse(expected_target.is_contiguous())
+
+            actual_input_bits_before = (
+                np.asarray(actual_input).reshape(-1).view(np.uint32).copy()
+            )
+            actual_target_bits_before = (
+                np.asarray(actual_target).reshape(-1).view(np.uint32).copy()
+            )
+            expected_input_bits_before = (
+                expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            expected_target_bits_before = (
+                expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+
+            for reduction in ("none", "sum"):
+                with warnings.catch_warnings(record=True) as actual_warnings:
+                    warnings.simplefilter("always")
+                    actual = functional.l1_loss(
+                        actual_input,
+                        actual_target,
+                        reduction=reduction,
+                    )
+                with warnings.catch_warnings(record=True) as expected_warnings:
+                    warnings.simplefilter("always")
+                    expected = reference_functional.l1_loss(
+                        expected_input,
+                        expected_target,
+                        reduction=reduction,
+                    )
+
+                with self.subTest(case=case, reduction=reduction, warnings=True):
+                    self.assertEqual(actual_warnings, [])
+                    self.assertEqual(expected_warnings, [])
+                self.assert_matches(
+                    actual,
+                    expected,
+                    case=(case, reduction),
+                    max_value_ulp=int(reduction == "sum"),
+                )
+
+                actual_repeat = functional.l1_loss(
+                    actual_input,
+                    actual_target,
+                    reduction=reduction,
+                )
+                expected_repeat = reference_functional.l1_loss(
+                    expected_input,
+                    expected_target,
+                    reduction=reduction,
+                )
+                with self.subTest(case=case, reduction=reduction, storage=True):
+                    self.assertFalse(actual.is_set_to(actual_repeat))
+                    self.assertFalse(expected.is_set_to(expected_repeat))
+                    self.assertFalse(actual.is_set_to(actual_input))
+                    self.assertFalse(expected.is_set_to(expected_input))
+                    self.assertFalse(actual.is_set_to(actual_target))
+                    self.assertFalse(expected.is_set_to(expected_target))
+                    if actual.numel() != 0:
+                        self.assertNotEqual(actual.data_ptr(), actual_repeat.data_ptr())
+                        self.assertNotEqual(actual.data_ptr(), actual_input.data_ptr())
+                        self.assertNotEqual(actual.data_ptr(), actual_target.data_ptr())
+                        self.assertNotEqual(expected.data_ptr(), expected_repeat.data_ptr())
+                        self.assertNotEqual(expected.data_ptr(), expected_input.data_ptr())
+                        self.assertNotEqual(expected.data_ptr(), expected_target.data_ptr())
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input).reshape(-1).view(np.uint32),
+                    actual_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target).reshape(-1).view(np.uint32),
+                    actual_target_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_target_bits_before,
                 )
 
     def test_channels_last_edge_singleton_empty_and_nonmutation_match_pytorch_2_13(self):
