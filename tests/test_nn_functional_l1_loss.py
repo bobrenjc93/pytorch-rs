@@ -776,20 +776,32 @@ class FunctionalL1LossTests(unittest.TestCase):
         large_values = np.ones(1024 * 1024, dtype=np.float32)
         large_input = torch.tensor(memoryview(large_values)).view(1024, 1024)
         large_target = torch.zeros((1024, 1024))
+        mixed_values = np.full(1024, 100_000.0, dtype=np.float32)
+        mixed_values[:31] = 100.0
+        mixed_input = torch.tensor(memoryview(mixed_values))
+        mixed_target = torch.zeros((1024,))
 
         cases = (
-            ("scalar signed zero", torch.tensor(-0.0), torch.tensor(0.0), None),
-            ("empty", torch.zeros((5, 0, 7)), torch.ones((5, 0, 7)), None),
+            ("scalar signed zero", torch.tensor(-0.0), torch.tensor(0.0), None, None),
+            ("empty", torch.zeros((5, 0, 7)), torch.ones((5, 0, 7)), None, None),
             (
                 "large contiguous",
                 large_input,
                 large_target,
                 None,
+                None,
             ),
-            ("inf edge bits", inf_input, inf_target, expected_edge_sum),
-            ("nan edge bits", edge_input, edge_target, expected_edge_sum),
+            (
+                "mixed magnitudes",
+                mixed_input,
+                mixed_target,
+                None,
+                0x4CBD_67D8,
+            ),
+            ("inf edge bits", inf_input, inf_target, expected_edge_sum, None),
+            ("nan edge bits", edge_input, edge_target, expected_edge_sum, None),
         )
-        for case, input, target, expected_factory in cases:
+        for case, input, target, expected_factory, expected_sum_bits in cases:
             with self.subTest(case=case):
                 self.assertEqual(input.shape, target.shape)
                 self.assertTrue(input.is_contiguous())
@@ -815,6 +827,11 @@ class FunctionalL1LossTests(unittest.TestCase):
                 self.assertEqual(actual.numel(), 1)
                 self.assertFalse(actual.requires_grad)
                 self.assertTrue(actual.is_leaf)
+                if expected_sum_bits is not None:
+                    self.assertEqual(
+                        int(self.tensor_bits(actual)[0]),
+                        expected_sum_bits,
+                    )
 
                 repeated = functional.l1_loss(input, target, reduction="sum")
                 self.assertFalse(actual.is_set_to(repeated))

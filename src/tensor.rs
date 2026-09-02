@@ -6856,38 +6856,12 @@ fn sum_contiguous_absolute_difference(left: &[f32], right: &[f32], elements: usi
     debug_assert_eq!(left.len(), elements);
     debug_assert_eq!(right.len(), elements);
 
-    if elements >= 1024 {
-        return sum_contiguous_absolute_difference_unrolled(left, right);
-    }
-
     left.iter()
         .copied()
         .zip(right.iter().copied())
         .fold(0.0_f32, |total, (left, right)| {
             total + absolute_value(l1_loss_difference_value(left, right))
         })
-}
-
-#[cfg(any(feature = "python-bindings", test))]
-fn sum_contiguous_absolute_difference_unrolled(left: &[f32], right: &[f32]) -> f32 {
-    const LANES: usize = 32;
-
-    let mut totals = [0.0_f32; LANES];
-    let mut left_chunks = left.chunks_exact(LANES);
-    let mut right_chunks = right.chunks_exact(LANES);
-    for (left, right) in left_chunks.by_ref().zip(right_chunks.by_ref()) {
-        for lane in 0..LANES {
-            totals[lane] += absolute_value(l1_loss_difference_value(left[lane], right[lane]));
-        }
-    }
-
-    let mut total = totals
-        .into_iter()
-        .fold(0.0_f32, |total, value| total + value);
-    for (&left, &right) in left_chunks.remainder().iter().zip(right_chunks.remainder()) {
-        total += absolute_value(l1_loss_difference_value(left, right));
-    }
-    total
 }
 
 #[cfg(any(feature = "python-bindings", test))]
@@ -12051,6 +12025,21 @@ mod tests {
         )
         .unwrap();
         assert_l1_sum_contiguous_fast_path_matches("large contiguous", &large_left, &large_right);
+
+        let mut mixed_magnitudes = vec![100.0_f32; 1024];
+        mixed_magnitudes[31..].fill(100_000.0);
+        let mixed_left = Tensor::from_vec(mixed_magnitudes, [1024]).unwrap();
+        let mixed_right = Tensor::zeros([1024]).unwrap();
+        assert_l1_sum_contiguous_fast_path_matches("mixed magnitudes", &mixed_left, &mixed_right);
+        assert_eq!(
+            mixed_left
+                .absolute_difference_sum_same_shape_contiguous(&mixed_right)
+                .unwrap()
+                .item()
+                .unwrap()
+                .to_bits(),
+            0x4cbd_67d8
+        );
 
         let transposed_left = edge_left.transpose(0, 1).unwrap();
         let transposed_right = edge_right.transpose(0, 1).unwrap();

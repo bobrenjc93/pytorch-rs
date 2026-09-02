@@ -938,6 +938,8 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             dtype=np.uint32,
         )
         large_values = np.ones(1024 * 1024, dtype=np.float32)
+        mixed_values = np.full(1024, 100_000.0, dtype=np.float32)
+        mixed_values[:31] = 100.0
         actual_cases = (
             (
                 "scalar signed zero",
@@ -955,6 +957,12 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 "large contiguous",
                 torch.tensor(memoryview(large_values)).view(1024, 1024),
                 torch.zeros((1024, 1024), dtype=torch.float32),
+                False,
+            ),
+            (
+                "mixed magnitudes",
+                torch.tensor(memoryview(mixed_values)),
+                torch.zeros((1024,), dtype=torch.float32),
                 False,
             ),
             (
@@ -993,6 +1001,15 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                     (1024, 1024),
                     dtype=reference_torch.float32,
                 ),
+                False,
+            ),
+            (
+                "mixed magnitudes",
+                reference_torch.tensor(
+                    memoryview(mixed_values),
+                    dtype=reference_torch.float32,
+                ),
+                reference_torch.zeros((1024,), dtype=reference_torch.float32),
                 False,
             ),
             (
@@ -1061,6 +1078,9 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 case=case,
                 allow_nan=allow_nan,
             )
+            if case == "mixed magnitudes":
+                self.assertEqual(int(actual_bits(actual)[0]), 0x4CBD_67D8)
+                self.assertEqual(int(expected_bits(expected)[0]), 0x4CBD_67D8)
 
             actual_repeat = functional.l1_loss(
                 actual_input,
