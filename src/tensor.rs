@@ -3860,6 +3860,19 @@ impl Tensor {
         output
     }
 
+    /// Computes the sum of every element while preserving the input rank.
+    ///
+    /// The output contains one element and has an all-ones shape matching the
+    /// input rank, as in `PyTorch` full reductions with `keepdim=True`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata allocation fails.
+    pub fn sum_keepdim(&self) -> Result<Self, TensorError> {
+        let output = self.sum();
+        output.into_full_reduction_keepdim(self.shape.len())
+    }
+
     /// Computes the arithmetic mean of every element.
     ///
     /// Empty tensors follow the same IEEE 754 path as `PyTorch`'s full reduction:
@@ -3883,6 +3896,27 @@ impl Tensor {
             }));
         }
         Ok(output)
+    }
+
+    /// Computes the arithmetic mean while preserving the input rank.
+    ///
+    /// The output contains one element and has an all-ones shape matching the
+    /// input rank, as in `PyTorch` full reductions with `keepdim=True`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation or metadata allocation fails.
+    pub fn mean_keepdim(&self) -> Result<Self, TensorError> {
+        self.mean()?.into_full_reduction_keepdim(self.shape.len())
+    }
+
+    fn into_full_reduction_keepdim(mut self, input_rank: usize) -> Result<Self, TensorError> {
+        let mut shape = try_result_vector(input_rank, self.elements)?;
+        shape.resize(input_rank, 1);
+        let strides = contiguous_strides(&shape, self.elements)?;
+        self.shape = shape;
+        self.strides = strides;
+        Ok(self)
     }
 
     fn sum_contiguous_shared_gradient(&self) -> Option<f32> {

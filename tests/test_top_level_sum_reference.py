@@ -71,6 +71,7 @@ class TopLevelSumReferenceTests(unittest.TestCase):
                 "empty",
                 module.zeros((2, 0, 3), dtype=module.float32).transpose(0, 2)[1],
             ),
+            ("singleton", module.tensor([[[7.0]]], dtype=module.float32)[0]),
             ("contiguous offset", dense[1]),
             ("offset", noncontiguous[1]),
             ("noncontiguous", noncontiguous),
@@ -100,6 +101,18 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             return module.sum(
                 input=source, dim=None, keepdim=False, dtype=module.float32, out=None
             )
+        if form == "positional none dim keepdim true":
+            return module.sum(source, None, True)
+        if form == "keyword none dim keepdim true":
+            return module.sum(source, dim=None, keepdim=True)
+        if form == "none dim out none keepdim true":
+            return module.sum(source, dim=None, keepdim=True, out=None)
+        if form == "none dim keepdim true dtype none":
+            return module.sum(source, dim=None, keepdim=True, dtype=None)
+        if form == "none dim keepdim true dtype float32":
+            return module.sum(source, dim=None, keepdim=True, dtype=module.float32)
+        if form == "alias keepdim dtype":
+            return module.sum(x=source, dim=None, keepdim=True, dtype=module.float32)
         return module.sum(**{form: source})
 
     @staticmethod
@@ -124,6 +137,9 @@ class TopLevelSumReferenceTests(unittest.TestCase):
                 (2, 0, 3), dtype=module.float32, requires_grad=True
             )
             return leaf, leaf.transpose(0, 2)[1]
+        if case == "singleton":
+            leaf = module.tensor([[[7.0]]], dtype=module.float32, requires_grad=True)
+            return leaf, leaf[0]
 
         leaf = module.tensor(
             np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4).tolist(),
@@ -155,6 +171,32 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             "alias and dtype",
             "none dim dtype out none",
         )
+        for actual_case, expected_case in zip(
+            actual_cases, expected_cases, strict=True
+        ):
+            case, actual_input = actual_case
+            expected_name, expected_input = expected_case
+            self.assertEqual(case, expected_name)
+            for form in forms:
+                self.assert_scalar_matches(
+                    self.call_sum(torch, actual_input, form),
+                    self.call_sum(reference_torch, expected_input, form),
+                    actual_input,
+                    expected_input,
+                    case=(case, form),
+                )
+
+    def test_keepdim_full_reduction_forms_match_pytorch_2_13(self):
+        forms = (
+            "positional none dim keepdim true",
+            "keyword none dim keepdim true",
+            "none dim out none keepdim true",
+            "none dim keepdim true dtype none",
+            "none dim keepdim true dtype float32",
+            "alias keepdim dtype",
+        )
+        actual_cases = self.make_cases(torch)
+        expected_cases = self.make_cases(reference_torch)
         for actual_case, expected_case in zip(
             actual_cases, expected_cases, strict=True
         ):
@@ -222,6 +264,56 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             )
         self.assert_scalar_matches(
             actual, expected, actual_leaf, expected_leaf, case="no_grad"
+        )
+        self.assertIsNone(actual_leaf.grad)
+
+    def test_keepdim_no_grad_and_final_scalar_backward_match_pytorch_2_13(self):
+        forms = (
+            "positional none dim keepdim true",
+            "keyword none dim keepdim true",
+            "none dim out none keepdim true",
+            "none dim keepdim true dtype none",
+            "none dim keepdim true dtype float32",
+            "alias keepdim dtype",
+        )
+        for case in ("scalar", "empty", "singleton", "offset", "noncontiguous"):
+            for form in forms:
+                actual_leaf, actual_input = self.autograd_case(torch, case)
+                expected_leaf, expected_input = self.autograd_case(reference_torch, case)
+                actual_output = self.call_sum(torch, actual_input, form)
+                expected_output = self.call_sum(reference_torch, expected_input, form)
+                self.assert_scalar_matches(
+                    actual_output,
+                    expected_output,
+                    actual_input,
+                    expected_input,
+                    case=(case, form, "forward"),
+                )
+
+                actual_output.sum().backward()
+                expected_output.sum().backward()
+                np.testing.assert_array_equal(
+                    np.asarray(actual_leaf.grad),
+                    expected_leaf.grad.detach().cpu().numpy(),
+                )
+
+        actual_leaf = torch.tensor([1.0, -2.0, 3.0], requires_grad=True)
+        expected_leaf = reference_torch.tensor(
+            [1.0, -2.0, 3.0],
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        with torch.no_grad():
+            actual = torch.sum(input=actual_leaf, dim=None, keepdim=True, dtype=torch.float)
+        with reference_torch.no_grad():
+            expected = reference_torch.sum(
+                input=expected_leaf,
+                dim=None,
+                keepdim=True,
+                dtype=reference_torch.float,
+            )
+        self.assert_scalar_matches(
+            actual, expected, actual_leaf, expected_leaf, case="keepdim no_grad"
         )
         self.assertIsNone(actual_leaf.grad)
 
@@ -614,12 +706,11 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             reference_torch.sum(expected, (0, 1)),
             reference_torch.sum(expected, [0, 1]),
             reference_torch.sum(expected, 0, keepdim=True),
-            reference_torch.sum(expected, None, keepdim=True),
             reference_torch.sum(expected, 0, dtype=reference_torch.float32),
         )
         self.assertEqual(
             [tuple(result.shape) for result in expected_dim_results],
-            [(3,), (3,), (), (), (1, 3), (1, 1), (3,)],
+            [(3,), (3,), (), (), (1, 3), (3,)],
         )
 
         actual_dim_calls = (
@@ -628,7 +719,6 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             lambda: torch.sum(actual, (0, 1)),
             lambda: torch.sum(actual, [0, 1]),
             lambda: torch.sum(actual, 0, keepdim=True),
-            lambda: torch.sum(actual, None, keepdim=True),
             lambda: torch.sum(actual, 0, dtype=torch.float32),
         )
         for case, call in enumerate(actual_dim_calls):

@@ -2854,11 +2854,17 @@ enum BoundTopLevelSumDType<'py> {
     Override(ProbedTorchFunctionOverride<'py>),
 }
 
+#[derive(Clone, Copy)]
+enum FullReductionOutput {
+    Scalar,
+    Keepdim,
+}
+
 struct BoundTopLevelSumCall<'py> {
     input: BoundTensorOrTorchFunction<'py>,
     dtype: BoundTopLevelSumDType<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
-    default_full_reduction: bool,
+    full_reduction: Option<FullReductionOutput>,
 }
 
 enum BoundTopLevelMeanDType<'py> {
@@ -2870,7 +2876,7 @@ struct BoundTopLevelMeanCall<'py> {
     input: BoundTensorOrTorchFunction<'py>,
     dtype: BoundTopLevelMeanDType<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
-    default_full_reduction: bool,
+    full_reduction: Option<FullReductionOutput>,
 }
 
 struct BoundTopLevelSubtractionCall<'py> {
@@ -4015,16 +4021,23 @@ fn dispatch_top_level_sum(
 }
 
 fn apply_top_level_sum(py: Python<'_>, call: &BoundTopLevelSumCall<'_>) -> PyResult<Py<PyAny>> {
-    if !call.default_full_reduction {
+    let Some(full_reduction) = call.full_reduction else {
         return Err(PyNotImplementedError::new_err(
-            "sum(): dim, keepdim, and out reductions are not supported",
+            "sum(): dimension reductions, concrete out tensors, and dtype conversions are not supported",
         ));
-    }
+    };
 
     let BoundTensorOrTorchFunction::Tensor(input) = &call.input else {
         unreachable!("sum overrides were dispatched before the native path")
     };
-    let output = input.try_borrow()?.inner.sum();
+    let input = input.try_borrow()?;
+    let output = match full_reduction {
+        FullReductionOutput::Scalar => input.inner.sum(),
+        FullReductionOutput::Keepdim => input
+            .inner
+            .sum_keepdim()
+            .map_err(|error| tensor_error(&error))?,
+    };
     Ok(Py::new(py, PyTensor::new(output))?.into_any())
 }
 
@@ -4096,20 +4109,21 @@ fn dispatch_top_level_mean(
 }
 
 fn apply_top_level_mean(py: Python<'_>, call: &BoundTopLevelMeanCall<'_>) -> PyResult<Py<PyAny>> {
-    if !call.default_full_reduction {
+    let Some(full_reduction) = call.full_reduction else {
         return Err(PyNotImplementedError::new_err(
-            "mean(): dim, keepdim, out, and dtype conversion reductions are not supported",
+            "mean(): dimension reductions, concrete out tensors, and dtype conversions are not supported",
         ));
-    }
+    };
 
     let BoundTensorOrTorchFunction::Tensor(input) = &call.input else {
         unreachable!("mean overrides were dispatched before the native path")
     };
-    let output = input
-        .try_borrow()?
-        .inner
-        .mean()
-        .map_err(|error| tensor_error(&error))?;
+    let input = input.try_borrow()?;
+    let output = match full_reduction {
+        FullReductionOutput::Scalar => input.inner.mean(),
+        FullReductionOutput::Keepdim => input.inner.mean_keepdim(),
+    }
+    .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(output))?.into_any())
 }
 
@@ -6220,8 +6234,15 @@ impl PyTensor {
     #[doc = "\nsum(dim=None, keepdim=False, dtype=None) -> Tensor\n\nSee :func:`torch.sum`\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn sum(&self, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
-        bind_method_sum_arguments(args, kwargs)?;
-        Ok(Self::new(self.inner.sum()))
+        let full_reduction = bind_method_sum_arguments(args, kwargs)?;
+        match full_reduction {
+            FullReductionOutput::Scalar => Ok(Self::new(self.inner.sum())),
+            FullReductionOutput::Keepdim => self
+                .inner
+                .sum_keepdim()
+                .map(Self::new)
+                .map_err(|error| tensor_error(&error)),
+        }
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -6233,11 +6254,13 @@ impl PyTensor {
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
-        bind_method_mean_arguments(args, kwargs)?;
-        self.inner
-            .mean()
-            .map(Self::new)
-            .map_err(|error| tensor_error(&error))
+        let full_reduction = bind_method_mean_arguments(args, kwargs)?;
+        match full_reduction {
+            FullReductionOutput::Scalar => self.inner.mean(),
+            FullReductionOutput::Keepdim => self.inner.mean_keepdim(),
+        }
+        .map(Self::new)
+        .map_err(|error| tensor_error(&error))
     }
 
     fn __add__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
@@ -10243,20 +10266,31 @@ fn bind_top_level_sum_arguments<'py>(
     let explicit_full_dimension = dimension
         .as_ref()
         .is_some_and(|dimension| dimension.value.is_none());
+    let keepdim_is_true = keepdim
+        .as_ref()
+        .is_some_and(|keepdim| keepdim.value.extract::<bool>().is_ok_and(|keepdim| keepdim));
     let keepdim_is_false = keepdim.as_ref().is_none_or(|keepdim| {
         keepdim
             .value
             .extract::<bool>()
             .is_ok_and(|keepdim| !keepdim)
     });
-    let full_reduction =
-        !has_dimension || explicit_full_dimension && keepdim_is_false && out.is_none();
+    let full_reduction = if out.is_none() && (!has_dimension || explicit_full_dimension) {
+        Some(if keepdim_is_true {
+            FullReductionOutput::Keepdim
+        } else {
+            debug_assert!(keepdim_is_false);
+            FullReductionOutput::Scalar
+        })
+    } else {
+        None
+    };
 
     Ok(BoundTopLevelSumCall {
         input,
         dtype,
         out,
-        default_full_reduction: full_reduction,
+        full_reduction,
     })
 }
 
@@ -10558,20 +10592,31 @@ fn bind_top_level_mean_arguments<'py>(
     let explicit_full_dimension = dimension
         .as_ref()
         .is_some_and(|dimension| dimension.value.is_none());
+    let keepdim_is_true = keepdim
+        .as_ref()
+        .is_some_and(|keepdim| keepdim.value.extract::<bool>().is_ok_and(|keepdim| keepdim));
     let keepdim_is_false = keepdim.as_ref().is_none_or(|keepdim| {
         keepdim
             .value
             .extract::<bool>()
             .is_ok_and(|keepdim| !keepdim)
     });
-    let full_reduction =
-        (!has_dimension || explicit_full_dimension) && keepdim_is_false && out.is_none();
+    let full_reduction = if out.is_none() && (!has_dimension || explicit_full_dimension) {
+        Some(if keepdim_is_true {
+            FullReductionOutput::Keepdim
+        } else {
+            debug_assert!(keepdim_is_false);
+            FullReductionOutput::Scalar
+        })
+    } else {
+        None
+    };
 
     Ok(BoundTopLevelMeanCall {
         input,
         dtype,
         out,
-        default_full_reduction: full_reduction,
+        full_reduction,
     })
 }
 
@@ -10699,7 +10744,7 @@ fn mean_unsupported_dtype_conversion() -> PyErr {
 fn bind_method_sum_arguments(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
-) -> PyResult<()> {
+) -> PyResult<FullReductionOutput> {
     if positional.len() > 2 {
         if positional.len() == 3 && keywords.is_none_or(PyDictMethods::is_empty) {
             return Err(PyTypeError::new_err(
@@ -10728,7 +10773,7 @@ fn bind_method_sum_arguments(
         if let Some(dtype) = keyword_dtype {
             bind_method_sum_dtype(&dtype.value, false, positional, keywords)?;
         }
-        return Ok(());
+        return Ok(FullReductionOutput::Scalar);
     }
 
     let dimension = method_sum_dimension_argument(positional, keyword_dim)?;
@@ -10750,17 +10795,18 @@ fn bind_method_sum_arguments(
             &keepdim.value,
         )?);
     }
-    if keepdim
+    let keepdim = keepdim
         .as_ref()
-        .is_some_and(|keepdim| keepdim.value.extract::<bool>().is_ok_and(|keepdim| keepdim))
-    {
-        return Err(sum_method_invalid_combination(positional, keywords)?);
-    }
+        .is_some_and(|keepdim| keepdim.value.extract::<bool>().is_ok_and(|keepdim| keepdim));
 
     if let Some(dtype) = keyword_dtype {
         bind_method_sum_dtype(&dtype.value, true, positional, keywords)?;
     }
-    Ok(())
+    Ok(if keepdim {
+        FullReductionOutput::Keepdim
+    } else {
+        FullReductionOutput::Scalar
+    })
 }
 
 fn method_sum_has_unexpected_keyword(keywords: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
@@ -10850,7 +10896,7 @@ fn sum_method_invalid_combination(
 fn bind_method_mean_arguments(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
-) -> PyResult<()> {
+) -> PyResult<FullReductionOutput> {
     if positional.len() > 2 {
         if positional.len() == 3 && keywords.is_none_or(PyDictMethods::is_empty) {
             return Err(PyTypeError::new_err(
@@ -10879,7 +10925,7 @@ fn bind_method_mean_arguments(
         if let Some(dtype) = keyword_dtype {
             bind_method_mean_dtype(&dtype.value, false, positional, keywords)?;
         }
-        return Ok(());
+        return Ok(FullReductionOutput::Scalar);
     }
 
     let dimension = method_sum_dimension_argument(positional, keyword_dim)?;
@@ -10904,17 +10950,18 @@ fn bind_method_mean_arguments(
             &keepdim.value,
         )?);
     }
-    if keepdim
+    let keepdim = keepdim
         .as_ref()
-        .is_some_and(|keepdim| keepdim.value.extract::<bool>().is_ok_and(|keepdim| keepdim))
-    {
-        return Err(mean_unsupported_reduction());
-    }
+        .is_some_and(|keepdim| keepdim.value.extract::<bool>().is_ok_and(|keepdim| keepdim));
 
     if let Some(dtype) = keyword_dtype {
         bind_method_mean_dtype(&dtype.value, has_dimension, positional, keywords)?;
     }
-    Ok(())
+    Ok(if keepdim {
+        FullReductionOutput::Keepdim
+    } else {
+        FullReductionOutput::Scalar
+    })
 }
 
 fn method_mean_has_unexpected_keyword(keywords: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
@@ -10970,7 +11017,7 @@ fn mean_method_invalid_combination(
 
 fn mean_unsupported_reduction() -> PyErr {
     PyNotImplementedError::new_err(
-        "mean(): dim, keepdim, out, and dtype conversion reductions are not supported",
+        "mean(): dimension reductions, concrete out tensors, and dtype conversions are not supported",
     )
 }
 

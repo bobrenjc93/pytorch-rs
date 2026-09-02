@@ -52,6 +52,31 @@ class TensorMeanTests(unittest.TestCase):
                     np.float32(expected).view(np.uint32).item(),
                 )
 
+    def assert_keepdim_reduction(self, value, expected, source, *, case):
+        expected_shape = tuple(1 for _ in source.shape)
+        expected_stride = tuple(1 for _ in source.shape)
+        with self.subTest(case=case, metadata=True):
+            self.assertEqual(value.shape, expected_shape)
+            self.assertEqual(value.stride(), expected_stride)
+            self.assertEqual(value.storage_offset(), 0)
+            self.assertEqual(value.numel(), 1)
+            self.assertTrue(value.is_contiguous())
+            self.assertIs(value.dtype, torch.float32)
+            self.assertEqual(value.device, torch.device("cpu"))
+            self.assertEqual(value.requires_grad, expected.requires_grad)
+            self.assertEqual(value.is_leaf, expected.is_leaf)
+            self.assertFalse(value.is_set_to(source))
+            if source.numel():
+                self.assertNotEqual(value.data_ptr(), source.data_ptr())
+        with self.subTest(case=case, value=True):
+            if math.isnan(expected.item()):
+                self.assertTrue(math.isnan(np.asarray(value).item()))
+            else:
+                self.assertEqual(
+                    np.asarray(value).view(np.uint32).item(),
+                    np.float32(expected.item()).view(np.uint32).item(),
+                )
+
     @staticmethod
     def sequential_float32_mean(values):
         values = np.asarray(values, dtype=np.float32).reshape(-1)
@@ -100,6 +125,24 @@ class TensorMeanTests(unittest.TestCase):
         )
 
     @staticmethod
+    def keepdim_method_calls(source):
+        return (
+            ("positional none dim keepdim true", lambda: source.mean(None, True)),
+            (
+                "keyword none dim keepdim true",
+                lambda: source.mean(dim=None, keepdim=True),
+            ),
+            (
+                "none dim keepdim true dtype none",
+                lambda: source.mean(dim=None, keepdim=True, dtype=None),
+            ),
+            (
+                "none dim keepdim true dtype float32",
+                lambda: source.mean(dim=None, keepdim=True, dtype=torch.float32),
+            ),
+        )
+
+    @staticmethod
     def supported_top_level_calls(source):
         return (
             ("positional", lambda: torch.mean(source)),
@@ -123,6 +166,56 @@ class TensorMeanTests(unittest.TestCase):
             ),
         )
 
+    @staticmethod
+    def keepdim_top_level_calls(source):
+        return (
+            ("positional none dim keepdim true", lambda: torch.mean(source, None, True)),
+            (
+                "keyword none dim keepdim true",
+                lambda: torch.mean(source, dim=None, keepdim=True),
+            ),
+            (
+                "none dim out none keepdim true",
+                lambda: torch.mean(source, dim=None, keepdim=True, out=None),
+            ),
+            (
+                "none dim keepdim true dtype none",
+                lambda: torch.mean(source, dim=None, keepdim=True, dtype=None),
+            ),
+            (
+                "none dim keepdim true dtype float32",
+                lambda: torch.mean(source, dim=None, keepdim=True, dtype=torch.float32),
+            ),
+            (
+                "all keyword keepdim defaults",
+                lambda: torch.mean(
+                    input=source, dim=None, keepdim=True, dtype=torch.float32, out=None
+                ),
+            ),
+        )
+
+    @staticmethod
+    def autograd_case(case):
+        if case == "scalar":
+            leaf = torch.tensor(-3.0, requires_grad=True)
+            return leaf, leaf
+        if case == "empty":
+            leaf = torch.zeros((2, 0, 3), requires_grad=True)
+            return leaf, leaf.transpose(0, 2)[1]
+        if case == "singleton":
+            leaf = torch.tensor([[[7.0]]], requires_grad=True)
+            return leaf, leaf[0]
+
+        leaf = torch.tensor(
+            np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            requires_grad=True,
+        )
+        if case == "offset":
+            return leaf, leaf[1]
+        if case == "noncontiguous":
+            return leaf, leaf.transpose(0, 2)
+        raise AssertionError(f"unknown mean autograd case: {case}")
+
     def test_supported_forms_match_sum_divided_by_count_metadata_and_storage(self):
         for name, source, expected_values in self.value_cases():
             expected = self.sequential_float32_mean(expected_values)
@@ -130,6 +223,18 @@ class TensorMeanTests(unittest.TestCase):
                 self.assert_scalar(call(), expected, source, case=(name, "method", form))
             for form, call in self.supported_top_level_calls(source):
                 self.assert_scalar(call(), expected, source, case=(name, "top-level", form))
+
+    def test_keepdim_full_reduction_forms_preserve_rank_metadata_and_values(self):
+        for name, source, _ in self.value_cases():
+            expected = source.mean()
+            for form, call in self.keepdim_method_calls(source):
+                self.assert_keepdim_reduction(
+                    call(), expected, source, case=(name, "method", form)
+                )
+            for form, call in self.keepdim_top_level_calls(source):
+                self.assert_keepdim_reduction(
+                    call(), expected, source, case=(name, "top-level", form)
+                )
 
     def test_mean_preserves_first_order_autograd_and_no_grad(self):
         for form, make_loss in (
@@ -188,6 +293,40 @@ class TensorMeanTests(unittest.TestCase):
                     np.asarray(rounding_leaf.grad).view(np.uint32),
                     expected_bits,
                 )
+
+    def test_keepdim_full_reduction_preserves_no_grad_and_final_scalar_backward(self):
+        form_groups = (
+            ("method", self.keepdim_method_calls),
+            ("top-level", self.keepdim_top_level_calls),
+        )
+        for group, calls_for in form_groups:
+            for case in ("scalar", "empty", "singleton", "offset", "noncontiguous"):
+                for form, _ in calls_for(torch.tensor(1.0)):
+                    keepdim_leaf, keepdim_input = self.autograd_case(case)
+                    scalar_leaf, scalar_input = self.autograd_case(case)
+                    keepdim_output = dict(calls_for(keepdim_input))[form]()
+                    scalar_output = scalar_input.mean()
+                    self.assert_keepdim_reduction(
+                        keepdim_output,
+                        scalar_output,
+                        keepdim_input,
+                        case=(group, case, form, "forward"),
+                    )
+
+                    keepdim_output.sum().backward()
+                    scalar_output.backward()
+                    self.assertEqual(keepdim_leaf.grad.shape, scalar_leaf.grad.shape)
+                    np.testing.assert_array_equal(
+                        np.asarray(keepdim_leaf.grad), np.asarray(scalar_leaf.grad)
+                    )
+
+        leaf = torch.tensor([1.0, -2.0, 3.0], requires_grad=True)
+        with torch.no_grad():
+            untracked = torch.mean(input=leaf, dim=None, keepdim=True, dtype=torch.float)
+        self.assertEqual(untracked.shape, (1,))
+        self.assertFalse(untracked.requires_grad)
+        self.assertTrue(untracked.is_leaf)
+        self.assertIsNone(leaf.grad)
 
     def test_top_level_modes_and_overrides_observe_calls_before_native_limits(self):
         tensor = torch.tensor([[1.0, -2.0], [3.0, 4.0]], requires_grad=True)
@@ -399,13 +538,12 @@ class TensorMeanTests(unittest.TestCase):
             ("keyword dim", lambda: tensor.mean(dim=0)),
             ("tuple dim", lambda: tensor.mean((0, 1))),
             ("list dim", lambda: tensor.mean(dim=[0, 1])),
-            ("positional keepdim true", lambda: tensor.mean(None, True)),
         )
         for case, call in unsupported_cases:
             with self.subTest(case=case):
                 with self.assertRaisesRegex(
                     NotImplementedError,
-                    r"^mean\(\): dim, keepdim, out, and dtype conversion reductions are not supported$",
+                    r"^mean\(\): dimension reductions, concrete out tensors, and dtype conversions are not supported$",
                 ):
                     call()
 
@@ -471,7 +609,6 @@ class TensorMeanTests(unittest.TestCase):
             ("tuple dim", lambda: torch.mean(tensor, (0, 1))),
             ("list dim", lambda: torch.mean(tensor, [0, 1])),
             ("keepdim", lambda: torch.mean(tensor, 0, keepdim=True)),
-            ("none dim keepdim true", lambda: torch.mean(tensor, None, keepdim=True)),
             ("out", lambda: torch.mean(tensor, out=destination)),
             ("none dim concrete out", lambda: torch.mean(tensor, None, out=destination)),
             ("dtype plus dim", lambda: torch.mean(tensor, 0, dtype=torch.float32)),
@@ -480,7 +617,7 @@ class TensorMeanTests(unittest.TestCase):
             with self.subTest(case=case):
                 with self.assertRaisesRegex(
                     NotImplementedError,
-                    r"^mean\(\): dim, keepdim, out, and dtype conversion reductions are not supported$",
+                    r"^mean\(\): dimension reductions, concrete out tensors, and dtype conversions are not supported$",
                 ):
                     call()
         self.assertEqual(destination.tolist(), [17.0, 19.0, 23.0])
