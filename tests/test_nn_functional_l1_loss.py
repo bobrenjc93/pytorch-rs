@@ -249,6 +249,38 @@ class FunctionalL1LossTests(unittest.TestCase):
             ),
         )
 
+    def mean_reduction_cases(self):
+        offset_input_base = torch.tensor(
+            np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4).tolist()
+        )
+        offset_target_base = torch.tensor(
+            np.linspace(-3.0, 4.0, 48, dtype=np.float32)
+            .reshape(2, 2, 3, 4)
+            .tolist()
+        )
+        transposed_input = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 4, 3).tolist()
+        ).transpose(1, 2)
+        transposed_target = torch.tensor(
+            np.linspace(-2.0, 2.0, 24, dtype=np.float32)
+            .reshape(2, 4, 3)
+            .tolist()
+        ).transpose(1, 2)
+        broadcast_input = torch.tensor(
+            np.arange(6, dtype=np.float32).reshape(2, 3).tolist()
+        )
+        broadcast_target = torch.tensor([1.0, -2.0, 0.5])
+        empty_input = torch.zeros((2, 0, 3)).transpose(0, 2)
+        empty_target = torch.ones((2, 0, 3)).transpose(0, 2)
+
+        return (
+            ("scalar", torch.tensor(-0.0), torch.tensor(2.5), False),
+            ("empty", empty_input, empty_target, False),
+            ("broadcasted", broadcast_input, broadcast_target, True),
+            ("offset", offset_input_base[1], offset_target_base[0], False),
+            ("noncontiguous", transposed_input, transposed_target, False),
+        )
+
     @staticmethod
     def broadcast_warning(input, target):
         return (
@@ -300,6 +332,7 @@ class FunctionalL1LossTests(unittest.TestCase):
             "CPU ``float32`` storage",
             "broadcastable shapes",
             "``reduction='none'``",
+            "``reduction='mean'``",
             "``size_average=None``",
             "``reduce=None``",
             "``weight=None``",
@@ -309,13 +342,18 @@ class FunctionalL1LossTests(unittest.TestCase):
             "rank-0 scalar broadcasts over row-major contiguous tensors",
             "one native absolute-difference pass",
             "subtraction and absolute-value behavior",
+            "supported full-tensor mean",
             "fresh, independent tensor",
             "size-mismatch warning",
             "Unbroadcastable shapes",
+            "``reduction='sum'``",
+            "legacy ``size_average``/``reduce`` behavior",
             "weights",
+            "unsupported dtypes or devices",
             "Tensor subclasses",
             "active ``TorchFunctionMode`` contexts",
             "active autograd recording",
+            "module loss wrappers",
             "inside ``torch.no_grad()``",
         ):
             self.assertIn(documented_limit, normalized_doc)
@@ -491,6 +529,51 @@ class FunctionalL1LossTests(unittest.TestCase):
                     self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
                     self.assertNotEqual(actual.data_ptr(), input.data_ptr())
                     self.assertNotEqual(actual.data_ptr(), target.data_ptr())
+
+            with self.subTest(case=case, nonmutation=True):
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1], input_state[-1]
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1], target_state[-1]
+                )
+
+    def test_mean_reduction_cases_match_composition_warning_storage_and_default(self):
+        for case, input, target, warns in self.mean_reduction_cases():
+            expected = (input - target).abs().mean()
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+
+            for form, call in (
+                (
+                    "explicit mean",
+                    lambda: functional.l1_loss(input, target, reduction="mean"),
+                ),
+                ("default mean", lambda: functional.l1_loss(input, target)),
+            ):
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    actual = call()
+
+                self.assert_matches_composition(actual, expected, case=(case, form))
+                with self.subTest(case=(case, form), warning=True):
+                    self.assertEqual(len(caught), int(warns))
+                    if warns:
+                        self.assertIs(caught[0].category, UserWarning)
+                        self.assertEqual(
+                            str(caught[0].message),
+                            self.broadcast_warning(input, target),
+                        )
+                with self.subTest(case=(case, form), storage=True):
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        repeated = call()
+                    self.assertFalse(actual.is_set_to(repeated))
+                    self.assertFalse(actual.is_set_to(input))
+                    self.assertFalse(actual.is_set_to(target))
+                    self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
 
             with self.subTest(case=case, nonmutation=True):
                 self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
@@ -737,25 +820,42 @@ class FunctionalL1LossTests(unittest.TestCase):
                 input_requires_grad=input_requires_grad,
                 target_requires_grad=target_requires_grad,
             ):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    r"^l1_loss\(\): autograd recording is not supported$",
+                for form, call, expected_call in (
+                    (
+                        "none",
+                        lambda: functional.l1_loss(input, target, reduction="none"),
+                        lambda: (input - target).abs(),
+                    ),
+                    (
+                        "explicit mean",
+                        lambda: functional.l1_loss(input, target, reduction="mean"),
+                        lambda: (input - target).abs().mean(),
+                    ),
+                    (
+                        "default mean",
+                        lambda: functional.l1_loss(input, target),
+                        lambda: (input - target).abs().mean(),
+                    ),
                 ):
-                    functional.l1_loss(input, target, reduction="none")
+                    with self.subTest(form=form):
+                        with self.assertRaisesRegex(
+                            RuntimeError,
+                            r"^l1_loss\(\): autograd recording is not supported$",
+                        ):
+                            call()
 
-                with torch.no_grad():
-                    actual = functional.l1_loss(input, target, reduction="none")
-                    difference = input - target
-                    expected = difference.abs()
-                self.assert_matches_composition(
-                    actual,
-                    expected,
-                    case="no_grad",
-                )
-                self.assertFalse(actual.requires_grad)
-                self.assertTrue(actual.is_leaf)
-                self.assertIsNone(input.grad)
-                self.assertIsNone(target.grad)
+                        with torch.no_grad():
+                            actual = call()
+                            expected = expected_call()
+                        self.assert_matches_composition(
+                            actual,
+                            expected,
+                            case=(form, "no_grad"),
+                        )
+                        self.assertFalse(actual.requires_grad)
+                        self.assertTrue(actual.is_leaf)
+                        self.assertIsNone(input.grad)
+                        self.assertIsNone(target.grad)
 
     def test_channels_last_requires_grad_operands_need_no_grad(self):
         for input_requires_grad, target_requires_grad in (
@@ -856,9 +956,10 @@ class FunctionalL1LossTests(unittest.TestCase):
         target = torch.zeros((2, 3))
 
         reduction_error = (
-            "torch_rs.nn.functional.l1_loss only supports reduction='none'"
+            "torch_rs.nn.functional.l1_loss only supports "
+            "reduction='none' or reduction='mean'"
         )
-        for reduction in ("mean", "sum", "batchmean", None, 1, object()):
+        for reduction in ("sum", "batchmean", None, 1, object()):
             with self.subTest(reduction=reduction):
                 with self.assertRaisesRegex(
                     NotImplementedError,
@@ -878,50 +979,56 @@ class FunctionalL1LossTests(unittest.TestCase):
             {"size_average": False, "reduce": False},
         ):
             with self.subTest(legacy_arguments=legacy_arguments):
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    f"^{re.escape(legacy_error)}$",
-                ):
-                    functional.l1_loss(
-                        input,
-                        target,
-                        reduction="none",
-                        **legacy_arguments,
-                    )
+                for reduction in ("none", "mean"):
+                    with self.subTest(reduction=reduction):
+                        with self.assertRaisesRegex(
+                            NotImplementedError,
+                            f"^{re.escape(legacy_error)}$",
+                        ):
+                            functional.l1_loss(
+                                input,
+                                target,
+                                reduction=reduction,
+                                **legacy_arguments,
+                            )
 
         weight_error = "torch_rs.nn.functional.l1_loss only supports weight=None"
         for weight in (torch.ones((2, 3)), 1.0, [1.0, 1.0]):
             with self.subTest(weight=type(weight)):
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    f"^{re.escape(weight_error)}$",
-                ):
-                    functional.l1_loss(
-                        input,
-                        target,
-                        reduction="none",
-                        weight=weight,
-                    )
+                for reduction in ("none", "mean"):
+                    with self.subTest(reduction=reduction):
+                        with self.assertRaisesRegex(
+                            NotImplementedError,
+                            f"^{re.escape(weight_error)}$",
+                        ):
+                            functional.l1_loss(
+                                input,
+                                target,
+                                reduction=reduction,
+                                weight=weight,
+                            )
 
         unbroadcastable_target = torch.zeros((2, 2))
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            with self.assertRaisesRegex(
-                RuntimeError,
-                r"^The size of tensor a \(3\) must match the size of tensor b "
-                r"\(2\) at non-singleton dimension 1$",
-            ):
-                functional.l1_loss(
-                    input,
-                    unbroadcastable_target,
-                    reduction="none",
+        for reduction in ("none", "mean"):
+            with self.subTest(reduction=reduction, unbroadcastable=True):
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        r"^The size of tensor a \(3\) must match the size of tensor b "
+                        r"\(2\) at non-singleton dimension 1$",
+                    ):
+                        functional.l1_loss(
+                            input,
+                            unbroadcastable_target,
+                            reduction=reduction,
+                        )
+                self.assertEqual(len(caught), 1)
+                self.assertIs(caught[0].category, UserWarning)
+                self.assertEqual(
+                    str(caught[0].message),
+                    self.broadcast_warning(input, unbroadcastable_target),
                 )
-        self.assertEqual(len(caught), 1)
-        self.assertIs(caught[0].category, UserWarning)
-        self.assertEqual(
-            str(caught[0].message),
-            self.broadcast_warning(input, unbroadcastable_target),
-        )
 
         class Override:
             calls = 0
@@ -944,15 +1051,17 @@ class FunctionalL1LossTests(unittest.TestCase):
                 input_type=type(actual_input),
                 target_type=type(actual_target),
             ):
-                with self.assertRaisesRegex(
-                    TypeError,
-                    f"^{re.escape(exact_tensor_error)}$",
-                ):
-                    functional.l1_loss(
-                        actual_input,
-                        actual_target,
-                        reduction="none",
-                    )
+                for reduction in ("none", "mean"):
+                    with self.subTest(reduction=reduction):
+                        with self.assertRaisesRegex(
+                            TypeError,
+                            f"^{re.escape(exact_tensor_error)}$",
+                        ):
+                            functional.l1_loss(
+                                actual_input,
+                                actual_target,
+                                reduction=reduction,
+                            )
         self.assertEqual(Override.calls, 0)
 
     def test_active_torch_function_mode_is_rejected_without_dispatch(self):

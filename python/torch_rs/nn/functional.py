@@ -45,20 +45,24 @@ l1_loss(input, target, size_average=None, reduce=None, reduction='mean', weight=
 Measures the element-wise mean absolute error between ``input`` and ``target``.
 
 The current native implementation requires exact ``torch_rs.Tensor`` operands
-with CPU ``float32`` storage, broadcastable shapes, ``reduction='none'``,
-``size_average=None``, ``reduce=None``, and ``weight=None``. It fuses
+with CPU ``float32`` storage, broadcastable shapes, ``reduction='none'`` or
+``reduction='mean'``, ``size_average=None``, ``reduce=None``, and
+``weight=None``. It fuses
 same-shape row-major contiguous operands, non-empty same-shape rank-4
 channels-last-contiguous operands with identical strides and non-overlapping
 dense storage, and rank-0 scalar broadcasts over row-major contiguous tensors
 into one native absolute-difference pass, otherwise preserving the established
-subtraction and absolute-value behavior.
+subtraction and absolute-value behavior. For ``reduction='mean'``, it composes
+that result with the supported full-tensor mean.
 The operation returns a fresh, independent tensor with
 PyTorch-compatible values, shape, strides, scalar metadata, and size-mismatch
 warning.
 
-Unbroadcastable shapes, reduced outputs, weights, Tensor subclasses, active
-``TorchFunctionMode`` contexts, and active autograd recording are not
-supported. Gradient-requiring operands may be used inside ``torch.no_grad()``.
+Unbroadcastable shapes, ``reduction='sum'``, legacy ``size_average``/``reduce``
+behavior, weights, unsupported dtypes or devices, Tensor subclasses, active
+``TorchFunctionMode`` contexts, active autograd recording, and module loss
+wrappers are not supported. Gradient-requiring operands may be used inside
+``torch.no_grad()``.
 """
 
 

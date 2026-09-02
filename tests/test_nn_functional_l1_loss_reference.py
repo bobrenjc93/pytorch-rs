@@ -160,6 +160,52 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             ),
         )
 
+    def make_mean_reduction_cases(self, module):
+        offset_input_base = self.tensor(
+            module,
+            np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4).tolist(),
+        )
+        offset_target_base = self.tensor(
+            module,
+            np.linspace(-3.0, 4.0, 48, dtype=np.float32)
+            .reshape(2, 2, 3, 4)
+            .tolist(),
+        )
+        transposed_input = self.tensor(
+            module,
+            np.arange(24, dtype=np.float32).reshape(2, 4, 3).tolist(),
+        ).transpose(1, 2)
+        transposed_target = self.tensor(
+            module,
+            np.linspace(-2.0, 2.0, 24, dtype=np.float32)
+            .reshape(2, 4, 3)
+            .tolist(),
+        ).transpose(1, 2)
+        broadcast_input = self.tensor(
+            module,
+            np.arange(6, dtype=np.float32).reshape(2, 3).tolist(),
+        )
+        broadcast_target = self.tensor(module, [1.0, -2.0, 0.5])
+        empty_input = module.zeros(
+            (2, 0, 3), dtype=module.float32
+        ).transpose(0, 2)
+        empty_target = module.ones(
+            (2, 0, 3), dtype=module.float32
+        ).transpose(0, 2)
+
+        return (
+            (
+                "scalar",
+                self.tensor(module, -0.0),
+                self.tensor(module, 2.5),
+                False,
+            ),
+            ("empty", empty_input, empty_target, False),
+            ("broadcasted", broadcast_input, broadcast_target, True),
+            ("offset", offset_input_base[1], offset_target_base[0], False),
+            ("noncontiguous", transposed_input, transposed_target, False),
+        )
+
     def make_channels_last_cases(self, module):
         edge_input_patterns = np.asarray(
             [
@@ -529,6 +575,105 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 self.assertFalse(actual.is_set_to(actual_target))
                 self.assertFalse(expected.is_set_to(expected_target))
 
+    def test_mean_reduction_outputs_warnings_storage_and_default_match_pytorch_2_13(self):
+        actual_cases = self.make_mean_reduction_cases(torch)
+        expected_cases = self.make_mean_reduction_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target, actual_warns = actual_case
+            expected_name, expected_input, expected_target, expected_warns = expected_case
+            self.assertEqual(case, expected_name)
+            self.assertEqual(actual_warns, expected_warns)
+            actual_input_bits_before = (
+                np.asarray(actual_input).reshape(-1).view(np.uint32).copy()
+            )
+            actual_target_bits_before = (
+                np.asarray(actual_target).reshape(-1).view(np.uint32).copy()
+            )
+            expected_input_bits_before = (
+                expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            expected_target_bits_before = (
+                expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+
+            for form, actual_call, expected_call in (
+                (
+                    "explicit mean",
+                    lambda: functional.l1_loss(
+                        actual_input,
+                        actual_target,
+                        reduction="mean",
+                    ),
+                    lambda: reference_functional.l1_loss(
+                        expected_input,
+                        expected_target,
+                        reduction="mean",
+                    ),
+                ),
+                (
+                    "default mean",
+                    lambda: functional.l1_loss(actual_input, actual_target),
+                    lambda: reference_functional.l1_loss(
+                        expected_input,
+                        expected_target,
+                    ),
+                ),
+            ):
+                with warnings.catch_warnings(record=True) as actual_warnings:
+                    warnings.simplefilter("always")
+                    actual = actual_call()
+                with warnings.catch_warnings(record=True) as expected_warnings:
+                    warnings.simplefilter("always")
+                    expected = expected_call()
+
+                with self.subTest(case=(case, form), warning=True):
+                    self.assertEqual(len(actual_warnings), len(expected_warnings))
+                    self.assertEqual(len(actual_warnings), int(actual_warns))
+                    if actual_warns:
+                        self.assertIs(actual_warnings[0].category, UserWarning)
+                        self.assertIs(expected_warnings[0].category, UserWarning)
+                        self.assertEqual(
+                            str(actual_warnings[0].message),
+                            str(expected_warnings[0].message),
+                        )
+                self.assert_matches(actual, expected, case=(case, form))
+
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    actual_repeat = actual_call()
+                    expected_repeat = expected_call()
+                with self.subTest(case=(case, form), storage=True):
+                    self.assertFalse(actual.is_set_to(actual_repeat))
+                    self.assertFalse(expected.is_set_to(expected_repeat))
+                    self.assertFalse(actual.is_set_to(actual_input))
+                    self.assertFalse(expected.is_set_to(expected_input))
+                    self.assertFalse(actual.is_set_to(actual_target))
+                    self.assertFalse(expected.is_set_to(expected_target))
+                    self.assertNotEqual(actual.data_ptr(), actual_repeat.data_ptr())
+                    self.assertNotEqual(expected.data_ptr(), expected_repeat.data_ptr())
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input).reshape(-1).view(np.uint32),
+                    actual_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target).reshape(-1).view(np.uint32),
+                    actual_target_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_target_bits_before,
+                )
+
     def test_unbroadcastable_shape_warning_and_error_match_pytorch_2_13(self):
         actual_input = torch.ones((2, 3))
         actual_target = torch.zeros((2, 2))
@@ -847,6 +992,74 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 expected,
                 case=(input_requires_grad, target_requires_grad),
             )
+
+    def test_mean_reduction_requires_grad_matches_no_grad_and_rejects_active_autograd(self):
+        for input_requires_grad, target_requires_grad in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            actual_input = torch.tensor(
+                [[1.0, -2.0], [3.0, -4.0]],
+                requires_grad=input_requires_grad,
+            )
+            actual_target = torch.tensor(
+                [[0.5, 2.0], [-3.0, 4.5]],
+                requires_grad=target_requires_grad,
+            )
+            expected_input = reference_torch.tensor(
+                [[1.0, -2.0], [3.0, -4.0]],
+                dtype=reference_torch.float32,
+                requires_grad=input_requires_grad,
+            )
+            expected_target = reference_torch.tensor(
+                [[0.5, 2.0], [-3.0, 4.5]],
+                dtype=reference_torch.float32,
+                requires_grad=target_requires_grad,
+            )
+            for form, actual_call, expected_call in (
+                (
+                    "explicit mean",
+                    lambda: functional.l1_loss(
+                        actual_input,
+                        actual_target,
+                        reduction="mean",
+                    ),
+                    lambda: reference_functional.l1_loss(
+                        expected_input,
+                        expected_target,
+                        reduction="mean",
+                    ),
+                ),
+                (
+                    "default mean",
+                    lambda: functional.l1_loss(actual_input, actual_target),
+                    lambda: reference_functional.l1_loss(
+                        expected_input,
+                        expected_target,
+                    ),
+                ),
+            ):
+                with self.subTest(
+                    form=form,
+                    input_requires_grad=input_requires_grad,
+                    target_requires_grad=target_requires_grad,
+                ):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        r"^l1_loss\(\): autograd recording is not supported$",
+                    ):
+                        actual_call()
+
+                    with torch.no_grad():
+                        actual = actual_call()
+                    with reference_torch.no_grad():
+                        expected = expected_call()
+                    self.assert_matches(actual, expected, case=form)
+                    self.assertIsNone(actual_input.grad)
+                    self.assertIsNone(actual_target.grad)
+                    self.assertIsNone(expected_input.grad)
+                    self.assertIsNone(expected_target.grad)
 
     def test_channels_last_requires_grad_matches_no_grad_and_rejects_active_autograd(self):
         for input_requires_grad, target_requires_grad in (
