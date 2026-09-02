@@ -3423,7 +3423,8 @@ impl Tensor {
     }
 
     /// Computes the sum of absolute differences, fusing same-shape row-major
-    /// contiguous inputs into one scalar reduction pass.
+    /// contiguous inputs and rank-two/rank-one trailing-dimension broadcasts
+    /// into one scalar reduction pass.
     ///
     /// # Errors
     ///
@@ -3432,6 +3433,10 @@ impl Tensor {
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn absolute_difference_sum(&self, other: &Self) -> Result<Self, TensorError> {
         if let Some(output) = self.absolute_difference_sum_same_shape_contiguous(other) {
+            return Ok(output);
+        }
+        if let Some(output) = self.absolute_difference_sum_rank_two_trailing_vector_broadcast(other)
+        {
             return Ok(output);
         }
 
@@ -3448,6 +3453,35 @@ impl Tensor {
         };
 
         let total = sum_contiguous_absolute_difference(left, right, self.elements);
+        Some(Self::from_scalar(total, self.dtype(), self.device()))
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn absolute_difference_sum_rank_two_trailing_vector_broadcast(
+        &self,
+        other: &Self,
+    ) -> Option<Self> {
+        let (matrix, vector, vector_on_left) = match (self.shape.as_slice(), other.shape.as_slice())
+        {
+            ([_, columns], [vector_columns]) if columns == vector_columns => (self, other, false),
+            ([vector_columns], [_, columns]) if vector_columns == columns => (other, self, true),
+            _ => return None,
+        };
+        if !matrix.is_contiguous() || !vector.is_contiguous() {
+            return None;
+        }
+        let (Some(matrix_values), Some(vector_values)) =
+            (matrix.contiguous_slice(), vector.contiguous_slice())
+        else {
+            return None;
+        };
+        let columns = vector.shape[0];
+        let total = sum_contiguous_trailing_vector_absolute_difference(
+            matrix_values,
+            vector_values,
+            columns,
+            vector_on_left,
+        );
         Some(Self::from_scalar(total, self.dtype(), self.device()))
     }
 
@@ -6914,6 +6948,63 @@ fn sum_contiguous_absolute_difference(left: &[f32], right: &[f32], elements: usi
         .fold(0.0_f32, |total, (left, right)| {
             total + absolute_value(l1_loss_difference_value(left, right))
         })
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn sum_contiguous_trailing_vector_absolute_difference(
+    matrix: &[f32],
+    vector: &[f32],
+    columns: usize,
+    vector_on_left: bool,
+) -> f32 {
+    if columns == 0 {
+        debug_assert_eq!(matrix.len(), 0, "zero-width matrices have no elements");
+        return 0.0;
+    }
+    debug_assert_eq!(vector.len(), columns);
+    debug_assert_eq!(matrix.len() % columns, 0);
+
+    let vector_contains_nan = vector.iter().any(|value| value.is_nan());
+    if vector_on_left {
+        matrix.chunks_exact(columns).fold(0.0_f32, |total, row| {
+            vector.iter().copied().zip(row.iter().copied()).fold(
+                total,
+                |total, (vector, matrix)| {
+                    total
+                        + if vector_contains_nan || matrix.is_nan() {
+                            absolute_value(l1_loss_difference_value(vector, matrix))
+                        } else {
+                            l1_loss_finite_absolute_difference_value(vector, matrix)
+                        }
+                },
+            )
+        })
+    } else {
+        matrix.chunks_exact(columns).fold(0.0_f32, |total, row| {
+            row.iter().copied().zip(vector.iter().copied()).fold(
+                total,
+                |total, (matrix, vector)| {
+                    total
+                        + if vector_contains_nan || matrix.is_nan() {
+                            absolute_value(l1_loss_difference_value(matrix, vector))
+                        } else {
+                            l1_loss_finite_absolute_difference_value(matrix, vector)
+                        }
+                },
+            )
+        })
+    }
+}
+
+#[inline]
+#[cfg(any(feature = "python-bindings", test))]
+fn l1_loss_finite_absolute_difference_value(left: f32, right: f32) -> f32 {
+    let difference = left - right;
+    if difference.is_nan() {
+        absolute_value(l1_loss_difference_value(left, right))
+    } else {
+        absolute_value(difference)
+    }
 }
 
 #[cfg(any(feature = "python-bindings", test))]
@@ -11717,6 +11808,61 @@ mod tests {
         );
     }
 
+    fn assert_l1_sum_trailing_vector_broadcast_fast_path_matches(
+        case: &str,
+        left: &Tensor,
+        right: &Tensor,
+    ) {
+        assert_ne!(left.shape(), right.shape(), "{case}");
+        assert!(left.is_contiguous(), "{case}");
+        assert!(right.is_contiguous(), "{case}");
+        assert!(
+            matches!(
+                (left.shape(), right.shape()),
+                ([_, columns], [vector_columns]) if columns == vector_columns
+            ) || matches!(
+                (left.shape(), right.shape()),
+                ([vector_columns], [_, columns]) if vector_columns == columns
+            ),
+            "{case}"
+        );
+        let left_bits_before = left.logical_values().map(f32::to_bits).collect::<Vec<_>>();
+        let right_bits_before = right.logical_values().map(f32::to_bits).collect::<Vec<_>>();
+
+        let expected = left.absolute_difference(right).unwrap().sum();
+        let fast = left
+            .absolute_difference_sum_rank_two_trailing_vector_broadcast(right)
+            .expect("rank-2/rank-1 trailing vector broadcast should use the L1 sum fast path");
+        let public = left.absolute_difference_sum(right).unwrap();
+
+        for actual in [&fast, &public] {
+            assert_eq!(actual.shape(), &[] as &[usize], "{case}");
+            assert_eq!(actual.stride(), &[] as &[usize], "{case}");
+            assert_eq!(actual.storage_offset(), 0, "{case}");
+            assert_eq!(actual.dtype(), expected.dtype(), "{case}");
+            assert_eq!(actual.device(), expected.device(), "{case}");
+            assert!(!actual.shares_storage_with(left), "{case}");
+            assert!(!actual.shares_storage_with(right), "{case}");
+            assert_eq!(
+                actual.item().unwrap().to_bits(),
+                expected.item().unwrap().to_bits(),
+                "{case}"
+            );
+        }
+
+        assert!(
+            left.logical_values().map(f32::to_bits).eq(left_bits_before),
+            "{case}"
+        );
+        assert!(
+            right
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(right_bits_before),
+            "{case}"
+        );
+    }
+
     #[test]
     fn squared_difference_same_shape_matches_the_established_composition() {
         let assert_matches = |left: &Tensor, right: &Tensor| {
@@ -12117,6 +12263,102 @@ mod tests {
         assert_eq!(
             broadcast_actual.item().unwrap().to_bits(),
             broadcast_expected.item().unwrap().to_bits()
+        );
+    }
+
+    #[test]
+    fn absolute_difference_sum_trailing_vector_broadcast_fast_path_matches_composition() {
+        let matrix_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+            0xff85_4321,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+        ];
+        let vector_bits = [0x8000_0000, 0x7f80_0000, 0xff86_789a, 0x7f82_abcd];
+        let matrix = Tensor::from_vec(matrix_bits.map(f32::from_bits).to_vec(), [3, 4]).unwrap();
+        let vector = Tensor::from_vec(vector_bits.map(f32::from_bits).to_vec(), [4]).unwrap();
+        assert_l1_sum_trailing_vector_broadcast_fast_path_matches(
+            "target broadcast edge bits",
+            &matrix,
+            &vector,
+        );
+        assert_l1_sum_trailing_vector_broadcast_fast_path_matches(
+            "input broadcast edge bits",
+            &vector,
+            &matrix,
+        );
+
+        let offset_matrix = offset_contiguous_tensor(&matrix_bits, &[3, 4]);
+        let offset_vector = offset_contiguous_tensor(&vector_bits, &[4]);
+        assert_l1_sum_trailing_vector_broadcast_fast_path_matches(
+            "offset target broadcast",
+            &offset_matrix,
+            &offset_vector,
+        );
+        assert_l1_sum_trailing_vector_broadcast_fast_path_matches(
+            "offset input broadcast",
+            &offset_vector,
+            &offset_matrix,
+        );
+
+        let empty_rows = Tensor::zeros([0, 4]).unwrap();
+        assert_l1_sum_trailing_vector_broadcast_fast_path_matches(
+            "empty leading target broadcast",
+            &empty_rows,
+            &vector,
+        );
+        assert_l1_sum_trailing_vector_broadcast_fast_path_matches(
+            "empty leading input broadcast",
+            &vector,
+            &empty_rows,
+        );
+
+        let empty_columns = Tensor::zeros([3, 0]).unwrap();
+        let empty_vector = Tensor::zeros([0]).unwrap();
+        assert_l1_sum_trailing_vector_broadcast_fast_path_matches(
+            "empty trailing target broadcast",
+            &empty_columns,
+            &empty_vector,
+        );
+        assert_l1_sum_trailing_vector_broadcast_fast_path_matches(
+            "empty trailing input broadcast",
+            &empty_vector,
+            &empty_columns,
+        );
+
+        let noncontiguous_matrix =
+            Tensor::from_vec(matrix_bits.map(f32::from_bits).to_vec(), [4, 3])
+                .unwrap()
+                .transpose(0, 1)
+                .unwrap();
+        assert_eq!(noncontiguous_matrix.shape(), matrix.shape());
+        assert!(!noncontiguous_matrix.is_contiguous());
+        assert!(
+            noncontiguous_matrix
+                .absolute_difference_sum_rank_two_trailing_vector_broadcast(&vector)
+                .is_none()
+        );
+
+        let column = Tensor::from_vec(vec![1.0, 2.0, 3.0], [3, 1]).unwrap();
+        assert!(
+            matrix
+                .absolute_difference_sum_rank_two_trailing_vector_broadcast(&column)
+                .is_none()
+        );
+
+        let scalar = Tensor::from_vec(vec![0.5], []).unwrap();
+        assert!(
+            matrix
+                .absolute_difference_sum_rank_two_trailing_vector_broadcast(&scalar)
+                .is_none()
         );
     }
 

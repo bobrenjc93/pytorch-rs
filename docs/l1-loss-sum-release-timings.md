@@ -2,9 +2,122 @@
 
 Date: 2026-09-02
 
-Candidate provenance: source snapshot based on
-`123ad635c137da09765334b22b8dc29345dd4fa0`. This branch adds timing evidence
-only; it does not change the runtime implementation.
+Focused update provenance: working tree based on
+`03f6a4db46a076d53ce5462e8de6a181d5d9780a`. This branch adds a direct
+native scalar-reduction path for row-major rank-2/rank-1 trailing-dimension
+broadcast `l1_loss(reduction="sum")` operands.
+
+The focused run below remeasured the weak
+`l1_sum_broadcast_640x768_by_768` cell after the implementation change. Inputs
+were created outside the timed region with integer-valued CPU `float32` data,
+warnings were checked against PyTorch 2.13 before timing and then ignored
+symmetrically during timing, and each measured block consumed the scalar output
+into a BLAKE2b checksum. Both implementation orders ran serially pinned to CPU
+24 with one BLAS/OpenMP/NumExpr thread.
+
+```bash
+env UV_CACHE_DIR="$PWD/target/uv-cache" \
+  UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python" \
+  uv venv --clear --python 3.12 .venv
+env UV_CACHE_DIR="$PWD/target/uv-cache" \
+  UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python" \
+  uv sync --locked --no-install-project --group dev --group reference
+mkdir -p target/cargo-home/registry
+cp -a /home/bobren/.cargo/registry/. target/cargo-home/registry/
+mkdir -p target/test-wheels
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  TMPDIR="$PWD/target" \
+  VIRTUAL_ENV="$PWD/.venv" \
+  PYO3_PYTHON="$PWD/.venv/bin/python" \
+  .venv/bin/maturin build --release --locked --offline \
+  --out target/test-wheels
+env UV_CACHE_DIR="$PWD/target/uv-cache" \
+  UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python" \
+  uv pip install --python "$PWD/.venv/bin/python" \
+  --force-reinstall --no-deps target/test-wheels/torch_rs-*.whl
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest \
+  tests.test_nn_functional_l1_loss \
+  tests.test_nn_functional_l1_loss_reference
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  cargo test --locked --offline --all-targets
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  cargo clippy --locked --offline --all-targets -- -D warnings
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  taskset -c 24 .venv/bin/python target/l1_loss_sum_broadcast_release_timing.py \
+  > target/l1-loss-sum-broadcast-release-timing.json
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  L1_LOSS_SUM_IMPL_ORDER=pytorch,torch_rs \
+  taskset -c 24 .venv/bin/python target/l1_loss_sum_broadcast_release_timing.py \
+  > target/l1-loss-sum-broadcast-release-timing-pass2.json
+```
+
+Checks run for this focused update:
+
+```bash
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  cargo fmt --check
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  cargo test --locked --offline --all-targets
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  cargo clippy --locked --offline --all-targets -- -D warnings
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest \
+  tests.test_nn_functional_l1_loss \
+  tests.test_nn_functional_l1_loss_reference
+```
+
+Focused environment:
+
+- CPU: AMD EPYC 9654 96-Core Processor, 2 sockets, 96 cores/socket,
+  2 threads/core
+- OS: Linux 6.13.2-0_fbk12_0_g0b66b3635210 x86_64, glibc 2.34
+- Python: 3.12.14+meta
+- NumPy: 2.5.1
+- Rust: `rustc 1.92.0 (ded5c06cf 2025-12-08)`,
+  `cargo 1.92.0 (344c4567c 2025-10-21)`
+- Maturin: 1.14.1
+- PyTorch: 2.13.0+cu130, CUDA runtime 13.0
+- Profile: release, Cargo `[profile.release]` with thin LTO and one codegen
+  unit
+- Device/dtype: CPU float32; `CUDA_VISIBLE_DEVICES=` for the timing runs
+- CPU affinity: `taskset -c 24`
+- Threads: `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`,
+  `OPENBLAS_NUM_THREADS=1`, `NUMEXPR_NUM_THREADS=1`,
+  `torch.set_num_threads(1)`, `torch.set_num_interop_threads(1)`;
+  `torch_rs.get_num_threads()` and `torch_rs.get_num_interop_threads()` both
+  reported 1
+- Dependency installation: locked `uv sync` resolved in 26 ms, prepared
+  packages in 15.80s, and installed in 1.10s
+- Build time: successful offline release wheel build completed in 29.08s
+
+| Workload | Category | Input / target | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Checksums |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| `l1_sum_broadcast_640x768_by_768` | broadcast | `(640, 768), stride (768, 1), offset 0` / `(768,), stride (1,), offset 0` | `(), stride (), offset 0, requires_grad=False` | 8 | 429.444 us +/- 2.668 us, var 330.855 | 123.914 us +/- 0.646 us, var 2.948 | 3.47x | `d50422156b6bd7f1`/`d50422156b6bd7f1` |
+
+This improves the historical broadcast-cell slowdown below from 4.27x to
+3.47x while keeping the same PyTorch-visible output metadata, warning, and
+scalar value.
+
+Previous full-report provenance: source snapshot based on
+`123ad635c137da09765334b22b8dc29345dd4fa0`. That earlier branch added timing
+evidence only; it did not change the runtime implementation.
 
 Exact setup, build, check, and timing commands were run from the repository
 root. The timing driver was a one-off file under ignored `target/` storage and
