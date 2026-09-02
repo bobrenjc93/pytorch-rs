@@ -124,6 +124,7 @@ SUPPORTED_SURFACE_NAMESPACE_SUMMARIES = (
             "`torch.cuda.device_count`",
             "`torch.cuda.is_available`",
             "`torch.cuda.is_initialized`",
+            "`torch.cuda.memory_allocated`",
         ),
     ),
     (
