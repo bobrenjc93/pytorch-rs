@@ -3739,6 +3739,35 @@ impl Tensor {
         self.scalar_div_with_output_layout(scalar, shape, strides)
     }
 
+    /// Divides a scalar by every element using top-level true-division
+    /// arithmetic and the tensor operand's binary-op output layout.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result allocation fails.
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn scalar_div_with_tensor_operand_layout(
+        &self,
+        scalar: f32,
+    ) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
+        }
+        let elements = self.elements;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides =
+            elementwise_output_strides(&shape, &[ElementwiseLayout::from_tensor(self)], elements)?;
+        let data = self.materialize_with_strides(&strides, |value| scalar / value)?;
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        ))
+    }
+
     /// Computes the reciprocal of every element using unary output layout planning.
     ///
     /// # Errors

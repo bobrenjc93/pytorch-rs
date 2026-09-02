@@ -15,6 +15,11 @@ except ImportError:
     reference_torch = None
 
 
+def tensor_from_float32_bits(module, *values):
+    bits = np.asarray(values, dtype=np.uint32)
+    return module.tensor(memoryview(bits.view(np.float32)))
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class TopLevelDivReferenceTests(unittest.TestCase):
     @classmethod
@@ -138,6 +143,16 @@ class TopLevelDivReferenceTests(unittest.TestCase):
                     expected_function(input=expected_offset, other=scalar),
                     case=(name, "keyword scalar", case),
                 )
+                self.assert_matches(
+                    actual_function(scalar, actual_offset),
+                    expected_function(scalar, expected_offset),
+                    case=(name, "scalar-left", case),
+                )
+                self.assert_matches(
+                    actual_function(input=scalar, other=actual_offset),
+                    expected_function(input=scalar, other=expected_offset),
+                    case=(name, "keyword scalar-left", case),
+                )
 
             actual_empty = torch.zeros((2, 0, 3)).transpose(0, 2)
             expected_empty = reference_torch.zeros((2, 0, 3)).transpose(0, 2)
@@ -147,6 +162,11 @@ class TopLevelDivReferenceTests(unittest.TestCase):
                     expected_empty, reference_torch.ones((1, 1, 2))
                 ),
                 case=(name, "strided broadcast empty"),
+            )
+            self.assert_matches(
+                actual_function(2.0, actual_empty),
+                expected_function(2.0, expected_empty),
+                case=(name, "scalar-left strided broadcast empty"),
             )
 
             special_bits = np.asarray(
@@ -176,6 +196,36 @@ class TopLevelDivReferenceTests(unittest.TestCase):
                 expected_function(expected_special, expected_divisors),
                 case=(name, "signed zero nan infinity"),
             )
+            for scalar in (0.0, -0.0, float("inf"), float("-inf"), float("nan")):
+                self.assert_matches(
+                    actual_function(scalar, actual_divisors),
+                    expected_function(scalar, expected_divisors),
+                    case=(name, "scalar-left signed zero nan infinity", scalar),
+                )
+
+            actual_subnormal_denominator = tensor_from_float32_bits(
+                torch, 0x0000_0001
+            )
+            expected_subnormal_denominator = tensor_from_float32_bits(
+                reference_torch, 0x0000_0001
+            )
+            self.assert_matches(
+                actual_function(1e-30, actual_subnormal_denominator),
+                expected_function(1e-30, expected_subnormal_denominator),
+                case=(name, "scalar-left subnormal denominator"),
+            )
+
+            actual_payload_nan_denominator = tensor_from_float32_bits(
+                torch, 0x7FC1_2345
+            )
+            expected_payload_nan_denominator = tensor_from_float32_bits(
+                reference_torch, 0x7FC1_2345
+            )
+            self.assert_matches(
+                actual_function(float("nan"), actual_payload_nan_denominator),
+                expected_function(float("nan"), expected_payload_nan_denominator),
+                case=(name, "scalar-left nan numerator payload"),
+            )
 
     def test_no_grad_operands_match_pytorch_2_13(self):
         for name in ("div", "divide"):
@@ -192,15 +242,22 @@ class TopLevelDivReferenceTests(unittest.TestCase):
                     actual_left.transpose(0, 1), actual_right.transpose(0, 1)
                 )
                 actual_scalar = actual_function(actual_left, 2.0)
+                actual_reflected_scalar = actual_function(2.0, actual_left)
             with reference_torch.no_grad():
                 expected_tensor = expected_function(
                     expected_left.transpose(0, 1),
                     expected_right.transpose(0, 1),
                 )
                 expected_scalar = expected_function(expected_left, 2.0)
+                expected_reflected_scalar = expected_function(2.0, expected_left)
 
             self.assert_matches(actual_tensor, expected_tensor, case=(name, "tensor"))
             self.assert_matches(actual_scalar, expected_scalar, case=(name, "scalar"))
+            self.assert_matches(
+                actual_reflected_scalar,
+                expected_reflected_scalar,
+                case=(name, "reflected scalar"),
+            )
 
     @staticmethod
     def dispatch_observation(module, function_name):
