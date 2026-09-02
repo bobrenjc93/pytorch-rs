@@ -1010,6 +1010,79 @@ class FunctionalMseLossTests(unittest.TestCase):
             case="empty",
         )
 
+    def test_sum_reduction_backward_edge_bits_match_pytorch_2_13_contract(self):
+        input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        target_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x8000_0000,
+                0x0000_0000,
+                0xFFC5_4321,
+                0x7FC1_2345,
+                0xFF85_4321,
+                0x7F81_2345,
+            ],
+            dtype=np.uint32,
+        )
+        expected_input_grad_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x0000_0000,
+                0x0000_0000,
+                0x8000_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ],
+            dtype=np.uint32,
+        )
+        expected_target_grad_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0000,
+                0xFFC5_4321,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7FC1_2345,
+            ],
+            dtype=np.uint32,
+        )
+        input = torch.tensor(
+            memoryview(input_bits.view(np.float32)),
+            requires_grad=True,
+        )
+        target = torch.tensor(
+            memoryview(target_bits.view(np.float32)),
+            requires_grad=True,
+        )
+
+        functional.mse_loss(input, target, reduction="sum").backward()
+
+        np.testing.assert_array_equal(
+            self.tensor_bits(input.grad),
+            expected_input_grad_bits,
+        )
+        np.testing.assert_array_equal(
+            self.tensor_bits(target.grad),
+            expected_target_grad_bits,
+        )
+
     def test_same_stride_noncontiguous_requires_grad_operands_need_no_grad(self):
         for input_requires_grad, target_requires_grad in (
             (True, False),

@@ -4791,24 +4791,25 @@ fn apply_squared_difference_grad_fn(
         }
         let (left_index, left_offset) = left.broadcast_position(output_shape, &coordinates);
         let (right_index, right_offset) = right.broadcast_position(output_shape, &coordinates);
-        let difference = left
+        let left_value = left
             .storage
             .as_ref()
             .expect("squared-difference derivative must save left operand values")
             .value(left_offset)
-            .expect("saved left operand offset must address storage")
-            - right
-                .storage
-                .as_ref()
-                .expect("squared-difference derivative must save right operand values")
-                .value(right_offset)
-                .expect("saved right operand offset must address storage");
-        let local_gradient = square_backward_value(difference, output_gradient);
+            .expect("saved left operand offset must address storage");
+        let right_value = right
+            .storage
+            .as_ref()
+            .expect("squared-difference derivative must save right operand values")
+            .value(right_offset)
+            .expect("saved right operand offset must address storage");
         if let Some(gradient) = &mut left_gradient {
+            let local_gradient = square_backward_value(left_value - right_value, output_gradient);
             gradient.add(left_index, local_gradient);
         }
         if let Some(gradient) = &mut right_gradient {
-            gradient.add(right_index, -local_gradient);
+            let local_gradient = square_backward_value(right_value - left_value, output_gradient);
+            gradient.add(right_index, local_gradient);
         }
     }
     if let (Some(meta), Some(gradient)) = (&left.autograd, left_gradient) {

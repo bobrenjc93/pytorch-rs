@@ -1316,6 +1316,73 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             case="empty",
         )
 
+    def test_sum_reduction_backward_edge_bits_match_pytorch_2_13(self):
+        input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        target_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x8000_0000,
+                0x0000_0000,
+                0xFFC5_4321,
+                0x7FC1_2345,
+                0xFF85_4321,
+                0x7F81_2345,
+            ],
+            dtype=np.uint32,
+        )
+        actual_input = torch.tensor(
+            memoryview(input_bits.view(np.float32)),
+            requires_grad=True,
+        )
+        actual_target = torch.tensor(
+            memoryview(target_bits.view(np.float32)),
+            requires_grad=True,
+        )
+        expected_input = reference_torch.tensor(
+            memoryview(input_bits.view(np.float32)),
+            requires_grad=True,
+        )
+        expected_target = reference_torch.tensor(
+            memoryview(target_bits.view(np.float32)),
+            requires_grad=True,
+        )
+
+        functional.mse_loss(
+            actual_input,
+            actual_target,
+            reduction="sum",
+        ).backward()
+        reference_functional.mse_loss(
+            expected_input,
+            expected_target,
+            reduction="sum",
+        ).backward()
+
+        for name, actual, expected in (
+            ("input", actual_input, expected_input),
+            ("target", actual_target, expected_target),
+        ):
+            with self.subTest(operand=name):
+                self.assertEqual(actual.grad.shape, tuple(expected.grad.shape))
+                self.assertEqual(actual.grad.stride(), expected.grad.stride())
+                np.testing.assert_array_equal(
+                    np.asarray(actual.grad).reshape(-1).view(np.uint32),
+                    expected.grad.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                )
+
     def test_unbroadcastable_shape_warning_and_error_match_pytorch_2_13(self):
         actual_input = torch.ones((2, 3))
         actual_target = torch.zeros((2, 2))
