@@ -10,6 +10,18 @@ thread_local! {
 #[derive(Clone, Copy)]
 pub(crate) struct GradModeToken(usize);
 
+impl GradModeToken {
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn raw(self) -> usize {
+        self.0
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn from_raw(raw: usize) -> Self {
+        Self(raw)
+    }
+}
+
 struct GradModeEntry {
     token: GradModeToken,
     enabled: bool,
@@ -45,6 +57,21 @@ impl Drop for EnableGradGuard {
     }
 }
 
+/// A thread-local guard which sets eager graph recording until dropped.
+///
+/// The guard is intentionally confined to its creating thread. When dropped it
+/// restores the gradient mode that was effective before the guard was created.
+pub struct SetGradEnabledGuard {
+    token: GradModeToken,
+    _not_send: PhantomData<Rc<()>>,
+}
+
+impl Drop for SetGradEnabledGuard {
+    fn drop(&mut self) {
+        exit_grad_mode(self.token);
+    }
+}
+
 /// Disables eager graph recording on the current thread for the guard's
 /// lifetime.
 #[must_use]
@@ -62,6 +89,16 @@ pub fn no_grad() -> NoGradGuard {
 pub fn enable_grad() -> EnableGradGuard {
     let token = enter_enable_grad();
     EnableGradGuard {
+        token,
+        _not_send: PhantomData,
+    }
+}
+
+/// Sets eager graph recording on the current thread for the guard's lifetime.
+#[must_use]
+pub fn set_grad_enabled(enabled: bool) -> SetGradEnabledGuard {
+    let token = enter_grad_mode(enabled);
+    SetGradEnabledGuard {
         token,
         _not_send: PhantomData,
     }
@@ -91,7 +128,12 @@ pub(crate) fn exit_grad_mode(token: GradModeToken) {
     });
 }
 
-fn enter_grad_mode(enabled: bool) -> GradModeToken {
+#[cfg(feature = "python-bindings")]
+pub(crate) fn is_grad_mode_token_current(token: GradModeToken) -> bool {
+    GRAD_MODE_STACK.with_borrow(|stack| stack.last().is_some_and(|entry| entry.token.0 == token.0))
+}
+
+pub(crate) fn enter_grad_mode(enabled: bool) -> GradModeToken {
     let token = NEXT_GRAD_MODE_TOKEN.with(|next_token| {
         let token = next_token.get();
         next_token.set(
