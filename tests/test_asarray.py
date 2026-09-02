@@ -65,6 +65,54 @@ class AsArrayTests(unittest.TestCase):
             ("special bits", torch.tensor(memoryview(special_bits.view(np.float32)))),
         )
 
+    def tensor_copy_cases(self):
+        dense_values = [float(value) for value in range(12)]
+        channel_bits = np.resize(
+            np.asarray(
+                (
+                    0x00000000,
+                    0x80000000,
+                    0x00000001,
+                    0x80000001,
+                    0x7F800000,
+                    0xFF800000,
+                    0x7FC12345,
+                    0xFFC54321,
+                    0x3F800000,
+                ),
+                dtype=np.uint32,
+            ),
+            48,
+        )
+        channel_source = torch.tensor(
+            memoryview(channel_bits.view(np.float32)), dtype=torch.float32
+        ).reshape((2, 3, 2, 4))
+        requires_grad_leaf = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        return (
+            ("scalar", torch.tensor(-0.0, dtype=torch.float32)),
+            ("empty", torch.zeros((2, 0, 3), dtype=torch.float32)[1]),
+            (
+                "offset",
+                torch.tensor(dense_values, dtype=torch.float32).reshape((3, 4))[1],
+            ),
+            (
+                "noncontiguous",
+                torch.tensor(dense_values, dtype=torch.float32)
+                .reshape((3, 4))
+                .transpose(0, 1),
+            ),
+            (
+                "channels-last",
+                channel_source.clone(memory_format=torch.channels_last),
+            ),
+            ("requires-grad leaf", requires_grad_leaf),
+            ("requires-grad view", (requires_grad_leaf * 2.0).transpose(0, 1)),
+        )
+
     def tensor_state(self, tensor):
         return (
             np.asarray(tensor).reshape(-1).view(np.uint32).tolist(),
@@ -141,6 +189,77 @@ class AsArrayTests(unittest.TestCase):
                     self.assertIs(result, tensor)
                     self.assertEqual(result.data_ptr(), before[4])
                     self.assertEqual(self.tensor_state(tensor), before)
+
+    def test_copy_true_exact_native_cpu_float32_tensors_use_clone_path(self):
+        option_cases = (
+            {"copy": True},
+            {"copy": True, "dtype": None},
+            {"copy": True, "dtype": torch.float32},
+            {"copy": True, "dtype": torch.float},
+            {"copy": True, "device": None},
+            {"copy": True, "device": "cpu"},
+            {"copy": True, "device": torch.device("cpu")},
+            {
+                "copy": True,
+                "dtype": torch.float32,
+                "device": torch.device("cpu"),
+                "requires_grad": None,
+            },
+        )
+        for case, tensor in self.tensor_copy_cases():
+            before = self.tensor_state(tensor)
+            expected = tensor.clone()
+            expected_state = self.tensor_state(expected)
+            for options in option_cases:
+                with self.subTest(case=case, options=options):
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        result = torch.asarray(tensor, **options)
+                    result_state = self.tensor_state(result)
+                    self.assertIsNot(result, tensor)
+                    self.assertFalse(result.is_set_to(tensor))
+                    if tensor.numel() > 0:
+                        self.assertNotEqual(result.data_ptr(), before[4])
+                    self.assertEqual(self.tensor_state(tensor), before)
+                    self.assertEqual(result_state[:4], expected_state[:4])
+                    self.assertEqual(result_state[5:], expected_state[5:])
+
+    def test_copy_true_preserves_autograd_and_honors_no_grad(self):
+        leaf = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        source = (leaf * 3.0).transpose(0, 1)[1]
+        before = self.tensor_state(source)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = torch.asarray(source, copy=True)
+
+        self.assertIsNot(result, source)
+        self.assertFalse(result.is_set_to(source))
+        self.assertTrue(result.requires_grad)
+        self.assertFalse(result.is_leaf)
+        self.assertEqual(self.tensor_state(source), before)
+
+        result.sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad), [[0.0, 3.0, 0.0], [0.0, 3.0, 0.0]]
+        )
+
+        no_grad_leaf = torch.ones((2, 3), dtype=torch.float32, requires_grad=True)
+        no_grad_source = (no_grad_leaf * 3.0).transpose(0, 1)[1]
+        before = self.tensor_state(no_grad_source)
+        with torch.no_grad():
+            result = torch.asarray(no_grad_source, copy=True)
+
+        self.assertIsNot(result, no_grad_source)
+        self.assertFalse(result.is_set_to(no_grad_source))
+        self.assertTrue(result.requires_grad)
+        self.assertTrue(result.is_leaf)
+        self.assertEqual(result.output_nr, 0)
+        self.assertEqual(self.tensor_state(no_grad_source), before)
+        np.testing.assert_array_equal(np.asarray(result), [3.0, 3.0])
 
     def test_python_float_scalars_create_fresh_cpu_float32_leaves(self):
         option_cases = (
@@ -641,17 +760,17 @@ class AsArrayTests(unittest.TestCase):
                 "asarray(): indexed CPU devices require a copy and are not supported",
             ),
             (
-                lambda: torch.asarray(tensor, copy=True),
-                NotImplementedError,
-                "asarray(): copy=True requires a copy and is not supported",
-            ),
-            (
                 lambda: torch.asarray(1.0, copy=True),
                 NotImplementedError,
                 "asarray(): copy=True requires a copy and is not supported",
             ),
             (
                 lambda: torch.asarray([1.0], copy=True),
+                NotImplementedError,
+                "asarray(): copy=True requires a copy and is not supported",
+            ),
+            (
+                lambda: torch.asarray(np.asarray([1.0], dtype=np.float32), copy=True),
                 NotImplementedError,
                 "asarray(): copy=True requires a copy and is not supported",
             ),
@@ -673,6 +792,16 @@ class AsArrayTests(unittest.TestCase):
             ),
             (
                 lambda: torch.asarray(tensor, requires_grad=True),
+                NotImplementedError,
+                explicit_requires_grad,
+            ),
+            (
+                lambda: torch.asarray(tensor, copy=True, requires_grad=False),
+                NotImplementedError,
+                explicit_requires_grad,
+            ),
+            (
+                lambda: torch.asarray(tensor, copy=True, requires_grad=True),
                 NotImplementedError,
                 explicit_requires_grad,
             ),
