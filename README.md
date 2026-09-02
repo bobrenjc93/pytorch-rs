@@ -44,14 +44,17 @@ The current native backend supports eager CPU `float32` tensors, core
 construction and layout/view operations, selected math and neural-network
 functions, and limited first-order autograd. Top-level `torch.cuda` exposes
 CPU-build probes only: `device_count()` is `0`, `is_available()` is `False`,
-and `is_initialized()` is `False`. `torch.backends.cuda` includes preference
-flags such as `enable_flash_sdp(...)`, `enable_cudnn_sdp(...)`, and the
-`sdp_kernel(...)` context manager/decorator, but they do not add
-`torch.nn.functional.scaled_dot_product_attention`, CUDA tensors, actual
-attention-kernel dispatch, or CUDA `torch.compile` execution. Device selection,
-streams, events, synchronization, allocator APIs, runtime initialization,
-additional tensor dtypes, and the full module, optimizer, model-serialization,
-compiler, and distributed stacks remain unsupported.
+and `is_initialized()` is `False`. `torch.get_default_device()` reports CPU,
+and `torch.set_default_device(...)` accepts default-equivalent CPU requests as a
+compatibility no-op; mutable default-device routing, CUDA/meta defaults, and
+`torch.device` context behavior remain unsupported. `torch.backends.cuda`
+includes preference flags such as `enable_flash_sdp(...)`,
+`enable_cudnn_sdp(...)`, and the `sdp_kernel(...)` context manager/decorator,
+but they do not add `torch.nn.functional.scaled_dot_product_attention`, CUDA
+tensors, actual attention-kernel dispatch, or CUDA `torch.compile` execution.
+Device selection, streams, events, synchronization, allocator APIs, runtime
+initialization, additional tensor dtypes, and the full module, optimizer,
+model-serialization, compiler, and distributed stacks remain unsupported.
 
 See the [exhaustive supported surface](docs/supported-surface.md) for exact API
 and limitation details, [FEATURES.md](FEATURES.md) for the weighted coverage

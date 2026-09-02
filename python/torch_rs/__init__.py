@@ -203,6 +203,69 @@ def get_default_device() -> "torch.device":
     return torch.device("cpu")
 
 
+def _default_device_type_name(value):
+    value_type = _builtins.type(value)
+    if value_type is Tensor:
+        return "Tensor"
+    if value_type is dtype:
+        return "torch.dtype"
+    if value_type is device:
+        return "torch.device"
+    if value_type is memory_format:
+        return "torch.memory_format"
+    if value_type is layout:
+        return "torch.layout"
+    if value_type is Size:
+        return "torch.Size"
+    if value_type is finfo:
+        return "torch.finfo"
+
+    name = _builtins.object.__getattribute__(value_type, "__name__")
+    module = _builtins.object.__getattribute__(value_type, "__module__")
+    if module == "numpy":
+        return f"numpy.{name}"
+    return name
+
+
+def _unsupported_default_device_error() -> NotImplementedError:
+    return NotImplementedError(
+        "set_default_device(): mutable default-device routing is not supported; "
+        "only None and unindexed CPU are accepted"
+    )
+
+
+def set_default_device(device: "Device") -> None:
+    r"""Sets the default ``torch.Tensor`` to be allocated on ``device``.
+
+    This CPU-only compatibility entrypoint accepts only default-equivalent CPU
+    requests and returns ``None`` without changing factory routing. Mutable
+    default-device routing, CUDA/meta defaults, indexed CPU defaults, and
+    ``torch.device`` context behavior remain unsupported.
+    """
+    if device is None:
+        return None
+
+    if _builtins.isinstance(device, _builtins.str):
+        try:
+            device = _C.device(device)
+        except RuntimeError as error:
+            if "only 'cpu' is implemented" in _builtins.str(error):
+                raise _unsupported_default_device_error() from None
+            raise
+
+    if not _builtins.isinstance(device, _C.device):
+        type_name = _default_device_type_name(device)
+        raise TypeError(
+            "set_default_device(): argument 'device' must be torch.device, "
+            f"str, or None, not {type_name}"
+        )
+
+    if device.type == "cpu" and device.index is None:
+        return None
+
+    raise _unsupported_default_device_error()
+
+
 @_functools.cache
 def get_device_module(device: torch.device | str | None = None):
     """
@@ -508,6 +571,7 @@ __all__ = [
     "set_deterministic_debug_mode",
     "is_deterministic_algorithms_warn_only_enabled",
     "get_default_device",
+    "set_default_device",
     "get_device_module",
     "get_float32_matmul_precision",
     "set_float32_matmul_precision",
