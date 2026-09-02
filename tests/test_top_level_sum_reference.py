@@ -71,6 +71,7 @@ class TopLevelSumReferenceTests(unittest.TestCase):
                 "empty",
                 module.zeros((2, 0, 3), dtype=module.float32).transpose(0, 2)[1],
             ),
+            ("singleton", module.tensor([[[7.0]]], dtype=module.float32)[0]),
             ("contiguous offset", dense[1]),
             ("offset", noncontiguous[1]),
             ("noncontiguous", noncontiguous),
@@ -99,6 +100,24 @@ class TopLevelSumReferenceTests(unittest.TestCase):
         if form == "none dim dtype out none":
             return module.sum(
                 input=source, dim=None, keepdim=False, dtype=module.float32, out=None
+            )
+        if form == "positional none dim keepdim true":
+            return module.sum(source, None, True)
+        if form == "mixed none dim keepdim true":
+            return module.sum(source, None, keepdim=True)
+        if form == "keyword none dim keepdim true":
+            return module.sum(source, dim=None, keepdim=True)
+        if form == "input keyword keepdim true":
+            return module.sum(input=source, dim=None, keepdim=True)
+        if form == "keepdim true dtype none":
+            return module.sum(source, dim=None, keepdim=True, dtype=None)
+        if form == "keepdim true dtype float32":
+            return module.sum(
+                input=source,
+                dim=None,
+                keepdim=True,
+                dtype=module.float32,
+                out=None,
             )
         return module.sum(**{form: source})
 
@@ -154,6 +173,12 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             "dtype float alias",
             "alias and dtype",
             "none dim dtype out none",
+            "positional none dim keepdim true",
+            "mixed none dim keepdim true",
+            "keyword none dim keepdim true",
+            "input keyword keepdim true",
+            "keepdim true dtype none",
+            "keepdim true dtype float32",
         )
         for actual_case, expected_case in zip(
             actual_cases, expected_cases, strict=True
@@ -222,6 +247,50 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             )
         self.assert_scalar_matches(
             actual, expected, actual_leaf, expected_leaf, case="no_grad"
+        )
+        self.assertIsNone(actual_leaf.grad)
+
+    def test_keepdim_autograd_and_no_grad_match_pytorch_2_13(self):
+        for case in ("scalar", "empty", "offset", "noncontiguous"):
+            actual_leaf, actual_input = self.autograd_case(torch, case)
+            expected_leaf, expected_input = self.autograd_case(reference_torch, case)
+            actual_kept = torch.sum(actual_input, dim=None, keepdim=True)
+            expected_kept = reference_torch.sum(
+                expected_input, dim=None, keepdim=True
+            )
+            self.assert_scalar_matches(
+                actual_kept,
+                expected_kept,
+                actual_input,
+                expected_input,
+                case=(case, "keepdim forward"),
+            )
+
+            actual_kept.sum().backward()
+            expected_kept.sum().backward()
+            self.assertEqual(actual_leaf.grad.shape, tuple(expected_leaf.grad.shape))
+            np.testing.assert_array_equal(
+                np.asarray(actual_leaf.grad),
+                expected_leaf.grad.detach().cpu().numpy(),
+            )
+
+        actual_leaf = torch.tensor([1.0, -2.0, 3.0], requires_grad=True)
+        expected_leaf = reference_torch.tensor(
+            [1.0, -2.0, 3.0],
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        with torch.no_grad():
+            actual = torch.sum(actual_leaf, dim=None, keepdim=True, dtype=torch.float)
+        with reference_torch.no_grad():
+            expected = reference_torch.sum(
+                expected_leaf,
+                dim=None,
+                keepdim=True,
+                dtype=reference_torch.float,
+            )
+        self.assert_scalar_matches(
+            actual, expected, actual_leaf, expected_leaf, case="keepdim no_grad"
         )
         self.assertIsNone(actual_leaf.grad)
 
@@ -614,12 +683,11 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             reference_torch.sum(expected, (0, 1)),
             reference_torch.sum(expected, [0, 1]),
             reference_torch.sum(expected, 0, keepdim=True),
-            reference_torch.sum(expected, None, keepdim=True),
             reference_torch.sum(expected, 0, dtype=reference_torch.float32),
         )
         self.assertEqual(
             [tuple(result.shape) for result in expected_dim_results],
-            [(3,), (3,), (), (), (1, 3), (1, 1), (3,)],
+            [(3,), (3,), (), (), (1, 3), (3,)],
         )
 
         actual_dim_calls = (
@@ -628,7 +696,6 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             lambda: torch.sum(actual, (0, 1)),
             lambda: torch.sum(actual, [0, 1]),
             lambda: torch.sum(actual, 0, keepdim=True),
-            lambda: torch.sum(actual, None, keepdim=True),
             lambda: torch.sum(actual, 0, dtype=torch.float32),
         )
         for case, call in enumerate(actual_dim_calls):
@@ -660,6 +727,19 @@ class TopLevelSumReferenceTests(unittest.TestCase):
         self.assertIs(expected_scalar_out, expected_scalar_destination)
         self.assertEqual(actual_scalar_destination.item(), 17.0)
         self.assertEqual(expected_scalar_destination.item(), 6.0)
+
+        actual_keepdim_destination = torch.tensor([[17.0]])
+        expected_keepdim_destination = reference_torch.tensor(
+            [[17.0]], dtype=reference_torch.float32
+        )
+        with self.assertRaises(NotImplementedError):
+            torch.sum(actual, None, keepdim=True, out=actual_keepdim_destination)
+        expected_keepdim_out = reference_torch.sum(
+            expected, None, keepdim=True, out=expected_keepdim_destination
+        )
+        self.assertIs(expected_keepdim_out, expected_keepdim_destination)
+        self.assertEqual(actual_keepdim_destination.tolist(), [[17.0]])
+        self.assertEqual(expected_keepdim_destination.tolist(), [[6.0]])
 
         with self.assertRaises(TypeError):
             torch.sum(actual, dtype=reference_torch.float64)
