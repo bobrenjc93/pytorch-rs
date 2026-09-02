@@ -3662,15 +3662,10 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when gradient recording is enabled for this tensor, or
-    /// when result metadata or storage allocation fails.
+    /// Returns an error when result metadata or storage allocation fails.
     pub fn reciprocal(&self) -> Result<Self, TensorError> {
-        if self.records_grad() {
-            return Err(TensorError::AutogradRecordingUnsupported {
-                operation: "reciprocal",
-            });
-        }
-        self.unary_map(|value| 1.0 * value.recip())
+        let output = self.unary_map(reciprocal_value)?;
+        self.finish_saved_input_unary_vjp(output, AutogradNode::Reciprocal, apply_reciprocal_vjp)
     }
 
     /// Computes the reciprocal square root of every element using unary output
@@ -5097,6 +5092,23 @@ fn apply_sqrt_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>
                 sqrt_backward_value(input.value_at_linear_index(index), value)
             }),
         );
+    }
+}
+
+fn apply_reciprocal_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    // Borrow one exact saved range for row-contiguous layouts, including
+    // nonzero-offset views, instead of resolving layout and storage per value.
+    if let Some(saved_values) = input.contiguous_slice() {
+        debug_assert_eq!(saved_values.len(), upstream.len());
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| {
+                reciprocal_backward_value(saved_value, upstream_value)
+            },
+        ));
+    } else {
+        gradient.extend(upstream.iter().enumerate().map(|(index, &value)| {
+            reciprocal_backward_value(input.value_at_linear_index(index), value)
+        }));
     }
 }
 
@@ -6558,6 +6570,10 @@ fn sigmoid_value(value: f32) -> f32 {
     1.0 / (1.0 + (-value).exp())
 }
 
+fn reciprocal_value(value: f32) -> f32 {
+    1.0 * value.recip()
+}
+
 fn sqrt_value(value: f32) -> f32 {
     // PyTorch canonicalizes domain errors to a positive quiet NaN while
     // preserving signed zero and the payload and sign of NaN inputs.
@@ -6631,6 +6647,12 @@ fn tanh_value(value: f32) -> f32 {
 #[inline]
 fn sqrt_backward_value(input: f32, upstream: f32) -> f32 {
     upstream / (2.0 * sqrt_value(input))
+}
+
+#[inline]
+fn reciprocal_backward_value(input: f32, upstream: f32) -> f32 {
+    let reciprocal = reciprocal_value(input);
+    -upstream * (reciprocal * reciprocal)
 }
 
 #[inline]
@@ -10997,6 +11019,10 @@ mod tests {
             Some("PowBackward0")
         );
         assert_eq!(source.sqrt().unwrap().grad_fn_name(), Some("SqrtBackward0"));
+        assert_eq!(
+            source.reciprocal().unwrap().grad_fn_name(),
+            Some("ReciprocalBackward0")
+        );
     }
 
     fn binary_outputs(left: &Tensor, right: &Tensor) -> [Tensor; 4] {

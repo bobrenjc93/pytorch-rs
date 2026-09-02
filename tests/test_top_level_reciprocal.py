@@ -129,42 +129,57 @@ class TopLevelReciprocalTests(unittest.TestCase):
                 if source.numel():
                     self.assertNotEqual(output.data_ptr(), source.data_ptr())
 
-    def test_autograd_is_rejected_before_output_planning_and_no_grad_is_allowed(self):
+    @staticmethod
+    def autograd_case():
         leaf = torch.tensor(
-            [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True
+            [[2.0, -4.0, 8.0], [-16.0, 32.0, -64.0]], requires_grad=True
         )
         source = leaf.transpose(0, 1)[1]
+        weights = torch.tensor([3.0, -5.0])
+        return leaf, source, weights
 
-        for form, call in self.supported_calls(source):
+    def test_autograd_records_saved_input_vjp_and_no_grad_is_allowed(self):
+        for form, _ in self.supported_calls(torch.tensor([1.0])):
+            function_leaf, function_input, function_weights = self.autograd_case()
+            method_leaf, method_input, method_weights = self.autograd_case()
             with self.subTest(form=form, mode="recording"):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    r"^reciprocal\(\): autograd recording is not supported$",
-                ):
-                    call()
+                function_output = dict(self.supported_calls(function_input))[form]()
+                method_output = method_input.reciprocal()
+                self.assert_matches_division(
+                    function_output, method_output, case=(form, "forward")
+                )
+                (function_output * function_weights).sum().backward()
+                (method_output * method_weights).sum().backward()
+                self.assert_matches_division(
+                    function_leaf.grad, method_leaf.grad, case=(form, "gradient")
+                )
+
+            no_grad_leaf, no_grad_input, _ = self.autograd_case()
             with self.subTest(form=form, mode="no_grad"):
                 with torch.no_grad():
-                    actual = call()
-                    expected = 1.0 / source
+                    actual = dict(self.supported_calls(no_grad_input))[form]()
+                    expected = no_grad_input.detach().reciprocal()
                 self.assert_matches_division(
                     actual, expected, case=(form, "no_grad")
                 )
+                self.assertIsNone(no_grad_leaf.grad)
 
         extreme = torch.zeros((0,), requires_grad=True).reshape(
             (0, sys.maxsize, 3)
         )
         with self.assertRaisesRegex(
             RuntimeError,
-            r"^reciprocal\(\): autograd recording is not supported$",
+            r"^Stride calculation overflowed$",
         ):
             torch.reciprocal(extreme)
         with torch.no_grad():
             with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
                 torch.reciprocal(extreme)
 
+        _, source, _ = self.autograd_case()
         detached = source.detach()
         self.assert_matches_division(
-            torch.reciprocal(detached), 1.0 / detached, case="detached input"
+            torch.reciprocal(detached), detached.reciprocal(), case="detached input"
         )
 
     def test_concrete_out_is_rejected_without_mutation(self):
