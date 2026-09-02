@@ -9500,6 +9500,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 93
       }
+    },
+    {
+      "key": "pr:1699",
+      "recordedAt": "2026-09-02T16:03:51.919Z",
+      "label": "PR #1699",
+      "kind": "leaf",
+      "prNumber": 1699,
+      "title": "Accept float sequences in torch.asarray",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 95,
+        "eval_39340456": 98.4,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 93
+      }
     }
   ]
 }
