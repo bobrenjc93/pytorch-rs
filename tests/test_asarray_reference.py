@@ -330,6 +330,31 @@ class AsArrayReferenceTests(unittest.TestCase):
             self.error_type_observation(lambda: reference_torch.asarray(data)),
         )
 
+    def test_copy_false_sequence_errors_match_pytorch_2_13(self):
+        recursive_list = []
+        recursive_list.append(recursive_list)
+        recursive_tuple = ([],)
+        recursive_tuple[0].append(recursive_tuple)
+        sequence_cases = (
+            ("integer list", [1]),
+            ("object list", [object()]),
+            ("ragged list", [[1.0], [2.0, 3.0]]),
+            ("recursive list", recursive_list),
+            ("overdeep list", self.nested_singleton(1.0, 129, list)),
+            ("object tuple", (object(),)),
+            ("ragged tuple", ((1.0,), (2.0, 3.0))),
+            ("recursive tuple", recursive_tuple),
+            ("overdeep tuple", self.nested_singleton(1.0, 129, tuple)),
+        )
+        for case, data in sequence_cases:
+            with self.subTest(case=case):
+                self.assertEqual(
+                    self.error_observation(lambda: torch.asarray(data, copy=False)),
+                    self.error_observation(
+                        lambda: reference_torch.asarray(data, copy=False)
+                    ),
+                )
+
     def test_autograd_identity_aliasing_matches_pytorch_2_13(self):
         outcomes = []
         for module in (torch, reference_torch):

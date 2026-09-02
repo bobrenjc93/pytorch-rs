@@ -1664,6 +1664,9 @@ pub(crate) fn asarray_variable_function(
         return Ok(result);
     }
 
+    if is_exact_list_or_tuple(&obj.value) {
+        validate_asarray_sequence_copy(arguments.copy.as_ref())?;
+    }
     let dtype = parse_identity_dtype("asarray", arguments.dtype.as_ref())?;
     let device = parse_as_tensor_device("asarray", arguments.device.as_ref())?;
     validate_asarray_copy(arguments.copy.as_ref())?;
@@ -1682,7 +1685,6 @@ pub(crate) fn asarray_variable_function(
             );
         }
         if let Some((flattened, shape)) = as_tensor_float_sequence(&obj.value)? {
-            validate_asarray_sequence_copy(arguments.copy.as_ref())?;
             return Ok(Py::new(
                 py,
                 CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
@@ -8891,7 +8893,10 @@ fn validate_asarray_scalar_copy(copy: Option<&Bound<'_, PyAny>>) -> PyResult<()>
 }
 
 fn validate_asarray_sequence_copy(copy: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
-    if copy.is_none() {
+    let Some(copy) = copy else {
+        return Ok(());
+    };
+    if copy.is_truthy()? {
         return Ok(());
     }
     Err(PyValueError::new_err(

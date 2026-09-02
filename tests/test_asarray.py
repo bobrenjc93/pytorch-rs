@@ -29,6 +29,7 @@ UNSUPPORTED_ASARRAY_CONVERSION = (
     "arrays/scalars, integer and boolean inference, and other conversions are "
     "not implemented"
 )
+SEQUENCE_COPY_FALSE_ERROR = "can't alias arbitrary sequence into a tensor."
 
 
 class AsArrayTests(unittest.TestCase):
@@ -303,6 +304,30 @@ class AsArrayTests(unittest.TestCase):
                     f"too many dimensions '{type_name}'",
                 )
 
+    def test_copy_false_rejects_exact_sequences_before_conversion(self):
+        recursive_list = []
+        recursive_list.append(recursive_list)
+        recursive_tuple = ([],)
+        recursive_tuple[0].append(recursive_tuple)
+        sequence_cases = (
+            ("integer list", [1]),
+            ("object list", [object()]),
+            ("ragged list", [[1.0], [2.0, 3.0]]),
+            ("recursive list", recursive_list),
+            ("overdeep list", self.nested_singleton(1.0, 129, list)),
+            ("object tuple", (object(),)),
+            ("ragged tuple", ((1.0,), (2.0, 3.0))),
+            ("recursive tuple", recursive_tuple),
+            ("overdeep tuple", self.nested_singleton(1.0, 129, tuple)),
+        )
+        for case, data in sequence_cases:
+            with self.subTest(case=case):
+                self.assert_error(
+                    lambda data=data: torch.asarray(data, copy=False),
+                    ValueError,
+                    SEQUENCE_COPY_FALSE_ERROR,
+                )
+
     def test_identity_preserves_autograd_graph_and_gradient_object(self):
         leaf = torch.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
@@ -476,9 +501,6 @@ class AsArrayTests(unittest.TestCase):
             "asarray(): explicit requires_grad changes are not supported; "
             "existing tensor autograd state is preserved"
         )
-        sequence_copy_false = (
-            "can't alias arbitrary sequence into a tensor."
-        )
         cases = (
             (
                 lambda: torch.asarray(),
@@ -616,7 +638,7 @@ class AsArrayTests(unittest.TestCase):
             (
                 lambda: torch.asarray([1.0], copy=False),
                 ValueError,
-                sequence_copy_false,
+                SEQUENCE_COPY_FALSE_ERROR,
             ),
             (
                 lambda: torch.asarray(tensor, requires_grad=False),
