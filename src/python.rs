@@ -1226,6 +1226,27 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\ndot(other) -> Tensor\n\nSee :func:`torch.dot`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn dot(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let (argument, keyword_error) = bind_dot_method_argument(args, kwargs)?;
+        let other = parse_exact_native_dot_tensor_or_torch_function_argument("tensor", &argument)?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+        if !slf.as_any().is_exact_instance_of::<PyTensor>() {
+            return Err(dot_unsupported_native_input());
+        }
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        dispatch_dot_method(slf.py(), tensor, &other, args, kwargs)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nmatmul(tensor2) -> Tensor\n\nSee :func:`torch.matmul`\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn matmul(
@@ -2532,6 +2553,22 @@ pub(crate) fn matmul_variable_function(
     dispatch_top_level_matmul(py, &input, &other, args, kwargs)
 }
 
+pub(crate) fn dot_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (arguments, out, keyword_error) = bind_top_level_dot_arguments(args, kwargs)?;
+    let input = parse_exact_native_dot_tensor_or_torch_function_argument("input", &arguments[0])?;
+    let tensor = parse_exact_native_dot_tensor_or_torch_function_argument("tensor", &arguments[1])?;
+    let out = parse_top_level_dot_out(out)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    let call = BoundTopLevelDotCall { input, tensor, out };
+    dispatch_top_level_dot(py, &call, args, kwargs)
+}
+
 pub(crate) fn mul_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -3004,6 +3041,12 @@ struct BoundTopLevelMeanCall<'py> {
     out: Option<BoundTensorOrTorchFunction<'py>>,
     full_reduction: bool,
     keepdim_full_reduction: bool,
+}
+
+struct BoundTopLevelDotCall<'py> {
+    input: BoundTensorOrTorchFunction<'py>,
+    tensor: BoundTensorOrTorchFunction<'py>,
+    out: Option<BoundTensorOrTorchFunction<'py>>,
 }
 
 struct BoundMethodReductionCall {
@@ -4725,6 +4768,94 @@ fn dispatch_matmul(
     }
 }
 
+fn dispatch_dot_method(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    other: &BoundTensorOrTorchFunction<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_dot_method_overrides(other)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        let BoundTensorOrTorchFunction::Tensor(other) = other else {
+            unreachable!("dot overrides were collected before the native fast path")
+        };
+        return apply_dot_tensors(py, tensor, other);
+    }
+
+    let function = py.get_type::<PyTensorBase>().getattr("dot")?.unbind();
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+    let argument_count = args
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("dot dispatch argument count overflowed"))?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate dot dispatch arguments"))?;
+    call_arguments.push(tensor.clone().into_any());
+    call_arguments.extend(args.iter());
+    let call_args = PyTuple::new(py, call_arguments)?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    match other {
+        BoundTensorOrTorchFunction::Override(probed) => {
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                "torch.Tensor.dot",
+                active_mode.get(),
+                Some(probed.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundTensorOrTorchFunction::Tensor(other) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.Tensor.dot",
+                    active_mode.get(),
+                    None,
+                )?);
+            }
+            apply_dot_tensors(py, tensor, other)
+        }
+    }
+}
+
+fn apply_dot_tensors(
+    py: Python<'_>,
+    input: &Bound<'_, PyTensor>,
+    tensor: &Bound<'_, PyTensor>,
+) -> PyResult<Py<PyAny>> {
+    let input = input.try_borrow()?;
+    let tensor = tensor.try_borrow()?;
+    validate_dot_tensor(&input)?;
+    validate_dot_tensor(&tensor)?;
+    let output = input
+        .inner
+        .dot(&tensor.inner)
+        .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(output))?.into_any())
+}
+
 fn ordered_binary_overrides<'py>(
     first: Option<&ProbedTorchFunctionOverride<'py>>,
     second: Option<&ProbedTorchFunctionOverride<'py>>,
@@ -4812,6 +4943,42 @@ fn ordered_matmul_overrides<'py>(
     ordered_binary_overrides(input, other, "unable to allocate matmul dispatch operands")
 }
 
+fn ordered_dot_method_overrides<'py>(
+    tensor: &BoundTensorOrTorchFunction<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let tensor = match tensor {
+        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
+        BoundTensorOrTorchFunction::Tensor(_) => None,
+    };
+    ordered_binary_overrides(None, tensor, "unable to allocate dot dispatch operands")
+}
+
+fn ordered_top_level_dot_overrides<'py>(
+    call: &BoundTopLevelDotCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let input = match &call.input {
+        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
+        BoundTensorOrTorchFunction::Tensor(_) => None,
+    };
+    let tensor = match &call.tensor {
+        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
+        BoundTensorOrTorchFunction::Tensor(_) => None,
+    };
+    let out = match &call.out {
+        Some(BoundTensorOrTorchFunction::Override(probed)) => Some(probed),
+        Some(BoundTensorOrTorchFunction::Tensor(_)) | None => None,
+    };
+
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(3)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate dot dispatch operands"))?;
+    for probed in [input, tensor, out].into_iter().flatten() {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
 fn ordered_dtype_overrides<'py>(
     operation: DTypeBinaryOperation,
     first: &BoundDTypeOperand<'py>,
@@ -4895,6 +5062,67 @@ fn dispatch_top_level_matmul(
         active_mode.get(),
         &overrides,
     )?)
+}
+
+fn dispatch_top_level_dot(
+    py: Python<'_>,
+    call: &BoundTopLevelDotCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_top_level_dot_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_dot(py, call);
+    }
+
+    let function = variable_function(py, "dot")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_top_level_dot(py, call);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.dot",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_dot(py: Python<'_>, call: &BoundTopLevelDotCall<'_>) -> PyResult<Py<PyAny>> {
+    if call.out.is_some() {
+        return Err(PyRuntimeError::new_err(
+            "dot(): the 'out' argument is not supported",
+        ));
+    }
+    let (BoundTensorOrTorchFunction::Tensor(input), BoundTensorOrTorchFunction::Tensor(tensor)) =
+        (&call.input, &call.tensor)
+    else {
+        unreachable!("dot overrides were dispatched before the native path")
+    };
+    apply_dot_tensors(py, input, tensor)
 }
 
 fn dispatch_top_level_multiplication(
@@ -5116,6 +5344,14 @@ fn validate_top_level_add_tensor(tensor: &PyTensor) -> PyResult<()> {
         Ok(())
     } else {
         Err(addition_unsupported_native_input())
+    }
+}
+
+fn validate_dot_tensor(tensor: &PyTensor) -> PyResult<()> {
+    if tensor.inner.dtype() == DType::Float32 && tensor.inner.device().is_cpu() {
+        Ok(())
+    } else {
+        Err(dot_unsupported_native_input())
     }
 }
 
@@ -15006,6 +15242,25 @@ fn parse_tensor_or_torch_function_argument<'py>(
         .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
 }
 
+fn parse_exact_native_dot_tensor_or_torch_function_argument<'py>(
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+) -> PyResult<BoundTensorOrTorchFunction<'py>> {
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundTensorOrTorchFunction::Tensor(
+            value.value.cast::<PyTensor>()?.clone(),
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundTensorOrTorchFunction::Override(probed));
+    }
+    if value.value.is_instance_of::<PyTensor>() {
+        return Err(dot_unsupported_native_input());
+    }
+    parse_tensor_argument("dot", argument, value)
+        .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
+}
+
 fn parse_exact_native_add_tensor_or_torch_function_argument<'py>(
     argument: &str,
     value: &ParsedCallArgument<'py>,
@@ -15102,6 +15357,18 @@ fn parse_top_level_add_out(
         return Ok(None);
     }
     parse_exact_native_add_tensor_or_torch_function_argument("out", &out).map(Some)
+}
+
+fn parse_top_level_dot_out(
+    out: Option<ParsedCallArgument<'_>>,
+) -> PyResult<Option<BoundTensorOrTorchFunction<'_>>> {
+    let Some(out) = out else {
+        return Ok(None);
+    };
+    if out.value.is_none() {
+        return Ok(None);
+    }
+    parse_exact_native_dot_tensor_or_torch_function_argument("out", &out).map(Some)
 }
 
 fn parse_top_level_subtraction_input<'py>(
@@ -15307,6 +15574,12 @@ fn addition_unsupported_native_input() -> PyErr {
     )
 }
 
+fn dot_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "dot(): only exact native CPU float32 rank-1 Tensor inputs are supported",
+    )
+}
+
 fn add_sub_method_unsupported_native_input(operation: AddSubMethodOperation) -> PyErr {
     PyNotImplementedError::new_err(format!(
         "{}(): only exact native CPU float32 Tensor input and Tensor or real-number other operands are supported",
@@ -15379,6 +15652,166 @@ fn parse_top_level_multiplication_operand<'py>(
 
     parse_tensor_argument(operation.name(), argument, value)?;
     unreachable!("unsupported multiplication operands were rejected by parse_tensor_argument")
+}
+
+fn bind_top_level_dot_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(
+    [ParsedCallArgument<'py>; 2],
+    Option<ParsedCallArgument<'py>>,
+    Option<PyErr>,
+)> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "dot() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut input = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut tensor = if positional.len() < 2 {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    };
+    let mut out = None;
+    let mut keyword_error = None;
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "input" if input.is_none() => {
+                    input = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "input" => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("dot() got multiple values for argument 'input'")
+                    });
+                }
+                "x" | "a" | "x1" if input.is_none() => {
+                    input = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "x" | "a" | "x1" => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "dot() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+                "tensor" if tensor.is_none() => {
+                    tensor = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "tensor" => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("dot() got multiple values for argument 'tensor'")
+                    });
+                }
+                "out" if out.is_none() => {
+                    out = optional_call_argument(value).map(|value| ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "out" => {}
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "dot() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let Some(input) = input else {
+        return Err(PyTypeError::new_err(
+            "dot() missing 2 required positional argument: \"input\", \"tensor\"",
+        ));
+    };
+    let Some(tensor) = tensor else {
+        parse_exact_native_dot_tensor_or_torch_function_argument("input", &input)?;
+        return Err(PyTypeError::new_err(
+            "dot() missing 1 required positional arguments: \"tensor\"",
+        ));
+    };
+
+    Ok(([input, tensor], out, keyword_error))
+}
+
+fn bind_dot_method_argument<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(ParsedCallArgument<'py>, Option<PyErr>)> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "dot() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut tensor = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "tensor" if tensor.is_none() => {
+                    tensor = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "tensor" => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("dot() got multiple values for argument 'tensor'")
+                    });
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "dot() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let Some(tensor) = tensor else {
+        return Err(PyTypeError::new_err(
+            "dot() missing 1 required positional arguments: \"tensor\"",
+        ));
+    };
+    Ok((tensor, keyword_error))
 }
 
 fn bind_matmul_argument<'py>(

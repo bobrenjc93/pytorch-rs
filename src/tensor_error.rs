@@ -13,6 +13,16 @@ pub enum TensorError {
         left: Vec<usize>,
         right: Vec<usize>,
     },
+    DotRequiresVectors {
+        left_rank: usize,
+        right_rank: usize,
+    },
+    DotElementCountMismatch {
+        left: Vec<usize>,
+        right: Vec<usize>,
+        left_elements: usize,
+        right_elements: usize,
+    },
     MatmulRequiresMatrices {
         left: Vec<usize>,
         right: Vec<usize>,
@@ -118,6 +128,9 @@ impl Display for TensorError {
                 "shape {shape:?} does not describe {elements} elements"
             ),
             Self::ShapeMismatch { left, right } => format_shape_mismatch(formatter, left, right),
+            error @ (Self::DotRequiresVectors { .. } | Self::DotElementCountMismatch { .. }) => {
+                format_dot_error(formatter, error)
+            }
             Self::MatmulRequiresMatrices { left, right } => write!(
                 formatter,
                 "matmul currently requires two rank-2 tensors, got {left:?} and {right:?}"
@@ -226,6 +239,28 @@ fn format_shape_mismatch(
             formatter,
             "tensor shapes are not broadcastable: {left:?} and {right:?}"
         )
+    }
+}
+
+fn format_dot_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
+    match error {
+        TensorError::DotRequiresVectors {
+            left_rank,
+            right_rank,
+        } => write!(
+            formatter,
+            "1D tensors expected, but got {left_rank}D and {right_rank}D tensors"
+        ),
+        TensorError::DotElementCountMismatch {
+            left,
+            right,
+            left_elements,
+            right_elements,
+        } => write!(
+            formatter,
+            "inconsistent tensor size, expected tensor {left:?} and src {right:?} to have the same number of elements, but got {left_elements} and {right_elements} elements respectively"
+        ),
+        _ => unreachable!("only dot-specific errors are formatted here"),
     }
 }
 

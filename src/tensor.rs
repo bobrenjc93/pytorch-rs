@@ -3989,6 +3989,30 @@ impl Tensor {
         Ok(self.value_at_linear_index(0))
     }
 
+    /// Computes the dot product of two rank-1 tensors.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error unless both tensors are vectors with the same number
+    /// of elements, or when the composed multiplication fails.
+    pub fn dot(&self, other: &Self) -> Result<Self, TensorError> {
+        if self.shape.len() != 1 || other.shape.len() != 1 {
+            return Err(TensorError::DotRequiresVectors {
+                left_rank: self.shape.len(),
+                right_rank: other.shape.len(),
+            });
+        }
+        if self.elements != other.elements {
+            return Err(TensorError::DotElementCountMismatch {
+                left: self.shape.clone(),
+                right: other.shape.clone(),
+                left_elements: self.elements,
+                right_elements: other.elements,
+            });
+        }
+        Ok(self.mul(other)?.sum())
+    }
+
     /// Multiplies two rank-2 matrices.
     ///
     /// # Errors

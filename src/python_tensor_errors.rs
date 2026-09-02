@@ -9,6 +9,8 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
     match error {
         TensorError::ShapeDataMismatch { .. }
         | TensorError::ShapeMismatch { .. }
+        | TensorError::DotRequiresVectors { .. }
+        | TensorError::DotElementCountMismatch { .. }
         | TensorError::MatmulRequiresMatrices { .. }
         | TensorError::MatmulInnerDimensionMismatch { .. }
         | TensorError::ItemRequiresOneElement { .. }

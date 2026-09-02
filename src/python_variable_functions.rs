@@ -21,18 +21,18 @@ use crate::python::{
     atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
     ceil_variable_function, conj_variable_function, cos_variable_function,
     detach_variable_function, div_variable_function, divide_variable_function,
-    empty_like_variable_function, exp_variable_function, fix_variable_function,
-    floor_variable_function, full_like_variable_function, get_device_variable_function,
-    imag_variable_function, is_conj_variable_function, is_inference_variable_function,
-    log_variable_function, matmul_variable_function, mean_variable_function,
-    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
-    multiply_variable_function, neg_variable_function, negative_variable_function,
-    ones_like_variable_function, permute_variable_function, positive_variable_function,
-    promote_types_variable_function, ravel_variable_function, real_variable_function,
-    reciprocal_variable_function, reshape_variable_function, resolve_conj_variable_function,
-    resolve_neg_variable_function, rsqrt_variable_function, scalar_tensor_variable_function,
-    select_variable_function, sigmoid_variable_function, sin_variable_function,
-    sqrt_variable_function, square_variable_function, sub_variable_function,
+    dot_variable_function, empty_like_variable_function, exp_variable_function,
+    fix_variable_function, floor_variable_function, full_like_variable_function,
+    get_device_variable_function, imag_variable_function, is_conj_variable_function,
+    is_inference_variable_function, log_variable_function, matmul_variable_function,
+    mean_variable_function, moveaxis_variable_function, movedim_variable_function,
+    mul_variable_function, multiply_variable_function, neg_variable_function,
+    negative_variable_function, ones_like_variable_function, permute_variable_function,
+    positive_variable_function, promote_types_variable_function, ravel_variable_function,
+    real_variable_function, reciprocal_variable_function, reshape_variable_function,
+    resolve_conj_variable_function, resolve_neg_variable_function, rsqrt_variable_function,
+    scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
+    sin_variable_function, sqrt_variable_function, square_variable_function, sub_variable_function,
     subtract_variable_function, sum_variable_function, tanh_variable_function,
     trunc_variable_function, unbind_variable_function, unsqueeze_variable_function,
     zeros_like_variable_function,
@@ -40,7 +40,7 @@ use crate::python::{
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 62] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 63] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -93,6 +93,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 62] = [
     "permute",
     "movedim",
     "moveaxis",
+    "dot",
     "matmul",
     "add",
     "div",
@@ -929,6 +930,33 @@ multiply(input, other, *, out=None)
 Alias for :func:`torch.mul`.
 ";
 
+const DOT_DOC: &std::ffi::CStr = cr"
+dot(input, tensor, *, out=None) -> Tensor
+
+Computes the dot product of two 1D tensors.
+
+.. note::
+
+    Unlike NumPy's dot, torch.dot intentionally only supports computing the dot product
+    of two 1D tensors with the same number of elements.
+
+Args:
+    input (Tensor): first tensor in the dot product, must be 1D.
+    tensor (Tensor): second tensor in the dot product, must be 1D.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> torch.dot(torch.tensor([2, 3]), torch.tensor([2, 1]))
+    tensor(7)
+
+    >>> t1, t2 = torch.tensor([0, 1]), torch.tensor([2, 3])
+    >>> torch.dot(t1, t2)
+    tensor(3)
+";
+
 const DIV_DOC: &std::ffi::CStr = cr#"
 div(input, other, *, rounding_mode=None, out=None) -> Tensor
 
@@ -1416,6 +1444,7 @@ variable_function_callback!(sub_callback, sub_variable_function);
 variable_function_callback!(subtract_callback, subtract_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
 variable_function_callback!(multiply_callback, multiply_variable_function);
+variable_function_callback!(dot_callback, dot_variable_function);
 variable_function_callback!(
     is_vulkan_available_callback,
     is_vulkan_available_variable_function
@@ -1506,6 +1535,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"subtract", subtract_callback, SUBTRACT_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
         variable_function_method!(c"multiply", multiply_callback, MULTIPLY_DOC),
+        variable_function_method!(c"dot", dot_callback, DOT_DOC),
         variable_function_method!(c"is_vulkan_available", is_vulkan_available_callback, c""),
         variable_function_method!(c"_nnpack_available", nnpack_available_callback, c""),
         variable_function_method!(c"is_conj", is_conj_callback, IS_CONJ_DOC),
