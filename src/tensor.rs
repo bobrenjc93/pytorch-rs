@@ -26,6 +26,45 @@ fn full_reduction_mean_divisor(elements: usize) -> f32 {
     elements as f32
 }
 
+#[inline]
+fn dot_add_product(total: f32, left: f32, right: f32) -> f32 {
+    let product = left * right;
+    total + product
+}
+
+#[inline]
+fn dot_accumulate_four(left: &[f32], right: &[f32], index: &mut usize, accumulator: &mut [f32; 4]) {
+    accumulator[0] = dot_add_product(accumulator[0], left[*index], right[*index]);
+    accumulator[1] = dot_add_product(accumulator[1], left[*index + 1], right[*index + 1]);
+    accumulator[2] = dot_add_product(accumulator[2], left[*index + 2], right[*index + 2]);
+    accumulator[3] = dot_add_product(accumulator[3], left[*index + 3], right[*index + 3]);
+    *index += 4;
+}
+
+#[inline]
+fn dot_finish_accumulators(accumulators: [[f32; 4]; 4]) -> f32 {
+    let mut combined = [0.0_f32; 4];
+    for lane in 0..4 {
+        combined[lane] = accumulators[0][lane] + accumulators[1][lane];
+    }
+    for lane in 0..4 {
+        combined[lane] += accumulators[2][lane];
+    }
+    for lane in 0..4 {
+        combined[lane] += accumulators[3][lane];
+    }
+
+    let even_lanes = combined[0] + combined[2];
+    let odd_lanes = combined[1] + combined[3];
+    even_lanes + odd_lanes
+}
+
+fn elements_to_next_16_byte_alignment(byte_modulo: usize) -> usize {
+    debug_assert!(byte_modulo < 16);
+    debug_assert_eq!(byte_modulo % std::mem::size_of::<f32>(), 0);
+    ((16 - byte_modulo) & 0x0f) / std::mem::size_of::<f32>()
+}
+
 struct AutogradMeta {
     kind: AutogradKind,
 }
@@ -3962,8 +4001,9 @@ impl Tensor {
         output
     }
 
-    /// Computes a rank-1 dot product by composing elementwise multiplication
-    /// with the existing full-tensor sum reduction.
+    /// Computes a rank-1 dot product with PyTorch-compatible CPU float32
+    /// accumulation while reusing elementwise multiplication and full-tensor
+    /// sum for autograd.
     ///
     /// # Errors
     ///
@@ -3983,7 +4023,129 @@ impl Tensor {
             });
         }
 
-        Ok(self.mul(other)?.sum())
+        let product = self.mul(other)?;
+        let total = self.dot_product_accumulator(other);
+        let mut output = Self::from_scalar(total, self.dtype(), self.device());
+        if product.requires_grad() && is_grad_enabled() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Sum {
+                        input: SavedTensor::from_tensor_metadata(&product),
+                    })),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
+    fn dot_product_accumulator(&self, other: &Self) -> f32 {
+        if self.elements == 0 {
+            return 0.0;
+        }
+        if let (Some(left), Some(right)) = (self.contiguous_slice(), other.contiguous_slice()) {
+            return Self::dot_contiguous_accumulator(left, right);
+        }
+
+        self.logical_values()
+            .zip(other.logical_values())
+            .fold(0.0_f32, |total, (left, right)| {
+                dot_add_product(total, left, right)
+            })
+    }
+
+    fn dot_contiguous_accumulator(left: &[f32], right: &[f32]) -> f32 {
+        debug_assert_eq!(left.len(), right.len());
+        if left.is_empty() {
+            return 0.0;
+        }
+
+        // PyTorch 2.13 CPU float32 dot uses the BLAS sdot path. For
+        // contiguous unit-stride inputs on the supported build, its observable
+        // rounding follows a small alignment peel and four-lane f32 reduction.
+        let left_alignment = left.as_ptr() as usize & 0x0f;
+        let right_alignment = right.as_ptr() as usize & 0x0f;
+        if left_alignment == right_alignment {
+            Self::dot_contiguous_same_alignment(left, right, left_alignment)
+        } else {
+            Self::dot_contiguous_mixed_alignment(left, right, right_alignment)
+        }
+    }
+
+    fn dot_contiguous_same_alignment(left: &[f32], right: &[f32], alignment: usize) -> f32 {
+        let mut accumulators = [[0.0_f32; 4]; 4];
+        let mut index = 0;
+        let mut remaining = left.len();
+
+        for _ in 0..elements_to_next_16_byte_alignment(alignment).min(remaining) {
+            accumulators[0][0] = dot_add_product(accumulators[0][0], left[index], right[index]);
+            index += 1;
+            remaining -= 1;
+        }
+        if remaining == 0 {
+            return accumulators[0][0];
+        }
+
+        while remaining >= 32 {
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[0]);
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[1]);
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[2]);
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[3]);
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[0]);
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[1]);
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[2]);
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[3]);
+            remaining -= 32;
+        }
+        if remaining >= 16 {
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[0]);
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[1]);
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[2]);
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[3]);
+            remaining -= 16;
+        }
+        if remaining >= 8 {
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[0]);
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[1]);
+            remaining -= 8;
+        }
+        if remaining >= 4 {
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[0]);
+            remaining -= 4;
+        }
+        while remaining > 0 {
+            accumulators[0][0] = dot_add_product(accumulators[0][0], left[index], right[index]);
+            index += 1;
+            remaining -= 1;
+        }
+
+        dot_finish_accumulators(accumulators)
+    }
+
+    fn dot_contiguous_mixed_alignment(left: &[f32], right: &[f32], right_alignment: usize) -> f32 {
+        let mut accumulators = [[0.0_f32; 4]; 4];
+        let mut index = 0;
+        let mut remaining = left.len();
+
+        for _ in 0..elements_to_next_16_byte_alignment(right_alignment).min(remaining) {
+            accumulators[0][0] = dot_add_product(accumulators[0][0], left[index], right[index]);
+            index += 1;
+            remaining -= 1;
+        }
+        if remaining == 0 {
+            return accumulators[0][0];
+        }
+
+        if remaining >= 4 {
+            dot_accumulate_four(left, right, &mut index, &mut accumulators[0]);
+            remaining -= 4;
+        }
+        while remaining > 0 {
+            accumulators[0][0] = dot_add_product(accumulators[0][0], left[index], right[index]);
+            index += 1;
+            remaining -= 1;
+        }
+
+        dot_finish_accumulators(accumulators)
     }
 
     /// Computes the arithmetic mean of every element.
@@ -13546,6 +13708,33 @@ mod tests {
         assert_eq!(live_gradient.try_to_vec().unwrap(), [2.0, 2.0]);
         saved_loss.backward().unwrap();
         assert_eq!(weights.grad().unwrap().unwrap().as_slice(), [2.0; 3]);
+    }
+
+    #[test]
+    fn dot_uses_pytorch_blas_float32_accumulation() {
+        let left = Tensor::from_vec(
+            [0xc4c9_6d9a, 0xc4e5_02be, 0x43e5_3f3d, 0xc3f1_d15c]
+                .map(f32::from_bits)
+                .to_vec(),
+            [4],
+        )
+        .unwrap();
+        let right = Tensor::from_vec(
+            [0xc4d6_9930, 0x44c9_2691, 0x448c_bb02, 0xc49f_1248]
+                .map(f32::from_bits)
+                .to_vec(),
+            [4],
+        )
+        .unwrap();
+
+        assert_eq!(
+            left.dot(&right).unwrap().item().unwrap().to_bits(),
+            0x4967_ea58
+        );
+        assert_eq!(
+            left.mul(&right).unwrap().sum().item().unwrap().to_bits(),
+            0x4967_ea5a
+        );
     }
 
     #[test]

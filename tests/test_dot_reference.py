@@ -163,6 +163,34 @@ class DotReferenceTests(unittest.TestCase):
                     case=(case, form),
                 )
 
+    def test_rounding_regression_matches_pytorch_2_13(self):
+        left_values = [
+            -1611.425048828125,
+            -1832.085693359375,
+            458.4940490722656,
+            -483.6356201171875,
+        ]
+        right_values = [
+            -1716.787109375,
+            1609.2052001953125,
+            1125.843994140625,
+            -1272.5712890625,
+        ]
+        actual_left = torch.tensor(left_values, dtype=torch.float32)
+        actual_right = torch.tensor(right_values, dtype=torch.float32)
+        expected_left = reference_torch.tensor(left_values, dtype=reference_torch.float32)
+        expected_right = reference_torch.tensor(right_values, dtype=reference_torch.float32)
+        expected = reference_torch.dot(expected_left, expected_right)
+
+        self.assertEqual(expected.detach().numpy().view(np.uint32).item(), 0x4967EA58)
+        self.assert_scalar_matches(
+            torch.dot(actual_left, actual_right),
+            expected,
+            actual_left,
+            actual_right,
+            case="float32 rounding regression",
+        )
+
     def test_shape_rank_and_binding_errors_match_pytorch_2_13(self):
         actual_vector = torch.ones((2,))
         expected_vector = reference_torch.ones((2,), dtype=reference_torch.float32)

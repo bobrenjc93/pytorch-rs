@@ -96,7 +96,7 @@ def dot_cases(module):
 
 
 class DotTests(unittest.TestCase):
-    def assert_dot_matches_composition(self, actual, expected, left, right, *, case):
+    def assert_dot_matches_expected(self, actual, expected, left, right, *, case):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, ())
             self.assertEqual(actual.stride(), ())
@@ -120,7 +120,7 @@ class DotTests(unittest.TestCase):
                 np.asarray(expected).view(np.uint32).item(),
             )
 
-    def test_tensor_and_top_level_forms_match_composed_multiply_sum(self):
+    def test_tensor_and_top_level_forms_match_supported_dot_values(self):
         for case, left, right in dot_cases(torch):
             expected = (left * right).sum()
             calls = (
@@ -134,9 +134,35 @@ class DotTests(unittest.TestCase):
                 ("function out none", lambda: torch.dot(left, right, out=None)),
             )
             for form, call in calls:
-                self.assert_dot_matches_composition(
+                self.assert_dot_matches_expected(
                     call(), expected, left, right, case=(case, form)
                 )
+
+    def test_rounding_matches_pytorch_dot_regression(self):
+        left = torch.tensor(
+            [
+                -1611.425048828125,
+                -1832.085693359375,
+                458.4940490722656,
+                -483.6356201171875,
+            ],
+            dtype=torch.float32,
+        )
+        right = torch.tensor(
+            [
+                -1716.787109375,
+                1609.2052001953125,
+                1125.843994140625,
+                -1272.5712890625,
+            ],
+            dtype=torch.float32,
+        )
+
+        actual_bits = np.asarray(torch.dot(left, right)).view(np.uint32).item()
+        composed_bits = np.asarray((left * right).sum()).view(np.uint32).item()
+
+        self.assertEqual(actual_bits, 0x4967EA58)
+        self.assertEqual(composed_bits, 0x4967EA5A)
 
     def test_shape_rank_and_binding_errors_match_the_narrow_surface(self):
         vector = torch.ones((2,))
@@ -314,7 +340,7 @@ class DotTests(unittest.TestCase):
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
 
-        self.assert_dot_matches_composition(
+        self.assert_dot_matches_expected(
             descriptor(tensor, tensor),
             tensor.dot(tensor),
             tensor,
