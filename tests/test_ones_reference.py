@@ -69,6 +69,9 @@ class OnesReferenceTests(unittest.TestCase):
             str(tensor.dtype),
             tensor.dtype is module.float32,
             str(tensor.device),
+            str(tensor.layout),
+            tensor.layout is module.strided,
+            tensor.is_pinned(),
             tensor.requires_grad,
             tensor.is_leaf,
         )
@@ -91,12 +94,18 @@ class OnesReferenceTests(unittest.TestCase):
             lambda module: {},
             lambda module: {"out": None},
             lambda module: {"dtype": module.float32},
+            lambda module: {"layout": None},
+            lambda module: {"layout": module.strided},
             lambda module: {"device": "cpu"},
             lambda module: {"device": module.device("cpu")},
+            lambda module: {"pin_memory": None},
+            lambda module: {"pin_memory": False},
             lambda module: {
                 "out": None,
                 "dtype": module.float32,
+                "layout": module.strided,
                 "device": module.device("cpu"),
+                "pin_memory": False,
                 "requires_grad": True,
             },
         )
@@ -137,12 +146,18 @@ class OnesReferenceTests(unittest.TestCase):
             lambda module: {},
             lambda module: {"out": None},
             lambda module: {"dtype": module.float32},
+            lambda module: {"layout": None},
+            lambda module: {"layout": module.strided},
             lambda module: {"device": "cpu"},
             lambda module: {"device": module.device("cpu")},
+            lambda module: {"pin_memory": None},
+            lambda module: {"pin_memory": False},
             lambda module: {
                 "out": None,
                 "dtype": module.float32,
+                "layout": module.strided,
                 "device": module.device("cpu"),
+                "pin_memory": False,
                 "requires_grad": True,
             },
         )
@@ -213,6 +228,55 @@ class OnesReferenceTests(unittest.TestCase):
                     actual.data_ptr() == actual_peer.data_ptr(),
                     expected.data_ptr() == expected_peer.data_ptr(),
                 )
+
+    def test_default_layout_and_pin_memory_options_match_pytorch_2_13(self):
+        cases = (
+            ("scalar tuple", lambda module, options: module.ones((), **options)),
+            ("scalar list", lambda module, options: module.ones([], **options)),
+            ("empty tuple", lambda module, options: module.ones((0,), **options)),
+            (
+                "empty variadic",
+                lambda module, options: module.ones(2, 0, 3, **options),
+            ),
+            ("variadic", lambda module, options: module.ones(2, 3, **options)),
+            ("tuple", lambda module, options: module.ones((2, 3), **options)),
+            ("list", lambda module, options: module.ones([2, 3], **options)),
+            (
+                "integer protocol dimensions",
+                lambda module, options: module.ones(
+                    [IndexDimension(2), np.int64(3), IntSubclass(1)],
+                    **options,
+                ),
+            ),
+        )
+        option_factories = (
+            lambda module: {"layout": None},
+            lambda module: {"layout": module.strided},
+            lambda module: {"pin_memory": None},
+            lambda module: {"pin_memory": False},
+            lambda module: {"out": None, "layout": module.strided},
+            lambda module: {"out": None, "pin_memory": False},
+            lambda module: {
+                "out": None,
+                "dtype": module.float32,
+                "layout": module.strided,
+                "device": module.device("cpu"),
+                "pin_memory": False,
+                "requires_grad": True,
+            },
+        )
+
+        for case, factory in cases:
+            for option_factory in option_factories:
+                actual_options = option_factory(torch)
+                expected_options = option_factory(reference_torch)
+                with self.subTest(case=case, options=actual_options):
+                    actual = factory(torch, actual_options)
+                    expected = factory(reference_torch, expected_options)
+                    self.assertEqual(
+                        self.tensor_observation(torch, actual),
+                        self.tensor_observation(reference_torch, expected),
+                    )
 
     def test_dimension_errors_match_pytorch_2_13(self):
         exact_cases = (
@@ -377,6 +441,99 @@ class OnesReferenceTests(unittest.TestCase):
                     actual_message.replace("torch.device or str", "torch.device"),
                     expected_message,
                 )
+
+    def test_layout_pin_memory_error_order_matches_pytorch_2_13(self):
+        cases = (
+            (
+                "invalid out before invalid layout",
+                lambda module: module.ones(2, out=[], layout=object()),
+            ),
+            (
+                "invalid dtype before invalid layout",
+                lambda module: module.ones(2, dtype=object(), layout=object()),
+            ),
+            (
+                "invalid layout before invalid device",
+                lambda module: module.ones(2, layout=object(), device=object()),
+            ),
+            (
+                "valid layout reaches invalid device",
+                lambda module: module.ones(2, layout=module.strided, device=object()),
+            ),
+            (
+                "valid layout reaches invalid out",
+                lambda module: module.ones(2, layout=module.strided, out=[]),
+            ),
+            (
+                "valid pin reaches invalid out",
+                lambda module: module.ones(2, pin_memory=False, out=[]),
+            ),
+            (
+                "valid layout and pin reach unknown keyword",
+                lambda module: module.ones(
+                    2,
+                    layout=module.strided,
+                    pin_memory=False,
+                    unexpected=True,
+                ),
+            ),
+        )
+        for case, call in cases:
+            with self.subTest(case=case):
+                actual_type, actual_message = self.capture_error(lambda: call(torch))
+                expected_type, expected_message = self.capture_error(
+                    lambda: call(reference_torch)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(
+                    actual_message.replace("torch.device or str", "torch.device"),
+                    expected_message,
+                )
+
+    def test_unsupported_dtype_device_layout_and_pin_memory_boundaries_are_pinned(
+        self,
+    ):
+        self.assertFalse(hasattr(torch, "float64"))
+        self.assertTrue(hasattr(reference_torch, "float64"))
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^ones\(\): argument 'dtype' must be torch\.dtype, not dtype$",
+        ):
+            torch.ones((1,), dtype=reference_torch.float64)
+        self.assertIs(
+            reference_torch.ones((1,), dtype=reference_torch.float64).dtype,
+            reference_torch.float64,
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^ones\(\): device 'meta' is not supported; only 'cpu' is implemented$",
+        ):
+            torch.ones((1,), device="meta")
+        meta = reference_torch.ones((1,), device="meta")
+        self.assertEqual(str(meta.device), "meta")
+
+        for layout in (object(), reference_torch.strided, reference_torch.sparse_coo):
+            with self.subTest(layout=layout):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^ones\(\): argument 'layout' must be torch\.layout, not ",
+                ):
+                    torch.ones((1,), layout=layout)
+
+        for pin_memory in (0, 1, "false", object()):
+            with self.subTest(pin_memory=pin_memory):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^ones\(\): argument 'pin_memory' must be bool, not ",
+                ):
+                    torch.ones((1,), pin_memory=pin_memory)
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^ones\(\): pin_memory=True is not supported; only unpinned CPU storage is implemented$",
+        ):
+            torch.ones((1,), pin_memory=True)
 
     def test_sequence_size_with_extra_positional_matches_pytorch_2_13(self):
         cases = (

@@ -23,12 +23,18 @@ class OnesTests(unittest.TestCase):
             {},
             {"out": None},
             {"dtype": torch.float32},
+            {"layout": None},
+            {"layout": torch.strided},
             {"device": "cpu"},
             {"device": torch.device("cpu")},
+            {"pin_memory": None},
+            {"pin_memory": False},
             {
                 "out": None,
                 "dtype": torch.float32,
+                "layout": torch.strided,
                 "device": torch.device("cpu"),
+                "pin_memory": False,
                 "requires_grad": True,
             },
         )
@@ -117,6 +123,72 @@ class OnesTests(unittest.TestCase):
                 with_out_none = factory({"out": None})
                 self.assert_tensor_matches(with_out_none, baseline)
                 self.assertFalse(with_out_none.is_set_to(baseline))
+
+    def test_default_layout_and_unpinned_keywords_cover_supported_size_forms(self):
+        class IntSubclass(int):
+            pass
+
+        class IndexDimension:
+            def __init__(self, value):
+                self.value = value
+
+            def __index__(self):
+                return self.value
+
+        cases = (
+            ("scalar tuple", lambda keywords: torch.ones((), **keywords)),
+            ("scalar list", lambda keywords: torch.ones([], **keywords)),
+            ("empty tuple", lambda keywords: torch.ones((0,), **keywords)),
+            ("empty variadic", lambda keywords: torch.ones(2, 0, 3, **keywords)),
+            ("variadic", lambda keywords: torch.ones(2, 3, **keywords)),
+            ("tuple", lambda keywords: torch.ones((2, 3), **keywords)),
+            ("list", lambda keywords: torch.ones([2, 3], **keywords)),
+            (
+                "integer protocol",
+                lambda keywords: torch.ones(
+                    [IndexDimension(2), np.int64(3), IntSubclass(1)],
+                    **keywords,
+                ),
+            ),
+        )
+        option_cases = (
+            {"layout": None},
+            {"layout": torch.strided},
+            {"pin_memory": None},
+            {"pin_memory": False},
+            {"out": None, "layout": torch.strided, "pin_memory": False},
+            {
+                "out": None,
+                "dtype": torch.float32,
+                "layout": torch.strided,
+                "device": torch.device("cpu"),
+                "pin_memory": False,
+                "requires_grad": True,
+            },
+        )
+
+        def flattened_values(value):
+            if isinstance(value, list):
+                for item in value:
+                    yield from flattened_values(item)
+            else:
+                yield value
+
+        for case, factory in cases:
+            for options in option_cases:
+                with self.subTest(case=case, options=options):
+                    tensor = factory(options)
+                    self.assertIs(tensor.dtype, torch.float32)
+                    self.assertEqual(tensor.device, torch.device("cpu"))
+                    self.assertIs(tensor.layout, torch.strided)
+                    self.assertFalse(tensor.is_pinned())
+                    self.assertEqual(
+                        tensor.requires_grad,
+                        bool(options.get("requires_grad", False)),
+                    )
+                    self.assertTrue(
+                        all(value == 1.0 for value in flattened_values(tensor.tolist()))
+                    )
 
     def test_one_positional_dimension_uses_the_index_protocol(self):
         class IntSubclass(int):
@@ -336,7 +408,7 @@ class OnesTests(unittest.TestCase):
                     ):
                         torch.ones(size, True, **competing_keyword)
 
-    def test_out_tensor_layout_and_pin_memory_remain_unsupported(self):
+    def test_out_tensor_nondefault_layout_and_pinned_memory_remain_unsupported(self):
         with self.assertRaisesRegex(
             RuntimeError,
             re.escape("ones(): the 'out' argument is not supported"),
@@ -360,24 +432,24 @@ class OnesTests(unittest.TestCase):
                 "ones(): device 'cuda' is not supported; only 'cpu' is implemented",
             ),
             (
-                lambda: torch.ones(2, layout=torch.strided, out=None),
+                lambda: torch.ones(2, layout=object(), out=None),
                 TypeError,
-                "ones() got an unexpected keyword argument 'layout'",
+                "ones(): argument 'layout' must be torch.layout, not object",
             ),
             (
-                lambda: torch.ones(2, pin_memory=False, out=None),
+                lambda: torch.ones(2, pin_memory=0, out=None),
                 TypeError,
-                "ones() got an unexpected keyword argument 'pin_memory'",
+                "ones(): argument 'pin_memory' must be bool, not int",
             ),
             (
-                lambda: torch.ones(2, 3, layout=torch.strided, out=None),
-                TypeError,
-                "ones() got an unexpected keyword argument 'layout'",
+                lambda: torch.ones(2, pin_memory=True, out=None),
+                RuntimeError,
+                "ones(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
             ),
             (
-                lambda: torch.ones(2, 3, pin_memory=False, out=None),
-                TypeError,
-                "ones() got an unexpected keyword argument 'pin_memory'",
+                lambda: torch.ones(2, 3, pin_memory=True, out=None),
+                RuntimeError,
+                "ones(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
             ),
         ):
             with self.subTest(message=message):
