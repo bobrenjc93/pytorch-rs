@@ -1670,7 +1670,10 @@ pub(crate) fn asarray_variable_function(
         validate_asarray_sequence_copy(arguments.copy.as_ref())?;
     }
     let device = parse_as_tensor_device("asarray", arguments.device.as_ref())?;
-    validate_asarray_copy(arguments.copy.as_ref())?;
+    let is_exact_native_tensor = obj.value.is_exact_instance_of::<PyTensor>();
+    if !is_exact_native_tensor {
+        validate_asarray_copy(arguments.copy.as_ref())?;
+    }
     validate_asarray_requires_grad(arguments.requires_grad.as_ref())?;
 
     if dtype != DType::Float32 || !device.is_cpu() {
@@ -1678,7 +1681,7 @@ pub(crate) fn asarray_variable_function(
             "asarray(): only identity conversion for CPU float32 tensors is supported",
         ));
     }
-    if !obj.value.is_exact_instance_of::<PyTensor>() {
+    if !is_exact_native_tensor {
         if let Some(value) = extract_exact_python_float_scalar(&obj.value)? {
             validate_asarray_scalar_copy(arguments.copy.as_ref())?;
             return Ok(
@@ -1698,7 +1701,7 @@ pub(crate) fn asarray_variable_function(
             "asarray(): only exact native CPU float32 Tensor inputs, Python float scalars, or exact list/tuple sequences of Python floats are supported; NumPy arrays/scalars, integer and boolean inference, and other conversions are not implemented",
         ));
     }
-    let should_warn_requires_grad = {
+    let source_requires_grad = {
         let tensor = obj.value.cast::<PyTensor>()?.try_borrow()?;
         if tensor.inner.dtype() != DType::Float32 || !tensor.inner.device().is_cpu() {
             return Err(PyNotImplementedError::new_err(
@@ -1707,12 +1710,24 @@ pub(crate) fn asarray_variable_function(
         }
         tensor.inner.requires_grad()
     };
-    if should_warn_requires_grad {
+    if source_requires_grad {
         warn_once(
             py,
             &ASARRAY_REQUIRES_GRAD_WARNING_EMITTED,
             c"torch.asarray: unspecified requires_grad now defaults to obj.requires_grad instead of False. Pass requires_grad=False explicitly to get the old behavior and silence this warning. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_new.cpp:1737.)",
         )?;
+    }
+    if asarray_copy_requested(arguments.copy.as_ref())? {
+        let copied = obj
+            .value
+            .cast::<PyTensor>()?
+            .try_borrow()?
+            .inner
+            .try_clone()
+            .map(|tensor| tensor.with_requires_grad(source_requires_grad))
+            .map(PyTensor::new)
+            .map_err(|error| tensor_error(&error))?;
+        return Ok(Py::new(py, copied)?.into_any());
     }
     Ok(obj.value.unbind())
 }
@@ -8882,6 +8897,13 @@ fn validate_asarray_copy(copy: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
     Err(PyNotImplementedError::new_err(
         "asarray(): copy=True requires a copy and is not supported",
     ))
+}
+
+fn asarray_copy_requested(copy: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+    let Some(copy) = copy else {
+        return Ok(false);
+    };
+    copy.is_truthy()
 }
 
 fn validate_asarray_scalar_copy(copy: Option<&Bound<'_, PyAny>>) -> PyResult<()> {

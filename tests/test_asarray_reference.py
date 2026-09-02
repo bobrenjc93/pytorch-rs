@@ -53,6 +53,54 @@ class AsArrayReferenceTests(unittest.TestCase):
             ("special bits", module.tensor(memoryview(special_bits.view(np.float32)))),
         )
 
+    def tensor_copy_cases(self, module):
+        dense_values = [float(value) for value in range(12)]
+        channel_bits = np.resize(
+            np.asarray(
+                (
+                    0x00000000,
+                    0x80000000,
+                    0x00000001,
+                    0x80000001,
+                    0x7F800000,
+                    0xFF800000,
+                    0x7FC12345,
+                    0xFFC54321,
+                    0x3F800000,
+                ),
+                dtype=np.uint32,
+            ),
+            48,
+        )
+        channel_source = module.tensor(
+            memoryview(channel_bits.view(np.float32)), dtype=module.float32
+        ).reshape((2, 3, 2, 4))
+        requires_grad_leaf = module.tensor(
+            [[1.0, 2.0], [3.0, 4.0]],
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        return (
+            ("scalar", module.tensor(-0.0, dtype=module.float32)),
+            ("empty", module.zeros((2, 0, 3), dtype=module.float32)[1]),
+            (
+                "offset",
+                module.tensor(dense_values, dtype=module.float32).reshape((3, 4))[1],
+            ),
+            (
+                "noncontiguous",
+                module.tensor(dense_values, dtype=module.float32)
+                .reshape((3, 4))
+                .transpose(0, 1),
+            ),
+            (
+                "channels-last",
+                channel_source.clone(memory_format=module.channels_last),
+            ),
+            ("requires-grad leaf", requires_grad_leaf),
+            ("requires-grad view", (requires_grad_leaf * 2.0).transpose(0, 1)),
+        )
+
     def option_cases(self, module):
         return (
             {},
@@ -69,6 +117,23 @@ class AsArrayReferenceTests(unittest.TestCase):
                 "dtype": module.float32,
                 "device": module.device("cpu"),
                 "copy": False,
+                "requires_grad": None,
+            },
+        )
+
+    def copy_option_cases(self, module):
+        return (
+            {"copy": True},
+            {"copy": True, "dtype": None},
+            {"copy": True, "dtype": module.float32},
+            {"copy": True, "dtype": module.float},
+            {"copy": True, "device": None},
+            {"copy": True, "device": "cpu"},
+            {"copy": True, "device": module.device("cpu")},
+            {
+                "copy": True,
+                "dtype": module.float32,
+                "device": module.device("cpu"),
                 "requires_grad": None,
             },
         )
@@ -154,6 +219,25 @@ class AsArrayReferenceTests(unittest.TestCase):
             "source_unchanged": before == after,
         }
 
+    def asarray_copy_contract(self, module, tensor, options, no_grad=False):
+        before = self.tensor_state(module, tensor)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            if no_grad:
+                with module.no_grad():
+                    result = module.asarray(tensor, **options)
+            else:
+                result = module.asarray(tensor, **options)
+        after = self.tensor_state(module, tensor)
+        return {
+            "fresh_object": result is not tensor,
+            "fresh_storage": not result.is_set_to(tensor),
+            "distinct_data_ptr_if_nonempty": tensor.numel() == 0
+            or result.data_ptr() != before["data_ptr"],
+            "result_state": self.comparable_tensor_state(module, result),
+            "source_unchanged": before == after,
+        }
+
     def asarray_float_scalar_contract(self, module, value, options):
         first = module.asarray(value, **options)
         second = module.asarray(value, **options)
@@ -229,6 +313,75 @@ class AsArrayReferenceTests(unittest.TestCase):
                         reference_torch, expected, expected_kwargs
                     )
                     self.assertEqual(actual_contract, expected_contract)
+
+    def test_copy_true_tensor_clone_matches_pytorch_2_13(self):
+        actual_cases = self.tensor_copy_cases(torch)
+        expected_cases = self.tensor_copy_cases(reference_torch)
+        actual_options = self.copy_option_cases(torch)
+        expected_options = self.copy_option_cases(reference_torch)
+
+        for (case, actual), (expected_case, expected) in zip(
+            actual_cases, expected_cases, strict=True
+        ):
+            self.assertEqual(case, expected_case)
+            for actual_kwargs, expected_kwargs in zip(
+                actual_options, expected_options, strict=True
+            ):
+                with self.subTest(case=case, options=actual_kwargs):
+                    actual_contract = self.asarray_copy_contract(
+                        torch, actual, actual_kwargs
+                    )
+                    expected_contract = self.asarray_copy_contract(
+                        reference_torch, expected, expected_kwargs
+                    )
+                    self.assertEqual(actual_contract, expected_contract)
+
+    def asarray_copy_autograd_contract(self, module):
+        leaf = module.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        source = (leaf * 3.0).transpose(0, 1)[1]
+        before = self.tensor_state(module, source)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = module.asarray(source, copy=True)
+        after = self.tensor_state(module, source)
+        metadata = {
+            "fresh_object": result is not source,
+            "fresh_storage": not result.is_set_to(source),
+            "result_state": self.comparable_tensor_state(module, result),
+            "source_unchanged": before == after,
+        }
+        result.sum().backward()
+        return metadata, self.tensor_state(module, leaf.grad)["values"]
+
+    def asarray_copy_no_grad_contract(self, module):
+        leaf = module.ones((2, 3), dtype=module.float32, requires_grad=True)
+        source = (leaf * 3.0).transpose(0, 1)[1]
+        before = self.tensor_state(module, source)
+        with module.no_grad():
+            result = module.asarray(source, copy=True)
+        after = self.tensor_state(module, source)
+        return {
+            "fresh_object": result is not source,
+            "fresh_storage": not result.is_set_to(source),
+            "result_state": self.comparable_tensor_state(module, result),
+            "source_unchanged": before == after,
+        }
+
+    def test_copy_true_autograd_and_no_grad_match_pytorch_2_13(self):
+        actual_metadata, actual_gradient = self.asarray_copy_autograd_contract(torch)
+        expected_metadata, expected_gradient = self.asarray_copy_autograd_contract(
+            reference_torch
+        )
+        self.assertEqual(actual_metadata, expected_metadata)
+        self.assertEqual(actual_gradient, expected_gradient)
+        self.assertEqual(
+            self.asarray_copy_no_grad_contract(torch),
+            self.asarray_copy_no_grad_contract(reference_torch),
+        )
 
     def test_python_float_scalar_creation_matches_pytorch_2_13(self):
         values = (
