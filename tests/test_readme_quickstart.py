@@ -88,6 +88,12 @@ SUPPORTED_SURFACE_SUBSECTION_ANCHORS = (
     ("Elementwise and reductions", "elementwise-and-reductions", "####"),
     ("NN and data helpers", "nn-and-data-helpers", "####"),
     ("Backend and compiler metadata", "backend-and-compiler-metadata", "####"),
+    ("CPU and default device", "cpu-and-default-device", "#####"),
+    ("Accelerator memory", "accelerator-memory", "#####"),
+    ("Grad and autocast state", "grad-and-autocast-state", "#####"),
+    ("Backend flags", "backend-flags", "#####"),
+    ("JIT and compiler", "jit-and-compiler", "#####"),
+    ("Distributed support", "distributed-support", "#####"),
     ("Unsupported boundaries", "unsupported-boundaries", "###"),
 )
 SUPPORTED_SURFACE_INDEX_SUMMARIES = (
