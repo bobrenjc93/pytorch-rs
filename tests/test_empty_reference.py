@@ -86,6 +86,8 @@ class EmptyReferenceTests(unittest.TestCase):
             lambda module: {"device": module.device("cpu")},
             lambda module: {"pin_memory": None},
             lambda module: {"pin_memory": False},
+            lambda module: {"memory_format": None},
+            lambda module: {"memory_format": module.contiguous_format},
             lambda module: {
                 "out": None,
                 "dtype": module.float32,
@@ -138,6 +140,8 @@ class EmptyReferenceTests(unittest.TestCase):
             lambda module: {"device": module.device("cpu")},
             lambda module: {"pin_memory": None},
             lambda module: {"pin_memory": False},
+            lambda module: {"memory_format": None},
+            lambda module: {"memory_format": module.contiguous_format},
             lambda module: {
                 "out": None,
                 "dtype": module.float32,
@@ -193,6 +197,19 @@ class EmptyReferenceTests(unittest.TestCase):
                     self.tensor_observation(torch, actual),
                     self.tensor_observation(reference_torch, expected),
                 )
+
+        actual_kwargs = torch.nn.factory_kwargs(
+            {"memory_format": torch.contiguous_format}
+        )
+        expected_kwargs = reference_torch.nn.factory_kwargs(
+            {"memory_format": reference_torch.contiguous_format}
+        )
+        actual = torch.empty(2, **actual_kwargs)
+        expected = reference_torch.empty(2, **expected_kwargs)
+        self.assertEqual(
+            self.tensor_observation(torch, actual),
+            self.tensor_observation(reference_torch, expected),
+        )
 
     def test_variadic_leading_index_provider_calls_match_pytorch_2_13(self):
         actual_dimension = StatefulIndexDimension((2, 3, 4))
@@ -272,6 +289,23 @@ class EmptyReferenceTests(unittest.TestCase):
         overflow_size = [2**63, 0]
         intercepted = []
 
+        def normalize(value):
+            for name in (
+                "contiguous_format",
+                "preserve_format",
+                "channels_last",
+                "channels_last_3d",
+            ):
+                if hasattr(module, name) and value is getattr(module, name):
+                    return f"torch.{name}"
+            if isinstance(value, tuple):
+                return tuple(normalize(item) for item in value)
+            if isinstance(value, list):
+                return [normalize(item) for item in value]
+            if isinstance(value, dict):
+                return {key: normalize(item) for key, item in value.items()}
+            return value
+
         class RecordingMode(module.overrides.TorchFunctionMode):
             def __init__(self):
                 self.calls = []
@@ -281,8 +315,8 @@ class EmptyReferenceTests(unittest.TestCase):
                     (
                         func is function,
                         types,
-                        args,
-                        kwargs,
+                        normalize(args),
+                        normalize(kwargs),
                         len(module.overrides._get_current_function_mode_stack()),
                     )
                 )
@@ -294,6 +328,17 @@ class EmptyReferenceTests(unittest.TestCase):
             (lambda: function(overflow_size), (overflow_size,), None),
             (lambda: function(2, device="cuda"), (2,), {"device": "cuda"}),
             (lambda: function(2, pin_memory=True), (2,), {"pin_memory": True}),
+            (lambda: function(2, memory_format=None), (2,), {"memory_format": None}),
+            (
+                lambda: function(2, memory_format=module.contiguous_format),
+                (2,),
+                {"memory_format": module.contiguous_format},
+            ),
+            (
+                lambda: function(2, memory_format=module.channels_last),
+                (2,),
+                {"memory_format": module.channels_last},
+            ),
             (lambda: function(2, requires_grad=True), (2,), {"requires_grad": True}),
         )
         for call, expected_args, expected_kwargs in cases:
@@ -307,8 +352,8 @@ class EmptyReferenceTests(unittest.TestCase):
                 (
                     result is marker,
                     mode.calls,
-                    expected_args,
-                    expected_kwargs,
+                    normalize(expected_args),
+                    normalize(expected_kwargs),
                     restored_inside,
                     module.overrides._get_current_function_mode_stack() == [],
                 )
@@ -322,6 +367,7 @@ class EmptyReferenceTests(unittest.TestCase):
             lambda: function(1.2),
             lambda: function(2, dtype=object()),
             lambda: function(2, requires_grad=1),
+            lambda: function(2, memory_format=object()),
         ):
             mode = RecordingMode()
             with mode:
@@ -359,8 +405,8 @@ class EmptyReferenceTests(unittest.TestCase):
                         ),
                         func is function,
                         types,
-                        args,
-                        kwargs,
+                        normalize(args),
+                        normalize(kwargs),
                     )
                 )
                 return func(*args, **(kwargs or {}))
@@ -655,15 +701,44 @@ class EmptyReferenceTests(unittest.TestCase):
         ):
             torch.empty((1,), pin_memory=True)
 
+        for actual_memory_format, expected_memory_format in (
+            (None, None),
+            (torch.contiguous_format, reference_torch.contiguous_format),
+        ):
+            with self.subTest(memory_format=actual_memory_format):
+                actual = torch.empty((1,), memory_format=actual_memory_format)
+                expected = reference_torch.empty(
+                    (1,), memory_format=expected_memory_format
+                )
+                self.assertEqual(
+                    self.tensor_observation(torch, actual),
+                    self.tensor_observation(reference_torch, expected),
+                )
+
+        actual_type, actual_message = self.capture_error(
+            lambda: torch.empty((1,), memory_format=object())
+        )
+        expected_type, expected_message = self.capture_error(
+            lambda: reference_torch.empty((1,), memory_format=object())
+        )
+        self.assertIs(actual_type, expected_type)
+        self.assertEqual(actual_message, expected_message)
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^empty\(\): argument 'memory_format' must be torch\.memory_format, not ",
+        ):
+            torch.empty((1,), memory_format=reference_torch.contiguous_format)
+
         for memory_format in (
-            None,
-            torch.contiguous_format,
-            reference_torch.contiguous_format,
+            torch.preserve_format,
+            torch.channels_last,
+            torch.channels_last_3d,
         ):
             with self.subTest(memory_format=memory_format):
                 with self.assertRaisesRegex(
-                    TypeError,
-                    r"^empty\(\) got an unexpected keyword argument 'memory_format'$",
+                    NotImplementedError,
+                    r"^empty\(\): only default-equivalent memory_format is supported$",
                 ):
                     torch.empty((1,), memory_format=memory_format)
 

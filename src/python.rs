@@ -1873,6 +1873,7 @@ fn validate_empty_torch_function_mode_arguments(
     validate_device_argument_type("empty", arguments.device.as_ref())?;
     parse_factory_bool("empty", "pin_memory", arguments.pin_memory.as_ref())?;
     parse_factory_requires_grad("empty", arguments.requires_grad.as_ref())?;
+    validate_empty_memory_format_argument_type("empty", arguments.memory_format.as_ref())?;
     Ok(arguments.keyword_error.is_none())
 }
 
@@ -6163,6 +6164,7 @@ struct CreationCallArguments<'py> {
     device: Option<Bound<'py, PyAny>>,
     pin_memory: Option<Bound<'py, PyAny>>,
     requires_grad: Option<Bound<'py, PyAny>>,
+    memory_format: Option<Bound<'py, PyAny>>,
     keyword_error: Option<PyErr>,
 }
 
@@ -8540,6 +8542,7 @@ fn bind_creation_arguments<'py>(
         device: None,
         pin_memory: None,
         requires_grad: None,
+        memory_format: None,
         keyword_error: None,
     };
     let Some(keywords) = keywords else {
@@ -8581,6 +8584,9 @@ fn bind_creation_arguments<'py>(
             "device" => arguments.device = optional_call_argument(value),
             "pin_memory" => arguments.pin_memory = optional_call_argument(value),
             "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            "memory_format" if function == "empty" => {
+                arguments.memory_format = optional_call_argument(value);
+            }
             _ => {
                 arguments.keyword_error.get_or_insert_with(|| {
                     PyTypeError::new_err(format!(
@@ -9791,6 +9797,7 @@ fn parse_creation_arguments(
         device,
         pin_memory,
         requires_grad,
+        memory_format,
         keyword_error,
     } = arguments;
 
@@ -9804,6 +9811,7 @@ fn parse_creation_arguments(
     validate_device_argument_type(function, device.as_ref())?;
     let pin_memory = parse_factory_bool(function, "pin_memory", pin_memory.as_ref())?;
     let requires_grad = parse_factory_requires_grad(function, requires_grad.as_ref())?;
+    parse_empty_memory_format(function, memory_format.as_ref())?;
     if let Some(error) = keyword_error {
         return Err(error);
     }
@@ -9933,6 +9941,46 @@ fn parse_like_factory_memory_format(
     let Some(memory_format) = memory_format else {
         return Ok(MemoryFormat::Preserve);
     };
+    if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
+        return Ok(memory_format.try_borrow()?.inner());
+    }
+
+    let actual = python_type_name(memory_format)?;
+    Err(PyTypeError::new_err(format!(
+        "{function}(): argument 'memory_format' must be torch.memory_format, not {actual}"
+    )))
+}
+
+fn parse_empty_memory_format(
+    function: &str,
+    memory_format: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    let memory_format = parse_empty_memory_format_value(function, memory_format)?;
+    if memory_format == MemoryFormat::Contiguous {
+        return Ok(());
+    }
+    Err(PyNotImplementedError::new_err(format!(
+        "{function}(): only default-equivalent memory_format is supported"
+    )))
+}
+
+fn validate_empty_memory_format_argument_type(
+    function: &str,
+    memory_format: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    parse_empty_memory_format_value(function, memory_format).map(drop)
+}
+
+fn parse_empty_memory_format_value(
+    function: &str,
+    memory_format: Option<&Bound<'_, PyAny>>,
+) -> PyResult<MemoryFormat> {
+    let Some(memory_format) = memory_format else {
+        return Ok(MemoryFormat::Contiguous);
+    };
+    if memory_format.is_none() {
+        return Ok(MemoryFormat::Contiguous);
+    }
     if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
         return Ok(memory_format.try_borrow()?.inner());
     }

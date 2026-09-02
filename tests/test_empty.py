@@ -108,6 +108,8 @@ class EmptyTests(unittest.TestCase):
             {"device": torch.device("cpu")},
             {"pin_memory": None},
             {"pin_memory": False},
+            {"memory_format": None},
+            {"memory_format": torch.contiguous_format},
             {
                 "out": None,
                 "dtype": torch.float32,
@@ -229,6 +231,15 @@ class EmptyTests(unittest.TestCase):
         self.assert_empty_metadata(torch.empty(size=(2,)), (2,))
         self.assert_empty_metadata(torch.empty(size=(2, True)), (2, 1))
         self.assert_empty_metadata(torch.empty(size=np.array([2])), (2,))
+        self.assert_empty_metadata(
+            torch.empty(
+                2,
+                **torch.nn.factory_kwargs(
+                    {"memory_format": torch.contiguous_format}
+                ),
+            ),
+            (2,),
+        )
 
         stateful = StatefulIndexDimension((2, 3, 4))
         stateful_tensor = torch.empty(stateful, 3)
@@ -458,6 +469,21 @@ class EmptyTests(unittest.TestCase):
             (lambda: torch.empty(2, device="cuda"), (2,), {"device": "cuda"}),
             (lambda: torch.empty(2, pin_memory=True), (2,), {"pin_memory": True}),
             (
+                lambda: torch.empty(2, memory_format=None),
+                (2,),
+                {"memory_format": None},
+            ),
+            (
+                lambda: torch.empty(2, memory_format=torch.contiguous_format),
+                (2,),
+                {"memory_format": torch.contiguous_format},
+            ),
+            (
+                lambda: torch.empty(2, memory_format=torch.channels_last),
+                (2,),
+                {"memory_format": torch.channels_last},
+            ),
+            (
                 lambda: torch.empty(2, requires_grad=True),
                 (2,),
                 {"requires_grad": True},
@@ -525,6 +551,14 @@ class EmptyTests(unittest.TestCase):
                 lambda: torch.empty(2, requires_grad=1),
                 TypeError,
                 re.escape("empty(): argument 'requires_grad' must be bool, not int"),
+            ),
+            (
+                lambda: torch.empty(2, memory_format=object()),
+                TypeError,
+                re.escape(
+                    "empty(): argument 'memory_format' must be torch.memory_format, "
+                    "not object"
+                ),
             ),
         )
         for call, error_type, message in cases:
@@ -678,14 +712,24 @@ class EmptyTests(unittest.TestCase):
                 "empty(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
             ),
             (
-                lambda: torch.empty(2, memory_format=torch.contiguous_format),
+                lambda: torch.empty(2, memory_format=object()),
                 TypeError,
-                "empty() got an unexpected keyword argument 'memory_format'",
+                "empty(): argument 'memory_format' must be torch.memory_format, not object",
             ),
             (
-                lambda: torch.empty(2, memory_format=None),
-                TypeError,
-                "empty() got an unexpected keyword argument 'memory_format'",
+                lambda: torch.empty(2, memory_format=torch.preserve_format),
+                NotImplementedError,
+                "empty(): only default-equivalent memory_format is supported",
+            ),
+            (
+                lambda: torch.empty(2, memory_format=torch.channels_last),
+                NotImplementedError,
+                "empty(): only default-equivalent memory_format is supported",
+            ),
+            (
+                lambda: torch.empty(2, memory_format=torch.channels_last_3d),
+                NotImplementedError,
+                "empty(): only default-equivalent memory_format is supported",
             ),
         ):
             with self.subTest(message=message):
