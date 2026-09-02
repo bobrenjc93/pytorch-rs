@@ -97,6 +97,13 @@ enum GradFn {
         output_shape: Vec<usize>,
         output_elements: usize,
     },
+    #[cfg(any(feature = "python-bindings", test))]
+    SquaredDifference {
+        left: SavedTensor,
+        right: SavedTensor,
+        output_shape: Vec<usize>,
+        output_elements: usize,
+    },
     MultiplyScalar {
         input: SavedTensor,
         scalar: Option<f32>,
@@ -161,6 +168,11 @@ impl GradFn {
                 left.take_parent(pending);
                 right.take_parent(pending);
             }
+            #[cfg(any(feature = "python-bindings", test))]
+            Self::SquaredDifference { left, right, .. } => {
+                left.take_parent(pending);
+                right.take_parent(pending);
+            }
             Self::MultiplyScalar { input, .. }
             | Self::Negate { input, .. }
             | Self::Sum { input }
@@ -178,6 +190,14 @@ impl GradFn {
             Self::Multiply { left, right, .. } => {
                 if (left.autograd.is_some() && right.storage.is_none())
                     || (right.autograd.is_some() && left.storage.is_none())
+                {
+                    return Err(TensorError::BackwardGraphFreed);
+                }
+            }
+            #[cfg(any(feature = "python-bindings", test))]
+            Self::SquaredDifference { left, right, .. } => {
+                if (left.autograd.is_some() || right.autograd.is_some())
+                    && (left.storage.is_none() || right.storage.is_none())
                 {
                     return Err(TensorError::BackwardGraphFreed);
                 }
@@ -212,6 +232,11 @@ impl GradFn {
         self.validate_saved_values()?;
         match self {
             Self::Multiply { left, right, .. } => {
+                left.storage = None;
+                right.storage = None;
+            }
+            #[cfg(any(feature = "python-bindings", test))]
+            Self::SquaredDifference { left, right, .. } => {
                 left.storage = None;
                 right.storage = None;
             }
@@ -1086,6 +1111,8 @@ impl Tensor {
             GradFn::AddSubtract { node, .. }
             | GradFn::Negate { node, .. }
             | GradFn::Transform { node, .. } => *node,
+            #[cfg(any(feature = "python-bindings", test))]
+            GradFn::SquaredDifference { .. } => AutogradNode::SquaredDifference,
             GradFn::SavedInputUnary(node) => node.identity,
             GradFn::SavedOutputUnary(node) => node.identity,
             GradFn::ZeroVjp(node) => node.identity,
@@ -1412,6 +1439,28 @@ impl Tensor {
                         output_elements: output.elements,
                         right_sign,
                         node,
+                    })),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn finish_squared_difference_vjp(
+        &self,
+        other: &Self,
+        mut output: Self,
+    ) -> Result<Self, TensorError> {
+        if (self.requires_grad() || other.requires_grad()) && is_grad_enabled() {
+            let output_shape = try_clone_result_shape(&output.shape, output.elements)?;
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::SquaredDifference {
+                        left: SavedTensor::try_from_tensor(self, true)?,
+                        right: SavedTensor::try_from_tensor(other, true)?,
+                        output_shape,
+                        output_elements: output.elements,
                     })),
                 },
             }));
@@ -3185,19 +3234,19 @@ impl Tensor {
     /// result metadata or storage allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn squared_difference(&self, other: &Self) -> Result<Self, TensorError> {
-        if self.shape == other.shape {
+        let output = if self.shape == other.shape {
             if let Some(output) = self.squared_difference_same_shape_contiguous(other)? {
-                return Ok(output);
+                output
+            } else if let Some(output) = self.squared_difference_same_shape_matching_dense(other)? {
+                output
+            } else {
+                self.zip_map_same_shape(other, squared_difference_value)?
             }
-            if let Some(output) = self.squared_difference_same_shape_matching_dense(other)? {
-                return Ok(output);
-            }
-            return self.zip_map_same_shape(other, squared_difference_value);
-        }
-
-        let plan = BroadcastPlan::new_for_expanded_operands(self, other)?;
-        let mut output =
-            if let Some(output) = self.squared_difference_rank_zero_contiguous(other, &plan)? {
+        } else {
+            let plan = BroadcastPlan::new_for_expanded_operands(self, other)?;
+            let mut output = if let Some(output) =
+                self.squared_difference_rank_zero_contiguous(other, &plan)?
+            {
                 output
             } else if let Some((data, fast_plan)) =
                 materialize_contiguous_trailing_broadcast(self, other, &squared_difference_value)?
@@ -3208,14 +3257,16 @@ impl Tensor {
             } else {
                 self.zip_map_broadcast_with_plan(other, plan, squared_difference_value)?
             };
-        if output.elements == 0 {
-            // The native MSE kernel receives already-expanded operands. For an
-            // empty broadcast, its output is restrided like the final square
-            // in `(input - target).square()`, even though no intermediate
-            // values need to be materialized.
-            output.strides = output.unary_output_strides(&output.shape, output.elements)?;
-        }
-        Ok(output)
+            if output.elements == 0 {
+                // The native MSE kernel receives already-expanded operands. For an
+                // empty broadcast, its output is restrided like the final square
+                // in `(input - target).square()`, even though no intermediate
+                // values need to be materialized.
+                output.strides = output.unary_output_strides(&output.shape, output.elements)?;
+            }
+            output
+        };
+        self.finish_squared_difference_vjp(other, output)
     }
 
     #[cfg(any(feature = "python-bindings", test))]
@@ -4480,6 +4531,11 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                             push_saved_parent(&mut stack, right);
                             push_saved_parent(&mut stack, left);
                         }
+                        #[cfg(any(feature = "python-bindings", test))]
+                        GradFn::SquaredDifference { left, right, .. } => {
+                            push_saved_parent(&mut stack, right);
+                            push_saved_parent(&mut stack, left);
+                        }
                         GradFn::MultiplyScalar { input, .. }
                         | GradFn::Negate { input, .. }
                         | GradFn::Sum { input }
@@ -4562,6 +4618,20 @@ fn apply_grad_fn(
             output_shape,
             output_elements,
         } => apply_multiply_grad_fn(
+            left,
+            right,
+            output_shape,
+            *output_elements,
+            upstream,
+            gradients,
+        )?,
+        #[cfg(any(feature = "python-bindings", test))]
+        GradFn::SquaredDifference {
+            left,
+            right,
+            output_shape,
+            output_elements,
+        } => apply_squared_difference_grad_fn(
             left,
             right,
             output_shape,
@@ -4692,6 +4762,73 @@ fn apply_multiply_grad_fn(
                         .value(left_offset)
                         .expect("saved left operand offset must address storage"),
             );
+        }
+    }
+    if let (Some(meta), Some(gradient)) = (&left.autograd, left_gradient) {
+        add_gradient(gradients, meta, left.output_nr, gradient.values);
+    }
+    if let (Some(meta), Some(gradient)) = (&right.autograd, right_gradient) {
+        add_gradient(gradients, meta, right.output_nr, gradient.values);
+    }
+    Ok(())
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn apply_squared_difference_grad_fn(
+    left: &SavedTensor,
+    right: &SavedTensor,
+    output_shape: &[usize],
+    output_elements: usize,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    debug_assert_eq!(output_elements, upstream.len());
+    let mut left_gradient = if left.autograd.is_some() {
+        Some(GradientAccumulator::new(
+            left.elements,
+            left.elements == output_elements,
+        )?)
+    } else {
+        None
+    };
+    let mut right_gradient = if right.autograd.is_some() {
+        Some(GradientAccumulator::new(
+            right.elements,
+            right.elements == output_elements,
+        )?)
+    } else {
+        None
+    };
+    let mut coordinates = try_result_vector(output_shape.len(), output_elements)?;
+    coordinates.resize(output_shape.len(), 0_usize);
+
+    for (output_index, &output_gradient) in upstream.iter().enumerate() {
+        let mut remaining = output_index;
+        for axis in (0..output_shape.len()).rev() {
+            coordinates[axis] = remaining % output_shape[axis];
+            remaining /= output_shape[axis];
+        }
+        let (left_index, left_offset) = left.broadcast_position(output_shape, &coordinates);
+        let (right_index, right_offset) = right.broadcast_position(output_shape, &coordinates);
+        let left_value = left
+            .storage
+            .as_ref()
+            .expect("squared-difference derivative must save left operand values")
+            .value(left_offset)
+            .expect("saved left operand offset must address storage");
+        let right_value = right
+            .storage
+            .as_ref()
+            .expect("squared-difference derivative must save right operand values")
+            .value(right_offset)
+            .expect("saved right operand offset must address storage");
+        if let Some(gradient) = &mut left_gradient {
+            let local_gradient = square_backward_value(left_value - right_value, output_gradient);
+            gradient.add(left_index, local_gradient);
+        }
+        if let Some(gradient) = &mut right_gradient {
+            let local_gradient = square_backward_value(right_value - left_value, output_gradient);
+            gradient.add(right_index, local_gradient);
         }
     }
     if let (Some(meta), Some(gradient)) = (&left.autograd, left_gradient) {
