@@ -134,6 +134,87 @@ class FunctionalL1LossTests(unittest.TestCase):
             ("same operand", same, same),
         )
 
+    def matching_dense_cases(self):
+        input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x0080_0000,
+                0x8080_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+            ],
+            dtype=np.uint32,
+        )
+        target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0001,
+                0x0000_0001,
+                0x807F_FFFF,
+                0x007F_FFFF,
+                0x8080_0000,
+                0x0080_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+                0x0000_0000,
+                0x8000_0000,
+            ],
+            dtype=np.uint32,
+        )
+        input_values = input_bits.view(np.float32)
+        target_values = target_bits.view(np.float32)
+        transposed_input = torch.tensor(memoryview(input_values)).view(3, 6)
+        transposed_target = torch.tensor(memoryview(target_values)).view(3, 6)
+
+        input_padding = np.linspace(
+            -11.0, 11.0, input_values.size, dtype=np.float32
+        )
+        target_padding = np.linspace(
+            13.0, -13.0, target_values.size, dtype=np.float32
+        )
+        offset_input_base = torch.tensor(
+            memoryview(np.concatenate([input_padding, input_values]))
+        ).view(2, 3, 6)
+        offset_target_base = torch.tensor(
+            memoryview(np.concatenate([target_padding, target_values]))
+        ).view(2, 3, 6)
+        empty_input = torch.zeros((2, 0, 3)).transpose(0, 2)
+        empty_target = torch.ones((2, 0, 3)).transpose(0, 2)
+
+        return (
+            (
+                "transposed edge bits",
+                transposed_input.transpose(0, 1),
+                transposed_target.transpose(0, 1),
+            ),
+            (
+                "offset transposed edge bits",
+                offset_input_base[1].transpose(0, 1),
+                offset_target_base[1].transpose(0, 1),
+            ),
+            ("empty transposed", empty_input, empty_target),
+        )
+
     def channels_last_cases(self):
         edge_input_patterns = np.asarray(
             [
@@ -337,6 +418,7 @@ class FunctionalL1LossTests(unittest.TestCase):
             "``weight=None``",
             "fuses same-shape row-major contiguous operands",
             "non-empty same-shape rank-4 channels-last-contiguous operands",
+            "same-shape operands with identical strides and non-overlapping dense storage",
             "identical strides and non-overlapping dense storage",
             "rank-0 scalar broadcasts over row-major contiguous tensors",
             "one native absolute-difference pass",
@@ -439,6 +521,74 @@ class FunctionalL1LossTests(unittest.TestCase):
         self.assertFalse(actual.is_set_to(target))
         self.assertNotEqual(actual.data_ptr(), input.data_ptr())
         self.assertNotEqual(actual.data_ptr(), target.data_ptr())
+
+    def test_matching_dense_cases_cover_edges_storage_sum_and_nonmutation(self):
+        for case, input, target in self.matching_dense_cases():
+            self.assertEqual(input.shape, target.shape)
+            self.assertEqual(input.stride(), target.stride())
+            if input.numel() != 0:
+                self.assertFalse(input.is_contiguous())
+                self.assertFalse(target.is_contiguous())
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+            expected_none, expected_none_bits = self.expected_l1_bits(input, target)
+            expected_values = expected_none_bits.view(np.float32).copy()
+            expected_sum = torch.tensor(memoryview(expected_values)).view(
+                expected_none.shape
+            ).sum()
+
+            for reduction, expected in (
+                ("none", expected_none),
+                ("sum", expected_sum),
+            ):
+                with self.subTest(case=case, reduction=reduction):
+                    actual = functional.l1_loss(input, target, reduction=reduction)
+                    if reduction == "none":
+                        self.assertEqual(actual.shape, expected.shape)
+                        self.assertEqual(actual.stride(), expected.stride())
+                        self.assertEqual(
+                            actual.storage_offset(),
+                            expected.storage_offset(),
+                        )
+                        self.assertEqual(
+                            actual.is_contiguous(),
+                            expected.is_contiguous(),
+                        )
+                        self.assertEqual(actual.requires_grad, expected.requires_grad)
+                        self.assertEqual(actual.is_leaf, expected.is_leaf)
+                        self.assertIs(actual.dtype, torch.float32)
+                        self.assertEqual(actual.device, torch.device("cpu"))
+                        np.testing.assert_array_equal(
+                            self.tensor_bits(actual),
+                            expected_none_bits,
+                        )
+                    else:
+                        self.assert_matches_composition(
+                            actual,
+                            expected,
+                            case=(case, reduction),
+                        )
+
+                    repeated = functional.l1_loss(input, target, reduction=reduction)
+                    self.assertFalse(actual.is_set_to(repeated))
+                    self.assertFalse(actual.is_set_to(input))
+                    self.assertFalse(actual.is_set_to(target))
+                    if actual.numel() != 0:
+                        self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+                        self.assertNotEqual(actual.data_ptr(), input.data_ptr())
+                        self.assertNotEqual(actual.data_ptr(), target.data_ptr())
+
+            with self.subTest(case=case, nonmutation=True):
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1],
+                    input_state[-1],
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1],
+                    target_state[-1],
+                )
 
     def test_channels_last_cases_match_composition_edges_and_storage(self):
         for case, input, target in self.channels_last_cases():
