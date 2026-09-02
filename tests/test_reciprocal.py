@@ -83,26 +83,72 @@ class TensorReciprocalTests(unittest.TestCase):
             self.assertFalse(function_output.is_set_to(source))
             self.assertFalse(method_output.is_set_to(function_output))
 
-    def test_grad_recording_is_rejected_before_planning_and_no_grad_is_allowed(self):
+    def test_grad_recording_uses_saved_input_vjp_and_no_grad_is_supported(self):
+        scalar = torch.tensor(4.0, requires_grad=True)
+        scalar_output = scalar.reciprocal()
+        self.assertTrue(scalar_output.requires_grad)
+        self.assertFalse(scalar_output.is_leaf)
+        scalar_output.backward()
+        self.assertEqual(scalar.grad.item(), -0.0625)
+
+        empty = torch.zeros((2, 0, 3), requires_grad=True)
+        empty_output = empty.reciprocal()
+        self.assertTrue(empty_output.requires_grad)
+        self.assertEqual(empty_output.shape, (2, 0, 3))
+        self.assertEqual(empty_output.stride(), (3, 3, 1))
+        empty_output.sum().backward()
+        self.assertEqual(empty.grad.shape, (2, 0, 3))
+        self.assertEqual(empty.grad.numel(), 0)
+
         leaf = torch.tensor(
             [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True
         )
         source = leaf.transpose(0, 1)[1]
-
+        output = source.reciprocal()
+        self.assertTrue(output.requires_grad)
+        self.assertFalse(output.is_leaf)
+        self.assertEqual(output.shape, (2,))
+        self.assertEqual(output.stride(), (1,))
+        loss = output.sum()
+        loss.backward()
+        expected_gradient = np.zeros((2, 3), dtype=np.float32)
+        expected_gradient[:, 1] = [np.float32("-inf"), -0.0625]
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad, dtype=np.float32).reshape(-1).view(np.uint32),
+            expected_gradient.reshape(-1).view(np.uint32),
+        )
         with self.assertRaisesRegex(
-            RuntimeError,
-            r"^reciprocal\(\): autograd recording is not supported$",
+            RuntimeError, "backward through the graph a second time"
         ):
-            source.reciprocal()
+            loss.backward()
+
+        accumulated = torch.tensor([2.0, -4.0], requires_grad=True)
+        accumulated.reciprocal().sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(accumulated.grad, dtype=np.float32),
+            np.asarray([-0.25, -0.0625], dtype=np.float32),
+        )
+        accumulated.reciprocal().sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(accumulated.grad, dtype=np.float32),
+            np.asarray([-0.5, -0.125], dtype=np.float32),
+        )
 
         extreme = torch.zeros((0,), requires_grad=True).reshape(
             (0, sys.maxsize, 3)
         )
         with self.assertRaisesRegex(
             RuntimeError,
-            r"^reciprocal\(\): autograd recording is not supported$",
+            r"^Stride calculation overflowed$",
         ):
             extreme.reciprocal()
+
+        higher_order_loss = torch.tensor([2.0], requires_grad=True).reciprocal().sum()
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^torch_rs\.Tensor\.backward does not support create_graph=True$",
+        ):
+            higher_order_loss.backward(create_graph=True)
 
         with torch.no_grad():
             actual = source.reciprocal()
@@ -250,13 +296,11 @@ class TensorReciprocalTests(unittest.TestCase):
         self.assertEqual(forwarded.tolist(), [0.25])
 
         order.clear()
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^reciprocal\(\): autograd recording is not supported$",
-        ):
-            with ForwardingMode("lower"):
-                with ForwardingMode("upper"):
-                    tensor.reciprocal()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                tracked_forwarded = tensor.reciprocal()
+        self.assertTrue(tracked_forwarded.requires_grad)
+        self.assertFalse(tracked_forwarded.is_leaf)
         self.assertEqual(order, ["upper", "lower"])
 
         invalid_mode = RecordingMode()
