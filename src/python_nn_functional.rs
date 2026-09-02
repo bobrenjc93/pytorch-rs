@@ -27,6 +27,12 @@ const MSE_LOSS_EXACT_TENSORS_ERROR: &str =
     "mse_loss() only supports exact native Tensor input and target operands";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+enum L1LossReduction {
+    None,
+    Sum,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum MseLossReduction {
     None,
     Mean,
@@ -544,16 +550,20 @@ fn _nn_functional_l1_loss(
             "torch_rs.nn.functional.l1_loss only supports size_average=None and reduce=None",
         ));
     }
-    let supports_reduction = reduction
+    let reduction = reduction
         .cast::<PyString>()
         .ok()
         .and_then(|reduction| reduction.to_str().ok())
-        .is_some_and(|reduction| reduction == "none");
-    if !supports_reduction {
+        .and_then(|reduction| match reduction {
+            "none" => Some(L1LossReduction::None),
+            "sum" => Some(L1LossReduction::Sum),
+            _ => None,
+        });
+    let Some(reduction) = reduction else {
         return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.l1_loss only supports reduction='none'",
+            "torch_rs.nn.functional.l1_loss only supports reduction='none' or reduction='sum'",
         ));
-    }
+    };
     if !weight.is_none() {
         return Err(PyNotImplementedError::new_err(
             "torch_rs.nn.functional.l1_loss only supports weight=None",
@@ -588,6 +598,10 @@ fn _nn_functional_l1_loss(
         .inner()
         .absolute_difference(target.inner())
         .map_err(|error| tensor_error(&error))?;
+    let output = match reduction {
+        L1LossReduction::None => output,
+        L1LossReduction::Sum => output.sum(),
+    };
     PyTensor::new(output).into_py_any(py)
 }
 
