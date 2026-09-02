@@ -172,6 +172,8 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         (
             "`Tensor.select`",
             "`torch.select`",
+            "`Tensor.unbind`",
+            "`torch.unbind`",
             "`Tensor.view`",
             "`Tensor.reshape`",
             "`torch.reshape`",
@@ -180,7 +182,6 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         (
             "range slicing",
             "advanced indexing",
-            "arbitrary-dimension `unbind`",
             "sequence `movedim` axes",
             "cross-dtype views",
         ),
