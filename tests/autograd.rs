@@ -381,6 +381,20 @@ fn reciprocal_square_root_nan_upstream_prefers_scalar_local_nan_payload() {
 }
 
 #[test]
+fn reciprocal_square_root_large_input_applies_upstream_before_underflow() {
+    let leaf = Tensor::from_vec(vec![f32::from_bits(0x7106_b45e)], [1])
+        .unwrap()
+        .with_requires_grad(true);
+    let upstream = Tensor::from_vec(vec![f32::from_bits(0x4cf9_2a41)], [1]).unwrap();
+    let loss = leaf.rsqrt().unwrap().mul(&upstream).unwrap().sum();
+    loss.backward().unwrap();
+    assert_eq!(
+        leaf.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        0x81f9_2a41
+    );
+}
+
+#[test]
 fn floor_records_reusable_zero_vjp_for_views_and_honors_no_grad() {
     let leaf = Tensor::from_vec(vec![-1.25, -0.0, 1.75, 4.5], [2, 2])
         .unwrap()

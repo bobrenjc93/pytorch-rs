@@ -659,6 +659,30 @@ class TopLevelRsqrtTests(unittest.TestCase):
                         np.asarray([expected_bits], dtype=np.uint32),
                     )
 
+    def test_large_input_applies_upstream_before_underflow(self):
+        forms = (
+            ("method", lambda leaf: leaf.rsqrt()),
+            ("top-level", lambda leaf: torch.rsqrt(leaf, out=None)),
+        )
+        for form, call in forms:
+            with self.subTest(form=form):
+                leaf = torch.tensor(
+                    memoryview(
+                        np.asarray([0x7106_B45E], dtype=np.uint32).view(np.float32)
+                    ),
+                    requires_grad=True,
+                )
+                upstream = torch.tensor(
+                    memoryview(
+                        np.asarray([0x4CF9_2A41], dtype=np.uint32).view(np.float32)
+                    )
+                )
+                (call(leaf) * upstream).sum().backward()
+                np.testing.assert_array_equal(
+                    np.asarray(leaf.grad, dtype=np.float32).view(np.uint32),
+                    np.asarray([0x81F9_2A41], dtype=np.uint32),
+                )
+
     def test_accumulation_graph_freeing_no_grad_and_detach_reuse_method_path(self):
         function_leaf = torch.tensor([1.0, 4.0, 9.0], requires_grad=True)
         method_leaf = torch.tensor([1.0, 4.0, 9.0], requires_grad=True)

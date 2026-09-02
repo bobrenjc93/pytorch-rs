@@ -397,6 +397,38 @@ class TensorRsqrtReferenceTests(unittest.TestCase):
                     tensors[0][1], tensors[1][1], case=(case, form, "gradient")
                 )
 
+    def test_autograd_large_input_applies_upstream_before_underflow_like_pytorch_2_13(
+        self,
+    ):
+        forms = (
+            ("method", lambda module, leaf: leaf.rsqrt()),
+            ("top-level", lambda module, leaf: module.rsqrt(leaf, out=None)),
+        )
+        for form, call in forms:
+            tensors = []
+            for module in (torch, reference_torch):
+                leaf = module.tensor(
+                    memoryview(
+                        np.asarray([0x7106_B45E], dtype=np.uint32).view(np.float32)
+                    ),
+                    requires_grad=True,
+                )
+                upstream = module.tensor(
+                    memoryview(
+                        np.asarray([0x4CF9_2A41], dtype=np.uint32).view(np.float32)
+                    )
+                )
+                output = call(module, leaf)
+                (output * upstream).sum().backward()
+                tensors.append((output, leaf.grad))
+
+            self.assert_tensor_matches(
+                tensors[0][0], tensors[1][0], case=(form, "forward")
+            )
+            self.assert_tensor_matches(
+                tensors[0][1], tensors[1][1], case=(form, "gradient")
+            )
+
     def test_autograd_accumulation_graph_freeing_no_grad_and_detach_match_pytorch_2_13(
         self,
     ):
