@@ -3548,7 +3548,19 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn add_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
-        let output = self.map_scalar(scalar, |value, scalar| value + scalar)?;
+        self.add_scalar_with_order(scalar, false)
+    }
+
+    pub(crate) fn add_scalar_with_order(
+        &self,
+        scalar: f32,
+        scalar_on_left: bool,
+    ) -> Result<Self, TensorError> {
+        let output = if scalar_on_left {
+            self.map_scalar(scalar, |value, scalar| scalar + value)?
+        } else {
+            self.map_scalar(scalar, |value, scalar| value + scalar)?
+        };
         self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Add)
     }
 

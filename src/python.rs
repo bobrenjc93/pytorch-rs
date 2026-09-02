@@ -4902,8 +4902,8 @@ fn dispatch_top_level_addition(
     )?;
 
     // Generated variable functions validate their schema before dispatch, but
-    // delay native-only unsupported cases such as scalar-left operands,
-    // concrete out tensors, and nondefault alpha until active handlers can override.
+    // delay native-only unsupported cases such as concrete out tensors and
+    // nondefault alpha until active handlers can override.
     let active_mode = torch_function_mode_stack::pop();
     if let Some(mode) = active_mode.get() {
         validate_torch_function_mode_handler(mode.bind(py))?;
@@ -4974,7 +4974,13 @@ fn apply_top_level_addition(
             let scalar = parse_supported_arithmetic_scalar(scalar)?;
             BinaryOperation::Add.apply_scalar(&input.inner, scalar.into_f32(), false)
         }
-        (BoundAddOperand::Scalar(_), BoundAddOperand::Tensor(_) | BoundAddOperand::Scalar(_)) => {
+        (BoundAddOperand::Scalar(scalar), BoundAddOperand::Tensor(other)) => {
+            let other = other.try_borrow()?;
+            validate_top_level_add_tensor(&other)?;
+            let scalar = parse_supported_arithmetic_scalar(scalar)?;
+            BinaryOperation::Add.apply_scalar(&other.inner, scalar.into_f32(), true)
+        }
+        (BoundAddOperand::Scalar(_), BoundAddOperand::Scalar(_)) => {
             return Err(addition_unsupported_native_input());
         }
         (BoundAddOperand::Override(_), _) | (_, BoundAddOperand::Override(_)) => {
@@ -6703,7 +6709,8 @@ impl BinaryOperation {
         reverse: bool,
     ) -> Result<CoreTensor, TensorError> {
         match (self, reverse) {
-            (Self::Add, _) => tensor.add_scalar(scalar),
+            (Self::Add, false) => tensor.add_scalar(scalar),
+            (Self::Add, true) => tensor.add_scalar_with_order(scalar, true),
             (Self::Subtract, false) => tensor.sub_scalar(scalar),
             (Self::Subtract, true) => tensor.scalar_sub(scalar),
             (Self::Multiply, _) => tensor.mul_scalar(scalar),
@@ -14496,7 +14503,7 @@ fn subtraction_unsupported_native_input(operation: SubtractionOperation) -> PyEr
 
 fn addition_unsupported_native_input() -> PyErr {
     PyNotImplementedError::new_err(
-        "add(): only exact native CPU float32 Tensor input with Tensor or real-number other operands is supported",
+        "add(): only exact native CPU float32 Tensor/Tensor, Tensor/real-number, or real-number/exact native CPU float32 Tensor operands are supported",
     )
 }
 
@@ -15204,7 +15211,7 @@ fn top_level_add_binding_error(
     try_push_string_with(&mut message, &summary, &allocation)?;
     try_push_string_with(
         &mut message,
-        "), but expected (Tensor input, Tensor or Number other, *, Number alpha = 1, Tensor out = None)",
+        "), but expected (Tensor or Number input, Tensor or Number other, *, Number alpha = 1, Tensor out = None)",
         &allocation,
     )?;
     if let Some(nul) = message.find('\0') {
