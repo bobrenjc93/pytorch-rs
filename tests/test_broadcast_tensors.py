@@ -383,6 +383,7 @@ class BroadcastTensorsTests(unittest.TestCase):
                     "broadcast_shapes",
                     "empty",
                     "empty_like",
+                    "full_like",
                     "ones",
                     "ones_like",
                     "zeros",
