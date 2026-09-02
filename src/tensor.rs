@@ -3828,23 +3828,29 @@ impl Tensor {
 
     #[must_use]
     pub fn sum(&self) -> Self {
-        let contiguous_values = self.contiguous_slice();
-        let total = if let Some(values) = contiguous_values {
-            values
-                .iter()
-                .copied()
-                .fold(0.0_f32, |total, value| total + value)
-        } else if let Some(total) = self.sum_contiguous_shared_gradient() {
-            total
-        } else if let Some(total) = self.fold_owned_sum_rank(0.0_f32, |total, value| total + value)
-        {
-            total
-        } else {
-            (0..self.elements).fold(0.0_f32, |total, index| {
-                total + self.value_at_strided_linear_index(index)
-            })
-        };
-        let mut output = Self::from_scalar(total, self.dtype(), self.device());
+        let total = self.full_reduction_sum_value();
+        self.finish_sum_output(Self::from_scalar(total, self.dtype(), self.device()))
+    }
+
+    /// Sums every element while retaining each input dimension with extent one.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata allocation fails.
+    pub fn sum_keepdim(&self) -> Result<Self, TensorError> {
+        let shape = self.full_reduction_keepdim_shape()?;
+        let strides = contiguous_strides(&shape, 1)?;
+        let total = self.full_reduction_sum_value();
+        Ok(self.finish_sum_output(Self::from_scalar_with_layout(
+            total,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        )))
+    }
+
+    fn finish_sum_output(&self, mut output: Self) -> Self {
         if self.requires_grad() && is_grad_enabled() {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
@@ -3855,6 +3861,31 @@ impl Tensor {
             }));
         }
         output
+    }
+
+    fn from_scalar_with_layout(
+        value: f32,
+        shape: Vec<usize>,
+        strides: Vec<usize>,
+        dtype: DType,
+        device: Device,
+    ) -> Self {
+        Self {
+            storage: Arc::new(Storage::from_scalar(value, dtype, device)),
+            shape,
+            strides,
+            offset: 0,
+            elements: 1,
+            output_nr: 0,
+            view_requires_grad: false,
+            autograd: None,
+        }
+    }
+
+    fn full_reduction_keepdim_shape(&self) -> Result<Vec<usize>, TensorError> {
+        let mut shape = try_result_vector(self.shape.len(), self.elements)?;
+        shape.resize(self.shape.len(), 1);
+        Ok(shape)
     }
 
     /// Computes the arithmetic mean of every element.
@@ -3868,7 +3899,37 @@ impl Tensor {
     /// Returns an error when result allocation fails.
     pub fn mean(&self) -> Result<Self, TensorError> {
         let divisor = full_reduction_mean_divisor(self.elements);
-        let mut output = self.sum().div_scalar_values(divisor)?;
+        let total = self.full_reduction_sum_value();
+        Ok(self.finish_mean_output(
+            Self::from_scalar(total / divisor, self.dtype(), self.device()),
+            divisor,
+        ))
+    }
+
+    /// Computes the arithmetic mean while retaining each input dimension with
+    /// extent one.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata allocation fails.
+    pub fn mean_keepdim(&self) -> Result<Self, TensorError> {
+        let shape = self.full_reduction_keepdim_shape()?;
+        let strides = contiguous_strides(&shape, 1)?;
+        let divisor = full_reduction_mean_divisor(self.elements);
+        let total = self.full_reduction_sum_value();
+        Ok(self.finish_mean_output(
+            Self::from_scalar_with_layout(
+                total / divisor,
+                shape,
+                strides,
+                self.dtype(),
+                self.device(),
+            ),
+            divisor,
+        ))
+    }
+
+    fn finish_mean_output(&self, mut output: Self, divisor: f32) -> Self {
         if self.requires_grad() && is_grad_enabled() {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
@@ -3879,7 +3940,26 @@ impl Tensor {
                 },
             }));
         }
-        Ok(output)
+        output
+    }
+
+    fn full_reduction_sum_value(&self) -> f32 {
+        let contiguous_values = self.contiguous_slice();
+        if let Some(values) = contiguous_values {
+            values
+                .iter()
+                .copied()
+                .fold(0.0_f32, |total, value| total + value)
+        } else if let Some(total) = self.sum_contiguous_shared_gradient() {
+            total
+        } else if let Some(total) = self.fold_owned_sum_rank(0.0_f32, |total, value| total + value)
+        {
+            total
+        } else {
+            (0..self.elements).fold(0.0_f32, |total, index| {
+                total + self.value_at_strided_linear_index(index)
+            })
+        }
     }
 
     fn sum_contiguous_shared_gradient(&self) -> Option<f32> {

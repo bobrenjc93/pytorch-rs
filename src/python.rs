@@ -4073,12 +4073,14 @@ fn apply_top_level_sum(py: Python<'_>, call: &BoundTopLevelSumCall<'_>) -> PyRes
         unreachable!("sum overrides were dispatched before the native path")
     };
     let input = input.try_borrow()?;
-    let mut output = input.inner.sum();
-    if call.keepdim_full_reduction {
-        output = output
-            .reshape(full_reduction_keepdim_shape(&input.inner))
-            .map_err(|error| tensor_error(&error))?;
-    }
+    let output = if call.keepdim_full_reduction {
+        input
+            .inner
+            .sum_keepdim()
+            .map_err(|error| tensor_error(&error))?
+    } else {
+        input.inner.sum()
+    };
     Ok(Py::new(py, PyTensor::new(output))?.into_any())
 }
 
@@ -4160,17 +4162,15 @@ fn apply_top_level_mean(py: Python<'_>, call: &BoundTopLevelMeanCall<'_>) -> PyR
         unreachable!("mean overrides were dispatched before the native path")
     };
     let input = input.try_borrow()?;
-    let mut output = input.inner.mean().map_err(|error| tensor_error(&error))?;
-    if call.keepdim_full_reduction {
-        output = output
-            .reshape(full_reduction_keepdim_shape(&input.inner))
-            .map_err(|error| tensor_error(&error))?;
-    }
+    let output = if call.keepdim_full_reduction {
+        input
+            .inner
+            .mean_keepdim()
+            .map_err(|error| tensor_error(&error))?
+    } else {
+        input.inner.mean().map_err(|error| tensor_error(&error))?
+    };
     Ok(Py::new(py, PyTensor::new(output))?.into_any())
-}
-
-fn full_reduction_keepdim_shape(input: &CoreTensor) -> Vec<i64> {
-    vec![1_i64; input.shape().len()]
 }
 
 fn dispatch_is_conj(
@@ -6418,12 +6418,13 @@ impl PyTensor {
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn sum(&self, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let call = bind_method_sum_arguments(args, kwargs)?;
-        let mut output = self.inner.sum();
-        if call.keepdim_full_reduction {
-            output = output
-                .reshape(full_reduction_keepdim_shape(&self.inner))
-                .map_err(|error| tensor_error(&error))?;
-        }
+        let output = if call.keepdim_full_reduction {
+            self.inner
+                .sum_keepdim()
+                .map_err(|error| tensor_error(&error))?
+        } else {
+            self.inner.sum()
+        };
         Ok(Self::new(output))
     }
 
@@ -6437,12 +6438,13 @@ impl PyTensor {
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
         let call = bind_method_mean_arguments(args, kwargs)?;
-        let mut output = self.inner.mean().map_err(|error| tensor_error(&error))?;
-        if call.keepdim_full_reduction {
-            output = output
-                .reshape(full_reduction_keepdim_shape(&self.inner))
-                .map_err(|error| tensor_error(&error))?;
-        }
+        let output = if call.keepdim_full_reduction {
+            self.inner
+                .mean_keepdim()
+                .map_err(|error| tensor_error(&error))?
+        } else {
+            self.inner.mean().map_err(|error| tensor_error(&error))?
+        };
         Ok(Self::new(output))
     }
 

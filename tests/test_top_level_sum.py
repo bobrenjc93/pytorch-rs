@@ -218,6 +218,10 @@ class TopLevelSumTests(unittest.TestCase):
             self.assert_keepdim_matches(
                 kept, expected, function_input, case=(case, "forward")
             )
+            self.assertEqual(
+                torch._C._nn_functional_dropout_tensor_autograd_suffix(kept),
+                ", grad_fn=<SumBackward0>",
+            )
 
             kept.sum().backward()
             expected.backward()

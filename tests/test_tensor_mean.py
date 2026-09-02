@@ -299,6 +299,10 @@ class TensorMeanTests(unittest.TestCase):
                 self.assert_keepdim_scalar(
                     kept, np.float32(5.0 / 6.0), view, case=(form, "tracked")
                 )
+                self.assertEqual(
+                    torch._C._nn_functional_dropout_tensor_autograd_suffix(kept),
+                    ", grad_fn=<MeanBackward0>",
+                )
                 kept.sum().backward()
                 np.testing.assert_array_equal(
                     np.asarray(leaf.grad),
