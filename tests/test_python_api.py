@@ -2022,8 +2022,16 @@ class PythonApiBaselineTests(unittest.TestCase):
         result = torch.full((2,), torch.tensor(3.0))
         self.assertEqual(result.tolist(), [3.0, 3.0])
 
-        with self.assertRaises(TypeError):
-            torch.full((2,), torch.tensor([3.0]))
+        for fill_value in (
+            torch.tensor(3.0, requires_grad=True),
+            torch.tensor([3.0]),
+        ):
+            with self.subTest(fill_value=fill_value), self.assertRaisesRegex(
+                TypeError,
+                r"^full\(\): argument 'fill_value' \(position 2\) "
+                r"must be Number, not Tensor$",
+            ):
+                torch.full((2,), fill_value)
 
     def test_full_accepts_real_numpy_scalar_fill_values(self):
         cases = (

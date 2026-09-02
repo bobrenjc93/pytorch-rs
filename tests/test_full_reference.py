@@ -258,6 +258,33 @@ class FullReferenceTests(unittest.TestCase):
 
         self.assertEqual(contract(torch), contract(reference_torch))
 
+    def test_tensor_fill_value_boundary_matches_pytorch_2_13(self):
+        actual = torch.full((2,), torch.tensor(-0.0))
+        expected = reference_torch.full((2,), reference_torch.tensor(-0.0))
+        self.assertEqual(
+            self.tensor_contract(torch, actual),
+            self.tensor_contract(reference_torch, expected),
+        )
+
+        error_cases = (
+            (
+                lambda: torch.full((2,), torch.tensor(2.0, requires_grad=True)),
+                lambda: reference_torch.full(
+                    (2,),
+                    reference_torch.tensor(2.0, requires_grad=True),
+                ),
+            ),
+            (
+                lambda: torch.full((2,), torch.tensor([2.0])),
+                lambda: reference_torch.full(
+                    (2,), reference_torch.tensor([2.0])
+                ),
+            ),
+        )
+        for actual_call, expected_call in error_cases:
+            with self.subTest(actual_call=actual_call):
+                self.assert_error_matches(actual_call, expected_call)
+
     def test_negative_and_overflow_errors_match_pytorch_2_13(self):
         exact_cases = (
             lambda module: module.full((-1,), 3.0),

@@ -297,15 +297,13 @@ class ZerosLikeTests(unittest.TestCase):
         self.assertIs(package.zeros_like, function)
         self.assertEqual(package.__all__.count("zeros_like"), 1)
 
-    def test_empty_like_and_full_like_remain_unsupported(self):
+    def test_empty_like_remains_unsupported(self):
         package = importlib.import_module("torch_rs")
         native = package._C
-        for name in ("empty_like", "full_like"):
-            with self.subTest(name=name):
-                self.assertFalse(hasattr(package, name))
-                self.assertFalse(hasattr(native, name))
-                self.assertNotIn(name, package.__all__)
-                self.assertNotIn(name, native.__all__)
+        self.assertFalse(hasattr(package, "empty_like"))
+        self.assertFalse(hasattr(native, "empty_like"))
+        self.assertNotIn("empty_like", package.__all__)
+        self.assertNotIn("empty_like", native.__all__)
 
 
 if __name__ == "__main__":
