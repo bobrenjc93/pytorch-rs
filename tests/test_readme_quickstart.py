@@ -128,6 +128,7 @@ SUPPORTED_SURFACE_NAMESPACE_SUMMARIES = (
             "`torch.cuda.device_count`",
             "`torch.cuda.is_available`",
             "`torch.cuda.is_initialized`",
+            "`torch.cuda.memory_reserved`",
         ),
     ),
     (
@@ -254,6 +255,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
             "`torch.accelerator.reset_peak_memory_stats`",
             "`torch.accelerator.memory_allocated`",
             "`torch.accelerator.max_memory_allocated`",
+            "`torch.cuda.memory_reserved`",
             "`torch.accelerator.memory_reserved`",
             "`torch.accelerator.max_memory_reserved`",
             "`torch.backends.nnpack.set_flags`",

@@ -2,7 +2,17 @@ r"""
 CPU-build CUDA compatibility probes.
 """
 
-__all__ = ["device_count", "is_available", "is_initialized"]
+from . import memory as _memory
+
+memory_reserved = _memory.memory_reserved
+try:
+    del memory
+except NameError:
+    pass
+del _memory
+
+
+__all__ = ["device_count", "is_available", "is_initialized", "memory_reserved"]
 
 
 def is_available() -> bool:
