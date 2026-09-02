@@ -424,6 +424,8 @@ class FunctionalL1LossTests(unittest.TestCase):
             "one native absolute-difference pass",
             "subtraction and absolute-value behavior",
             "``reduction='sum'``",
+            "direct fused absolute-difference scalar reduction",
+            "other supported layouts",
             "supported full-tensor sum",
             "fresh, independent tensor",
             "size-mismatch warning",
@@ -725,6 +727,109 @@ class FunctionalL1LossTests(unittest.TestCase):
                 )
                 np.testing.assert_array_equal(
                     self.tensor_state(target)[-1], target_state[-1]
+                )
+
+    def test_same_shape_contiguous_sum_edges_metadata_and_nonmutation(self):
+        def expected_edge_sum(input, target):
+            expected_none, expected_bits = self.expected_l1_bits(input, target)
+            expected_values = expected_bits.view(np.float32).copy()
+            return torch.tensor(memoryview(expected_values)).view(
+                expected_none.shape
+            ).sum()
+
+        edge_input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F81_2345,
+            ],
+            dtype=np.uint32,
+        )
+        edge_target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xFF86_789A,
+            ],
+            dtype=np.uint32,
+        )
+        inf_input_bits = np.asarray(
+            [0x7F80_0000, 0xFF80_0000, 0x3F80_0000, 0xBF80_0000],
+            dtype=np.uint32,
+        )
+        inf_target_bits = np.asarray(
+            [0xFF80_0000, 0x7F80_0000, 0xBF80_0000, 0x3F80_0000],
+            dtype=np.uint32,
+        )
+        edge_input = torch.tensor(memoryview(edge_input_bits.view(np.float32)))
+        edge_target = torch.tensor(memoryview(edge_target_bits.view(np.float32)))
+        inf_input = torch.tensor(memoryview(inf_input_bits.view(np.float32)))
+        inf_target = torch.tensor(memoryview(inf_target_bits.view(np.float32)))
+        large_values = np.ones(1024 * 1024, dtype=np.float32)
+        large_input = torch.tensor(memoryview(large_values)).view(1024, 1024)
+        large_target = torch.zeros((1024, 1024))
+
+        cases = (
+            ("scalar signed zero", torch.tensor(-0.0), torch.tensor(0.0), None),
+            ("empty", torch.zeros((5, 0, 7)), torch.ones((5, 0, 7)), None),
+            (
+                "large contiguous",
+                large_input,
+                large_target,
+                None,
+            ),
+            ("inf edge bits", inf_input, inf_target, expected_edge_sum),
+            ("nan edge bits", edge_input, edge_target, expected_edge_sum),
+        )
+        for case, input, target, expected_factory in cases:
+            with self.subTest(case=case):
+                self.assertEqual(input.shape, target.shape)
+                self.assertTrue(input.is_contiguous())
+                self.assertTrue(target.is_contiguous())
+                input_state = self.tensor_state(input)
+                target_state = self.tensor_state(target)
+                expected = (
+                    (input - target).abs().sum()
+                    if expected_factory is None
+                    else expected_factory(input, target)
+                )
+
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    actual = functional.l1_loss(input, target, reduction="sum")
+
+                self.assertEqual(caught, [])
+                self.assert_matches_composition(actual, expected, case=case)
+                self.assertEqual(actual.shape, ())
+                self.assertEqual(actual.stride(), ())
+                self.assertEqual(actual.storage_offset(), 0)
+                self.assertTrue(actual.is_contiguous())
+                self.assertEqual(actual.numel(), 1)
+                self.assertFalse(actual.requires_grad)
+                self.assertTrue(actual.is_leaf)
+
+                repeated = functional.l1_loss(input, target, reduction="sum")
+                self.assertFalse(actual.is_set_to(repeated))
+                self.assertFalse(actual.is_set_to(input))
+                self.assertFalse(actual.is_set_to(target))
+                self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1],
+                    input_state[-1],
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1],
+                    target_state[-1],
                 )
 
     def test_mixed_layout_singleton_keeps_binary_tensoriterator_stride(self):

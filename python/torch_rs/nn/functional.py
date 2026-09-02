@@ -52,8 +52,9 @@ operands with identical strides and non-overlapping dense storage, non-empty
 same-shape rank-4 channels-last-contiguous operands, and rank-0 scalar
 broadcasts over row-major contiguous tensors into one native absolute-difference
 pass, otherwise preserving the established subtraction and absolute-value
-behavior. For ``reduction='sum'``, it composes that result with the supported
-full-tensor sum.
+behavior. For ``reduction='sum'``, same-shape row-major contiguous operands use
+a direct fused absolute-difference scalar reduction; other supported layouts
+compose the absolute-difference result with the supported full-tensor sum.
 The operation returns a fresh, independent tensor with PyTorch-compatible
 values, shape, strides, scalar metadata, and size-mismatch warning.
 
