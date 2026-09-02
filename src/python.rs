@@ -5180,9 +5180,8 @@ fn dispatch_top_level_division(
     )?;
 
     // Generated variable functions validate their schema before dispatch, but
-    // delay native-only unsupported cases such as concrete out tensors,
-    // scalar-left operands, and non-None rounding modes until active handlers
-    // can override.
+    // delay native-only unsupported cases such as concrete out tensors and
+    // non-None rounding modes until active handlers can override.
     let active_mode = torch_function_mode_stack::pop();
     if let Some(mode) = active_mode.get() {
         validate_torch_function_mode_handler(mode.bind(py))?;
@@ -5257,8 +5256,16 @@ fn apply_top_level_division(
             let scalar = parse_top_level_mul_scalar(scalar)?;
             BinaryOperation::Divide.apply_scalar(&input.inner, scalar, false)
         }
-        (BoundDivOperand::Scalar(_), BoundDivOperand::Tensor(_)) => {
-            return Err(division_unsupported_native_input(operation));
+        (BoundDivOperand::Scalar(scalar), BoundDivOperand::Tensor(tensor)) => {
+            let tensor = tensor.try_borrow()?;
+            validate_top_level_division_tensor(operation, &tensor)?;
+            if is_grad_enabled() && tensor.inner.requires_grad() {
+                return Err(PyRuntimeError::new_err(
+                    operation.autograd_unsupported_error(),
+                ));
+            }
+            let scalar = parse_top_level_mul_scalar(scalar)?;
+            tensor.inner.scalar_div_with_tensor_operand_layout(scalar)
         }
         (BoundDivOperand::Scalar(_), BoundDivOperand::Scalar(_)) => {
             return Err(PyTypeError::new_err(format!(
@@ -15327,7 +15334,7 @@ fn is_boolean_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
 
 fn division_unsupported_native_input(operation: DivisionOperation) -> PyErr {
     PyNotImplementedError::new_err(format!(
-        "{}(): only exact native CPU float32 Tensor input and Tensor or real-number other operands with rounding_mode=None are supported",
+        "{}(): only exact native CPU float32 Tensor/Tensor, Tensor/real-number, and real-number/Tensor operands with rounding_mode=None are supported",
         operation.name()
     ))
 }

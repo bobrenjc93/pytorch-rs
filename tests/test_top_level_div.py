@@ -153,6 +153,21 @@ class TopLevelDivTests(unittest.TestCase):
                     offset_noncontiguous / scalar,
                     case=(name, "keyword scalar", type(scalar).__name__, scalar),
                 )
+                self.assert_tensor_matches(
+                    function(scalar, offset_noncontiguous),
+                    scalar / offset_noncontiguous,
+                    case=(name, "scalar-left", type(scalar).__name__, scalar),
+                )
+                self.assert_tensor_matches(
+                    function(input=scalar, other=offset_noncontiguous),
+                    scalar / offset_noncontiguous,
+                    case=(
+                        name,
+                        "keyword scalar-left",
+                        type(scalar).__name__,
+                        scalar,
+                    ),
+                )
 
             empty = torch.zeros((2, 0, 3)).transpose(0, 2)
             broadcast = torch.ones((1, 1, 2))
@@ -160,6 +175,11 @@ class TopLevelDivTests(unittest.TestCase):
                 function(empty, broadcast),
                 empty / broadcast,
                 case=(name, "strided broadcast empty"),
+            )
+            self.assert_tensor_matches(
+                function(2.0, empty),
+                empty * 2.0,
+                case=(name, "scalar-left strided empty"),
             )
 
             special_bits = np.asarray(
@@ -189,6 +209,16 @@ class TopLevelDivTests(unittest.TestCase):
             if result.numel():
                 self.assertNotEqual(result.data_ptr(), special.data_ptr())
                 self.assertNotEqual(result.data_ptr(), divisors.data_ptr())
+            for scalar in (0.0, -0.0, float("inf"), float("-inf"), float("nan")):
+                scalar_result = function(scalar, divisors)
+                self.assert_tensor_matches(
+                    scalar_result,
+                    scalar / divisors,
+                    case=(name, "scalar-left signed zero nan infinity", scalar),
+                )
+                self.assertFalse(scalar_result.is_set_to(divisors))
+                if scalar_result.numel():
+                    self.assertNotEqual(scalar_result.data_ptr(), divisors.data_ptr())
 
     def test_active_autograd_is_rejected_but_no_grad_uses_native_division(self):
         for name in ("div", "divide"):
@@ -211,6 +241,11 @@ class TopLevelDivTests(unittest.TestCase):
                     rf"^{name}\(\): autograd recording is not supported$",
                 ):
                     function(left, 2.0)
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    rf"^{name}\(\): autograd recording is not supported$",
+                ):
+                    function(2.0, left)
 
             with self.subTest(name=name, case="no_grad"):
                 with torch.no_grad():
@@ -218,8 +253,10 @@ class TopLevelDivTests(unittest.TestCase):
                         left.transpose(0, 1), right.transpose(0, 1)
                     )
                     scalar_output = function(left, 2.0)
+                    reflected_scalar_output = function(2.0, left)
                     expected_tensor = left.transpose(0, 1) / right.transpose(0, 1)
                     expected_scalar = left / 2.0
+                    expected_reflected_scalar = 2.0 / left
                 self.assertFalse(tensor_output.requires_grad)
                 self.assertTrue(tensor_output.is_leaf)
                 self.assert_tensor_matches(
@@ -229,6 +266,13 @@ class TopLevelDivTests(unittest.TestCase):
                 self.assertTrue(scalar_output.is_leaf)
                 self.assert_tensor_matches(
                     scalar_output, expected_scalar, case=(name, "no_grad scalar")
+                )
+                self.assertFalse(reflected_scalar_output.requires_grad)
+                self.assertTrue(reflected_scalar_output.is_leaf)
+                self.assert_tensor_matches(
+                    reflected_scalar_output,
+                    expected_reflected_scalar,
+                    case=(name, "no_grad reflected scalar"),
                 )
 
     def test_torch_function_modes_and_overrides_observe_boundaries(self):
@@ -311,6 +355,15 @@ class TopLevelDivTests(unittest.TestCase):
                     forwarded = function(input=left, other=right, rounding_mode=None)
             self.assertEqual(order, ["upper", "lower"])
             self.assert_tensor_matches(forwarded, left / right, case=(name, "forwarded"))
+
+            order.clear()
+            with ForwardingMode("lower"):
+                with ForwardingMode("upper"):
+                    forwarded = function(input=4.0, other=left, rounding_mode=None)
+            self.assertEqual(order, ["upper", "lower"])
+            self.assert_tensor_matches(
+                forwarded, 4.0 / left, case=(name, "forwarded scalar-left")
+            )
 
             events = []
 
@@ -436,27 +489,38 @@ class TopLevelDivTests(unittest.TestCase):
                 function(tensor, other, out=destination)
             self.assertEqual(destination.tolist(), [17.0])
             with self.assertRaisesRegex(
+                RuntimeError, rf"^{name}\(\): the 'out' argument is not supported$"
+            ):
+                function(4.0, tensor, out=destination)
+            self.assertEqual(destination.tolist(), [17.0])
+            with self.assertRaisesRegex(
                 NotImplementedError,
                 rf"^{name}\(\): non-None rounding_mode is not supported$",
             ):
                 function(tensor, other, rounding_mode="floor")
+            with self.assertRaisesRegex(
+                NotImplementedError,
+                rf"^{name}\(\): non-None rounding_mode is not supported$",
+            ):
+                function(4.0, tensor, rounding_mode="floor")
             with self.assertRaisesRegex(
                 TypeError,
                 rf"^{name}\(\): scalar-scalar division is not supported; "
                 r"at least one operand must be Tensor$",
             ):
                 function(4.0, 2.0)
-            with self.assertRaisesRegex(
-                NotImplementedError,
-                rf"^{name}\(\): only exact native CPU float32 Tensor input and "
-                r"Tensor or real-number other operands with rounding_mode=None "
-                r"are supported$",
-            ):
-                function(4.0, tensor)
+            with self.assertRaisesRegex(TypeError, "^an integer is required$"):
+                function(tensor, np.uint64(2**63))
+            with self.assertRaisesRegex(TypeError, "^an integer is required$"):
+                function(np.uint64(2**63), tensor)
             for call in (
                 lambda function=function: function(tensor, other, dtype=torch.float32),
                 lambda function=function: function(
                     tensor, other, device=torch.device("cpu")
+                ),
+                lambda function=function: function(4.0, tensor, dtype=torch.float32),
+                lambda function=function: function(
+                    4.0, tensor, device=torch.device("cpu")
                 ),
                 lambda function=function: function(
                     input=tensor, x=tensor, other=other
