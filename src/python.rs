@@ -1624,8 +1624,11 @@ pub(crate) fn as_tensor_variable_function(
                 Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
             );
         }
+        if let Some(tensor) = exact_python_float_sequence_tensor(&data.value, dtype, device)? {
+            return Ok(Py::new(py, tensor)?.into_any());
+        }
         return Err(PyNotImplementedError::new_err(
-            "as_tensor(): only exact native CPU float32 Tensor inputs or Python float scalars are supported; Python sequences, NumPy arrays, and non-float scalar conversions are not implemented",
+            "as_tensor(): only exact native CPU float32 Tensor inputs, Python float scalars, or exact list/tuple sequences of Python floats are supported; NumPy arrays/scalars, non-float scalar conversions, and broader sequence conversions are not implemented",
         ));
     }
     Ok(data.value.unbind())
@@ -6747,9 +6750,7 @@ fn tensor(
     } else {
         return Err(unsupported_tensor_data_error(data, dtype_was_explicit)?);
     };
-    CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
-        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-        .map_err(|error| tensor_error(&error))
+    tensor_from_flattened_values(flattened, shape, dtype, device, requires_grad)
 }
 
 const MIN_BACKWARD_LEAF_ROOTS: usize = 2;
@@ -6813,6 +6814,108 @@ fn extract_exact_python_float_scalar(value: &Bound<'_, PyAny>) -> PyResult<Optio
     #[allow(clippy::cast_possible_truncation)]
     let value = value.extract::<f64>()? as f32;
     Ok(Some(value))
+}
+
+fn tensor_from_flattened_values(
+    flattened: Vec<f32>,
+    shape: Vec<usize>,
+    dtype: DType,
+    device: Device,
+    requires_grad: bool,
+) -> PyResult<PyTensor> {
+    CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
+        .map_err(|error| tensor_error(&error))
+}
+
+fn exact_python_float_sequence_tensor(
+    value: &Bound<'_, PyAny>,
+    dtype: DType,
+    device: Device,
+) -> PyResult<Option<PyTensor>> {
+    if !is_exact_python_list_or_tuple(value) {
+        return Ok(None);
+    }
+
+    let mut flattened = Vec::new();
+    let Some(shape) = flatten_exact_python_float_sequence(value, &mut flattened, 0)? else {
+        return Ok(None);
+    };
+    tensor_from_flattened_values(flattened, shape, dtype, device, false).map(Some)
+}
+
+fn is_exact_python_list_or_tuple(value: &Bound<'_, PyAny>) -> bool {
+    value.is_exact_instance_of::<PyList>() || value.is_exact_instance_of::<PyTuple>()
+}
+
+fn flatten_exact_python_float_sequence(
+    value: &Bound<'_, PyAny>,
+    output: &mut Vec<f32>,
+    dimension: usize,
+) -> PyResult<Option<Vec<usize>>> {
+    if let Some(scalar) = extract_exact_python_float_scalar(value)? {
+        output.push(scalar);
+        return Ok(Some(Vec::new()));
+    }
+
+    if !is_exact_python_list_or_tuple(value) {
+        return Ok(None);
+    }
+    let length = value.len()?;
+    if length == 0 {
+        return Ok(Some(vec![0]));
+    }
+
+    let Some(first_shape) =
+        flatten_exact_python_float_sequence(&value.get_item(0)?, output, dimension + 1)?
+    else {
+        return Ok(None);
+    };
+    for index in 1..length {
+        let item = value.get_item(index)?;
+        let Some(shape) = flatten_exact_python_float_sequence(&item, output, dimension + 1)? else {
+            return Ok(None);
+        };
+        validate_exact_float_sequence_shape(&first_shape, &shape, dimension + 1, &item)?;
+    }
+
+    let mut shape = Vec::with_capacity(first_shape.len() + 1);
+    shape.push(length);
+    shape.extend(first_shape);
+    Ok(Some(shape))
+}
+
+fn validate_exact_float_sequence_shape(
+    expected_shape: &[usize],
+    actual_shape: &[usize],
+    dimension: usize,
+    actual_value: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    if expected_shape == actual_shape {
+        return Ok(());
+    }
+
+    let mismatched_dimension = expected_shape
+        .iter()
+        .zip(actual_shape)
+        .position(|(expected, actual)| expected != actual);
+    if let Some(offset) = mismatched_dimension {
+        return Err(PyValueError::new_err(format!(
+            "expected sequence of length {} at dim {} (got {})",
+            expected_shape[offset],
+            dimension + offset,
+            actual_shape[offset]
+        )));
+    }
+
+    if actual_shape.len() < expected_shape.len() {
+        return Err(PyTypeError::new_err("not a sequence"));
+    }
+
+    let actual = python_type_name(actual_value)?;
+    Err(PyTypeError::new_err(format!(
+        "must be real number, not {actual}"
+    )))
 }
 
 fn rank_zero_scalar_tensor(

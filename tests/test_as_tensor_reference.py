@@ -114,6 +114,20 @@ class AsTensorReferenceTests(unittest.TestCase):
             "grad_is_none": first.grad is None,
         }
 
+    def as_tensor_float_sequence_contract(self, module, data, options):
+        first = module.as_tensor(data, **options)
+        second = module.as_tensor(data, **options)
+        return {
+            "fresh_object": first is not second,
+            "fresh_logical_storage": not first.is_set_to(second),
+            "fresh_nonempty_data_ptr": None
+            if first.numel() == 0
+            else first.data_ptr() != second.data_ptr(),
+            "state": self.comparable_tensor_state(module, first),
+            "numel": first.numel(),
+            "grad_is_none": first.grad is None,
+        }
+
     def test_identity_aliasing_and_metadata_match_pytorch_2_13(self):
         actual_cases = self.tensor_cases(torch)
         expected_cases = self.tensor_cases(reference_torch)
@@ -161,6 +175,44 @@ class AsTensorReferenceTests(unittest.TestCase):
                         reference_torch, value, expected_kwargs
                     )
                     self.assertEqual(actual_contract, expected_contract)
+
+    def test_python_float_sequence_creation_matches_pytorch_2_13(self):
+        cases = (
+            ("empty list", []),
+            ("empty tuple", ()),
+            ("flat", [1.25, -0.0]),
+            ("nested rectangular", [[1.0, 2.0], [3.5, -4.0]]),
+            ("tuple list mixed", ([1.0, 2.0], (3.0, 4.0))),
+            ("special values", [-0.0, float("nan"), float("inf"), float("-inf")]),
+        )
+        actual_options = self.option_cases(torch)
+        expected_options = self.option_cases(reference_torch)
+        for case, data in cases:
+            for actual_kwargs, expected_kwargs in zip(
+                actual_options, expected_options, strict=True
+            ):
+                with self.subTest(case=case, options=actual_kwargs):
+                    actual_contract = self.as_tensor_float_sequence_contract(
+                        torch, data, actual_kwargs
+                    )
+                    expected_contract = self.as_tensor_float_sequence_contract(
+                        reference_torch, data, expected_kwargs
+                    )
+                    self.assertEqual(actual_contract, expected_contract)
+
+    def test_python_float_sequence_no_grad_matches_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            with module.no_grad():
+                result = module.as_tensor([[1.0, 2.0], [3.0, 4.0]])
+            outcomes.append(
+                (
+                    self.comparable_tensor_state(module, result),
+                    result.grad is None,
+                )
+            )
+
+        self.assertEqual(outcomes[0], outcomes[1])
 
     def test_autograd_identity_aliasing_matches_pytorch_2_13(self):
         outcomes = []
@@ -366,6 +418,52 @@ class AsTensorReferenceTests(unittest.TestCase):
             (
                 lambda: torch.as_tensor(actual, device="banana"),
                 lambda: reference_torch.as_tensor(expected, device="banana"),
+            ),
+        )
+        for actual_call, expected_call in cases:
+            with self.subTest(case=actual_call):
+                with self.assertRaises(Exception) as actual_raised:
+                    actual_call()
+                with self.assertRaises(Exception) as expected_raised:
+                    expected_call()
+                self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
+                self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+
+    def test_float_sequence_error_ordering_matches_pytorch_2_13(self):
+        cases = (
+            (
+                lambda: torch.as_tensor([[1.0], [2.0, 3.0]]),
+                lambda: reference_torch.as_tensor([[1.0], [2.0, 3.0]]),
+            ),
+            (
+                lambda: torch.as_tensor(([1.0], 2.0)),
+                lambda: reference_torch.as_tensor(([1.0], 2.0)),
+            ),
+            (
+                lambda: torch.as_tensor((1.0, [2.0])),
+                lambda: reference_torch.as_tensor((1.0, [2.0])),
+            ),
+            (
+                lambda: torch.as_tensor([[1.0], [2.0, 3.0]], dtype=1),
+                lambda: reference_torch.as_tensor([[1.0], [2.0, 3.0]], dtype=1),
+            ),
+            (
+                lambda: torch.as_tensor([[1.0], [2.0, 3.0]], device=1.5),
+                lambda: reference_torch.as_tensor(
+                    [[1.0], [2.0, 3.0]], device=1.5
+                ),
+            ),
+            (
+                lambda: torch.as_tensor([[1.0], [2.0, 3.0]], out=None),
+                lambda: reference_torch.as_tensor(
+                    [[1.0], [2.0, 3.0]], out=None
+                ),
+            ),
+            (
+                lambda: torch.as_tensor([[1.0], [2.0, 3.0]], requires_grad=True),
+                lambda: reference_torch.as_tensor(
+                    [[1.0], [2.0, 3.0]], requires_grad=True
+                ),
             ),
         )
         for actual_call, expected_call in cases:

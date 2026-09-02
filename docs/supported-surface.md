@@ -8,7 +8,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 
 | Adopter task | Supported APIs | Unsupported boundaries to verify |
 | --- | --- | --- |
-| Create CPU `float32` tensors | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.zeros_like`, `torch.ones_like`, `torch.full`, `torch.eye` in [Tensors](#tensors) and [Creation](#creation) | Identity converters reject Python sequences, NumPy arrays/scalars, non-float scalars, dtype conversions, accelerator or meta devices, and copy/output requests; factories reject non-`float32` dtypes, non-CPU devices, concrete `out`, pinning, sparse layouts, and backend-specific allocation. |
+| Create CPU `float32` tensors | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.zeros`, `torch.ones`, `torch.zeros_like`, `torch.ones_like`, `torch.full`, `torch.eye` in [Tensors](#tensors) and [Creation](#creation) | `torch.as_tensor` accepts exact Python float list/tuple sequences; identity converters otherwise reject NumPy arrays/scalars, non-float scalars, dtype conversions, accelerator or meta devices, and copy/output requests; factories reject non-`float32` dtypes, non-CPU devices, concrete `out`, pinning, sparse layouts, and backend-specific allocation. |
 | Preserve or change tensor layout | `Tensor.select`, `torch.select`, `Tensor.unbind`, `torch.unbind`, `Tensor.view`, `Tensor.view_as`, `Tensor.reshape`, `Tensor.reshape_as`, `torch.reshape`, `Tensor.unsqueeze`, `torch.unsqueeze`, `Tensor.permute`, `torch.permute`, `Tensor.movedim`, `Tensor.moveaxis`, `torch.movedim`, `torch.moveaxis`, `Tensor.contiguous`, `Tensor.cpu` in [Metadata and views](#metadata-and-views) | Unsupported edges include range slicing, advanced indexing, broader `None` indexing expansion, sequence `movedim` axes, variadic top-level reshape dimensions, cross-dtype views, complex dtypes, and imaginary views. |
 | Run eager math and reductions | Python `+`, `-`, `*`, and `/` operators, `Tensor.add`, `torch.add`, `Tensor.sub`, `Tensor.subtract`, `Tensor.mul`, `Tensor.multiply`, `Tensor.div`, `Tensor.divide`, `torch.sub`, `torch.subtract`, `torch.mul`, `torch.multiply`, `torch.matmul`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.cos`, `torch.exp`, `torch.log`, `torch.reciprocal`, `torch.rsqrt`, `torch.sin`, `torch.sqrt`, `torch.square`, `torch.sigmoid`, `torch.tanh` in [Elementwise and reductions](#elementwise-and-reductions) | scalar-left and scalar-only `torch.add` calls, concrete `out` tensors, in-place variants, active-autograd `rsqrt`, nondefault `alpha` or `rounding_mode`, scalar-only multiplication/division, dimension reductions, `keepdim=True`, dtype conversions, and non-CPU/non-`float32` tensors remain outside the contract. |
 | Use functional NN helpers | `torch.nn.functional.linear`, `torch.nn.functional.relu`, `torch.nn.functional.l1_loss`, `torch.nn.functional.mse_loss`, `torch.nn.functional.dropout`, `torch.nn.functional.dropout1d`, `torch.nn.functional.dropout2d`, `torch.nn.functional.dropout3d`, `torch.nn.functional.sigmoid`, `torch.nn.functional.silu`, `torch.nn.functional.softsign`, `torch.nn.functional.tanh`, `torch.nn.init.calculate_gain` in [NN/data helpers](#nn-and-data-helpers) and [math activations](#elementwise-and-reductions) | Module layers, active autograd for `l1_loss`, `mse_loss(reduction="none")`, and softsign paths, `l1_loss` reductions other than `"none"`, `mse_loss` reductions other than `"none"`/`"mean"`/`"sum"`, loss `weight` arguments, nondeterministic dropout, nonidentity inplace dropout, and mutating initializers remain unsupported. |
@@ -724,19 +724,23 @@ its implementation engine.
 
 `torch.as_tensor(data, dtype=None, device=None)` is exposed as a
 PyTorch-style top-level builtin for exact native CPU `float32` tensor identity
-conversion and exact Python `float` scalar construction. When `data` is an
-exact native CPU `float32` tensor and `dtype` and `device` are omitted, `None`,
-or the unindexed CPU/`torch.float32` defaults, the exact same Python Tensor
-object is returned with unchanged storage, shape, stride, storage offset, dtype,
-device, layout, autograd history, leaf state, and output number. When `data` is
-an exact Python `float` with the same default-equivalent metadata, a fresh
-rank-0 CPU `float32` leaf tensor is allocated with `requires_grad=False`,
-including finite values, signed zero, infinities, and NaN. Python sequences,
-NumPy arrays, NumPy scalar values, integer and boolean scalar inference, tensor
-subclasses, dtype conversions, accelerator or meta devices, indexed CPU devices
-that would require a copy, pinned-memory options, concrete or `None` `out`
-arguments, explicit copy requests, and `requires_grad` keyword requests remain
-unsupported.
+conversion, exact Python `float` scalar construction, and exact Python
+`list`/`tuple` sequences whose leaves are exact Python floats. When `data` is
+an exact native CPU `float32` tensor and `dtype` and `device` are omitted,
+`None`, or the unindexed CPU/`torch.float32` defaults, the exact same Python
+Tensor object is returned with unchanged storage, shape, stride, storage
+offset, dtype, device, layout, autograd history, leaf state, and output number.
+When `data` is an exact Python `float` with the same default-equivalent
+metadata, a fresh rank-0 CPU `float32` leaf tensor is allocated with
+`requires_grad=False`, including finite values, signed zero, infinities, and
+NaN. Exact Python float sequences cover empty, flat, nested rectangular, and
+mixed list/tuple containers, preserve signed zero, infinities, and NaN, and
+allocate fresh leaf storage even under `torch.no_grad()`. NumPy arrays, NumPy
+scalar values, integer and boolean scalar inference, integer-containing
+sequences, tuple/list subclasses, tensor subclasses, dtype conversions,
+accelerator or meta devices, indexed CPU devices that would require a copy,
+pinned-memory options, concrete or `None` `out` arguments, explicit copy
+requests, and `requires_grad` keyword requests remain unsupported.
 
 `torch.asarray(obj, *, dtype=None, device=None, copy=None, requires_grad=None)`
 is exposed as the matching array conversion sibling. Exact native CPU `float32`
