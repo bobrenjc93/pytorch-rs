@@ -11,6 +11,8 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::ShapeMismatch { .. }
         | TensorError::MatmulRequiresMatrices { .. }
         | TensorError::MatmulInnerDimensionMismatch { .. }
+        | TensorError::DotRequiresVectors { .. }
+        | TensorError::DotLengthMismatch { .. }
         | TensorError::ItemRequiresOneElement { .. }
         | TensorError::InvalidStorageOffset { .. }
         | TensorError::IndexCalculationOverflow

@@ -21,6 +21,14 @@ pub enum TensorError {
         left: Vec<usize>,
         right: Vec<usize>,
     },
+    DotRequiresVectors {
+        left_rank: usize,
+        right_rank: usize,
+    },
+    DotLengthMismatch {
+        left: usize,
+        right: usize,
+    },
     ItemRequiresOneElement {
         elements: usize,
     },
@@ -125,6 +133,9 @@ impl Display for TensorError {
             Self::MatmulInnerDimensionMismatch { left, right } => {
                 format_matmul_inner_dimension_mismatch(formatter, left, right)
             }
+            error @ (Self::DotRequiresVectors { .. } | Self::DotLengthMismatch { .. }) => {
+                format_dot_error(formatter, error)
+            }
             Self::ItemRequiresOneElement { elements } => {
                 write!(formatter, "item requires one element, got {elements}")
             }
@@ -210,6 +221,23 @@ impl Display for TensorError {
 }
 
 impl Error for TensorError {}
+
+fn format_dot_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
+    match error {
+        TensorError::DotRequiresVectors {
+            left_rank,
+            right_rank,
+        } => write!(
+            formatter,
+            "1D tensors expected, but got {left_rank}D and {right_rank}D tensors"
+        ),
+        TensorError::DotLengthMismatch { left, right } => write!(
+            formatter,
+            "inconsistent tensor size, expected tensor [{left}] and src [{right}] to have the same number of elements, but got {left} and {right} elements respectively"
+        ),
+        _ => unreachable!("non-dot tensor errors are filtered by caller"),
+    }
+}
 
 fn format_shape_mismatch(
     formatter: &mut Formatter<'_>,

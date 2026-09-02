@@ -3962,6 +3962,30 @@ impl Tensor {
         output
     }
 
+    /// Computes a rank-1 dot product by composing elementwise multiplication
+    /// with the existing full-tensor sum reduction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error unless both tensors are rank-1 with the same length,
+    /// or when elementwise multiplication cannot be materialized.
+    pub fn dot(&self, other: &Self) -> Result<Self, TensorError> {
+        if self.shape.len() != 1 || other.shape.len() != 1 {
+            return Err(TensorError::DotRequiresVectors {
+                left_rank: self.shape.len(),
+                right_rank: other.shape.len(),
+            });
+        }
+        if self.shape[0] != other.shape[0] {
+            return Err(TensorError::DotLengthMismatch {
+                left: self.shape[0],
+                right: other.shape[0],
+            });
+        }
+
+        Ok(self.mul(other)?.sum())
+    }
+
     /// Computes the arithmetic mean of every element.
     ///
     /// Empty tensors follow the same IEEE 754 path as `PyTorch`'s full reduction:
