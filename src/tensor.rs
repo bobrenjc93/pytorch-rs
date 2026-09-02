@@ -714,12 +714,23 @@ impl Tensor {
     /// exceeds the platform capacity.
     #[cfg(feature = "python-bindings")]
     pub(crate) fn arange_float32(elements: usize) -> Result<Self, TensorError> {
+        Self::arange_float32_from(0.0, elements)
+    }
+
+    /// Creates the default float32 CPU range `start, start + 1, ...`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the one-dimensional shape or storage allocation
+    /// exceeds the platform capacity.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn arange_float32_from(start: f64, elements: usize) -> Result<Self, TensorError> {
         validate_storage_capacity(elements)?;
 
         let mut data = try_result_vector(elements, elements)?;
         for index in 0..elements {
-            #[allow(clippy::cast_precision_loss)]
-            data.push(index as f32);
+            data.push((start + index as f64) as f32);
         }
 
         let mut shape = try_result_vector(1, elements)?;

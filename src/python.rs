@@ -6070,8 +6070,10 @@ struct ScalarTensorCallArguments<'py> {
 }
 
 struct ArangeCallArguments<'py> {
+    start: Option<ParsedCallArgument<'py>>,
     end: Option<ParsedCallArgument<'py>>,
     unsupported_overload: bool,
+    explicit_step: bool,
     out: Option<Bound<'py, PyAny>>,
     dtype: Option<Bound<'py, PyAny>>,
     layout: Option<Bound<'py, PyAny>>,
@@ -7262,8 +7264,14 @@ fn arange_impl(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyTensor> {
-    let (elements, requires_grad) = parse_arange_arguments(bind_arange_arguments(args, kwargs)?)?;
-    CoreTensor::arange_float32(elements)
+    let (start, elements, requires_grad) =
+        parse_arange_arguments(bind_arange_arguments(args, kwargs)?)?;
+    let inner = if start.to_bits() == 0.0_f64.to_bits() {
+        CoreTensor::arange_float32(elements)
+    } else {
+        CoreTensor::arange_float32_from(start, elements)
+    };
+    inner
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| scalar_creation_error(&error, Some(elements)))
 }
@@ -8696,20 +8704,18 @@ fn bind_arange_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<ArangeCallArguments<'py>> {
-    if positional.len() > 1 {
+    if positional.len() == 3 {
+        return Err(arange_explicit_step_unsupported());
+    }
+    if positional.len() > 3 {
         return Err(arange_overload_unsupported());
     }
 
     let mut arguments = ArangeCallArguments {
-        end: if positional.is_empty() {
-            None
-        } else {
-            Some(ParsedCallArgument {
-                value: positional.get_item(0)?,
-                position: Some(1),
-            })
-        },
+        start: None,
+        end: None,
         unsupported_overload: false,
+        explicit_step: false,
         out: None,
         dtype: None,
         layout: None,
@@ -8718,6 +8724,26 @@ fn bind_arange_arguments<'py>(
         requires_grad: None,
         keyword_error: None,
     };
+    match positional.len() {
+        0 => {}
+        1 => {
+            arguments.end = Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            });
+        }
+        2 => {
+            arguments.start = Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            });
+            arguments.end = Some(ParsedCallArgument {
+                value: positional.get_item(1)?,
+                position: Some(2),
+            });
+        }
+        _ => unreachable!("positional arange arguments were checked above"),
+    }
     let Some(keywords) = keywords else {
         return Ok(arguments);
     };
@@ -8727,18 +8753,36 @@ fn bind_arange_arguments<'py>(
         match key.as_str() {
             "end" => {
                 if arguments.end.is_some() {
-                    // A positional value combined with `end=` selects
-                    // PyTorch's two-bound overload rather than duplicating the
-                    // one-bound argument. That overload remains unsupported.
-                    arguments.unsupported_overload = true;
+                    if positional.len() == 1 && arguments.start.is_none() {
+                        // A positional value combined with `end=` selects
+                        // PyTorch's two-bound overload rather than duplicating
+                        // the one-bound argument.
+                        arguments.start = arguments.end.take();
+                        arguments.end = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    } else {
+                        arguments.unsupported_overload = true;
+                    }
                 } else {
-                    arguments.end = optional_call_argument(value).map(|value| ParsedCallArgument {
+                    arguments.end = Some(ParsedCallArgument {
                         value,
                         position: None,
                     });
                 }
             }
-            "start" | "step" => arguments.unsupported_overload = true,
+            "start" => {
+                if arguments.start.is_some() || positional.len() == 1 {
+                    arguments.unsupported_overload = true;
+                } else {
+                    arguments.start = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            }
+            "step" => arguments.explicit_step = true,
             "out" => arguments.out = optional_call_argument(value),
             "dtype" => arguments.dtype = optional_call_argument(value),
             "layout" => arguments.layout = optional_call_argument(value),
@@ -8757,10 +8801,28 @@ fn bind_arange_arguments<'py>(
     Ok(arguments)
 }
 
-fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize, bool)> {
+fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(f64, usize, bool)> {
+    if arguments.explicit_step {
+        return Err(arange_explicit_step_unsupported());
+    }
+    if arguments.unsupported_overload {
+        return Err(arange_overload_unsupported());
+    }
+    if arguments.end.is_none() {
+        return Err(PyTypeError::new_err(
+            "arange() missing required argument 'end'",
+        ));
+    }
+
+    if arguments.start.is_some() {
+        return parse_two_bound_arange_arguments(arguments);
+    }
+
     let ArangeCallArguments {
+        start: _,
         end,
-        unsupported_overload,
+        unsupported_overload: _,
+        explicit_step: _,
         out,
         dtype,
         layout,
@@ -8769,43 +8831,20 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize
         requires_grad,
         keyword_error,
     } = arguments;
+    let end = end.expect("one-bound arange was selected after checking end is present");
 
-    if unsupported_overload {
-        return Err(arange_overload_unsupported());
-    }
-    let Some(end) = end else {
-        return Err(PyTypeError::new_err(
-            "arange() missing required argument 'end'",
-        ));
-    };
-    let exact_float_endpoint = end.value.is_exact_instance_of::<PyFloat>();
-    let exact_integer_endpoint = end.value.is_exact_instance_of::<PyInt>();
-    let numpy_float_endpoint = if exact_float_endpoint || exact_integer_endpoint {
-        false
-    } else {
-        is_numpy_scalar_of_types(&end.value, &["floating"])?
-    };
+    let end_kind = classify_arange_endpoint(&end.value)?;
     // Peek only at a valid native dtype here so unsupported endpoint/dtype
     // combinations retain the endpoint-first error ordering below.
-    let exact_integer_with_explicit_float32 = if exact_integer_endpoint {
-        match dtype
-            .as_ref()
-            .and_then(|dtype| dtype.cast::<PyDType>().ok())
-        {
-            Some(dtype) => dtype.try_borrow()?.inner() == DType::Float32,
-            None => false,
-        }
-    } else {
-        false
-    };
-    if !exact_float_endpoint && !numpy_float_endpoint && !exact_integer_with_explicit_float32 {
-        let position = end
-            .position
-            .map_or_else(String::new, |position| format!(" (position {position})"));
-        let actual = python_type_name(&end.value)?;
-        return Err(PyTypeError::new_err(format!(
-            "arange(): argument 'end'{position} must be an exact Python float, not {actual}"
-        )));
+    let exact_integer_with_explicit_float32 = end_kind
+        == Some(ArangeEndpointKind::ExactPythonInteger)
+        && arange_has_explicit_float32_dtype(dtype.as_ref())?;
+    if !matches!(
+        end_kind,
+        Some(ArangeEndpointKind::ExactPythonFloat | ArangeEndpointKind::NumpyFloating)
+    ) && !exact_integer_with_explicit_float32
+    {
+        return Err(arange_one_bound_endpoint_type_error(&end)?);
     }
 
     let dtype = parse_dtype("arange", dtype.as_ref())?;
@@ -8833,21 +8872,178 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize
             "arange(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
         ));
     }
-    let elements = arange_element_count(extract_arange_end(&end.value)?)?;
-    Ok((elements, requires_grad))
+    let elements = arange_element_count(extract_arange_endpoint(&end.value, end_kind)?)?;
+    Ok((0.0, elements, requires_grad))
+}
+
+fn parse_two_bound_arange_arguments(
+    arguments: ArangeCallArguments<'_>,
+) -> PyResult<(f64, usize, bool)> {
+    let ArangeCallArguments {
+        start,
+        end,
+        unsupported_overload: _,
+        explicit_step: _,
+        out,
+        dtype,
+        layout,
+        device,
+        pin_memory,
+        requires_grad,
+        keyword_error,
+    } = arguments;
+    let start = start.expect("two-bound arange was selected by the presence of start");
+    let end = end.expect("two-bound arange was selected after checking end is present");
+
+    let start_kind = classify_arange_endpoint(&start.value)?;
+    if !matches!(
+        start_kind,
+        Some(ArangeEndpointKind::ExactPythonInteger | ArangeEndpointKind::NumpyInteger)
+    ) {
+        return Err(arange_two_bound_endpoint_type_error("start", &start)?);
+    }
+
+    let end_kind = classify_arange_endpoint(&end.value)?;
+    if !matches!(
+        end_kind,
+        Some(ArangeEndpointKind::ExactPythonInteger | ArangeEndpointKind::NumpyInteger)
+    ) {
+        return Err(arange_two_bound_endpoint_type_error("end", &end)?);
+    }
+
+    let explicit_float32_dtype = arange_has_explicit_float32_dtype(dtype.as_ref())?;
+    let dtype = parse_dtype("arange", dtype.as_ref())?;
+    parse_factory_layout("arange", layout.as_ref())?;
+    validate_device_argument_type("arange", device.as_ref())?;
+    let pin_memory = parse_factory_bool("arange", "pin_memory", pin_memory.as_ref())?;
+    let requires_grad = parse_factory_requires_grad("arange", requires_grad.as_ref())?;
+    if let Some(error) = keyword_error {
+        return Err(error);
+    }
+    let device = parse_device("arange", device.as_ref())?;
+
+    if !explicit_float32_dtype {
+        return Err(arange_two_bound_dtype_unsupported());
+    }
+    if out.is_some() {
+        return Err(PyRuntimeError::new_err(
+            "arange(): the 'out' argument is not supported",
+        ));
+    }
+    if dtype != DType::Float32 || device != Device::Cpu {
+        return Err(PyRuntimeError::new_err(
+            "arange(): only the default float32 CPU metadata is supported",
+        ));
+    }
+    if pin_memory {
+        return Err(PyRuntimeError::new_err(
+            "arange(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
+        ));
+    }
+
+    let start = extract_arange_endpoint(&start.value, start_kind)?;
+    let end = extract_arange_endpoint(&end.value, end_kind)?;
+    let elements = arange_two_bound_element_count(start, end)?;
+    Ok((start, elements, requires_grad))
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ArangeEndpointKind {
+    ExactPythonFloat,
+    ExactPythonInteger,
+    NumpyFloating,
+    NumpyInteger,
+}
+
+fn classify_arange_endpoint(value: &Bound<'_, PyAny>) -> PyResult<Option<ArangeEndpointKind>> {
+    if value.is_exact_instance_of::<PyFloat>() {
+        return Ok(Some(ArangeEndpointKind::ExactPythonFloat));
+    }
+    if value.is_exact_instance_of::<PyInt>() {
+        return Ok(Some(ArangeEndpointKind::ExactPythonInteger));
+    }
+    if is_numpy_scalar_of_types(value, &["floating"])? {
+        return Ok(Some(ArangeEndpointKind::NumpyFloating));
+    }
+    if is_numpy_scalar_of_types(value, &["integer"])? {
+        return Ok(Some(ArangeEndpointKind::NumpyInteger));
+    }
+    Ok(None)
+}
+
+fn arange_has_explicit_float32_dtype(dtype: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+    let Some(dtype) = dtype else {
+        return Ok(false);
+    };
+    let Ok(dtype) = dtype.cast::<PyDType>() else {
+        return Ok(false);
+    };
+    Ok(dtype.try_borrow()?.inner() == DType::Float32)
 }
 
 #[allow(clippy::cast_precision_loss)]
-fn extract_arange_end(end: &Bound<'_, PyAny>) -> PyResult<f64> {
-    if end.is_exact_instance_of::<PyInt>() {
-        // Match PyTorch's signed-then-unsigned scalar conversion, including
-        // the distinct overflow errors outside the combined i64/u64 range.
-        if let Ok(end) = end.extract::<i64>() {
-            return Ok(end as f64);
+fn extract_arange_endpoint(
+    endpoint: &Bound<'_, PyAny>,
+    kind: Option<ArangeEndpointKind>,
+) -> PyResult<f64> {
+    match kind {
+        Some(ArangeEndpointKind::ExactPythonInteger) => extract_python_arange_integer(endpoint),
+        Some(ArangeEndpointKind::NumpyInteger) => endpoint
+            .extract::<i64>()
+            .map(|endpoint| endpoint as f64)
+            .map_err(|_| PyTypeError::new_err("an integer is required")),
+        Some(ArangeEndpointKind::ExactPythonFloat | ArangeEndpointKind::NumpyFloating) => {
+            endpoint.extract::<f64>()
         }
-        return end.extract::<u64>().map(|end| end as f64);
+        None => unreachable!("arange endpoint types were checked before conversion"),
     }
-    end.extract::<f64>()
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn extract_python_arange_integer(endpoint: &Bound<'_, PyAny>) -> PyResult<f64> {
+    // Match PyTorch's signed-then-unsigned scalar conversion, including the
+    // distinct overflow errors outside the combined i64/u64 range.
+    if let Ok(endpoint) = endpoint.extract::<i64>() {
+        return Ok(endpoint as f64);
+    }
+    endpoint.extract::<u64>().map(|endpoint| endpoint as f64)
+}
+
+fn arange_one_bound_endpoint_type_error(end: &ParsedCallArgument<'_>) -> PyResult<PyErr> {
+    let position = end
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(&end.value)?;
+    Ok(PyTypeError::new_err(format!(
+        "arange(): argument 'end'{position} must be an exact Python float, not {actual}"
+    )))
+}
+
+fn arange_two_bound_endpoint_type_error(
+    name: &str,
+    argument: &ParsedCallArgument<'_>,
+) -> PyResult<PyErr> {
+    let position = argument
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(&argument.value)?;
+    Ok(PyTypeError::new_err(format!(
+        "arange(): argument '{name}'{position} must be an exact Python or NumPy integer, not {actual}"
+    )))
+}
+
+fn arange_two_bound_dtype_unsupported() -> PyErr {
+    PyTypeError::new_err("arange(): two-bound integer ranges require explicit dtype=torch.float32")
+}
+
+fn arange_two_bound_element_count(start: f64, end: f64) -> PyResult<usize> {
+    let span = end - start;
+    if span < 0.0 {
+        return Err(PyRuntimeError::new_err(
+            "upper bound and lower bound inconsistent with step sign",
+        ));
+    }
+    arange_element_count(span)
 }
 
 fn arange_element_count(end: f64) -> PyResult<usize> {
@@ -8894,7 +9090,13 @@ fn arange_element_count(end: f64) -> PyResult<usize> {
 
 fn arange_overload_unsupported() -> PyErr {
     PyTypeError::new_err(
-        "arange(): start and step overloads are not supported; pass one exact Python float endpoint",
+        "arange(): only one-bound float endpoints and two-bound integer endpoints with explicit dtype=torch.float32 are supported",
+    )
+}
+
+fn arange_explicit_step_unsupported() -> PyErr {
+    PyTypeError::new_err(
+        "arange(): explicit step is not supported; only implicit step=1 is implemented",
     )
 }
 
