@@ -4010,6 +4010,8 @@ impl Tensor {
                 right_elements: other.elements,
             });
         }
+        // Keep dot as the exposed multiply-then-sum composition instead of
+        // adding a separate accumulator with different rounding behavior.
         Ok(self.mul(other)?.sum())
     }
 

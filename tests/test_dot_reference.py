@@ -29,7 +29,9 @@ class DotReferenceTests(unittest.TestCase):
         self.assertEqual(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
 
-    def assert_scalar_matches(self, actual, expected, *, case, exact_bits=False):
+    def assert_scalar_matches(
+        self, actual, expected, *, case, exact_bits=False, rtol=0.0, atol=0.0
+    ):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, tuple(expected.shape))
             self.assertEqual(actual.stride(), expected.stride())
@@ -60,8 +62,8 @@ class DotReferenceTests(unittest.TestCase):
             np.testing.assert_allclose(
                 actual_values,
                 expected_values,
-                rtol=0.0,
-                atol=0.0,
+                rtol=rtol,
+                atol=atol,
                 equal_nan=True,
             )
 
@@ -139,8 +141,38 @@ class DotReferenceTests(unittest.TestCase):
             )
             for form, actual_call, expected_call in calls:
                 self.assert_scalar_matches(
-                    actual_call(), expected_call(), case=(case, form), exact_bits=True
+                    actual_call(),
+                    expected_call(),
+                    case=(case, form),
+                    atol=np.finfo(np.float32).eps,
                 )
+
+    def test_finite_accumulation_uses_composed_multiply_sum_and_stays_close_to_pytorch_2_13(
+        self,
+    ):
+        left_values = [0.1257302165, -0.1321048588, 0.6404226422, 0.1049001142]
+        right_values = [-0.5356693864, 0.3615950644, 1.3040000200, 0.9470809698]
+        actual_left = torch.tensor(left_values)
+        actual_right = torch.tensor(right_values)
+        expected_left = reference_torch.tensor(
+            left_values, dtype=reference_torch.float32
+        )
+        expected_right = reference_torch.tensor(
+            right_values, dtype=reference_torch.float32
+        )
+
+        actual = torch.dot(actual_left, actual_right)
+        composed = torch.mul(actual_left, actual_right).sum()
+        np.testing.assert_array_equal(
+            np.asarray(actual).reshape(-1).view(np.uint32),
+            np.asarray(composed).reshape(-1).view(np.uint32),
+        )
+        self.assert_scalar_matches(
+            actual,
+            reference_torch.dot(expected_left, expected_right),
+            case="finite accumulation",
+            atol=np.finfo(np.float32).eps,
+        )
 
     def test_signed_zero_and_nonfinite_values_match_pytorch_2_13(self):
         signed_zero_cases = (

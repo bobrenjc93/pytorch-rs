@@ -15692,7 +15692,7 @@ fn bind_top_level_dot_arguments<'py>(
         for (key, value) in keywords {
             let key = key.extract::<String>()?;
             match key.as_str() {
-                "input" if input.is_none() => {
+                "input" | "x" | "a" | "x1" if input.is_none() => {
                     input = Some(ParsedCallArgument {
                         value,
                         position: None,
@@ -15701,12 +15701,6 @@ fn bind_top_level_dot_arguments<'py>(
                 "input" => {
                     keyword_error.get_or_insert_with(|| {
                         PyTypeError::new_err("dot() got multiple values for argument 'input'")
-                    });
-                }
-                "x" | "a" | "x1" if input.is_none() => {
-                    input = Some(ParsedCallArgument {
-                        value,
-                        position: None,
                     });
                 }
                 "x" | "a" | "x1" => {

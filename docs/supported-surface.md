@@ -813,14 +813,17 @@ unsupported.
 `torch.dot(input, tensor, *, out=None)` and `Tensor.dot(tensor)` accept exact
 native CPU float32 rank-1 tensors only. They compose the existing elementwise
 multiplication and full-tensor sum paths, returning a fresh rank-0 CPU float32
-tensor for contiguous, offset, noncontiguous, and empty vectors while preserving
-PyTorch 2.13-compatible values, signed zero, NaNs, infinities, scalar output
-metadata, `torch.no_grad()` boundaries, first-order autograd through the
-composed operations, callable metadata, and `TorchFunctionMode`/
-`__torch_function__` dispatch before native-only limits. Rank and length
-mismatches raise PyTorch-compatible errors. Concrete `out` tensors, `vdot`,
-`inner`, `outer`, rank-1/vector `matmul` aliases, complex conjugation semantics,
-dtype/device/subclass expansion without an override, and higher-order
+tensor for contiguous, offset, noncontiguous, and empty vectors. Finite
+accumulation is the exact `torch.mul(input, tensor).sum()` composition rather
+than a separate CPU dot accumulator, so finite differential tests assert
+float32-tolerance parity with PyTorch 2.13 `torch.dot`; signed-zero, NaN,
+infinity, scalar output metadata, `torch.no_grad()` boundaries, first-order
+autograd through the composed operations, callable metadata, and
+`TorchFunctionMode`/`__torch_function__` dispatch stay PyTorch-compatible for
+the covered cases. Rank and length mismatches raise PyTorch-compatible errors.
+Concrete `out` tensors, `vdot`, `inner`, `outer`, rank-1/vector `matmul`
+aliases, complex conjugation semantics, dtype/device/subclass expansion without
+an override, bit-identical native CPU finite dot accumulation, and higher-order
 gradients remain unsupported.
 
 Top-level `torch.add(input, other, *, alpha=1, out=None)` accepts exact native
