@@ -226,6 +226,18 @@ class AutogradApiTests(unittest.TestCase):
             delayed_context.__exit__(None, None, None)
         self.assertIs(torch.is_grad_enabled(), True)
 
+        first = torch.set_grad_enabled(False)
+        second = torch.set_grad_enabled(True)
+        try:
+            self.assertIs(torch.is_grad_enabled(), True)
+            first.__exit__(None, None, None)
+            self.assertIs(torch.is_grad_enabled(), True)
+            second.__exit__(None, None, None)
+            self.assertIs(torch.is_grad_enabled(), False)
+        finally:
+            torch.set_grad_enabled(True)
+        self.assertIs(torch.is_grad_enabled(), True)
+
     def test_set_grad_enabled_restores_after_exception_and_decorates(self):
         value = torch.tensor([3.0], requires_grad=True)
 
@@ -1528,6 +1540,18 @@ class AutogradReferenceTests(unittest.TestCase):
                 states.append(module.is_grad_enabled())
             finally:
                 delayed_context.__exit__(None, None, None)
+            states.append(module.is_grad_enabled())
+
+            first = module.set_grad_enabled(False)
+            second = module.set_grad_enabled(True)
+            try:
+                states.append(module.is_grad_enabled())
+                first.__exit__(None, None, None)
+                states.append(module.is_grad_enabled())
+                second.__exit__(None, None, None)
+                states.append(module.is_grad_enabled())
+            finally:
+                module.set_grad_enabled(True)
             states.append(module.is_grad_enabled())
 
             try:

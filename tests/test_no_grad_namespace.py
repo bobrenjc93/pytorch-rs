@@ -37,6 +37,15 @@ class StatefulEnableGrad(torch.enable_grad):
         self.required = required
 
 
+class StatefulSetGradEnabled(torch.set_grad_enabled):
+    init_calls = 0
+
+    def __init__(self, mode, payload=None):
+        type(self).init_calls += 1
+        super().__init__(mode)
+        self.payload = payload
+
+
 class NewArgsNoGrad(torch.no_grad):
     __slots__ = ("constructed",)
     init_calls = 0
@@ -106,6 +115,14 @@ if reference_torch is not None:
             super().__init__()
             self.required = required
 
+    class ReferenceStatefulSetGradEnabled(reference_torch.set_grad_enabled):
+        init_calls = 0
+
+        def __init__(self, mode, payload=None):
+            type(self).init_calls += 1
+            super().__init__(mode)
+            self.payload = payload
+
     class ReferenceNewArgsNoGrad(reference_torch.no_grad):
         __slots__ = ("constructed",)
         init_calls = 0
@@ -155,6 +172,7 @@ else:
     ReferenceNewArgsNoGrad = None
     ReferenceStatefulEnableGrad = None
     ReferenceNewArgsEnableGrad = None
+    ReferenceStatefulSetGradEnabled = None
 
 
 class NoGradNamespaceTests(unittest.TestCase):
@@ -279,6 +297,29 @@ class NoGradNamespaceTests(unittest.TestCase):
         self.assertIs(torch.set_grad_enabled, grad_mode.set_grad_enabled)
         self.assertEqual(torch.autograd.__all__, old_autograd_exports)
         self.assertEqual(grad_mode.__all__, old_grad_mode_exports)
+
+    def test_set_grad_enabled_subclass_accepts_extra_constructor_arguments(self):
+        StatefulSetGradEnabled.init_calls = 0
+        payload = {"x": [1]}
+        instance = StatefulSetGradEnabled(False, payload)
+        try:
+            self.assertIs(type(instance), StatefulSetGradEnabled)
+            self.assertIs(instance.payload, payload)
+            self.assertFalse(torch.is_grad_enabled())
+        finally:
+            instance.__exit__(None, None, None)
+        self.assertTrue(torch.is_grad_enabled())
+
+        with torch.no_grad():
+            keyword_instance = StatefulSetGradEnabled(True, payload=payload)
+            try:
+                self.assertIs(keyword_instance.payload, payload)
+                self.assertTrue(torch.is_grad_enabled())
+            finally:
+                keyword_instance.__exit__(None, None, None)
+            self.assertFalse(torch.is_grad_enabled())
+        self.assertTrue(torch.is_grad_enabled())
+        self.assertEqual(StatefulSetGradEnabled.init_calls, 2)
 
     def test_metadata_copy_and_pickle_resolve_through_grad_mode(self):
         grad_mode = torch.autograd.grad_mode
@@ -686,6 +727,76 @@ class NoGradNamespaceReferenceTests(unittest.TestCase):
             "new_calls": subclass_type.new_calls,
         }
 
+    def set_grad_enabled_subclass_contract(self, module, subclass_type):
+        subclass_type.init_calls = 0
+        payload = {"payload": [1, 2]}
+        states = [module.is_grad_enabled()]
+        instance = subclass_type(False, payload)
+        try:
+            states.append(module.is_grad_enabled())
+            instance_metadata = (
+                type(instance) is subclass_type,
+                instance.mode,
+                instance.prev,
+                instance.payload is payload,
+                instance.payload == payload,
+            )
+        finally:
+            instance.__exit__(None, None, None)
+        states.append(module.is_grad_enabled())
+
+        with module.no_grad():
+            keyword_instance = subclass_type(True, payload=payload)
+            try:
+                states.append(module.is_grad_enabled())
+                keyword_metadata = (
+                    type(keyword_instance) is subclass_type,
+                    keyword_instance.mode,
+                    keyword_instance.prev,
+                    keyword_instance.payload is payload,
+                    keyword_instance.payload == payload,
+                )
+            finally:
+                keyword_instance.__exit__(None, None, None)
+            states.append(module.is_grad_enabled())
+        states.append(module.is_grad_enabled())
+
+        inactive = subclass_type(False, payload)
+        inactive.__exit__(None, None, None)
+        shallow = copy.copy(inactive)
+        deep = copy.deepcopy(inactive)
+        pickle_results = []
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            restored = pickle.loads(pickle.dumps(inactive, protocol=protocol))
+            pickle_results.append(
+                (
+                    type(restored) is subclass_type,
+                    restored.mode,
+                    restored.prev,
+                    restored.payload == payload,
+                )
+            )
+
+        return {
+            "states": tuple(states),
+            "instance": instance_metadata,
+            "keyword": keyword_metadata,
+            "copy": (
+                type(shallow) is subclass_type,
+                shallow.payload is payload,
+                shallow.payload == payload,
+                shallow.mode,
+                shallow.prev,
+                type(deep) is subclass_type,
+                deep.payload is payload,
+                deep.payload == payload,
+                deep.mode,
+                deep.prev,
+            ),
+            "pickle": tuple(pickle_results),
+            "init_calls": subclass_type.init_calls,
+        }
+
     def test_namespace_metadata_copy_and_pickle_match_pytorch_2_13(self):
         for context_name in ("enable_grad", "no_grad", "set_grad_enabled"):
             with self.subTest(context=context_name):
@@ -717,6 +828,14 @@ class NoGradNamespaceReferenceTests(unittest.TestCase):
                     self.newargs_contract(native_subclass),
                     self.newargs_contract(reference_subclass),
                 )
+
+    def test_set_grad_enabled_subclass_constructor_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.set_grad_enabled_subclass_contract(torch, StatefulSetGradEnabled),
+            self.set_grad_enabled_subclass_contract(
+                reference_torch, ReferenceStatefulSetGradEnabled
+            ),
+        )
 
 
 if __name__ == "__main__":

@@ -9,15 +9,14 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyModule};
 
 use crate::{
-    enter_enable_grad, enter_grad_mode, enter_no_grad, exit_grad_mode, grad_mode::GradModeToken,
-    is_grad_enabled, is_grad_mode_token_current,
+    enter_enable_grad, enter_no_grad, exit_grad_mode, grad_mode::GradModeToken, is_grad_enabled,
+    set_grad_mode_enabled,
 };
 
 const GRAD_MODE_WRAPPER_SOURCE: &CStr = cr#"
 import functools
 import inspect
 import sys
-import threading
 
 
 def _decorate_grad_mode(context_factory, function):
@@ -115,65 +114,35 @@ def _make_enable_grad(context_base):
 
 
 def _make_set_grad_enabled(
-    enter_grad_mode,
-    exit_grad_mode,
+    set_grad_mode_enabled,
     is_grad_enabled,
-    is_grad_mode_token_current,
 ):
     class set_grad_enabled:
         """Context-manager that sets gradient calculation on or off."""
 
-        def __new__(cls, mode=None):
-            instance = super().__new__(cls)
-            instance._tokens_by_thread = {}
-            return instance
+        def __new__(cls, *args, **kwargs):
+            return super().__new__(cls)
 
         def __init__(self, mode: bool) -> None:
             if type(mode) is not bool:
                 raise TypeError(
                     "set_grad_enabled(): argument 'enabled' (position 1) "
                     f"must be bool, not {_grad_mode_bool_type_name(mode)}"
-                )
+            )
             self.prev = is_grad_enabled()
             self.mode = mode
-            self._push_context()
-
-        def _has_current_context_token(self):
-            tokens_by_thread = getattr(self, "_tokens_by_thread", None)
-            if tokens_by_thread is None:
-                self._tokens_by_thread = {}
-                return False
-            tokens = tokens_by_thread.get(threading.get_ident())
-            return bool(tokens) and is_grad_mode_token_current(tokens[-1])
-
-        def _push_context(self):
-            token = enter_grad_mode(self.mode)
-            self._tokens_by_thread.setdefault(threading.get_ident(), []).append(token)
-
-        def _pop_context(self):
-            tokens_by_thread = getattr(self, "_tokens_by_thread", None)
-            if not tokens_by_thread:
-                return
-            thread_id = threading.get_ident()
-            tokens = tokens_by_thread.get(thread_id)
-            if not tokens:
-                return
-            token = tokens.pop()
-            if not tokens:
-                del tokens_by_thread[thread_id]
-            exit_grad_mode(token)
+            set_grad_mode_enabled(mode)
 
         def __call__(self, function):
-            self._pop_context()
+            set_grad_mode_enabled(self.prev)
             return _decorate_grad_mode(self.clone, function)
 
         def __enter__(self):
-            if not self._has_current_context_token():
-                self._push_context()
+            set_grad_mode_enabled(self.mode)
             return None
 
         def __exit__(self, exception_type, exception_value, traceback):
-            self._pop_context()
+            set_grad_mode_enabled(self.prev)
 
         def __reduce__(self):
             from torch_rs.autograd.grad_mode import _reduce_set_grad_enabled
@@ -213,24 +182,14 @@ def _make_set_grad_enabled(
     return set_grad_enabled
 "#;
 
-#[pyfunction(name = "_grad_mode_enter")]
-fn grad_mode_enter_py(enabled: bool) -> usize {
-    enter_grad_mode(enabled).raw()
-}
-
-#[pyfunction(name = "_grad_mode_exit")]
-fn grad_mode_exit_py(token: usize) {
-    exit_grad_mode(GradModeToken::from_raw(token));
-}
-
 #[pyfunction(name = "_is_grad_enabled")]
 fn is_grad_enabled_py() -> bool {
     is_grad_enabled()
 }
 
-#[pyfunction(name = "_grad_mode_token_is_current")]
-fn grad_mode_token_is_current_py(token: usize) -> bool {
-    is_grad_mode_token_current(GradModeToken::from_raw(token))
+#[pyfunction(name = "_set_grad_enabled")]
+fn set_grad_enabled_py(enabled: bool) {
+    set_grad_mode_enabled(enabled);
 }
 
 fn push_context_token(
@@ -342,10 +301,8 @@ pub(crate) fn add_grad_mode_contexts(module: &Bound<'_, PyModule>) -> PyResult<(
     let py = module.py();
     module.add_class::<PyNoGrad>()?;
     module.add_class::<PyEnableGrad>()?;
-    module.add_function(wrap_pyfunction!(grad_mode_enter_py, module)?)?;
-    module.add_function(wrap_pyfunction!(grad_mode_exit_py, module)?)?;
     module.add_function(wrap_pyfunction!(is_grad_enabled_py, module)?)?;
-    module.add_function(wrap_pyfunction!(grad_mode_token_is_current_py, module)?)?;
+    module.add_function(wrap_pyfunction!(set_grad_enabled_py, module)?)?;
     let grad_mode_helpers = PyModule::from_code(
         py,
         GRAD_MODE_WRAPPER_SOURCE,
@@ -361,28 +318,22 @@ pub(crate) fn add_grad_mode_contexts(module: &Bound<'_, PyModule>) -> PyResult<(
     let set_grad_enabled_class = grad_mode_helpers
         .getattr("_make_set_grad_enabled")?
         .call1((
-            module.getattr("_grad_mode_enter")?,
-            module.getattr("_grad_mode_exit")?,
+            module.getattr("_set_grad_enabled")?,
             module.getattr("_is_grad_enabled")?,
-            module.getattr("_grad_mode_token_is_current")?,
         ))?;
     let exports = module.getattr("__all__")?;
     for name in [
         "_NoGradContext",
         "_EnableGradContext",
-        "_grad_mode_enter",
-        "_grad_mode_exit",
         "_is_grad_enabled",
-        "_grad_mode_token_is_current",
+        "_set_grad_enabled",
     ] {
         exports.call_method1("remove", (name,))?;
     }
     module.delattr("_NoGradContext")?;
     module.delattr("_EnableGradContext")?;
-    module.delattr("_grad_mode_enter")?;
-    module.delattr("_grad_mode_exit")?;
     module.delattr("_is_grad_enabled")?;
-    module.delattr("_grad_mode_token_is_current")?;
+    module.delattr("_set_grad_enabled")?;
     module.add("no_grad", no_grad_class)?;
     module.add("enable_grad", enable_grad_class)?;
     module.add("set_grad_enabled", set_grad_enabled_class)?;

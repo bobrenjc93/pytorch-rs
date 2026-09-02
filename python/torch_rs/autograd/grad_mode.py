@@ -36,22 +36,6 @@ def _grad_mode_state(context):
     return instance_state
 
 
-def _without_active_grad_mode_tokens(state):
-    if isinstance(state, dict):
-        state = dict(state)
-        state.pop("_tokens_by_thread", None)
-        return state
-    if (
-        isinstance(state, tuple)
-        and len(state) == 2
-        and isinstance(state[0], dict)
-    ):
-        instance_state = dict(state[0])
-        instance_state.pop("_tokens_by_thread", None)
-        return instance_state, state[1]
-    return state
-
-
 def _grad_mode_newobj(context):
     context_type = type(context)
     getnewargs_ex = getattr(context, "__getnewargs_ex__", None)
@@ -113,7 +97,7 @@ def _reduce_enable_grad(context, protocol):
 
 
 def _reduce_set_grad_enabled(context, protocol):
-    state = _without_active_grad_mode_tokens(_grad_mode_state(context))
+    state = _grad_mode_state(context)
     if protocol < 2:
         return (
             _legacy_rebuild_set_grad_enabled,

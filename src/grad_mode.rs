@@ -3,24 +3,13 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 thread_local! {
+    static GRAD_MODE_DEFAULT: Cell<bool> = const { Cell::new(true) };
     static GRAD_MODE_STACK: RefCell<Vec<GradModeEntry>> = const { RefCell::new(Vec::new()) };
     static NEXT_GRAD_MODE_TOKEN: Cell<usize> = const { Cell::new(0) };
 }
 
 #[derive(Clone, Copy)]
 pub(crate) struct GradModeToken(usize);
-
-impl GradModeToken {
-    #[cfg(feature = "python-bindings")]
-    pub(crate) fn raw(self) -> usize {
-        self.0
-    }
-
-    #[cfg(feature = "python-bindings")]
-    pub(crate) fn from_raw(raw: usize) -> Self {
-        Self(raw)
-    }
-}
 
 struct GradModeEntry {
     token: GradModeToken,
@@ -107,7 +96,13 @@ pub fn set_grad_enabled(enabled: bool) -> SetGradEnabledGuard {
 /// Returns whether eager graph recording is enabled on the current thread.
 #[must_use]
 pub fn is_grad_enabled() -> bool {
-    GRAD_MODE_STACK.with_borrow(|stack| stack.last().is_none_or(|entry| entry.enabled))
+    if let Some(enabled) =
+        GRAD_MODE_STACK.with_borrow(|stack| stack.last().map(|entry| entry.enabled))
+    {
+        enabled
+    } else {
+        GRAD_MODE_DEFAULT.with(Cell::get)
+    }
 }
 
 pub(crate) fn enter_no_grad() -> GradModeToken {
@@ -128,11 +123,6 @@ pub(crate) fn exit_grad_mode(token: GradModeToken) {
     });
 }
 
-#[cfg(feature = "python-bindings")]
-pub(crate) fn is_grad_mode_token_current(token: GradModeToken) -> bool {
-    GRAD_MODE_STACK.with_borrow(|stack| stack.last().is_some_and(|entry| entry.token.0 == token.0))
-}
-
 pub(crate) fn enter_grad_mode(enabled: bool) -> GradModeToken {
     let token = NEXT_GRAD_MODE_TOKEN.with(|next_token| {
         let token = next_token.get();
@@ -145,4 +135,19 @@ pub(crate) fn enter_grad_mode(enabled: bool) -> GradModeToken {
     });
     GRAD_MODE_STACK.with_borrow_mut(|stack| stack.push(GradModeEntry { token, enabled }));
     token
+}
+
+#[cfg(feature = "python-bindings")]
+pub(crate) fn set_grad_mode_enabled(enabled: bool) {
+    let updated_stack = GRAD_MODE_STACK.with_borrow_mut(|stack| {
+        if let Some(entry) = stack.last_mut() {
+            entry.enabled = enabled;
+            true
+        } else {
+            false
+        }
+    });
+    if !updated_stack {
+        GRAD_MODE_DEFAULT.with(|default| default.set(enabled));
+    }
 }
