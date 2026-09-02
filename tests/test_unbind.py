@@ -32,20 +32,21 @@ def offset_noncontiguous_source(*, requires_grad=False):
 
 
 class TensorUnbindTests(unittest.TestCase):
-    def assert_rows_match_indexing(self, source, rows):
-        self.assertIs(type(rows), tuple)
-        self.assertEqual(len(rows), source.shape[0])
-        for index, row in enumerate(rows):
-            direct = source[index]
+    def assert_unbind_matches_selects(self, source, outputs, dimension=0):
+        axis = dimension + source.dim() if dimension < 0 else dimension
+        self.assertIs(type(outputs), tuple)
+        self.assertEqual(len(outputs), source.shape[axis])
+        for index, output in enumerate(outputs):
+            direct = source.select(axis, index)
             with self.subTest(index=index):
-                self.assertEqual(row.tolist(), direct.tolist())
-                self.assertEqual(row.shape, direct.shape)
-                self.assertEqual(row.stride(), direct.stride())
-                self.assertEqual(row.storage_offset(), direct.storage_offset())
-                self.assertEqual(row.data_ptr(), direct.data_ptr())
-                self.assertTrue(row.is_set_to(direct))
-                self.assertIs(row.dtype, source.dtype)
-                self.assertEqual(row.device, source.device)
+                self.assertEqual(output.tolist(), direct.tolist())
+                self.assertEqual(output.shape, direct.shape)
+                self.assertEqual(output.stride(), direct.stride())
+                self.assertEqual(output.storage_offset(), direct.storage_offset())
+                self.assertEqual(output.data_ptr(), direct.data_ptr())
+                self.assertTrue(output.is_set_to(direct))
+                self.assertIs(output.dtype, source.dtype)
+                self.assertEqual(output.device, source.device)
 
     def test_default_positional_and_keyword_calls_return_first_axis_views(self):
         source = offset_noncontiguous_source()
@@ -67,7 +68,7 @@ class TensorUnbindTests(unittest.TestCase):
         for case, call in calls:
             with self.subTest(case=case):
                 rows = call()
-                self.assert_rows_match_indexing(source, rows)
+                self.assert_unbind_matches_selects(source, rows)
                 self.assertEqual(tuple(row.tolist() for row in rows), expected_values)
                 self.assertEqual(
                     tuple(row.storage_offset() for row in rows), (24, 28, 32)
@@ -78,8 +79,33 @@ class TensorUnbindTests(unittest.TestCase):
         scalars = vector.unbind(-1)
         self.assertEqual(tuple(value.tolist() for value in scalars), (1.0, 2.0, 3.0))
         self.assertTrue(
-            all(value.is_set_to(vector[index]) for index, value in enumerate(scalars))
+            all(
+                value.is_set_to(vector.select(0, index))
+                for index, value in enumerate(scalars)
+            )
         )
+
+    def test_arbitrary_dimension_calls_return_select_style_views(self):
+        contiguous = torch.tensor([float(value) for value in range(24)]).reshape(
+            2, 3, 4
+        )
+        offset = offset_noncontiguous_source()
+        empty = torch.zeros((2, 0, 3))
+        cases = (
+            ("contiguous middle", contiguous, 1, (0, 4, 8)),
+            ("contiguous last negative", contiguous, -1, (0, 1, 2, 3)),
+            ("offset noncontiguous middle", offset, 1, (24, 36)),
+            ("offset noncontiguous last", offset, 2, (24, 25, 26, 27)),
+            ("empty nonzero dimension", empty, -1, (0, 1, 2)),
+            ("empty zero dimension", empty, 1, ()),
+        )
+        for case, source, dimension, offsets in cases:
+            with self.subTest(case=case):
+                outputs = source.unbind(dimension)
+                self.assert_unbind_matches_selects(source, outputs, dimension)
+                self.assertEqual(
+                    tuple(output.storage_offset() for output in outputs), offsets
+                )
 
     def test_autograd_output_numbers_no_grad_and_empty_shapes(self):
         leaf = torch.tensor([float(value) for value in range(48)], requires_grad=True)
@@ -89,7 +115,7 @@ class TensorUnbindTests(unittest.TestCase):
         self.assertEqual(tuple(row.output_nr for row in rows), (0, 1, 2))
         self.assertTrue(all(row.requires_grad for row in rows))
         self.assertTrue(all(not row.is_leaf for row in rows))
-        self.assert_rows_match_indexing(source, rows)
+        self.assert_unbind_matches_selects(source, rows)
 
         (rows[0] * rows[2]).sum().backward()
         expected_gradient = [0.0] * 48
@@ -116,14 +142,56 @@ class TensorUnbindTests(unittest.TestCase):
         self.assertEqual(tuple(row.output_nr for row in empty_rows), (0, 1))
         self.assertEqual(tuple(row.shape for row in empty_rows), ((0, 3), (0, 3)))
         self.assertEqual(tuple(row.numel() for row in empty_rows), (0, 0))
-        self.assert_rows_match_indexing(empty, empty_rows)
+        self.assert_unbind_matches_selects(empty, empty_rows)
         empty_rows[1].sum().backward()
         self.assertEqual(empty.grad.shape, (2, 0, 3))
         self.assertEqual(empty.grad.tolist(), [[], []])
 
         self.assertEqual(torch.zeros((0, 2), requires_grad=True).unbind(), ())
 
-    def test_supported_call_errors_and_deliberate_surface_limits(self):
+    def test_arbitrary_dimension_autograd_no_grad_and_empty_shapes(self):
+        leaf = torch.tensor([float(value) for value in range(48)], requires_grad=True)
+        source = (leaf * 2.0).reshape(2, 2, 3, 4)[1].transpose(0, 1)
+        columns = source.unbind(1)
+
+        self.assertEqual(tuple(column.output_nr for column in columns), (0, 1))
+        self.assertTrue(all(column.requires_grad for column in columns))
+        self.assertTrue(all(not column.is_leaf for column in columns))
+        self.assert_unbind_matches_selects(source, columns, 1)
+
+        total = columns[0].sum()
+        for column in columns[1:]:
+            total = total + column.sum()
+        total.backward()
+        expected_gradient = [0.0] * 48
+        for index in range(24, 48):
+            expected_gradient[index] = 2.0
+        self.assertEqual(leaf.grad.tolist(), expected_gradient)
+
+        no_grad_source = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], requires_grad=True
+        )
+        with torch.no_grad():
+            no_grad_columns = no_grad_source.unbind(dim=1)
+        self.assertEqual(tuple(column.output_nr for column in no_grad_columns), (0, 0))
+        self.assertTrue(all(column.requires_grad for column in no_grad_columns))
+        self.assertTrue(all(column.is_leaf for column in no_grad_columns))
+        self.assert_unbind_matches_selects(no_grad_source, no_grad_columns, 1)
+
+        empty = torch.zeros((2, 0, 3), requires_grad=True)
+        empty_planes = empty.unbind(-1)
+        self.assertEqual(tuple(plane.output_nr for plane in empty_planes), (0, 1, 2))
+        self.assertEqual(
+            tuple(plane.shape for plane in empty_planes), ((2, 0), (2, 0), (2, 0))
+        )
+        self.assertEqual(tuple(plane.numel() for plane in empty_planes), (0, 0, 0))
+        self.assert_unbind_matches_selects(empty, empty_planes, -1)
+        empty_planes[2].sum().backward()
+        self.assertEqual(empty.grad.shape, (2, 0, 3))
+        self.assertEqual(empty.grad.tolist(), [[], []])
+        self.assertEqual(torch.zeros((2, 0, 3), requires_grad=True).unbind(1), ())
+
+    def test_supported_call_errors_and_surface_limits(self):
         tensor = torch.zeros((2, 3))
         scalar = torch.tensor(1.0)
         cases = (
@@ -208,10 +276,7 @@ class TensorUnbindTests(unittest.TestCase):
             tensor.unbind(2**100)
         self.assertEqual(len(tensor.unbind(np.int64(0))), 2)
 
-        with self.assertRaisesRegex(
-            RuntimeError, "^Tensor\\.unbind only supports dimension 0$"
-        ):
-            tensor.unbind(1)
+        self.assertEqual(len(tensor.unbind(1)), 3)
 
         self.assertTrue(hasattr(torch, "unbind"))
         self.assertIn("unbind", torch.__all__)
@@ -242,7 +307,7 @@ class TensorUnbindTests(unittest.TestCase):
         for case, call in calls:
             with self.subTest(case=case):
                 rows = call()
-                self.assert_rows_match_indexing(source, rows)
+                self.assert_unbind_matches_selects(source, rows)
                 self.assertEqual(
                     tuple(row.tolist() for row in rows),
                     tuple(row.tolist() for row in expected),
@@ -250,6 +315,23 @@ class TensorUnbindTests(unittest.TestCase):
                 self.assertTrue(
                     all(row.is_set_to(expected[index]) for index, row in enumerate(rows))
                 )
+
+    def test_top_level_arbitrary_dimension_forms_reuse_select_views(self):
+        source = offset_noncontiguous_source()
+        calls = (
+            ("positional middle", 1, lambda: torch.unbind(source, 1)),
+            ("keyword middle", 1, lambda: torch.unbind(input=source, dim=1)),
+            ("input alias middle", 1, lambda: torch.unbind(x=source, dim=1)),
+            ("negative last", -1, lambda: torch.unbind(source, -1)),
+        )
+        for case, dimension, call in calls:
+            with self.subTest(case=case):
+                outputs = call()
+                self.assert_unbind_matches_selects(source, outputs, dimension)
+
+        empty = torch.zeros((2, 0, 3))
+        self.assert_unbind_matches_selects(empty, torch.unbind(empty, dim=-1), -1)
+        self.assertEqual(torch.unbind(empty, dim=1), ())
 
     def test_top_level_autograd_output_numbers_no_grad_and_empty_shapes(self):
         leaf = torch.tensor([float(value) for value in range(48)], requires_grad=True)
@@ -259,7 +341,7 @@ class TensorUnbindTests(unittest.TestCase):
         self.assertEqual(tuple(row.output_nr for row in rows), (0, 1, 2))
         self.assertTrue(all(row.requires_grad for row in rows))
         self.assertTrue(all(not row.is_leaf for row in rows))
-        self.assert_rows_match_indexing(source, rows)
+        self.assert_unbind_matches_selects(source, rows)
 
         (rows[0] * rows[2]).sum().backward()
         expected_gradient = [0.0] * 48
@@ -290,7 +372,47 @@ class TensorUnbindTests(unittest.TestCase):
         self.assertEqual(empty.grad.tolist(), [[], []])
         self.assertEqual(torch.unbind(torch.zeros((0, 2), requires_grad=True)), ())
 
-    def test_top_level_binding_errors_and_deliberate_dimension_limit(self):
+    def test_top_level_arbitrary_dimension_autograd_no_grad_and_empty_shapes(self):
+        leaf = torch.tensor([float(value) for value in range(48)], requires_grad=True)
+        source = (leaf * 2.0).reshape(2, 2, 3, 4)[1].transpose(0, 1)
+        columns = torch.unbind(source, dim=1)
+
+        self.assertEqual(tuple(column.output_nr for column in columns), (0, 1))
+        self.assertTrue(all(column.requires_grad for column in columns))
+        self.assertTrue(all(not column.is_leaf for column in columns))
+        self.assert_unbind_matches_selects(source, columns, 1)
+
+        total = columns[0].sum()
+        for column in columns[1:]:
+            total = total + column.sum()
+        total.backward()
+        expected_gradient = [0.0] * 48
+        for index in range(24, 48):
+            expected_gradient[index] = 2.0
+        self.assertEqual(leaf.grad.tolist(), expected_gradient)
+
+        no_grad_source = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], requires_grad=True
+        )
+        with torch.no_grad():
+            no_grad_columns = torch.unbind(input=no_grad_source, dim=1)
+        self.assertEqual(tuple(column.output_nr for column in no_grad_columns), (0, 0))
+        self.assertTrue(all(column.requires_grad for column in no_grad_columns))
+        self.assertTrue(all(column.is_leaf for column in no_grad_columns))
+        self.assert_unbind_matches_selects(no_grad_source, no_grad_columns, 1)
+
+        empty = torch.zeros((2, 0, 3), requires_grad=True)
+        empty_planes = torch.unbind(empty, -1)
+        self.assertEqual(tuple(plane.output_nr for plane in empty_planes), (0, 1, 2))
+        self.assertEqual(
+            tuple(plane.shape for plane in empty_planes), ((2, 0), (2, 0), (2, 0))
+        )
+        empty_planes[2].sum().backward()
+        self.assertEqual(empty.grad.shape, (2, 0, 3))
+        self.assertEqual(empty.grad.tolist(), [[], []])
+        self.assertEqual(torch.unbind(torch.zeros((2, 0, 3), requires_grad=True), 1), ())
+
+    def test_top_level_binding_errors_and_surface_limits(self):
         tensor = torch.zeros((2, 3))
         scalar = torch.tensor(1.0)
         cases = (
@@ -388,11 +510,8 @@ class TensorUnbindTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "^Overflow when unpacking long long$"):
             torch.unbind(tensor, 2**100)
         self.assertEqual(len(torch.unbind(tensor, np.int64(0))), 2)
-        for dimension in (1, -1):
-            with self.subTest(dimension=dimension), self.assertRaisesRegex(
-                RuntimeError, "^torch\\.unbind only supports dimension 0$"
-            ):
-                torch.unbind(tensor, dimension)
+        self.assertEqual(len(torch.unbind(tensor, 1)), 3)
+        self.assertEqual(len(torch.unbind(tensor, -1)), 3)
 
         self.assertFalse(hasattr(torch.Tensor, "chunk"))
         self.assertFalse(hasattr(torch, "chunk"))
@@ -427,7 +546,7 @@ class TensorUnbindTests(unittest.TestCase):
                 {"input": tensor, "dim": 0},
             ),
             (
-                "unsupported replacement",
+                "nonzero dimension replacement",
                 lambda: torch.unbind(tensor, 1),
                 (tensor, 1),
                 None,
@@ -469,7 +588,7 @@ class TensorUnbindTests(unittest.TestCase):
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
                 forwarded = torch.unbind(input=tensor, dim=0)
-        self.assert_rows_match_indexing(tensor, forwarded)
+        self.assert_unbind_matches_selects(tensor, forwarded)
         self.assertEqual([entry[0] for entry in order], ["upper", "lower"])
         for _, function, dispatch_types, args, kwargs in order:
             self.assertIs(function, torch.unbind)
@@ -609,7 +728,7 @@ class TensorUnbindTests(unittest.TestCase):
             descriptor(tensor, 0),
             descriptor(tensor, dim=0),
         ):
-            self.assert_rows_match_indexing(tensor, rows)
+            self.assert_unbind_matches_selects(tensor, rows)
 
         cases = (
             (
@@ -650,7 +769,7 @@ class TensorUnbindTests(unittest.TestCase):
             ("default", lambda: tensor.unbind(), (tensor,), None),
             ("positional", lambda: tensor.unbind(0), (tensor, 0), None),
             ("keyword", lambda: tensor.unbind(dim=0), (tensor,), {"dim": 0}),
-            ("unsupported replacement", lambda: tensor.unbind(1), (tensor, 1), None),
+            ("nonzero dimension replacement", lambda: tensor.unbind(1), (tensor, 1), None),
         )
         for case, call, expected_args, expected_kwargs in cases:
             mode = RecordingMode(marker)
@@ -682,7 +801,7 @@ class TensorUnbindTests(unittest.TestCase):
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
                 forwarded = tensor.unbind(dim=0)
-        self.assert_rows_match_indexing(tensor, forwarded)
+        self.assert_unbind_matches_selects(tensor, forwarded)
         self.assertEqual([entry[0] for entry in order], ["upper", "lower"])
         for _, function, dispatch_types, args, kwargs in order:
             self.assertIs(function, descriptor)

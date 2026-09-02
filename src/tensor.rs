@@ -124,6 +124,7 @@ enum GradFn {
     },
     Unbind {
         input: SavedTensor,
+        dimension: usize,
         output_count: usize,
         output_elements: usize,
     },
@@ -2765,15 +2766,15 @@ impl Tensor {
     }
 
     #[cfg_attr(not(any(feature = "python-bindings", test)), allow(dead_code))]
-    pub(crate) fn unbind_first_dimension(&self) -> Result<Vec<Self>, TensorError> {
-        let Some(&output_count) = self.shape.first() else {
+    pub(crate) fn unbind_dimension(&self, dimension: usize) -> Result<Vec<Self>, TensorError> {
+        let Some(&output_count) = self.shape.get(dimension) else {
             return Err(TensorError::InvalidScalarIndex);
         };
         let mut outputs = try_result_vector(output_count, self.elements)?;
         for output_nr in 0..output_count {
             let index =
                 i64::try_from(output_nr).map_err(|_| TensorError::IndexCalculationOverflow)?;
-            outputs.push(self.index_dimensions_impl(&[index], false)?);
+            outputs.push(self.select_dimension_impl(dimension, index, false)?);
         }
         if self.records_grad() && !outputs.is_empty() {
             let output_elements = outputs[0].elements;
@@ -2781,6 +2782,7 @@ impl Tensor {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Unbind {
                         input: SavedTensor::try_from_tensor(self, false)?,
+                        dimension,
                         output_count,
                         output_elements,
                     })),
@@ -2871,6 +2873,15 @@ impl Tensor {
     /// Returns an error for a missing dimension, an out-of-bounds index,
     /// checked arithmetic overflow, or view metadata allocation failure.
     pub fn select_dimension(&self, dimension: usize, index: i64) -> Result<Self, TensorError> {
+        self.select_dimension_impl(dimension, index, true)
+    }
+
+    fn select_dimension_impl(
+        &self,
+        dimension: usize,
+        index: i64,
+        record_history: bool,
+    ) -> Result<Self, TensorError> {
         let offset = self.checked_index_offset(self.offset, dimension, index)?;
         let mut shape = try_result_vector(self.shape.len().saturating_sub(1), self.elements)?;
         shape.extend_from_slice(&self.shape[..dimension]);
@@ -2890,7 +2901,7 @@ impl Tensor {
             view_requires_grad: self.requires_grad(),
             autograd: None,
         };
-        if self.records_grad() {
+        if record_history && self.records_grad() {
             self.record_transform(
                 &mut output,
                 TransformMapping::Select {
@@ -4386,10 +4397,18 @@ fn run_backward(root: &Arc<AutogradMeta>, root_output_nr: usize) -> Result<(), T
             }
             Some(GradFn::Unbind {
                 input,
+                dimension,
                 output_count,
                 output_elements,
             }) => {
-                apply_unbind_grad_fn(meta, input, *output_count, *output_elements, &mut gradients)?;
+                apply_unbind_grad_fn(
+                    meta,
+                    input,
+                    *dimension,
+                    *output_count,
+                    *output_elements,
+                    &mut gradients,
+                )?;
             }
             Some(grad_fn) => {
                 let Some(upstream) = gradients.remove(&gradient_key(meta, 0)) else {
@@ -4712,11 +4731,15 @@ fn apply_mean_grad_fn(
 fn apply_unbind_grad_fn(
     node: &Arc<AutogradMeta>,
     input: &SavedTensor,
+    dimension: usize,
     output_count: usize,
     output_elements: usize,
     gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
     let mut assembled = None;
+    let input_strides = contiguous_strides(&input.shape, input.elements)?;
+    let mut coordinates = try_result_vector(input.shape.len().saturating_sub(1), output_elements)?;
+    coordinates.resize(input.shape.len().saturating_sub(1), 0_usize);
     for output_nr in 0..output_count {
         let Some(output_gradient) = gradients.remove(&gradient_key(node, output_nr)) else {
             continue;
@@ -4728,16 +4751,44 @@ fn apply_unbind_grad_fn(
             Some(gradient) => gradient,
             None => assembled.insert(filled_storage(input.elements, 0.0)?),
         };
-        let start = output_nr
-            .checked_mul(output_elements)
-            .ok_or(TensorError::IndexCalculationOverflow)?;
-        let end = start
-            .checked_add(output_elements)
-            .ok_or(TensorError::IndexCalculationOverflow)?;
-        gradient
-            .get_mut(start..end)
-            .ok_or(TensorError::IndexCalculationOverflow)?
-            .copy_from_slice(&output_gradient);
+        for (output_index, &value) in output_gradient.iter().enumerate() {
+            let mut remaining = output_index;
+            for input_axis in (0..input.shape.len()).rev() {
+                if input_axis == dimension {
+                    continue;
+                }
+                let output_axis = if input_axis < dimension {
+                    input_axis
+                } else {
+                    input_axis - 1
+                };
+                coordinates[output_axis] = remaining % input.shape[input_axis];
+                remaining /= input.shape[input_axis];
+            }
+
+            let mut input_index = output_nr
+                .checked_mul(input_strides[dimension])
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            for (input_axis, &stride) in input_strides.iter().enumerate() {
+                if input_axis == dimension {
+                    continue;
+                }
+                let output_axis = if input_axis < dimension {
+                    input_axis
+                } else {
+                    input_axis - 1
+                };
+                let contribution = coordinates[output_axis]
+                    .checked_mul(stride)
+                    .ok_or(TensorError::IndexCalculationOverflow)?;
+                input_index = input_index
+                    .checked_add(contribution)
+                    .ok_or(TensorError::IndexCalculationOverflow)?;
+            }
+            *gradient
+                .get_mut(input_index)
+                .ok_or(TensorError::IndexCalculationOverflow)? = value;
+        }
     }
     if let (Some(meta), Some(gradient)) = (&input.autograd, assembled) {
         add_gradient(gradients, meta, input.output_nr, gradient);
@@ -10635,11 +10686,11 @@ mod tests {
     }
 
     #[test]
-    fn first_dimension_unbind_tracks_output_numbers_only_with_autograd_history() {
+    fn unbind_tracks_output_numbers_only_with_autograd_history() {
         let source = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [3, 2])
             .unwrap()
             .with_requires_grad(true);
-        let outputs = source.unbind_first_dimension().unwrap();
+        let outputs = source.unbind_dimension(0).unwrap();
 
         assert_eq!(outputs.len(), 3);
         assert_eq!(
@@ -10672,14 +10723,14 @@ mod tests {
 
         let no_grad_outputs = {
             let _guard = crate::no_grad();
-            source.unbind_first_dimension().unwrap()
+            source.unbind_dimension(0).unwrap()
         };
         assert!(no_grad_outputs.iter().all(|output| output.output_nr() == 0));
 
         let ordinary = Tensor::zeros([3, 2]).unwrap();
         assert!(
             ordinary
-                .unbind_first_dimension()
+                .unbind_dimension(0)
                 .unwrap()
                 .iter()
                 .all(|output| output.output_nr() == 0)
@@ -10687,19 +10738,47 @@ mod tests {
         assert!(
             Tensor::zeros([0, 2])
                 .unwrap()
-                .unbind_first_dimension()
+                .unbind_dimension(0)
                 .unwrap()
                 .is_empty()
         );
         assert_eq!(
-            Tensor::zeros([]).unwrap().unbind_first_dimension(),
+            Tensor::zeros([]).unwrap().unbind_dimension(0),
             Err(TensorError::InvalidScalarIndex)
+        );
+
+        let middle_source = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+            .unwrap()
+            .with_requires_grad(true);
+        let middle_outputs = middle_source.unbind_dimension(1).unwrap();
+        assert_eq!(middle_outputs.len(), 3);
+        assert_eq!(
+            middle_outputs
+                .iter()
+                .map(Tensor::output_nr)
+                .collect::<Vec<_>>(),
+            [0, 1, 2]
+        );
+        assert!(Arc::ptr_eq(
+            middle_outputs[0].autograd.as_ref().unwrap(),
+            middle_outputs[1].autograd.as_ref().unwrap()
+        ));
+        for (index, output) in middle_outputs.iter().enumerate() {
+            assert!(output.shares_storage_with(&middle_source));
+            assert_eq!(output.shape(), [2]);
+            assert_eq!(output.stride(), [3]);
+            assert_eq!(output.storage_offset(), index);
+        }
+        middle_outputs[1].sum().backward().unwrap();
+        assert_eq!(
+            middle_source.grad().unwrap().unwrap().as_slice(),
+            [0.0, 1.0, 0.0, 0.0, 1.0, 0.0]
         );
 
         let signed_source = Tensor::from_vec(vec![1.0, -0.0], [2, 1])
             .unwrap()
             .with_requires_grad(true);
-        let signed_outputs = signed_source.unbind_first_dimension().unwrap();
+        let signed_outputs = signed_source.unbind_dimension(0).unwrap();
         signed_outputs[0]
             .mul(&signed_outputs[1])
             .unwrap()

@@ -444,7 +444,7 @@ impl PyTensorBase {
         let dimension = dimension.map_or(Ok(0), |dimension| {
             extract_dimension_swap_dimension(&dimension.value)
         })?;
-        unbind_first_dimension(slf.py(), tensor, dimension, "Tensor.unbind")
+        unbind_dimension(slf.py(), tensor, dimension)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -3260,22 +3260,16 @@ pub(crate) fn dispatch_tensorbase_no_argument_mode(
     dispatch_tensorbase_mode(py, tensor, TensorBaseModeTarget::Method(method))
 }
 
-fn unbind_first_dimension(
+fn unbind_dimension(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
     dimension: i64,
-    operation: &str,
 ) -> PyResult<Py<PyAny>> {
     let axis = normalize_unbind_dimension(dimension, tensor.try_borrow()?.inner.shape().len())?;
-    if axis != 0 {
-        return Err(PyRuntimeError::new_err(format!(
-            "{operation} only supports dimension 0"
-        )));
-    }
     let outputs = tensor
         .try_borrow()?
         .inner
-        .unbind_first_dimension()
+        .unbind_dimension(axis)
         .map_err(|error| tensor_error(&error))?;
     Ok(PyTuple::new(py, outputs.into_iter().map(PyTensor::new))?
         .into_any()
@@ -3374,7 +3368,7 @@ fn dispatch_top_level_unbind(
         let dimension = dimension.map_or(Ok(0), |dimension| {
             extract_dimension_swap_dimension(&dimension.value)
         })?;
-        return unbind_first_dimension(py, tensor, dimension, "torch.unbind");
+        return unbind_dimension(py, tensor, dimension);
     }
 
     let function = variable_function(py, "unbind")?;
@@ -3425,7 +3419,7 @@ fn dispatch_top_level_unbind(
             let dimension = dimension.map_or(Ok(0), |dimension| {
                 extract_dimension_swap_dimension(&dimension.value)
             })?;
-            unbind_first_dimension(py, tensor, dimension, "torch.unbind")
+            unbind_dimension(py, tensor, dimension)
         }
     }
 }
