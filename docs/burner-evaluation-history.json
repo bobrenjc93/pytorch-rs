@@ -9272,6 +9272,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 93
       }
+    },
+    {
+      "key": "pr:1636",
+      "recordedAt": "2026-09-02T04:22:09.355Z",
+      "label": "PR #1636",
+      "kind": "leaf",
+      "prNumber": 1636,
+      "title": "Add mse_loss mean reduction",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 95,
+        "eval_39340456": 96.7,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 93
+      }
     }
   ]
 }
