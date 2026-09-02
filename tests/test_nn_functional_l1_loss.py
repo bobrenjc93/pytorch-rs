@@ -36,6 +36,20 @@ class FunctionalL1LossTests(unittest.TestCase):
         ) & 0x7FFF_FFFF
         return expected, expected_bits
 
+    @classmethod
+    def expected_l1_sum(cls, input, target):
+        expected = (input - target).abs()
+        expected_bits = cls.tensor_bits(expected).copy()
+        if expected_bits.size != 0:
+            target_bits = np.asarray(target).view(np.uint32)
+            target_bits = np.broadcast_to(target_bits, expected.shape).reshape(-1)
+            target_nan = (target_bits & 0x7FFF_FFFF) > 0x7F80_0000
+            expected_bits[target_nan] = (
+                target_bits[target_nan] | 0x0040_0000
+            ) & 0x7FFF_FFFF
+        expected_values = expected_bits.view(np.float32).copy()
+        return torch.tensor(memoryview(expected_values)).view(expected.shape).sum()
+
     def assert_matches_composition(
         self,
         actual,
@@ -849,6 +863,133 @@ class FunctionalL1LossTests(unittest.TestCase):
                     target_state[-1],
                 )
 
+    def test_rank2_trailing_vector_sum_broadcast_edges_metadata_warning_and_nonmutation(
+        self,
+    ):
+        signed_zero_matrix_bits = np.asarray(
+            [0x8000_0000, 0x0000_0000, 0x8000_0000, 0x0000_0000],
+            dtype=np.uint32,
+        )
+        signed_zero_vector_bits = np.asarray(
+            [0x0000_0000, 0x8000_0000],
+            dtype=np.uint32,
+        )
+        edge_matrix_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+            ],
+            dtype=np.uint32,
+        )
+        edge_vector_bits = np.asarray(
+            [0x8000_0000, 0x7F80_0000, 0xFF86_789A, 0x7F82_ABCD],
+            dtype=np.uint32,
+        )
+        inf_matrix_bits = np.asarray(
+            [0x7F80_0000, 0xFF80_0000, 0x3F80_0000, 0xBF80_0000],
+            dtype=np.uint32,
+        )
+        inf_vector_bits = np.asarray(
+            [0xFF80_0000, 0x3F80_0000],
+            dtype=np.uint32,
+        )
+
+        signed_zero_matrix = torch.tensor(
+            memoryview(signed_zero_matrix_bits.view(np.float32))
+        ).view(2, 2)
+        signed_zero_vector = torch.tensor(
+            memoryview(signed_zero_vector_bits.view(np.float32))
+        )
+        edge_matrix = torch.tensor(memoryview(edge_matrix_bits.view(np.float32))).view(
+            3, 4
+        )
+        edge_vector = torch.tensor(memoryview(edge_vector_bits.view(np.float32)))
+        inf_matrix = torch.tensor(memoryview(inf_matrix_bits.view(np.float32))).view(
+            2, 2
+        )
+        inf_vector = torch.tensor(memoryview(inf_vector_bits.view(np.float32)))
+        empty_rows = torch.zeros((0, 4))
+
+        cases = (
+            (
+                "target broadcast signed zero",
+                signed_zero_matrix,
+                signed_zero_vector,
+                0x0000_0000,
+            ),
+            (
+                "input broadcast signed zero",
+                signed_zero_vector,
+                signed_zero_matrix,
+                0x0000_0000,
+            ),
+            ("target broadcast nan inf", edge_matrix, edge_vector, None),
+            ("input broadcast nan inf", edge_vector, edge_matrix, None),
+            ("target broadcast inf", inf_matrix, inf_vector, 0x7F80_0000),
+            ("input broadcast inf", inf_vector, inf_matrix, 0x7F80_0000),
+            ("empty leading target broadcast", empty_rows, edge_vector, 0x0000_0000),
+            ("empty leading input broadcast", edge_vector, empty_rows, 0x0000_0000),
+        )
+        for case, input, target, expected_sum_bits in cases:
+            with self.subTest(case=case):
+                self.assertNotEqual(input.shape, target.shape)
+                self.assertTrue(input.is_contiguous())
+                self.assertTrue(target.is_contiguous())
+                input_state = self.tensor_state(input)
+                target_state = self.tensor_state(target)
+                expected = self.expected_l1_sum(input, target)
+
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    actual = functional.l1_loss(input, target, reduction="sum")
+
+                self.assert_matches_composition(actual, expected, case=case)
+                self.assertEqual(actual.shape, ())
+                self.assertEqual(actual.stride(), ())
+                self.assertEqual(actual.storage_offset(), 0)
+                self.assertTrue(actual.is_contiguous())
+                self.assertEqual(actual.numel(), 1)
+                self.assertFalse(actual.requires_grad)
+                self.assertTrue(actual.is_leaf)
+                if expected_sum_bits is not None:
+                    self.assertEqual(int(self.tensor_bits(actual)[0]), expected_sum_bits)
+
+                self.assertEqual(len(caught), 1)
+                self.assertIs(caught[0].category, UserWarning)
+                self.assertEqual(
+                    str(caught[0].message),
+                    self.broadcast_warning(input, target),
+                )
+
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    repeated = functional.l1_loss(input, target, reduction="sum")
+                self.assertFalse(actual.is_set_to(repeated))
+                self.assertFalse(actual.is_set_to(input))
+                self.assertFalse(actual.is_set_to(target))
+                self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1],
+                    input_state[-1],
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1],
+                    target_state[-1],
+                )
+
     def test_mixed_layout_singleton_keeps_binary_tensoriterator_stride(self):
         input = torch.tensor(
             np.arange(6, dtype=np.float32).reshape(2, 1, 3).tolist()
@@ -1065,6 +1206,70 @@ class FunctionalL1LossTests(unittest.TestCase):
                         if layout == "noncontiguous fallback":
                             self.assertFalse(tensor.is_contiguous())
                             self.assertEqual(actual.stride(), expected.stride())
+
+    def test_rank2_trailing_vector_sum_broadcast_requires_grad_operands_need_no_grad(
+        self,
+    ):
+        def target_broadcast(input_requires_grad, target_requires_grad):
+            return (
+                torch.tensor(
+                    [[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0]],
+                    requires_grad=input_requires_grad,
+                ),
+                torch.tensor([0.5, -1.0, 7.0], requires_grad=target_requires_grad),
+            )
+
+        def input_broadcast(input_requires_grad, target_requires_grad):
+            return (
+                torch.tensor([0.5, -1.0, 7.0], requires_grad=input_requires_grad),
+                torch.tensor(
+                    [[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0]],
+                    requires_grad=target_requires_grad,
+                ),
+            )
+
+        for case, factory in (
+            ("target broadcast", target_broadcast),
+            ("input broadcast", input_broadcast),
+        ):
+            for input_requires_grad, target_requires_grad in (
+                (True, False),
+                (False, True),
+                (True, True),
+            ):
+                input, target = factory(input_requires_grad, target_requires_grad)
+                with self.subTest(
+                    case=case,
+                    input_requires_grad=input_requires_grad,
+                    target_requires_grad=target_requires_grad,
+                ):
+                    with self.assertWarnsRegex(UserWarning, "Using a target size"):
+                        with self.assertRaisesRegex(
+                            RuntimeError,
+                            r"^l1_loss\(\): autograd recording is not supported$",
+                        ):
+                            functional.l1_loss(input, target, reduction="sum")
+
+                    with warnings.catch_warnings(record=True) as caught, torch.no_grad():
+                        warnings.simplefilter("always")
+                        expected = (input - target).abs().sum()
+                        actual = functional.l1_loss(input, target, reduction="sum")
+
+                    self.assert_matches_composition(
+                        actual,
+                        expected,
+                        case=(case, input_requires_grad, target_requires_grad),
+                    )
+                    self.assertEqual(len(caught), 1)
+                    self.assertIs(caught[0].category, UserWarning)
+                    self.assertEqual(
+                        str(caught[0].message),
+                        self.broadcast_warning(input, target),
+                    )
+                    self.assertFalse(actual.requires_grad)
+                    self.assertTrue(actual.is_leaf)
+                    self.assertIsNone(input.grad)
+                    self.assertIsNone(target.grad)
 
     def test_requires_grad_operands_need_no_grad(self):
         for input_requires_grad, target_requires_grad in (
