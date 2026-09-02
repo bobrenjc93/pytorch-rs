@@ -22,6 +22,17 @@ FUNCTION_DOCS = {
     "is_available": "Returns a bool indicating if CUDA is currently available.",
     "device_count": "Returns the number of GPUs available.",
     "is_initialized": "Return whether PyTorch's CUDA state has been initialized.",
+    "memory_reserved": """Return the current GPU memory managed by the caching allocator in bytes for a given device.
+
+    Args:
+        device (torch.device or int, optional): selected device. Returns
+            statistic for the current device, given by :func:`~torch.cuda.current_device`,
+            if :attr:`device` is ``None`` (default).
+
+    .. note::
+        See :ref:`cuda-memory-management` for more details about GPU memory
+        management.
+    """,
 }
 
 
@@ -67,6 +78,7 @@ class CudaProbeTests(unittest.TestCase):
             (torch.cuda.is_available, False, bool),
             (torch.cuda.device_count, 0, int),
             (torch.cuda.is_initialized, False, bool),
+            (torch.cuda.memory_reserved, 0, int),
         )
         environments = (
             {},
@@ -95,6 +107,59 @@ class CudaProbeTests(unittest.TestCase):
         self.assertFalse(hasattr(torch.cuda, "_initialized"))
         self.assertFalse(hasattr(torch.cuda, "_cached_device_count"))
 
+    def test_memory_reserved_accepts_cpu_build_device_forms_without_parsing(self):
+        function = torch.cuda.memory_reserved
+
+        class ExplodingDevice:
+            def __getattribute__(self, name):
+                raise AssertionError(f"device attribute was read: {name}")
+
+            def __repr__(self):
+                raise AssertionError("device repr was read")
+
+            def __str__(self):
+                raise AssertionError("device str was read")
+
+        device_forms = (
+            ("omitted", (), {}),
+            ("none positional", (None,), {}),
+            ("none keyword", (), {"device": None}),
+            ("cuda string", ("cuda",), {}),
+            ("cuda index string", ("cuda:0",), {}),
+            ("cuda negative string", ("cuda:-1",), {}),
+            ("cpu string", ("cpu",), {}),
+            ("cpu index string", ("cpu:0",), {}),
+            ("empty string", ("",), {}),
+            ("unknown string", ("banana",), {}),
+            ("int zero", (0,), {}),
+            ("negative int", (-1,), {}),
+            ("large int", (sys.maxsize,), {}),
+            ("cpu device", (torch.device("cpu"),), {}),
+            ("indexed cpu device", (torch.device("cpu:0"),), {}),
+            ("object", (object(),), {}),
+            ("unreadable object", (ExplodingDevice(),), {}),
+        )
+        for label, args, kwargs in device_forms:
+            with self.subTest(label=label):
+                before = (
+                    torch.cuda.is_available(),
+                    torch.cuda.device_count(),
+                    torch.cuda.is_initialized(),
+                )
+                result = function(*args, **kwargs)
+                after = (
+                    torch.cuda.is_available(),
+                    torch.cuda.device_count(),
+                    torch.cuda.is_initialized(),
+                )
+
+                self.assertIs(type(result), int)
+                self.assertEqual(result, 0)
+                self.assertEqual(before, (False, 0, False))
+                self.assertEqual(after, before)
+                self.assertFalse(hasattr(torch.cuda, "_initialized"))
+                self.assertFalse(hasattr(torch.cuda, "_cached_device_count"))
+
     def test_signature_documentation_and_module_identity(self):
         cuda = importlib.import_module("torch_rs.cuda")
 
@@ -102,23 +167,36 @@ class CudaProbeTests(unittest.TestCase):
         self.assertIs(sys.modules["torch_rs.cuda"], cuda)
         self.assertEqual(inspect.cleandoc(cuda.__doc__), inspect.cleandoc(MODULE_DOC))
         cases = (
-            ("device_count", "() -> int", {"return": int}),
-            ("is_available", "() -> bool", {"return": bool}),
-            ("is_initialized", "()", {}),
+            ("device_count", "() -> int", {"return": int}, None),
+            ("is_available", "() -> bool", {"return": bool}, None),
+            ("is_initialized", "()", {}, None),
+            (
+                "memory_reserved",
+                "(device: 'Device' = None) -> int",
+                {"device": "Device", "return": int},
+                (None,),
+            ),
         )
-        for name, signature, annotations in cases:
+        for name, signature, annotations, defaults in cases:
             with self.subTest(name=name):
                 function = getattr(cuda, name)
                 self.assertIs(type(function), types.FunctionType)
                 self.assertEqual(str(inspect.signature(function)), signature)
                 self.assertEqual(function.__annotations__, annotations)
-                self.assertEqual(typing.get_type_hints(function), annotations)
+                if name == "memory_reserved":
+                    with self.assertRaises(NameError):
+                        typing.get_type_hints(function)
+                else:
+                    self.assertEqual(typing.get_type_hints(function), annotations)
                 self.assertEqual(function.__name__, name)
                 self.assertEqual(function.__qualname__, name)
                 self.assertEqual(function.__module__, "torch_rs.cuda")
                 self.assertIs(inspect.getmodule(function), cuda)
-                self.assertEqual(function.__doc__, FUNCTION_DOCS[name])
-                self.assertIsNone(function.__defaults__)
+                self.assertEqual(
+                    inspect.cleandoc(function.__doc__),
+                    inspect.cleandoc(FUNCTION_DOCS[name]),
+                )
+                self.assertEqual(function.__defaults__, defaults)
                 self.assertIsNone(function.__kwdefaults__)
                 self.assertEqual(function.__dict__, {})
                 self.assertFalse(hasattr(function, "__text_signature__"))
@@ -127,11 +205,12 @@ class CudaProbeTests(unittest.TestCase):
         cuda = torch.cuda
 
         self.assertEqual(
-            cuda.__all__, ["device_count", "is_available", "is_initialized"]
+            cuda.__all__,
+            ["device_count", "is_available", "is_initialized", "memory_reserved"],
         )
         self.assertEqual(
             {name for name in vars(cuda) if not name.startswith("_")},
-            {"device_count", "is_available", "is_initialized"},
+            {"device_count", "is_available", "is_initialized", "memory_reserved"},
         )
 
         package_import = {}
@@ -140,7 +219,7 @@ class CudaProbeTests(unittest.TestCase):
         top_level_wildcard = {}
         exec("from torch_rs import cuda", package_import)
         exec(
-            "from torch_rs.cuda import device_count, is_available, is_initialized",
+            "from torch_rs.cuda import device_count, is_available, is_initialized, memory_reserved",
             direct_import,
         )
         exec("from torch_rs.cuda import *", module_wildcard)
@@ -149,19 +228,28 @@ class CudaProbeTests(unittest.TestCase):
         self.assertIs(direct_import["device_count"], cuda.device_count)
         self.assertIs(direct_import["is_available"], cuda.is_available)
         self.assertIs(direct_import["is_initialized"], cuda.is_initialized)
+        self.assertIs(direct_import["memory_reserved"], cuda.memory_reserved)
         self.assertEqual(
             {name for name in module_wildcard if not name.startswith("__")},
-            {"device_count", "is_available", "is_initialized"},
+            {"device_count", "is_available", "is_initialized", "memory_reserved"},
         )
         self.assertIs(module_wildcard["device_count"], cuda.device_count)
         self.assertIs(module_wildcard["is_available"], cuda.is_available)
         self.assertIs(module_wildcard["is_initialized"], cuda.is_initialized)
+        self.assertIs(module_wildcard["memory_reserved"], cuda.memory_reserved)
         self.assertNotIn("cuda", torch.__all__)
         self.assertNotIn("is_initialized", torch.__all__)
+        self.assertNotIn("memory_reserved", torch.__all__)
         self.assertNotIn("cuda", top_level_wildcard)
         self.assertNotIn("is_initialized", top_level_wildcard)
+        self.assertNotIn("memory_reserved", top_level_wildcard)
 
-        for function in (cuda.device_count, cuda.is_available, cuda.is_initialized):
+        for function in (
+            cuda.device_count,
+            cuda.is_available,
+            cuda.is_initialized,
+            cuda.memory_reserved,
+        ):
             with self.subTest(function=function.__name__):
                 self.assertIs(copy.copy(function), function)
                 self.assertIs(copy.deepcopy(function), function)
@@ -176,6 +264,7 @@ class CudaProbeTests(unittest.TestCase):
         old_device_count = cuda.device_count
         old_is_available = cuda.is_available
         old_is_initialized = cuda.is_initialized
+        old_memory_reserved = cuda.memory_reserved
         namespace = cuda.__dict__
 
         reloaded = importlib.reload(cuda)
@@ -187,14 +276,17 @@ class CudaProbeTests(unittest.TestCase):
         self.assertIsNot(cuda.device_count, old_device_count)
         self.assertIsNot(cuda.is_available, old_is_available)
         self.assertIsNot(cuda.is_initialized, old_is_initialized)
+        self.assertIsNot(cuda.memory_reserved, old_memory_reserved)
         self.assertEqual(cuda.device_count(), 0)
         self.assertIs(cuda.is_available(), False)
         self.assertIs(cuda.is_initialized(), False)
+        self.assertEqual(cuda.memory_reserved(), 0)
 
         for function, old_function in (
             (cuda.device_count, old_device_count),
             (cuda.is_available, old_is_available),
             (cuda.is_initialized, old_is_initialized),
+            (cuda.memory_reserved, old_memory_reserved),
         ):
             with self.subTest(function=function.__name__):
                 self.assertIs(copy.copy(function), function)
@@ -259,6 +351,22 @@ class CudaProbeTests(unittest.TestCase):
                 lambda: torch.cuda.is_initialized(None, enabled=True),
                 "is_initialized() got an unexpected keyword argument 'enabled'",
             ),
+            (
+                lambda: torch.cuda.memory_reserved(None, None),
+                "memory_reserved() takes from 0 to 1 positional arguments but 2 were given",
+            ),
+            (
+                lambda: torch.cuda.memory_reserved(enabled=True),
+                "memory_reserved() got an unexpected keyword argument 'enabled'",
+            ),
+            (
+                lambda: torch.cuda.memory_reserved(None, enabled=True),
+                "memory_reserved() got an unexpected keyword argument 'enabled'",
+            ),
+            (
+                lambda: torch.cuda.memory_reserved(None, device=None),
+                "memory_reserved() got multiple values for argument 'device'",
+            ),
         )
         for call, message in cases:
             with self.subTest(message=message):
@@ -277,8 +385,22 @@ class CudaProbeTests(unittest.TestCase):
             "current_stream",
             "empty_cache",
             "init",
+            "mem_get_info",
+            "memory",
             "memory_allocated",
+            "memory_cached",
+            "memory_snapshot",
             "memory_stats",
+            "memory_stats_as_nested_dict",
+            "memory_summary",
+            "memory_usage",
+            "max_memory_allocated",
+            "max_memory_cached",
+            "max_memory_reserved",
+            "reset_accumulated_memory_stats",
+            "reset_max_memory_allocated",
+            "reset_max_memory_cached",
+            "reset_peak_memory_stats",
             "set_device",
             "stream",
             "synchronize",
@@ -317,6 +439,8 @@ class CudaProbeTests(unittest.TestCase):
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertIs(torch.cuda.is_initialized(), False)
+        self.assertEqual(torch.cuda.memory_reserved(), 0)
+        self.assertEqual(torch.cuda.memory_reserved("cuda:0"), 0)
         importlib.reload(torch.cuda)
 
         self.assertEqual(_backend_preferences(), expected)
@@ -346,19 +470,24 @@ os.environ.update(
 )
 import torch_rs as torch
 from torch_rs import cuda
-from torch_rs.cuda import device_count, is_available, is_initialized
+from torch_rs.cuda import device_count, is_available, is_initialized, memory_reserved
 
 assert torch.cuda is cuda
 assert cuda.device_count is device_count
 assert cuda.is_available is is_available
 assert cuda.is_initialized is is_initialized
-assert cuda.__all__ == ["device_count", "is_available", "is_initialized"]
+assert cuda.memory_reserved is memory_reserved
+assert cuda.__all__ == ["device_count", "is_available", "is_initialized", "memory_reserved"]
 assert device_count.__code__.co_names == ()
 assert is_available.__code__.co_names == ()
 assert is_initialized.__code__.co_names == ()
+assert memory_reserved.__code__.co_names == ()
 assert type(device_count()) is int and device_count() == 0
 assert is_available() is False
 assert is_initialized() is False
+assert type(memory_reserved()) is int and memory_reserved() == 0
+assert memory_reserved("cuda:0") == 0
+assert memory_reserved(object()) == 0
 assert not hasattr(cuda, "_initialized")
 assert not hasattr(cuda, "synchronize")
 assert not hasattr(cuda, "Stream")
