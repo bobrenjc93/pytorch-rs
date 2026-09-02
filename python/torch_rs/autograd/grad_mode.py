@@ -4,6 +4,7 @@ import copyreg as _copyreg
 
 from ..torch_rs import enable_grad as enable_grad
 from ..torch_rs import no_grad as no_grad
+from ..torch_rs import set_grad_enabled as set_grad_enabled
 
 
 def _legacy_rebuild_no_grad(context_type):
@@ -12,6 +13,10 @@ def _legacy_rebuild_no_grad(context_type):
 
 def _legacy_rebuild_enable_grad(context_type):
     return enable_grad.__new__(context_type)
+
+
+def _legacy_rebuild_set_grad_enabled(context_type, mode):
+    return set_grad_enabled.__new__(context_type, mode)
 
 
 def _grad_mode_state(context):
@@ -31,7 +36,7 @@ def _grad_mode_state(context):
     return instance_state
 
 
-def _grad_mode_newobj(context):
+def _grad_mode_newobj(context, default_newargs=()):
     context_type = type(context)
     getnewargs_ex = getattr(context, "__getnewargs_ex__", None)
     if getnewargs_ex is not None:
@@ -69,17 +74,17 @@ def _grad_mode_newobj(context):
             )
         return _copyreg.__newobj__, (context_type, *newargs)
 
-    return _copyreg.__newobj__, (context_type,)
+    return _copyreg.__newobj__, (context_type, *default_newargs)
 
 
-def _reduce_grad_mode(context, protocol, legacy_rebuild):
+def _reduce_grad_mode(context, protocol, legacy_rebuild, default_newargs=()):
     if protocol < 2:
         return (
             legacy_rebuild,
-            (type(context),),
+            (type(context), *default_newargs),
             _grad_mode_state(context),
         )
-    newobj, newargs = _grad_mode_newobj(context)
+    newobj, newargs = _grad_mode_newobj(context, default_newargs)
     return newobj, newargs, _grad_mode_state(context)
 
 
@@ -91,4 +96,13 @@ def _reduce_enable_grad(context, protocol):
     return _reduce_grad_mode(context, protocol, _legacy_rebuild_enable_grad)
 
 
-__all__ = ["no_grad", "enable_grad"]
+def _reduce_set_grad_enabled(context, protocol):
+    return _reduce_grad_mode(
+        context,
+        protocol,
+        _legacy_rebuild_set_grad_enabled,
+        (context.mode,),
+    )
+
+
+__all__ = ["no_grad", "enable_grad", "set_grad_enabled"]

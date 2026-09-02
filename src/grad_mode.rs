@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 thread_local! {
+    static CURRENT_GRAD_MODE: Cell<bool> = const { Cell::new(true) };
     static GRAD_MODE_STACK: RefCell<Vec<GradModeEntry>> = const { RefCell::new(Vec::new()) };
     static NEXT_GRAD_MODE_TOKEN: Cell<usize> = const { Cell::new(0) };
 }
@@ -12,7 +13,7 @@ pub(crate) struct GradModeToken(usize);
 
 struct GradModeEntry {
     token: GradModeToken,
-    enabled: bool,
+    previous_enabled: bool,
 }
 
 /// A thread-local guard which disables eager graph recording until dropped.
@@ -45,6 +46,21 @@ impl Drop for EnableGradGuard {
     }
 }
 
+/// A thread-local guard which sets eager graph recording until dropped.
+///
+/// The guard is intentionally confined to its creating thread. When dropped it
+/// restores the gradient mode that was effective before the guard was created.
+pub struct SetGradEnabledGuard {
+    token: GradModeToken,
+    _not_send: PhantomData<Rc<()>>,
+}
+
+impl Drop for SetGradEnabledGuard {
+    fn drop(&mut self) {
+        exit_grad_mode(self.token);
+    }
+}
+
 /// Disables eager graph recording on the current thread for the guard's
 /// lifetime.
 #[must_use]
@@ -67,10 +83,20 @@ pub fn enable_grad() -> EnableGradGuard {
     }
 }
 
+/// Sets eager graph recording on the current thread for the guard's lifetime.
+#[must_use]
+pub fn set_grad_enabled(enabled: bool) -> SetGradEnabledGuard {
+    let token = enter_set_grad_enabled(enabled);
+    SetGradEnabledGuard {
+        token,
+        _not_send: PhantomData,
+    }
+}
+
 /// Returns whether eager graph recording is enabled on the current thread.
 #[must_use]
 pub fn is_grad_enabled() -> bool {
-    GRAD_MODE_STACK.with_borrow(|stack| stack.last().is_none_or(|entry| entry.enabled))
+    CURRENT_GRAD_MODE.with(Cell::get)
 }
 
 pub(crate) fn enter_no_grad() -> GradModeToken {
@@ -81,14 +107,29 @@ pub(crate) fn enter_enable_grad() -> GradModeToken {
     enter_grad_mode(true)
 }
 
+pub(crate) fn enter_set_grad_enabled(enabled: bool) -> GradModeToken {
+    enter_grad_mode(enabled)
+}
+
 pub(crate) fn exit_grad_mode(token: GradModeToken) {
     GRAD_MODE_STACK.with_borrow_mut(|stack| {
         let position = stack
             .iter()
             .rposition(|entry| entry.token.0 == token.0)
             .expect("grad-mode guard exited without a matching entry");
-        stack.remove(position);
+        let removed = stack.remove(position);
+        if position == stack.len() {
+            CURRENT_GRAD_MODE.with(|current| current.set(removed.previous_enabled));
+        } else if let Some(next_entry) = stack.get_mut(position) {
+            next_entry.previous_enabled = removed.previous_enabled;
+        }
     });
+}
+
+pub(crate) fn set_grad_enabled_state(enabled: bool) -> bool {
+    let previous = is_grad_enabled();
+    CURRENT_GRAD_MODE.with(|current| current.set(enabled));
+    previous
 }
 
 fn enter_grad_mode(enabled: bool) -> GradModeToken {
@@ -101,6 +142,12 @@ fn enter_grad_mode(enabled: bool) -> GradModeToken {
         );
         GradModeToken(token)
     });
-    GRAD_MODE_STACK.with_borrow_mut(|stack| stack.push(GradModeEntry { token, enabled }));
+    let previous_enabled = set_grad_enabled_state(enabled);
+    GRAD_MODE_STACK.with_borrow_mut(|stack| {
+        stack.push(GradModeEntry {
+            token,
+            previous_enabled,
+        });
+    });
     token
 }

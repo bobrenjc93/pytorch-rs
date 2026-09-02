@@ -170,8 +170,12 @@ class NoGradNamespaceTests(unittest.TestCase):
         grad_mode = importlib.import_module("torch_rs.autograd.grad_mode")
         from torch_rs.autograd import enable_grad as autograd_enable_grad
         from torch_rs.autograd import no_grad as autograd_no_grad
+        from torch_rs.autograd import set_grad_enabled as autograd_set_grad_enabled
         from torch_rs.autograd.grad_mode import enable_grad as grad_mode_enable_grad
         from torch_rs.autograd.grad_mode import no_grad as grad_mode_no_grad
+        from torch_rs.autograd.grad_mode import (
+            set_grad_enabled as grad_mode_set_grad_enabled,
+        )
 
         self.assertIs(torch.autograd, autograd)
         self.assertIs(autograd.grad_mode, grad_mode)
@@ -183,15 +187,22 @@ class NoGradNamespaceTests(unittest.TestCase):
         self.assertIs(torch.enable_grad, grad_mode.enable_grad)
         self.assertIs(torch.enable_grad, autograd_enable_grad)
         self.assertIs(torch.enable_grad, grad_mode_enable_grad)
+        self.assertIs(torch.set_grad_enabled, autograd.set_grad_enabled)
+        self.assertIs(torch.set_grad_enabled, grad_mode.set_grad_enabled)
+        self.assertIs(torch.set_grad_enabled, autograd_set_grad_enabled)
+        self.assertIs(torch.set_grad_enabled, grad_mode_set_grad_enabled)
         self.assertEqual(
-            autograd.__all__, ["backward", "grad_mode", "enable_grad", "no_grad"]
+            autograd.__all__,
+            ["backward", "grad_mode", "enable_grad", "no_grad", "set_grad_enabled"],
         )
-        self.assertEqual(grad_mode.__all__, ["no_grad", "enable_grad"])
+        self.assertEqual(
+            grad_mode.__all__, ["no_grad", "enable_grad", "set_grad_enabled"]
+        )
         self.assertEqual(torch.__all__.count("enable_grad"), 1)
+        self.assertEqual(torch.__all__.count("set_grad_enabled"), 1)
         self.assertNotIn("autograd", torch.__all__)
 
         for unsupported in (
-            "set_grad_enabled",
             "inference_mode",
             "set_anomaly_enabled",
         ):
@@ -199,7 +210,6 @@ class NoGradNamespaceTests(unittest.TestCase):
                 self.assertFalse(hasattr(torch, unsupported))
         for module in (autograd, grad_mode):
             for unsupported in (
-                "set_grad_enabled",
                 "inference_mode",
                 "grad",
                 "anomaly_mode",
@@ -213,11 +223,13 @@ class NoGradNamespaceTests(unittest.TestCase):
 
     def test_metadata_copy_and_pickle_resolve_through_grad_mode(self):
         grad_mode = torch.autograd.grad_mode
-        for context_type, enabled_inside_disabled in (
-            (torch.no_grad, False),
-            (torch.enable_grad, True),
+        for context_type, args, enabled_inside_disabled in (
+            (torch.no_grad, (), False),
+            (torch.enable_grad, (), True),
+            (torch.set_grad_enabled, (False,), False),
+            (torch.set_grad_enabled, (True,), True),
         ):
-            with self.subTest(context=context_type.__name__):
+            with self.subTest(context=context_type.__name__, args=args):
                 self.assertEqual(context_type.__name__, context_type.__qualname__)
                 self.assertEqual(
                     context_type.__module__, "torch_rs.autograd.grad_mode"
@@ -226,10 +238,14 @@ class NoGradNamespaceTests(unittest.TestCase):
                 self.assertIs(copy.copy(context_type), context_type)
                 self.assertIs(copy.deepcopy(context_type), context_type)
 
-                instance = context_type()
+                instance = context_type(*args)
+                if context_type is torch.set_grad_enabled:
+                    instance.__exit__(None, None, None)
                 for operation in (copy.copy, copy.deepcopy):
                     with self.subTest(
-                        context=context_type.__name__, operation=operation.__name__
+                        context=context_type.__name__,
+                        args=args,
+                        operation=operation.__name__,
                     ):
                         restored = operation(instance)
                         self.assertIsNot(restored, instance)
@@ -246,6 +262,7 @@ class NoGradNamespaceTests(unittest.TestCase):
                 for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
                     with self.subTest(
                         context=context_type.__name__,
+                        args=args,
                         protocol=protocol,
                         value="class",
                     ):
@@ -255,6 +272,7 @@ class NoGradNamespaceTests(unittest.TestCase):
 
                     with self.subTest(
                         context=context_type.__name__,
+                        args=args,
                         protocol=protocol,
                         value="instance",
                     ):
@@ -278,6 +296,7 @@ class NoGradNamespaceTests(unittest.TestCase):
         self.assertIs(torch.autograd.grad_mode, grad_mode)
         self.assertIs(torch.enable_grad, grad_mode.enable_grad)
         self.assertIs(torch.no_grad, grad_mode.no_grad)
+        self.assertIs(torch.set_grad_enabled, grad_mode.set_grad_enabled)
         self.assertEqual(torch.autograd.__all__, old_autograd_exports)
         self.assertEqual(grad_mode.__all__, old_grad_mode_exports)
 
@@ -389,9 +408,18 @@ class NoGradNamespaceTests(unittest.TestCase):
     def test_aliases_preserve_context_decorator_generator_and_thread_behavior(self):
         autograd_enable_grad = torch.autograd.enable_grad
         autograd_no_grad = torch.autograd.no_grad
+        autograd_set_grad_enabled = torch.autograd.set_grad_enabled
         grad_mode_enable_grad = torch.autograd.grad_mode.enable_grad
         grad_mode_no_grad = torch.autograd.grad_mode.no_grad
+        grad_mode_set_grad_enabled = torch.autograd.grad_mode.set_grad_enabled
         value = torch.tensor([2.0], requires_grad=True)
+
+        disabled = autograd_set_grad_enabled(False)
+        try:
+            self.assertFalse((value * value).requires_grad)
+        finally:
+            disabled.__exit__(None, None, None)
+        self.assertTrue((value * value).requires_grad)
 
         with autograd_no_grad():
             self.assertFalse((value * value).requires_grad)
@@ -405,6 +433,10 @@ class NoGradNamespaceTests(unittest.TestCase):
                 self.assertTrue((value * value).requires_grad)
             with grad_mode_no_grad():
                 self.assertFalse((value * value).requires_grad)
+            with grad_mode_set_grad_enabled(True):
+                self.assertTrue((value * value).requires_grad)
+            with autograd_set_grad_enabled(False):
+                self.assertFalse((value * value).requires_grad)
             self.assertFalse((value * value).requires_grad)
         self.assertTrue((value * value).requires_grad)
 
@@ -416,14 +448,24 @@ class NoGradNamespaceTests(unittest.TestCase):
         def enabled_decorated():
             return (value * value).requires_grad
 
+        @autograd_set_grad_enabled(False)
+        def set_disabled_decorated():
+            return (value * value).requires_grad
+
+        @grad_mode_set_grad_enabled(True)
+        def set_enabled_decorated():
+            return (value * value).requires_grad
+
         @grad_mode_enable_grad()
         def generate():
             request = yield (value * value).requires_grad
             yield request, (value * value).requires_grad
 
         self.assertFalse(decorated())
+        self.assertFalse(set_disabled_decorated())
         with torch.no_grad():
             self.assertTrue(enabled_decorated())
+            self.assertTrue(set_enabled_decorated())
             self.assertFalse(torch.is_grad_enabled())
             generator = generate()
             self.assertTrue(next(generator))
@@ -441,6 +483,9 @@ class NoGradNamespaceTests(unittest.TestCase):
                 worker_states.append(torch.is_grad_enabled())
                 with grad_mode_enable_grad():
                     worker_states.append(torch.is_grad_enabled())
+                    with grad_mode_set_grad_enabled(False):
+                        worker_states.append(torch.is_grad_enabled())
+                    worker_states.append(torch.is_grad_enabled())
                 worker_states.append(torch.is_grad_enabled())
             worker_states.append(torch.is_grad_enabled())
 
@@ -450,7 +495,7 @@ class NoGradNamespaceTests(unittest.TestCase):
             thread.join()
             self.assertFalse(torch.is_grad_enabled())
 
-        self.assertEqual(worker_states, [True, False, True, False, True])
+        self.assertEqual(worker_states, [True, False, True, False, True, False, True])
         self.assertTrue(torch.is_grad_enabled())
 
 
@@ -463,9 +508,15 @@ class NoGradNamespaceReferenceTests(unittest.TestCase):
                 "no-grad namespace differentials require pinned PyTorch 2.13.0"
             )
 
-    def contract(self, module, context_name):
+    def inactive_context_instance(self, context_type, args):
+        instance = context_type(*args)
+        if context_type.__name__ == "set_grad_enabled":
+            instance.__exit__(None, None, None)
+        return instance
+
+    def contract(self, module, context_name, args=()):
         context_type = getattr(module, context_name)
-        instance = context_type()
+        instance = self.inactive_context_instance(context_type, args)
         module_prefix = module.__name__
         return {
             "aliases": (
@@ -597,11 +648,16 @@ class NoGradNamespaceReferenceTests(unittest.TestCase):
         }
 
     def test_namespace_metadata_copy_and_pickle_match_pytorch_2_13(self):
-        for context_name in ("enable_grad", "no_grad"):
-            with self.subTest(context=context_name):
+        for context_name, args in (
+            ("enable_grad", ()),
+            ("no_grad", ()),
+            ("set_grad_enabled", (False,)),
+            ("set_grad_enabled", (True,)),
+        ):
+            with self.subTest(context=context_name, args=args):
                 self.assertEqual(
-                    self.contract(torch, context_name),
-                    self.contract(reference_torch, context_name),
+                    self.contract(torch, context_name, args),
+                    self.contract(reference_torch, context_name, args),
                 )
 
     def test_instance_and_subclass_state_match_pytorch_2_13(self):
