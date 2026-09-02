@@ -1809,6 +1809,10 @@ pub(crate) fn empty_variable_function(
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     let arguments = bind_creation_arguments("empty", args, kwargs)?;
+    if let Some(result) = dispatch_empty_torch_function_mode(py, args, kwargs, &arguments)? {
+        return Ok(result);
+    }
+
     let (size, dtype, device, requires_grad) = parse_creation_arguments("empty", arguments)?;
     let ParsedCreationSize {
         dimensions,
@@ -1819,6 +1823,57 @@ pub(crate) fn empty_variable_function(
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| creation_factory_error(&error, &shape, scalar_dimension))?;
     Ok(Py::new(py, tensor)?.into_any())
+}
+
+fn dispatch_empty_torch_function_mode(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+    arguments: &CreationCallArguments<'_>,
+) -> PyResult<Option<Py<PyAny>>> {
+    if torch_function_mode_stack::is_empty() {
+        return Ok(None);
+    }
+
+    if !validate_empty_torch_function_mode_arguments(arguments)? {
+        return Ok(None);
+    }
+
+    let function = variable_function(py, "empty")?;
+    let types = PyTuple::empty(py);
+    let active_mode = torch_function_mode_stack::pop();
+    let Some(mode) = active_mode.get() else {
+        return Ok(None);
+    };
+    validate_torch_function_mode_handler(mode.bind(py))?;
+    let handler = mode.bind(py).getattr("__torch_function__")?;
+    let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+    if !is_not_implemented(py, &result) {
+        return Ok(Some(result));
+    }
+    Err(torch_function_dispatch_error(
+        py,
+        "torch.empty",
+        Some(mode),
+        None,
+    )?)
+}
+
+fn validate_empty_torch_function_mode_arguments(
+    arguments: &CreationCallArguments<'_>,
+) -> PyResult<bool> {
+    validate_creation_size_for_torch_function_mode(
+        "empty",
+        arguments.size.as_ref(),
+        arguments.shape.as_ref(),
+    )?;
+    validate_creation_out("empty", arguments.out.as_ref())?;
+    parse_dtype("empty", arguments.dtype.as_ref())?;
+    parse_factory_layout("empty", arguments.layout.as_ref())?;
+    validate_device_argument_type("empty", arguments.device.as_ref())?;
+    parse_factory_bool("empty", "pin_memory", arguments.pin_memory.as_ref())?;
+    parse_factory_requires_grad("empty", arguments.requires_grad.as_ref())?;
+    Ok(arguments.keyword_error.is_none())
 }
 
 pub(crate) fn full_like_variable_function(
@@ -10036,7 +10091,7 @@ fn parse_creation_size<'py>(
         }
     };
 
-    let sequence_error = match parse_creation_sequence_dimensions(function, value) {
+    let sequence_error = match parse_creation_sequence_dimensions(function, origin, value) {
         Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
         Err(error) => error,
     };
@@ -10047,17 +10102,135 @@ fn parse_creation_size<'py>(
     bind_creation_positional_dimension(function, value, sequence_error)
 }
 
+fn validate_creation_size_for_torch_function_mode(
+    function: &str,
+    size: Option<&CreationSizeArgument<'_>>,
+    shape: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    let (value, origin) = match (size, shape) {
+        (Some(_), Some(_)) => {
+            return Err(PyTypeError::new_err(format!(
+                "{function}() received both 'size' and its compatibility alias 'shape'"
+            )));
+        }
+        (Some(CreationSizeArgument::Variadic(_)), None) => return Ok(()),
+        (Some(CreationSizeArgument::Single { value, origin }), None) => (value, *origin),
+        (None, Some(value)) => (value, CreationSizeOrigin::ShapeKeyword),
+        (None, None) => {
+            return Err(PyTypeError::new_err(format!(
+                "{function}() missing 1 required positional arguments: \"size\""
+            )));
+        }
+    };
+
+    validate_single_creation_size_for_torch_function_mode(function, origin, value)
+}
+
+fn validate_single_creation_size_for_torch_function_mode(
+    function: &str,
+    origin: CreationSizeOrigin,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    if let Ok(dimensions) = value.extract::<Vec<Bound<'_, PyAny>>>() {
+        if let Some(dimension) = dimensions.first() {
+            validate_first_sequence_creation_dimension(function, origin, value, dimension)?;
+        }
+        return Ok(());
+    }
+
+    if origin != CreationSizeOrigin::Positional {
+        return Err(creation_size_keyword_type_error(function, value)?);
+    }
+    if dimension_is_accepted_creation_integer(value) {
+        return Ok(());
+    }
+    Err(creation_dimension_type_error(function, value)?)
+}
+
+fn validate_first_sequence_creation_dimension(
+    function: &str,
+    origin: CreationSizeOrigin,
+    sequence: &Bound<'_, PyAny>,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    if dimension_is_accepted_creation_integer(dimension) {
+        return Ok(());
+    }
+    Err(creation_sequence_first_dimension_type_error(
+        function, origin, sequence, dimension,
+    )?)
+}
+
+fn dimension_is_accepted_creation_integer(dimension: &Bound<'_, PyAny>) -> bool {
+    if dimension.is_instance_of::<PyBool>() {
+        return false;
+    }
+    if dimension.is_instance_of::<PyInt>() {
+        return true;
+    }
+    let indexed = PyModule::import(dimension.py(), "operator")
+        .and_then(|operator| operator.getattr("index"))
+        .and_then(|index| index.call1((dimension,)));
+    indexed.is_ok()
+}
+
 fn parse_creation_sequence_dimensions<'py>(
     function: &str,
+    origin: CreationSizeOrigin,
     value: &Bound<'py, PyAny>,
 ) -> PyResult<Vec<usize>> {
-    let dimensions = value.extract::<Vec<Bound<'py, PyAny>>>()?;
+    let dimensions = match value.extract::<Vec<Bound<'py, PyAny>>>() {
+        Ok(dimensions) => dimensions,
+        Err(error) => {
+            if origin != CreationSizeOrigin::Positional {
+                return Err(creation_size_keyword_type_error(function, value)?);
+            }
+            return Err(error);
+        }
+    };
     let mut signed = try_size_vector(dimensions.len())?;
     for (index, dimension) in dimensions.into_iter().enumerate() {
-        let dimension = extract_variadic_creation_dimension(function, index + 1, &dimension)?;
+        let position = index + 1;
+        let dimension =
+            extract_sequence_creation_dimension(function, origin, value, position, &dimension)?;
         try_push_size(&mut signed, dimension)?;
     }
     finish_signed_creation_dimensions(function, signed)
+}
+
+fn extract_sequence_creation_dimension(
+    function: &str,
+    origin: CreationSizeOrigin,
+    sequence: &Bound<'_, PyAny>,
+    position: usize,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<i64> {
+    if position != 1 {
+        return extract_variadic_creation_dimension(function, position, dimension);
+    }
+
+    if dimension.is_instance_of::<PyBool>() {
+        return Err(creation_sequence_first_dimension_type_error(
+            function, origin, sequence, dimension,
+        )?);
+    }
+
+    let indexed = if dimension.is_instance_of::<PyInt>() {
+        dimension.clone()
+    } else {
+        let indexed = PyModule::import(dimension.py(), "operator")
+            .and_then(|operator| operator.getattr("index"))
+            .and_then(|index| index.call1((dimension,)));
+        let Ok(indexed) = indexed else {
+            return Err(creation_sequence_first_dimension_type_error(
+                function, origin, sequence, dimension,
+            )?);
+        };
+        indexed
+    };
+    indexed
+        .extract::<i64>()
+        .map_err(|_| creation_dimension_overflow_at(function, position))
 }
 
 fn bind_creation_positional_dimension<'py>(
@@ -10197,6 +10370,25 @@ fn creation_sequence_dimension_type_error(
     let type_name = python_type_name(dimension)?;
     Ok(PyTypeError::new_err(format!(
         "{function}(): argument 'size' (position 1) must be tuple of ints, but found element of type {type_name} at pos 0"
+    )))
+}
+
+fn creation_sequence_first_dimension_type_error(
+    function: &str,
+    origin: CreationSizeOrigin,
+    sequence: &Bound<'_, PyAny>,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    if origin == CreationSizeOrigin::Positional {
+        return creation_sequence_dimension_type_error(function, dimension);
+    }
+    creation_size_keyword_type_error(function, sequence)
+}
+
+fn creation_size_keyword_type_error(function: &str, size: &Bound<'_, PyAny>) -> PyResult<PyErr> {
+    let type_name = python_type_name(size)?;
+    Ok(PyTypeError::new_err(format!(
+        "{function}(): argument 'size' must be tuple of ints, not {type_name}"
     )))
 }
 

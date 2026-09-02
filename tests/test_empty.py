@@ -71,6 +71,16 @@ class EmptyTests(unittest.TestCase):
             ("tuple", lambda options: torch.empty((2, 3), **options), (2, 3)),
             ("list", lambda options: torch.empty([2, 3], **options), (2, 3)),
             (
+                "tuple non-leading bool dimension",
+                lambda options: torch.empty((2, True), **options),
+                (2, 1),
+            ),
+            (
+                "list non-leading bool dimension",
+                lambda options: torch.empty([2, False], **options),
+                (2, 0),
+            ),
+            (
                 "integer protocol sequence",
                 lambda options: torch.empty(
                     [IndexDimension(2), np.int64(3), IntSubclass(1)], **options
@@ -217,6 +227,7 @@ class EmptyTests(unittest.TestCase):
                 self.assert_empty_metadata(tensor, expected_shape)
 
         self.assert_empty_metadata(torch.empty(size=(2,)), (2,))
+        self.assert_empty_metadata(torch.empty(size=(2, True)), (2, 1))
         self.assert_empty_metadata(torch.empty(size=np.array([2])), (2,))
 
         stateful = StatefulIndexDimension((2, 3, 4))
@@ -224,7 +235,10 @@ class EmptyTests(unittest.TestCase):
         self.assertEqual(stateful_tensor.shape, (4, 3))
         self.assertEqual(stateful.calls, 3)
 
-        with self.assertRaises(TypeError):
+        with self.assertRaisesRegex(
+            TypeError,
+            re.escape("empty(): argument 'size' must be tuple of ints, not int"),
+        ):
             torch.empty(size=2)
         with self.assertRaisesRegex(
             TypeError,
@@ -331,6 +345,40 @@ class EmptyTests(unittest.TestCase):
 
         sequence_failures = (
             (
+                lambda: torch.empty((True, 2)),
+                TypeError,
+                re.escape(
+                    "empty(): argument 'size' (position 1) must be tuple of ints, "
+                    "but found element of type bool at pos 0"
+                ),
+            ),
+            (
+                lambda: torch.empty([True, 2]),
+                TypeError,
+                re.escape(
+                    "empty(): argument 'size' (position 1) must be tuple of ints, "
+                    "but found element of type bool at pos 0"
+                ),
+            ),
+            (
+                lambda: torch.empty((np.bool_(True), 2)),
+                TypeError,
+                re.escape(
+                    "empty(): argument 'size' (position 1) must be tuple of ints, "
+                    "but found element of type numpy.bool at pos 0"
+                ),
+            ),
+            (
+                lambda: torch.empty(size=(True,)),
+                TypeError,
+                re.escape("empty(): argument 'size' must be tuple of ints, not tuple"),
+            ),
+            (
+                lambda: torch.empty(size=[True]),
+                TypeError,
+                re.escape("empty(): argument 'size' must be tuple of ints, not list"),
+            ),
+            (
                 lambda: torch.empty((-1,)),
                 RuntimeError,
                 re.escape("Trying to create tensor with negative dimension -1: [-1]"),
@@ -381,6 +429,210 @@ class EmptyTests(unittest.TestCase):
             ),
         ):
             torch.empty(sys.maxsize, 2)
+
+    def test_torch_function_mode_intercepts_before_native_validation(self):
+        marker = object()
+        negative_size = [-1]
+        overflow_size = [2**63, 0]
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                        tuple(torch.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                return marker
+
+        cases = (
+            (lambda: torch.empty(2), (2,), None),
+            (lambda: torch.empty(negative_size), (negative_size,), None),
+            (lambda: torch.empty(overflow_size), (overflow_size,), None),
+            (lambda: torch.empty(2, device="cuda"), (2,), {"device": "cuda"}),
+            (lambda: torch.empty(2, pin_memory=True), (2,), {"pin_memory": True}),
+            (
+                lambda: torch.empty(2, requires_grad=True),
+                (2,),
+                {"requires_grad": True},
+            ),
+        )
+        for call, expected_args, expected_kwargs in cases:
+            mode = RecordingMode()
+            with self.subTest(args=expected_args, kwargs=expected_kwargs):
+                with mode:
+                    self.assertIs(call(), marker)
+                    self.assertEqual(
+                        torch.overrides._get_current_function_mode_stack(), [mode]
+                    )
+                self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+                self.assertEqual(len(mode.calls), 1)
+                function, dispatch_types, args, kwargs, handler_stack = mode.calls[0]
+                self.assertIs(function, torch.empty)
+                self.assertEqual(dispatch_types, ())
+                self.assertEqual(args, expected_args)
+                self.assertEqual(kwargs, expected_kwargs)
+                self.assertEqual(handler_stack, ())
+
+    def test_torch_function_mode_does_not_intercept_binding_type_errors(self):
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return object()
+
+        cases = (
+            (
+                lambda: torch.empty([True, 2]),
+                TypeError,
+                re.escape(
+                    "empty(): argument 'size' (position 1) must be tuple of ints, "
+                    "but found element of type bool at pos 0"
+                ),
+            ),
+            (
+                lambda: torch.empty(size=(True,)),
+                TypeError,
+                re.escape("empty(): argument 'size' must be tuple of ints, not tuple"),
+            ),
+            (
+                lambda: torch.empty(size=2),
+                TypeError,
+                re.escape("empty(): argument 'size' must be tuple of ints, not int"),
+            ),
+            (
+                lambda: torch.empty(1.2),
+                TypeError,
+                re.escape(
+                    "empty(): argument 'size' (position 1) must be tuple of ints, "
+                    "not float"
+                ),
+            ),
+            (
+                lambda: torch.empty(2, dtype=object()),
+                TypeError,
+                re.escape("empty(): argument 'dtype' must be torch.dtype, not object"),
+            ),
+            (
+                lambda: torch.empty(2, requires_grad=1),
+                TypeError,
+                re.escape("empty(): argument 'requires_grad' must be bool, not int"),
+            ),
+        )
+        for call, error_type, message in cases:
+            mode = RecordingMode()
+            with self.subTest(call=call):
+                with mode:
+                    with self.assertRaisesRegex(error_type, message):
+                        call()
+                    self.assertEqual(
+                        torch.overrides._get_current_function_mode_stack(), [mode]
+                    )
+                self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+                self.assertEqual(mode.calls, [])
+
+    def test_torch_function_mode_forwards_and_restores_the_stack(self):
+        events = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append(
+                    (
+                        self.label,
+                        tuple(
+                            mode.label
+                            for mode in torch.overrides._get_current_function_mode_stack()
+                        ),
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                result = torch.empty(2, True)
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(), [lower, upper]
+                )
+            self.assertEqual(torch.overrides._get_current_function_mode_stack(), [lower])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+        self.assert_empty_metadata(result, (2, 1))
+        self.assertEqual(
+            [
+                (label, stack, function is torch.empty, types, args, kwargs)
+                for label, stack, function, types, args, kwargs in events
+            ],
+            [
+                ("upper", ("lower",), True, (), (2, True), None),
+                ("lower", (), True, (), (2, True), {}),
+            ],
+        )
+
+        expected = ValueError("handler failed")
+
+        class RaisingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                raise expected
+
+        raising = RaisingMode()
+        with lower:
+            with raising:
+                with self.assertRaises(ValueError) as raised:
+                    torch.empty(2)
+                self.assertIs(raised.exception, expected)
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(), [lower, raising]
+                )
+            self.assertEqual(torch.overrides._get_current_function_mode_stack(), [lower])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+        forwarding = ForwardingMode("native-error")
+        with forwarding:
+            with self.assertRaisesRegex(
+                TypeError,
+                re.escape(
+                    "empty(): argument 'size' (position 1) must be tuple of ints, "
+                    "but found element of type bool at pos 0"
+                ),
+            ):
+                torch.empty([True, 2])
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [forwarding]
+            )
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        declining = DecliningMode()
+        with declining:
+            with self.assertRaisesRegex(
+                TypeError,
+                r"^Multiple dispatch failed for 'torch\.empty'; all "
+                r"__torch_function__ handlers returned NotImplemented:",
+            ):
+                torch.empty(2)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [declining]
+            )
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
 
     def test_out_pinned_layout_dtype_device_and_memory_format_boundaries(self):
         with self.assertRaisesRegex(
