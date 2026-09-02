@@ -1624,8 +1624,17 @@ pub(crate) fn as_tensor_variable_function(
                 Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
             );
         }
+        if let Some((flattened, shape)) = as_tensor_float_sequence(&data.value)? {
+            return Ok(Py::new(
+                py,
+                CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
+                    .map(PyTensor::new)
+                    .map_err(|error| tensor_error(&error))?,
+            )?
+            .into_any());
+        }
         return Err(PyNotImplementedError::new_err(
-            "as_tensor(): only exact native CPU float32 Tensor inputs or Python float scalars are supported; Python sequences, NumPy arrays, and non-float scalar conversions are not implemented",
+            "as_tensor(): only exact native CPU float32 Tensor inputs, Python float scalars, or exact list/tuple sequences of Python floats are supported; NumPy arrays/scalars, integer and boolean inference, and other conversions are not implemented",
         ));
     }
     Ok(data.value.unbind())
@@ -6813,6 +6822,59 @@ fn extract_exact_python_float_scalar(value: &Bound<'_, PyAny>) -> PyResult<Optio
     #[allow(clippy::cast_possible_truncation)]
     let value = value.extract::<f64>()? as f32;
     Ok(Some(value))
+}
+
+fn as_tensor_float_sequence(value: &Bound<'_, PyAny>) -> PyResult<Option<(Vec<f32>, Vec<usize>)>> {
+    if !is_exact_list_or_tuple(value) {
+        return Ok(None);
+    }
+
+    let mut flattened = Vec::new();
+    let Some(shape) = flatten_as_tensor_float_sequence(value, &mut flattened)? else {
+        return Ok(None);
+    };
+    Ok(Some((flattened, shape)))
+}
+
+fn flatten_as_tensor_float_sequence(
+    value: &Bound<'_, PyAny>,
+    output: &mut Vec<f32>,
+) -> PyResult<Option<Vec<usize>>> {
+    if let Some(scalar) = extract_exact_python_float_scalar(value)? {
+        output.push(scalar);
+        return Ok(Some(Vec::new()));
+    }
+
+    if !is_exact_list_or_tuple(value) {
+        return Ok(None);
+    }
+    let length = value.len()?;
+    if length == 0 {
+        return Ok(Some(vec![0]));
+    }
+
+    let Some(first_shape) = flatten_as_tensor_float_sequence(&value.get_item(0)?, output)? else {
+        return Ok(None);
+    };
+    for index in 1..length {
+        let Some(shape) = flatten_as_tensor_float_sequence(&value.get_item(index)?, output)? else {
+            return Ok(None);
+        };
+        if shape != first_shape {
+            return Err(PyValueError::new_err(
+                "expected a rectangular sequence, but nested shapes differ",
+            ));
+        }
+    }
+
+    let mut shape = Vec::with_capacity(first_shape.len() + 1);
+    shape.push(length);
+    shape.extend(first_shape);
+    Ok(Some(shape))
+}
+
+fn is_exact_list_or_tuple(value: &Bound<'_, PyAny>) -> bool {
+    value.is_exact_instance_of::<PyList>() || value.is_exact_instance_of::<PyTuple>()
 }
 
 fn rank_zero_scalar_tensor(
