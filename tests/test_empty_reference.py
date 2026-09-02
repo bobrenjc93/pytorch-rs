@@ -341,6 +341,50 @@ class EmptyReferenceTests(unittest.TestCase):
                 self.assertIn("Overflow when unpacking long long", actual_message)
                 self.assertIn("Overflow when unpacking long long", expected_message)
 
+        sequence_exact_factories = (
+            lambda: (-1,),
+            lambda: [-1],
+            lambda: (2, -1),
+            lambda: [2, -1],
+            lambda: (2, IndexDimension(-1)),
+            lambda: [2, IndexDimension(-1)],
+        )
+        for size_factory in sequence_exact_factories:
+            actual_size = size_factory()
+            expected_size = size_factory()
+            with self.subTest(size=actual_size):
+                actual_type, actual_message = self.capture_error(
+                    lambda size=actual_size: torch.empty(size)
+                )
+                expected_type, expected_message = self.capture_error(
+                    lambda size=expected_size: reference_torch.empty(size)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(actual_message, expected_message)
+
+        sequence_overflow_cases = (
+            (lambda: (2**63, 0), 1),
+            (lambda: [2**63, 0], 1),
+            (lambda: (2, np.uint64(2**63)), 2),
+            (lambda: [2, IndexDimension(2**63)], 2),
+        )
+        for size_factory, position in sequence_overflow_cases:
+            actual_size = size_factory()
+            expected_size = size_factory()
+            with self.subTest(size=actual_size):
+                actual_type, actual_message = self.capture_error(
+                    lambda size=actual_size: torch.empty(size)
+                )
+                expected_type, expected_message = self.capture_error(
+                    lambda size=expected_size: reference_torch.empty(size)
+                )
+                self.assertIs(actual_type, expected_type)
+                marker = f"failed to unpack the object at pos {position} with error"
+                self.assertIn(marker, actual_message)
+                self.assertIn(marker, expected_message)
+                self.assertIn("Overflow when unpacking long long", actual_message)
+                self.assertIn("Overflow when unpacking long long", expected_message)
+
     def test_unsupported_dtype_device_layout_pin_memory_and_memory_format_boundaries(
         self,
     ):

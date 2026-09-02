@@ -329,6 +329,43 @@ class EmptyTests(unittest.TestCase):
                 with self.assertRaisesRegex(error_type, message):
                     call()
 
+        sequence_failures = (
+            (
+                lambda: torch.empty((-1,)),
+                RuntimeError,
+                re.escape("Trying to create tensor with negative dimension -1: [-1]"),
+            ),
+            (
+                lambda: torch.empty([2, -1]),
+                RuntimeError,
+                re.escape("Trying to create tensor with negative dimension -1: [2, -1]"),
+            ),
+            (
+                lambda: torch.empty((2, IndexDimension(-1))),
+                RuntimeError,
+                re.escape("Trying to create tensor with negative dimension -1: [2, -1]"),
+            ),
+            (
+                lambda: torch.empty((2**63, 0)),
+                TypeError,
+                r"pos 1.*Overflow when unpacking long long",
+            ),
+            (
+                lambda: torch.empty([2**63, 0]),
+                TypeError,
+                r"pos 1.*Overflow when unpacking long long",
+            ),
+            (
+                lambda: torch.empty([2, np.uint64(2**63)]),
+                TypeError,
+                r"pos 2.*Overflow when unpacking long long",
+            ),
+        )
+        for call, error_type, message in sequence_failures:
+            with self.subTest(call=call):
+                with self.assertRaisesRegex(error_type, message):
+                    call()
+
         with self.assertRaisesRegex(
             RuntimeError,
             re.escape(

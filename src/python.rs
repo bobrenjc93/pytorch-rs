@@ -10036,7 +10036,7 @@ fn parse_creation_size<'py>(
         }
     };
 
-    let sequence_error = match value.extract::<Vec<usize>>() {
+    let sequence_error = match parse_creation_sequence_dimensions(function, value) {
         Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
         Err(error) => error,
     };
@@ -10045,6 +10045,19 @@ fn parse_creation_size<'py>(
     }
 
     bind_creation_positional_dimension(function, value, sequence_error)
+}
+
+fn parse_creation_sequence_dimensions<'py>(
+    function: &str,
+    value: &Bound<'py, PyAny>,
+) -> PyResult<Vec<usize>> {
+    let dimensions = value.extract::<Vec<Bound<'py, PyAny>>>()?;
+    let mut signed = try_size_vector(dimensions.len())?;
+    for (index, dimension) in dimensions.into_iter().enumerate() {
+        let dimension = extract_variadic_creation_dimension(function, index + 1, &dimension)?;
+        try_push_size(&mut signed, dimension)?;
+    }
+    finish_signed_creation_dimensions(function, signed)
 }
 
 fn bind_creation_positional_dimension<'py>(
@@ -10115,18 +10128,23 @@ fn parse_variadic_creation_dimensions(
     function: &str,
     dimensions: &Bound<'_, PyTuple>,
 ) -> PyResult<Vec<usize>> {
-    let mut parsed = try_size_vector(dimensions.len())?;
     let mut signed = try_size_vector(dimensions.len())?;
     for (index, dimension) in dimensions.iter().enumerate() {
         let position = index + 1;
         let dimension = extract_variadic_creation_dimension(function, position, &dimension)?;
         try_push_size(&mut signed, dimension)?;
     }
+    finish_signed_creation_dimensions(function, signed)
+}
+
+fn finish_signed_creation_dimensions(function: &str, signed: Vec<i64>) -> PyResult<Vec<usize>> {
     if let Some(dimension) = signed.iter().find(|dimension| **dimension < 0) {
         return Err(creation_negative_dimension_error(
             function, *dimension, &signed,
         ));
     }
+
+    let mut parsed = try_size_vector(signed.len())?;
     for dimension in signed {
         try_push_size(
             &mut parsed,
