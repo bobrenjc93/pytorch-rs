@@ -410,6 +410,17 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
         ]
         return output, warning_state
 
+    @staticmethod
+    def call_default_with_warnings(module_functional, input, target):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            output = module_functional.mse_loss(input, target)
+        warning_state = [
+            (warning.category.__name__, str(warning.message), warning.filename, warning.lineno)
+            for warning in caught
+        ]
+        return output, warning_state
+
     def assert_matches(self, actual, expected, *, case, max_value_ulp=0):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, tuple(expected.shape))
@@ -786,6 +797,114 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                     reference_torch.equal(expected_target, expected_target_before)
                 )
 
+    def test_mean_reduction_cases_and_default_match_pytorch_2_13(self):
+        actual_cases = self.make_sum_reduction_cases(torch)
+        expected_cases = self.make_sum_reduction_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target, warns = actual_case
+            expected_name, expected_input, expected_target, expected_warns = expected_case
+            self.assertEqual(case, expected_name)
+            self.assertEqual(warns, expected_warns)
+            actual_input_before = np.asarray(actual_input).copy()
+            actual_target_before = np.asarray(actual_target).copy()
+            expected_input_before = expected_input.clone()
+            expected_target_before = expected_target.clone()
+
+            for form, actual_call, expected_call in (
+                (
+                    "explicit mean",
+                    lambda: self.call_with_warnings(
+                        functional,
+                        actual_input,
+                        actual_target,
+                        reduction="mean",
+                    ),
+                    lambda: self.call_with_warnings(
+                        reference_functional,
+                        expected_input,
+                        expected_target,
+                        reduction="mean",
+                    ),
+                ),
+                (
+                    "default",
+                    lambda: self.call_default_with_warnings(
+                        functional,
+                        actual_input,
+                        actual_target,
+                    ),
+                    lambda: self.call_default_with_warnings(
+                        reference_functional,
+                        expected_input,
+                        expected_target,
+                    ),
+                ),
+            ):
+                with self.subTest(case=case, form=form):
+                    actual, actual_warnings = actual_call()
+                    expected, expected_warnings = expected_call()
+
+                    self.assert_matches(
+                        actual,
+                        expected,
+                        case=(case, form),
+                        max_value_ulp=2,
+                    )
+                    with self.subTest(case=case, form=form, warnings=True):
+                        self.assertEqual(actual_warnings, expected_warnings)
+                        self.assertEqual(len(actual_warnings), int(warns))
+
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        actual_repeat = (
+                            functional.mse_loss(actual_input, actual_target)
+                            if form == "default"
+                            else functional.mse_loss(
+                                actual_input,
+                                actual_target,
+                                reduction="mean",
+                            )
+                        )
+                        expected_repeat = (
+                            reference_functional.mse_loss(
+                                expected_input,
+                                expected_target,
+                            )
+                            if form == "default"
+                            else reference_functional.mse_loss(
+                                expected_input,
+                                expected_target,
+                                reduction="mean",
+                            )
+                        )
+                    with self.subTest(case=case, form=form, storage=True):
+                        self.assertFalse(actual.is_set_to(actual_repeat))
+                        self.assertFalse(expected.is_set_to(expected_repeat))
+                        self.assertFalse(actual.is_set_to(actual_input))
+                        self.assertFalse(expected.is_set_to(expected_input))
+                        self.assertFalse(actual.is_set_to(actual_target))
+                        self.assertFalse(expected.is_set_to(expected_target))
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input),
+                    actual_input_before,
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target),
+                    actual_target_before,
+                )
+                self.assertTrue(
+                    reference_torch.equal(expected_input, expected_input_before)
+                )
+                self.assertTrue(
+                    reference_torch.equal(expected_target, expected_target_before)
+                )
+
     def test_mixed_layout_singleton_stride_matches_pytorch_2_13(self):
         actual_input = self.tensor(
             torch,
@@ -1153,6 +1272,49 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 actual,
                 expected,
                 case=(input_requires_grad, target_requires_grad),
+                max_value_ulp=2,
+            )
+
+    def test_mean_reduction_requires_grad_operands_match_inside_no_grad(self):
+        for input_requires_grad, target_requires_grad in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            actual_input = torch.tensor(
+                [[1.0, -2.0], [3.0, -4.0]],
+                requires_grad=input_requires_grad,
+            )
+            actual_target = torch.tensor(
+                [[0.5, 2.0], [-3.0, 4.5]],
+                requires_grad=target_requires_grad,
+            )
+            expected_input = reference_torch.tensor(
+                [[1.0, -2.0], [3.0, -4.0]],
+                dtype=reference_torch.float32,
+                requires_grad=input_requires_grad,
+            )
+            expected_target = reference_torch.tensor(
+                [[0.5, 2.0], [-3.0, 4.5]],
+                dtype=reference_torch.float32,
+                requires_grad=target_requires_grad,
+            )
+            with torch.no_grad():
+                actual = functional.mse_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="mean",
+                )
+            with reference_torch.no_grad():
+                expected = reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="mean",
+                )
+            self.assert_matches(
+                actual,
+                expected,
+                case=(input_requires_grad, target_requires_grad),
                 max_value_ulp=1,
             )
 
@@ -1176,6 +1338,47 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             expected_view,
             expected_view,
             reduction="sum",
+        )
+        self.assert_matches(
+            actual_loss,
+            expected_loss,
+            case="no_grad view",
+            max_value_ulp=1,
+        )
+
+        actual_loss.backward()
+        expected_loss.backward()
+        self.assertIsNone(actual_leaf.grad)
+        self.assertIsNone(expected_leaf.grad)
+        with self.assertRaisesRegex(
+            RuntimeError, "backward through the graph a second time"
+        ):
+            actual_loss.backward()
+        with self.assertRaisesRegex(
+            RuntimeError, "backward through the graph a second time"
+        ):
+            expected_loss.backward()
+
+    def test_mean_reduction_no_grad_view_repeated_backward_matches_pytorch_2_13(self):
+        actual_leaf = torch.tensor(
+            [[1.0, -2.0], [3.0, -4.0]],
+            requires_grad=True,
+        )
+        expected_leaf = reference_torch.tensor(
+            [[1.0, -2.0], [3.0, -4.0]],
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        with torch.no_grad():
+            actual_view = actual_leaf[0]
+        with reference_torch.no_grad():
+            expected_view = expected_leaf[0]
+
+        actual_loss = functional.mse_loss(actual_view, actual_view, reduction="mean")
+        expected_loss = reference_functional.mse_loss(
+            expected_view,
+            expected_view,
+            reduction="mean",
         )
         self.assert_matches(
             actual_loss,
@@ -1355,6 +1558,170 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             (actual_input, actual_target),
             (expected_input, expected_target),
             case="empty",
+        )
+
+    def test_mean_reduction_first_order_backward_matches_pytorch_2_13(self):
+        def assert_grads_match(actual_sources, expected_sources, *, case):
+            for actual, expected in zip(actual_sources, expected_sources, strict=True):
+                with self.subTest(case=case, source=tuple(expected.shape)):
+                    if expected.grad is None:
+                        self.assertIsNone(actual.grad)
+                    else:
+                        self.assertEqual(actual.grad.shape, tuple(expected.grad.shape))
+                        self.assertEqual(actual.grad.stride(), expected.grad.stride())
+                        np.testing.assert_array_equal(
+                            np.asarray(actual.grad).reshape(-1).view(np.uint32),
+                            expected.grad.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                        )
+
+        def assert_case(
+            case,
+            actual_input,
+            actual_target,
+            expected_input,
+            expected_target,
+            *,
+            actual_sources=None,
+            expected_sources=None,
+            use_default=False,
+            ignore_warnings=False,
+        ):
+            def compute_losses():
+                actual_loss = (
+                    functional.mse_loss(actual_input, actual_target)
+                    if use_default
+                    else functional.mse_loss(
+                        actual_input,
+                        actual_target,
+                        reduction="mean",
+                    )
+                )
+                expected_loss = (
+                    reference_functional.mse_loss(
+                        expected_input,
+                        expected_target,
+                    )
+                    if use_default
+                    else reference_functional.mse_loss(
+                        expected_input,
+                        expected_target,
+                        reduction="mean",
+                    )
+                )
+                return actual_loss, expected_loss
+
+            if ignore_warnings:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    actual_loss, expected_loss = compute_losses()
+            else:
+                actual_loss, expected_loss = compute_losses()
+
+            self.assert_matches(
+                actual_loss,
+                expected_loss,
+                case=case,
+                max_value_ulp=2,
+            )
+            actual_loss.backward()
+            expected_loss.backward()
+            assert_grads_match(
+                actual_sources or (actual_input, actual_target),
+                expected_sources or (expected_input, expected_target),
+                case=case,
+            )
+
+        assert_case(
+            "same shape default",
+            torch.tensor(
+                [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
+                requires_grad=True,
+            ),
+            torch.tensor(
+                [[0.5, 2.0, -3.0], [1.0, -1.0, 0.0]],
+                requires_grad=True,
+            ),
+            reference_torch.tensor(
+                [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
+                dtype=reference_torch.float32,
+                requires_grad=True,
+            ),
+            reference_torch.tensor(
+                [[0.5, 2.0, -3.0], [1.0, -1.0, 0.0]],
+                dtype=reference_torch.float32,
+                requires_grad=True,
+            ),
+            use_default=True,
+        )
+
+        assert_case(
+            "broadcast",
+            torch.tensor(
+                [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
+                requires_grad=True,
+            ),
+            torch.tensor([0.5, -1.5, 2.0], requires_grad=True),
+            reference_torch.tensor(
+                [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
+                dtype=reference_torch.float32,
+                requires_grad=True,
+            ),
+            reference_torch.tensor(
+                [0.5, -1.5, 2.0],
+                dtype=reference_torch.float32,
+                requires_grad=True,
+            ),
+            ignore_warnings=True,
+        )
+
+        actual_input_base = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 4, 3).tolist(),
+            requires_grad=True,
+        )
+        actual_target_base = torch.tensor(
+            np.linspace(-2.0, 2.0, 24, dtype=np.float32).reshape(2, 4, 3).tolist(),
+            requires_grad=True,
+        )
+        expected_input_base = reference_torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 4, 3),
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        expected_target_base = reference_torch.tensor(
+            np.linspace(-2.0, 2.0, 24, dtype=np.float32).reshape(2, 4, 3),
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        assert_case(
+            "offset noncontiguous",
+            actual_input_base[1].transpose(0, 1),
+            actual_target_base[0].transpose(0, 1),
+            expected_input_base[1].transpose(0, 1),
+            expected_target_base[0].transpose(0, 1),
+            actual_sources=(actual_input_base, actual_target_base),
+            expected_sources=(expected_input_base, expected_target_base),
+        )
+
+        actual_input = torch.zeros((2, 0, 3), requires_grad=True)
+        actual_target = torch.ones((2, 0, 3), requires_grad=True)
+        expected_input = reference_torch.zeros(
+            (2, 0, 3),
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        expected_target = reference_torch.ones(
+            (2, 0, 3),
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        assert_case(
+            "empty",
+            actual_input.transpose(0, 2),
+            actual_target.transpose(0, 2),
+            expected_input.transpose(0, 2),
+            expected_target.transpose(0, 2),
+            actual_sources=(actual_input, actual_target),
+            expected_sources=(expected_input, expected_target),
         )
 
     def test_sum_reduction_backward_edge_bits_match_pytorch_2_13(self):
