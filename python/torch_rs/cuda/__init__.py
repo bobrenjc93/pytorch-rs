@@ -2,7 +2,16 @@ r"""
 CPU-build CUDA compatibility probes.
 """
 
-__all__ = ["device_count", "is_available", "is_initialized"]
+from . import memory as memory
+from .memory import max_memory_allocated
+
+
+__all__ = [
+    "device_count",
+    "is_available",
+    "is_initialized",
+    "max_memory_allocated",
+]
 
 
 def is_available() -> bool:
@@ -18,3 +27,6 @@ def device_count() -> int:
 def is_initialized():
     r"""Return whether PyTorch's CUDA state has been initialized."""
     return False
+
+
+del memory
