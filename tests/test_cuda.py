@@ -428,8 +428,6 @@ class CudaProbeTests(unittest.TestCase):
             object(),
             [],
             {},
-            torch.device("cuda"),
-            torch.device("cuda", 0),
             torch.device("cpu"),
             torch.device("cpu", 0),
             ExplodingDeviceToken(),
