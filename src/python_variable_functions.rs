@@ -20,7 +20,8 @@ use crate::python::{
     asarray_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
     atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
     ceil_variable_function, conj_variable_function, cos_variable_function,
-    detach_variable_function, exp_variable_function, fix_variable_function,
+    detach_variable_function, div_variable_function, divide_variable_function,
+    empty_like_variable_function, exp_variable_function, fix_variable_function,
     floor_variable_function, full_like_variable_function, get_device_variable_function,
     imag_variable_function, is_conj_variable_function, is_inference_variable_function,
     log_variable_function, matmul_variable_function, mean_variable_function,
@@ -39,12 +40,13 @@ use crate::python::{
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 59] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 62] = [
     "get_device",
     "as_tensor",
     "asarray",
     "scalar_tensor",
     "arange",
+    "empty_like",
     "full_like",
     "ones_like",
     "zeros_like",
@@ -93,6 +95,8 @@ const VARIABLE_FUNCTION_NAMES: [&str; 59] = [
     "moveaxis",
     "matmul",
     "add",
+    "div",
+    "divide",
     "sub",
     "subtract",
     "mul",
@@ -182,6 +186,12 @@ ones_like(input, *, dtype=None, layout=None, device=None, requires_grad=False, m
 
 Returns a tensor filled with the scalar value `1`, with the same size as
 :attr:`input`.
+";
+
+const EMPTY_LIKE_DOC: &std::ffi::CStr = cr"
+empty_like(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=torch.preserve_format) -> Tensor
+
+Returns an uninitialized tensor with the same size as :attr:`input`.
 ";
 
 const FULL_LIKE_DOC: &std::ffi::CStr = cr"
@@ -919,6 +929,77 @@ multiply(input, other, *, out=None)
 Alias for :func:`torch.mul`.
 ";
 
+const DIV_DOC: &std::ffi::CStr = cr#"
+div(input, other, *, rounding_mode=None, out=None) -> Tensor
+
+Divides each element of the input ``input`` by the corresponding element of
+:attr:`other`.
+
+.. math::
+    \text{out}_i = \frac{\text{input}_i}{\text{other}_i}
+
+.. note::
+    By default, this performs a "true" division like Python 3.
+    See the :attr:`rounding_mode` argument for floor division.
+
+Supports :ref:`broadcasting to a common shape <broadcasting-semantics>`,
+:ref:`type promotion <type-promotion-doc>`, and integer, float, and complex inputs.
+Always promotes integer types to the default scalar type.
+
+Args:
+    input (Tensor): the dividend
+    other (Tensor or Number): the divisor
+
+Keyword args:
+    rounding_mode (str, optional): Type of rounding applied to the result:
+
+        * None - default behavior. Performs no rounding and, if both :attr:`input` and
+          :attr:`other` are integer types, promotes the inputs to the default scalar type.
+          Equivalent to true division in Python (the ``/`` operator) and NumPy's ``np.true_divide``.
+        * ``"trunc"`` - rounds the results of the division towards zero.
+          Equivalent to C-style integer division.
+        * ``"floor"`` - rounds the results of the division down.
+          Equivalent to floor division in Python (the ``//`` operator) and NumPy's ``np.floor_divide``.
+
+    out (Tensor, optional): the output tensor.
+
+Examples::
+
+    >>> x = torch.tensor([ 0.3810,  1.2774, -0.2972, -0.3719,  0.4637])
+    >>> torch.div(x, 0.5)
+    tensor([ 0.7620,  2.5548, -0.5944, -0.7438,  0.9274])
+
+    >>> a = torch.tensor([[-0.3711, -1.9353, -0.4605, -0.2917],
+    ...                   [ 0.1815, -1.0111,  0.9805, -1.5923],
+    ...                   [ 0.1062,  1.4581,  0.7759, -1.2344],
+    ...                   [-0.1830, -0.0313,  1.1908, -1.4757]])
+    >>> b = torch.tensor([ 0.8032,  0.2930, -0.8113, -0.2308])
+    >>> torch.div(a, b)
+    tensor([[-0.4620, -6.6051,  0.5676,  1.2639],
+            [ 0.2260, -3.4509, -1.2086,  6.8990],
+            [ 0.1322,  4.9764, -0.9564,  5.3484],
+            [-0.2278, -0.1068, -1.4678,  6.3938]])
+
+    >>> torch.div(a, b, rounding_mode='trunc')
+    tensor([[-0., -6.,  0.,  1.],
+            [ 0., -3., -1.,  6.],
+            [ 0.,  4., -0.,  5.],
+            [-0., -0., -1.,  6.]])
+
+    >>> torch.div(a, b, rounding_mode='floor')
+    tensor([[-1., -7.,  0.,  1.],
+            [ 0., -4., -2.,  6.],
+            [ 0.,  4., -1.,  5.],
+            [-1., -1., -2.,  6.]])
+
+"#;
+
+const DIVIDE_DOC: &std::ffi::CStr = c"
+divide(input, other, *, rounding_mode=None, out=None) -> Tensor
+
+Alias for :func:`torch.div`.
+";
+
 const ADD_DOC: &std::ffi::CStr = cr"
 add(input, other, *, alpha=1, out=None) -> Tensor
 
@@ -1292,6 +1373,7 @@ variable_function_callback!(as_tensor_callback, as_tensor_variable_function);
 variable_function_callback!(asarray_callback, asarray_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
 variable_function_callback!(arange_callback, arange_variable_function);
+variable_function_callback!(empty_like_callback, empty_like_variable_function);
 variable_function_callback!(full_like_callback, full_like_variable_function);
 variable_function_callback!(ones_like_callback, ones_like_variable_function);
 variable_function_callback!(zeros_like_callback, zeros_like_variable_function);
@@ -1328,6 +1410,8 @@ variable_function_callback!(sum_callback, sum_variable_function);
 variable_function_callback!(mean_callback, mean_variable_function);
 variable_function_callback!(tanh_callback, tanh_variable_function);
 variable_function_callback!(add_callback, add_variable_function);
+variable_function_callback!(div_callback, div_variable_function);
+variable_function_callback!(divide_callback, divide_variable_function);
 variable_function_callback!(sub_callback, sub_variable_function);
 variable_function_callback!(subtract_callback, subtract_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
@@ -1382,6 +1466,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"asarray", asarray_callback, ASARRAY_DOC),
         variable_function_method!(c"scalar_tensor", scalar_tensor_callback, c""),
         variable_function_method!(c"arange", arange_callback, ARANGE_DOC),
+        variable_function_method!(c"empty_like", empty_like_callback, EMPTY_LIKE_DOC),
         variable_function_method!(c"full_like", full_like_callback, FULL_LIKE_DOC),
         variable_function_method!(c"ones_like", ones_like_callback, ONES_LIKE_DOC),
         variable_function_method!(c"zeros_like", zeros_like_callback, ZEROS_LIKE_DOC),
@@ -1415,6 +1500,8 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"mean", mean_callback, MEAN_DOC),
         variable_function_method!(c"tanh", tanh_callback, TANH_DOC),
         variable_function_method!(c"add", add_callback, ADD_DOC),
+        variable_function_method!(c"div", div_callback, DIV_DOC),
+        variable_function_method!(c"divide", divide_callback, DIVIDE_DOC),
         variable_function_method!(c"sub", sub_callback, SUB_DOC),
         variable_function_method!(c"subtract", subtract_callback, SUBTRACT_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
