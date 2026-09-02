@@ -467,7 +467,16 @@ fn linear_rank_three(
     }
     .and_then(|output| output.reshape(output_shape));
     Ok(match bias {
-        Some(bias) if input_shape[2] != 0 => output.and_then(|output| output.add(bias.inner())),
+        Some(bias) if input_shape[2] != 0 => output.and_then(|output| {
+            if output.numel() == 0 {
+                match output.add(bias.inner()) {
+                    Ok(_) => Ok(output),
+                    Err(error) => Err(error),
+                }
+            } else {
+                output.add(bias.inner())
+            }
+        }),
         _ => output,
     })
 }

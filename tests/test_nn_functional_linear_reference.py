@@ -942,6 +942,52 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                 expected.detach().cpu().numpy().reshape(-1).view(np.uint32),
             )
 
+    def test_rank_three_bias_empty_output_strides_match(self):
+        cases = (
+            (
+                "zero batch singleton sequence",
+                (0, 1, 1),
+                (5, 1),
+                (5,),
+            ),
+            (
+                "zero batch singleton sequence singleton bias",
+                (0, 1, 1),
+                (5, 1),
+                (1,),
+            ),
+            (
+                "zero sequence singleton batch",
+                (1, 0, 1),
+                (5, 1),
+                (5,),
+            ),
+            (
+                "zero output zero batch singleton sequence",
+                (0, 1, 4),
+                (0, 4),
+                (0,),
+            ),
+            (
+                "zero output zero batch singleton sequence singleton bias",
+                (0, 1, 4),
+                (0, 4),
+                (1,),
+            ),
+        )
+        for case, input_shape, weight_shape, bias_shape in cases:
+            actual = functional.linear(
+                torch.zeros(input_shape),
+                torch.zeros(weight_shape),
+                torch.zeros(bias_shape),
+            )
+            expected = reference_functional.linear(
+                reference_torch.zeros(input_shape, dtype=reference_torch.float32),
+                reference_torch.zeros(weight_shape, dtype=reference_torch.float32),
+                reference_torch.zeros(bias_shape, dtype=reference_torch.float32),
+            )
+            self.assert_matches(actual, expected, case=case)
+
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, weight_requires_grad in (
             (True, False),
@@ -1411,6 +1457,28 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
         expected_weight = reference_torch.zeros((5, 4), dtype=reference_torch.float32)
         expected_bias = reference_torch.zeros((4,), dtype=reference_torch.float32)
         with self.subTest(case="non-foldable rank three"):
+            with self.assertRaises(Exception) as actual_raised:
+                functional.linear(actual_input, actual_weight, actual_bias)
+            with self.assertRaises(Exception) as expected_raised:
+                reference_functional.linear(
+                    expected_input,
+                    expected_weight,
+                    expected_bias,
+                )
+            self.assertIs(
+                type(actual_raised.exception),
+                type(expected_raised.exception),
+            )
+            self.assertEqual(
+                str(actual_raised.exception),
+                str(expected_raised.exception),
+            )
+
+        actual_weight = torch.zeros((0, 4))
+        actual_bias = torch.zeros((2,))
+        expected_weight = reference_torch.zeros((0, 4), dtype=reference_torch.float32)
+        expected_bias = reference_torch.zeros((2,), dtype=reference_torch.float32)
+        with self.subTest(case="non-foldable rank three empty output"):
             with self.assertRaises(Exception) as actual_raised:
                 functional.linear(actual_input, actual_weight, actual_bias)
             with self.assertRaises(Exception) as expected_raised:

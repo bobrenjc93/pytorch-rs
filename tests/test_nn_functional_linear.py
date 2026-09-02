@@ -683,6 +683,49 @@ class FunctionalLinearTests(unittest.TestCase):
             np.asarray([0x80000000, 0x80000000], dtype=np.uint32),
         )
 
+    def test_rank_three_bias_empty_outputs_preserve_reshaped_matmul_strides(self):
+        cases = (
+            (
+                "zero batch singleton sequence",
+                torch.zeros((0, 1, 1)),
+                torch.zeros((5, 1)),
+                torch.zeros((5,)),
+            ),
+            (
+                "zero batch singleton sequence singleton bias",
+                torch.zeros((0, 1, 1)),
+                torch.zeros((5, 1)),
+                torch.zeros((1,)),
+            ),
+            (
+                "zero sequence singleton batch",
+                torch.zeros((1, 0, 1)),
+                torch.zeros((5, 1)),
+                torch.zeros((5,)),
+            ),
+            (
+                "zero output zero batch singleton sequence",
+                torch.zeros((0, 1, 4)),
+                torch.zeros((0, 4)),
+                torch.zeros((0,)),
+            ),
+            (
+                "zero output zero batch singleton sequence singleton bias",
+                torch.zeros((0, 1, 4)),
+                torch.zeros((0, 4)),
+                torch.zeros((1,)),
+            ),
+        )
+        for case, input, weight, bias in cases:
+            actual = functional.linear(input, weight, bias)
+            expected = functional.linear(input, weight)
+            with self.subTest(case=case):
+                self.assertEqual(actual.shape, expected.shape)
+                self.assertEqual(actual.stride(), expected.stride())
+                self.assertEqual(actual.storage_offset(), expected.storage_offset())
+                self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+                self.assertEqual(actual.numel(), 0)
+
     def test_every_call_returns_fresh_storage_including_empty_outputs(self):
         cases = tuple(
             (f"matrix {case}", input, weight)
@@ -860,15 +903,28 @@ class FunctionalLinearTests(unittest.TestCase):
     def test_noncontiguous_rank_three_bias_length_mismatch_uses_broadcast_error(
         self,
     ):
-        input = torch.zeros((2, 4, 3)).transpose(1, 2)
-        weight = torch.zeros((5, 4))
-        bias = torch.zeros((4,))
-        message = (
-            "The size of tensor a (5) must match the size of tensor b (4) "
-            "at non-singleton dimension 2"
+        cases = (
+            (
+                "non-empty output",
+                torch.zeros((2, 4, 3)).transpose(1, 2),
+                torch.zeros((5, 4)),
+                torch.zeros((4,)),
+                "The size of tensor a (5) must match the size of tensor b (4) "
+                "at non-singleton dimension 2",
+            ),
+            (
+                "empty output",
+                torch.zeros((2, 4, 3)).transpose(1, 2),
+                torch.zeros((0, 4)),
+                torch.zeros((2,)),
+                "The size of tensor a (0) must match the size of tensor b (2) "
+                "at non-singleton dimension 2",
+            ),
         )
-        with self.assertRaisesRegex(RuntimeError, f"^{re.escape(message)}$"):
-            functional.linear(input, weight, bias)
+        for case, input, weight, bias, message in cases:
+            with self.subTest(case=case):
+                with self.assertRaisesRegex(RuntimeError, f"^{re.escape(message)}$"):
+                    functional.linear(input, weight, bias)
 
     def test_requires_grad_operands_need_no_grad(self):
         for rank, input_values in (
