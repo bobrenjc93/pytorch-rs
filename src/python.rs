@@ -19,7 +19,9 @@ use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError,
     grad_mode::is_grad_enabled,
     python_cpython_compat as cpython_compat,
-    python_device::{PyDevice, device_argument_type_error, parse_device_value},
+    python_device::{
+        PyDevice, device_argument_type_error, parse_device_descriptor, parse_device_value,
+    },
     python_dtype::{PyDType, add_default_dtype_validator, dtype_object},
     python_finfo::finfo_type_object,
     python_grad_mode::add_grad_mode_contexts,
@@ -534,6 +536,35 @@ impl PyTensorBase {
         // dense conversion is therefore the exact receiver, without a storage
         // borrow, metadata rewrite, copy, or autograd operation. Sparse storage
         // and the dtype and masked_grad overloads remain outside this surface.
+        Ok(tensor.clone().unbind().into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nto(*args, **kwargs) -> Tensor\n\nPerforms Tensor dtype and/or device conversion. A :class:`torch.dtype` and :class:`torch.device` are\ninferred from the arguments of ``self.to(*args, **kwargs)``.\n\n.. note::\n\n    If the ``self`` Tensor already\n    has the correct :class:`torch.dtype` and :class:`torch.device`, then ``self`` is returned.\n    Otherwise, the returned tensor is a copy of ``self`` with the desired\n    :class:`torch.dtype` and :class:`torch.device`.\n\n.. note::\n\n    If ``self`` requires gradients (``requires_grad=True``) but the target\n    ``dtype`` specified is an integer type, the returned tensor will implicitly\n    set ``requires_grad=False``. This is because only tensors with\n    floating-point or complex dtypes can require gradients.\n\nHere are the ways to call ``to``:\n\n.. method:: to(dtype, non_blocking=False, copy=False, memory_format=torch.preserve_format) -> Tensor\n   :noindex:\n\n    Returns a Tensor with the specified :attr:`dtype`\n\n    Args:\n        memory_format (:class:`torch.memory_format`, optional): the desired memory format of\n        returned Tensor. Default: ``torch.preserve_format``.\n\n.. note::\n\n    According to `C++ type conversion rules <https://en.cppreference.com/w/cpp/language/implicit_conversion.html>`_,\n    converting floating point value to integer type will truncate the fractional part.\n    If the truncated value cannot fit into the target type (e.g., casting ``torch.inf`` to ``torch.long``),\n    the behavior is undefined and the result may vary across platforms.\n\n.. method:: to(device=None, dtype=None, non_blocking=False, copy=False, memory_format=torch.preserve_format) -> Tensor\n   :noindex:\n\n    Returns a Tensor with the specified :attr:`device` and (optional)\n    :attr:`dtype`. If :attr:`dtype` is ``None`` it is inferred to be ``self.dtype``.\n    When :attr:`non_blocking` is set to ``True``, the function attempts to perform\n    the conversion asynchronously with respect to the host, if possible. This\n    asynchronous behavior applies to both pinned and pageable memory. However,\n    caution is advised when using this feature. For more information, refer to the\n    `tutorial on good usage of non_blocking and pin_memory <https://pytorch.org/tutorials/intermediate/pinmem_nonblock.html>`__.\n    When :attr:`copy` is set, a new Tensor is created even when the Tensor\n    already matches the desired conversion.\n\n    Args:\n        memory_format (:class:`torch.memory_format`, optional): the desired memory format of\n        returned Tensor. Default: ``torch.preserve_format``.\n\n.. method:: to(other, non_blocking=False, copy=False) -> Tensor\n   :noindex:\n\n    Returns a Tensor with same :class:`torch.dtype` and :class:`torch.device` as\n    the Tensor :attr:`other`.\n    When :attr:`non_blocking` is set to ``True``, the function attempts to perform\n    the conversion asynchronously with respect to the host, if possible. This\n    asynchronous behavior applies to both pinned and pageable memory. However,\n    caution is advised when using this feature. For more information, refer to the\n    `tutorial on good usage of non_blocking and pin_memory <https://pytorch.org/tutorials/intermediate/pinmem_nonblock.html>`__.\n    When :attr:`copy` is set, a new Tensor is created even when the Tensor\n    already matches the desired conversion.\n\nExample::\n\n    >>> tensor = torch.randn(2, 2)  # Initially dtype=float32, device=cpu\n    >>> tensor.to(torch.float64)\n    tensor([[-0.5044,  0.0005],\n            [ 0.3310, -0.0584]], dtype=torch.float64)\n\n    >>> cuda0 = torch.device('cuda:0')\n    >>> tensor.to(cuda0)\n    tensor([[-0.5044,  0.0005],\n            [ 0.3310, -0.0584]], device='cuda:0')\n\n    >>> tensor.to(cuda0, dtype=torch.float64)\n    tensor([[-0.5044,  0.0005],\n            [ 0.3310, -0.0584]], dtype=torch.float64, device='cuda:0')\n\n    >>> other = torch.randn((), dtype=torch.float64, device=cuda0)\n    >>> tensor.to(other, non_blocking=True)\n    tensor([[-0.5044,  0.0005],\n            [ 0.3310, -0.0584]], dtype=torch.float64, device='cuda:0')\n"]
+    // Keep the variadic descriptor shape used by PyTorch because `to` has
+    // several overloads that share one native TensorBase descriptor.
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn to(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let arguments = bind_to_arguments(args, kwargs)?;
+
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "to",
+            "torch.Tensor.to",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        validate_to_identity_request(tensor, &arguments)?;
         Ok(tensor.clone().unbind().into_any())
     }
 
@@ -8430,6 +8461,341 @@ fn parse_cpu_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<MemoryF
     let type_name = memory_format.get_type().name()?;
     Err(PyTypeError::new_err(format!(
         "cpu(): argument 'memory_format' must be torch.memory_format, not {type_name}"
+    )))
+}
+
+enum ToTarget<'py> {
+    DeviceDType {
+        device: Option<Bound<'py, PyAny>>,
+        dtype: Option<Bound<'py, PyAny>>,
+    },
+    DType(Bound<'py, PyAny>),
+    Tensor(Bound<'py, PyAny>),
+}
+
+struct ToCallArguments<'py> {
+    target: ToTarget<'py>,
+    copy: bool,
+    memory_format: MemoryFormat,
+}
+
+fn bind_to_arguments<'py>(
+    args: &Bound<'py, PyTuple>,
+    kwargs: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ToCallArguments<'py>> {
+    if args.len() > 4 {
+        return Err(PyTypeError::new_err(format!(
+            "to() takes from 0 to 4 positional arguments but {} were given",
+            args.len()
+        )));
+    }
+
+    let (mut target, mut non_blocking_was_provided, mut copy) =
+        bind_to_positional_arguments(args, kwargs)?;
+    let memory_format = bind_to_keyword_arguments(
+        args,
+        kwargs,
+        &mut target,
+        &mut non_blocking_was_provided,
+        &mut copy,
+    )?;
+
+    Ok(ToCallArguments {
+        target,
+        copy: copy.unwrap_or(false),
+        memory_format,
+    })
+}
+
+fn bind_to_positional_arguments<'py>(
+    args: &Bound<'py, PyTuple>,
+    kwargs: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(ToTarget<'py>, bool, Option<bool>)> {
+    let mut target = ToTarget::DeviceDType {
+        device: None,
+        dtype: None,
+    };
+    let mut non_blocking_was_provided = false;
+    let mut copy = None;
+
+    if !args.is_empty() {
+        let first = args.get_item(0)?;
+        if first.cast::<PyDType>().is_ok() {
+            target = ToTarget::DType(first);
+            if args.len() >= 2 {
+                parse_to_bool_argument(&args.get_item(1)?, args, kwargs)?;
+                non_blocking_was_provided = true;
+            }
+            if args.len() >= 3 {
+                copy = Some(parse_to_bool_argument(&args.get_item(2)?, args, kwargs)?);
+            }
+            if args.len() >= 4 {
+                return Err(invalid_to_arguments_error(args, kwargs)?);
+            }
+        } else if first.cast::<PyTensor>().is_ok() {
+            target = ToTarget::Tensor(first);
+            if args.len() >= 2 {
+                parse_to_bool_argument(&args.get_item(1)?, args, kwargs)?;
+                non_blocking_was_provided = true;
+            }
+            if args.len() >= 3 {
+                copy = Some(parse_to_bool_argument(&args.get_item(2)?, args, kwargs)?);
+            }
+            if args.len() >= 4 {
+                return Err(invalid_to_arguments_error(args, kwargs)?);
+            }
+        } else if is_to_device_argument(&first) {
+            let device = Some(first);
+            let dtype = if args.len() >= 2 {
+                let dtype = args.get_item(1)?;
+                if !is_to_dtype_argument(&dtype) {
+                    return Err(invalid_to_arguments_error(args, kwargs)?);
+                }
+                Some(dtype)
+            } else {
+                None
+            };
+            if args.len() >= 3 {
+                parse_to_bool_argument(&args.get_item(2)?, args, kwargs)?;
+                non_blocking_was_provided = true;
+            }
+            if args.len() >= 4 {
+                copy = Some(parse_to_bool_argument(&args.get_item(3)?, args, kwargs)?);
+            }
+            target = ToTarget::DeviceDType { device, dtype };
+        } else {
+            return Err(invalid_to_arguments_error(args, kwargs)?);
+        }
+    }
+
+    Ok((target, non_blocking_was_provided, copy))
+}
+
+fn bind_to_keyword_arguments<'py>(
+    args: &Bound<'py, PyTuple>,
+    kwargs: Option<&Bound<'py, PyDict>>,
+    target: &mut ToTarget<'py>,
+    non_blocking_was_provided: &mut bool,
+    copy: &mut Option<bool>,
+) -> PyResult<MemoryFormat> {
+    let mut memory_format = MemoryFormat::Preserve;
+    let mut memory_format_was_provided = false;
+    if let Some(kwargs) = kwargs {
+        for (key, value) in kwargs {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "device" => {
+                    if !is_to_device_argument(&value) {
+                        return Err(invalid_to_arguments_error(args, Some(kwargs))?);
+                    }
+                    let ToTarget::DeviceDType { device, .. } = target else {
+                        return Err(invalid_to_arguments_error(args, Some(kwargs))?);
+                    };
+                    if device.is_some() {
+                        return Err(invalid_to_arguments_error(args, Some(kwargs))?);
+                    }
+                    *device = Some(value);
+                }
+                "dtype" => {
+                    if !is_to_dtype_argument(&value) {
+                        return Err(invalid_to_arguments_error(args, Some(kwargs))?);
+                    }
+                    let ToTarget::DeviceDType { dtype, .. } = target else {
+                        return Err(invalid_to_arguments_error(args, Some(kwargs))?);
+                    };
+                    if dtype.is_some() {
+                        return Err(invalid_to_arguments_error(args, Some(kwargs))?);
+                    }
+                    *dtype = Some(value);
+                }
+                "tensor" => {
+                    if value.cast::<PyTensor>().is_err() {
+                        return Err(invalid_to_arguments_error(args, Some(kwargs))?);
+                    }
+                    match &target {
+                        ToTarget::DeviceDType {
+                            device: None,
+                            dtype: None,
+                        } => *target = ToTarget::Tensor(value),
+                        ToTarget::DeviceDType { .. } | ToTarget::DType(_) | ToTarget::Tensor(_) => {
+                            return Err(invalid_to_arguments_error(args, Some(kwargs))?);
+                        }
+                    }
+                }
+                "non_blocking" => {
+                    if *non_blocking_was_provided {
+                        return Err(invalid_to_arguments_error(args, Some(kwargs))?);
+                    }
+                    parse_to_bool_argument(&value, args, Some(kwargs))?;
+                    *non_blocking_was_provided = true;
+                }
+                "copy" => {
+                    if copy.is_some() {
+                        return Err(invalid_to_arguments_error(args, Some(kwargs))?);
+                    }
+                    *copy = Some(parse_to_bool_argument(&value, args, Some(kwargs))?);
+                }
+                "memory_format" => {
+                    if memory_format_was_provided || !is_to_memory_format_argument(&value) {
+                        return Err(invalid_to_arguments_error(args, Some(kwargs))?);
+                    }
+                    memory_format = parse_to_memory_format(&value)?;
+                    memory_format_was_provided = true;
+                }
+                _ => return Err(invalid_to_arguments_error(args, Some(kwargs))?),
+            }
+        }
+    }
+
+    Ok(memory_format)
+}
+
+fn is_to_device_argument(value: &Bound<'_, PyAny>) -> bool {
+    value.is_none() || value.cast::<PyDevice>().is_ok() || value.cast::<PyString>().is_ok()
+}
+
+fn is_to_dtype_argument(value: &Bound<'_, PyAny>) -> bool {
+    value.is_none() || value.cast::<PyDType>().is_ok()
+}
+
+fn is_to_memory_format_argument(value: &Bound<'_, PyAny>) -> bool {
+    value.is_none() || value.cast::<PyMemoryFormat>().is_ok()
+}
+
+fn parse_to_bool_argument(
+    value: &Bound<'_, PyAny>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<bool> {
+    if !value.is_exact_instance_of::<PyBool>() {
+        return Err(invalid_to_arguments_error(args, kwargs)?);
+    }
+    value.is_truthy()
+}
+
+fn parse_to_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<MemoryFormat> {
+    if memory_format.is_none() {
+        return Ok(MemoryFormat::Preserve);
+    }
+    let memory_format = memory_format.cast::<PyMemoryFormat>()?;
+    Ok(memory_format.try_borrow()?.inner())
+}
+
+fn validate_to_identity_request(
+    tensor: &Bound<'_, PyTensor>,
+    arguments: &ToCallArguments<'_>,
+) -> PyResult<()> {
+    match &arguments.target {
+        ToTarget::DeviceDType { device, dtype } => {
+            if let Some(device) = device {
+                validate_to_identity_device(device)?;
+            }
+            if let Some(dtype) = dtype {
+                validate_to_identity_dtype(dtype)?;
+            }
+        }
+        ToTarget::DType(dtype) => validate_to_identity_dtype(dtype)?,
+        ToTarget::Tensor(other) => validate_to_identity_tensor(tensor, other)?,
+    }
+    if arguments.copy {
+        return Err(unsupported_to_conversion());
+    }
+    validate_to_identity_memory_format(tensor, arguments.memory_format)
+}
+
+fn validate_to_identity_dtype(dtype: &Bound<'_, PyAny>) -> PyResult<()> {
+    if dtype.is_none() {
+        return Ok(());
+    }
+    let dtype = dtype.cast::<PyDType>()?;
+    if dtype.try_borrow()?.inner() == DType::Float32 {
+        return Ok(());
+    }
+    Err(unsupported_to_conversion())
+}
+
+fn validate_to_identity_device(device: &Bound<'_, PyAny>) -> PyResult<()> {
+    if device.is_none() {
+        return Ok(());
+    }
+    let device = parse_device_descriptor("to", device)?;
+    if device.inner() == Device::Cpu && !device.has_index() {
+        return Ok(());
+    }
+    Err(unsupported_to_conversion())
+}
+
+fn validate_to_identity_tensor(
+    tensor: &Bound<'_, PyTensor>,
+    other: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    let other = other.cast::<PyTensor>()?.try_borrow()?;
+    let tensor = tensor.try_borrow()?;
+    if tensor.inner.dtype() == other.inner.dtype()
+        && tensor.inner.device() == other.inner.device()
+        && other.inner.dtype() == DType::Float32
+        && other.inner.device() == Device::Cpu
+    {
+        return Ok(());
+    }
+    Err(unsupported_to_conversion())
+}
+
+fn validate_to_identity_memory_format(
+    tensor: &Bound<'_, PyTensor>,
+    memory_format: MemoryFormat,
+) -> PyResult<()> {
+    match memory_format {
+        MemoryFormat::Preserve | MemoryFormat::Contiguous => Ok(()),
+        MemoryFormat::ChannelsLast | MemoryFormat::ChannelsLast3d => {
+            let tensor = tensor.try_borrow()?;
+            if tensor.inner.suggested_memory_format() == memory_format {
+                Ok(())
+            } else {
+                Err(unsupported_to_conversion())
+            }
+        }
+    }
+}
+
+fn unsupported_to_conversion() -> PyErr {
+    PyNotImplementedError::new_err(
+        "torch_rs.Tensor.to only supports no-copy CPU float32 identity conversions",
+    )
+}
+
+fn invalid_to_arguments_error(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let mut parts = Vec::new();
+    let keyword_count = match kwargs {
+        Some(kwargs) => kwargs.len(),
+        None => 0,
+    };
+    parts
+        .try_reserve_exact(args.len() + keyword_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate to argument description"))?;
+    for argument in args {
+        parts.push(python_type_name(&argument)?);
+    }
+    if let Some(kwargs) = kwargs {
+        for (key, value) in kwargs {
+            let key = key.extract::<String>()?;
+            let value_type = python_type_name(&value)?;
+            parts.push(format!("{key}={value_type}"));
+        }
+    }
+
+    let trailing_keyword_comma =
+        if args.is_empty() && kwargs.is_some_and(|kwargs| !kwargs.is_empty()) {
+            ", "
+        } else {
+            ""
+        };
+    Ok(PyTypeError::new_err(format!(
+        "to() received an invalid combination of arguments - got ({}{trailing_keyword_comma}), but expected one of:\n * (torch.device device = None, torch.dtype dtype = None, bool non_blocking = False, bool copy = False, *, torch.memory_format memory_format = None)\n * (torch.dtype dtype, bool non_blocking = False, bool copy = False, *, torch.memory_format memory_format = None)\n * (Tensor tensor, bool non_blocking = False, bool copy = False, *, torch.memory_format memory_format = None)\n",
+        parts.join(", ")
     )))
 }
 
