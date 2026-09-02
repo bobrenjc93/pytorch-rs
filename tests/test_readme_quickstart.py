@@ -67,6 +67,10 @@ HISTORICAL_TIMING_REPORTS = (
         '`torch.nn.functional.l1_loss(reduction="none")` release timings',
         "docs/l1-loss-release-timings.md",
     ),
+    (
+        '`torch.nn.functional.l1_loss(reduction="sum")` release timings',
+        "docs/l1-loss-sum-release-timings.md",
+    ),
 )
 SUPPORTED_SURFACE_ANCHORS = (
     ("Tensors", "tensors"),
@@ -215,14 +219,17 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         "Use functional NN helpers",
         (
             "`torch.nn.functional.linear`",
+            "`torch.nn.functional.l1_loss`",
             "`torch.nn.functional.mse_loss`",
             "`torch.nn.functional.dropout1d`",
             "`torch.nn.functional.softsign`",
         ),
         (
             "Module layers",
+            '`l1_loss` reductions other than `"none"`/`"sum"`',
             '`mse_loss` reductions other than `"none"`/`"mean"`/`"sum"`',
             "loss `weight` arguments",
+            "legacy loss reduction arguments",
             "mutating initializers",
         ),
         (
