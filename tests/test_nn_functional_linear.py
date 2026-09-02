@@ -659,7 +659,19 @@ class FunctionalLinearTests(unittest.TestCase):
                         operand=operand,
                     )
 
-    def test_rank_three_bias_seeds_signed_zero_accumulators_before_reshape(self):
+    def test_rank_three_bias_uses_pytorch_post_matmul_addition_order(self):
+        output = functional.linear(
+            torch.tensor([[[1.0, 1.0]]]),
+            torch.tensor([[-1.0e20, 1.0]]),
+            torch.tensor([1.0e20]),
+        )
+        self.assertEqual(output.shape, (1, 1, 1))
+        np.testing.assert_array_equal(
+            np.asarray(output).reshape(-1).view(np.uint32),
+            np.asarray([0x00000000], dtype=np.uint32),
+        )
+
+    def test_rank_three_bias_preserves_zero_inner_signed_zero_before_reshape(self):
         output = functional.linear(
             torch.zeros((1, 2, 0)),
             torch.zeros((1, 0)),
@@ -844,6 +856,19 @@ class FunctionalLinearTests(unittest.TestCase):
                             weight,
                             torch.zeros((bias_features,)),
                         )
+
+    def test_noncontiguous_rank_three_bias_length_mismatch_uses_broadcast_error(
+        self,
+    ):
+        input = torch.zeros((2, 4, 3)).transpose(1, 2)
+        weight = torch.zeros((5, 4))
+        bias = torch.zeros((4,))
+        message = (
+            "The size of tensor a (5) must match the size of tensor b (4) "
+            "at non-singleton dimension 2"
+        )
+        with self.assertRaisesRegex(RuntimeError, f"^{re.escape(message)}$"):
+            functional.linear(input, weight, bias)
 
     def test_requires_grad_operands_need_no_grad(self):
         for rank, input_values in (

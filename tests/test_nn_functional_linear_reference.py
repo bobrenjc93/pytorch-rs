@@ -924,6 +924,24 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                 expected.detach().cpu().numpy().reshape(-1).view(np.uint32),
             )
 
+    def test_rank_three_bias_accumulation_order_matches(self):
+        actual = functional.linear(
+            torch.tensor([[[1.0, 1.0]]]),
+            torch.tensor([[-1.0e20, 1.0]]),
+            torch.tensor([1.0e20]),
+        )
+        expected = reference_functional.linear(
+            reference_torch.tensor([[[1.0, 1.0]]], dtype=reference_torch.float32),
+            reference_torch.tensor([[-1.0e20, 1.0]], dtype=reference_torch.float32),
+            reference_torch.tensor([1.0e20], dtype=reference_torch.float32),
+        )
+        self.assert_matches(actual, expected, case="rank-three cancellation")
+        with self.subTest(case="rank-three cancellation", sign_bits=True):
+            np.testing.assert_array_equal(
+                np.asarray(actual).reshape(-1).view(np.uint32),
+                expected.detach().cpu().numpy().reshape(-1).view(np.uint32),
+            )
+
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, weight_requires_grad in (
             (True, False),
@@ -1382,6 +1400,33 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                         str(actual_raised.exception),
                         str(expected_raised.exception),
                     )
+
+        actual_input = torch.zeros((2, 4, 3)).transpose(1, 2)
+        actual_weight = torch.zeros((5, 4))
+        actual_bias = torch.zeros((4,))
+        expected_input = reference_torch.zeros(
+            (2, 4, 3),
+            dtype=reference_torch.float32,
+        ).transpose(1, 2)
+        expected_weight = reference_torch.zeros((5, 4), dtype=reference_torch.float32)
+        expected_bias = reference_torch.zeros((4,), dtype=reference_torch.float32)
+        with self.subTest(case="non-foldable rank three"):
+            with self.assertRaises(Exception) as actual_raised:
+                functional.linear(actual_input, actual_weight, actual_bias)
+            with self.assertRaises(Exception) as expected_raised:
+                reference_functional.linear(
+                    expected_input,
+                    expected_weight,
+                    expected_bias,
+                )
+            self.assertIs(
+                type(actual_raised.exception),
+                type(expected_raised.exception),
+            )
+            self.assertEqual(
+                str(actual_raised.exception),
+                str(expected_raised.exception),
+            )
 
     def test_noncontiguous_rank_three_inner_dimension_error_matches(self):
         cases = (

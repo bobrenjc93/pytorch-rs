@@ -435,15 +435,41 @@ fn linear_rank_three(
         i64::try_from(weight_shape[0])
             .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
     ];
-    Ok(input
-        .flatten(0, 1)
-        .and_then(|input| {
-            bias.map_or_else(
-                || input.matmul(transposed_weight),
-                |bias| input.matmul_with_row_bias(transposed_weight, bias.inner()),
-            )
-        })
-        .and_then(|output| output.reshape(output_shape)))
+    let flattened_input = match input.flatten(0, 1) {
+        Ok(input) => input,
+        Err(error) => return Ok(Err(error)),
+    };
+    let output = match flattened_input.matmul(transposed_weight) {
+        Ok(output) => output,
+        Err(error) => return Ok(Err(error)),
+    };
+    if let Some(bias) = bias
+        && folds_to_matrix
+    {
+        let bias_features = bias.inner().shape()[0];
+        if bias_features != weight_shape[0] && bias_features != 1 {
+            let target_rows = input_shape[0]
+                .checked_mul(input_shape[1])
+                .ok_or_else(|| tensor_error(&TensorError::ElementCountOverflow))?;
+            return Err(linear_bias_size_error(
+                target_rows,
+                weight_shape[0],
+                bias_features,
+            ));
+        }
+    }
+    let output = if let Some(bias) = bias
+        && input_shape[2] == 0
+    {
+        flattened_input.matmul_with_row_bias(transposed_weight, bias.inner())
+    } else {
+        Ok(output)
+    }
+    .and_then(|output| output.reshape(output_shape));
+    Ok(match bias {
+        Some(bias) if input_shape[2] != 0 => output.and_then(|output| output.add(bias.inner())),
+        _ => output,
+    })
 }
 
 fn resolve_linear_output(
@@ -455,18 +481,12 @@ fn resolve_linear_output(
 ) -> PyResult<Tensor> {
     match output {
         Ok(output) => Ok(output),
-        Err(TensorError::ShapeMismatch { .. }) if bias.is_some() => {
+        Err(TensorError::ShapeMismatch { .. }) if bias.is_some() && input_rank != 3 => {
             let bias_features = bias
                 .expect("only biased linear can report a bias shape mismatch")
                 .inner()
                 .shape()[0];
-            let target_rows = match input_rank {
-                1 => 1,
-                3 => input.shape()[0]
-                    .checked_mul(input.shape()[1])
-                    .ok_or_else(|| tensor_error(&TensorError::ElementCountOverflow))?,
-                _ => input.shape()[0],
-            };
+            let target_rows = if input_rank == 1 { 1 } else { input.shape()[0] };
             Err(linear_bias_size_error(
                 target_rows,
                 weight.shape()[0],
