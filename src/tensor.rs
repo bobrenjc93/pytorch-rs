@@ -18,12 +18,148 @@ const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
 // Keep tiny latency cases on the single-row loop while still row-blocking the
 // 8x64 skinny-RHS workload from the release timing matrix.
 const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 512;
+#[cfg(any(feature = "python-bindings", test))]
+const PYTORCH_SUM_VECTOR_WIDTH: usize = 8;
+#[cfg(any(feature = "python-bindings", test))]
+const PYTORCH_SUM_VECTOR_GROUPS: usize = 4;
+#[cfg(any(feature = "python-bindings", test))]
+const PYTORCH_SUM_GROUP_ELEMENTS: usize = PYTORCH_SUM_VECTOR_WIDTH * PYTORCH_SUM_VECTOR_GROUPS;
+#[cfg(any(feature = "python-bindings", test))]
+const PYTORCH_SUM_MIN_LEVEL_POWER: u32 = 4;
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
 #[allow(clippy::cast_precision_loss)]
 fn full_reduction_mean_divisor(elements: usize) -> f32 {
     elements as f32
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_l1_full_reduction_sum(values: &[f32]) -> f32 {
+    if values.len() < PYTORCH_SUM_VECTOR_WIDTH {
+        return pytorch_l1_small_full_reduction_sum(values);
+    }
+
+    let groups = values.len() / PYTORCH_SUM_GROUP_ELEMENTS;
+    let level_power = pytorch_sum_level_power(groups);
+    let level_step = 1_usize << level_power;
+    let promote_first_mask = (level_step - 1) << level_power;
+    let promote_second_mask = (level_step - 1) << (2 * level_power);
+    let mut group_index = 0_usize;
+    let mut first_level = [[0.0_f32; PYTORCH_SUM_VECTOR_WIDTH]; PYTORCH_SUM_VECTOR_GROUPS];
+    let mut second_level = [[0.0_f32; PYTORCH_SUM_VECTOR_WIDTH]; PYTORCH_SUM_VECTOR_GROUPS];
+    let mut third_level = [[0.0_f32; PYTORCH_SUM_VECTOR_WIDTH]; PYTORCH_SUM_VECTOR_GROUPS];
+
+    while groups - group_index >= level_step {
+        let local = pytorch_l1_sum_32_element_groups(values, group_index, level_step);
+        group_index += level_step;
+        add_pytorch_sum_vector_groups(&mut first_level, &local);
+        if group_index & promote_first_mask == 0 {
+            add_pytorch_sum_vector_groups(&mut second_level, &first_level);
+            first_level = [[0.0_f32; PYTORCH_SUM_VECTOR_WIDTH]; PYTORCH_SUM_VECTOR_GROUPS];
+            if group_index & promote_second_mask == 0 {
+                add_pytorch_sum_vector_groups(&mut third_level, &second_level);
+                second_level = [[0.0_f32; PYTORCH_SUM_VECTOR_WIDTH]; PYTORCH_SUM_VECTOR_GROUPS];
+            }
+        }
+    }
+
+    let mut local = pytorch_l1_sum_32_element_groups(values, group_index, groups - group_index);
+    add_pytorch_sum_vector_groups(&mut local, &first_level);
+    add_pytorch_sum_vector_groups(&mut local, &second_level);
+    add_pytorch_sum_vector_groups(&mut local, &third_level);
+
+    let mut index = groups * PYTORCH_SUM_GROUP_ELEMENTS;
+    while index + PYTORCH_SUM_VECTOR_WIDTH <= values.len() {
+        for lane in 0..PYTORCH_SUM_VECTOR_WIDTH {
+            local[0][lane] += values[index + lane];
+        }
+        index += PYTORCH_SUM_VECTOR_WIDTH;
+    }
+
+    let mut vector = [0.0_f32; PYTORCH_SUM_VECTOR_WIDTH];
+    for lane in 0..PYTORCH_SUM_VECTOR_WIDTH {
+        vector[lane] = ((local[0][lane] + local[1][lane]) + local[2][lane]) + local[3][lane];
+    }
+
+    let tail = pytorch_l1_scalar_tail_sum(&values[index..]);
+    let mut total = vector[0] + tail;
+    for value in &vector[1..] {
+        total += *value;
+    }
+    total
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_l1_small_full_reduction_sum(values: &[f32]) -> f32 {
+    let mut rows = [0.0_f32; PYTORCH_SUM_VECTOR_GROUPS];
+    let prefix = values.len().min(PYTORCH_SUM_VECTOR_GROUPS);
+    rows[..prefix].copy_from_slice(&values[..prefix]);
+    for value in &values[prefix..] {
+        rows[0] += *value;
+    }
+    let mut total = rows[0];
+    for value in &rows[1..] {
+        total += *value;
+    }
+    total
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_l1_sum_32_element_groups(
+    values: &[f32],
+    first_group: usize,
+    groups: usize,
+) -> [[f32; PYTORCH_SUM_VECTOR_WIDTH]; PYTORCH_SUM_VECTOR_GROUPS] {
+    let mut sums = [[0.0_f32; PYTORCH_SUM_VECTOR_WIDTH]; PYTORCH_SUM_VECTOR_GROUPS];
+    for group in first_group..first_group + groups {
+        let group_start = group * PYTORCH_SUM_GROUP_ELEMENTS;
+        for (vector_group, sum) in sums.iter_mut().enumerate() {
+            let vector_start = group_start + vector_group * PYTORCH_SUM_VECTOR_WIDTH;
+            for lane in 0..PYTORCH_SUM_VECTOR_WIDTH {
+                sum[lane] += values[vector_start + lane];
+            }
+        }
+    }
+    sums
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn add_pytorch_sum_vector_groups(
+    target: &mut [[f32; PYTORCH_SUM_VECTOR_WIDTH]; PYTORCH_SUM_VECTOR_GROUPS],
+    source: &[[f32; PYTORCH_SUM_VECTOR_WIDTH]; PYTORCH_SUM_VECTOR_GROUPS],
+) {
+    for vector_group in 0..PYTORCH_SUM_VECTOR_GROUPS {
+        for lane in 0..PYTORCH_SUM_VECTOR_WIDTH {
+            target[vector_group][lane] += source[vector_group][lane];
+        }
+    }
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_l1_scalar_tail_sum(values: &[f32]) -> f32 {
+    let mut total = 0.0_f32;
+    let mut chunks = values.chunks_exact(4);
+    for chunk in &mut chunks {
+        total = (((total + chunk[0]) + chunk[1]) + chunk[2]) + chunk[3];
+    }
+    for value in chunks.remainder() {
+        total += *value;
+    }
+    total
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn pytorch_sum_level_power(groups: usize) -> u32 {
+    if groups <= 1 {
+        return PYTORCH_SUM_MIN_LEVEL_POWER;
+    }
+    let ceil_log2 = usize::BITS - (groups - 1).leading_zeros();
+    if ceil_log2 <= 19 {
+        PYTORCH_SUM_MIN_LEVEL_POWER
+    } else {
+        ceil_log2 / 4
+    }
 }
 
 struct AutogradMeta {
@@ -3885,6 +4021,26 @@ impl Tensor {
         Ok(output)
     }
 
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn l1_loss_mean(&self, other: &Self) -> Result<Self, TensorError> {
+        let difference = self.absolute_difference(other)?;
+        if difference.elements == 0 {
+            return difference.mean();
+        }
+        let total = if let Some(values) = difference.dense_physical_slice() {
+            pytorch_l1_full_reduction_sum(values)
+        } else {
+            let values = difference.try_to_vec()?;
+            pytorch_l1_full_reduction_sum(&values)
+        };
+        let mean = total / full_reduction_mean_divisor(difference.elements);
+        Ok(Self::from_scalar(
+            mean,
+            difference.dtype(),
+            difference.device(),
+        ))
+    }
+
     fn sum_contiguous_shared_gradient(&self) -> Option<f32> {
         if self.elements == 0 || !self.is_contiguous() {
             return None;
@@ -7211,6 +7367,42 @@ mod tests {
                 .logical_values()
                 .map(f32::to_bits)
                 .eq([expected_mean_gradient; 3])
+        );
+    }
+
+    #[test]
+    fn l1_loss_mean_matches_pytorch_cascade_rounding() {
+        let input = Tensor::from_vec(
+            vec![
+                f32::from_bits(0x3f80_0000),
+                f32::from_bits(0xbf8c_cccd),
+                f32::from_bits(0x3f9a_e148),
+                f32::from_bits(0xbfaa_5e35),
+                f32::from_bits(0x3fbb_67a1),
+            ],
+            [5],
+        )
+        .unwrap();
+        let target = Tensor::from_vec(
+            vec![
+                f32::from_bits(0xbf80_0000),
+                f32::from_bits(0x3f66_6666),
+                f32::from_bits(0xbf4f_5c29),
+                f32::from_bits(0x3f3a_9fbe),
+                f32::from_bits(0xbf27_f62b),
+            ],
+            [5],
+        )
+        .unwrap();
+
+        assert_eq!(
+            input
+                .l1_loss_mean(&target)
+                .unwrap()
+                .item()
+                .unwrap()
+                .to_bits(),
+            0x4002_9003
         );
     }
 

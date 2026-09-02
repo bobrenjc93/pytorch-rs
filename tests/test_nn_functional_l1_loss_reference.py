@@ -192,6 +192,26 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
         empty_target = module.ones(
             (2, 0, 3), dtype=module.float32
         ).transpose(0, 2)
+        rounding_sensitive_input = self.tensor(
+            module,
+            [
+                1.0,
+                -1.100000023841858,
+                1.2100000381469727,
+                -1.3309999704360962,
+                1.4641000032424927,
+            ],
+        )
+        rounding_sensitive_target = self.tensor(
+            module,
+            [
+                -1.0,
+                0.8999999761581421,
+                -0.8100000023841858,
+                0.7289999723434448,
+                -0.6560999751091003,
+            ],
+        )
 
         return (
             (
@@ -204,6 +224,12 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             ("broadcasted", broadcast_input, broadcast_target, True),
             ("offset", offset_input_base[1], offset_target_base[0], False),
             ("noncontiguous", transposed_input, transposed_target, False),
+            (
+                "rounding sensitive",
+                rounding_sensitive_input,
+                rounding_sensitive_target,
+                False,
+            ),
         )
 
     def make_channels_last_cases(self, module):

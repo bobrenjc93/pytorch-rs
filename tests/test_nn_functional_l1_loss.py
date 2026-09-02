@@ -585,6 +585,41 @@ class FunctionalL1LossTests(unittest.TestCase):
                     self.tensor_state(target)[-1], target_state[-1]
                 )
 
+    def test_mean_reduction_matches_pytorch_rounding_sensitive_case(self):
+        input = torch.tensor(
+            [
+                1.0,
+                -1.100000023841858,
+                1.2100000381469727,
+                -1.3309999704360962,
+                1.4641000032424927,
+            ]
+        )
+        target = torch.tensor(
+            [
+                -1.0,
+                0.8999999761581421,
+                -0.8100000023841858,
+                0.7289999723434448,
+                -0.6560999751091003,
+            ]
+        )
+        expected_bits = np.asarray([0x40029003], dtype=np.uint32)
+
+        for form, actual in (
+            (
+                "explicit mean",
+                functional.l1_loss(input, target, reduction="mean"),
+            ),
+            ("default mean", functional.l1_loss(input, target)),
+        ):
+            with self.subTest(form=form):
+                self.assertEqual(actual.shape, ())
+                np.testing.assert_array_equal(
+                    self.tensor_bits(actual),
+                    expected_bits,
+                )
+
     def test_mixed_layout_singleton_keeps_binary_tensoriterator_stride(self):
         input = torch.tensor(
             np.arange(6, dtype=np.float32).reshape(2, 1, 3).tolist()
