@@ -3692,13 +3692,10 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when gradient recording is enabled for this tensor, or
-    /// when result metadata or storage allocation fails.
+    /// Returns an error when result metadata or storage allocation fails.
     pub fn log(&self) -> Result<Self, TensorError> {
-        if self.records_grad() {
-            return Err(TensorError::AutogradRecordingUnsupported { operation: "log" });
-        }
-        self.unary_map(log_value)
+        let output = self.unary_map(log_value)?;
+        self.finish_saved_input_unary_vjp(output, AutogradNode::Log, apply_log_vjp)
     }
 
     fn scalar_div_with_output_layout(
@@ -5095,6 +5092,23 @@ fn apply_sqrt_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>
         gradient.extend(
             upstream.iter().enumerate().map(|(index, &value)| {
                 sqrt_backward_value(input.value_at_linear_index(index), value)
+            }),
+        );
+    }
+}
+
+fn apply_log_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    // Borrow one exact saved range for row-contiguous layouts, including
+    // nonzero-offset views, instead of resolving layout and storage per value.
+    if let Some(saved_values) = input.contiguous_slice() {
+        debug_assert_eq!(saved_values.len(), upstream.len());
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| log_backward_value(saved_value, upstream_value),
+        ));
+    } else {
+        gradient.extend(
+            upstream.iter().enumerate().map(|(index, &value)| {
+                log_backward_value(input.value_at_linear_index(index), value)
             }),
         );
     }
@@ -6631,6 +6645,11 @@ fn tanh_value(value: f32) -> f32 {
 #[inline]
 fn sqrt_backward_value(input: f32, upstream: f32) -> f32 {
     upstream / (2.0 * sqrt_value(input))
+}
+
+#[inline]
+fn log_backward_value(input: f32, upstream: f32) -> f32 {
+    upstream / input
 }
 
 #[inline]
@@ -10997,6 +11016,7 @@ mod tests {
             Some("PowBackward0")
         );
         assert_eq!(source.sqrt().unwrap().grad_fn_name(), Some("SqrtBackward0"));
+        assert_eq!(source.log().unwrap().grad_fn_name(), Some("LogBackward0"));
     }
 
     fn binary_outputs(left: &Tensor, right: &Tensor) -> [Tensor; 4] {

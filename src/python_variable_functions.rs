@@ -480,8 +480,8 @@ of :attr:`input`.
 .. math::
     y_{i} = \log_{e}(\text{input}_{i})
 
-The current native implementation supports exact CPU ``float32`` tensors when
-autograd recording is inactive or the input does not require gradients.
+The current native implementation supports exact CPU ``float32`` tensors,
+including first-order autograd when gradient recording is active.
 
 Args:
     input (Tensor): the input tensor.

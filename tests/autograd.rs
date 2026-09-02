@@ -4320,6 +4320,180 @@ fn sqrt_accumulates_across_graphs_and_obeys_detach_and_no_grad() {
 }
 
 #[test]
+fn logarithm_preserves_scalar_empty_offset_and_strided_autograd_history() {
+    let scalar = Tensor::from_vec(vec![4.0], [])
+        .unwrap()
+        .with_requires_grad(true);
+    let scalar_output = scalar.log().unwrap();
+    assert!(scalar_output.requires_grad());
+    assert!(!scalar_output.is_leaf());
+    assert!(scalar_output.shape().is_empty());
+    assert!(scalar_output.stride().is_empty());
+    assert_eq!(scalar_output.storage_offset(), 0);
+    scalar_output.backward().unwrap();
+    assert_eq!(
+        scalar.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        0.25_f32.to_bits()
+    );
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let empty_output = empty.log().unwrap();
+    assert!(empty_output.requires_grad());
+    assert!(!empty_output.is_leaf());
+    assert_eq!(empty_output.shape(), [2, 0, 3]);
+    assert_eq!(empty_output.stride(), [3, 3, 1]);
+    assert_eq!(empty_output.storage_offset(), 0);
+    assert_eq!(empty_output.dtype(), empty.dtype());
+    assert_eq!(empty_output.device(), empty.device());
+    empty_output.sum().backward().unwrap();
+    let empty_gradient = empty.grad().unwrap().unwrap();
+    assert_eq!(empty_gradient.shape(), [2, 0, 3]);
+    assert_eq!(empty_gradient.stride(), [3, 3, 1]);
+    assert!(values(&empty_gradient).is_empty());
+
+    let source = Tensor::from_vec((1_u8..=24).map(f32::from).collect(), [2, 3, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    let offset = source.index([1]).unwrap();
+    let offset_output = offset.log().unwrap();
+    assert!(offset_output.requires_grad());
+    assert!(!offset_output.is_leaf());
+    assert_eq!(offset.storage_offset(), 12);
+    assert_eq!(offset_output.shape(), [3, 4]);
+    assert_eq!(offset_output.stride(), [4, 1]);
+    assert_eq!(offset_output.storage_offset(), 0);
+    assert!(!offset_output.shares_storage_with(&offset));
+    offset_output.sum().backward().unwrap();
+    let expected = (1_u8..=24)
+        .map(|value| {
+            if value <= 12 {
+                0.0
+            } else {
+                1.0 / f32::from(value)
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(values(&source.grad().unwrap().unwrap()), expected);
+
+    let strided_source = Tensor::from_vec((1_u8..=24).map(f32::from).collect(), [2, 3, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    let strided = strided_source.index([1]).unwrap().transpose(0, 1).unwrap();
+    let weights = Tensor::from_vec((1_u8..=12).map(f32::from).collect(), [4, 3]).unwrap();
+    let strided_output = strided.log().unwrap();
+    assert!(strided_output.requires_grad());
+    assert!(!strided_output.is_leaf());
+    assert_eq!(strided.storage_offset(), 12);
+    assert_eq!(strided_output.shape(), [4, 3]);
+    assert_eq!(strided_output.stride(), [1, 4]);
+    assert_eq!(strided_output.storage_offset(), 0);
+    assert!(!strided_output.shares_storage_with(&strided));
+    strided_output
+        .mul(&weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    let expected = (1_u8..=24)
+        .map(|value| {
+            if value <= 12 {
+                return 0.0;
+            }
+            let index = usize::from(value - 13);
+            let row = index / 4;
+            let column = index % 4;
+            let upstream = f32::from(u8::try_from(column * 3 + row + 1).unwrap());
+            upstream / f32::from(value)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(values(&strided_source.grad().unwrap().unwrap()), expected);
+}
+
+#[test]
+fn logarithm_vjp_uses_saved_input_for_signed_zero_negatives_non_finites_and_nans() {
+    let input_bits = [
+        0x0000_0000,
+        0x8000_0000,
+        0x0000_0001,
+        0x8000_0001,
+        0x3e80_0000,
+        0xbe80_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x7f7f_ffff,
+        0xff7f_ffff,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7f81_2345,
+        0xff81_2345,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let weight_bits = [
+        0x3f80_0000,
+        0xbf80_0000,
+        0x0000_0000,
+        0x8000_0000,
+        0x3f00_0000,
+        0xbf00_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x3f00_0000,
+        0xbf00_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x7fc0_1234,
+        0xffc0_5678,
+    ];
+    let input_values = input_bits.map(f32::from_bits);
+    let weight_values = weight_bits.map(f32::from_bits);
+    let expected_bits = input_values
+        .iter()
+        .zip(weight_values)
+        .map(|(&input, upstream)| (upstream / input).to_bits())
+        .collect::<Vec<_>>();
+    let leaf = Tensor::from_vec(input_values.to_vec(), [input_bits.len()])
+        .unwrap()
+        .with_requires_grad(true);
+    let weights = Tensor::from_vec(weight_values.to_vec(), [weight_bits.len()]).unwrap();
+    let loss = leaf.log().unwrap().mul(&weights).unwrap().sum();
+
+    loss.backward().unwrap();
+    assert!(
+        leaf.grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .eq(expected_bits)
+    );
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+}
+
+#[test]
+fn logarithm_accumulates_across_graphs_and_obeys_detach_and_no_grad() {
+    let leaf = Tensor::from_vec(vec![1.0, 2.0, 4.0], [3])
+        .unwrap()
+        .with_requires_grad(true);
+    leaf.log().unwrap().sum().backward().unwrap();
+    leaf.log().unwrap().sum().backward().unwrap();
+    assert_eq!(values(&leaf.grad().unwrap().unwrap()), [2.0, 1.0, 0.5]);
+
+    assert!(!leaf.detach().unwrap().log().unwrap().requires_grad());
+    {
+        let _guard = no_grad();
+        let output = leaf.transpose(0, 0).unwrap().log().unwrap();
+        assert!(!output.requires_grad());
+        assert!(output.is_leaf());
+        assert_eq!(output.shape(), [3]);
+        assert_eq!(output.stride(), [1]);
+    }
+    assert!(leaf.log().unwrap().requires_grad());
+}
+
+#[test]
 fn saved_input_unary_nodes_compose_and_release_their_saved_values() {
     let leaf = Tensor::from_vec(vec![-1.0, 0.5, 2.0, 4.0], [4])
         .unwrap()
