@@ -1740,13 +1740,14 @@ pub(crate) fn ones_like_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let (input, requires_grad) = parse_like_factory_arguments(
+    let (input, memory_format, requires_grad) = parse_like_factory_arguments(
         "ones_like",
         bind_like_factory_arguments("ones_like", args, kwargs)?,
     )?;
-    let shape = like_factory_input_shape("ones_like", &input)?;
-    let inner = CoreTensor::ones_with_metadata(shape, DType::Float32, Device::Cpu)
-        .map_err(|error| tensor_error(&error))?;
+    let (shape, strides) = like_factory_output_metadata("ones_like", &input, memory_format)?;
+    let inner =
+        CoreTensor::full_with_strides_metadata(shape, strides, 1.0, DType::Float32, Device::Cpu)
+            .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
 }
 
@@ -1755,13 +1756,14 @@ pub(crate) fn zeros_like_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let (input, requires_grad) = parse_like_factory_arguments(
+    let (input, memory_format, requires_grad) = parse_like_factory_arguments(
         "zeros_like",
         bind_like_factory_arguments("zeros_like", args, kwargs)?,
     )?;
-    let shape = like_factory_input_shape("zeros_like", &input)?;
-    let inner = CoreTensor::zeros_with_metadata(shape, DType::Float32, Device::Cpu)
-        .map_err(|error| tensor_error(&error))?;
+    let (shape, strides) = like_factory_output_metadata("zeros_like", &input, memory_format)?;
+    let inner =
+        CoreTensor::full_with_strides_metadata(shape, strides, 0.0, DType::Float32, Device::Cpu)
+            .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
 }
 
@@ -9202,7 +9204,7 @@ fn parse_creation_arguments(
 fn parse_like_factory_arguments<'py>(
     function: &str,
     arguments: LikeFactoryCallArguments<'py>,
-) -> PyResult<(Bound<'py, PyTensor>, bool)> {
+) -> PyResult<(Bound<'py, PyTensor>, MemoryFormat, bool)> {
     let LikeFactoryCallArguments {
         input,
         dtype,
@@ -9242,7 +9244,7 @@ fn parse_like_factory_arguments<'py>(
             "{function}(): __torch_function__ modes are not supported"
         )));
     }
-    Ok((input.clone(), requires_grad))
+    Ok((input.clone(), memory_format, requires_grad))
 }
 
 fn parse_like_factory_memory_format(
@@ -14226,23 +14228,43 @@ fn parse_exact_native_like_factory_tensor_argument<'a, 'py>(
     Ok(value.value.cast::<PyTensor>()?)
 }
 
-fn like_factory_input_shape(function: &str, input: &Bound<'_, PyTensor>) -> PyResult<Vec<usize>> {
+fn like_factory_output_metadata(
+    function: &str,
+    input: &Bound<'_, PyTensor>,
+    memory_format: MemoryFormat,
+) -> PyResult<(Vec<usize>, Vec<usize>)> {
     let tensor = input.try_borrow()?;
-    validate_like_factory_native_input(function, &tensor.inner)?;
+    validate_like_factory_native_input(function, &tensor.inner, memory_format)?;
     let mut shape = try_size_vector(tensor.inner.shape().len())?;
     shape.extend_from_slice(tensor.inner.shape());
-    Ok(shape)
+    let mut strides = try_size_vector(tensor.inner.stride().len())?;
+    strides.extend_from_slice(tensor.inner.stride());
+    Ok((shape, strides))
 }
 
-fn validate_like_factory_native_input(function: &str, input: &CoreTensor) -> PyResult<()> {
-    if input.dtype() == DType::Float32
-        && input.device() == Device::Cpu
-        && input.is_contiguous_with_memory_format(MemoryFormat::Contiguous)
-        && like_factory_has_canonical_row_major_strides(input)
+fn validate_like_factory_native_input(
+    function: &str,
+    input: &CoreTensor,
+    memory_format: MemoryFormat,
+) -> PyResult<()> {
+    if input.dtype() != DType::Float32 || input.device() != Device::Cpu {
+        return Err(like_factory_unsupported_native_input(function));
+    }
+
+    if like_factory_has_canonical_row_major_strides(input)
         && input.suggested_memory_format() == MemoryFormat::Contiguous
     {
         return Ok(());
     }
+
+    if memory_format == MemoryFormat::Preserve
+        && input.shape().len() == 4
+        && input.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast)
+        && input.is_non_overlapping_and_dense()
+    {
+        return Ok(());
+    }
+
     Err(like_factory_unsupported_native_input(function))
 }
 
@@ -14273,7 +14295,7 @@ fn like_factory_has_canonical_row_major_strides(input: &CoreTensor) -> bool {
 
 fn like_factory_unsupported_native_input(function: &str) -> PyErr {
     PyNotImplementedError::new_err(format!(
-        "{function}(): only exact native CPU float32 row-major contiguous Tensor inputs are supported"
+        "{function}(): only exact native CPU float32 row-major contiguous or rank-4 channels-last-contiguous non-overlapping dense Tensor inputs are supported"
     ))
 }
 

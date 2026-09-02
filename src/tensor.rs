@@ -783,6 +783,25 @@ impl Tensor {
     }
 
     #[cfg(feature = "python-bindings")]
+    pub(crate) fn full_with_strides_metadata(
+        shape: Vec<usize>,
+        strides: Vec<usize>,
+        fill_value: f32,
+        dtype: DType,
+        device: Device,
+    ) -> Result<Self, TensorError> {
+        if shape.len() != strides.len() {
+            return Err(TensorError::StrideCalculationOverflow);
+        }
+        let elements = element_count(&shape)?;
+        if !layout_is_non_overlapping_and_dense(&shape, &strides, elements) {
+            return Err(TensorError::ViewIncompatibleLayout);
+        }
+        let data = filled_storage(elements, fill_value)?;
+        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+    }
+
+    #[cfg(feature = "python-bindings")]
     pub(crate) fn validate_full_shape(shape: &[usize]) -> Result<usize, TensorError> {
         let (elements, _) = validated_layout(shape)?;
         validate_storage_capacity(elements)?;
