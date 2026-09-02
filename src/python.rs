@@ -2538,12 +2538,12 @@ pub(crate) fn mm_variable_function(
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     let (arguments, out, keyword_error) = bind_top_level_mm_arguments(args, kwargs)?;
-    let input = parse_exact_native_mm_tensor_or_torch_function_argument("input", &arguments[0])?;
-    let mat2 = parse_exact_native_mm_tensor_or_torch_function_argument("mat2", &arguments[1])?;
-    let out = parse_top_level_mm_out(out)?;
     if let Some(keyword_error) = keyword_error {
         return Err(keyword_error);
     }
+    let input = parse_exact_native_mm_tensor_or_torch_function_argument("input", &arguments[0])?;
+    let mat2 = parse_exact_native_mm_tensor_or_torch_function_argument("mat2", &arguments[1])?;
+    let out = parse_top_level_mm_out(out)?;
     let call = BoundTopLevelMmCall { input, mat2, out };
     dispatch_top_level_mm(py, &call, args, kwargs)
 }
@@ -14619,6 +14619,11 @@ fn bind_top_level_mm_keyword_error(
         return Ok(None);
     }
 
+    let repeated_input_alias = usize::from(keywords.contains("input")?)
+        + usize::from(keywords.contains("x")?)
+        + usize::from(keywords.contains("a")?)
+        + usize::from(keywords.contains("x1")?)
+        > 1;
     for key in keywords.keys() {
         let key = key.extract::<String>()?;
         let position = match key.as_str() {
@@ -14632,7 +14637,7 @@ fn bind_top_level_mm_keyword_error(
                 )?));
             }
         };
-        if position < positional.len() {
+        if repeated_input_alias || position < positional.len() {
             return Ok(Some(top_level_mm_binding_error(
                 positional,
                 Some(keywords),

@@ -125,6 +125,13 @@ def invalid_mm_overload(summary):
     )
 
 
+def first_operand_alias_pairs():
+    aliases = ("input", "x", "a", "x1")
+    for index, left_alias in enumerate(aliases):
+        for right_alias in aliases[index + 1 :]:
+            yield left_alias, right_alias
+
+
 class TopLevelMmTests(unittest.TestCase):
     def assert_matches_matmul(self, actual, expected, *, case):
         with self.subTest(case=case, metadata=True):
@@ -273,12 +280,56 @@ class TopLevelMmTests(unittest.TestCase):
             lambda: torch.mm([], mat2),
             lambda: torch.mm(left, []),
             lambda: torch.mm(left, mat2, unexpected=True),
+            lambda: torch.mm(input=left, x=mat2, mat2=mat2),
         ):
             mode = RecordingMode()
             with mode:
                 with self.assertRaises(TypeError):
                     call()
             self.assertEqual(mode.calls, [])
+
+    def test_duplicate_first_operand_aliases_reject_before_dispatch(self):
+        tensor = torch.tensor([[1.0]])
+        other = torch.tensor([[2.0]])
+        invalid_overload = r"^mm\(\) received an invalid combination of arguments - got "
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return object()
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return object()
+
+        for left_alias, right_alias in first_operand_alias_pairs():
+            with self.subTest(left_alias=left_alias, right_alias=right_alias):
+                kwargs = {left_alias: tensor, right_alias: other, "mat2": tensor}
+                with self.assertRaisesRegex(TypeError, invalid_overload):
+                    torch.mm(**kwargs)
+
+            for override_alias in (left_alias, right_alias):
+                with self.subTest(
+                    left_alias=left_alias,
+                    right_alias=right_alias,
+                    override_alias=override_alias,
+                ):
+                    Override.calls.clear()
+                    mode = RecordingMode()
+                    kwargs = {left_alias: tensor, right_alias: other, "mat2": tensor}
+                    kwargs[override_alias] = Override()
+                    with mode:
+                        with self.assertRaisesRegex(TypeError, invalid_overload):
+                            torch.mm(**kwargs)
+                    self.assertEqual(mode.calls, [])
+                    self.assertEqual(Override.calls, [])
 
     def test_operand_override_order_types_and_declining_errors(self):
         native = torch.tensor([[1.0]])

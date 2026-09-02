@@ -91,6 +91,13 @@ def invalid_mm_overload(summary):
     )
 
 
+def first_operand_alias_pairs():
+    aliases = ("input", "x", "a", "x1")
+    for index, left_alias in enumerate(aliases):
+        for right_alias in aliases[index + 1 :]:
+            yield left_alias, right_alias
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class TopLevelMmReferenceTests(unittest.TestCase):
     @classmethod
@@ -370,19 +377,50 @@ class TopLevelMmReferenceTests(unittest.TestCase):
         with declining_mode:
             fallback_result = function(input=left, mat2=FallbackOverride())
 
+        class InvalidOverride:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
         invalid_observations = []
-        for call in (
+        invalid_calls = [
             lambda: function([], mat2),
             lambda: function(left, []),
             lambda: function(left, mat2, unexpected=True),
-        ):
+        ]
+        for left_alias, right_alias in first_operand_alias_pairs():
+            invalid_calls.append(
+                lambda left_alias=left_alias, right_alias=right_alias: function(
+                    **{left_alias: left, right_alias: left, "mat2": mat2}
+                )
+            )
+            invalid_calls.append(
+                lambda left_alias=left_alias, right_alias=right_alias: function(
+                    **{left_alias: InvalidOverride(), right_alias: left, "mat2": mat2}
+                )
+            )
+            invalid_calls.append(
+                lambda left_alias=left_alias, right_alias=right_alias: function(
+                    **{left_alias: left, right_alias: InvalidOverride(), "mat2": mat2}
+                )
+            )
+        for call in invalid_calls:
             invalid_mode = RecordingMode()
+            InvalidOverride.calls.clear()
             try:
                 with invalid_mode:
                     call()
             except Exception as error:
                 invalid_observations.append(
-                    (type(error).__name__, str(error), len(invalid_mode.calls))
+                    (
+                        type(error).__name__,
+                        str(error),
+                        len(invalid_mode.calls),
+                        len(InvalidOverride.calls),
+                    )
                 )
 
         return (
