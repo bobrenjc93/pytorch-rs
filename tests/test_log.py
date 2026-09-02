@@ -32,8 +32,9 @@ of :attr:`input`.
 .. math::
     y_{i} = \\log_{e}(\\text{input}_{i})
 
-The current native implementation supports exact CPU ``float32`` tensors when
-autograd recording is inactive or the input does not require gradients.
+The current native implementation supports exact CPU ``float32`` tensors and
+first-order autograd. Concrete ``out`` tensors, in-place ``log_``,
+dtype/device/subclass expansion, and higher-order gradients are unsupported.
 
 Args:
     input (Tensor): the input tensor.
@@ -146,13 +147,22 @@ class TensorLogTests(unittest.TestCase):
             ("alias and out none", lambda: torch.log(x=source, out=None)),
         )
 
-    def assert_untracked_result(self, output, source, expected_stride, *, case):
+    def assert_result(
+        self,
+        output,
+        source,
+        expected_stride,
+        *,
+        case,
+        requires_grad=False,
+        is_leaf=True,
+    ):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(output.shape, source.shape)
             self.assertEqual(output.stride(), expected_stride)
             self.assertEqual(output.storage_offset(), 0)
-            self.assertFalse(output.requires_grad)
-            self.assertTrue(output.is_leaf)
+            self.assertEqual(output.requires_grad, requires_grad)
+            self.assertEqual(output.is_leaf, is_leaf)
             self.assertIs(output.dtype, torch.float32)
             self.assertEqual(output.device, torch.device("cpu"))
             self.assertFalse(output.is_set_to(source))
@@ -163,9 +173,7 @@ class TensorLogTests(unittest.TestCase):
         for case, source, expected_stride in make_cases(torch):
             source_bits = tensor_bits(source).copy()
             output = source.log()
-            self.assert_untracked_result(
-                output, source, expected_stride, case=case
-            )
+            self.assert_result(output, source, expected_stride, case=case)
 
             if case == "numerical edges":
                 expected_bits = SPECIAL_OUTPUT_BITS
@@ -198,46 +206,82 @@ class TensorLogTests(unittest.TestCase):
             expected = source.log()
             for form, call in self.top_level_calls(source):
                 actual = call()
-                self.assert_untracked_result(
-                    actual, source, expected_stride, case=(case, form)
-                )
+                self.assert_result(actual, source, expected_stride, case=(case, form))
                 with self.subTest(case=case, form=form, values=True):
                     np.testing.assert_array_equal(
                         tensor_bits(actual), tensor_bits(expected)
                     )
 
-    def test_active_autograd_is_rejected_and_no_grad_or_detach_is_allowed(self):
+    def test_first_order_autograd_no_grad_and_detach_boundaries(self):
+        scalar = torch.tensor(2.0, requires_grad=True)
+        scalar_output = scalar.log()
+        self.assert_result(
+            scalar_output,
+            scalar,
+            (),
+            case="scalar",
+            requires_grad=True,
+            is_leaf=False,
+        )
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(scalar_output),
+            ", grad_fn=<LogBackward0>",
+        )
+        scalar_output.backward()
+        self.assertEqual(scalar.grad.item(), 0.5)
+
+        empty = torch.zeros((2, 0, 3), requires_grad=True)
+        empty_output = torch.log(empty, out=None)
+        self.assert_result(
+            empty_output,
+            empty,
+            (3, 3, 1),
+            case="empty",
+            requires_grad=True,
+            is_leaf=False,
+        )
+        empty_output.sum().backward()
+        self.assertEqual(empty.grad.shape, (2, 0, 3))
+        self.assertEqual(empty.grad.stride(), (3, 3, 1))
+        self.assertEqual(empty.grad.numel(), 0)
+
         leaf = torch.tensor(
             [[0.25, 1.0, 2.0], [4.0, 8.0, 16.0]], requires_grad=True
         )
         source = leaf.transpose(0, 1)[1]
         source_bits = tensor_bits(source).copy()
-
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^log\(\): autograd recording is not supported$",
-        ):
-            source.log()
+        output = source.log()
+        self.assert_result(
+            output,
+            source,
+            (1,),
+            case="offset noncontiguous",
+            requires_grad=True,
+            is_leaf=False,
+        )
+        (output * torch.tensor([2.0, -3.0])).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad),
+            np.asarray([[0.0, 2.0, 0.0], [0.0, -0.375, 0.0]], dtype=np.float32),
+        )
         for form, call in self.top_level_calls(source):
             with self.subTest(form=form, mode="recording"):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    r"^log\(\): autograd recording is not supported$",
-                ):
-                    call()
+                actual = call()
+                self.assert_result(
+                    actual,
+                    source,
+                    (1,),
+                    case=("top-level recording", form),
+                    requires_grad=True,
+                    is_leaf=False,
+                )
 
         extreme = torch.zeros((0,), requires_grad=True).reshape(
             (0, sys.maxsize, 3)
         )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^log\(\): autograd recording is not supported$",
-        ):
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             extreme.log()
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^log\(\): autograd recording is not supported$",
-        ):
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             torch.log(extreme)
 
         detached = source.detach()
@@ -256,14 +300,93 @@ class TensorLogTests(unittest.TestCase):
             ("detached", detached.log()),
         ):
             with self.subTest(label=label):
-                self.assert_untracked_result(
-                    actual, detached, expected.stride(), case=label
-                )
+                self.assert_result(actual, detached, expected.stride(), case=label)
                 np.testing.assert_array_equal(
                     tensor_bits(actual), tensor_bits(expected)
                 )
         np.testing.assert_array_equal(tensor_bits(source), source_bits)
-        self.assertIsNone(leaf.grad)
+        self.assertIsNotNone(leaf.grad)
+
+    def test_log_backward_special_values_accumulation_and_freed_graph_reuse(self):
+        input_bits = np.asarray(
+            (
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ),
+            dtype=np.uint32,
+        )
+        weight_bits = np.asarray(
+            (
+                0x3F80_0000,
+                0xBF80_0000,
+                0x0000_0000,
+                0x8000_0000,
+                0x4000_0000,
+                0xC000_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7FC0_1234,
+                0xFFC0_5678,
+            ),
+            dtype=np.uint32,
+        )
+        expected_non_nan_gradient_bits = np.asarray(
+            (
+                0x7F80_0000,
+                0x7F80_0000,
+                0x0000_0000,
+                0x0000_0000,
+                0x4000_0000,
+                0x4000_0000,
+                0x0000_0000,
+                0x0000_0000,
+            ),
+            dtype=np.uint32,
+        )
+        leaf = torch.tensor(memoryview(input_bits.view(np.float32)), requires_grad=True)
+        weights = torch.tensor(memoryview(weight_bits.view(np.float32)))
+        (leaf.log() * weights).sum().backward()
+        gradient = np.asarray(leaf.grad, dtype=np.float32)
+        np.testing.assert_array_equal(
+            gradient[: len(expected_non_nan_gradient_bits)].view(np.uint32),
+            expected_non_nan_gradient_bits,
+        )
+        np.testing.assert_array_equal(np.isnan(gradient[-2:]), [True, True])
+
+        accumulated = torch.tensor([1.0, 2.0, 4.0], requires_grad=True)
+        accumulated.log().sum().backward()
+        torch.log(accumulated, out=None).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(accumulated.grad, dtype=np.float32),
+            np.asarray([2.0, 1.0, 0.5], dtype=np.float32),
+        )
+
+        freed = torch.tensor([1.0, 2.0], requires_grad=True)
+        loss = freed.log().sum()
+        loss.backward()
+        with self.assertRaisesRegex(
+            RuntimeError, "backward through the graph a second time"
+        ):
+            loss.backward()
+
+        higher_order = torch.tensor(2.0, requires_grad=True)
+        higher_order_loss = higher_order.log()
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^torch_rs\.Tensor\.backward does not support create_graph=True$",
+        ):
+            higher_order_loss.backward(create_graph=True)
+        self.assertIsNone(higher_order.grad)
+        higher_order_loss.backward()
+        self.assertEqual(higher_order.grad.item(), 0.5)
 
     def test_tensorbase_descriptor_metadata_errors_copy_pickle_and_mode_dispatch(self):
         tensor = torch.tensor([1.0], requires_grad=True)
@@ -386,14 +509,17 @@ class TensorLogTests(unittest.TestCase):
         self.assertEqual(forwarded.tolist(), [0.0])
 
         order.clear()
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^log\(\): autograd recording is not supported$",
-        ):
-            with ForwardingMode("lower"):
-                with ForwardingMode("upper"):
-                    tensor.log()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                tracked_forwarded = tensor.log()
         self.assertEqual(order, ["upper", "lower"])
+        self.assertTrue(tracked_forwarded.requires_grad)
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                tracked_forwarded
+            ),
+            ", grad_fn=<LogBackward0>",
+        )
 
     def test_top_level_out_binding_import_wildcard_reload_copy_and_pickle(self):
         source = torch.tensor([1.0, np.e], requires_grad=True)

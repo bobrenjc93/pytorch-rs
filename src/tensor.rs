@@ -3692,13 +3692,10 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when gradient recording is enabled for this tensor, or
-    /// when result metadata or storage allocation fails.
+    /// Returns an error when result metadata or storage allocation fails.
     pub fn log(&self) -> Result<Self, TensorError> {
-        if self.records_grad() {
-            return Err(TensorError::AutogradRecordingUnsupported { operation: "log" });
-        }
-        self.unary_map(log_value)
+        let output = self.unary_map(log_value)?;
+        self.finish_saved_input_unary_vjp(output, AutogradNode::Log, apply_log_vjp)
     }
 
     fn scalar_div_with_output_layout(
@@ -5016,6 +5013,23 @@ fn apply_cos_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>)
             .enumerate()
             .map(|(index, value)| cos_backward_value(input.value_at_linear_index(index), *value)),
     );
+}
+
+fn apply_log_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    // Borrow one exact saved range for row-contiguous layouts, including
+    // nonzero-offset views, instead of resolving layout and storage per value.
+    if let Some(saved_values) = input.contiguous_slice() {
+        debug_assert_eq!(saved_values.len(), upstream.len());
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| log_backward_value(saved_value, upstream_value),
+        ));
+    } else {
+        gradient.extend(
+            upstream.iter().enumerate().map(|(index, &value)| {
+                log_backward_value(input.value_at_linear_index(index), value)
+            }),
+        );
+    }
 }
 
 fn apply_exp_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
@@ -6641,6 +6655,11 @@ fn exp_backward_value(output: f32, upstream: f32) -> f32 {
 #[inline]
 fn cos_backward_value(input: f32, upstream: f32) -> f32 {
     upstream * -input.sin()
+}
+
+#[inline]
+fn log_backward_value(input: f32, upstream: f32) -> f32 {
+    upstream / input
 }
 
 #[inline]
@@ -10967,6 +10986,7 @@ mod tests {
 
         assert_eq!(source.abs().unwrap().grad_fn_name(), Some("AbsBackward0"));
         assert_eq!(source.relu().unwrap().grad_fn_name(), Some("ReluBackward0"));
+        assert_eq!(source.log().unwrap().grad_fn_name(), Some("LogBackward0"));
         assert_eq!(source.sin().unwrap().grad_fn_name(), Some("SinBackward0"));
         assert_eq!(source.cos().unwrap().grad_fn_name(), Some("CosBackward0"));
         assert_eq!(source.exp().unwrap().grad_fn_name(), Some("ExpBackward0"));
