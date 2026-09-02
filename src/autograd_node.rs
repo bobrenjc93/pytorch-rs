@@ -23,6 +23,8 @@ pub(crate) enum AutogradNode {
     Slice,
     Sigmoid,
     Sqrt,
+    #[cfg(any(feature = "python-bindings", test))]
+    SquaredDifference,
     Squeeze,
     SqueezeDimension,
     SqueezeDimensions,
@@ -62,6 +64,8 @@ impl AutogradNode {
             Self::Slice => "SliceBackward0",
             Self::Sigmoid => "SigmoidBackward0",
             Self::Sqrt => "SqrtBackward0",
+            #[cfg(any(feature = "python-bindings", test))]
+            Self::SquaredDifference => "MseLossBackward0",
             Self::Squeeze => "SqueezeBackward0",
             Self::SqueezeDimension => "SqueezeBackward1",
             Self::SqueezeDimensions => "SqueezeBackward2",

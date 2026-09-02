@@ -40,6 +40,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-mul-release-timings.md",
     ),
     (
+        "Rank-2 `@`, `Tensor.matmul`, and `torch.matmul` release timings",
+        "docs/rank2-matmul-release-timings.md",
+    ),
+    (
         "`Tensor.abs` and `torch.abs` release timings",
         "docs/tensor-abs-release-timings.md",
     ),
@@ -48,11 +52,11 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-sqrt-release-timings.md",
     ),
     (
-        "`Tensor.view`, reshape, flatten, ravel, and edge-unsqueeze release timings",
+        "`Tensor.view`, reshape, flatten, ravel, unbind, and edge-unsqueeze release timings",
         "docs/tensor-view-release-timings.md",
     ),
     (
-        '`torch.nn.functional.mse_loss(reduction="none")` release timings',
+        "`torch.nn.functional.mse_loss` release timings",
         "docs/mse-loss-release-timings.md",
     ),
     (
@@ -172,6 +176,8 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         (
             "`Tensor.select`",
             "`torch.select`",
+            "`Tensor.unbind`",
+            "`torch.unbind`",
             "`Tensor.view`",
             "`Tensor.reshape`",
             "`torch.reshape`",
@@ -180,7 +186,6 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         (
             "range slicing",
             "advanced indexing",
-            "arbitrary-dimension `unbind`",
             "sequence `movedim` axes",
             "cross-dtype views",
         ),
@@ -201,11 +206,13 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         "Use functional NN helpers",
         (
             "`torch.nn.functional.linear`",
+            "`torch.nn.functional.mse_loss`",
             "`torch.nn.functional.dropout1d`",
             "`torch.nn.functional.softsign`",
         ),
         (
             "Module layers",
+            '`mse_loss` reductions other than `"none"`/`"sum"`',
             "loss `weight` arguments",
             "mutating initializers",
         ),
