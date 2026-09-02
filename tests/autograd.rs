@@ -360,6 +360,27 @@ fn reciprocal_square_root_records_saved_input_vjp_and_honors_no_grad() {
 }
 
 #[test]
+fn reciprocal_square_root_nan_upstream_prefers_scalar_local_nan_payload() {
+    for (input_bits, upstream_bits, expected_bits) in [
+        (0xc080_0000, 0x7fc0_1234, 0xffc0_0000),
+        (0x7f81_2345, 0xffc0_5678, 0x7fc1_2345),
+        (0xff81_2345, 0x7fc0_abcd, 0xffc1_2345),
+        (0xff80_0000, 0xffc0_dcba, 0xffc0_0000),
+    ] {
+        let leaf = Tensor::from_vec(vec![f32::from_bits(input_bits)], [1])
+            .unwrap()
+            .with_requires_grad(true);
+        let upstream = Tensor::from_vec(vec![f32::from_bits(upstream_bits)], [1]).unwrap();
+        let loss = leaf.rsqrt().unwrap().mul(&upstream).unwrap().sum();
+        loss.backward().unwrap();
+        assert_eq!(
+            leaf.grad().unwrap().unwrap().item().unwrap().to_bits(),
+            expected_bits
+        );
+    }
+}
+
+#[test]
 fn floor_records_reusable_zero_vjp_for_views_and_honors_no_grad() {
     let leaf = Tensor::from_vec(vec![-1.25, -0.0, 1.75, 4.5], [2, 2])
         .unwrap()

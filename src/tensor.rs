@@ -5099,9 +5099,10 @@ fn apply_sqrt_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>
 
 fn apply_rsqrt_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
     // This is mathematically equivalent to -0.5 * grad * input.pow(-1.5),
-    // but PyTorch's CPU backward evaluates it through the reciprocal-sqrt
-    // result. Recompute that value from the saved input so the node remains
-    // saved-input while preserving the observable IEEE edge behavior.
+    // but PyTorch's scalar CPU backward builds the reciprocal-sqrt local
+    // derivative before applying the upstream gradient. Recompute that value
+    // from the saved input so the node remains saved-input while preserving
+    // the observable IEEE edge behavior.
     if let Some(saved_values) = input.contiguous_slice() {
         debug_assert_eq!(saved_values.len(), upstream.len());
         gradient.extend(saved_values.iter().zip(upstream).map(
@@ -6651,7 +6652,7 @@ fn sqrt_backward_value(input: f32, upstream: f32) -> f32 {
 fn rsqrt_backward_value(input: f32, upstream: f32) -> f32 {
     let reciprocal_sqrt = rsqrt_value(input);
     let cubed = (reciprocal_sqrt * reciprocal_sqrt) * reciprocal_sqrt;
-    (upstream * -0.5) * cubed
+    (cubed * -0.5) * upstream
 }
 
 #[inline]

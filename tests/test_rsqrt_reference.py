@@ -358,6 +358,45 @@ class TensorRsqrtReferenceTests(unittest.TestCase):
             tensors[0][1], tensors[1][1], case="gradient"
         )
 
+    def test_autograd_nan_upstream_scalar_payloads_match_pytorch_2_13(self):
+        cases = (
+            ("negative finite", 0xC080_0000, 0x7FC0_1234),
+            ("positive nan input", 0x7F81_2345, 0xFFC0_5678),
+            ("negative nan input", 0xFF81_2345, 0x7FC0_ABCD),
+            ("negative infinity", 0xFF80_0000, 0xFFC0_DCBA),
+        )
+        forms = (
+            ("method", lambda module, leaf: leaf.rsqrt()),
+            ("top-level", lambda module, leaf: module.rsqrt(leaf, out=None)),
+        )
+        for case, input_bits, upstream_bits in cases:
+            for form, call in forms:
+                tensors = []
+                for module in (torch, reference_torch):
+                    leaf = module.tensor(
+                        memoryview(
+                            np.asarray([input_bits], dtype=np.uint32).view(np.float32)
+                        ),
+                        requires_grad=True,
+                    )
+                    upstream = module.tensor(
+                        memoryview(
+                            np.asarray([upstream_bits], dtype=np.uint32).view(
+                                np.float32
+                            )
+                        )
+                    )
+                    output = call(module, leaf)
+                    (output * upstream).sum().backward()
+                    tensors.append((output, leaf.grad))
+
+                self.assert_tensor_matches(
+                    tensors[0][0], tensors[1][0], case=(case, form, "forward")
+                )
+                self.assert_tensor_matches(
+                    tensors[0][1], tensors[1][1], case=(case, form, "gradient")
+                )
+
     def test_autograd_accumulation_graph_freeing_no_grad_and_detach_match_pytorch_2_13(
         self,
     ):

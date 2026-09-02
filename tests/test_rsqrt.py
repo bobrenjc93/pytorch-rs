@@ -626,6 +626,39 @@ class TopLevelRsqrtTests(unittest.TestCase):
             function_leaf.grad, method_leaf.grad, case="special gradient"
         )
 
+    def test_nan_upstream_scalar_prefers_local_nan_payload(self):
+        cases = (
+            ("negative finite", 0xC080_0000, 0x7FC0_1234, 0xFFC0_0000),
+            ("positive nan input", 0x7F81_2345, 0xFFC0_5678, 0x7FC1_2345),
+            ("negative nan input", 0xFF81_2345, 0x7FC0_ABCD, 0xFFC1_2345),
+            ("negative infinity", 0xFF80_0000, 0xFFC0_DCBA, 0xFFC0_0000),
+        )
+        forms = (
+            ("method", lambda leaf: leaf.rsqrt()),
+            ("top-level", lambda leaf: torch.rsqrt(leaf, out=None)),
+        )
+        for case, input_bits, upstream_bits, expected_bits in cases:
+            for form, call in forms:
+                with self.subTest(case=case, form=form):
+                    leaf = torch.tensor(
+                        memoryview(
+                            np.asarray([input_bits], dtype=np.uint32).view(np.float32)
+                        ),
+                        requires_grad=True,
+                    )
+                    upstream = torch.tensor(
+                        memoryview(
+                            np.asarray([upstream_bits], dtype=np.uint32).view(
+                                np.float32
+                            )
+                        )
+                    )
+                    (call(leaf) * upstream).sum().backward()
+                    np.testing.assert_array_equal(
+                        np.asarray(leaf.grad, dtype=np.float32).view(np.uint32),
+                        np.asarray([expected_bits], dtype=np.uint32),
+                    )
+
     def test_accumulation_graph_freeing_no_grad_and_detach_reuse_method_path(self):
         function_leaf = torch.tensor([1.0, 4.0, 9.0], requires_grad=True)
         method_leaf = torch.tensor([1.0, 4.0, 9.0], requires_grad=True)
