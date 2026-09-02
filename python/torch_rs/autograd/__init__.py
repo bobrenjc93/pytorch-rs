@@ -9,6 +9,7 @@ from .. import _C as _C
 from . import grad_mode as grad_mode
 from .grad_mode import enable_grad as enable_grad
 from .grad_mode import no_grad as no_grad
+from .grad_mode import set_grad_enabled as set_grad_enabled
 
 
 _Tensor = _C.Tensor
@@ -198,6 +199,6 @@ def backward(
 is_multithreading_enabled = _C._is_multithreading_enabled
 is_view_replay_enabled = _C._is_view_replay_enabled
 
-__all__ = ["backward", "grad_mode", "enable_grad", "no_grad"]
+__all__ = ["backward", "grad_mode", "enable_grad", "no_grad", "set_grad_enabled"]
 
 del _C

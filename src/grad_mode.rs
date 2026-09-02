@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 thread_local! {
     static GRAD_MODE_STACK: RefCell<Vec<GradModeEntry>> = const { RefCell::new(Vec::new()) };
+    static GRAD_MODE_ENABLED: Cell<bool> = const { Cell::new(true) };
     static NEXT_GRAD_MODE_TOKEN: Cell<usize> = const { Cell::new(0) };
 }
 
@@ -12,7 +13,7 @@ pub(crate) struct GradModeToken(usize);
 
 struct GradModeEntry {
     token: GradModeToken,
-    enabled: bool,
+    previous_enabled: bool,
 }
 
 /// A thread-local guard which disables eager graph recording until dropped.
@@ -70,7 +71,7 @@ pub fn enable_grad() -> EnableGradGuard {
 /// Returns whether eager graph recording is enabled on the current thread.
 #[must_use]
 pub fn is_grad_enabled() -> bool {
-    GRAD_MODE_STACK.with_borrow(|stack| stack.last().is_none_or(|entry| entry.enabled))
+    GRAD_MODE_ENABLED.with(Cell::get)
 }
 
 pub(crate) fn enter_no_grad() -> GradModeToken {
@@ -81,17 +82,27 @@ pub(crate) fn enter_enable_grad() -> GradModeToken {
     enter_grad_mode(true)
 }
 
+pub(crate) fn enter_set_grad_enabled(enabled: bool, previous_enabled: bool) -> GradModeToken {
+    enter_grad_mode_with_previous(enabled, previous_enabled)
+}
+
 pub(crate) fn exit_grad_mode(token: GradModeToken) {
-    GRAD_MODE_STACK.with_borrow_mut(|stack| {
+    let previous_enabled = GRAD_MODE_STACK.with_borrow_mut(|stack| {
         let position = stack
             .iter()
             .rposition(|entry| entry.token.0 == token.0)
             .expect("grad-mode guard exited without a matching entry");
-        stack.remove(position);
+        stack.remove(position).previous_enabled
     });
+    GRAD_MODE_ENABLED.with(|enabled| enabled.set(previous_enabled));
 }
 
 fn enter_grad_mode(enabled: bool) -> GradModeToken {
+    let previous_enabled = GRAD_MODE_ENABLED.with(|current| current.replace(enabled));
+    enter_grad_mode_with_previous(enabled, previous_enabled)
+}
+
+fn enter_grad_mode_with_previous(enabled: bool, previous_enabled: bool) -> GradModeToken {
     let token = NEXT_GRAD_MODE_TOKEN.with(|next_token| {
         let token = next_token.get();
         next_token.set(
@@ -101,6 +112,12 @@ fn enter_grad_mode(enabled: bool) -> GradModeToken {
         );
         GradModeToken(token)
     });
-    GRAD_MODE_STACK.with_borrow_mut(|stack| stack.push(GradModeEntry { token, enabled }));
+    GRAD_MODE_ENABLED.with(|current| current.set(enabled));
+    GRAD_MODE_STACK.with_borrow_mut(|stack| {
+        stack.push(GradModeEntry {
+            token,
+            previous_enabled,
+        });
+    });
     token
 }
