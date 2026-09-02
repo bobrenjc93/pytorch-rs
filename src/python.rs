@@ -4957,8 +4957,7 @@ fn apply_top_level_addition(
             let scalar = parse_supported_arithmetic_scalar(scalar)?;
             BinaryOperation::Add.apply_scalar(&input.inner, scalar.into_f32(), false)
         }
-        (BoundAddOperand::Scalar(_), BoundAddOperand::Scalar(_))
-        | (BoundAddOperand::Scalar(_), BoundAddOperand::Tensor(_)) => {
+        (BoundAddOperand::Scalar(_), BoundAddOperand::Scalar(_) | BoundAddOperand::Tensor(_)) => {
             return Err(addition_unsupported_native_input());
         }
         (BoundAddOperand::Override(_), _) | (_, BoundAddOperand::Override(_)) => {
