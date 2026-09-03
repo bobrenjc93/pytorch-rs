@@ -24,7 +24,7 @@ use crate::python::{
     empty_like_variable_function, exp_variable_function, fix_variable_function,
     floor_variable_function, full_like_variable_function, get_device_variable_function,
     imag_variable_function, is_conj_variable_function, is_inference_variable_function,
-    log_variable_function, matmul_variable_function, mean_variable_function,
+    log_variable_function, matmul_variable_function, mean_variable_function, mm_variable_function,
     moveaxis_variable_function, movedim_variable_function, mul_variable_function,
     multiply_variable_function, neg_variable_function, negative_variable_function,
     ones_like_variable_function, permute_variable_function, positive_variable_function,
@@ -40,7 +40,7 @@ use crate::python::{
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 62] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 63] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -94,6 +94,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 62] = [
     "movedim",
     "moveaxis",
     "matmul",
+    "mm",
     "add",
     "div",
     "divide",
@@ -1312,6 +1313,24 @@ Example::
 
 ";
 
+const MM_DOC: &std::ffi::CStr = cr"
+mm(input, mat2, *, out=None) -> Tensor
+
+Performs a matrix multiplication of the matrices :attr:`input` and :attr:`mat2`.
+
+If :attr:`input` is a :math:`(n \times m)` tensor, :attr:`mat2` is a
+:math:`(m \times p)` tensor, :attr:`out` will be a :math:`(n \times p)` tensor.
+
+.. note:: This function does not :ref:`broadcast <broadcasting-semantics>`.
+          For broadcasting matrix products, see :func:`torch.matmul`.
+
+The current native implementation supports exact CPU ``float32`` rank-2 tensor
+operands by delegating to the existing rank-2 matrix multiplication kernel.
+Concrete ``out`` tensors, :func:`torch.bmm`, :func:`torch.addmm`, rank-1 or
+batched ``matmul`` behavior, dtype/device expansion, tensor subclasses, and
+unsupported autograd cases remain unsupported.
+";
+
 #[allow(
     unsafe_code,
     reason = "CPython passes borrowed tuple and dictionary pointers to C method callbacks"
@@ -1440,6 +1459,7 @@ variable_function_callback!(permute_callback, permute_variable_function);
 variable_function_callback!(movedim_callback, movedim_variable_function);
 variable_function_callback!(moveaxis_callback, moveaxis_variable_function);
 variable_function_callback!(matmul_callback, matmul_variable_function);
+variable_function_callback!(mm_callback, mm_variable_function);
 variable_function_callback!(can_cast_callback, can_cast_variable_function);
 variable_function_callback!(promote_types_callback, promote_types_variable_function);
 
@@ -1524,6 +1544,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"movedim", movedim_callback, MOVEDIM_DOC),
         variable_function_method!(c"moveaxis", moveaxis_callback, MOVEAXIS_DOC),
         variable_function_method!(c"matmul", matmul_callback, MATMUL_DOC),
+        variable_function_method!(c"mm", mm_callback, MM_DOC),
         variable_function_method!(c"can_cast", can_cast_callback, CAN_CAST_DOC),
         variable_function_method!(c"promote_types", promote_types_callback, PROMOTE_TYPES_DOC),
         ffi::PyMethodDef::zeroed(),
