@@ -151,6 +151,118 @@ class ArangeReferenceTests(unittest.TestCase):
                                 self.tensor_contract(reference_torch, expected),
                             )
 
+    def test_two_bound_exact_float_endpoints_match_pytorch_2_13(self):
+        cases = (
+            (0.0, 0.0),
+            (0.0, -0.0),
+            (0.0, 4.0),
+            (0.25, 3.25),
+            (0.25, 3.0),
+            (-2.5, 2.5),
+            (math.nextafter(0.0, 1.0), math.nextafter(1.0, 2.0)),
+            (math.nextafter(1.0, 0.0), math.nextafter(4.0, 0.0)),
+            (math.nextafter(float(2**63), 0.0), float(2**63)),
+            (float(2**63), math.nextafter(float(2**63), math.inf)),
+            (1.0e100, 1.0e100),
+        )
+        for start, end in cases:
+            for dtype_name in (None, "float32", "float"):
+                actual_options = (
+                    {}
+                    if dtype_name is None
+                    else {"dtype": getattr(torch, dtype_name)}
+                )
+                expected_options = (
+                    {}
+                    if dtype_name is None
+                    else {"dtype": getattr(reference_torch, dtype_name)}
+                )
+                for form in ("positional", "positional_start_keyword_end", "keywords"):
+                    with self.subTest(
+                        start=start, end=end, dtype=dtype_name, form=form
+                    ):
+                        if form == "positional":
+                            actual = torch.arange(
+                                start, end, **actual_options
+                            )
+                            expected = reference_torch.arange(
+                                start, end, **expected_options
+                            )
+                        elif form == "positional_start_keyword_end":
+                            actual = torch.arange(
+                                start, end=end, **actual_options
+                            )
+                            expected = reference_torch.arange(
+                                start, end=end, **expected_options
+                            )
+                        else:
+                            actual = torch.arange(
+                                start=start, end=end, **actual_options
+                            )
+                            expected = reference_torch.arange(
+                                start=start, end=end, **expected_options
+                            )
+                        self.assertEqual(
+                            self.tensor_contract(torch, actual),
+                            self.tensor_contract(reference_torch, expected),
+                        )
+
+    def test_two_bound_numpy_floating_endpoints_match_pytorch_2_13(self):
+        scalar_types = (*NUMPY_FLOAT_TYPES, NumpyFloatSubclass)
+        raw_cases = (
+            (0.25, 3.25),
+            (-2.5, 2.5),
+            (1.25, 1.25),
+        )
+        for scalar_type in scalar_types:
+            for raw_start, raw_end in raw_cases:
+                start = scalar_type(raw_start)
+                end = scalar_type(raw_end)
+                for dtype_name in (None, "float32", "float"):
+                    actual_options = (
+                        {}
+                        if dtype_name is None
+                        else {"dtype": getattr(torch, dtype_name)}
+                    )
+                    expected_options = (
+                        {}
+                        if dtype_name is None
+                        else {"dtype": getattr(reference_torch, dtype_name)}
+                    )
+                    for form in ("positional", "positional_start_keyword_end", "keywords"):
+                        with self.subTest(
+                            scalar_type=scalar_type.__name__,
+                            start=start,
+                            end=end,
+                            dtype=dtype_name,
+                            form=form,
+                        ):
+                            if form == "positional":
+                                actual = torch.arange(
+                                    start, end, **actual_options
+                                )
+                                expected = reference_torch.arange(
+                                    start, end, **expected_options
+                                )
+                            elif form == "positional_start_keyword_end":
+                                actual = torch.arange(
+                                    start, end=end, **actual_options
+                                )
+                                expected = reference_torch.arange(
+                                    start, end=end, **expected_options
+                                )
+                            else:
+                                actual = torch.arange(
+                                    start=start, end=end, **actual_options
+                                )
+                                expected = reference_torch.arange(
+                                    start=start, end=end, **expected_options
+                                )
+                            self.assertEqual(
+                                self.tensor_contract(torch, actual),
+                                self.tensor_contract(reference_torch, expected),
+                            )
+
     def test_spoofed_numpy_floating_type_rejection_matches_pytorch_2_13(self):
         def outcome(module, endpoint, dtype_name, form):
             options = (
@@ -356,6 +468,37 @@ class ArangeReferenceTests(unittest.TestCase):
                     self.tensor_contract(reference_torch, expected),
                 )
 
+    def test_two_bound_float_default_equivalent_options_match_pytorch_2_13(self):
+        option_factories = (
+            lambda module: {},
+            lambda module: {"out": None},
+            lambda module: {"dtype": None},
+            lambda module: {"dtype": module.float32},
+            lambda module: {"dtype": module.float},
+            lambda module: {"layout": None},
+            lambda module: {"layout": module.strided},
+            lambda module: {"device": None},
+            lambda module: {"device": "cpu"},
+            lambda module: {"device": "cpu:0"},
+            lambda module: {"device": module.device("cpu")},
+            lambda module: {"pin_memory": None},
+            lambda module: {"pin_memory": False},
+            lambda module: {"requires_grad": None},
+            lambda module: {"requires_grad": False},
+        )
+        for option_factory in option_factories:
+            actual_options = option_factory(torch)
+            expected_options = option_factory(reference_torch)
+            with self.subTest(options=actual_options):
+                actual = torch.arange(-1.5, 1.5, **actual_options)
+                expected = reference_torch.arange(
+                    -1.5, 1.5, **expected_options
+                )
+                self.assertEqual(
+                    self.tensor_contract(torch, actual),
+                    self.tensor_contract(reference_torch, expected),
+                )
+
     def test_numpy_integer_default_equivalent_options_match_pytorch_2_13(self):
         option_factories = (
             lambda module: {"dtype": module.float32},
@@ -446,6 +589,41 @@ class ArangeReferenceTests(unittest.TestCase):
 
             with self.subTest(scalar_type=scalar_type.__name__):
                 self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_two_bound_float_leaf_semantics_match_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            ordinary = module.arange(-1.5, 2.5, requires_grad=True)
+            with module.no_grad():
+                no_grad = module.arange(
+                    start=np.float32(-1.5),
+                    end=np.float32(2.5),
+                    dtype=module.float,
+                    requires_grad=True,
+                )
+                empty = module.arange(
+                    1.25,
+                    1.25,
+                    dtype=module.float32,
+                    requires_grad=True,
+                )
+
+            weights = module.tensor(
+                [1.0, 2.0, 3.0, 4.0], dtype=module.float32
+            )
+            module_outcomes = []
+            for leaf in (ordinary, no_grad):
+                gradients = []
+                for _ in range(2):
+                    (leaf * weights).sum().backward()
+                    gradients.append(leaf.grad.tolist())
+                module_outcomes.append(
+                    (self.tensor_contract(module, leaf), gradients)
+                )
+            module_outcomes.append(self.tensor_contract(module, empty))
+            outcomes.append(module_outcomes)
+
+        self.assertEqual(outcomes[0], outcomes[1])
 
     def test_explicit_float32_integer_leaf_semantics_match_pytorch_2_13(self):
         outcomes = []
@@ -622,6 +800,42 @@ class ArangeReferenceTests(unittest.TestCase):
             with self.subTest(scalar_type=scalar_type.__name__):
                 self.assertEqual(outcomes[0], outcomes[1])
 
+    def test_two_bound_float_storage_matches_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            module_outcomes = []
+            for requires_grad in (False, True):
+                first = module.arange(
+                    -1.5, 6.5, requires_grad=requires_grad
+                )
+                second = module.arange(
+                    start=-1.5,
+                    end=6.5,
+                    dtype=module.float,
+                    requires_grad=requires_grad,
+                )
+                empty_first = module.arange(
+                    4.25, 4.25, requires_grad=requires_grad
+                )
+                empty_second = module.arange(
+                    start=np.float32(4.25),
+                    end=np.float32(4.25),
+                    dtype=module.float,
+                    requires_grad=requires_grad,
+                )
+                module_outcomes.append(
+                    (
+                        first.data_ptr() != second.data_ptr(),
+                        first.is_set_to(second),
+                        empty_first.data_ptr() == 0,
+                        empty_second.data_ptr() == 0,
+                        empty_first.is_set_to(empty_second),
+                    )
+                )
+            outcomes.append(module_outcomes)
+
+        self.assertEqual(outcomes[0], outcomes[1])
+
     def test_explicit_float32_integer_storage_matches_pytorch_2_13(self):
         outcomes = []
         for module in (torch, reference_torch):
@@ -789,6 +1003,59 @@ class ArangeReferenceTests(unittest.TestCase):
                                 end=-1, dtype=dtype
                             ),
                         )
+
+    def test_two_bound_float_boundary_errors_match_pytorch_2_13(self):
+        cases = (
+            (2.5, 1.5),
+            (-1.0, -4.0),
+            (0.0, math.nextafter(float(2**63), 0.0)),
+            (0.0, float(2**63)),
+            (0.0, math.nextafter(float(2**63), math.inf)),
+            (-1.0e308, 1.0e308),
+        )
+        for start, end in cases:
+            for dtype_name in (None, "float32", "float"):
+                actual_options = (
+                    {}
+                    if dtype_name is None
+                    else {"dtype": getattr(torch, dtype_name)}
+                )
+                expected_options = (
+                    {}
+                    if dtype_name is None
+                    else {"dtype": getattr(reference_torch, dtype_name)}
+                )
+                for form in ("positional", "positional_start_keyword_end", "keywords"):
+                    with self.subTest(
+                        start=start, end=end, dtype=dtype_name, form=form
+                    ):
+                        if form == "positional":
+                            self.assert_error_matches(
+                                lambda start=start, end=end, options=actual_options: torch.arange(
+                                    start, end, **options
+                                ),
+                                lambda start=start, end=end, options=expected_options: reference_torch.arange(
+                                    start, end, **options
+                                ),
+                            )
+                        elif form == "positional_start_keyword_end":
+                            self.assert_error_matches(
+                                lambda start=start, end=end, options=actual_options: torch.arange(
+                                    start, end=end, **options
+                                ),
+                                lambda start=start, end=end, options=expected_options: reference_torch.arange(
+                                    start, end=end, **options
+                                ),
+                            )
+                        else:
+                            self.assert_error_matches(
+                                lambda start=start, end=end, options=actual_options: torch.arange(
+                                    start=start, end=end, **options
+                                ),
+                                lambda start=start, end=end, options=expected_options: reference_torch.arange(
+                                    start=start, end=end, **options
+                                ),
+                            )
 
     def test_numpy_floating_negative_and_nonfinite_errors_match_pytorch_2_13(self):
         for scalar_type in NUMPY_FLOAT_TYPES:
