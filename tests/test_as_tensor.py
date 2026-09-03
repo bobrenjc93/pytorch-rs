@@ -274,6 +274,32 @@ class AsTensorTests(unittest.TestCase):
         self.assertEqual(result.output_nr, 0)
         self.assertEqual(self.float32_bits(result), [0x80000000])
 
+    def test_numpy_float32_scalar_detection_ignores_mutable_numpy_global(self):
+        original_float32 = np.float32
+        sequence = scalar = rebound_scalar = None
+        try:
+            del np.float32
+            sequence = torch.as_tensor([1.0])
+            scalar = torch.as_tensor(original_float32(1.25))
+
+            np.float32 = np.float64
+            rebound_scalar = torch.as_tensor(original_float32(-0.0))
+            self.assert_error(
+                lambda: torch.as_tensor(np.float64(1.25)),
+                NotImplementedError,
+                UNSUPPORTED_AS_TENSOR_CONVERSION,
+            )
+        finally:
+            np.float32 = original_float32
+
+        self.assertEqual(sequence.shape, (1,))
+        self.assertEqual(sequence.stride(), (1,))
+        self.assertEqual(self.float32_bits(sequence), [0x3F800000])
+        self.assertEqual(scalar.shape, ())
+        self.assertEqual(self.float32_bits(scalar), [0x3FA00000])
+        self.assertEqual(rebound_scalar.shape, ())
+        self.assertEqual(self.float32_bits(rebound_scalar), [0x80000000])
+
     def test_recursive_and_overdeep_float_sequences_raise_value_error(self):
         recursive_list = []
         recursive_list.append(recursive_list)

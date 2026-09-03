@@ -7213,11 +7213,39 @@ fn extract_exact_python_float_scalar(value: &Bound<'_, PyAny>) -> PyResult<Optio
 }
 
 fn extract_exact_numpy_float32_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<f32>> {
-    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
+    let value_type = value.get_type();
+    if value_type.name()? != "float32" {
+        return Ok(None);
+    }
+    if value_type.getattr("__module__")?.extract::<String>()? != "numpy" {
+        return Ok(None);
+    }
+
+    let Ok(dtype) = value.getattr("dtype") else {
         return Ok(None);
     };
-    let numpy_float32 = numpy.getattr("float32")?;
-    if !value.get_type().as_any().is(&numpy_float32) {
+    let Ok(dtype_type) = dtype.getattr("type") else {
+        return Ok(None);
+    };
+    if !dtype_type.is(value_type.as_any()) {
+        return Ok(None);
+    }
+    let Ok(dtype_name) = dtype
+        .getattr("name")
+        .and_then(|name| name.extract::<String>())
+    else {
+        return Ok(None);
+    };
+    if dtype_name != "float32" {
+        return Ok(None);
+    }
+    let Ok(item_size) = dtype
+        .getattr("itemsize")
+        .and_then(|itemsize| itemsize.extract::<usize>())
+    else {
+        return Ok(None);
+    };
+    if item_size != std::mem::size_of::<f32>() {
         return Ok(None);
     }
 
