@@ -450,7 +450,9 @@ def _execute_native_eager_compile_graph(graph, input, compile_trace):
 
 
 def _native_eager_compile_implementation(model, name, recompile_limit):
-    cached_graphs = {}
+    from . import _compiler_state as _compile_state
+
+    cache = _compile_state.new_native_eager_compile_cache()
 
     def compiled_model(*args, **kwargs):
         from . import _compile_bytecode as _compile_bytecode
@@ -485,9 +487,9 @@ def _native_eager_compile_implementation(model, name, recompile_limit):
         _ensure_compile_tensor_method_guards(_compile_trace)
         input_metadata = _compile_trace._metadata_from_native_tensor(input)
         cache_key = (model.__code__, input_metadata)
-        graph = cached_graphs.get(cache_key)
+        graph = cache.graphs.get(cache_key)
         if graph is None:
-            if len(cached_graphs) >= recompile_limit:
+            if len(cache.graphs) >= recompile_limit:
                 raise _compile_trace.CompileTraceUnsupportedError(
                     "torch.compile trace bytecode lowering hit "
                     f"recompile_limit={recompile_limit}; no additional input "
@@ -498,7 +500,7 @@ def _native_eager_compile_implementation(model, name, recompile_limit):
                 input_metadata,
                 name=name or getattr(model, "__name__", "compile_trace"),
             )
-            cached_graphs[cache_key] = graph
+            cache.graphs[cache_key] = graph
         return _execute_native_eager_compile_graph(graph, input, _compile_trace)
 
     return compiled_model

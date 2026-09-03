@@ -59,6 +59,7 @@ def reset() -> None:
     process-local state used by :func:`torch.compile`. It does not delete
     filesystem caches, such as Inductor's disk cache.
     """
+    _state.reset_compile_caches()
 
 
 def list_backends(exclude_tags=("debug", "experimental")) -> list[str]:

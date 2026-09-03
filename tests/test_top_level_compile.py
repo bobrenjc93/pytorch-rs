@@ -385,6 +385,42 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         finally:
             _compile_bytecode.lower_one_input_compile_graph = original_lower
 
+    def test_compiler_reset_clears_eager_fullgraph_compile_cache(self):
+        def program(x):
+            return x.neg().abs() + x
+
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def counting_lower(requested_program, input_metadata, *, name=None):
+            calls.append((requested_program, input_metadata, name))
+            return original_lower(requested_program, input_metadata, name=name)
+
+        compiled = torch.compile(
+            program,
+            backend="eager",
+            fullgraph=True,
+            recompile_limit=1,
+        )
+        first = torch.tensor([[-2.0, 3.0], [4.0, -5.0]], dtype=torch.float32)
+        different_shape = torch.tensor([1.5, -2.5, 3.5], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            self.assertEqual(compiled(first).tolist(), program(first).tolist())
+            with self.assertRaisesRegex(NotImplementedError, "recompile_limit=1"):
+                compiled(different_shape)
+            self.assertEqual(len(calls), 1)
+
+            self.assertIs(torch.compiler.reset(), None)
+            self.assertEqual(
+                compiled(different_shape).tolist(),
+                program(different_shape).tolist(),
+            )
+            self.assertEqual(len(calls), 2)
+        finally:
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
     def test_eager_fullgraph_recompile_limit_rejects_invalid_values(self):
         def program(x):
             return x + x
