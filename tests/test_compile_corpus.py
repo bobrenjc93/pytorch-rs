@@ -598,7 +598,13 @@ class CompileCorpusTraceTests(unittest.TestCase):
         recorder = _compile_trace.CompileTraceRecorder()
         x = recorder.input(shape=(2, 3))
 
+        def augmented_add():
+            value = x
+            value += x
+            return value
+
         for operation, call in (
+            ("Tensor.__iadd__", augmented_add),
             ("Tensor.__sub__", lambda: x - x),
             ("Tensor.relu", lambda: x.relu()),
             ("Tensor.__bool__", lambda: bool(x)),
@@ -614,6 +620,22 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 self.assertIn("Tensor.neg", message)
                 self.assertIn("Tensor.abs", message)
                 self.assertIn("Tensor.add", message)
+
+    def test_augmented_self_add_aliasing_rejects_instead_of_recording_add(self):
+        def augmented_alias_program(x):
+            y = x
+            x += x
+            return y
+
+        with self.assertRaisesRegex(
+            _compile_trace.CompileTraceUnsupportedError,
+            "Tensor.__iadd__",
+        ):
+            _compile_trace.trace_one_input_compile_graph(
+                augmented_alias_program,
+                cpu_float32_self_add_inputs,
+                name="cpu_float32_augmented_self_add",
+            )
 
     def test_binary_proxy_rejects_non_tensor_or_mixed_recorder_operands_clearly(self):
         recorder = _compile_trace.CompileTraceRecorder()

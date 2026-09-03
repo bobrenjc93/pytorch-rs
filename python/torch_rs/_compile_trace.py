@@ -699,6 +699,9 @@ class CompileTraceTensorProxy:
             )
         return self._recorder.record_binary("add", self, other, "Tensor.add")
 
+    def __iadd__(self, other):
+        _unsupported_operation("Tensor.__iadd__")
+
     def __sub__(self, other):
         _unsupported_operation("Tensor.__sub__")
 
