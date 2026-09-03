@@ -35,6 +35,7 @@ class FunctionalMseLossTests(unittest.TestCase):
         *,
         case,
         expected_stride=None,
+        allow_nan=False,
     ):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, expected.shape)
@@ -49,10 +50,23 @@ class FunctionalMseLossTests(unittest.TestCase):
             self.assertIs(actual.dtype, torch.float32)
             self.assertEqual(actual.device, torch.device("cpu"))
         with self.subTest(case=case, values=True):
-            np.testing.assert_array_equal(
-                self.tensor_bits(actual),
-                self.tensor_bits(expected),
-            )
+            if allow_nan:
+                actual_values = np.asarray(actual).reshape(-1)
+                expected_values = np.asarray(expected).reshape(-1)
+                actual_nan = np.isnan(actual_values)
+                expected_nan = np.isnan(expected_values)
+                np.testing.assert_array_equal(actual_nan, expected_nan)
+                non_nan = ~expected_nan
+                if np.any(non_nan):
+                    np.testing.assert_array_equal(
+                        actual_values[non_nan].view(np.uint32),
+                        expected_values[non_nan].view(np.uint32),
+                    )
+            else:
+                np.testing.assert_array_equal(
+                    self.tensor_bits(actual),
+                    self.tensor_bits(expected),
+                )
 
     def layout_cases(self):
         offset_input_base = torch.tensor(
@@ -206,6 +220,68 @@ class FunctionalMseLossTests(unittest.TestCase):
             ("broadcasted", broadcast_input, broadcast_target, True),
             ("offset", offset_input_base[1], offset_target_base[0], False),
             ("noncontiguous", transposed_input, transposed_target, False),
+        )
+
+    def rank_two_trailing_vector_sum_cases(self):
+        edge_matrix_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        edge_vector_bits = np.asarray(
+            [0x8000_0000, 0x0000_0000, 0xFF80_0000, 0x7F82_ABCD],
+            dtype=np.uint32,
+        )
+        signed_zero_matrix_bits = np.asarray(
+            [0x0000_0000, 0x8000_0000, 0x8000_0000, 0x0000_0000],
+            dtype=np.uint32,
+        )
+        signed_zero_vector_bits = np.asarray(
+            [0x8000_0000, 0x0000_0000],
+            dtype=np.uint32,
+        )
+        matrix = torch.tensor(
+            np.linspace(-6.0, 8.0, 12, dtype=np.float32).reshape(3, 4).tolist()
+        )
+        vector = torch.tensor([1.0, -2.0, 3.5, -4.5])
+        edge_matrix = torch.tensor(memoryview(edge_matrix_bits.view(np.float32))).view(2, 4)
+        edge_vector = torch.tensor(memoryview(edge_vector_bits.view(np.float32)))
+        signed_zero_matrix = torch.tensor(
+            memoryview(signed_zero_matrix_bits.view(np.float32))
+        ).view(2, 2)
+        signed_zero_vector = torch.tensor(
+            memoryview(signed_zero_vector_bits.view(np.float32))
+        )
+        empty_matrix = torch.zeros((0, 4))
+        empty_vector = torch.tensor([1.0, -2.0, 3.5, -4.5])
+
+        return (
+            ("target broadcast", matrix, vector, False),
+            ("input broadcast", vector, matrix, False),
+            ("target broadcast signed-zero", signed_zero_matrix, signed_zero_vector, False),
+            ("input broadcast signed-zero", signed_zero_vector, signed_zero_matrix, False),
+            ("target broadcast nan inf", edge_matrix, edge_vector, True),
+            ("input broadcast nan inf", edge_vector, edge_matrix, True),
+            (
+                "target broadcast empty leading dimension",
+                empty_matrix,
+                empty_vector,
+                False,
+            ),
+            (
+                "input broadcast empty leading dimension",
+                empty_vector,
+                empty_matrix,
+                False,
+            ),
         )
 
     def same_stride_noncontiguous_cases(self):
@@ -532,6 +608,151 @@ class FunctionalMseLossTests(unittest.TestCase):
                 np.testing.assert_array_equal(
                     self.tensor_state(target)[-1], target_state[-1]
                 )
+
+    def test_rank_two_trailing_vector_sum_broadcast_matches_composition_warning_metadata_and_nonmutation(
+        self,
+    ):
+        for case, input, target, allow_nan in self.rank_two_trailing_vector_sum_cases():
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                expected_none = functional.mse_loss(input, target, reduction="none")
+            expected = expected_none.sum()
+
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                warning_line = inspect.currentframe().f_lineno + 1
+                actual = functional.mse_loss(input, target, reduction="sum")
+
+            self.assert_matches_composition(
+                actual,
+                expected,
+                case=case,
+                allow_nan=allow_nan,
+            )
+            with self.subTest(case=case, warning=True):
+                self.assertEqual(len(caught), 1)
+                self.assertIs(caught[0].category, UserWarning)
+                self.assertEqual(
+                    str(caught[0].message),
+                    self.broadcast_warning(input, target),
+                )
+                self.assertEqual(caught[0].filename, __file__)
+                self.assertEqual(caught[0].lineno, warning_line)
+            with self.subTest(case=case, metadata=True):
+                self.assertEqual(actual.shape, ())
+                self.assertEqual(actual.stride(), ())
+                self.assertEqual(actual.storage_offset(), 0)
+                self.assertTrue(actual.is_contiguous())
+                self.assertEqual(actual.numel(), 1)
+                self.assertFalse(actual.requires_grad)
+                self.assertTrue(actual.is_leaf)
+                self.assertIs(actual.dtype, torch.float32)
+                self.assertEqual(actual.device, torch.device("cpu"))
+            with self.subTest(case=case, storage=True):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    repeated = functional.mse_loss(input, target, reduction="sum")
+                self.assertFalse(actual.is_set_to(repeated))
+                self.assertFalse(actual.is_set_to(input))
+                self.assertFalse(actual.is_set_to(target))
+                self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+            with self.subTest(case=case, none_reduction=True):
+                with warnings.catch_warnings(record=True) as none_warnings:
+                    warnings.simplefilter("always")
+                    none_actual = functional.mse_loss(
+                        input,
+                        target,
+                        reduction="none",
+                    )
+                self.assertEqual(len(none_warnings), 1)
+                self.assert_matches_composition(
+                    none_actual,
+                    expected_none,
+                    case=(case, "none"),
+                )
+            with self.subTest(case=case, nonmutation=True):
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1],
+                    input_state[-1],
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1],
+                    target_state[-1],
+                )
+
+    def test_rank_two_trailing_vector_sum_requires_grad_records_active_autograd_and_no_grad(
+        self,
+    ):
+        def target_broadcast(input_requires_grad, target_requires_grad):
+            return (
+                torch.tensor(
+                    [[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0]],
+                    requires_grad=input_requires_grad,
+                ),
+                torch.tensor(
+                    [0.5, -1.5, 2.5],
+                    requires_grad=target_requires_grad,
+                ),
+            )
+
+        def input_broadcast(input_requires_grad, target_requires_grad):
+            return (
+                torch.tensor(
+                    [0.5, -1.5, 2.5],
+                    requires_grad=input_requires_grad,
+                ),
+                torch.tensor(
+                    [[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0]],
+                    requires_grad=target_requires_grad,
+                ),
+            )
+
+        for case, factory in (
+            ("target broadcast", target_broadcast),
+            ("input broadcast", input_broadcast),
+        ):
+            for input_requires_grad, target_requires_grad in (
+                (True, False),
+                (False, True),
+                (True, True),
+            ):
+                input, target = factory(input_requires_grad, target_requires_grad)
+                with self.subTest(
+                    case=case,
+                    input_requires_grad=input_requires_grad,
+                    target_requires_grad=target_requires_grad,
+                ):
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        active = functional.mse_loss(input, target, reduction="sum")
+                        active_expected = (input - target).square().sum()
+                    self.assert_matches_composition(
+                        active,
+                        active_expected,
+                        case=(case, "active"),
+                    )
+                    self.assertTrue(active.requires_grad)
+                    self.assertFalse(active.is_leaf)
+                    self.assertIsNone(input.grad)
+                    self.assertIsNone(target.grad)
+
+                    with warnings.catch_warnings(), torch.no_grad():
+                        warnings.simplefilter("ignore")
+                        actual = functional.mse_loss(input, target, reduction="sum")
+                        expected = (input - target).square().sum()
+                    self.assert_matches_composition(
+                        actual,
+                        expected,
+                        case=(case, "no_grad"),
+                    )
+                    self.assertFalse(actual.requires_grad)
+                    self.assertTrue(actual.is_leaf)
+                    self.assertIsNone(input.grad)
+                    self.assertIsNone(target.grad)
 
     def test_mean_reduction_cases_match_composition_warning_storage_and_default(self):
         for case, input, target, warns in self.sum_reduction_cases():
