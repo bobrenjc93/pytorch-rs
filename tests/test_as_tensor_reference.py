@@ -203,6 +203,32 @@ class AsTensorReferenceTests(unittest.TestCase):
                     )
                     self.assertEqual(actual_contract, expected_contract)
 
+    def test_numpy_float32_scalar_creation_matches_pytorch_2_13(self):
+        values = (
+            np.float32(0.0),
+            np.float32(-0.0),
+            np.float32(1.25),
+            np.float32(-3.5),
+            np.float32(float("inf")),
+            np.float32(float("-inf")),
+            np.float32(float("nan")),
+            np.asarray([0x7FC12345], dtype=np.uint32).view(np.float32)[0],
+        )
+        actual_options = self.option_cases(torch)
+        expected_options = self.option_cases(reference_torch)
+        for value in values:
+            for actual_kwargs, expected_kwargs in zip(
+                actual_options, expected_options, strict=True
+            ):
+                with self.subTest(value=repr(value), options=actual_kwargs):
+                    actual_contract = self.as_tensor_float_scalar_contract(
+                        torch, value, actual_kwargs
+                    )
+                    expected_contract = self.as_tensor_float_scalar_contract(
+                        reference_torch, value, expected_kwargs
+                    )
+                    self.assertEqual(actual_contract, expected_contract)
+
     def test_python_float_sequence_creation_matches_pytorch_2_13(self):
         sequence_cases = (
             ("empty list", []),
@@ -364,6 +390,9 @@ class AsTensorReferenceTests(unittest.TestCase):
         elif case == "scalar":
             data = 1.25
             call = lambda: module.as_tensor(data)
+        elif case == "numpy scalar":
+            data = np.float32(1.25)
+            call = lambda: module.as_tensor(data)
         elif case == "sequence":
             data = [1.0, 2.0]
             call = lambda: module.as_tensor(data)
@@ -421,7 +450,14 @@ class AsTensorReferenceTests(unittest.TestCase):
         }
 
     def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
-        for case in ("positional", "keyword", "scalar", "sequence", "device"):
+        for case in (
+            "positional",
+            "keyword",
+            "scalar",
+            "numpy scalar",
+            "sequence",
+            "device",
+        ):
             with self.subTest(case=case):
                 self.assertEqual(
                     self.mode_dispatch_observation(torch, case),
@@ -460,12 +496,34 @@ class AsTensorReferenceTests(unittest.TestCase):
                 lambda: reference_torch.as_tensor(1.0, requires_grad=True),
             ),
             (
+                lambda: torch.as_tensor(np.float32(1.0), out=None),
+                lambda: reference_torch.as_tensor(np.float32(1.0), out=None),
+            ),
+            (
+                lambda: torch.as_tensor(np.float32(1.0), copy=False),
+                lambda: reference_torch.as_tensor(np.float32(1.0), copy=False),
+            ),
+            (
+                lambda: torch.as_tensor(np.float32(1.0), requires_grad=True),
+                lambda: reference_torch.as_tensor(
+                    np.float32(1.0), requires_grad=True
+                ),
+            ),
+            (
                 lambda: torch.as_tensor(actual, dtype=1),
                 lambda: reference_torch.as_tensor(expected, dtype=1),
             ),
             (
+                lambda: torch.as_tensor(np.float32(1.0), dtype=1),
+                lambda: reference_torch.as_tensor(np.float32(1.0), dtype=1),
+            ),
+            (
                 lambda: torch.as_tensor(actual, device=1.5),
                 lambda: reference_torch.as_tensor(expected, device=1.5),
+            ),
+            (
+                lambda: torch.as_tensor(np.float32(1.0), device=1.5),
+                lambda: reference_torch.as_tensor(np.float32(1.0), device=1.5),
             ),
             (
                 lambda: torch.as_tensor(actual, device=""),
