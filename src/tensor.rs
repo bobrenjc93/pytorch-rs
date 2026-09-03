@@ -3480,6 +3480,9 @@ impl Tensor {
         if let Some(output) = self.absolute_difference_sum_same_shape_contiguous(other) {
             return Ok(output);
         }
+        if let Some(output) = self.absolute_difference_sum_rank_zero_contiguous(other) {
+            return Ok(output);
+        }
         if let Some(output) =
             self.absolute_difference_sum_rank_two_trailing_vector_contiguous(other)
         {
@@ -3499,6 +3502,33 @@ impl Tensor {
         };
 
         let total = sum_contiguous_absolute_difference(left, right, self.elements);
+        Some(Self::from_scalar(total, self.dtype(), self.device()))
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn absolute_difference_sum_rank_zero_contiguous(&self, other: &Self) -> Option<Self> {
+        if self.dtype() != DType::Float32
+            || other.dtype() != DType::Float32
+            || self.device() != Device::Cpu
+            || other.device() != Device::Cpu
+        {
+            return None;
+        }
+        let (scalar, tensor, scalar_on_left) = if self.shape.is_empty() && !other.shape.is_empty() {
+            (self.value_at_linear_index(0), other, true)
+        } else if other.shape.is_empty() && !self.shape.is_empty() {
+            (other.value_at_linear_index(0), self, false)
+        } else {
+            return None;
+        };
+        let values = tensor.contiguous_slice()?;
+
+        let total = sum_contiguous_scalar_absolute_difference(
+            values,
+            scalar,
+            scalar_on_left,
+            tensor.elements,
+        );
         Some(Self::from_scalar(total, self.dtype(), self.device()))
     }
 
@@ -7082,6 +7112,64 @@ fn sum_contiguous_absolute_difference(left: &[f32], right: &[f32], elements: usi
 #[cfg(any(feature = "python-bindings", test))]
 fn accumulate_sum_value(total: f32, value: f32) -> f32 {
     total + value
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn sum_contiguous_scalar_absolute_difference(
+    values: &[f32],
+    scalar: f32,
+    scalar_on_left: bool,
+    elements: usize,
+) -> f32 {
+    const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+    debug_assert_eq!(values.len(), elements);
+
+    let scalar_is_nan = scalar.to_bits() & !F32_SIGN_MASK > f32::INFINITY.to_bits();
+    if scalar.is_finite() && values.iter().all(|value| value.is_finite()) {
+        return if scalar_on_left {
+            values.iter().copied().fold(0.0_f32, |total, value| {
+                accumulate_sum_value(total, absolute_value(scalar - value))
+            })
+        } else {
+            values.iter().copied().fold(0.0_f32, |total, value| {
+                accumulate_sum_value(total, absolute_value(value - scalar))
+            })
+        };
+    }
+
+    let mut total = 0.0_f32;
+    if scalar_on_left {
+        for value in values.iter().copied() {
+            let value_bits = value.to_bits();
+            let term = if value_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+                absolute_value(f32::from_bits(value_bits | QUIET_NAN_MASK))
+            } else {
+                absolute_value(scalar - value)
+            };
+            total = accumulate_scalar_l1_sum_value(total, term);
+        }
+    } else if scalar_is_nan {
+        let term = absolute_value(f32::from_bits(scalar.to_bits() | QUIET_NAN_MASK));
+        for _ in 0..elements {
+            total = accumulate_scalar_l1_sum_value(total, term);
+        }
+    } else {
+        for value in values.iter().copied() {
+            total = accumulate_scalar_l1_sum_value(total, absolute_value(value - scalar));
+        }
+    }
+    total
+}
+
+#[inline]
+#[cfg(any(feature = "python-bindings", test))]
+fn accumulate_scalar_l1_sum_value(total: f32, value: f32) -> f32 {
+    if total.is_nan() {
+        total
+    } else {
+        accumulate_sum_value(total, value)
+    }
 }
 
 #[cfg(any(feature = "python-bindings", test))]
@@ -11929,6 +12017,53 @@ mod tests {
         );
     }
 
+    fn assert_l1_sum_rank_zero_contiguous_fast_path_matches(
+        case: &str,
+        left: &Tensor,
+        right: &Tensor,
+    ) {
+        assert_ne!(left.shape().is_empty(), right.shape().is_empty(), "{case}");
+        let material = if left.shape().is_empty() { right } else { left };
+        assert!(material.is_contiguous(), "{case}");
+        let left_bits_before = left.logical_values().map(f32::to_bits).collect::<Vec<_>>();
+        let right_bits_before = right.logical_values().map(f32::to_bits).collect::<Vec<_>>();
+
+        let expected = left.absolute_difference(right).unwrap().sum();
+        let fast = left
+            .absolute_difference_sum_rank_zero_contiguous(right)
+            .expect("rank-zero scalar and contiguous tensor should use the L1 sum fast path");
+        let public = left.absolute_difference_sum(right).unwrap();
+
+        for actual in [&fast, &public] {
+            assert_eq!(actual.shape(), &[] as &[usize], "{case}");
+            assert_eq!(actual.stride(), &[] as &[usize], "{case}");
+            assert_eq!(actual.storage_offset(), 0, "{case}");
+            assert_eq!(actual.dtype(), expected.dtype(), "{case}");
+            assert_eq!(actual.device(), expected.device(), "{case}");
+            assert!(!actual.requires_grad(), "{case}");
+            assert!(actual.is_leaf(), "{case}");
+            assert!(!actual.shares_storage_with(left), "{case}");
+            assert!(!actual.shares_storage_with(right), "{case}");
+            assert_eq!(
+                actual.item().unwrap().to_bits(),
+                expected.item().unwrap().to_bits(),
+                "{case}"
+            );
+        }
+
+        assert!(
+            left.logical_values().map(f32::to_bits).eq(left_bits_before),
+            "{case}"
+        );
+        assert!(
+            right
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(right_bits_before),
+            "{case}"
+        );
+    }
+
     fn assert_l1_sum_rank_two_trailing_vector_fast_path_matches(
         case: &str,
         left: &Tensor,
@@ -12771,6 +12906,116 @@ mod tests {
             broadcast_actual.item().unwrap().to_bits(),
             broadcast_expected.item().unwrap().to_bits()
         );
+    }
+
+    #[test]
+    fn absolute_difference_sum_rank_zero_contiguous_fast_path_matches_composition() {
+        let tensor_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x007f_ffff,
+            0x807f_ffff,
+            0x0080_0000,
+            0x8080_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+            0xff85_4321,
+        ];
+        let contiguous = Tensor::from_vec(
+            tensor_bits.iter().copied().map(f32::from_bits).collect(),
+            [2, tensor_bits.len() / 2],
+        )
+        .unwrap();
+        let offset = offset_contiguous_tensor(&tensor_bits, &[2, tensor_bits.len() / 2]);
+        let empty = Tensor::zeros([0, tensor_bits.len() / 2]).unwrap();
+
+        for scalar_bits in [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc6_789a,
+            0x7f86_789a,
+        ] {
+            let scalar = Tensor::from_vec(vec![f32::from_bits(scalar_bits)], []).unwrap();
+            for (layout, tensor) in [
+                ("contiguous", &contiguous),
+                ("offset contiguous", &offset),
+                ("empty", &empty),
+            ] {
+                assert_l1_sum_rank_zero_contiguous_fast_path_matches(
+                    &format!("{layout} scalar-left {scalar_bits:#010x}"),
+                    &scalar,
+                    tensor,
+                );
+                assert_l1_sum_rank_zero_contiguous_fast_path_matches(
+                    &format!("{layout} scalar-right {scalar_bits:#010x}"),
+                    tensor,
+                    &scalar,
+                );
+            }
+        }
+
+        let offset_scalar = Tensor::from_vec(vec![17.0, -0.0], [2])
+            .unwrap()
+            .index_integer(1)
+            .unwrap();
+        assert_ne!(offset_scalar.storage_offset(), 0);
+        assert_l1_sum_rank_zero_contiguous_fast_path_matches(
+            "offset scalar left",
+            &offset_scalar,
+            &contiguous,
+        );
+        assert_l1_sum_rank_zero_contiguous_fast_path_matches(
+            "offset scalar right",
+            &contiguous,
+            &offset_scalar,
+        );
+    }
+
+    #[test]
+    fn absolute_difference_sum_rank_zero_fast_path_rejects_other_layouts() {
+        let scalar = Tensor::from_vec(vec![0.5], []).unwrap();
+        let same_rank_scalar = Tensor::from_vec(vec![-0.0], []).unwrap();
+        let vector = Tensor::from_vec(vec![1.0, -2.0, 3.0], [3]).unwrap();
+        let noncontiguous = Tensor::from_vec((0_u16..6).map(f32::from).collect(), [3, 2])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+
+        assert!(
+            scalar
+                .absolute_difference_sum_rank_zero_contiguous(&same_rank_scalar)
+                .is_none()
+        );
+        assert!(
+            vector
+                .absolute_difference_sum_rank_zero_contiguous(&vector)
+                .is_none()
+        );
+
+        for (left, right) in [(&scalar, &noncontiguous), (&noncontiguous, &scalar)] {
+            assert!(!noncontiguous.is_contiguous());
+            assert!(
+                left.absolute_difference_sum_rank_zero_contiguous(right)
+                    .is_none()
+            );
+            let expected = left.absolute_difference(right).unwrap().sum();
+            let actual = left.absolute_difference_sum(right).unwrap();
+            assert_eq!(
+                actual.item().unwrap().to_bits(),
+                expected.item().unwrap().to_bits()
+            );
+            assert!(!actual.shares_storage_with(left));
+            assert!(!actual.shares_storage_with(right));
+        }
     }
 
     #[test]

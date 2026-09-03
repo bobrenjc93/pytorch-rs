@@ -1181,6 +1181,115 @@ class FunctionalL1LossTests(unittest.TestCase):
                             self.assertFalse(tensor.is_contiguous())
                             self.assertEqual(actual.stride(), expected.stride())
 
+    def test_scalar_broadcast_sum_float32_edges_match_composition_warning_metadata_and_nonmutation(
+        self,
+    ):
+        tensor_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x0080_0000,
+                0x8080_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        contiguous_tensor = torch.tensor(
+            memoryview(tensor_bits.view(np.float32))
+        ).view(2, 7)
+        empty_tensor = torch.zeros((0, 7))
+
+        for scalar_bits in (
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7F80_0000,
+            0xFF80_0000,
+            0x7FC6_789A,
+            0x7F86_789A,
+        ):
+            scalar_values = np.asarray([scalar_bits], dtype=np.uint32).view(np.float32)
+            scalar = torch.tensor(memoryview(scalar_values))[0]
+            for layout, tensor in (
+                ("contiguous", contiguous_tensor),
+                ("empty", empty_tensor),
+                ("noncontiguous fallback", contiguous_tensor.transpose(0, 1)),
+            ):
+                for scalar_on_left in (True, False):
+                    input, target = (
+                        (scalar, tensor) if scalar_on_left else (tensor, scalar)
+                    )
+                    input_state = self.tensor_state(input)
+                    target_state = self.tensor_state(target)
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        expected = functional.l1_loss(
+                            input,
+                            target,
+                            reduction="none",
+                        ).sum()
+
+                    with warnings.catch_warnings(record=True) as caught:
+                        warnings.simplefilter("always")
+                        actual = functional.l1_loss(input, target, reduction="sum")
+
+                    case = (layout, hex(scalar_bits), scalar_on_left)
+                    self.assert_matches_composition(actual, expected, case=case)
+                    with self.subTest(case=case, warning=True):
+                        self.assertEqual(len(caught), 1)
+                        self.assertIs(caught[0].category, UserWarning)
+                        self.assertEqual(
+                            str(caught[0].message),
+                            self.broadcast_warning(input, target),
+                        )
+                    with self.subTest(case=case, metadata=True):
+                        self.assertEqual(actual.shape, ())
+                        self.assertEqual(actual.stride(), ())
+                        self.assertEqual(actual.storage_offset(), 0)
+                        self.assertTrue(actual.is_contiguous())
+                        self.assertEqual(actual.numel(), 1)
+                        self.assertFalse(actual.requires_grad)
+                        self.assertTrue(actual.is_leaf)
+                    with self.subTest(case=case, storage=True):
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            repeated = functional.l1_loss(
+                                input,
+                                target,
+                                reduction="sum",
+                            )
+                        self.assertFalse(actual.is_set_to(repeated))
+                        self.assertFalse(actual.is_set_to(input))
+                        self.assertFalse(actual.is_set_to(target))
+                        self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+                    with self.subTest(case=case, nonmutation=True):
+                        self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                        self.assertEqual(
+                            self.tensor_state(target)[:-1],
+                            target_state[:-1],
+                        )
+                        np.testing.assert_array_equal(
+                            self.tensor_state(input)[-1],
+                            input_state[-1],
+                        )
+                        np.testing.assert_array_equal(
+                            self.tensor_state(target)[-1],
+                            target_state[-1],
+                        )
+                    if layout == "noncontiguous fallback":
+                        with self.subTest(case=case, fallback_layout=True):
+                            self.assertFalse(tensor.is_contiguous())
+
     def test_requires_grad_operands_need_no_grad(self):
         for input_requires_grad, target_requires_grad in (
             (True, False),
@@ -1361,22 +1470,41 @@ class FunctionalL1LossTests(unittest.TestCase):
                     input_requires_grad=input_requires_grad,
                     target_requires_grad=target_requires_grad,
                 ):
-                    with self.assertWarnsRegex(UserWarning, "Using a target size"):
-                        with self.assertRaisesRegex(
-                            RuntimeError,
-                            r"^l1_loss\(\): autograd recording is not supported$",
-                        ):
-                            functional.l1_loss(input, target, reduction="none")
+                    for reduction in ("none", "sum"):
+                        with self.subTest(reduction=reduction):
+                            with self.assertWarnsRegex(
+                                UserWarning,
+                                "Using a target size",
+                            ):
+                                with self.assertRaisesRegex(
+                                    RuntimeError,
+                                    r"^l1_loss\(\): autograd recording is not supported$",
+                                ):
+                                    functional.l1_loss(
+                                        input,
+                                        target,
+                                        reduction=reduction,
+                                    )
 
-                    with warnings.catch_warnings(), torch.no_grad():
-                        warnings.simplefilter("ignore")
-                        actual = functional.l1_loss(input, target, reduction="none")
-                        expected = (input - target).abs()
-                    self.assert_matches_composition(actual, expected, case="no_grad")
-                    self.assertFalse(actual.requires_grad)
-                    self.assertTrue(actual.is_leaf)
-                    self.assertIsNone(input.grad)
-                    self.assertIsNone(target.grad)
+                            with warnings.catch_warnings(), torch.no_grad():
+                                warnings.simplefilter("ignore")
+                                expected = (input - target).abs()
+                                if reduction == "sum":
+                                    expected = expected.sum()
+                                actual = functional.l1_loss(
+                                    input,
+                                    target,
+                                    reduction=reduction,
+                                )
+                            self.assert_matches_composition(
+                                actual,
+                                expected,
+                                case=("no_grad", reduction),
+                            )
+                            self.assertFalse(actual.requires_grad)
+                            self.assertTrue(actual.is_leaf)
+                            self.assertIsNone(input.grad)
+                            self.assertIsNone(target.grad)
 
     def test_unsupported_options_shapes_and_operands_are_rejected(self):
         input = torch.ones((2, 3))
