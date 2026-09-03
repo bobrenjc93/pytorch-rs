@@ -216,13 +216,13 @@ def _validate_program(program):
 
     code = program.__code__
     if (
-        code.co_argcount != 1
+        code.co_argcount not in (1, 2)
         or code.co_kwonlyargcount != 0
         or code.co_flags & (_CODE_FLAG_VARARGS | _CODE_FLAG_VARKEYWORDS)
     ):
         raise _trace.CompileTraceUnsupportedError(
             "torch.compile trace bytecode lowering currently supports exact "
-            "Python functions with one positional Tensor argument"
+            "Python functions with one or two positional Tensor arguments"
         )
     if program.__closure__ is not None or code.co_freevars or code.co_cellvars:
         raise _trace.CompileTraceUnsupportedError(
@@ -480,28 +480,44 @@ def _lower_instruction(recorder, locals, stack, program, instruction):
     return _OPCODE_HANDLERS[kind](recorder, locals, stack, program, instruction)
 
 
-def lower_one_input_compile_graph(program, input_metadata, *, name=None):
+def lower_compile_graph(program, input_metadatas, *, name=None):
     """Lower a narrow straight-line Python function into a native trace graph."""
     code = _validate_program(program)
-    if not _builtins.isinstance(input_metadata, _trace.CompileTraceTensorMetadata):
+    if not _builtins.isinstance(input_metadatas, tuple):
         raise TypeError(
-            "torch.compile trace bytecode lowering expected "
-            "CompileTraceTensorMetadata"
+            "torch.compile trace bytecode lowering expected a tuple of "
+            "CompileTraceTensorMetadata inputs"
         )
+    if len(input_metadatas) != code.co_argcount:
+        raise _trace.CompileTraceUnsupportedError(
+            "torch.compile trace bytecode lowering expected metadata for "
+            f"{code.co_argcount} positional Tensor arguments, got "
+            f"{len(input_metadatas)}"
+        )
+    for input_metadata in input_metadatas:
+        if not _builtins.isinstance(
+            input_metadata,
+            _trace.CompileTraceTensorMetadata,
+        ):
+            raise TypeError(
+                "torch.compile trace bytecode lowering expected "
+                "CompileTraceTensorMetadata"
+            )
 
     recorder = _trace.CompileTraceRecorder(
         name or getattr(program, "__name__", "compile_trace")
     )
-    input_name = code.co_varnames[0]
-    input_proxy = recorder.input(
-        name=input_name,
-        shape=input_metadata.shape,
-        stride=input_metadata.stride,
-        dtype=input_metadata.dtype,
-        device=input_metadata.device,
-        requires_grad=input_metadata.requires_grad,
-    )
-    locals = {input_name: input_proxy}
+    locals = {}
+    for index, input_metadata in enumerate(input_metadatas):
+        input_name = code.co_varnames[index]
+        locals[input_name] = recorder.input(
+            name=input_name,
+            shape=input_metadata.shape,
+            stride=input_metadata.stride,
+            dtype=input_metadata.dtype,
+            device=input_metadata.device,
+            requires_grad=input_metadata.requires_grad,
+        )
     stack = []
 
     for instruction in _dis.get_instructions(program):
@@ -514,6 +530,11 @@ def lower_one_input_compile_graph(program, input_metadata, *, name=None):
     )
 
 
+def lower_one_input_compile_graph(program, input_metadata, *, name=None):
+    return lower_compile_graph(program, (input_metadata,), name=name)
+
+
 __all__ = [
+    "lower_compile_graph",
     "lower_one_input_compile_graph",
 ]

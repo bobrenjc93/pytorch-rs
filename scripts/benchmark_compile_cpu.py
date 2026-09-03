@@ -22,7 +22,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "torch_compile_cpu_eager_benchmark_v1"
+BENCHMARK_VERSION = "torch_compile_cpu_eager_benchmark_v2"
 DEFAULT_WARMUPS = 7
 DEFAULT_SAMPLES = 31
 IMPLEMENTATION_ORDERS = (
@@ -38,6 +38,7 @@ class InputVariant:
     description: str
     repeats: int
     make_inputs: object
+    input_count: int | None = 1
 
 
 def _product(shape):
@@ -67,10 +68,31 @@ def _dense_input(shape):
     return make_inputs
 
 
+def _dense_inputs(*shapes):
+    def make_inputs(module):
+        return tuple(
+            module.tensor(_nested_values(shape), dtype=module.float32)
+            for shape in shapes
+        )
+
+    return make_inputs
+
+
 def _transposed_input(base_shape):
     def make_inputs(module):
         base = module.tensor(_nested_values(base_shape), dtype=module.float32)
         return (base.transpose(0, 1),)
+
+    return make_inputs
+
+
+def _transposed_matrix_vector_input(base_shape):
+    def make_inputs(module):
+        base = module.tensor(_nested_values(base_shape), dtype=module.float32)
+        return (
+            base.transpose(0, 1),
+            module.tensor(_nested_values((base_shape[0],)), dtype=module.float32),
+        )
 
     return make_inputs
 
@@ -81,6 +103,7 @@ INPUT_VARIANTS = (
         "corpus_default",
         "case's checked-in input factory",
         256,
+        None,
         None,
     ),
     InputVariant("scalar", "scalar", "rank-0 scalar", 2048, _dense_input(())),
@@ -112,6 +135,54 @@ INPUT_VARIANTS = (
         "transpose view from base shape (31, 37)",
         128,
         _transposed_input((31, 37)),
+    ),
+    InputVariant(
+        "matrix_vector_31x37_by_37",
+        "broadcast_matrix_vector",
+        "row-major rank-2 by trailing rank-1 broadcast, shape (31, 37) by (37,)",
+        128,
+        _dense_inputs((31, 37), (37,)),
+        2,
+    ),
+    InputVariant(
+        "matrix_vector_127x131_by_131",
+        "broadcast_matrix_vector",
+        "row-major rank-2 by trailing rank-1 broadcast, shape (127, 131) by (131,)",
+        16,
+        _dense_inputs((127, 131), (131,)),
+        2,
+    ),
+    InputVariant(
+        "tensor_scalar_31x37",
+        "broadcast_tensor_scalar",
+        "row-major rank-2 by scalar broadcast, shape (31, 37) by ()",
+        128,
+        _dense_inputs((31, 37), ()),
+        2,
+    ),
+    InputVariant(
+        "scalar_tensor_31x37",
+        "broadcast_scalar_tensor",
+        "scalar by row-major rank-2 broadcast, shape () by (31, 37)",
+        128,
+        _dense_inputs((), (31, 37)),
+        2,
+    ),
+    InputVariant(
+        "empty_2x0_by_0",
+        "broadcast_empty",
+        "rank-2 empty by trailing empty rank-1 broadcast, shape (2, 0) by (0,)",
+        2048,
+        _dense_inputs((2, 0), (0,)),
+        2,
+    ),
+    InputVariant(
+        "transpose_31x37_by_37",
+        "broadcast_noncontiguous",
+        "transpose view shape (31, 37) by trailing rank-1 broadcast",
+        128,
+        _transposed_matrix_vector_input((37, 31)),
+        2,
     ),
 )
 
@@ -213,6 +284,7 @@ def _environment(torch_rs, reference_torch, corpus_version, args):
         "git": _git_provenance(),
         "warmups": args.warmups,
         "samples": args.samples,
+        "required_single_cpu_affinity": args.require_single_cpu_affinity,
         "implementation_orders": IMPLEMENTATION_ORDERS,
     }
 
@@ -231,6 +303,21 @@ def _reset_compile_state(module, implementation, corpus_module):
         reset = getattr(compiler, "reset", None)
         if reset is not None:
             reset()
+
+
+def _program_input_count(case):
+    code = getattr(case.program, "__code__", None)
+    if code is None:
+        raise AssertionError(f"{case.name} program is not an exact Python function")
+    return code.co_argcount
+
+
+def _variant_applies_to_case(variant, case):
+    return variant.input_count is None or variant.input_count == _program_input_count(case)
+
+
+def _cell_input_factory(case, variant):
+    return case.make_inputs if variant.make_inputs is None else variant.make_inputs
 
 
 def _synchronize(module):
@@ -342,14 +429,22 @@ def _run_cell(
     warmups,
     samples,
 ):
-    make_inputs = case.make_inputs if variant.make_inputs is None else variant.make_inputs
+    make_inputs = _cell_input_factory(case, variant)
     inputs = make_inputs(module)
-    if len(inputs) != 1:
-        raise AssertionError(f"{case.name} returned {len(inputs)} inputs, expected 1")
+    expected_input_count = _program_input_count(case)
+    if len(inputs) != expected_input_count:
+        raise AssertionError(
+            f"{case.name}/{variant.name} returned {len(inputs)} inputs, "
+            f"expected {expected_input_count}"
+        )
+    if expected_input_count not in (1, 2):
+        raise AssertionError(
+            f"{case.name} has unsupported benchmark arity {expected_input_count}"
+        )
 
     _reset_compile_state(module, implementation, corpus_module)
     compile_started_ns = time.perf_counter_ns()
-    compiled = module.compile(case.program, backend="eager", fullgraph=True)
+    compiled = module.compile(case.program, **case.compile_kwargs("eager"))
     factory_ns = time.perf_counter_ns() - compile_started_ns
     cold_ns, cold_checksum, cold_output = _time_once(compiled, inputs, module)
 
@@ -386,6 +481,61 @@ def _geomean(values):
     return math.exp(sum(math.log(value) for value in values) / len(values))
 
 
+def _coverage_denominator(corpus_module, selected_cases):
+    category_weights = dict(corpus_module.CATEGORY_WEIGHTS)
+    selected_names = {case.name for case in selected_cases}
+    public_cases = tuple(corpus_module.COMPILE_CORPUS)
+    held_out_cases = tuple(getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ()))
+
+    supported_categories = []
+    zero_credit_categories = []
+    supported_weight = 0
+    for category, weight in category_weights.items():
+        category_cases = [
+            case.name for case in public_cases if case.category == category
+        ]
+        if category_cases:
+            supported_weight += weight
+            supported_categories.append(
+                {
+                    "category": category,
+                    "weight": weight,
+                    "public_cases": category_cases,
+                    "timed_public_cases": [
+                        name for name in category_cases if name in selected_names
+                    ],
+                }
+            )
+        else:
+            zero_credit_categories.append(
+                {
+                    "category": category,
+                    "weight": weight,
+                    "reason": (
+                        "no native torch_rs eager/fullgraph compile cases are "
+                        "implemented for this category in the checked-in corpus"
+                    ),
+                }
+            )
+
+    total_weight = sum(category_weights.values())
+    zero_credit_weight = total_weight - supported_weight
+    return {
+        "category_weights": category_weights,
+        "total_weight": total_weight,
+        "supported_weight": supported_weight,
+        "zero_credit_weight": zero_credit_weight,
+        "weighted_supported_percent": (supported_weight / total_weight * 100.0)
+        if total_weight
+        else None,
+        "public_supported_case_count": len(public_cases),
+        "held_out_case_count": len(held_out_cases),
+        "selected_public_case_count": len(selected_cases),
+        "supported_categories": supported_categories,
+        "zero_credit_categories": zero_credit_categories,
+    }
+
+
 def _select_named(items, selected_names, *, item_kind):
     if not selected_names:
         return tuple(items)
@@ -418,6 +568,12 @@ def run_benchmark(args):
         raise SystemExit(
             "CPU compile benchmark requires pinned PyTorch "
             f"{REFERENCE_PYTORCH_VERSION}, got {reference_torch.__version__}"
+        )
+    affinity = _affinity()
+    if args.require_single_cpu_affinity and (affinity is None or len(affinity) != 1):
+        raise SystemExit(
+            "--require-single-cpu-affinity requires the process to be pinned "
+            f"to exactly one CPU, got {affinity!r}"
         )
 
     _configure_reference_threads(reference_torch, args.threads)
@@ -454,6 +610,7 @@ def run_benchmark(args):
         ),
         "cases": rows,
         "aggregates": {
+            "timed_supported_cell_count": len(rows),
             "steady_geomean_torch_rs_over_pytorch": _geomean(steady_ratios),
             "steady_geomean_capped_0_10_10_0": _geomean(
                 [min(10.0, max(0.10, ratio)) for ratio in steady_ratios]
@@ -463,6 +620,7 @@ def run_benchmark(args):
                 [min(10.0, max(0.10, ratio)) for ratio in cold_ratios]
             ),
         },
+        "coverage_denominator": _coverage_denominator(corpus_module, cases),
     }
 
 
@@ -504,6 +662,8 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
             module = torch_rs if implementation == "torch_rs" else reference_torch
             for case in cases:
                 for variant in variants:
+                    if not _variant_applies_to_case(variant, case):
+                        continue
                     cell_key = f"{case.name}/{variant.name}"
                     measured = _measure_one_pass(
                         module=module,
@@ -518,11 +678,7 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                         implementation,
                         [],
                     ).append(measured)
-                    expected_inputs = (
-                        case.make_inputs(module)
-                        if variant.make_inputs is None
-                        else variant.make_inputs(module)
-                    )
+                    expected_inputs = _cell_input_factory(case, variant)(module)
                     expected = case.program(*expected_inputs)
                     _assert_outputs_match(
                         measured["cold_output"],
@@ -535,11 +691,10 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                         cell_name=f"{cell_key}/{implementation}",
                     )
                     if implementation == "torch_rs":
-                        reference_inputs = (
-                            case.make_inputs(reference_torch)
-                            if variant.make_inputs is None
-                            else variant.make_inputs(reference_torch)
-                        )
+                        reference_inputs = _cell_input_factory(
+                            case,
+                            variant,
+                        )(reference_torch)
                         reference_expected = case.program(*reference_inputs)
                         _assert_outputs_match(
                             measured["cold_output"],
@@ -555,6 +710,8 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
     rows = []
     for case in cases:
         for variant in variants:
+            if not _variant_applies_to_case(variant, case):
+                continue
             cell_key = f"{case.name}/{variant.name}"
             cell = pass_results[cell_key]
             implementations = {}
@@ -604,6 +761,7 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                     "category": case.category,
                     "variant": variant.name,
                     "variant_category": variant.category,
+                    "input_count": _program_input_count(case),
                     "description": variant.description,
                     "repeats": variant.repeats,
                     "input_metadata": cell["torch_rs"][0]["input_metadata"],
@@ -617,6 +775,8 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                     },
                 }
             )
+    if not rows:
+        raise SystemExit("no benchmark cells selected")
     return rows
 
 
@@ -625,6 +785,7 @@ def parse_args():
     parser.add_argument("--warmups", type=int, default=DEFAULT_WARMUPS)
     parser.add_argument("--samples", type=int, default=DEFAULT_SAMPLES)
     parser.add_argument("--threads", type=int, default=1)
+    parser.add_argument("--require-single-cpu-affinity", action="store_true")
     parser.add_argument("--cases", nargs="*", default=())
     parser.add_argument("--variants", nargs="*", default=())
     parser.add_argument("--output", type=Path)
