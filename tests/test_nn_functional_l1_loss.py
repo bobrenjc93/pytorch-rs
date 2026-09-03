@@ -36,6 +36,25 @@ class FunctionalL1LossTests(unittest.TestCase):
         ) & 0x7FFF_FFFF
         return expected, expected_bits
 
+    @classmethod
+    def expected_l1_sum(cls, input, target):
+        expected_none = (input - target).abs()
+        expected_bits = cls.tensor_bits(expected_none).copy()
+        if target.shape == ():
+            target_bits = np.full(
+                expected_bits.shape,
+                cls.tensor_bits(target)[0],
+                dtype=np.uint32,
+            )
+        else:
+            target_bits = cls.tensor_bits(target)
+        target_nan = (target_bits & 0x7FFF_FFFF) > 0x7F80_0000
+        expected_bits[target_nan] = (
+            target_bits[target_nan] | 0x0040_0000
+        ) & 0x7FFF_FFFF
+        expected_values = expected_bits.view(np.float32).copy()
+        return torch.tensor(memoryview(expected_values)).view(expected_none.shape).sum()
+
     def assert_matches_composition(
         self,
         actual,
@@ -403,6 +422,83 @@ class FunctionalL1LossTests(unittest.TestCase):
                 "input broadcast empty leading dimension",
                 empty_vector,
                 empty_matrix,
+            ),
+        )
+
+    def scalar_broadcast_sum_cases(self):
+        tensor_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        edge_tensor = torch.tensor(memoryview(tensor_bits.view(np.float32))).view(2, 6)
+        empty_tensor = torch.zeros((0, 6))
+        noncontiguous_tensor = edge_tensor.transpose(0, 1)
+        signed_zero_scalar = torch.tensor(
+            memoryview(np.asarray([0x8000_0000], dtype=np.uint32).view(np.float32))
+        )[0]
+        positive_inf_scalar = torch.tensor(
+            memoryview(np.asarray([0x7F80_0000], dtype=np.uint32).view(np.float32))
+        )[0]
+        nan_scalar = torch.tensor(
+            memoryview(np.asarray([0x7F86_789A], dtype=np.uint32).view(np.float32))
+        )[0]
+
+        return (
+            (
+                "scalar input signed zero contiguous",
+                signed_zero_scalar,
+                edge_tensor,
+                True,
+            ),
+            (
+                "scalar target signed zero contiguous",
+                edge_tensor,
+                signed_zero_scalar,
+                True,
+            ),
+            (
+                "scalar input empty contiguous",
+                torch.tensor(2.5),
+                empty_tensor,
+                True,
+            ),
+            (
+                "scalar target empty contiguous",
+                empty_tensor,
+                torch.tensor(-2.5),
+                True,
+            ),
+            (
+                "scalar input inf target edges",
+                positive_inf_scalar,
+                edge_tensor,
+                True,
+            ),
+            ("scalar target nan", edge_tensor, nan_scalar, True),
+            (
+                "scalar input noncontiguous fallback",
+                torch.tensor(0.5),
+                noncontiguous_tensor,
+                False,
+            ),
+            (
+                "scalar target noncontiguous fallback",
+                noncontiguous_tensor,
+                torch.tensor(0.5),
+                False,
             ),
         )
 
@@ -832,6 +928,63 @@ class FunctionalL1LossTests(unittest.TestCase):
                     expected_none,
                     case=(case, "none"),
                 )
+            with self.subTest(case=case, nonmutation=True):
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1],
+                    input_state[-1],
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1],
+                    target_state[-1],
+                )
+
+    def test_scalar_broadcast_sum_matches_composition_warning_metadata_and_nonmutation(
+        self,
+    ):
+        for case, input, target, fast_path_expected in self.scalar_broadcast_sum_cases():
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+            expected = self.expected_l1_sum(input, target)
+
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                warning_line = inspect.currentframe().f_lineno + 1
+                actual = functional.l1_loss(input, target, reduction="sum")
+
+            self.assert_matches_composition(actual, expected, case=case)
+            with self.subTest(case=case, warning=True):
+                self.assertEqual(len(caught), 1)
+                self.assertIs(caught[0].category, UserWarning)
+                self.assertEqual(
+                    str(caught[0].message),
+                    self.broadcast_warning(input, target),
+                )
+                self.assertEqual(caught[0].filename, __file__)
+                self.assertEqual(caught[0].lineno, warning_line)
+            with self.subTest(case=case, metadata=True):
+                self.assertEqual(actual.shape, ())
+                self.assertEqual(actual.stride(), ())
+                self.assertEqual(actual.storage_offset(), 0)
+                self.assertTrue(actual.is_contiguous())
+                self.assertEqual(actual.numel(), 1)
+                self.assertFalse(actual.requires_grad)
+                self.assertTrue(actual.is_leaf)
+                self.assertIs(actual.dtype, torch.float32)
+                self.assertEqual(actual.device, torch.device("cpu"))
+            with self.subTest(case=case, storage=True):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    repeated = functional.l1_loss(input, target, reduction="sum")
+                self.assertFalse(actual.is_set_to(repeated))
+                self.assertFalse(actual.is_set_to(input))
+                self.assertFalse(actual.is_set_to(target))
+                self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+            with self.subTest(case=case, fallback=not fast_path_expected):
+                tensor = target if input.shape == () else input
+                if not fast_path_expected:
+                    self.assertFalse(tensor.is_contiguous())
             with self.subTest(case=case, nonmutation=True):
                 self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
                 self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
@@ -1361,22 +1514,41 @@ class FunctionalL1LossTests(unittest.TestCase):
                     input_requires_grad=input_requires_grad,
                     target_requires_grad=target_requires_grad,
                 ):
-                    with self.assertWarnsRegex(UserWarning, "Using a target size"):
-                        with self.assertRaisesRegex(
-                            RuntimeError,
-                            r"^l1_loss\(\): autograd recording is not supported$",
-                        ):
-                            functional.l1_loss(input, target, reduction="none")
+                    for reduction in ("none", "sum"):
+                        with self.subTest(reduction=reduction):
+                            with self.assertWarnsRegex(
+                                UserWarning,
+                                "Using a target size",
+                            ):
+                                with self.assertRaisesRegex(
+                                    RuntimeError,
+                                    r"^l1_loss\(\): autograd recording is not supported$",
+                                ):
+                                    functional.l1_loss(
+                                        input,
+                                        target,
+                                        reduction=reduction,
+                                    )
 
-                    with warnings.catch_warnings(), torch.no_grad():
-                        warnings.simplefilter("ignore")
-                        actual = functional.l1_loss(input, target, reduction="none")
-                        expected = (input - target).abs()
-                    self.assert_matches_composition(actual, expected, case="no_grad")
-                    self.assertFalse(actual.requires_grad)
-                    self.assertTrue(actual.is_leaf)
-                    self.assertIsNone(input.grad)
-                    self.assertIsNone(target.grad)
+                            with warnings.catch_warnings(), torch.no_grad():
+                                warnings.simplefilter("ignore")
+                                actual = functional.l1_loss(
+                                    input,
+                                    target,
+                                    reduction=reduction,
+                                )
+                                expected = (input - target).abs()
+                                if reduction == "sum":
+                                    expected = expected.sum()
+                            self.assert_matches_composition(
+                                actual,
+                                expected,
+                                case=("no_grad", reduction),
+                            )
+                            self.assertFalse(actual.requires_grad)
+                            self.assertTrue(actual.is_leaf)
+                            self.assertIsNone(input.grad)
+                            self.assertIsNone(target.grad)
 
     def test_unsupported_options_shapes_and_operands_are_rejected(self):
         input = torch.ones((2, 3))

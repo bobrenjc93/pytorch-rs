@@ -349,6 +349,96 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             ),
         )
 
+    def make_scalar_broadcast_sum_cases(self, module):
+        tensor_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        edge_tensor = module.tensor(
+            memoryview(tensor_bits.view(np.float32)),
+            dtype=module.float32,
+        ).view(2, 6)
+        empty_tensor = module.zeros((0, 6), dtype=module.float32)
+        noncontiguous_tensor = edge_tensor.transpose(0, 1)
+        signed_zero_scalar = module.tensor(
+            memoryview(np.asarray([0x8000_0000], dtype=np.uint32).view(np.float32)),
+            dtype=module.float32,
+        )[0]
+        positive_inf_scalar = module.tensor(
+            memoryview(np.asarray([0x7F80_0000], dtype=np.uint32).view(np.float32)),
+            dtype=module.float32,
+        )[0]
+        nan_scalar = module.tensor(
+            memoryview(np.asarray([0x7F86_789A], dtype=np.uint32).view(np.float32)),
+            dtype=module.float32,
+        )[0]
+
+        return (
+            (
+                "scalar input signed zero contiguous",
+                signed_zero_scalar,
+                edge_tensor,
+                True,
+                True,
+            ),
+            (
+                "scalar target signed zero contiguous",
+                edge_tensor,
+                signed_zero_scalar,
+                True,
+                True,
+            ),
+            (
+                "scalar input empty contiguous",
+                self.tensor(module, 2.5),
+                empty_tensor,
+                False,
+                True,
+            ),
+            (
+                "scalar target empty contiguous",
+                empty_tensor,
+                self.tensor(module, -2.5),
+                False,
+                True,
+            ),
+            (
+                "scalar input inf target edges",
+                positive_inf_scalar,
+                edge_tensor,
+                True,
+                True,
+            ),
+            ("scalar target nan", edge_tensor, nan_scalar, True, True),
+            (
+                "scalar input noncontiguous fallback",
+                self.tensor(module, 0.5),
+                noncontiguous_tensor,
+                True,
+                False,
+            ),
+            (
+                "scalar target noncontiguous fallback",
+                noncontiguous_tensor,
+                self.tensor(module, 0.5),
+                True,
+                False,
+            ),
+        )
+
     def make_channels_last_cases(self, module):
         edge_input_patterns = np.asarray(
             [
@@ -914,6 +1004,128 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 )
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
+                )
+
+    def test_scalar_broadcast_sum_matches_pytorch_2_13(self):
+        def actual_bits(tensor):
+            return np.asarray(tensor).reshape(-1).view(np.uint32).copy()
+
+        def expected_bits(tensor):
+            return tensor.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+
+        def assert_scalar_matches(actual, expected, *, case, allow_nan):
+            with self.subTest(case=case, metadata=True):
+                self.assertEqual(actual.shape, tuple(expected.shape))
+                self.assertEqual(actual.stride(), expected.stride())
+                self.assertEqual(actual.storage_offset(), expected.storage_offset())
+                self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+                self.assertFalse(actual.requires_grad)
+                self.assertEqual(actual.is_leaf, expected.is_leaf)
+                self.assertIs(actual.dtype, torch.float32)
+                self.assertEqual(actual.device, torch.device("cpu"))
+                self.assertEqual(actual.numel(), expected.numel())
+
+            actual_values = np.asarray(actual).reshape(-1)
+            expected_values = expected.detach().cpu().numpy().reshape(-1)
+            with self.subTest(case=case, values=True):
+                if allow_nan:
+                    actual_nan = np.isnan(actual_values)
+                    expected_nan = np.isnan(expected_values)
+                    np.testing.assert_array_equal(actual_nan, expected_nan)
+                    non_nan = ~expected_nan
+                    if np.any(non_nan):
+                        np.testing.assert_array_max_ulp(
+                            actual_values[non_nan],
+                            expected_values[non_nan],
+                            maxulp=1,
+                        )
+                else:
+                    np.testing.assert_array_max_ulp(
+                        actual_values,
+                        expected_values,
+                        maxulp=1,
+                    )
+
+        actual_cases = self.make_scalar_broadcast_sum_cases(torch)
+        expected_cases = self.make_scalar_broadcast_sum_cases(reference_torch)
+        for actual_case, expected_case in zip(actual_cases, expected_cases, strict=True):
+            case, actual_input, actual_target, allow_nan, fast_path_expected = actual_case
+            (
+                expected_name,
+                expected_input,
+                expected_target,
+                expected_allow_nan,
+                expected_fast_path,
+            ) = expected_case
+            self.assertEqual(case, expected_name)
+            self.assertEqual(allow_nan, expected_allow_nan)
+            self.assertEqual(fast_path_expected, expected_fast_path)
+            actual_input_before = actual_bits(actual_input)
+            actual_target_before = actual_bits(actual_target)
+            expected_input_before = expected_bits(expected_input)
+            expected_target_before = expected_bits(expected_target)
+
+            actual, actual_warnings = self.call_with_warnings(
+                functional,
+                actual_input,
+                actual_target,
+                reduction="sum",
+            )
+            expected, expected_warnings = self.call_with_warnings(
+                reference_functional,
+                expected_input,
+                expected_target,
+                reduction="sum",
+            )
+
+            assert_scalar_matches(
+                actual,
+                expected,
+                case=case,
+                allow_nan=allow_nan,
+            )
+            with self.subTest(case=case, warnings=True):
+                self.assertEqual(actual_warnings, expected_warnings)
+                self.assertEqual(len(actual_warnings), 1)
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                actual_repeat = functional.l1_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="sum",
+                )
+                expected_repeat = reference_functional.l1_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="sum",
+                )
+            with self.subTest(case=case, storage=True):
+                self.assertFalse(actual.is_set_to(actual_repeat))
+                self.assertFalse(expected.is_set_to(expected_repeat))
+                self.assertFalse(actual.is_set_to(actual_input))
+                self.assertFalse(expected.is_set_to(expected_input))
+                self.assertFalse(actual.is_set_to(actual_target))
+                self.assertFalse(expected.is_set_to(expected_target))
+                self.assertNotEqual(actual.data_ptr(), actual_repeat.data_ptr())
+                self.assertNotEqual(expected.data_ptr(), expected_repeat.data_ptr())
+
+            with self.subTest(case=case, fallback=not fast_path_expected):
+                tensor = actual_target if actual_input.shape == () else actual_input
+                expected_tensor = (
+                    expected_target if tuple(expected_input.shape) == () else expected_input
+                )
+                if not fast_path_expected:
+                    self.assertFalse(tensor.is_contiguous())
+                    self.assertFalse(expected_tensor.is_contiguous())
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(actual_bits(actual_input), actual_input_before)
+                np.testing.assert_array_equal(actual_bits(actual_target), actual_target_before)
+                np.testing.assert_array_equal(expected_bits(expected_input), expected_input_before)
+                np.testing.assert_array_equal(
+                    expected_bits(expected_target),
+                    expected_target_before,
                 )
 
     def test_rank_two_trailing_vector_sum_broadcast_matches_pytorch_2_13(self):
@@ -1888,25 +2100,54 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                     input_requires_grad,
                     target_requires_grad,
                 )
-                with warnings.catch_warnings(), torch.no_grad():
-                    warnings.simplefilter("ignore")
-                    actual = functional.l1_loss(
-                        actual_input,
-                        actual_target,
-                        reduction="none",
-                    )
-                with warnings.catch_warnings(), reference_torch.no_grad():
-                    warnings.simplefilter("ignore")
-                    expected = reference_functional.l1_loss(
-                        expected_input,
-                        expected_target,
-                        reduction="none",
-                    )
-                self.assert_matches(
-                    actual,
-                    expected,
-                    case=(case, input_requires_grad, target_requires_grad),
-                )
+                for reduction in ("none", "sum"):
+                    with self.subTest(
+                        case=case,
+                        input_requires_grad=input_requires_grad,
+                        target_requires_grad=target_requires_grad,
+                        reduction=reduction,
+                    ):
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            with self.assertRaisesRegex(
+                                RuntimeError,
+                                r"^l1_loss\(\): autograd recording is not supported$",
+                            ):
+                                functional.l1_loss(
+                                    actual_input,
+                                    actual_target,
+                                    reduction=reduction,
+                                )
+
+                        with warnings.catch_warnings(), torch.no_grad():
+                            warnings.simplefilter("ignore")
+                            actual = functional.l1_loss(
+                                actual_input,
+                                actual_target,
+                                reduction=reduction,
+                            )
+                        with warnings.catch_warnings(), reference_torch.no_grad():
+                            warnings.simplefilter("ignore")
+                            expected = reference_functional.l1_loss(
+                                expected_input,
+                                expected_target,
+                                reduction=reduction,
+                            )
+                        self.assert_matches(
+                            actual,
+                            expected,
+                            case=(
+                                case,
+                                input_requires_grad,
+                                target_requires_grad,
+                                reduction,
+                            ),
+                            max_value_ulp=int(reduction == "sum"),
+                        )
+                        self.assertIsNone(actual_input.grad)
+                        self.assertIsNone(actual_target.grad)
+                        self.assertIsNone(expected_input.grad)
+                        self.assertIsNone(expected_target.grad)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,77 @@
 # `torch.nn.functional.l1_loss(reduction="sum")` Release Timings
 
-Date: 2026-09-02
+Date: 2026-09-03
+
+## Focused scalar-broadcast update
+
+Candidate provenance: source snapshot based on
+`95e8a5875b3b1f1c9afd05745cb841ea6797ead3`, plus the worktree changes that add
+the direct rank-0 scalar broadcast sum path.
+
+This focused update measures only scalar-broadcast
+`l1_loss(reduction="sum")` cells. The queued channels-last L1 sum work and the
+historical full matrix below remain unchanged.
+
+Commands:
+
+```bash
+env UV_CACHE_DIR="$PWD/target/uv-cache" \
+  UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python" \
+  uv venv --clear --python 3.12
+env UV_CACHE_DIR="$PWD/target/uv-cache" \
+  UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python" \
+  uv sync --locked --no-install-project --group dev --group reference
+mkdir -p target/cargo-home/registry
+cp -a /home/bobren/.cargo/registry/. target/cargo-home/registry/
+env CARGO_TARGET_DIR="$PWD/target" cargo fmt --check
+env CARGO_TARGET_DIR="$PWD/target" cargo test --all-targets absolute_difference_sum
+env -u CONDA_PREFIX -u CONDA_DEFAULT_ENV -u CONDA_PROMPT_MODIFIER \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_NET_OFFLINE=true \
+  TMPDIR="$PWD/target" \
+  VIRTUAL_ENV="$PWD/.venv" \
+  PYO3_PYTHON="$PWD/.venv/bin/python" \
+  .venv/bin/maturin develop --release --locked --offline
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest \
+  tests.test_nn_functional_l1_loss \
+  tests.test_nn_functional_l1_loss_reference
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  taskset -c 24 .venv/bin/python \
+  target/l1_loss_sum_scalar_broadcast_timing.py
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  L1_LOSS_SUM_IMPL_ORDER=pytorch,torch_rs \
+  taskset -c 24 .venv/bin/python \
+  target/l1_loss_sum_scalar_broadcast_timing.py
+```
+
+The timing driver was generated under ignored `target/` storage. It validates
+the broadcast warning, scalar output metadata, and scalar value against PyTorch
+2.13 before timing. Each process used 15 warmup blocks and 81 measured blocks;
+the 1024x1024 cells repeated the operation 4 times per block, and the empty
+cells repeated it 5000 times per block. Each block consumed the final scalar
+output with a BLAKE2b metadata/value checksum. Reported medians below are the
+medians of the two per-process medians, run once in each implementation order.
+
+Environment matched the historical run unless noted: worktree-local `.venv`,
+Python 3.12.14+meta, NumPy 2.5.1, PyTorch 2.13.0+cu130, Rust
+`rustc 1.92.0 (ded5c06cf 2025-12-08)`, `cargo 1.92.0
+(344c4567c 2025-10-21)`, maturin 1.14.1, CPU AMD EPYC 9654, Linux
+6.13.2-0_fbk12_0_g0b66b3635210 x86_64, release profile, CPU float32,
+`CUDA_VISIBLE_DEVICES=`, CPU affinity `taskset -c 24`, and single-threaded
+BLAS/OpenMP/torch settings. `torch_rs.get_num_threads()` and
+`torch_rs.get_num_interop_threads()` both reported 1.
+
+| Workload | Category | Input / target | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Materialized checksums |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| `l1_sum_scalar_left_broadcast_1024x1024` | scalar broadcast | `(), stride (), offset 0` / `(1024, 1024), stride (1024, 1), offset 0` | `(), stride (), offset 0, requires_grad=False` | 4 | 1631.851 us +/- 6.620 us, var 149.504 | 279.299 us +/- 6.330 us, var 181.715 | 5.84x | `573452ca76f45ffc`/`573452ca76f45ffc` |
+| `l1_sum_scalar_right_broadcast_1024x1024` | scalar broadcast | `(1024, 1024), stride (1024, 1), offset 0` / `(), stride (), offset 0` | `(), stride (), offset 0, requires_grad=False` | 4 | 1009.540 us +/- 5.261 us, var 623.603 | 285.190 us +/- 4.539 us, var 99.492 | 3.54x | `573452ca76f45ffc`/`573452ca76f45ffc` |
+| `l1_sum_scalar_left_empty_0x1024` | empty scalar broadcast | `(), stride (), offset 0` / `(0, 1024), stride (1024, 1), offset 0` | `(), stride (), offset 0, requires_grad=False` | 5000 | 0.961 us +/- 0.006 us, var 0.003 | 7.584 us +/- 0.032 us, var 0.068 | 0.13x | `866469888f182a0b`/`866469888f182a0b` |
+| `l1_sum_scalar_right_empty_0x1024` | empty scalar broadcast | `(0, 1024), stride (1024, 1), offset 0` / `(), stride (), offset 0` | `(), stride (), offset 0, requires_grad=False` | 5000 | 0.950 us +/- 0.004 us, var 0.003 | 7.611 us +/- 0.037 us, var 0.043 | 0.12x | `866469888f182a0b`/`866469888f182a0b` |
 
 ## Focused rank-2 trailing-vector broadcast update
 
