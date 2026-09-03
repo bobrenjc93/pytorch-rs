@@ -26,7 +26,7 @@ After locked setup, refresh the reference group before README examples or Python
 smoke tests, then confirm the environment:
 
 ```bash
-uv sync --locked --no-install-project --group dev --group reference
+uv sync --locked --no-install-project --group dev --group reference --inexact
 .venv/bin/python - <<'PY'
 import importlib.metadata as metadata, sys
 from pathlib import Path
