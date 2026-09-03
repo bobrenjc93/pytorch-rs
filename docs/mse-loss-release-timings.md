@@ -219,7 +219,7 @@ Geometric mean `torch_rs / PyTorch` slowdown for the supported
 | --- | --- | --- | ---: | ---: | ---: | ---: |
 | `mse_sum_scalar` | scalar | `()`, stride `()`, offset 0, requires_grad=False | 10000 | 1.957 +/- 0.012 us | 6.727 +/- 0.040 us | 0.29x |
 | `mse_sum_empty_transposed` | empty | `()`, stride `()`, offset 0, requires_grad=False | 5000 | 1.982 +/- 0.009 us | 6.941 +/- 0.072 us | 0.29x |
-| `mse_sum_broadcasted_256x384_by_384` | broadcasted | `()`, stride `()`, offset 0, requires_grad=False | 8 | 96.266 +/- 0.476 us | 28.698 +/- 0.578 us | 3.35x |
+| `mse_sum_broadcasted_256x384_by_384` | broadcasted | `()`, stride `()`, offset 0, requires_grad=False | 8 | 82.680 +/- 0.680 us | 23.994 +/- 0.170 us | 3.45x |
 | `mse_sum_offset_96x80` | offset | `()`, stride `()`, offset 0, requires_grad=False | 16 | 9.486 +/- 0.027 us | 8.439 +/- 0.067 us | 1.12x |
 | `mse_sum_noncontig_transpose_256x512` | noncontiguous | `()`, stride `()`, offset 0, requires_grad=False | 4 | 137.977 +/- 2.332 us | 34.458 +/- 0.168 us | 4.00x |
 
