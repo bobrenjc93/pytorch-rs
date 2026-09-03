@@ -775,7 +775,7 @@ and explicit `requires_grad` mutation requests remain unsupported.
 `torch.arange` creates fresh one-dimensional CPU `float32` tensors for the
 supported numeric overloads. One-bound exact Python `float` and NumPy floating
 endpoints accept omitted, `None`, or explicit `torch.float32`/`torch.float`
-dtype metadata. One-bound exact Python integer endpoints, and two-bound
+dtype metadata. One-bound exact Python or NumPy integer endpoints, and two-bound
 implicit-step exact Python or NumPy integer `start, end` endpoints, require an
 explicit `dtype=torch.float32` or `dtype=torch.float`. Supported two-bound
 integer calls produce values in `[start, end)` with step `1`, including negative
@@ -783,8 +783,8 @@ starts and zero-length ranges when PyTorch 2.13's floating shape calculation
 does so. Supported metadata is limited to `out=None`, `layout=None` or
 `torch.strided`, `device=None` or CPU, `pin_memory=None` or `False`, and
 `requires_grad=False` or `True`; `requires_grad=True` creates a fresh leaf even
-under `torch.no_grad()`. Omitted-dtype integer inference, NumPy integer
-one-bound endpoints, float two-bound ranges, explicit `step`, concrete `out`
+under `torch.no_grad()`. Omitted-dtype integer inference, Python and NumPy
+boolean endpoints, float two-bound ranges, explicit `step`, concrete `out`
 tensors, non-CPU devices, non-float32 dtypes, pinned allocation, sparse or
 foreign layouts, and backend-specific allocation behavior remain unsupported.
 
