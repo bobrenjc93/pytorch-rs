@@ -400,6 +400,8 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
             old_function = compiler.skip_all_guards_unsafe
             old_exports = compiler.__all__
             reloaded = importlib.reload(compiler)
+            if module is reference_torch:
+                expose_reference_compiler_register_backend(reference_torch)
             new_function = reloaded.skip_all_guards_unsafe
 
             try:

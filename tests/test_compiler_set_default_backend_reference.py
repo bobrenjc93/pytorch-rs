@@ -307,7 +307,10 @@ class CompilerSetDefaultBackendReferenceTests(unittest.TestCase):
                 old_setter(first_backend)
 
                 try:
-                    self.assertIs(importlib.reload(original_module), original_module)
+                    reloaded = importlib.reload(original_module)
+                    if package is reference_torch:
+                        expose_reference_compiler_register_backend(reference_torch)
+                    self.assertIs(reloaded, original_module)
                     self.assertIs(package.compiler, original_module)
                     self.assertIs(old_getter(), first_backend)
                     self.assertIs(
@@ -318,6 +321,8 @@ class CompilerSetDefaultBackendReferenceTests(unittest.TestCase):
                     module_name = original_module.__name__
                     self.assertIs(sys.modules.pop(module_name), original_module)
                     replacement_module = importlib.import_module(module_name)
+                    if package is reference_torch:
+                        expose_reference_compiler_register_backend(reference_torch)
                     self.assertIsNot(replacement_module, original_module)
                     self.assertIs(package.compiler, replacement_module)
                     self.assertIs(

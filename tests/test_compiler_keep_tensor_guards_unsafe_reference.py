@@ -673,6 +673,8 @@ class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
             old_function = compiler.keep_tensor_guards_unsafe
             old_exports = compiler.__all__
             reloaded = importlib.reload(compiler)
+            if module is reference_torch:
+                expose_reference_compiler_register_backend(reference_torch)
             new_function = reloaded.keep_tensor_guards_unsafe
 
             try:

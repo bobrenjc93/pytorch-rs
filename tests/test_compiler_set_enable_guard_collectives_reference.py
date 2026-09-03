@@ -368,6 +368,8 @@ print(repr((handler_results, outer_result, final_result)))
 
             old_function(True)
             reloaded = importlib.reload(original_module)
+            if package is reference_torch:
+                expose_reference_compiler_register_backend(reference_torch)
             reload_result = (
                 reloaded is original_module,
                 package.compiler is original_module,
@@ -378,6 +380,8 @@ print(repr((handler_results, outer_result, final_result)))
 
             self.assertIs(sys.modules.pop(module_name), original_module)
             replacement_module = importlib.import_module(module_name)
+            if package is reference_torch:
+                expose_reference_compiler_register_backend(reference_torch)
             reimport_result = (
                 replacement_module is original_module,
                 package.compiler is replacement_module,

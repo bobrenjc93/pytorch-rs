@@ -480,6 +480,8 @@ class CompilerSkipGuardOnInbuiltNnModulesUnsafeTests(unittest.TestCase):
             old_function = compiler.skip_guard_on_inbuilt_nn_modules_unsafe
             old_exports = compiler.__all__
             reloaded = importlib.reload(compiler)
+            if compiler.__name__ == "torch.compiler":
+                expose_reference_compiler_register_backend(reference_torch)
             new_function = reloaded.skip_guard_on_inbuilt_nn_modules_unsafe
 
             self.assertIs(reloaded, compiler)
@@ -685,6 +687,8 @@ class CompilerSkipGuardOnInbuiltNnModulesUnsafeReferenceTests(unittest.TestCase)
             old_function = compiler.skip_guard_on_inbuilt_nn_modules_unsafe
             old_exports = compiler.__all__
             reloaded = importlib.reload(compiler)
+            if module is reference_torch:
+                expose_reference_compiler_register_backend(reference_torch)
             new_function = reloaded.skip_guard_on_inbuilt_nn_modules_unsafe
             try:
                 pickle.dumps(old_function)

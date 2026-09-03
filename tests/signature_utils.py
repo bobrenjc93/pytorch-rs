@@ -22,15 +22,16 @@ def expose_reference_compiler_register_backend(reference_torch):
         return
 
     compiler = getattr(reference_torch, "compiler", None)
-    if compiler is None or hasattr(compiler, "register_backend"):
+    if compiler is None:
         return
 
-    try:
-        dynamo = importlib.import_module(f"{reference_torch.__name__}._dynamo")
-    except (AttributeError, ImportError):
-        return
-    register_backend = dynamo.register_backend
-    compiler.register_backend = register_backend
+    if not hasattr(compiler, "register_backend"):
+        try:
+            dynamo = importlib.import_module(f"{reference_torch.__name__}._dynamo")
+        except (AttributeError, ImportError):
+            return
+        compiler.register_backend = dynamo.register_backend
+
     exports = list(compiler.__all__)
     if "register_backend" not in exports:
         try:
