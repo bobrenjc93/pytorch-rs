@@ -74,7 +74,7 @@ coverage.
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup expectations, focused test
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup preflight, focused test
 selection, draft-PR workflow, and documentation ownership.
 
 ```bash

@@ -20,6 +20,30 @@ The lockfiles are part of the contract: `uv.lock` pins Python dependencies,
 toolchain. Use locked installs and builds by default. Change a lockfile only
 when the patch intentionally changes dependencies, and call that out in review.
 
+## Contributor Preflight
+
+Before README examples or Python smoke tests, confirm the active checkout environment, packages, and Rust channel:
+
+```bash
+. .venv/bin/activate
+python - <<'PY'
+import importlib.metadata as md, pathlib, sys
+if pathlib.Path(sys.prefix).resolve() != pathlib.Path(".venv").resolve():
+    raise SystemExit(sys.prefix)
+import numpy, torch, torch_rs
+if torch.__version__.split("+", 1)[0] != "2.13.0":
+    raise SystemExit(torch.__version__)
+print("python", sys.executable)
+print("torch-rs", md.version("torch-rs"), torch_rs.__file__)
+print("numpy", numpy.__version__, numpy.__file__)
+print("torch", torch.__version__, torch.__file__)
+PY
+rustc --version && cargo --version
+```
+
+If `torch` is missing, run `uv sync --locked --no-install-project --group reference`.
+After a manual release wheel install, run `.venv/bin/python .github/scripts/verify_native_extension.py`; `./scripts/test-python.sh` runs that check before the suite.
+
 ## Environment Expectations
 
 - Import the installed package as `torch_rs`, usually aliased to `torch` in
