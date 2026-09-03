@@ -1671,9 +1671,12 @@ pub(crate) fn asarray_variable_function(
     }
     let device = parse_as_tensor_device("asarray", arguments.device.as_ref())?;
     let is_exact_native_tensor = obj.value.is_exact_instance_of::<PyTensor>();
-    if !is_exact_native_tensor {
-        validate_asarray_copy(arguments.copy.as_ref())?;
-    }
+    let copy_requested = asarray_copy_requested(arguments.copy.as_ref())?;
+    let literal_sequence = if is_exact_native_tensor {
+        None
+    } else {
+        asarray_sequence_for_copy_request(&obj.value, copy_requested, arguments.copy.as_ref())?
+    };
     validate_asarray_requires_grad(arguments.requires_grad.as_ref())?;
 
     if dtype != DType::Float32 || !device.is_cpu() {
@@ -1688,15 +1691,22 @@ pub(crate) fn asarray_variable_function(
                 Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
             );
         }
-        if let Some((flattened, shape)) = as_tensor_float_sequence(&obj.value)? {
-            return Ok(Py::new(
-                py,
-                CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
-                    .map(PyTensor::new)
-                    .map_err(|error| tensor_error(&error))?,
-            )?
-            .into_any());
+        if let Some((flattened, shape)) = literal_sequence {
+            return asarray_float_sequence_tensor(py, flattened, shape, dtype, device);
         }
+        match as_tensor_float_sequence(&obj.value) {
+            Ok(Some((flattened, shape))) => {
+                return asarray_float_sequence_tensor(py, flattened, shape, dtype, device);
+            }
+            Ok(None) => {}
+            Err(error) => {
+                if asarray_copy_requested(arguments.copy.as_ref())? {
+                    validate_asarray_copy(arguments.copy.as_ref())?;
+                }
+                return Err(error);
+            }
+        }
+        validate_asarray_copy(arguments.copy.as_ref())?;
         return Err(PyNotImplementedError::new_err(
             "asarray(): only exact native CPU float32 Tensor inputs, Python float scalars, or exact list/tuple sequences of Python floats are supported; NumPy arrays/scalars, integer and boolean inference, and other conversions are not implemented",
         ));
@@ -1717,7 +1727,7 @@ pub(crate) fn asarray_variable_function(
             c"torch.asarray: unspecified requires_grad now defaults to obj.requires_grad instead of False. Pass requires_grad=False explicitly to get the old behavior and silence this warning. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_new.cpp:1737.)",
         )?;
     }
-    if asarray_copy_requested(arguments.copy.as_ref())? {
+    if copy_requested {
         let copied = obj
             .value
             .cast::<PyTensor>()?
@@ -1730,6 +1740,44 @@ pub(crate) fn asarray_variable_function(
         return Ok(Py::new(py, copied)?.into_any());
     }
     Ok(obj.value.unbind())
+}
+
+fn asarray_sequence_for_copy_request(
+    obj: &Bound<'_, PyAny>,
+    copy_requested: bool,
+    copy: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Option<(Vec<f32>, Vec<usize>)>> {
+    if !copy_requested || extract_exact_python_float_scalar(obj)?.is_some() {
+        return Ok(None);
+    }
+    if !is_exact_list_or_tuple(obj) {
+        validate_asarray_copy(copy)?;
+        return Ok(None);
+    }
+    match as_tensor_float_sequence(obj) {
+        Ok(Some(sequence)) => Ok(Some(sequence)),
+        Ok(None) => {
+            validate_asarray_copy(copy)?;
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn asarray_float_sequence_tensor(
+    py: Python<'_>,
+    flattened: Vec<f32>,
+    shape: Vec<usize>,
+    dtype: DType,
+    device: Device,
+) -> PyResult<Py<PyAny>> {
+    Ok(Py::new(
+        py,
+        CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
+            .map(PyTensor::new)
+            .map_err(|error| tensor_error(&error))?,
+    )?
+    .into_any())
 }
 
 pub(crate) fn scalar_tensor_variable_function(
@@ -9382,7 +9430,10 @@ fn asarray_copy_requested(copy: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
 }
 
 fn validate_asarray_scalar_copy(copy: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
-    if copy.is_none() {
+    let Some(copy) = copy else {
+        return Ok(());
+    };
+    if copy.is_truthy()? {
         return Ok(());
     }
     Err(PyNotImplementedError::new_err(

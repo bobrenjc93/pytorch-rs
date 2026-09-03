@@ -148,11 +148,18 @@ class AsArrayReferenceTests(unittest.TestCase):
             {"device": "cpu"},
             {"device": module.device("cpu")},
             {"copy": None},
+            {"copy": True},
             {"requires_grad": None},
             {
                 "dtype": module.float32,
                 "device": module.device("cpu"),
                 "copy": None,
+                "requires_grad": None,
+            },
+            {
+                "dtype": module.float32,
+                "device": module.device("cpu"),
+                "copy": True,
                 "requires_grad": None,
             },
         )
@@ -167,11 +174,18 @@ class AsArrayReferenceTests(unittest.TestCase):
             {"device": "cpu"},
             {"device": module.device("cpu")},
             {"copy": None},
+            {"copy": True},
             {"requires_grad": None},
             {
                 "dtype": module.float32,
                 "device": module.device("cpu"),
                 "copy": None,
+                "requires_grad": None,
+            },
+            {
+                "dtype": module.float32,
+                "device": module.device("cpu"),
+                "copy": True,
                 "requires_grad": None,
             },
         )
@@ -238,8 +252,12 @@ class AsArrayReferenceTests(unittest.TestCase):
             "source_unchanged": before == after,
         }
 
-    def asarray_float_scalar_contract(self, module, value, options):
-        first = module.asarray(value, **options)
+    def asarray_float_scalar_contract(self, module, value, options, no_grad=False):
+        if no_grad:
+            with module.no_grad():
+                first = module.asarray(value, **options)
+        else:
+            first = module.asarray(value, **options)
         second = module.asarray(value, **options)
         return {
             "fresh_object": first is not second,
@@ -441,12 +459,28 @@ class AsArrayReferenceTests(unittest.TestCase):
                     )
                     self.assertEqual(actual_contract, expected_contract)
 
-    def test_python_float_sequence_no_grad_matches_pytorch_2_13(self):
+    def test_python_float_literal_no_grad_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.asarray_float_scalar_contract(
+                torch, -0.0, {"copy": True}, no_grad=True
+            ),
+            self.asarray_float_scalar_contract(
+                reference_torch, -0.0, {"copy": True}, no_grad=True
+            ),
+        )
         data = [1.0, -0.0, float("inf")]
         self.assertEqual(
             self.asarray_float_sequence_contract(torch, data, {}, no_grad=True),
             self.asarray_float_sequence_contract(
                 reference_torch, data, {}, no_grad=True
+            ),
+        )
+        self.assertEqual(
+            self.asarray_float_sequence_contract(
+                torch, data, {"copy": True}, no_grad=True
+            ),
+            self.asarray_float_sequence_contract(
+                reference_torch, data, {"copy": True}, no_grad=True
             ),
         )
 
@@ -462,11 +496,20 @@ class AsArrayReferenceTests(unittest.TestCase):
             ("overdeep tuple", self.nested_singleton(1.0, 129, tuple)),
         )
         for case, data in cases:
-            with self.subTest(case=case):
-                self.assertEqual(
-                    self.error_observation(lambda: torch.asarray(data)),
-                    self.error_observation(lambda: reference_torch.asarray(data)),
-                )
+            for options in ({}, {"copy": True}):
+                with self.subTest(case=case, options=options):
+                    self.assertEqual(
+                        self.error_observation(
+                            lambda data=data, options=options: torch.asarray(
+                                data, **options
+                            )
+                        ),
+                        self.error_observation(
+                            lambda data=data, options=options: reference_torch.asarray(
+                                data, **options
+                            )
+                        ),
+                    )
 
         for container in (list, tuple):
             with self.subTest(max_rank=container.__name__):
@@ -477,11 +520,24 @@ class AsArrayReferenceTests(unittest.TestCase):
                 )
 
     def test_malformed_rectangular_sequence_error_type_matches_pytorch_2_13(self):
-        data = [[1.0], [2.0, 3.0]]
-        self.assertEqual(
-            self.error_type_observation(lambda: torch.asarray(data)),
-            self.error_type_observation(lambda: reference_torch.asarray(data)),
-        )
+        for case, data in (
+            ("ragged list", [[1.0], [2.0, 3.0]]),
+            ("ragged tuple", ((1.0,), (2.0, 3.0))),
+        ):
+            for options in ({}, {"copy": True}):
+                with self.subTest(case=case, options=options):
+                    self.assertEqual(
+                        self.error_type_observation(
+                            lambda data=data, options=options: torch.asarray(
+                                data, **options
+                            )
+                        ),
+                        self.error_type_observation(
+                            lambda data=data, options=options: reference_torch.asarray(
+                                data, **options
+                            )
+                        ),
+                    )
 
     def test_copy_false_sequence_errors_match_pytorch_2_13(self):
         recursive_list = []
@@ -750,6 +806,14 @@ class AsArrayReferenceTests(unittest.TestCase):
             (
                 lambda: torch.asarray(actual, copy=0),
                 lambda: reference_torch.asarray(expected, copy=0),
+            ),
+            (
+                lambda: torch.asarray(1.0, copy=0),
+                lambda: reference_torch.asarray(1.0, copy=0),
+            ),
+            (
+                lambda: torch.asarray([1.0], copy=0),
+                lambda: reference_torch.asarray([1.0], copy=0),
             ),
             (
                 lambda: torch.asarray(actual, requires_grad=0),
