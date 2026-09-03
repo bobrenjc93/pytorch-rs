@@ -163,6 +163,21 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 self.tensor(module, [[0.25, 4.0, -3.5], [0.0, -7.0, 8.5]]),
             ),
             (
+                "signed zero",
+                module.tensor(
+                    memoryview(
+                        np.asarray([0x0000_0000, 0x8000_0000], dtype=np.uint32)
+                        .view(np.float32)
+                    )
+                ),
+                module.tensor(
+                    memoryview(
+                        np.asarray([0x8000_0000, 0x0000_0000], dtype=np.uint32)
+                        .view(np.float32)
+                    )
+                ),
+            ),
+            (
                 "signed-zero-nan-infinity",
                 module.tensor(memoryview(edge_input_bits.view(np.float32))).view(2, 4),
                 module.tensor(memoryview(edge_target_bits.view(np.float32))).view(2, 4),
@@ -576,6 +591,98 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 self.assertFalse(actual.is_set_to(actual_target))
                 self.assertFalse(expected.is_set_to(expected_input))
                 self.assertFalse(expected.is_set_to(expected_target))
+
+    def test_mean_reduction_same_shape_contiguous_cases_match_pytorch_2_13(self):
+        actual_cases = self.make_same_shape_contiguous_cases(torch)
+        expected_cases = self.make_same_shape_contiguous_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            self.assertEqual(actual_input.shape, tuple(expected_input.shape))
+            self.assertEqual(actual_target.shape, tuple(expected_target.shape))
+            self.assertTrue(actual_input.is_contiguous())
+            self.assertTrue(actual_target.is_contiguous())
+            self.assertTrue(expected_input.is_contiguous())
+            self.assertTrue(expected_target.is_contiguous())
+            actual_input_before = np.asarray(actual_input).reshape(-1).view(np.uint32).copy()
+            actual_target_before = np.asarray(actual_target).reshape(-1).view(np.uint32).copy()
+            expected_input_before = (
+                expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            expected_target_before = (
+                expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+
+            for form, call_kwargs in (
+                ("explicit mean", {"reduction": "mean"}),
+                ("default mean", {"use_default": True}),
+            ):
+                actual, actual_warnings = self.call_with_warnings(
+                    functional,
+                    actual_input,
+                    actual_target,
+                    **call_kwargs,
+                )
+                expected, expected_warnings = self.call_with_warnings(
+                    reference_functional,
+                    expected_input,
+                    expected_target,
+                    **call_kwargs,
+                )
+
+                self.assert_matches(
+                    actual,
+                    expected,
+                    case=(case, form),
+                    max_value_ulp=8192 if case == "bandwidth-sized" else 2,
+                )
+                with self.subTest(case=(case, form), warnings=True):
+                    self.assertEqual(actual_warnings, expected_warnings)
+                    self.assertEqual(actual_warnings, [])
+
+                actual_repeat, _ = self.call_with_warnings(
+                    functional,
+                    actual_input,
+                    actual_target,
+                    **call_kwargs,
+                )
+                expected_repeat, _ = self.call_with_warnings(
+                    reference_functional,
+                    expected_input,
+                    expected_target,
+                    **call_kwargs,
+                )
+                with self.subTest(case=(case, form), storage=True):
+                    self.assertFalse(actual.is_set_to(actual_repeat))
+                    self.assertFalse(expected.is_set_to(expected_repeat))
+                    self.assertFalse(actual.is_set_to(actual_input))
+                    self.assertFalse(expected.is_set_to(expected_input))
+                    self.assertFalse(actual.is_set_to(actual_target))
+                    self.assertFalse(expected.is_set_to(expected_target))
+                    self.assertNotEqual(actual.data_ptr(), actual_repeat.data_ptr())
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input).reshape(-1).view(np.uint32),
+                    actual_input_before,
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target).reshape(-1).view(np.uint32),
+                    actual_target_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_input_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_target_before,
+                )
 
     def test_same_stride_noncontiguous_cases_match_pytorch_2_13(self):
         actual_cases = self.make_same_stride_noncontiguous_cases(torch)
@@ -1352,6 +1459,70 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             RuntimeError, "backward through the graph a second time"
         ):
             expected_loss.backward()
+
+    def test_mean_reduction_active_autograd_same_shape_contiguous_matches_pytorch_2_13(self):
+        def assert_grads_match(actual_sources, expected_sources, *, case):
+            for actual, expected in zip(actual_sources, expected_sources, strict=True):
+                with self.subTest(case=case, source=tuple(expected.shape)):
+                    if expected.grad is None:
+                        self.assertIsNone(actual.grad)
+                    else:
+                        self.assertEqual(actual.grad.shape, tuple(expected.grad.shape))
+                        self.assertEqual(actual.grad.stride(), expected.grad.stride())
+                        np.testing.assert_array_max_ulp(
+                            np.asarray(actual.grad),
+                            expected.grad.detach().cpu().numpy(),
+                            maxulp=1,
+                        )
+
+        for input_requires_grad, target_requires_grad in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            actual_input = torch.tensor(
+                [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
+                requires_grad=input_requires_grad,
+            )
+            actual_target = torch.tensor(
+                [[0.5, 2.0, -3.0], [1.0, -1.0, 0.0]],
+                requires_grad=target_requires_grad,
+            )
+            expected_input = reference_torch.tensor(
+                [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
+                dtype=reference_torch.float32,
+                requires_grad=input_requires_grad,
+            )
+            expected_target = reference_torch.tensor(
+                [[0.5, 2.0, -3.0], [1.0, -1.0, 0.0]],
+                dtype=reference_torch.float32,
+                requires_grad=target_requires_grad,
+            )
+
+            with self.subTest(
+                input_requires_grad=input_requires_grad,
+                target_requires_grad=target_requires_grad,
+            ):
+                actual_loss = functional.mse_loss(actual_input, actual_target)
+                expected_loss = reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                )
+                self.assert_matches(
+                    actual_loss,
+                    expected_loss,
+                    case="same-shape contiguous autograd",
+                    max_value_ulp=2,
+                )
+                self.assertTrue(actual_loss.requires_grad)
+                self.assertFalse(actual_loss.is_leaf)
+                actual_loss.backward()
+                expected_loss.backward()
+                assert_grads_match(
+                    (actual_input, actual_target),
+                    (expected_input, expected_target),
+                    case=(input_requires_grad, target_requires_grad),
+                )
 
     def test_sum_reduction_first_order_backward_matches_pytorch_2_13(self):
         def assert_grads_match(actual_sources, expected_sources, *, case):

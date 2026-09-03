@@ -7,6 +7,82 @@ Review update: 2026-09-01
 Candidate provenance: source snapshot based on
 `2231dec5e208f3545c05484d497b32b3981f640d`
 
+## Review Update: `reduction="mean"` same-shape contiguous no-grad
+
+The 2026-09-03 review run used the current worktree's release wheel, built and
+installed under `target/review-wheels`. This update covers only the optimized
+same-shape row-major contiguous `mse_loss(reduction="mean")` cell. It used CPU
+`float32` inputs created outside the timed region with NumPy seed `20260903`,
+`CUDA_VISIBLE_DEVICES=`, one PyTorch thread, one `torch_rs` thread,
+`taskset -c 24`, 15 warmup blocks, and 81 measured blocks in each of two
+process-order passes. The first pass measured `torch_rs` before PyTorch; the
+second pass reversed that order. Each timed call consumed the scalar output
+with `.item()`.
+
+Correctness was checked against PyTorch 2.13 before timing for output shape,
+stride, storage offset, contiguity, dtype, device, `requires_grad`, leaf status,
+warnings, NaN/inf behavior, signed-zero behavior, values, and operand
+nonmutation. The 1024x1024 timing input used `rtol=1e-3`, `atol=1e-4`, and
+`equal_nan=True` to allow equivalent float32 reductions with different
+accumulation grouping; the focused reference tests check smaller semantic
+cases more tightly.
+
+Focused checks for this update:
+
+```bash
+PATH=/home/bobren/.cargo/bin:$PATH cargo fmt --check
+PATH=/home/bobren/.cargo/bin:$PATH cargo clippy --all-targets -- -D warnings
+PATH=/home/bobren/.cargo/bin:$PATH cargo test --all-targets
+PATH=/home/bobren/.cargo/bin:$PATH PYO3_PYTHON="$PWD/.venv/bin/python" \
+  cargo clippy --all-targets --features python-bindings -- -D warnings
+PATH=/home/bobren/.cargo/bin:$PATH PYO3_PYTHON="$PWD/.venv/bin/python" \
+  LD_LIBRARY_PATH="/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib:${LD_LIBRARY_PATH:-}" \
+  cargo test --all-targets --features python-bindings
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest \
+  tests.test_nn_functional_mse_loss \
+  tests.test_nn_functional_mse_loss_reference
+```
+
+Results: the focused MSE Python implementation and PyTorch 2.13 differential
+tests passed 49 tests.
+
+Geometric mean `torch_rs / PyTorch` slowdown for the supported optimized
+`reduction="mean"` cell:
+
+- Uncapped: 4.02x
+- Capped to `[0.10x, 10.00x]` per cell: 4.02x
+
+| Workload | Category | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `mse_mean_same_contiguous_1024x1024` | same-shape contiguous mean | `()`, stride `()`, offset 0, requires_grad=False | 4 | 870.060 +/- 2.192 us, var 22.390 | 216.624 +/- 2.263 us, var 94.442 | 4.02x |
+
+Environment:
+
+- CPU: AMD EPYC 9654 96-Core Processor, 2 sockets, 96 cores/socket,
+  2 threads/core
+- OS: Linux 6.13.2-0_fbk12_0_g0b66b3635210 x86_64, glibc 2.34
+- Python: 3.14.5
+- NumPy: 2.5.1
+- Rust: `rustc 1.92.0 (ded5c06cf 2025-12-08)`,
+  `cargo 1.92.0 (344c4567c 2025-10-21)`
+- PyTorch: 2.13.0+cu130 from `.venv/lib/python3.14/site-packages/torch`
+- `torch_rs`: 0.1.0 from the wheel-installed
+  `.venv/lib/python3.14/site-packages/torch_rs`
+- Profile: release, Cargo `[profile.release]` with thin LTO and one codegen
+  unit
+- Device/dtype: CPU float32; `CUDA_VISIBLE_DEVICES=` for the timing run
+- Threads: `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`,
+  `OPENBLAS_NUM_THREADS=1`, `NUMEXPR_NUM_THREADS=1`,
+  `torch.set_num_threads(1)`, `torch.set_num_interop_threads(1)`;
+  `torch_rs.get_num_threads()` and `torch_rs.get_num_interop_threads()` both
+  reported 1
+- Dependency installation: locked `uv sync` resolved in 32 ms, prepared 14
+  packages in 36.44s, and installed 32 packages in 778 ms
+- Build time: release extension wheel build reused cached artifacts and
+  completed in 0.01s
+
 ## Review Update: `reduction="sum"`
 
 The 2026-09-01 review rerun used the current composite worktree's release

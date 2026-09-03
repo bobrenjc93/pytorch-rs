@@ -675,6 +675,14 @@ fn _nn_functional_mse_loss(
         ));
     }
 
+    if reduction == MseLossReduction::Mean
+        && let Some(output) = input
+            .inner()
+            .squared_difference_mean_same_shape_contiguous_unrecorded(target.inner())
+    {
+        return PyTensor::new(output).into_py_any(py);
+    }
+
     let output = input
         .inner()
         .squared_difference(target.inner())

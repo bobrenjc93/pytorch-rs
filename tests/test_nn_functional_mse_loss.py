@@ -35,6 +35,7 @@ class FunctionalMseLossTests(unittest.TestCase):
         *,
         case,
         expected_stride=None,
+        allow_nan_payload=False,
     ):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, expected.shape)
@@ -49,6 +50,16 @@ class FunctionalMseLossTests(unittest.TestCase):
             self.assertIs(actual.dtype, torch.float32)
             self.assertEqual(actual.device, torch.device("cpu"))
         with self.subTest(case=case, values=True):
+            if allow_nan_payload:
+                actual_values = np.asarray(actual).reshape(-1)
+                expected_values = np.asarray(expected).reshape(-1)
+                nan_mask = np.isnan(expected_values)
+                np.testing.assert_array_equal(np.isnan(actual_values), nan_mask)
+                np.testing.assert_array_equal(
+                    self.tensor_bits(actual)[~nan_mask],
+                    self.tensor_bits(expected)[~nan_mask],
+                )
+                return
             np.testing.assert_array_equal(
                 self.tensor_bits(actual),
                 self.tensor_bits(expected),
@@ -208,6 +219,75 @@ class FunctionalMseLossTests(unittest.TestCase):
             ("noncontiguous", transposed_input, transposed_target, False),
         )
 
+    def same_shape_contiguous_mean_cases(self):
+        edge_input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        edge_target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0001,
+                0x0000_0001,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+            ],
+            dtype=np.uint32,
+        )
+        bandwidth_input = np.linspace(-3.0, 5.0, 1 << 20, dtype=np.float32)
+        bandwidth_target = np.linspace(4.0, -2.0, 1 << 20, dtype=np.float32)
+
+        return (
+            ("scalar", torch.tensor(-0.0), torch.tensor(2.5)),
+            ("empty", torch.zeros((0, 1024)), torch.ones((0, 1024))),
+            (
+                "small",
+                torch.tensor([[1.0, -2.0, 3.5], [-0.0, 5.0, -6.5]]),
+                torch.tensor([[0.25, 4.0, -3.5], [0.0, -7.0, 8.5]]),
+            ),
+            (
+                "signed zero",
+                torch.tensor(
+                    memoryview(
+                        np.asarray([0x0000_0000, 0x8000_0000], dtype=np.uint32)
+                        .view(np.float32)
+                    )
+                ),
+                torch.tensor(
+                    memoryview(
+                        np.asarray([0x8000_0000, 0x0000_0000], dtype=np.uint32)
+                        .view(np.float32)
+                    )
+                ),
+            ),
+            (
+                "signed-zero-nan-infinity",
+                torch.tensor(memoryview(edge_input_bits.view(np.float32))).view(2, 5),
+                torch.tensor(memoryview(edge_target_bits.view(np.float32))).view(2, 5),
+            ),
+            (
+                "large contiguous",
+                torch.tensor(memoryview(bandwidth_input)),
+                torch.tensor(memoryview(bandwidth_target)),
+            ),
+        )
+
     def same_stride_noncontiguous_cases(self):
         edge_input_bits = np.asarray(
             [
@@ -340,6 +420,7 @@ class FunctionalMseLossTests(unittest.TestCase):
             "``weight=None``",
             "fuses subtraction and square into one native pass",
             "supported full-tensor mean or sum",
+            "direct ``reduction='mean'`` scalar reduction",
             "fresh, independent tensor",
             "size-mismatch warning",
             "Unbroadcastable shapes",
@@ -578,6 +659,46 @@ class FunctionalMseLossTests(unittest.TestCase):
                     self.tensor_state(target)[-1], target_state[-1]
                 )
 
+    def test_mean_reduction_same_shape_contiguous_cases_match_composition(self):
+        for case, input, target in self.same_shape_contiguous_mean_cases():
+            self.assertEqual(input.shape, target.shape)
+            self.assertTrue(input.is_contiguous())
+            self.assertTrue(target.is_contiguous())
+            expected = functional.mse_loss(input, target, reduction="none").mean()
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+
+            for form, call in (
+                (
+                    "explicit mean",
+                    lambda: functional.mse_loss(input, target, reduction="mean"),
+                ),
+                ("default mean", lambda: functional.mse_loss(input, target)),
+            ):
+                with self.subTest(case=(case, form)):
+                    actual = call()
+                    self.assert_matches_composition(
+                        actual,
+                        expected,
+                        case=(case, form),
+                        allow_nan_payload=case == "signed-zero-nan-infinity",
+                    )
+                    repeated = call()
+                    self.assertFalse(actual.is_set_to(repeated))
+                    self.assertFalse(actual.is_set_to(input))
+                    self.assertFalse(actual.is_set_to(target))
+                    self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+
+            with self.subTest(case=case, nonmutation=True):
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1], input_state[-1]
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1], target_state[-1]
+                )
+
     def test_sum_reduction_no_grad_view_repeated_backward_reports_freed_graph(self):
         leaf = torch.tensor(
             [[1.0, -2.0], [3.0, -4.0]],
@@ -598,6 +719,61 @@ class FunctionalMseLossTests(unittest.TestCase):
             RuntimeError, "backward through the graph a second time"
         ):
             loss.backward()
+
+    def test_mean_reduction_active_autograd_same_shape_contiguous_matches_composition(self):
+        def assert_gradients(actual_sources, expected_sources):
+            for actual, expected in zip(actual_sources, expected_sources, strict=True):
+                if expected.grad is None:
+                    self.assertIsNone(actual.grad)
+                else:
+                    self.assertEqual(actual.grad.shape, expected.grad.shape)
+                    self.assertEqual(actual.grad.stride(), expected.grad.stride())
+                    np.testing.assert_array_equal(
+                        self.tensor_bits(actual.grad),
+                        self.tensor_bits(expected.grad),
+                    )
+
+        for input_requires_grad, target_requires_grad in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            actual_input = torch.tensor(
+                [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
+                requires_grad=input_requires_grad,
+            )
+            actual_target = torch.tensor(
+                [[0.5, 2.0, -3.0], [1.0, -1.0, 0.0]],
+                requires_grad=target_requires_grad,
+            )
+            expected_input = torch.tensor(
+                [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
+                requires_grad=input_requires_grad,
+            )
+            expected_target = torch.tensor(
+                [[0.5, 2.0, -3.0], [1.0, -1.0, 0.0]],
+                requires_grad=target_requires_grad,
+            )
+
+            with self.subTest(
+                input_requires_grad=input_requires_grad,
+                target_requires_grad=target_requires_grad,
+            ):
+                actual_loss = functional.mse_loss(actual_input, actual_target)
+                expected_loss = (expected_input - expected_target).square().mean()
+                self.assert_matches_composition(
+                    actual_loss,
+                    expected_loss,
+                    case="same-shape contiguous autograd",
+                )
+                self.assertTrue(actual_loss.requires_grad)
+                self.assertFalse(actual_loss.is_leaf)
+                actual_loss.backward()
+                expected_loss.backward()
+                assert_gradients(
+                    (actual_input, actual_target),
+                    (expected_input, expected_target),
+                )
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
     def test_high_rank_scalar_broadcast_warning_is_fallible(self):
