@@ -48,8 +48,9 @@ assert ratio.tolist() == [[-1.0, 2.0], [3.0, -4.0]]
 | `torch.compile` shell | Non-executing PyTorch 2.13-shaped argument binding; `disable=True` pass-through; backend default/name resolution through the `torch.compiler` registry. | No graph capture, graph execution, eager fallback, installed-PyTorch forwarding, backend invocation, or CUDA compilation. |
 | Larger PyTorch stacks | Metadata and helper shims only where listed in the supported surface. | Full module, optimizer, model-serialization, compiler execution, and distributed stacks remain unsupported. |
 
-See the [exhaustive supported surface](docs/supported-surface.md) for exact API
-and limitation details, [FEATURES.md](FEATURES.md) for the weighted coverage
+See [docs/README.md](docs/README.md) for a compact documentation index, the
+[exhaustive supported surface](docs/supported-surface.md) for exact API and
+limitation details, [FEATURES.md](FEATURES.md) for the weighted coverage
 contract, [ARCHITECTURE.md](ARCHITECTURE.md) for a source-oriented contributor
 map, and [BENCHMARKING.md](BENCHMARKING.md) for performance policy.
 

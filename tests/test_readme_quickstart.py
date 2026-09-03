@@ -8,6 +8,7 @@ README = REPOSITORY_ROOT / "README.md"
 BENCHMARKING = REPOSITORY_ROOT / "BENCHMARKING.md"
 CONTRIBUTING = REPOSITORY_ROOT / "CONTRIBUTING.md"
 FEATURES = REPOSITORY_ROOT / "FEATURES.md"
+DOCS_README = REPOSITORY_ROOT / "docs" / "README.md"
 SUPPORTED_SURFACE = REPOSITORY_ROOT / "docs" / "supported-surface.md"
 HISTORICAL_TIMING_REPORTS = (
     (
@@ -391,6 +392,40 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "compiler execution",
     "distributed stacks",
 )
+DOCS_INDEX_CONTRACTS = (
+    (
+        "Supported surface",
+        "supported-surface.md",
+        "Exhaustive Python API coverage and unsupported boundary contract.",
+    ),
+    (
+        "Feature coverage contract",
+        "../FEATURES.md",
+        "Weighted feature areas and what counts toward coverage.",
+    ),
+    (
+        "Benchmark policy",
+        "../BENCHMARKING.md",
+        "Correctness gates, measurement rules, provenance, and anti-gaming policy.",
+    ),
+)
+DOCS_INDEX_GUIDES = (
+    (
+        "Repository README",
+        "../README.md",
+        "Install commands, first-success example, scope summary, and validation entry points.",
+    ),
+    (
+        "Contributing guide",
+        "../CONTRIBUTING.md",
+        "Locked setup, environment expectations, test selection, draft workflow, and documentation ownership.",
+    ),
+    (
+        "Architecture map",
+        "../ARCHITECTURE.md",
+        "Source map for the Rust core, Python bindings, wrappers, and test layout.",
+    ),
+)
 
 
 class ReadmeQuickstartTests(unittest.TestCase):
@@ -542,13 +577,83 @@ class ReadmeQuickstartTests(unittest.TestCase):
                 self.assertTrue(path.is_relative_to(REPOSITORY_ROOT))
                 self.assertTrue(path.is_file())
 
+    def test_docs_readme_indexes_contracts_guides_and_timing_evidence(self):
+        docs_readme = DOCS_README.read_text(encoding="utf-8")
+        sections = (
+            "## Current Contracts",
+            "## Contributor Guides",
+            "## Historical Timing Evidence",
+        )
+        previous_position = docs_readme.index("# Documentation Index")
+        for heading in sections:
+            with self.subTest(heading=heading):
+                self.assertEqual(docs_readme.count(heading), 1)
+                position = docs_readme.index(heading)
+                self.assertGreater(position, previous_position)
+                previous_position = position
+
+        for line in docs_readme.splitlines():
+            if line.startswith("- "):
+                with self.subTest(line=line):
+                    self.assertRegex(line, r"^- \[[^\]]+\]\([^)]+\): \S")
+
+        current_contracts = docs_readme[
+            docs_readme.index("## Current Contracts") : docs_readme.index(
+                "## Contributor Guides"
+            )
+        ]
+        for label, target, description in DOCS_INDEX_CONTRACTS:
+            with self.subTest(contract=target):
+                self.assertIn(
+                    f"- [{label}]({target}): {description}",
+                    current_contracts,
+                )
+                path = (DOCS_README.parent / target).resolve()
+                self.assertTrue(path.is_relative_to(REPOSITORY_ROOT))
+                self.assertTrue(path.is_file())
+
+        contributor_guides = docs_readme[
+            docs_readme.index("## Contributor Guides") : docs_readme.index(
+                "## Historical Timing Evidence"
+            )
+        ]
+        for label, target, description in DOCS_INDEX_GUIDES:
+            with self.subTest(guide=target):
+                self.assertIn(
+                    f"- [{label}]({target}): {description}",
+                    contributor_guides,
+                )
+                path = (DOCS_README.parent / target).resolve()
+                self.assertTrue(path.is_relative_to(REPOSITORY_ROOT))
+                self.assertTrue(path.is_file())
+
+        timing_evidence = docs_readme[
+            docs_readme.index("## Historical Timing Evidence") :
+        ]
+        normalized_timing_evidence = re.sub(r"\s+", " ", timing_evidence).lower()
+        self.assertIn("historical release evidence snapshots", normalized_timing_evidence)
+        self.assertIn("not live benchmark gates", normalized_timing_evidence)
+
+        links = dict(re.findall(r"\[([^\]]+)\]\(([^)]+)\):", timing_evidence))
+        expected_targets = {
+            Path(target).name for _, target in HISTORICAL_TIMING_REPORTS
+        }
+        self.assertEqual(set(links.values()), expected_targets)
+        for _, target in HISTORICAL_TIMING_REPORTS:
+            with self.subTest(timing_report=target):
+                path = DOCS_README.parent / Path(target).name
+                self.assertTrue(path.is_file())
+
     def test_readme_links_contributing_guide(self):
         readme = README.read_text(encoding="utf-8")
+        self.assertIn("[docs/README.md](docs/README.md)", readme)
         self.assertIn("[CONTRIBUTING.md](CONTRIBUTING.md)", readme)
         self.assertIn("setup preflight", readme)
+        self.assertTrue(DOCS_README.is_file())
         self.assertTrue(CONTRIBUTING.is_file())
 
         contributing = CONTRIBUTING.read_text(encoding="utf-8")
+        self.assertIn("[docs/README.md](docs/README.md)", contributing)
         self.assertIn("## Contributor Preflight", contributing)
         self.assertLess(len(contributing.splitlines()), 120)
 
