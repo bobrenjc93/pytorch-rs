@@ -9413,17 +9413,53 @@ fn format_arange_bound(value: f64) -> String {
             "inf".to_owned()
         };
     }
+    if value == 0.0 {
+        return if value.is_sign_negative() {
+            "-0".to_owned()
+        } else {
+            "0".to_owned()
+        };
+    }
 
-    let mut formatted = format!("{value:?}");
-    if formatted.ends_with(".0") {
-        formatted.truncate(formatted.len() - 2);
+    let scientific = format!("{value:.5e}");
+    let exponent_marker = scientific
+        .find('e')
+        .expect("Rust scientific float formatting includes an exponent");
+    let exponent = scientific[exponent_marker + 1..]
+        .parse::<i32>()
+        .expect("Rust scientific float exponent is numeric");
+    if !(-4..6).contains(&exponent) {
+        return normalize_arange_scientific_bound(scientific, exponent_marker, exponent);
     }
-    if let Some(exponent) = formatted.find('e')
-        && !matches!(formatted.as_bytes().get(exponent + 1), Some(b'+' | b'-'))
-    {
-        formatted.insert(exponent + 1, '+');
-    }
+
+    let fixed_digits = usize::try_from(5 - exponent)
+        .expect("fixed arange bound precision is non-negative for defaultfloat");
+    let mut formatted = format!("{value:.fixed_digits$}");
+    trim_arange_float_mantissa(&mut formatted);
     formatted
+}
+
+fn normalize_arange_scientific_bound(
+    mut formatted: String,
+    exponent_marker: usize,
+    exponent: i32,
+) -> String {
+    formatted.truncate(exponent_marker);
+    trim_arange_float_mantissa(&mut formatted);
+    let sign = if exponent < 0 { '-' } else { '+' };
+    format!("{}e{}{:02}", formatted, sign, exponent.unsigned_abs())
+}
+
+fn trim_arange_float_mantissa(formatted: &mut String) {
+    if !formatted.contains('.') {
+        return;
+    }
+    while formatted.ends_with('0') {
+        formatted.pop();
+    }
+    if formatted.ends_with('.') {
+        formatted.pop();
+    }
 }
 
 fn arange_element_count(end: f64) -> PyResult<usize> {

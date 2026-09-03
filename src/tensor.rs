@@ -14,6 +14,10 @@ use crate::tensor_error::TensorError;
 const F32_SIGN_MASK: u32 = 0x8000_0000;
 #[cfg(feature = "python-bindings")]
 const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
+#[cfg(feature = "python-bindings")]
+const PYTORCH_FLOAT32_ARANGE_VECTOR_WIDTH: usize = 8;
+#[cfg(feature = "python-bindings")]
+const PYTORCH_FLOAT32_ARANGE_VECTOR_PAIR_WIDTH: usize = 2 * PYTORCH_FLOAT32_ARANGE_VECTOR_WIDTH;
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
 // Keep tiny latency cases on the single-row loop while still row-blocking the
 // 8x64 skinny-RHS workload from the release timing matrix.
@@ -729,8 +733,19 @@ impl Tensor {
         validate_storage_capacity(elements)?;
 
         let mut data = try_result_vector(elements, elements)?;
-        for index in 0..elements {
+        let mut index = 0usize;
+        while elements - index >= PYTORCH_FLOAT32_ARANGE_VECTOR_PAIR_WIDTH {
+            for chunk_start in [index, index + PYTORCH_FLOAT32_ARANGE_VECTOR_WIDTH] {
+                let base = (start + chunk_start as f64) as f32;
+                for lane in 0..PYTORCH_FLOAT32_ARANGE_VECTOR_WIDTH {
+                    data.push((f64::from(base) + lane as f64) as f32);
+                }
+            }
+            index += PYTORCH_FLOAT32_ARANGE_VECTOR_PAIR_WIDTH;
+        }
+        while index < elements {
             data.push((start + index as f64) as f32);
+            index += 1;
         }
 
         let mut shape = try_result_vector(1, elements)?;

@@ -233,6 +233,113 @@ class ArangeTests(unittest.TestCase):
                         ):
                             self.assert_default_tensor(call(), expected)
 
+    def test_two_bound_float32_values_match_pytorch_rounding(self):
+        python_float_long_span = [
+            -9.100000381469727,
+            -8.100000381469727,
+            -7.100000381469727,
+            -6.100000381469727,
+            -5.100000381469727,
+            -4.100000381469727,
+            -3.1000003814697266,
+            -2.1000003814697266,
+            -1.100000023841858,
+            -0.10000002384185791,
+            0.8999999761581421,
+            1.899999976158142,
+            2.9000000953674316,
+            3.9000000953674316,
+            4.900000095367432,
+            5.900000095367432,
+            6.900000095367432,
+            7.900000095367432,
+            8.899999618530273,
+            9.899999618530273,
+        ]
+        cases = (
+            (
+                "python_float_short_span",
+                -9.1,
+                -4.1,
+                [
+                    -9.100000381469727,
+                    -8.100000381469727,
+                    -7.099999904632568,
+                    -6.099999904632568,
+                    -5.099999904632568,
+                ],
+            ),
+            (
+                "python_float_long_span",
+                -9.1,
+                10.9,
+                python_float_long_span,
+            ),
+            (
+                "numpy_float64_long_span",
+                np.float64(-9.1),
+                np.float64(10.9),
+                python_float_long_span,
+            ),
+            (
+                "numpy_float32_long_span",
+                np.float32(-9.1),
+                np.float32(10.9),
+                [
+                    -9.100000381469727,
+                    -8.100000381469727,
+                    -7.100000381469727,
+                    -6.100000381469727,
+                    -5.100000381469727,
+                    -4.100000381469727,
+                    -3.1000003814697266,
+                    -2.1000003814697266,
+                    -1.1000003814697266,
+                    -0.10000038146972656,
+                    0.8999996185302734,
+                    1.8999996185302734,
+                    2.8999996185302734,
+                    3.8999996185302734,
+                    4.899999618530273,
+                    5.899999618530273,
+                    6.899999618530273,
+                    7.899999618530273,
+                    8.899999618530273,
+                    9.899999618530273,
+                ],
+            ),
+            (
+                "numpy_float16_long_span",
+                np.float16(-9.1),
+                np.float16(10.9),
+                [
+                    -9.1015625,
+                    -8.1015625,
+                    -7.1015625,
+                    -6.1015625,
+                    -5.1015625,
+                    -4.1015625,
+                    -3.1015625,
+                    -2.1015625,
+                    -1.1015625,
+                    -0.1015625,
+                    0.8984375,
+                    1.8984375,
+                    2.8984375,
+                    3.8984375,
+                    4.8984375,
+                    5.8984375,
+                    6.8984375,
+                    7.8984375,
+                    8.8984375,
+                    9.8984375,
+                ],
+            ),
+        )
+        for name, start, end, expected in cases:
+            with self.subTest(name=name):
+                self.assert_default_tensor(torch.arange(start, end), expected)
+
     def test_two_bound_float_finite_boundary_cases(self):
         for start, end, elements in (
             (
@@ -982,6 +1089,21 @@ class ArangeTests(unittest.TestCase):
                     lambda start=start, end=end: torch.arange(start, end),
                     RuntimeError,
                     "upper bound and lower bound inconsistent with step sign",
+                )
+
+        for start, end, message in (
+            (-0.0, math.inf, "unsupported range: -0 -> inf"),
+            (1.234567, math.inf, "unsupported range: 1.23457 -> inf"),
+            (1e-5, math.inf, "unsupported range: 1e-05 -> inf"),
+            (1234567.0, math.inf, "unsupported range: 1.23457e+06 -> inf"),
+            (math.inf, 1.234567, "unsupported range: inf -> 1.23457"),
+            (1.234567, math.nan, "unsupported range: 1.23457 -> nan"),
+        ):
+            with self.subTest(start=start, end=end):
+                self.assert_error(
+                    lambda start=start, end=end: torch.arange(start, end),
+                    RuntimeError,
+                    message,
                 )
 
     def test_numpy_floating_negative_and_nonfinite_errors(self):

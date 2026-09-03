@@ -159,6 +159,8 @@ class ArangeReferenceTests(unittest.TestCase):
             (0.25, 3.25),
             (0.25, 3.0),
             (-2.5, 2.5),
+            (-9.1, -4.1),
+            (-9.1, 10.9),
             (math.nextafter(0.0, 1.0), math.nextafter(1.0, 2.0)),
             (math.nextafter(1.0, 0.0), math.nextafter(4.0, 0.0)),
             (math.nextafter(float(2**63), 0.0), float(2**63)),
@@ -212,6 +214,7 @@ class ArangeReferenceTests(unittest.TestCase):
         raw_cases = (
             (0.25, 3.25),
             (-2.5, 2.5),
+            (-9.1, 10.9),
             (1.25, 1.25),
         )
         for scalar_type in scalar_types:
@@ -1008,6 +1011,12 @@ class ArangeReferenceTests(unittest.TestCase):
         cases = (
             (2.5, 1.5),
             (-1.0, -4.0),
+            (-0.0, math.inf),
+            (1.234567, math.inf),
+            (1e-5, math.inf),
+            (1234567.0, math.inf),
+            (math.inf, 1.234567),
+            (1.234567, math.nan),
             (0.0, math.nextafter(float(2**63), 0.0)),
             (0.0, float(2**63)),
             (0.0, math.nextafter(float(2**63), math.inf)),
