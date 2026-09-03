@@ -2585,14 +2585,20 @@ pub(crate) fn mm_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let ([input, mat2], out, keyword_error) = bind_top_level_mm_arguments(args, kwargs)?;
+    let ([input, mat2], out_dtype, out, keyword_error) = bind_top_level_mm_arguments(args, kwargs)?;
     let input = parse_exact_native_mm_tensor_or_torch_function_argument("input", &input)?;
     let mat2 = parse_exact_native_mm_tensor_or_torch_function_argument("mat2", &mat2)?;
+    let out_dtype = parse_top_level_mm_out_dtype(out_dtype, args, kwargs)?;
     let out = parse_top_level_mm_out(out, args, kwargs)?;
     if let Some(keyword_error) = keyword_error {
         return Err(keyword_error);
     }
-    let call = BoundTopLevelMmCall { input, mat2, out };
+    let call = BoundTopLevelMmCall {
+        input,
+        mat2,
+        out_dtype,
+        out,
+    };
     dispatch_top_level_mm(py, &call, args, kwargs)
 }
 
@@ -3047,7 +3053,14 @@ struct BoundUnaryOutCall<'py> {
 struct BoundTopLevelMmCall<'py> {
     input: BoundTensorOrTorchFunction<'py>,
     mat2: BoundTensorOrTorchFunction<'py>,
+    out_dtype: BoundTopLevelMmOutDType<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
+}
+
+enum BoundTopLevelMmOutDType<'py> {
+    Omitted,
+    DType,
+    Override(ProbedTorchFunctionOverride<'py>),
 }
 
 enum BoundTopLevelSumDType<'py> {
@@ -3110,6 +3123,7 @@ struct BoundTensorMethodDivisionCall<'py> {
 
 type BoundTopLevelMmArguments<'py> = (
     [ParsedCallArgument<'py>; 2],
+    Option<ParsedCallArgument<'py>>,
     Option<ParsedCallArgument<'py>>,
     Option<PyErr>,
 );
@@ -4984,15 +4998,19 @@ fn ordered_top_level_mm_overrides<'py>(
         BoundTensorOrTorchFunction::Override(probed) => Some(probed),
         BoundTensorOrTorchFunction::Tensor(_) => None,
     };
+    let out_dtype = match &call.out_dtype {
+        BoundTopLevelMmOutDType::Override(probed) => Some(probed),
+        BoundTopLevelMmOutDType::Omitted | BoundTopLevelMmOutDType::DType => None,
+    };
     let out = match &call.out {
         Some(BoundTensorOrTorchFunction::Override(probed)) => Some(probed),
         Some(BoundTensorOrTorchFunction::Tensor(_)) | None => None,
     };
     let mut overrides = Vec::new();
     overrides
-        .try_reserve_exact(3)
+        .try_reserve_exact(4)
         .map_err(|_| PyMemoryError::new_err("unable to allocate mm dispatch operands"))?;
-    for probed in [input, mat2, out].into_iter().flatten() {
+    for probed in [input, mat2, out_dtype, out].into_iter().flatten() {
         insert_ordered_torch_function_override(&mut overrides, probed)?;
     }
     Ok(overrides)
@@ -5049,6 +5067,13 @@ fn dispatch_top_level_mm(
 }
 
 fn apply_top_level_mm(py: Python<'_>, call: &BoundTopLevelMmCall<'_>) -> PyResult<Py<PyAny>> {
+    match &call.out_dtype {
+        BoundTopLevelMmOutDType::Omitted => {}
+        BoundTopLevelMmOutDType::DType => return Err(mm_out_dtype_unsupported()),
+        BoundTopLevelMmOutDType::Override(_) => {
+            unreachable!("mm out_dtype overrides were dispatched before the native path")
+        }
+    }
     if call.out.is_some() {
         return Err(PyRuntimeError::new_err(
             "mm(): the 'out' argument is not supported",
@@ -14281,7 +14306,7 @@ fn bind_top_level_mm_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<BoundTopLevelMmArguments<'py>> {
-    if positional.len() > 2 {
+    if positional.len() > 3 {
         return Err(top_level_mm_binding_error(positional, keywords)?);
     }
 
@@ -14319,6 +14344,17 @@ fn bind_top_level_mm_arguments<'py>(
             position: Some(2),
         })
     };
+    let out_dtype = if positional.len() < 3 {
+        keyword_argument(&["out_dtype"])?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(2)?,
+            position: Some(3),
+        })
+    };
     let out = keyword_argument(&["out"])?.map(|value| ParsedCallArgument {
         value,
         position: None,
@@ -14332,12 +14368,32 @@ fn bind_top_level_mm_arguments<'py>(
         return Err(top_level_mm_binding_error(positional, keywords)?);
     };
 
+    let positional_out_dtype_duplicate = if positional.len() >= 3 {
+        keywords
+            .map(|keywords| keywords.get_item("out_dtype"))
+            .transpose()?
+            .flatten()
+            .is_some()
+    } else {
+        false
+    };
+    let positional_out_dtype_duplicate_error = positional_out_dtype_duplicate
+        .then(|| PyTypeError::new_err("mm() got multiple values for argument 'out_dtype'"));
+
     let bound_keyword_count = usize::from(input.position.is_none())
         + usize::from(mat2.position.is_none())
+        + usize::from(
+            out_dtype
+                .as_ref()
+                .is_some_and(|argument| argument.position.is_none()),
+        )
         + usize::from(out.is_some());
-    let keyword_error = bind_top_level_mm_keyword_error(positional, keywords, bound_keyword_count)?;
+    let keyword_error = match positional_out_dtype_duplicate_error {
+        Some(error) => Some(error),
+        None => bind_top_level_mm_keyword_error(positional, keywords, bound_keyword_count)?,
+    };
 
-    Ok(([input, mat2], out, keyword_error))
+    Ok(([input, mat2], out_dtype, out, keyword_error))
 }
 
 fn bind_top_level_mm_keyword_error(
@@ -15608,6 +15664,23 @@ fn parse_top_level_add_out(
     parse_exact_native_add_tensor_or_torch_function_argument("out", &out).map(Some)
 }
 
+fn parse_top_level_mm_out_dtype<'py>(
+    out_dtype: Option<ParsedCallArgument<'py>>,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundTopLevelMmOutDType<'py>> {
+    let Some(out_dtype) = out_dtype else {
+        return Ok(BoundTopLevelMmOutDType::Omitted);
+    };
+    if out_dtype.value.cast::<PyDType>().is_ok() {
+        return Ok(BoundTopLevelMmOutDType::DType);
+    }
+    if let Some(probed) = probe_dtype_torch_function_override(&out_dtype.value) {
+        return Ok(BoundTopLevelMmOutDType::Override(probed));
+    }
+    Err(top_level_mm_binding_error(positional, keywords)?)
+}
+
 fn parse_top_level_mm_out<'py>(
     out: Option<ParsedCallArgument<'py>>,
     positional: &Bound<'py, PyTuple>,
@@ -15840,6 +15913,10 @@ fn mm_unsupported_native_input() -> PyErr {
     PyNotImplementedError::new_err(
         "mm(): only exact native CPU float32 Tensor input and mat2 operands are supported",
     )
+}
+
+fn mm_out_dtype_unsupported() -> PyErr {
+    PyNotImplementedError::new_err("mm(): out_dtype is not supported for CPU tensors")
 }
 
 fn add_sub_method_unsupported_native_input(operation: AddSubMethodOperation) -> PyErr {

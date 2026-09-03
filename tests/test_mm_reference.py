@@ -30,6 +30,19 @@ class TopLevelMmReferenceTests(unittest.TestCase):
         self.assertEqual(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
 
+    def assert_out_dtype_native_rejection_matches(self, actual_call, expected_call):
+        with self.assertRaises(Exception) as actual_raised:
+            actual_call()
+        with self.assertRaises(Exception) as expected_raised:
+            expected_call()
+        self.assertEqual(type(actual_raised.exception), NotImplementedError)
+        self.assertEqual(type(expected_raised.exception), NotImplementedError)
+        self.assertEqual(
+            str(actual_raised.exception),
+            "mm(): out_dtype is not supported for CPU tensors",
+        )
+        self.assertIn("Could not run 'aten::mm.dtype", str(expected_raised.exception))
+
     def assert_matches(self, actual, expected, *, case):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, tuple(expected.shape))
@@ -224,12 +237,60 @@ class TopLevelMmReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
+    def test_schema_valid_out_dtype_reaches_native_unsupported_path(self):
+        actual = torch.tensor([[1.0]])
+        expected = reference_torch.tensor([[1.0]], dtype=reference_torch.float32)
+        for case, actual_call, expected_call in (
+            (
+                "positional out_dtype",
+                lambda: torch.mm(actual, actual, torch.float32),
+                lambda: reference_torch.mm(expected, expected, reference_torch.float32),
+            ),
+            (
+                "keyword out_dtype",
+                lambda: torch.mm(actual, actual, out_dtype=torch.float32),
+                lambda: reference_torch.mm(
+                    expected, expected, out_dtype=reference_torch.float32
+                ),
+            ),
+            (
+                "out_dtype with out none",
+                lambda: torch.mm(actual, actual, torch.float32, out=None),
+                lambda: reference_torch.mm(
+                    expected, expected, reference_torch.float32, out=None
+                ),
+            ),
+        ):
+            with self.subTest(case=case):
+                self.assert_out_dtype_native_rejection_matches(
+                    actual_call, expected_call
+                )
+
     def torch_function_dispatch_observation(self, module):
         left = module.tensor([[1.0]])
         right = module.tensor([[2.0]])
         function = module.mm
         marker = object()
         mode_observations = []
+
+        def argument_kind(value):
+            if value is left:
+                return "left"
+            if value is right:
+                return "right"
+            if value is module.float32:
+                return "float32"
+            if value is None:
+                return "None"
+            return type(value).__name__
+
+        def arguments_observation(args):
+            return tuple(argument_kind(value) for value in args)
+
+        def keyword_observation(kwargs):
+            if kwargs is None:
+                return None
+            return tuple((key, argument_kind(value)) for key, value in kwargs.items())
 
         class RecordingMode(module.overrides.TorchFunctionMode):
             def __init__(self, result=marker):
@@ -241,11 +302,29 @@ class TopLevelMmReferenceTests(unittest.TestCase):
                 return self.result
 
         calls = (
-            (lambda: function(left, right), None),
-            (lambda: function(input=left, mat2=right), ("input", "mat2")),
-            (lambda: function(left, right, out=None), ("out",)),
+            (lambda: function(left, right), ("left", "right"), None),
+            (
+                lambda: function(input=left, mat2=right),
+                (),
+                (("input", "left"), ("mat2", "right")),
+            ),
+            (
+                lambda: function(left, right, out=None),
+                ("left", "right"),
+                (("out", "None"),),
+            ),
+            (
+                lambda: function(left, right, module.float32),
+                ("left", "right", "float32"),
+                None,
+            ),
+            (
+                lambda: function(left, right, out_dtype=module.float32),
+                ("left", "right"),
+                (("out_dtype", "float32"),),
+            ),
         )
-        for call, keywords in calls:
+        for call, expected_args, expected_kwargs in calls:
             mode = RecordingMode()
             with mode:
                 result = call()
@@ -255,12 +334,8 @@ class TopLevelMmReferenceTests(unittest.TestCase):
                     result is marker,
                     func is function,
                     dispatch_types == (),
-                    len(args),
-                    len(args) == 2 and args[0] is left and args[1] is right,
-                    kwargs is None,
-                    kwargs is not None
-                    and tuple(kwargs) == keywords
-                    and (keywords != ("out",) or kwargs["out"] is None),
+                    arguments_observation(args) == expected_args,
+                    keyword_observation(kwargs) == expected_kwargs,
                 )
             )
 
@@ -278,6 +353,8 @@ class TopLevelMmReferenceTests(unittest.TestCase):
             (lambda value: function(value, right), None),
             (lambda value: function(left, value), None),
             (lambda value: function(input=left, mat2=value), "mat2"),
+            (lambda value: function(left, right, value), None),
+            (lambda value: function(left, right, out_dtype=value), "out_dtype"),
             (lambda value: function(left, right, out=value), "out"),
         ):
             value = Override()
@@ -299,6 +376,8 @@ class TopLevelMmReferenceTests(unittest.TestCase):
         for call in (
             lambda: function([], right),
             lambda: function(left, []),
+            lambda: function(left, right, None),
+            lambda: function(left, right, out_dtype=None),
             lambda: function(left, right, unexpected=True),
         ):
             invalid_mode = RecordingMode()

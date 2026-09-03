@@ -190,8 +190,63 @@ class TopLevelMmTests(unittest.TestCase):
         ):
             torch.mm(torch.ones((1, 1)), torch.ones((1, 1)), out=torch.zeros((1, 1)))
 
-        with self.assertRaisesRegex(TypeError, r"^mm\(\) received an invalid combination"):
-            torch.mm(torch.ones((1, 1)), torch.ones((1, 1)), torch.float32)
+        for case, call in (
+            (
+                "positional out_dtype",
+                lambda: torch.mm(torch.ones((1, 1)), torch.ones((1, 1)), torch.float32),
+            ),
+            (
+                "keyword out_dtype",
+                lambda: torch.mm(
+                    torch.ones((1, 1)),
+                    torch.ones((1, 1)),
+                    out_dtype=torch.float32,
+                ),
+            ),
+            (
+                "out_dtype with out none",
+                lambda: torch.mm(
+                    torch.ones((1, 1)),
+                    torch.ones((1, 1)),
+                    torch.float32,
+                    out=None,
+                ),
+            ),
+        ):
+            with self.subTest(case=case):
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    r"^mm\(\): out_dtype is not supported for CPU tensors$",
+                ):
+                    call()
+
+        for case, call in (
+            (
+                "positional out_dtype none",
+                lambda: torch.mm(torch.ones((1, 1)), torch.ones((1, 1)), None),
+            ),
+            (
+                "keyword out_dtype none",
+                lambda: torch.mm(
+                    torch.ones((1, 1)),
+                    torch.ones((1, 1)),
+                    out_dtype=None,
+                ),
+            ),
+            (
+                "positional out_dtype tensor",
+                lambda: torch.mm(
+                    torch.ones((1, 1)),
+                    torch.ones((1, 1)),
+                    torch.ones((1, 1)),
+                ),
+            ),
+        ):
+            with self.subTest(case=case):
+                with self.assertRaisesRegex(
+                    TypeError, r"^mm\(\) received an invalid combination"
+                ):
+                    call()
         self.assertFalse(hasattr(torch, "bmm"))
         self.assertFalse(hasattr(torch, "addmm"))
 
@@ -210,11 +265,28 @@ class TopLevelMmTests(unittest.TestCase):
                 return self.result
 
         calls = (
-            ("positional", lambda: torch.mm(left, right), None),
-            ("canonical keywords", lambda: torch.mm(input=left, mat2=right), ("input", "mat2")),
-            ("out none", lambda: torch.mm(left, right, out=None), ("out",)),
+            ("positional", lambda: torch.mm(left, right), (left, right), None),
+            (
+                "canonical keywords",
+                lambda: torch.mm(input=left, mat2=right),
+                (),
+                ("input", "mat2"),
+            ),
+            ("out none", lambda: torch.mm(left, right, out=None), (left, right), ("out",)),
+            (
+                "positional out_dtype",
+                lambda: torch.mm(left, right, torch.float32),
+                (left, right, torch.float32),
+                None,
+            ),
+            (
+                "keyword out_dtype",
+                lambda: torch.mm(left, right, out_dtype=torch.float32),
+                (left, right),
+                ("out_dtype",),
+            ),
         )
-        for case, call, keywords in calls:
+        for case, call, expected_args, keywords in calls:
             mode = RecordingMode()
             with mode:
                 self.assertIs(call(), marker)
@@ -223,8 +295,8 @@ class TopLevelMmTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assertIs(function, torch.mm)
                 self.assertEqual(dispatch_types, ())
+                self.assertEqual(args, expected_args)
                 if keywords is None:
-                    self.assertEqual(args, (left, right))
                     self.assertIsNone(kwargs)
                 else:
                     self.assertEqual(tuple(kwargs), keywords)
@@ -253,11 +325,28 @@ class TopLevelMmTests(unittest.TestCase):
                 cls.calls.append((func, types, args, kwargs))
                 return marker
 
-        for case, call, expected_keywords in (
-            ("left override", lambda value: torch.mm(value, right), None),
-            ("right override", lambda value: torch.mm(left, value), None),
-            ("keyword override", lambda value: torch.mm(input=left, mat2=value), ("input", "mat2")),
-            ("out override", lambda value: torch.mm(left, right, out=value), ("out",)),
+        for case, call, expected_args, expected_keywords in (
+            ("left override", lambda value: torch.mm(value, right), 2, None),
+            ("right override", lambda value: torch.mm(left, value), 2, None),
+            (
+                "keyword override",
+                lambda value: torch.mm(input=left, mat2=value),
+                0,
+                ("input", "mat2"),
+            ),
+            (
+                "out_dtype positional override",
+                lambda value: torch.mm(left, right, value),
+                3,
+                None,
+            ),
+            (
+                "out_dtype keyword override",
+                lambda value: torch.mm(left, right, out_dtype=value),
+                2,
+                ("out_dtype",),
+            ),
+            ("out override", lambda value: torch.mm(left, right, out=value), 2, ("out",)),
         ):
             value = Override()
             Override.calls.clear()
@@ -267,8 +356,8 @@ class TopLevelMmTests(unittest.TestCase):
                 function, dispatch_types, args, kwargs = Override.calls[0]
                 self.assertIs(function, torch.mm)
                 self.assertEqual(dispatch_types, (Override,))
+                self.assertEqual(len(args), expected_args)
                 if expected_keywords is None:
-                    self.assertEqual(len(args), 2)
                     self.assertIsNone(kwargs)
                 else:
                     self.assertEqual(tuple(kwargs), expected_keywords)
@@ -293,6 +382,12 @@ class TopLevelMmTests(unittest.TestCase):
         with mode:
             with self.assertRaises(TypeError):
                 torch.mm([], right)
+        self.assertEqual(mode.calls, [])
+
+        mode = RecordingMode()
+        with mode:
+            with self.assertRaises(TypeError):
+                torch.mm(left, right, out_dtype=None)
         self.assertEqual(mode.calls, [])
 
     def test_binding_metadata_import_reload_copy_and_pickle(self):
