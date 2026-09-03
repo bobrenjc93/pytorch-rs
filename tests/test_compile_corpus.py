@@ -1193,7 +1193,7 @@ assert not any(name == "torch" or name.startswith("torch.") for name in sys.modu
 
         with self.assertRaisesRegex(
             NotImplementedError,
-            "does not support exception handling",
+            "does not support (?:exception handling|control flow)",
         ):
             compiled(input)
 
