@@ -18,9 +18,9 @@ FUNCTION_DOC_PREFIX = (
 )
 UNSUPPORTED_AS_TENSOR_CONVERSION = (
     "as_tensor(): only exact native CPU float32 Tensor inputs, Python float scalars, "
-    "or exact list/tuple sequences of Python floats are supported; NumPy "
-    "arrays/scalars, integer and boolean inference, and other conversions are "
-    "not implemented"
+    "exact NumPy float32 scalars, or exact list/tuple sequences of Python "
+    "floats are supported; NumPy arrays, non-float32 NumPy scalars, integer "
+    "and boolean inference, and other conversions are not implemented"
 )
 
 
@@ -168,6 +168,61 @@ class AsTensorTests(unittest.TestCase):
                     self.assertEqual(result.output_nr, 0)
                     self.assertIsNone(result.grad)
                     self.assertEqual(self.float32_bits(result), [expected_bits])
+
+    def test_numpy_float32_scalars_create_fresh_cpu_float32_leaves(self):
+        option_cases = (
+            {},
+            {"dtype": None},
+            {"dtype": torch.float32},
+            {"dtype": torch.float},
+            {"device": None},
+            {"device": "cpu"},
+            {"device": torch.device("cpu")},
+            {"dtype": torch.float32, "device": torch.device("cpu")},
+        )
+        value_cases = (
+            ("positive zero", 0x00000000),
+            ("negative zero", 0x80000000),
+            ("finite", 0x3FA00000),
+            ("negative finite", 0xC0600000),
+            ("positive infinity", 0x7F800000),
+            ("negative infinity", 0xFF800000),
+            ("nan", 0x7FC00000),
+            ("nan payload", 0x7FC12345),
+        )
+        for case, bits in value_cases:
+            value = np.asarray([bits], dtype=np.uint32).view(np.float32)[0]
+            for options in option_cases:
+                with self.subTest(case=case, options=options):
+                    result = torch.as_tensor(value, **options)
+                    duplicate = torch.as_tensor(value, **options)
+
+                    self.assertIsInstance(result, torch.Tensor)
+                    self.assertIsNot(result, duplicate)
+                    self.assertNotEqual(result.data_ptr(), duplicate.data_ptr())
+                    self.assertFalse(result.is_set_to(duplicate))
+                    self.assertEqual(result.shape, ())
+                    self.assertEqual(result.stride(), ())
+                    self.assertEqual(result.storage_offset(), 0)
+                    self.assertEqual(result.numel(), 1)
+                    self.assertIs(result.dtype, torch.float32)
+                    self.assertEqual(result.device, torch.device("cpu"))
+                    self.assertIs(result.layout, torch.strided)
+                    self.assertFalse(result.requires_grad)
+                    self.assertTrue(result.is_leaf)
+                    self.assertEqual(result.output_nr, 0)
+                    self.assertIsNone(result.grad)
+                    self.assertEqual(self.float32_bits(result), [bits])
+
+    def test_numpy_float32_scalar_construction_ignores_no_grad(self):
+        value = np.asarray([0x80000000], dtype=np.uint32).view(np.float32)[0]
+        with torch.no_grad():
+            result = torch.as_tensor(value)
+
+        self.assertFalse(result.requires_grad)
+        self.assertTrue(result.is_leaf)
+        self.assertEqual(result.output_nr, 0)
+        self.assertEqual(self.float32_bits(result), [0x80000000])
 
     def test_python_float_sequences_create_fresh_cpu_float32_leaves(self):
         sequence_cases = (
@@ -364,6 +419,12 @@ class AsTensorTests(unittest.TestCase):
                 None,
             ),
             (
+                "numpy float32 scalar",
+                lambda: torch.as_tensor(np.float32(1.25)),
+                (np.float32(1.25),),
+                None,
+            ),
+            (
                 "unsupported device string",
                 lambda: torch.as_tensor([1.0], device="cuda"),
                 ([1.0],),
@@ -521,7 +582,12 @@ class AsTensorTests(unittest.TestCase):
                 UNSUPPORTED_AS_TENSOR_CONVERSION,
             ),
             (
-                lambda: torch.as_tensor(np.float32(1.0)),
+                lambda: torch.as_tensor(np.float64(1.0)),
+                NotImplementedError,
+                UNSUPPORTED_AS_TENSOR_CONVERSION,
+            ),
+            (
+                lambda: torch.as_tensor(np.float16(1.0)),
                 NotImplementedError,
                 UNSUPPORTED_AS_TENSOR_CONVERSION,
             ),
@@ -564,6 +630,12 @@ class AsTensorTests(unittest.TestCase):
         class TupleSubclass(tuple):
             pass
 
+        class FloatSubclass(float):
+            pass
+
+        class NumpyFloat32Subclass(np.float32):
+            pass
+
         self.assert_error(
             lambda: torch.as_tensor(ListSubclass([1.0])),
             NotImplementedError,
@@ -571,6 +643,16 @@ class AsTensorTests(unittest.TestCase):
         )
         self.assert_error(
             lambda: torch.as_tensor(TupleSubclass((1.0,))),
+            NotImplementedError,
+            UNSUPPORTED_AS_TENSOR_CONVERSION,
+        )
+        self.assert_error(
+            lambda: torch.as_tensor(FloatSubclass(1.0)),
+            NotImplementedError,
+            UNSUPPORTED_AS_TENSOR_CONVERSION,
+        )
+        self.assert_error(
+            lambda: torch.as_tensor(NumpyFloat32Subclass(1.0)),
             NotImplementedError,
             UNSUPPORTED_AS_TENSOR_CONVERSION,
         )
@@ -600,6 +682,31 @@ class AsTensorTests(unittest.TestCase):
         )
         self.assert_error(
             lambda: torch.as_tensor([1.0], requires_grad=True),
+            TypeError,
+            "as_tensor() got an unexpected keyword argument 'requires_grad'",
+        )
+        self.assert_error(
+            lambda: torch.as_tensor(np.float32(1.0), dtype=1),
+            TypeError,
+            "as_tensor(): argument 'dtype' must be torch.dtype, not int",
+        )
+        self.assert_error(
+            lambda: torch.as_tensor(np.float32(1.0), device=1.5),
+            TypeError,
+            "as_tensor(): argument 'device' must be torch.device, not float",
+        )
+        self.assert_error(
+            lambda: torch.as_tensor(np.float32(1.0), out=None),
+            TypeError,
+            "as_tensor() got an unexpected keyword argument 'out'",
+        )
+        self.assert_error(
+            lambda: torch.as_tensor(np.float32(1.0), copy=False),
+            TypeError,
+            "as_tensor() got an unexpected keyword argument 'copy'",
+        )
+        self.assert_error(
+            lambda: torch.as_tensor(np.float32(1.0), requires_grad=True),
             TypeError,
             "as_tensor() got an unexpected keyword argument 'requires_grad'",
         )
