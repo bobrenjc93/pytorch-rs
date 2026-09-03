@@ -38,30 +38,18 @@ COMPILER_EXPORTS = [
 ]
 
 
-class _UninspectableTags:
-    def _fail(self, operation):
-        raise AssertionError(f"exclude_tags was inspected through {operation}")
-
-    def __bool__(self):
-        self._fail("bool")
-
-    def __contains__(self, value):
-        self._fail("contains")
-
-    def __iter__(self):
-        self._fail("iteration")
-
-    def __len__(self):
-        self._fail("length")
-
-    def __repr__(self):
-        self._fail("repr")
-
-    def __str__(self):
-        self._fail("str")
-
-
 class CompilerListBackendsTests(unittest.TestCase):
+    def setUp(self):
+        from torch_rs import _compiler_state
+
+        self._registry = _compiler_state.registered_backends
+        self._saved_registry = dict(self._registry)
+        self._registry.clear()
+
+    def tearDown(self):
+        self._registry.clear()
+        self._registry.update(self._saved_registry)
+
     def test_empty_registry_returns_fresh_empty_lists_for_supported_argument_forms(self):
         function = torch.compiler.list_backends
         default = function()
@@ -71,7 +59,6 @@ class CompilerListBackendsTests(unittest.TestCase):
         list_tags = function([])
         none_tags = function(None)
         string_tags = function("debug")
-        opaque_tags = function(_UninspectableTags())
 
         results = (
             default,
@@ -81,7 +68,6 @@ class CompilerListBackendsTests(unittest.TestCase):
             list_tags,
             none_tags,
             string_tags,
-            opaque_tags,
         )
         for result in results:
             self.assertIs(type(result), list)
@@ -150,7 +136,8 @@ class CompilerListBackendsTests(unittest.TestCase):
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
         self.assertFalse(hasattr(function, "__text_signature__"))
-        self.assertEqual(function.__code__.co_names, ())
+        self.assertNotIn("torch", function.__code__.co_names)
+        self.assertNotIn("_dynamo", function.__code__.co_names)
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
@@ -243,7 +230,7 @@ class CompilerListBackendsTests(unittest.TestCase):
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch, "list_backends"))
         self.assertFalse(hasattr(torch.compiler, "compile"))
-        self.assertFalse(hasattr(torch.compiler, "register_backend"))
+        self.assertTrue(callable(torch.compiler.register_backend))
 
         unsupported_compiler_names = (
             "allow_in_graph",
@@ -272,9 +259,15 @@ import torch_rs as torch
 
 modules_before_call = set(sys.modules)
 first = torch.compiler.list_backends()
-second = torch.compiler.list_backends(exclude_tags=object())
+def backend(graph_module, example_inputs):
+    raise AssertionError("backend should not be invoked")
+registered = torch.compiler.register_backend(
+    backend, name="subprocess_visible_backend"
+)
+second = torch.compiler.list_backends(exclude_tags=None)
 assert first == []
-assert second == []
+assert registered is backend
+assert second == ["subprocess_visible_backend"]
 assert first is not second
 assert set(sys.modules) == modules_before_call
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)

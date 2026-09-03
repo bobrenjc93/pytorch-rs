@@ -110,6 +110,7 @@ SUPPORTED_SURFACE_INDEX_SUMMARIES = (
     "Functional linear, loss, and deterministic dropout paths",
     "autocast cache state helpers",
     "grad/autograd state queries",
+    "backend registry",
     "eager JIT helper decorators and state queries",
     "Explicit unsupported APIs",
 )
@@ -159,6 +160,8 @@ SUPPORTED_SURFACE_NAMESPACE_SUMMARIES = (
     (
         "torch.compiler",
         (
+            "`torch.compiler.register_backend`",
+            "`torch.compiler.list_backends`",
             "`torch.compiler.disable`",
             "`torch.compiler.skip_all_guards_unsafe`",
         ),
@@ -312,6 +315,8 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         "Integrate eager compiler, JIT, and distributed probes",
         (
             "`torch.compiler.disable`",
+            "`torch.compiler.register_backend`",
+            "`torch.compiler.list_backends`",
             "`torch.jit.annotate`",
             "`torch.distributed.is_available`",
             "`torch.distributed.is_gloo_available`",
@@ -327,7 +332,12 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
             "`torch.distributed.get_node_local_rank`",
         ),
         (
-            "Actual `torch.compile`",
+            "top-level `torch.compile`",
+            "graph capture",
+            "graph execution",
+            "eager fallback",
+            "installed-PyTorch forwarding",
+            "backend invocation",
             "TorchScript compilation",
             "process-group creation",
             "initialized backend/config/rank/world-size access",

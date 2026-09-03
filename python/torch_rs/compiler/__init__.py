@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 import functools
 import sys
 import types
@@ -65,7 +65,54 @@ def list_backends(exclude_tags=("debug", "experimental")) -> list[str]:
     Args:
         exclude_tags(optional): A tuple of strings representing tags to exclude.
     """
-    return []
+    exclude_tags_set = set(exclude_tags or ())
+    backends = [
+        name
+        for name, compiler_fn in _state.registered_backends.items()
+        if not exclude_tags_set.intersection(compiler_fn._tags)
+    ]
+    return sorted(backends)
+
+
+def register_backend(
+    compiler_fn: Callable[..., Any] | None = None,
+    name: str | None = None,
+    tags: Sequence[str] = (),
+) -> Callable[..., Any]:
+    """
+    Decorator to add a given compiler to the registry to allow calling
+    `torch.compile` with string shorthand.  Note: for projects not
+    imported by default, it might be easier to pass a function directly
+    as a backend and not use a string.
+
+    This compatibility layer records backend names for discovery only; it does
+    not add `torch.compile` execution.
+
+    Args:
+        compiler_fn: Callable taking a FX graph and fake tensor inputs
+        name: Optional name, defaults to `compiler_fn.__name__`
+        tags: Optional set of string tags to categorize backend with
+    """
+    if compiler_fn is None:
+        return functools.partial(register_backend, name=name, tags=tags)
+    if not callable(compiler_fn):
+        raise AssertionError(f"compiler_fn must be callable, got {type(compiler_fn)}")
+
+    if name is None:
+        name = compiler_fn.__name__
+    elif isinstance(name, str):
+        if name == "":
+            name = compiler_fn.__name__
+    else:
+        raise AssertionError(f"name must be a string, got {type(name)}")
+
+    if name in _state.registered_backends:
+        raise AssertionError(f"duplicate name: {name}")
+
+    backend_tags = tuple(tags)
+    compiler_fn._tags = backend_tags
+    _state.registered_backends[name] = compiler_fn
+    return compiler_fn
 
 
 def _disable_function(fn, recursive, reason):

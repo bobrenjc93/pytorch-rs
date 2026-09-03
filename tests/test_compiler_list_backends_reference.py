@@ -277,7 +277,7 @@ class CompilerListBackendsReferenceTests(unittest.TestCase):
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch, "list_backends"))
         self.assertFalse(hasattr(torch.compiler, "compile"))
-        self.assertFalse(hasattr(torch.compiler, "register_backend"))
+        self.assertTrue(callable(torch.compiler.register_backend))
 
 
 if __name__ == "__main__":
