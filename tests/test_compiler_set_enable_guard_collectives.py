@@ -444,17 +444,24 @@ assert function(False) is True
         self.assertFalse(hasattr(function, "__text_signature__"))
 
         self.assertIn("set_enable_guard_collectives", compiler.__all__)
+        self.assertIn("cudagraph_mark_step_begin", compiler.__all__)
         namespace = {}
         exec("from torch_rs.compiler import *", namespace)
         self.assertIs(namespace[function.__name__], function)
+        self.assertIs(
+            namespace["cudagraph_mark_step_begin"],
+            compiler.cudagraph_mark_step_begin,
+        )
 
         self.assertNotIn("set_enable_guard_collectives", torch.__all__)
+        self.assertNotIn("cudagraph_mark_step_begin", torch.__all__)
         self.assertTrue(hasattr(torch._C, "_exchange_enable_guard_collectives"))
         self.assertNotIn("_exchange_enable_guard_collectives", torch._C.__all__)
         self.assertFalse(hasattr(torch, "_exchange_enable_guard_collectives"))
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("set_enable_guard_collectives", top_level_namespace)
+        self.assertNotIn("cudagraph_mark_step_begin", top_level_namespace)
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)

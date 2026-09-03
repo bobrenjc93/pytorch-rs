@@ -160,6 +160,7 @@ SUPPORTED_SURFACE_NAMESPACE_SUMMARIES = (
         "torch.compiler",
         (
             "`torch.compiler.disable`",
+            "`torch.compiler.cudagraph_mark_step_begin`",
             "`torch.compiler.skip_all_guards_unsafe`",
         ),
     ),
@@ -312,6 +313,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         "Integrate eager compiler, JIT, and distributed probes",
         (
             "`torch.compiler.disable`",
+            "`torch.compiler.cudagraph_mark_step_begin`",
             "`torch.jit.annotate`",
             "`torch.distributed.is_available`",
             "`torch.distributed.is_gloo_available`",
@@ -329,6 +331,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         (
             "Actual `torch.compile`",
             "TorchScript compilation",
+            "CUDA graph capture/execution",
             "process-group creation",
             "initialized backend/config/rank/world-size access",
             "distributed APIs outside [Backend and compiler metadata]",
