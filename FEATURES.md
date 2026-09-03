@@ -34,10 +34,11 @@ Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 
 The compilation row also includes one executable `torch.compile` graphlet:
 exact Python functions that return their single positional exact native CPU
-`float32` tensor argument unchanged. This path proxy-traces without PyTorch,
-invokes the resolved callable backend once with a package-local identity graph
-object, and executes the backend-returned callable; all non-identity programs
-keep the legacy unsupported error.
+`float32` tensor argument unchanged without inspecting proxy metadata. This
+path proxy-traces without PyTorch, invokes the resolved callable backend once
+with a package-local identity graph object, and executes the backend-returned
+callable; metadata-dependent and non-identity programs keep the legacy
+unsupported error.
 
 The creation row includes CPU float32 `torch.zeros(*size, shape=None, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)` and `torch.ones(*size, shape=None, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)` allocation for scalar, empty, and multidimensional sizes, including single and variadic positional integer-compatible dimensions, fresh-storage `out=None` behavior, default strided layout keywords, and unpinned allocation keywords. It also includes CPU float32 `torch.empty_like(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=torch.preserve_format)`, `torch.zeros_like(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=None)`, `torch.ones_like(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=None)`, and `torch.full_like(input, fill_value, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=torch.preserve_format)` for exact native canonical row-major contiguous inputs with default-equivalent metadata, fresh storage, and supported fill behavior for the filled variants, plus CPU float32 `torch.full(size, fill_value, *, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)` allocation for the currently supported exact size and fill-value forms. Concrete output tensors, `size=` combined with positional dimensions, top-level `torch.empty`, non-strided size-factory layouts, pinned allocation, non-float32 dtypes, and non-CPU devices remain outside the supported creation surface.
 

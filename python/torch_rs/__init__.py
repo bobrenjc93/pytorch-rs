@@ -5,6 +5,7 @@ import copyreg as _copyreg
 import functools as _functools
 import multiprocessing.reduction as _multiprocessing_reduction
 import sys as _sys
+import threading as _threading
 import types as _types
 from math import e, inf, nan, pi
 
@@ -265,37 +266,80 @@ _COMPILE_UNSUPPORTED_MESSAGE = (
     "not supported; only argument binding, disable=True pass-through, and "
     "backend resolution are implemented"
 )
-_COMPILE_CACHE_MISSING = _builtins.object()
 _PYTHON_FUNCTION_TYPE = _types.FunctionType
 
 
 class _CompileTensorProxy:
-    __slots__ = ("name", "dtype", "device", "shape", "requires_grad")
+    __slots__ = (
+        "name",
+        "_dtype",
+        "_device",
+        "_shape",
+        "_requires_grad",
+        "_metadata_observed",
+    )
 
     def __init__(self, name, tensor):
         self.name = name
-        self.dtype = tensor.dtype
-        self.device = tensor.device
-        self.shape = tuple(tensor.shape)
-        self.requires_grad = tensor.requires_grad
+        self._dtype = tensor.dtype
+        self._device = tensor.device
+        self._shape = tuple(tensor.shape)
+        self._requires_grad = tensor.requires_grad
+        self._metadata_observed = False
+
+    @property
+    def dtype(self):
+        self._metadata_observed = True
+        return self._dtype
+
+    @property
+    def device(self):
+        self._metadata_observed = True
+        return self._device
+
+    @property
+    def shape(self):
+        self._metadata_observed = True
+        return self._shape
+
+    @property
+    def requires_grad(self):
+        self._metadata_observed = True
+        return self._requires_grad
 
     @property
     def ndim(self):
-        return len(self.shape)
+        self._metadata_observed = True
+        return len(self._shape)
 
     def dim(self):
-        return len(self.shape)
+        self._metadata_observed = True
+        return len(self._shape)
 
     def size(self, dim=None):
+        self._metadata_observed = True
         if dim is None:
-            return self.shape
-        return self.shape[dim]
+            return self._shape
+        return self._shape[dim]
+
+    def __bool__(self):
+        self._metadata_observed = True
+        raise TypeError("torch.compile() tensor proxy truthiness is unsupported")
+
+    def __eq__(self, other):
+        self._metadata_observed = True
+        raise TypeError("torch.compile() tensor proxy comparison is unsupported")
+
+    def __ne__(self, other):
+        self._metadata_observed = True
+        raise TypeError("torch.compile() tensor proxy comparison is unsupported")
 
     def __repr__(self):
+        self._metadata_observed = True
         return (
             "_CompileTensorProxy("
-            f"name={self.name!r}, shape={self.shape!r}, dtype={self.dtype!r}, "
-            f"device={self.device!r})"
+            f"name={self.name!r}, shape={self._shape!r}, dtype={self._dtype!r}, "
+            f"device={self._device!r})"
         )
 
 
@@ -340,7 +384,7 @@ def _trace_compile_identity(model, example_input):
     except Exception:
         return None
 
-    if result is not proxy:
+    if result is not proxy or proxy._metadata_observed:
         return None
     return proxy
 
@@ -367,7 +411,9 @@ def _unsupported_compile_wrapper(
     isolate_recompiles,
     shapes_spec,
 ):
-    compiled_callable = _COMPILE_CACHE_MISSING
+    cache_missing = _builtins.object()
+    compiled_callable = cache_missing
+    compile_lock = _threading.Lock()
 
     def compiled_model(*args, **kwargs):
         nonlocal compiled_callable
@@ -382,16 +428,19 @@ def _unsupported_compile_wrapper(
         if not _builtins.callable(resolved_backend):
             raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
 
-        if compiled_callable is _COMPILE_CACHE_MISSING:
-            proxy = _trace_compile_identity(model, args[0])
-            if proxy is None:
-                raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
-            graph_module = _CompileIdentityGraph(name or model.__name__)
-            compiled_callable = _call_compile_backend(
-                resolved_backend,
-                graph_module,
-                (proxy,),
-            )
+        proxy = _trace_compile_identity(model, args[0])
+        if proxy is None:
+            raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
+
+        if compiled_callable is cache_missing:
+            with compile_lock:
+                if compiled_callable is cache_missing:
+                    graph_module = _CompileIdentityGraph(name or model.__name__)
+                    compiled_callable = _call_compile_backend(
+                        resolved_backend,
+                        graph_module,
+                        (proxy,),
+                    )
 
         return compiled_callable(args[0])
 
@@ -482,9 +531,10 @@ def compile(
     This entrypoint implements Python argument binding, ``disable=True``
     pass-through, backend resolution through ``torch.compiler``, and execution
     of exact Python identity functions whose proxy trace returns their single
-    positional native CPU ``float32`` tensor argument unchanged. Other graph
-    capture, graph execution, eager fallback, installed-PyTorch forwarding, and
-    broader backend invocation remain unsupported.
+    positional native CPU ``float32`` tensor argument unchanged without
+    inspecting proxy metadata. Other graph capture, graph execution, eager
+    fallback, installed-PyTorch forwarding, and broader backend invocation
+    remain unsupported.
     """
     if model is None:
         captured_backend = (

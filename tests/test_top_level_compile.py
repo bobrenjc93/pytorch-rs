@@ -4,6 +4,7 @@ import inspect
 import pickle
 import subprocess
 import sys
+import threading
 import types
 import unittest
 
@@ -250,7 +251,7 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertIs(compiled_calls[0], first)
 
         self.assertIs(compiled(second), second)
-        self.assertEqual(len(model_trace_inputs), 1)
+        self.assertEqual(len(model_trace_inputs), 2)
         self.assertEqual(len(backend_calls), 1)
         self.assertEqual(len(compiled_calls), 2)
         self.assertIs(compiled_calls[1], second)
@@ -259,12 +260,14 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         named_compiled = torch.compile(model, backend="zz_identity")
         third = torch.tensor([7.0], dtype=torch.float32)
         self.assertIs(named_compiled(third), third)
-        self.assertEqual(len(model_trace_inputs), 2)
+        self.assertEqual(len(model_trace_inputs), 3)
         self.assertEqual(len(backend_calls), 2)
         self.assertEqual(len(compiled_calls), 3)
         self.assertIs(compiled_calls[2], third)
 
-    def test_identity_decorator_form_compiles_and_non_identity_stays_unsupported(self):
+    def test_identity_decorator_form_compiles_and_non_identity_stays_unsupported(
+        self,
+    ):
         backend_calls = []
 
         def backend(graph_module, example_inputs):
@@ -286,6 +289,72 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         with self.assertRaises(NotImplementedError) as raised:
             compiled_non_identity(input_tensor)
         self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(len(backend_calls), 1)
+
+        def metadata_conditional(value):
+            if value.size(0) == 2:
+                return value
+            return value.neg()
+
+        compiled_conditional = torch.compile(metadata_conditional, backend=backend)
+        length_two = torch.tensor([1.0, 2.0], dtype=torch.float32)
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled_conditional(length_two)
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(len(backend_calls), 1)
+
+    def test_identity_backend_is_invoked_once_under_concurrent_first_calls(self):
+        trace_barrier = threading.Barrier(2)
+        backend_calls = []
+        results = []
+        errors = []
+
+        def model(value):
+            trace_barrier.wait(timeout=10)
+            return value
+
+        def backend(graph_module, example_inputs):
+            backend_calls.append((graph_module, example_inputs))
+            return graph_module.forward
+
+        compiled = torch.compile(model, backend=backend)
+        inputs = (
+            torch.tensor([1.0], dtype=torch.float32),
+            torch.tensor([2.0], dtype=torch.float32),
+        )
+
+        def worker(input_tensor):
+            try:
+                results.append(compiled(input_tensor))
+            except BaseException as error:
+                errors.append(error)
+
+        threads = [threading.Thread(target=worker, args=(input,)) for input in inputs]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(errors, [])
+        self.assertEqual(set(map(id, results)), {id(input) for input in inputs})
+        self.assertEqual(len(backend_calls), 1)
+
+    def test_compiled_identity_wrapper_survives_reload_before_first_call(self):
+        backend_calls = []
+
+        def model(value):
+            return value
+
+        def backend(graph_module, example_inputs):
+            backend_calls.append((graph_module, example_inputs))
+            return graph_module.forward
+
+        compiled = torch.compile(model, backend=backend)
+        self.assertIs(importlib.reload(torch), torch)
+
+        input_tensor = torch.tensor([1.0], dtype=torch.float32)
+        self.assertIs(compiled(input_tensor), input_tensor)
         self.assertEqual(len(backend_calls), 1)
 
     def test_backend_none_resolves_default_and_registered_backend_names(self):
