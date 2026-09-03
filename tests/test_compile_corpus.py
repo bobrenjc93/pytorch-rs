@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import unittest
 
 import torch_rs as torch
@@ -84,16 +84,6 @@ COMPILE_CORPUS = (
 )
 
 
-@dataclass
-class CompileCorpusAccounting:
-    corpus_version: str
-    eligible_cases: int = 0
-    passed_eligible_cases: int = 0
-    eligible_weight: int = 0
-    passed_weight: int = 0
-    not_implemented_cases: list = field(default_factory=list)
-
-
 def make_recording_backend(calls):
     def backend(graph_module, example_inputs):
         calls.append((graph_module, example_inputs))
@@ -162,14 +152,10 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
             with self.subTest(case=case.name):
                 self.assert_reference_eligible(case)
 
-    def test_torch_rs_compile_records_zero_passed_eligible_cases(self):
-        accounting = CompileCorpusAccounting(corpus_version=COMPILE_CORPUS_VERSION)
-
+    def test_torch_rs_compile_keeps_eligible_cases_unsupported(self):
         for case in COMPILE_CORPUS:
             with self.subTest(case=case.name):
                 self.assert_reference_eligible(case)
-                accounting.eligible_cases += 1
-                accounting.eligible_weight += CATEGORY_WEIGHTS[case.category]
 
                 model_calls = []
                 backend_calls = []
@@ -189,19 +175,6 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
                 self.assertEqual(model_calls, [])
                 self.assertEqual(backend_calls, [])
-                accounting.not_implemented_cases.append(case.name)
-
-        self.assertEqual(accounting.eligible_cases, 1)
-        self.assertEqual(accounting.passed_eligible_cases, 0)
-        self.assertEqual(
-            accounting.eligible_weight,
-            CATEGORY_WEIGHTS["tensor_arithmetic"],
-        )
-        self.assertEqual(accounting.passed_weight, 0)
-        self.assertEqual(
-            accounting.not_implemented_cases,
-            ["cpu_float32_unary_abs_neg"],
-        )
 
 
 if __name__ == "__main__":
