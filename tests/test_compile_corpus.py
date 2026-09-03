@@ -15,7 +15,7 @@ except ImportError:
 
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-COMPILE_CORPUS_VERSION = "torch_compile_corpus_v2"
+COMPILE_CORPUS_VERSION = "torch_compile_corpus_v3"
 
 CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -86,6 +86,73 @@ def cpu_float32_empty_matrix_inputs(module):
     return (module.tensor([[], []], dtype=module.float32),)
 
 
+def cpu_float32_matrix_vector_add(x, y):
+    return x.neg().abs() + y.negative()
+
+
+def cpu_float32_matrix_vector_add_method(x, y):
+    return x.add(y.abs())
+
+
+def cpu_float32_tensor_scalar_add(x, y):
+    return (x + y).abs()
+
+
+def cpu_float32_scalar_tensor_add(x, y):
+    return x.add(y.neg())
+
+
+def cpu_float32_heldout_broadcast_chain(x, y):
+    z = y.abs()
+    return (x + z).neg().add(y)
+
+
+def cpu_float32_heldout_scalar_left_broadcast(x, y):
+    return (x.neg() + y).absolute()
+
+
+def cpu_float32_matrix_vector_inputs(module):
+    return (
+        module.tensor(
+            [[-3.0, 0.5, 4.0], [2.25, -5.5, 6.75]],
+            dtype=module.float32,
+        ),
+        module.tensor([1.0, -2.0, 0.25], dtype=module.float32),
+    )
+
+
+def cpu_float32_matrix_vector_requires_grad_inputs(module):
+    return (
+        module.tensor(
+            [[-1.0, 2.0, -3.0], [4.0, -5.0, 6.0]],
+            dtype=module.float32,
+            requires_grad=True,
+        ),
+        module.tensor([0.5, -1.5, 2.5], dtype=module.float32),
+    )
+
+
+def cpu_float32_tensor_scalar_inputs(module):
+    return (
+        module.tensor(
+            [[-2.0, 0.0, 3.5], [4.25, -5.75, 6.0]],
+            dtype=module.float32,
+        ),
+        module.tensor(-1.25, dtype=module.float32, requires_grad=True),
+    )
+
+
+def cpu_float32_scalar_tensor_inputs(module):
+    return (
+        module.tensor(2.0, dtype=module.float32),
+        module.tensor(
+            [[-0.5, 1.5, -2.5], [3.5, -4.5, 5.5]],
+            dtype=module.float32,
+            requires_grad=True,
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class CompileCorpusCase:
     name: str
@@ -142,7 +209,53 @@ COMPILE_CORPUS = (
         program=cpu_float32_add_unary_composition,
         make_inputs=cpu_float32_empty_matrix_inputs,
     ),
+    CompileCorpusCase(
+        name="cpu_float32_matrix_vector_add",
+        category="broadcasting",
+        program=cpu_float32_matrix_vector_add,
+        make_inputs=cpu_float32_matrix_vector_inputs,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_matrix_vector_add_method",
+        category="broadcasting",
+        program=cpu_float32_matrix_vector_add_method,
+        make_inputs=cpu_float32_matrix_vector_requires_grad_inputs,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_tensor_scalar_add",
+        category="broadcasting",
+        program=cpu_float32_tensor_scalar_add,
+        make_inputs=cpu_float32_tensor_scalar_inputs,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_scalar_tensor_add",
+        category="broadcasting",
+        program=cpu_float32_scalar_tensor_add,
+        make_inputs=cpu_float32_scalar_tensor_inputs,
+    ),
 )
+
+
+COMPILE_HELD_OUT_CORPUS = (
+    CompileCorpusCase(
+        name="cpu_float32_heldout_broadcast_chain",
+        category="broadcasting",
+        program=cpu_float32_heldout_broadcast_chain,
+        make_inputs=cpu_float32_matrix_vector_inputs,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_heldout_scalar_left_broadcast",
+        category="broadcasting",
+        program=cpu_float32_heldout_scalar_left_broadcast,
+        make_inputs=cpu_float32_scalar_tensor_inputs,
+    ),
+)
+
+
+def compile_corpus_cases(include_held_out=False):
+    if include_held_out:
+        return (*COMPILE_CORPUS, *COMPILE_HELD_OUT_CORPUS)
+    return COMPILE_CORPUS
 
 
 def make_recording_backend(calls):
@@ -163,9 +276,10 @@ def reset_reference_compile_state():
 
 class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
-        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v2")
+        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v3")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(len(COMPILE_CORPUS), 5)
+        self.assertEqual(len(COMPILE_CORPUS), 9)
+        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 2)
 
         case_names = [case.name for case in COMPILE_CORPUS]
         self.assertEqual(
@@ -176,11 +290,33 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_abs_neg_reordered",
                 "cpu_float32_repeated_unary_chain",
                 "cpu_float32_add_unary_composition",
+                "cpu_float32_matrix_vector_add",
+                "cpu_float32_matrix_vector_add_method",
+                "cpu_float32_tensor_scalar_add",
+                "cpu_float32_scalar_tensor_add",
             ],
         )
+        held_out_case_names = [case.name for case in COMPILE_HELD_OUT_CORPUS]
+        self.assertEqual(
+            held_out_case_names,
+            [
+                "cpu_float32_heldout_broadcast_chain",
+                "cpu_float32_heldout_scalar_left_broadcast",
+            ],
+        )
+
+        categories = {case.category for case in COMPILE_CORPUS}
+        self.assertEqual(categories, {"tensor_arithmetic", "broadcasting"})
         for case in COMPILE_CORPUS:
             with self.subTest(case=case.name):
-                self.assertEqual(case.category, "tensor_arithmetic")
+                self.assertIn(case.category, CATEGORY_WEIGHTS)
+                self.assertTrue(case.fullgraph)
+                self.assertIsNone(case.dynamic)
+                self.assertIsNone(case.mode)
+                self.assertIsNone(case.options)
+        for case in COMPILE_HELD_OUT_CORPUS:
+            with self.subTest(held_out_case=case.name):
+                self.assertEqual(case.category, "broadcasting")
                 self.assertIn(case.category, CATEGORY_WEIGHTS)
                 self.assertTrue(case.fullgraph)
                 self.assertIsNone(case.dynamic)
@@ -194,6 +330,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
         self.assertNotIn("_compile_bytecode", torch.__all__)
         self.assertFalse(hasattr(_compile_trace, "_dis"))
         self.assertFalse(hasattr(_compile_trace, "lower_one_input_compile_graph"))
+        self.assertFalse(hasattr(_compile_trace, "lower_compile_graph"))
 
 
 class CompileCorpusTraceTests(unittest.TestCase):
@@ -206,7 +343,7 @@ class CompileCorpusTraceTests(unittest.TestCase):
             arg=arg,
         )
 
-    def lower_with_bytecode_instructions(self, program, instructions, input):
+    def lower_with_bytecode_instructions(self, program, instructions, *inputs):
         original_get_instructions = _compile_bytecode._dis.get_instructions
 
         def fake_get_instructions(requested_program):
@@ -215,9 +352,12 @@ class CompileCorpusTraceTests(unittest.TestCase):
 
         try:
             _compile_bytecode._dis.get_instructions = fake_get_instructions
-            return _compile_bytecode.lower_one_input_compile_graph(
+            return _compile_bytecode.lower_compile_graph(
                 program,
-                _compile_trace._metadata_from_native_tensor(input),
+                tuple(
+                    _compile_trace._metadata_from_native_tensor(input)
+                    for input in inputs
+                ),
                 name=program.__name__,
             )
         finally:
@@ -298,25 +438,51 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 cpu_float32_empty_matrix_inputs,
                 ["neg", "abs", "add", "neg", "add"],
             ),
+            (
+                cpu_float32_matrix_vector_add,
+                cpu_float32_matrix_vector_inputs,
+                ["neg", "abs", "neg", "add"],
+            ),
+            (
+                cpu_float32_matrix_vector_add_method,
+                cpu_float32_matrix_vector_requires_grad_inputs,
+                ["abs", "add"],
+            ),
+            (
+                cpu_float32_tensor_scalar_add,
+                cpu_float32_tensor_scalar_inputs,
+                ["add", "abs"],
+            ),
+            (
+                cpu_float32_scalar_tensor_add,
+                cpu_float32_scalar_tensor_inputs,
+                ["neg", "add"],
+            ),
         )
         for program, make_inputs, expected_targets in cases:
             with self.subTest(program=program.__name__):
-                (input,) = make_inputs(torch)
-                graph = _compile_bytecode.lower_one_input_compile_graph(
+                inputs = make_inputs(torch)
+                graph = _compile_bytecode.lower_compile_graph(
                     program,
-                    _compile_trace._metadata_from_native_tensor(input),
+                    tuple(
+                        _compile_trace._metadata_from_native_tensor(input)
+                        for input in inputs
+                    ),
                     name=program.__name__,
                 )
-                expected = program(input)
+                expected = program(*inputs)
 
                 self.assertEqual(graph.name, program.__name__)
-                self.assertEqual(graph.inputs[0].name, "x")
+                self.assertEqual(
+                    [input.name for input in graph.inputs],
+                    list(program.__code__.co_varnames[: program.__code__.co_argcount]),
+                )
                 self.assertEqual(
                     [operation.target for operation in graph.operations],
                     expected_targets,
                 )
                 self.assert_native_tensor_matches(
-                    graph.forward(input),
+                    graph.forward(*inputs),
                     expected,
                     case=program.__name__,
                 )
@@ -407,6 +573,48 @@ class CompileCorpusTraceTests(unittest.TestCase):
         ):
             self.lower_with_bytecode_instructions(program, instructions, input)
 
+    def test_bytecode_lowerer_rejects_unsupported_input_counts(self):
+        def no_inputs():
+            raise AssertionError("unsupported program should not run")
+
+        def three_inputs(x, y, z):
+            raise AssertionError("unsupported program should not run")
+
+        input = torch.tensor([1.0], dtype=torch.float32)
+        metadata = _compile_trace._metadata_from_native_tensor(input)
+        for program, input_metadatas in (
+            (no_inputs, ()),
+            (three_inputs, (metadata, metadata, metadata)),
+        ):
+            with self.subTest(program=program.__name__):
+                with self.assertRaisesRegex(
+                    _compile_trace.CompileTraceUnsupportedError,
+                    "one or two positional Tensor arguments",
+                ):
+                    _compile_bytecode.lower_compile_graph(
+                        program,
+                        input_metadatas,
+                        name=program.__name__,
+                    )
+
+    def test_bytecode_lowerer_rejects_python_scalar_add_operands(self):
+        def scalar_operand(x, y):
+            return x + 1.0
+
+        left, right = cpu_float32_matrix_vector_inputs(torch)
+        with self.assertRaisesRegex(
+            _compile_trace.CompileTraceUnsupportedError,
+            "non-Tensor right operand",
+        ):
+            _compile_bytecode.lower_compile_graph(
+                scalar_operand,
+                (
+                    _compile_trace._metadata_from_native_tensor(left),
+                    _compile_trace._metadata_from_native_tensor(right),
+                ),
+                name="scalar_operand",
+            )
+
     def test_bytecode_lowerer_accepts_combined_local_load_opcodes(self):
         def program(x):
             raise AssertionError("synthetic bytecode test must not run")
@@ -453,6 +661,40 @@ class CompileCorpusTraceTests(unittest.TestCase):
                     input + input,
                     case=opname,
                 )
+
+    def test_bytecode_lowerer_accepts_combined_distinct_local_loads(self):
+        def program(x, y):
+            raise AssertionError("synthetic bytecode test must not run")
+
+        left = torch.tensor(
+            [[-2.0, 0.5, 3.0], [4.0, -5.0, 6.0]],
+            dtype=torch.float32,
+        )
+        right = torch.tensor([1.0, -2.0, 0.25], dtype=torch.float32)
+        instructions = (
+            self.bytecode_instruction("LOAD_FAST_LOAD_FAST", ("x", "y"), ""),
+            self.bytecode_instruction("BINARY_OP", argrepr="+"),
+            self.bytecode_instruction("RETURN_VALUE"),
+        )
+
+        graph = self.lower_with_bytecode_instructions(
+            program,
+            instructions,
+            left,
+            right,
+        )
+
+        self.assertEqual(
+            [operation.target for operation in graph.operations],
+            ["add"],
+        )
+        self.assertEqual([input.name for input in graph.inputs], ["x", "y"])
+        self.assertEqual(graph.operations[0].inputs, ("x", "y"))
+        self.assert_native_tensor_matches(
+            graph.forward(left, right),
+            left + right,
+            case="LOAD_FAST_LOAD_FAST distinct locals",
+        )
 
     def test_bytecode_lowerer_accepts_combined_store_then_load_opcode(self):
         def program(x):
@@ -568,6 +810,44 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 with self.assertRaises(AttributeError):
                     graph.operations.append(add_op)
 
+    def test_two_input_broadcast_records_private_immutable_graph(self):
+        graph = _compile_trace.trace_compile_graph(
+            cpu_float32_matrix_vector_add,
+            cpu_float32_matrix_vector_inputs,
+            name="cpu_float32_matrix_vector_add",
+        )
+        inputs = cpu_float32_matrix_vector_inputs(torch)
+        expected = cpu_float32_matrix_vector_add(*inputs)
+
+        self.assertEqual(graph.name, "cpu_float32_matrix_vector_add")
+        self.assertEqual(graph.output, "add_3")
+        self.assertEqual([input.name for input in graph.inputs], ["arg0", "arg1"])
+        self.assertEqual([input.index for input in graph.inputs], [0, 1])
+        self.assertEqual(len(graph.operations), 4)
+
+        self.assertEqual(graph.inputs[0].metadata.shape, (2, 3))
+        self.assertEqual(graph.inputs[0].metadata.stride, (3, 1))
+        self.assertEqual(graph.inputs[1].metadata.shape, (3,))
+        self.assertEqual(graph.inputs[1].metadata.stride, (1,))
+
+        neg, abs_op, right_neg, add_op = graph.operations
+        self.assertEqual(neg.target, "neg")
+        self.assertEqual(neg.inputs, ("arg0",))
+        self.assertEqual(abs_op.target, "abs")
+        self.assertEqual(abs_op.inputs, ("neg_0",))
+        self.assertEqual(right_neg.target, "neg")
+        self.assertEqual(right_neg.inputs, ("arg1",))
+        self.assertEqual(add_op.target, "add")
+        self.assertEqual(add_op.inputs, ("abs_1", "neg_2"))
+        self.assertEqual(add_op.metadata.shape, tuple(expected.shape))
+        self.assertEqual(add_op.metadata.stride, expected.stride())
+        self.assertEqual(graph.output_metadata, add_op.metadata)
+        self.assert_native_tensor_matches(
+            graph.forward(*inputs),
+            expected,
+            case="two-input graph",
+        )
+
     def test_unary_abs_neg_executes_private_native_graph(self):
         case = COMPILE_CORPUS[0]
         graph = _compile_trace.trace_one_input_compile_graph(
@@ -588,6 +868,108 @@ class CompileCorpusTraceTests(unittest.TestCase):
             expected,
             case=f"{case.name} function executor",
         )
+
+    def test_two_input_broadcast_executes_private_native_graph_for_key_layouts(self):
+        cases = (
+            (
+                "matrix vector",
+                cpu_float32_matrix_vector_add,
+                cpu_float32_matrix_vector_inputs,
+            ),
+            (
+                "method matrix vector requires_grad",
+                cpu_float32_matrix_vector_add_method,
+                cpu_float32_matrix_vector_requires_grad_inputs,
+            ),
+            (
+                "tensor scalar",
+                cpu_float32_tensor_scalar_add,
+                cpu_float32_tensor_scalar_inputs,
+            ),
+            (
+                "scalar tensor",
+                cpu_float32_scalar_tensor_add,
+                cpu_float32_scalar_tensor_inputs,
+            ),
+        )
+        for case, program, make_inputs in cases:
+            with self.subTest(case=case):
+                graph = _compile_trace.trace_compile_graph(
+                    program,
+                    make_inputs,
+                    name=program.__name__,
+                )
+                inputs = make_inputs(torch)
+                expected = program(*inputs)
+
+                self.assertEqual(len(graph.inputs), 2)
+                self.assertEqual(graph.output_metadata.shape, tuple(expected.shape))
+                self.assertEqual(graph.output_metadata.stride, expected.stride())
+                self.assertEqual(
+                    graph.output_metadata.requires_grad,
+                    expected.requires_grad,
+                )
+                self.assert_native_tensor_matches(
+                    graph.forward(*inputs),
+                    expected,
+                    case=case,
+                )
+                self.assert_native_tensor_matches(
+                    _compile_trace.execute_compile_trace_graph(graph, *inputs),
+                    expected,
+                    case=f"{case} function executor",
+                )
+
+    def test_two_input_binary_executor_matches_empty_and_strided_broadcasts(self):
+        cases = (
+            (
+                "strided matrix vector",
+                torch.tensor(
+                    [[[-3.0, 0.5], [4.0, -2.0], [1.25, 6.0]]],
+                    dtype=torch.float32,
+                ).transpose(0, 2),
+                torch.tensor([[1.0], [-0.5], [2.0]], dtype=torch.float32),
+            ),
+            (
+                "empty strided",
+                torch.zeros((2, 0, 3), dtype=torch.float32).transpose(0, 2),
+                torch.ones((1, 1, 2), dtype=torch.float32),
+            ),
+        )
+        for case, left, right in cases:
+            with self.subTest(case=case):
+                recorder = _compile_trace.CompileTraceRecorder(name=case)
+                left_proxy = recorder.input(
+                    shape=tuple(left.shape),
+                    stride=left.stride(),
+                    dtype=_compile_trace.float32,
+                    device="cpu",
+                    requires_grad=left.requires_grad,
+                )
+                right_proxy = recorder.input(
+                    shape=tuple(right.shape),
+                    stride=right.stride(),
+                    dtype=_compile_trace.float32,
+                    device="cpu",
+                    requires_grad=right.requires_grad,
+                )
+                graph = recorder.finish(left_proxy + right_proxy)
+                expected = left + right
+
+                self.assertEqual(graph.operations[0].inputs, ("arg0", "arg1"))
+                self.assertEqual(
+                    graph.operations[0].metadata.shape,
+                    tuple(expected.shape),
+                )
+                self.assertEqual(
+                    graph.operations[0].metadata.stride,
+                    expected.stride(),
+                )
+                self.assert_native_tensor_matches(
+                    graph.forward(left, right),
+                    expected,
+                    case=case,
+                )
 
     def test_binary_self_add_executes_private_native_graph_for_key_layouts(self):
         cases = (
@@ -724,6 +1106,36 @@ class CompileCorpusTraceTests(unittest.TestCase):
             actual_no_grad,
             expected_no_grad,
             case="binary requires_grad no_grad",
+        )
+
+    def test_two_input_binary_executor_matches_no_grad_requires_grad_outputs(self):
+        graph = _compile_trace.trace_compile_graph(
+            cpu_float32_matrix_vector_add_method,
+            cpu_float32_matrix_vector_requires_grad_inputs,
+            name="cpu_float32_matrix_vector_add_method_requires_grad",
+        )
+        inputs = cpu_float32_matrix_vector_requires_grad_inputs(torch)
+        expected_with_grad = cpu_float32_matrix_vector_add_method(*inputs)
+
+        self.assertTrue(graph.inputs[0].metadata.requires_grad)
+        self.assertFalse(graph.inputs[1].metadata.requires_grad)
+        self.assertTrue(graph.operations[-1].metadata.requires_grad)
+        self.assertTrue(graph.output_metadata.requires_grad)
+        self.assert_native_tensor_matches(
+            graph.forward(*inputs),
+            expected_with_grad,
+            case="two-input requires_grad grad-enabled",
+        )
+
+        with torch.no_grad():
+            expected_no_grad = cpu_float32_matrix_vector_add_method(*inputs)
+            actual_no_grad = graph.forward(*inputs)
+
+        self.assertFalse(expected_no_grad.requires_grad)
+        self.assert_native_tensor_matches(
+            actual_no_grad,
+            expected_no_grad,
+            case="two-input requires_grad no_grad",
         )
 
     def test_unary_output_metadata_matches_native_stride_planning(self):
@@ -878,6 +1290,24 @@ class CompileCorpusTraceTests(unittest.TestCase):
         ):
             graph.forward(mismatched)
 
+    def test_private_executor_rejects_two_input_runtime_metadata_mismatch(self):
+        graph = _compile_trace.trace_compile_graph(
+            cpu_float32_matrix_vector_add,
+            cpu_float32_matrix_vector_inputs,
+            name="cpu_float32_matrix_vector_add",
+        )
+        left, _ = cpu_float32_matrix_vector_inputs(torch)
+        mismatched = torch.tensor([[1.0, -2.0, 3.0]], dtype=torch.float32)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            (
+                "metadata mismatch for 'arg1': "
+                r"shape expected \(3,\), got \(1, 3\)"
+            ),
+        ):
+            graph.forward(left, mismatched)
+
     def test_proxy_unsupported_operations_fail_clearly(self):
         recorder = _compile_trace.CompileTraceRecorder()
         x = recorder.input(shape=(2, 3))
@@ -1014,12 +1444,24 @@ def program(x):
 def self_add(x):
     return x + x
 
+def broadcast_add(x, y):
+    return x.neg().abs() + y.negative()
+
 def make_inputs(module):
     return (
         module.tensor(
             [[-3.25, -0.0, 1.5], [2.0, -4.5, 0.25]],
             dtype=module.float32,
         ),
+    )
+
+def make_two_inputs(module):
+    return (
+        module.tensor(
+            [[-3.0, 0.5, 4.0], [2.25, -5.5, 6.75]],
+            dtype=module.float32,
+        ),
+        module.tensor([1.0, -2.0, 0.25], dtype=module.float32),
     )
 
 backend_calls = []
@@ -1072,6 +1514,34 @@ for actual in (
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
+two_input_graph = _compile_trace.trace_compile_graph(
+    broadcast_add,
+    make_two_inputs,
+    name="cpu_float32_matrix_vector_add",
+)
+assert two_input_graph.output == "add_3"
+assert [operation.target for operation in two_input_graph.operations] == [
+    "neg",
+    "abs",
+    "neg",
+    "add",
+]
+assert two_input_graph.operations[-1].inputs == ("abs_1", "neg_2")
+two_inputs = make_two_inputs(torch)
+two_expected = broadcast_add(*two_inputs)
+for actual in (
+    two_input_graph.forward(*two_inputs),
+    _compile_trace.execute_compile_trace_graph(two_input_graph, *two_inputs),
+):
+    assert actual.tolist() == two_expected.tolist()
+    assert actual.shape == two_expected.shape
+    assert actual.stride() == two_expected.stride()
+    assert actual.dtype is two_expected.dtype
+    assert actual.device == two_expected.device
+    assert actual.requires_grad is two_expected.requires_grad
+assert backend_calls == []
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
 compiled = torch.compile(self_add, backend="eager", fullgraph=True)
 compiled_actual = compiled(native_input)
 assert compiled_actual.tolist() == self_add_expected.tolist()
@@ -1089,7 +1559,7 @@ try:
 except NotImplementedError as error:
     assert str(error) == (
         "torch.compile(): only backend='eager', fullgraph=True straight-line "
-        "Tensor neg/abs/add functions with one positional exact native CPU "
+        "Tensor neg/abs/add functions with one or two positional exact native CPU "
         "float32 Tensor are supported; eager fallback, installed-PyTorch "
         "forwarding, callable backend invocation, CUDA compilation, and broader "
         "graph capture remain unsupported"
@@ -1141,20 +1611,26 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
         )
         actual = compiled(*inputs)
         reference_torch.testing.assert_close(actual, expected)
+        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+        self.assertEqual(actual.stride(), expected.stride())
+        self.assertIs(actual.dtype, expected.dtype)
+        self.assertEqual(actual.device, expected.device)
+        self.assertEqual(actual.requires_grad, expected.requires_grad)
         self.assertGreaterEqual(len(backend_calls), 1)
 
     def test_reference_pytorch_2_13_accepts_all_eligible_cases(self):
-        for case in COMPILE_CORPUS:
+        for case in compile_corpus_cases(include_held_out=True):
             with self.subTest(case=case.name):
                 self.assert_reference_eligible(case)
 
     def test_torch_rs_compile_runs_eligible_eager_cases_natively(self):
-        for case in COMPILE_CORPUS:
+        for case in compile_corpus_cases(include_held_out=True):
             with self.subTest(case=case.name):
                 self.assert_reference_eligible(case)
 
                 inputs = case.make_inputs(torch)
                 expected = case.program(*case.make_inputs(torch))
+                reference_expected = case.program(*case.make_inputs(reference_torch))
                 compiled = torch.compile(
                     case.program,
                     **case.compile_kwargs("eager"),
@@ -1162,11 +1638,20 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                 actual = compiled(*inputs)
                 self.assertIs(compiled._torch_rs_compile_backend, "eager")
                 self.assertEqual(actual.tolist(), expected.tolist())
+                self.assertEqual(actual.tolist(), reference_expected.tolist())
                 self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+                self.assertEqual(tuple(actual.shape), tuple(reference_expected.shape))
                 self.assertEqual(actual.stride(), expected.stride())
+                self.assertEqual(actual.stride(), reference_expected.stride())
                 self.assertIs(actual.dtype, expected.dtype)
+                self.assertEqual(str(actual.dtype), str(reference_expected.dtype))
                 self.assertEqual(actual.device, expected.device)
+                self.assertEqual(str(actual.device), str(reference_expected.device))
                 self.assertEqual(actual.requires_grad, expected.requires_grad)
+                self.assertEqual(
+                    actual.requires_grad,
+                    reference_expected.requires_grad,
+                )
 
 
 if __name__ == "__main__":

@@ -262,7 +262,7 @@ def set_default_device(device: "Device") -> None:
 
 _COMPILE_UNSUPPORTED_MESSAGE = (
     "torch.compile(): only backend='eager', fullgraph=True straight-line "
-    "Tensor neg/abs/add functions with one positional exact native CPU "
+    "Tensor neg/abs/add functions with one or two positional exact native CPU "
     "float32 Tensor are supported; eager fallback, installed-PyTorch "
     "forwarding, callable backend invocation, CUDA compilation, and broader "
     "graph capture remain unsupported"
@@ -442,8 +442,16 @@ def _ensure_compile_tensor_method_guards(
         )
 
 
-def _execute_native_eager_compile_graph(graph, input, compile_trace):
-    values = {graph.inputs[0].name: input}
+def _execute_native_eager_compile_graph(graph, inputs, compile_trace):
+    if len(inputs) != len(graph.inputs):
+        raise compile_trace.CompileTraceUnsupportedError(
+            "torch.compile trace execution expected "
+            f"{len(graph.inputs)} positional Tensor inputs, got {len(inputs)}"
+        )
+
+    values = {
+        graph_input.name: input for graph_input, input in zip(graph.inputs, inputs)
+    }
     for operation in graph.operations:
         values[operation.name] = compile_trace._execute_operation(operation, values)
     return values[graph.output]
@@ -465,18 +473,18 @@ def _native_eager_compile_implementation(model, name, recompile_limit):
                 "torch.compile trace bytecode lowering does not support "
                 f"keyword arguments: {names}"
             )
-        if len(args) != 1:
+        if len(args) not in (1, 2):
             raise _compile_trace.CompileTraceUnsupportedError(
                 "torch.compile trace bytecode lowering currently supports "
-                "exactly one positional Tensor argument"
+                "one or two positional Tensor arguments"
             )
 
-        input = args[0]
-        if _builtins.type(input) is not Tensor:
-            raise TypeError(
-                "torch.compile trace bytecode lowering expected exact native "
-                f"torch_rs Tensor input, got {_builtins.type(input)}"
-            )
+        for input in args:
+            if _builtins.type(input) is not Tensor:
+                raise TypeError(
+                    "torch.compile trace bytecode lowering expected exact "
+                    f"native torch_rs Tensor input, got {_builtins.type(input)}"
+                )
 
         if _compile_overrides._get_current_function_mode() is not None:
             raise _compile_trace.CompileTraceUnsupportedError(
@@ -485,8 +493,10 @@ def _native_eager_compile_implementation(model, name, recompile_limit):
             )
 
         _ensure_compile_tensor_method_guards(_compile_trace)
-        input_metadata = _compile_trace._metadata_from_native_tensor(input)
-        cache_key = (model.__code__, input_metadata)
+        input_metadatas = tuple(
+            _compile_trace._metadata_from_native_tensor(input) for input in args
+        )
+        cache_key = (model.__code__, input_metadatas)
         with cache.lock:
             graph = cache.graphs.get(cache_key)
             if graph is None:
@@ -497,13 +507,21 @@ def _native_eager_compile_implementation(model, name, recompile_limit):
                         "input metadata variants will be compiled for this "
                         "wrapper"
                     )
-                graph = _compile_bytecode.lower_one_input_compile_graph(
-                    model,
-                    input_metadata,
-                    name=name or getattr(model, "__name__", "compile_trace"),
-                )
+                graph_name = name or getattr(model, "__name__", "compile_trace")
+                if len(input_metadatas) == 1:
+                    graph = _compile_bytecode.lower_one_input_compile_graph(
+                        model,
+                        input_metadatas[0],
+                        name=graph_name,
+                    )
+                else:
+                    graph = _compile_bytecode.lower_compile_graph(
+                        model,
+                        input_metadatas,
+                        name=graph_name,
+                    )
                 cache.graphs[cache_key] = graph
-        return _execute_native_eager_compile_graph(graph, input, _compile_trace)
+        return _execute_native_eager_compile_graph(graph, args, _compile_trace)
 
     return compiled_model
 
@@ -596,11 +614,11 @@ def compile(
 
     This entrypoint implements Python argument binding, ``disable=True``
     pass-through, and backend resolution through ``torch.compiler``. It also
-    lowers one-input exact Python functions made only from Tensor ``neg``,
-    ``abs``, and binary ``add`` operations for ``backend="eager"`` with
-    ``fullgraph=True``. Eager fallback, installed-PyTorch forwarding, callable
-    backend invocation, CUDA compilation, and broader graph capture remain
-    unsupported.
+    lowers exact Python functions with one or two positional exact native CPU
+    ``float32`` Tensor inputs made only from Tensor ``neg``, ``abs``, and
+    binary ``add`` operations for ``backend="eager"`` with ``fullgraph=True``.
+    Eager fallback, installed-PyTorch forwarding, callable backend invocation,
+    CUDA compilation, and broader graph capture remain unsupported.
     """
     if model is None:
         captured_backend = (
