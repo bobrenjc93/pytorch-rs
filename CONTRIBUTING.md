@@ -37,6 +37,31 @@ when the patch intentionally changes dependencies, and call that out in review.
 - Keep build and test artifacts inside the worktree. Do not depend on local
   user configuration, parent checkouts, or globally installed packages.
 
+## Contributor Preflight
+
+Before README/docs or Python smoke tests, verify the environment and install the current release wheel:
+
+```bash
+uv sync --locked --no-install-project --group dev --group reference
+mkdir -p target
+wheel_dir="$(mktemp -d "$PWD/target/preflight-wheel.XXXXXX")"
+TMPDIR="$PWD/target" VIRTUAL_ENV="$PWD/.venv" PYO3_PYTHON="$PWD/.venv/bin/python" \
+  .venv/bin/maturin build --release --locked --out "$wheel_dir"
+uv pip install --python .venv/bin/python --force-reinstall --no-deps "$wheel_dir"/torch_rs-*.whl
+.venv/bin/python - <<'PY'
+import importlib.metadata as meta, pathlib, sys
+import numpy, torch, torch_rs
+root = pathlib.Path.cwd().resolve()
+assert pathlib.Path(sys.prefix).resolve() == (root / ".venv").resolve()
+assert torch.__version__.split("+", 1)[0] == "2.13.0"
+for dist, module in (("torch-rs", torch_rs), ("numpy", numpy), ("torch", torch)):
+    print(f"{dist} {meta.version(dist)}: {pathlib.Path(module.__file__).resolve()}")
+print(f"python {sys.version.split()[0]}: {sys.executable}")
+PY
+rustc --version && cargo --version
+.venv/bin/python .github/scripts/verify_native_extension.py
+```
+
 ## Choosing Tests
 
 Start with the narrowest checks that exercise the changed behavior, then expand
