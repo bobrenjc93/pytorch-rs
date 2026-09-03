@@ -6,13 +6,14 @@ import warnings
 import torch_rs as torch
 from torch_rs import Tensor
 from torch_rs._diagnostics import _format_single_element_tensor
-from torch_rs.overrides import _dispatch_unary_torch_function
+from torch_rs.overrides import _dispatch_unary_torch_function, has_torch_function_unary
 
 from ..torch_rs import (
     _nn_functional_dropout,
     _nn_functional_l1_loss,
     _nn_functional_linear,
     _nn_functional_mse_loss,
+    _nn_functional_silu,
     _nn_functional_softsign,
 )
 
@@ -261,6 +262,8 @@ def _silu_impl(input, inplace):
         raise NotImplementedError(
             "torch_rs.nn.functional.silu does not support inplace=True"
         )
+    if not input.requires_grad or not torch.is_grad_enabled():
+        return _nn_functional_silu(input)
     return input * input.sigmoid()
 
 
@@ -282,6 +285,13 @@ def silu(input: Tensor, inplace: bool = False) -> Tensor:
 
     See :class:`~torch.nn.SiLU` for more details.
     """
+    if (
+        type(input) is Tensor
+        and not has_torch_function_unary(input)
+        and not bool(inplace)
+        and (not input.requires_grad or not torch.is_grad_enabled())
+    ):
+        return _nn_functional_silu(input)
     return _dispatch_unary_torch_function(
         silu,
         _silu_impl,

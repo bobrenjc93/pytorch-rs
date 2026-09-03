@@ -35,6 +35,7 @@ gates.
 - [Square-root timings](tensor-sqrt-release-timings.md): `Tensor.sqrt` and `torch.sqrt` release evidence.
 - [Reciprocal timings](tensor-reciprocal-release-timings.md): `Tensor.reciprocal` and `torch.reciprocal` release evidence.
 - [Softsign timings](softsign-release-timings.md): `torch.nn.functional.softsign` release evidence.
+- [SiLU timings](silu-release-timings.md): `torch.nn.functional.silu` release evidence.
 - [View and reshape timings](tensor-view-release-timings.md): View, reshape, flatten, ravel, unbind, and edge-unsqueeze release evidence.
 - [MSE loss timings](mse-loss-release-timings.md): `torch.nn.functional.mse_loss` release evidence.
 - [L1 loss timings](l1-loss-release-timings.md): `torch.nn.functional.l1_loss(reduction="none")` release evidence.

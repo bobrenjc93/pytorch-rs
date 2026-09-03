@@ -3889,6 +3889,20 @@ impl Tensor {
         self.unary_map(softsign_value)
     }
 
+    /// Applies the `SiLU` activation in one inference pass.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn silu(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "silu" });
+        }
+        self.unary_map(silu_value)
+    }
+
     /// Computes the reciprocal square root of every element using unary output
     /// layout planning.
     ///
@@ -6803,6 +6817,7 @@ fn trunc_value(value: f32) -> f32 {
     round_value(value, f32::trunc)
 }
 
+#[inline]
 fn sigmoid_value(value: f32) -> f32 {
     1.0 / (1.0 + (-value).exp())
 }
@@ -6815,6 +6830,26 @@ fn reciprocal_value(value: f32) -> f32 {
 #[cfg(any(feature = "python-bindings", test))]
 fn softsign_value(value: f32) -> f32 {
     value / (absolute_value(value) + 1.0)
+}
+
+#[inline]
+#[cfg(any(feature = "python-bindings", test))]
+fn silu_value(value: f32) -> f32 {
+    let bits = value.to_bits();
+    if bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        silu_nan_value(bits)
+    } else {
+        value * sigmoid_value(value)
+    }
+}
+
+#[cold]
+#[inline(never)]
+#[cfg(any(feature = "python-bindings", test))]
+fn silu_nan_value(bits: u32) -> f32 {
+    const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+    f32::from_bits(bits | QUIET_NAN_MASK)
 }
 
 fn sqrt_value(value: f32) -> f32 {
@@ -14328,6 +14363,138 @@ mod tests {
         let no_grad_output = {
             let _guard = crate::no_grad();
             tracked.softsign().unwrap()
+        };
+        assert!(!no_grad_output.requires_grad());
+        assert!(no_grad_output.is_leaf());
+    }
+
+    const SILU_COMPOSITION_EDGE_BITS: [u32; 25] = [
+        0x0000_0000,
+        0x8000_0000,
+        0x0000_0001,
+        0x8000_0001,
+        0x0080_0000,
+        0x8080_0000,
+        0x3eff_ffff,
+        0x3f00_0000,
+        0x3f7f_ffff,
+        0x3f80_0000,
+        0xbf00_0000,
+        0xbf7f_ffff,
+        0xbf80_0000,
+        0xbfc0_0000,
+        0x3fc0_0000,
+        0x42b0_0000,
+        0x42b2_0000,
+        0xc2b0_0000,
+        0xc2b2_0000,
+        0x7f7f_ffff,
+        0xff7f_ffff,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    const SILU_OFFSET_BITS: [u32; 9] = [
+        0x0000_0000,
+        0x8000_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc1_2345,
+        0xffc5_4321,
+        0x4000_0000,
+    ];
+
+    #[test]
+    fn silu_matches_sigmoid_multiplication_and_rejects_grad_recording() {
+        fn assert_matches_composition(input: &Tensor) {
+            const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+            let expected = input.mul(&input.sigmoid().unwrap()).unwrap();
+            let actual = input.silu().unwrap();
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert_eq!(actual.storage_offset(), expected.storage_offset());
+            assert_eq!(actual.dtype(), expected.dtype());
+            assert_eq!(actual.device(), expected.device());
+            assert!(!actual.shares_storage_with(input));
+            for ((actual, expected), input) in actual
+                .logical_values()
+                .zip(expected.logical_values())
+                .zip(input.logical_values())
+            {
+                let expected_bits = if input.is_nan() {
+                    input.to_bits() | QUIET_NAN_MASK
+                } else {
+                    expected.to_bits()
+                };
+                assert_eq!(actual.to_bits(), expected_bits);
+            }
+        }
+
+        let contiguous = Tensor::from_vec(
+            SILU_COMPOSITION_EDGE_BITS
+                .iter()
+                .copied()
+                .map(f32::from_bits)
+                .collect(),
+            [5, 5],
+        )
+        .unwrap();
+        let strided = contiguous.transpose(0, 1).unwrap();
+        let offset_strided = offset_strided_matrix(SILU_OFFSET_BITS);
+        let channels_last = Tensor::from_vec(
+            (0_u16..120).map(|value| f32::from(value) - 60.0).collect(),
+            [2, 3, 4, 5],
+        )
+        .unwrap()
+        .try_contiguous(MemoryFormat::ChannelsLast)
+        .unwrap();
+        let channels_last_3d = Tensor::from_vec(
+            (0_u16..720).map(|value| f32::from(value) - 360.0).collect(),
+            [2, 3, 4, 5, 6],
+        )
+        .unwrap()
+        .try_contiguous(MemoryFormat::ChannelsLast3d)
+        .unwrap();
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+
+        for input in [
+            &contiguous,
+            &strided,
+            &offset_strided,
+            &channels_last,
+            &channels_last_3d,
+            &empty,
+        ] {
+            assert_matches_composition(input);
+        }
+
+        let signaling = Tensor::from_vec(
+            vec![f32::from_bits(0x7f81_2345), f32::from_bits(0xff81_2345)],
+            [2],
+        )
+        .unwrap();
+        let signaling_output = signaling.silu().unwrap();
+        assert!(
+            signaling_output
+                .logical_values()
+                .map(f32::to_bits)
+                .eq([0x7fc1_2345, 0xffc1_2345])
+        );
+
+        let tracked = Tensor::from_vec(vec![0.5], [1])
+            .unwrap()
+            .with_requires_grad(true);
+        assert_eq!(
+            tracked.silu(),
+            Err(TensorError::AutogradRecordingUnsupported { operation: "silu" })
+        );
+        let no_grad_output = {
+            let _guard = crate::no_grad();
+            tracked.silu().unwrap()
         };
         assert!(!no_grad_output.requires_grad());
         assert!(no_grad_output.is_leaf());

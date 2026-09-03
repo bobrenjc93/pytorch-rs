@@ -86,6 +86,7 @@ class FunctionalSiluTests(unittest.TestCase):
         return (
             ("scalar", torch.tensor(-0.0)),
             ("empty", torch.zeros((2, 0, 3)).transpose(0, 2)[1]),
+            ("contiguous", base),
             ("offset", base[1]),
             ("noncontiguous", base.transpose(0, 2)[1]),
             ("channels_last", channels_last),
@@ -182,7 +183,7 @@ class FunctionalSiluTests(unittest.TestCase):
                 self.assertEqual(after[:-1], before[:-1])
                 np.testing.assert_array_equal(after[-1], before[-1])
 
-    def test_numerical_edges_match_sigmoid_multiplication_bitwise(self):
+    def test_numerical_edges_match_sigmoid_multiplication_and_quiet_nans(self):
         special_bits = np.asarray(
             (
                 0x0000_0000,
@@ -218,7 +219,17 @@ class FunctionalSiluTests(unittest.TestCase):
         source = torch.tensor(memoryview(special_bits.view(np.float32)))
         expected = source * source.sigmoid()
         actual = functional.silu(source)
-        np.testing.assert_array_equal(self.tensor_bits(actual), self.tensor_bits(expected))
+        actual_bits = self.tensor_bits(actual)
+        expected_bits = self.tensor_bits(expected)
+        input_bits = self.tensor_bits(source)
+        input_values = np.asarray(source, dtype=np.float32)
+        nan_mask = np.isnan(input_values)
+
+        np.testing.assert_array_equal(actual_bits[~nan_mask], expected_bits[~nan_mask])
+        np.testing.assert_array_equal(
+            actual_bits[nan_mask],
+            input_bits[nan_mask] | np.uint32(0x0040_0000),
+        )
 
     def test_supported_autograd_matches_explicit_composition(self):
         values = [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]]
@@ -248,6 +259,20 @@ class FunctionalSiluTests(unittest.TestCase):
         output.sum().backward()
         self.assertEqual(empty.grad.shape, (2, 0, 3))
         self.assertEqual(empty.grad.tolist(), [[], []])
+
+    def test_no_grad_tracked_input_uses_untracked_fresh_output(self):
+        source = torch.tensor([[-3.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True)
+        before = self.tensor_state(source)
+        with torch.no_grad():
+            actual = functional.silu(source)
+            expected = source * source.sigmoid()
+        self.assert_matches_composition(actual, expected, source, case="no_grad")
+        self.assertFalse(actual.requires_grad)
+        self.assertTrue(actual.is_leaf)
+        after = self.tensor_state(source)
+        self.assertEqual(after[:-1], before[:-1])
+        np.testing.assert_array_equal(after[-1], before[-1])
+        self.assertIsNone(source.grad)
 
     def test_torch_function_overrides_and_modes_observe_the_public_function(self):
         marker = object()

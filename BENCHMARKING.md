@@ -52,6 +52,7 @@ do not replace the benchmark policy or Burner-managed evaluation progress.
 - [`Tensor.sqrt` and `torch.sqrt` release timings](docs/tensor-sqrt-release-timings.md)
 - [`Tensor.reciprocal` and `torch.reciprocal` release timings](docs/tensor-reciprocal-release-timings.md)
 - [`torch.nn.functional.softsign` release timings](docs/softsign-release-timings.md)
+- [`torch.nn.functional.silu` release timings](docs/silu-release-timings.md)
 - [`Tensor.view`, reshape, flatten, ravel, unbind, and edge-unsqueeze release timings](docs/tensor-view-release-timings.md)
 - [`torch.nn.functional.mse_loss` release timings](docs/mse-loss-release-timings.md)
 - [`torch.nn.functional.l1_loss(reduction="none")` release timings](docs/l1-loss-release-timings.md)

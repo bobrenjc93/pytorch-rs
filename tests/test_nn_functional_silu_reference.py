@@ -99,6 +99,7 @@ class FunctionalSiluReferenceTests(unittest.TestCase):
                 module.zeros((2, 0, 3), dtype=module.float32)
                 .transpose(0, 2)[1],
             ),
+            ("contiguous", base),
             ("offset", base[1]),
             ("noncontiguous", base.transpose(0, 2)[1]),
             ("channels_last", channels_last),
@@ -301,6 +302,43 @@ class FunctionalSiluReferenceTests(unittest.TestCase):
             self.tensor_values(expected_leaf.grad),
             expected_before,
         )
+
+    def test_no_grad_tracked_input_matches_pytorch_2_13(self):
+        actual_input = torch.tensor(
+            [[-3.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True
+        )
+        expected_input = reference_torch.tensor(
+            [[-3.0, -0.0, 1.0], [2.0, 4.0, 8.0]],
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        actual_before = self.tensor_state(actual_input)
+        expected_before = self.tensor_state(expected_input)
+
+        with torch.no_grad():
+            actual_output = functional.silu(actual_input)
+        with reference_torch.no_grad():
+            expected_output = reference_functional.silu(expected_input)
+
+        self.assert_tensor_matches(actual_output, expected_output, case="no_grad")
+        self.assertFalse(actual_output.is_set_to(actual_input))
+        self.assertFalse(expected_output.is_set_to(expected_input))
+        self.assertFalse(actual_output.requires_grad)
+        self.assertFalse(expected_output.requires_grad)
+        self.assertTrue(actual_output.is_leaf)
+        self.assertTrue(expected_output.is_leaf)
+        self.assertEqual(self.tensor_state(actual_input)[:-1], actual_before[:-1])
+        self.assertEqual(self.tensor_state(expected_input)[:-1], expected_before[:-1])
+        np.testing.assert_array_equal(
+            self.tensor_values(actual_input).reshape(-1).view(np.uint32),
+            actual_before[-1],
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(expected_input).reshape(-1).view(np.uint32),
+            expected_before[-1],
+        )
+        self.assertIsNone(actual_input.grad)
+        self.assertIsNone(expected_input.grad)
 
     @staticmethod
     def error(call):
