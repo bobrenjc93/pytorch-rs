@@ -10,16 +10,24 @@ import unittest
 
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import expose_reference_compiler_register_backend
+else:
+    from signature_utils import expose_reference_compiler_register_backend
+
 try:
     import torch as reference_torch
 except ImportError:
     reference_torch = None
+
+expose_reference_compiler_register_backend(reference_torch)
 
 
 SUPPORTED_COMPILER_EXPORTS = {
     "assume_constant_result",
     "reset",
     "list_backends",
+    "register_backend",
     "disable",
     "set_default_backend",
     "get_default_backend",
@@ -668,6 +676,8 @@ class CompilerKeepPortableGuardsUnsafeReferenceTests(unittest.TestCase):
             old_function = compiler.keep_portable_guards_unsafe
             old_exports = compiler.__all__
             reloaded = importlib.reload(compiler)
+            if module is reference_torch:
+                expose_reference_compiler_register_backend(reference_torch)
             new_function = reloaded.keep_portable_guards_unsafe
 
             try:

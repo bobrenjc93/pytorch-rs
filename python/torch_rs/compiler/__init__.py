@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 import functools
 import sys
 import types
@@ -14,6 +14,7 @@ __all__ = [
     "assume_constant_result",
     "reset",
     "list_backends",
+    "register_backend",
     "disable",
     "set_default_backend",
     "get_default_backend",
@@ -65,7 +66,52 @@ def list_backends(exclude_tags=("debug", "experimental")) -> list[str]:
     Args:
         exclude_tags(optional): A tuple of strings representing tags to exclude.
     """
-    return []
+    exclude_tags_set = set(exclude_tags or ())
+    backends = [
+        name
+        for name in _state.registered_backends
+        if name not in _state.registered_backend_fns
+        or not exclude_tags_set.intersection(
+            getattr(_state.registered_backend_fns[name], "_tags", ())
+        )
+    ]
+    return sorted(backends)
+
+
+def register_backend(
+    compiler_fn: Callable[..., Any] | None = None,
+    name: str | None = None,
+    tags: Sequence[str] = (),
+) -> Callable[..., Any]:
+    """
+    Decorator to add a given compiler to the registry to allow calling
+    `torch.compile` with string shorthand.  Note: for projects not
+    imported by default, it might be easier to pass a function directly
+    as a backend and not use a string.
+
+    Args:
+        compiler_fn: Callable taking a FX graph and fake tensor inputs
+        name: Optional name, defaults to `compiler_fn.__name__`
+        tags: Optional set of string tags to categorize backend with
+    """
+    if name is not None and not isinstance(name, str):
+        raise AssertionError(f"name must be str or None, got {type(name)}")
+    if compiler_fn is None:
+        return functools.partial(register_backend, name=name, tags=tags)
+    if not callable(compiler_fn):
+        raise AssertionError(f"compiler_fn must be callable, got {type(compiler_fn)}")
+
+    backend_name = name or compiler_fn.__name__
+    if not isinstance(backend_name, str):
+        raise AssertionError(f"name must be str or None, got {type(backend_name)}")
+    if backend_name in _state.registered_backend_fns:
+        raise AssertionError(f"duplicate name: {backend_name}")
+
+    backend_tags = tuple(tags)
+    compiler_fn._tags = backend_tags
+    _state.registered_backends.setdefault(backend_name, None)
+    _state.registered_backend_fns[backend_name] = compiler_fn
+    return compiler_fn
 
 
 def _disable_function(fn, recursive, reason):

@@ -11,10 +11,17 @@ import unittest
 
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import expose_reference_compiler_register_backend
+else:
+    from signature_utils import expose_reference_compiler_register_backend
+
 try:
     import torch as reference_torch
 except ImportError:
     reference_torch = None
+
+expose_reference_compiler_register_backend(reference_torch)
 
 
 FUNCTION_DOC = """
@@ -36,6 +43,7 @@ COMPILER_EXPORTS = [
     "assume_constant_result",
     "reset",
     "list_backends",
+    "register_backend",
     "disable",
     "set_default_backend",
     "get_default_backend",
@@ -472,6 +480,8 @@ class CompilerSkipGuardOnInbuiltNnModulesUnsafeTests(unittest.TestCase):
             old_function = compiler.skip_guard_on_inbuilt_nn_modules_unsafe
             old_exports = compiler.__all__
             reloaded = importlib.reload(compiler)
+            if compiler.__name__ == "torch.compiler":
+                expose_reference_compiler_register_backend(reference_torch)
             new_function = reloaded.skip_guard_on_inbuilt_nn_modules_unsafe
 
             self.assertIs(reloaded, compiler)
@@ -677,6 +687,8 @@ class CompilerSkipGuardOnInbuiltNnModulesUnsafeReferenceTests(unittest.TestCase)
             old_function = compiler.skip_guard_on_inbuilt_nn_modules_unsafe
             old_exports = compiler.__all__
             reloaded = importlib.reload(compiler)
+            if module is reference_torch:
+                expose_reference_compiler_register_backend(reference_torch)
             new_function = reloaded.skip_guard_on_inbuilt_nn_modules_unsafe
             try:
                 pickle.dumps(old_function)
