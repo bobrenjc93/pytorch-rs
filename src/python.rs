@@ -8884,13 +8884,14 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(f64, 
     let end_kind = classify_arange_endpoint(&end.value)?;
     // Peek only at a valid native dtype here so unsupported endpoint/dtype
     // combinations retain the endpoint-first error ordering below.
-    let exact_integer_with_explicit_float32 = end_kind
-        == Some(ArangeEndpointKind::ExactPythonInteger)
-        && arange_has_explicit_float32_dtype(dtype.as_ref())?;
+    let integer_with_explicit_float32 = matches!(
+        end_kind,
+        Some(ArangeEndpointKind::ExactPythonInteger | ArangeEndpointKind::NumpyInteger)
+    ) && arange_has_explicit_float32_dtype(dtype.as_ref())?;
     if !matches!(
         end_kind,
         Some(ArangeEndpointKind::ExactPythonFloat | ArangeEndpointKind::NumpyFloating)
-    ) && !exact_integer_with_explicit_float32
+    ) && !integer_with_explicit_float32
     {
         return Err(arange_one_bound_endpoint_type_error(&end)?);
     }
@@ -9138,7 +9139,7 @@ fn arange_element_count(end: f64) -> PyResult<usize> {
 
 fn arange_overload_unsupported() -> PyErr {
     PyTypeError::new_err(
-        "arange(): only one-bound float endpoints and two-bound integer endpoints with explicit dtype=torch.float32 are supported",
+        "arange(): only one-bound float endpoints and integer endpoints with explicit dtype=torch.float32 are supported",
     )
 }
 
