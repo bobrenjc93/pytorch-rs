@@ -2513,6 +2513,24 @@ fn dimension_move_variable_function(
     dispatch_top_level_movedim(operation, py, &input, &source, &destination, args, kwargs)
 }
 
+pub(crate) fn mm_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let ([input, mat2], out, keyword_error) = bind_mm_arguments(args, kwargs)?;
+    let input = parse_tensor_or_torch_function_argument("mm", "input", &input)?;
+    let mat2 = parse_tensor_or_torch_function_argument("mm", "mat2", &mat2)?;
+    let out = out
+        .map(|out| parse_tensor_or_torch_function_argument("mm", "out", &out))
+        .transpose()?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    let call = BoundMmCall { input, mat2, out };
+    dispatch_top_level_mm(py, &call, args, kwargs)
+}
+
 pub(crate) fn matmul_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -3029,6 +3047,12 @@ struct BoundTopLevelDivisionCall<'py> {
     input: BoundDivOperand<'py>,
     other: BoundDivOperand<'py>,
     rounding_mode: BoundDivisionRoundingMode<'py>,
+    out: Option<BoundTensorOrTorchFunction<'py>>,
+}
+
+struct BoundMmCall<'py> {
+    input: BoundTensorOrTorchFunction<'py>,
+    mat2: BoundTensorOrTorchFunction<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
 }
 
@@ -4812,6 +4836,24 @@ fn ordered_matmul_overrides<'py>(
     ordered_binary_overrides(input, other, "unable to allocate matmul dispatch operands")
 }
 
+fn ordered_mm_overrides<'py>(
+    call: &BoundMmCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(3)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate mm dispatch operands"))?;
+    for operand in [&call.input, &call.mat2] {
+        if let BoundTensorOrTorchFunction::Override(probed) = operand {
+            insert_ordered_torch_function_override(&mut overrides, probed)?;
+        }
+    }
+    if let Some(BoundTensorOrTorchFunction::Override(probed)) = &call.out {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
 fn ordered_dtype_overrides<'py>(
     operation: DTypeBinaryOperation,
     first: &BoundDTypeOperand<'py>,
@@ -4842,6 +4884,78 @@ fn ordered_multiplication_overrides<'py>(
         BoundMulOperand::Tensor(_) | BoundMulOperand::Scalar(_) => None,
     };
     ordered_binary_overrides(input, other, operation.dispatch_allocation_error())
+}
+
+fn dispatch_top_level_mm(
+    py: Python<'_>,
+    call: &BoundMmCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_mm_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        let (BoundTensorOrTorchFunction::Tensor(input), BoundTensorOrTorchFunction::Tensor(mat2)) =
+            (&call.input, &call.mat2)
+        else {
+            unreachable!("mm overrides were collected before the native fast path")
+        };
+        return apply_top_level_mm(py, input, mat2, call.out.as_ref());
+    }
+
+    let function = variable_function(py, "mm")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.mm",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_mm(
+    py: Python<'_>,
+    input: &Bound<'_, PyTensor>,
+    mat2: &Bound<'_, PyTensor>,
+    out: Option<&BoundTensorOrTorchFunction<'_>>,
+) -> PyResult<Py<PyAny>> {
+    if out.is_some() {
+        return Err(PyRuntimeError::new_err(
+            "mm(): the 'out' argument is not supported",
+        ));
+    }
+
+    let input = input.try_borrow()?;
+    if input.inner().shape().len() != 2 {
+        return Err(PyRuntimeError::new_err("self must be a matrix"));
+    }
+    let mat2 = mat2.try_borrow()?;
+    if mat2.inner().shape().len() != 2 {
+        return Err(PyRuntimeError::new_err("mat2 must be a matrix"));
+    }
+    let result = input.matrix_multiply(&mat2)?;
+    Ok(Py::new(py, result)?.into_any())
 }
 
 fn dispatch_top_level_matmul(
@@ -13969,6 +14083,99 @@ impl LegacyBinaryInputKind {
     }
 }
 
+fn bind_mm_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(
+    [ParsedCallArgument<'py>; 2],
+    Option<ParsedCallArgument<'py>>,
+    Option<PyErr>,
+)> {
+    if positional.len() > 2 {
+        return Err(top_level_mm_binding_error(positional, keywords)?);
+    }
+
+    let mut input = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut mat2 = if positional.len() < 2 {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    };
+    let mut out = None;
+    let mut keyword_error = None;
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "input" | "x" | "a" | "x1" if input.is_none() => {
+                    input = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "input" | "x" | "a" | "x1" => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("mm() got multiple values for argument 'input'")
+                    });
+                }
+                "mat2" if mat2.is_none() => {
+                    mat2 = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "mat2" => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("mm() got multiple values for argument 'mat2'")
+                    });
+                }
+                "out" => {
+                    if !value.is_none() {
+                        out = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "mm() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let Some(input) = input else {
+        if positional.is_empty() && keywords.is_none_or(PyDictMethods::is_empty) {
+            return Err(top_level_mm_binding_error(positional, keywords)?);
+        }
+        return Err(PyTypeError::new_err(
+            "mm() missing 2 required positional argument: \"input\", \"mat2\"",
+        ));
+    };
+    let Some(mat2) = mat2 else {
+        return Err(PyTypeError::new_err(
+            "mm() missing 1 required positional arguments: \"mat2\"",
+        ));
+    };
+
+    Ok(([input, mat2], out, keyword_error))
+}
+
 fn bind_legacy_binary_arguments<'py>(
     function: &str,
     positional: &Bound<'py, PyTuple>,
@@ -15869,6 +16076,20 @@ fn top_level_multiply_binding_error(
         .call1((message,))
         .map_err(|_| allocation.error())?;
     Ok(PyErr::from_value(exception))
+}
+
+fn top_level_mm_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let mut summary =
+        call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    if let Some(nul) = summary.find('\0') {
+        summary.truncate(nul);
+    }
+    Ok(PyTypeError::new_err(format!(
+        "mm() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (Tensor input, Tensor mat2, *, Tensor out = None)\n * (Tensor input, Tensor mat2, torch.dtype out_dtype, *, Tensor out = None)\n"
+    )))
 }
 
 fn tensor_add_method_binding_error(
