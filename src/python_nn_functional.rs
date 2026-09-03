@@ -694,11 +694,20 @@ fn _nn_functional_mse_loss(
                     .map_err(|error| tensor_error(&error))?
             }
         }
-        MseLossReduction::Sum => input
-            .inner()
-            .squared_difference(target.inner())
-            .map_err(|error| tensor_error(&error))?
-            .sum(),
+        MseLossReduction::Sum => {
+            if let Some(output) = input
+                .inner()
+                .squared_difference_sum_same_shape_contiguous(target.inner())
+            {
+                output
+            } else {
+                input
+                    .inner()
+                    .squared_difference(target.inner())
+                    .map_err(|error| tensor_error(&error))?
+                    .sum()
+            }
+        }
     };
     PyTensor::new(output).into_py_any(py)
 }
