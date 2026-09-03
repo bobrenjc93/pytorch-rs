@@ -10013,6 +10013,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 95
       }
+    },
+    {
+      "key": "pr:1798",
+      "recordedAt": "2026-09-03T21:57:02.917Z",
+      "label": "PR #1798",
+      "kind": "leaf",
+      "prNumber": 1798,
+      "title": "Add decision-grade CPU compile evidence to guarded frontend",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 95,
+        "eval_39340456": 99.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 4,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 95
+      }
     }
   ]
 }
