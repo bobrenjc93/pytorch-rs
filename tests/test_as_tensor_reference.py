@@ -107,8 +107,12 @@ class AsTensorReferenceTests(unittest.TestCase):
             "source_unchanged": before == after,
         }
 
-    def as_tensor_float_scalar_contract(self, module, value, options):
-        first = module.as_tensor(value, **options)
+    def as_tensor_float_scalar_contract(self, module, value, options, no_grad=False):
+        if no_grad:
+            with module.no_grad():
+                first = module.as_tensor(value, **options)
+        else:
+            first = module.as_tensor(value, **options)
         second = module.as_tensor(value, **options)
         return {
             "fresh_object": first is not second,
@@ -203,6 +207,36 @@ class AsTensorReferenceTests(unittest.TestCase):
                     )
                     self.assertEqual(actual_contract, expected_contract)
 
+    def test_numpy_float32_scalar_creation_matches_pytorch_2_13(self):
+        value_bits = (
+            0x00000000,
+            0x80000000,
+            0x3FA00000,
+            0xC0600000,
+            0x7F800000,
+            0xFF800000,
+            0x7FC00000,
+            0x7FC12345,
+            0xFFC54321,
+        )
+        actual_options = self.option_cases(torch)
+        expected_options = self.option_cases(reference_torch)
+        for bits in value_bits:
+            actual_value = np.asarray(bits, dtype=np.uint32).view(np.float32)[()]
+            expected_value = np.asarray(bits, dtype=np.uint32).view(np.float32)[()]
+            self.assertIs(type(actual_value), np.float32)
+            for actual_kwargs, expected_kwargs in zip(
+                actual_options, expected_options, strict=True
+            ):
+                with self.subTest(bits=hex(bits), options=actual_kwargs):
+                    actual_contract = self.as_tensor_float_scalar_contract(
+                        torch, actual_value, actual_kwargs
+                    )
+                    expected_contract = self.as_tensor_float_scalar_contract(
+                        reference_torch, expected_value, expected_kwargs
+                    )
+                    self.assertEqual(actual_contract, expected_contract)
+
     def test_python_float_sequence_creation_matches_pytorch_2_13(self):
         sequence_cases = (
             ("empty list", []),
@@ -239,6 +273,15 @@ class AsTensorReferenceTests(unittest.TestCase):
             self.as_tensor_float_sequence_contract(torch, data, {}, no_grad=True),
             self.as_tensor_float_sequence_contract(
                 reference_torch, data, {}, no_grad=True
+            ),
+        )
+
+    def test_numpy_float32_scalar_no_grad_matches_pytorch_2_13(self):
+        value = np.asarray(0x80000000, dtype=np.uint32).view(np.float32)[()]
+        self.assertEqual(
+            self.as_tensor_float_scalar_contract(torch, value, {}, no_grad=True),
+            self.as_tensor_float_scalar_contract(
+                reference_torch, value, {}, no_grad=True
             ),
         )
 
@@ -364,6 +407,9 @@ class AsTensorReferenceTests(unittest.TestCase):
         elif case == "scalar":
             data = 1.25
             call = lambda: module.as_tensor(data)
+        elif case == "numpy_scalar":
+            data = np.float32(1.25)
+            call = lambda: module.as_tensor(data)
         elif case == "sequence":
             data = [1.0, 2.0]
             call = lambda: module.as_tensor(data)
@@ -421,7 +467,14 @@ class AsTensorReferenceTests(unittest.TestCase):
         }
 
     def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
-        for case in ("positional", "keyword", "scalar", "sequence", "device"):
+        for case in (
+            "positional",
+            "keyword",
+            "scalar",
+            "numpy_scalar",
+            "sequence",
+            "device",
+        ):
             with self.subTest(case=case):
                 self.assertEqual(
                     self.mode_dispatch_observation(torch, case),
@@ -456,16 +509,38 @@ class AsTensorReferenceTests(unittest.TestCase):
                 lambda: reference_torch.as_tensor(expected, copy=False),
             ),
             (
+                lambda: torch.as_tensor(np.float32(1.0), copy=False),
+                lambda: reference_torch.as_tensor(np.float32(1.0), copy=False),
+            ),
+            (
                 lambda: torch.as_tensor(1.0, requires_grad=True),
                 lambda: reference_torch.as_tensor(1.0, requires_grad=True),
+            ),
+            (
+                lambda: torch.as_tensor(np.float32(1.0), requires_grad=True),
+                lambda: reference_torch.as_tensor(
+                    np.float32(1.0), requires_grad=True
+                ),
+            ),
+            (
+                lambda: torch.as_tensor(np.float32(1.0), out=None),
+                lambda: reference_torch.as_tensor(np.float32(1.0), out=None),
             ),
             (
                 lambda: torch.as_tensor(actual, dtype=1),
                 lambda: reference_torch.as_tensor(expected, dtype=1),
             ),
             (
+                lambda: torch.as_tensor(np.float32(1.0), dtype=1),
+                lambda: reference_torch.as_tensor(np.float32(1.0), dtype=1),
+            ),
+            (
                 lambda: torch.as_tensor(actual, device=1.5),
                 lambda: reference_torch.as_tensor(expected, device=1.5),
+            ),
+            (
+                lambda: torch.as_tensor(np.float32(1.0), device=1.5),
+                lambda: reference_torch.as_tensor(np.float32(1.0), device=1.5),
             ),
             (
                 lambda: torch.as_tensor(actual, device=""),
