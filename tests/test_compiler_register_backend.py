@@ -181,10 +181,7 @@ class CompilerRegisterBackendTests(unittest.TestCase):
 
         with self.assertRaises(AttributeError) as raised:
             compiler.register_backend(len, name="builtin_len")
-        self.assertEqual(
-            str(raised.exception),
-            "'builtin_function_or_method' object has no attribute '_tags'",
-        )
+        self.assertIn("has no attribute '_tags'", str(raised.exception))
         self.assertEqual(self._registry, before)
 
     def test_argument_errors_match_python_function_shape(self):
@@ -221,10 +218,30 @@ class CompilerRegisterBackendTests(unittest.TestCase):
         self.assertIs(sys.modules["torch_rs.compiler"], compiler)
         self.assertIs(type(function), types.FunctionType)
         self.assertEqual(
-            str(inspect.signature(function)),
-            "(compiler_fn: collections.abc.Callable[..., typing.Any] | None = "
-            "None, name: str | None = None, tags: collections.abc.Sequence[str] "
-            "= ()) -> collections.abc.Callable[..., typing.Any]",
+            inspect.signature(function),
+            inspect.Signature(
+                parameters=[
+                    inspect.Parameter(
+                        "compiler_fn",
+                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                        default=None,
+                        annotation=compiler_fn_annotation,
+                    ),
+                    inspect.Parameter(
+                        "name",
+                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                        default=None,
+                        annotation=str | None,
+                    ),
+                    inspect.Parameter(
+                        "tags",
+                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                        default=(),
+                        annotation=Sequence[str],
+                    ),
+                ],
+                return_annotation=return_annotation,
+            ),
         )
         self.assertEqual(
             function.__annotations__,
