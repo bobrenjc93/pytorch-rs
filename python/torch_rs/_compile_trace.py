@@ -62,8 +62,8 @@ class CompileTraceGraph:
     output: str
     output_metadata: CompileTraceTensorMetadata
 
-    def forward(self, input):
-        return execute_compile_trace_graph(self, input)
+    def forward(self, *inputs):
+        return execute_compile_trace_graph(self, *inputs)
 
 
 _SUPPORTED_UNARY_METHODS = (
@@ -560,28 +560,34 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
     )
 
 
-def execute_compile_trace_graph(graph, input):
+def execute_compile_trace_graph(graph, *inputs):
     if not _builtins.isinstance(graph, CompileTraceGraph):
         raise TypeError(
             "torch.compile trace execution expected CompileTraceGraph, "
             f"got {_type_name(graph)}"
         )
-    if len(graph.inputs) != 1:
+    if len(graph.inputs) not in (1, 2):
         raise CompileTraceUnsupportedError(
-            "torch.compile trace execution currently supports exactly one input"
+            "torch.compile trace execution currently supports one or two inputs"
+        )
+    if len(inputs) != len(graph.inputs):
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace execution expected "
+            f"{len(graph.inputs)} input(s), got {len(inputs)}"
         )
 
-    graph_input = graph.inputs[0]
-    _require_native_tensor(input, graph_input.name)
-    input_metadata = _metadata_from_native_tensor(input)
-    _require_matching_metadata(
-        input_metadata,
-        graph_input.metadata,
-        value_name=graph_input.name,
-    )
-
-    values = {graph_input.name: input}
-    metadata_values = {graph_input.name: input_metadata}
+    values = {}
+    metadata_values = {}
+    for graph_input, input in zip(graph.inputs, inputs):
+        _require_native_tensor(input, graph_input.name)
+        input_metadata = _metadata_from_native_tensor(input)
+        _require_matching_metadata(
+            input_metadata,
+            graph_input.metadata,
+            value_name=graph_input.name,
+        )
+        values[graph_input.name] = input
+        metadata_values[graph_input.name] = input_metadata
     grad_enabled = _grad_enabled()
     for operation in graph.operations:
         if operation.name in values:
@@ -858,9 +864,9 @@ class CompileTraceRecorder:
     def finish(self, output):
         self._ensure_open()
         self._require_owned_proxy(output)
-        if len(self._inputs) != 1:
+        if len(self._inputs) not in (1, 2):
             raise CompileTraceUnsupportedError(
-                "torch.compile trace currently supports exactly one input"
+                "torch.compile trace currently supports one or two inputs"
             )
         self._closed = True
         return CompileTraceGraph(
@@ -948,7 +954,14 @@ class CompileTraceTorchModule:
         )
 
 
-def trace_one_input_compile_graph(program, make_inputs, *, name=None):
+def _trace_compile_graph(
+    program,
+    make_inputs,
+    *,
+    allowed_input_counts,
+    input_count_message,
+    name=None,
+):
     if not _builtins.callable(program):
         raise TypeError("torch.compile trace program must be callable")
     if not _builtins.callable(make_inputs):
@@ -963,13 +976,47 @@ def trace_one_input_compile_graph(program, make_inputs, *, name=None):
         raise CompileTraceUnsupportedError(
             "torch.compile trace input factory must return a tuple of inputs"
         )
-    if len(inputs) != 1:
-        raise CompileTraceUnsupportedError(
-            "torch.compile trace currently supports exactly one input"
-        )
+    if len(inputs) not in allowed_input_counts:
+        raise CompileTraceUnsupportedError(input_count_message)
 
     output = program(*inputs)
     return recorder.finish(output)
+
+
+def trace_compile_graph(program, make_inputs, *, name=None):
+    return _trace_compile_graph(
+        program,
+        make_inputs,
+        allowed_input_counts=(1, 2),
+        input_count_message=(
+            "torch.compile trace currently supports one or two inputs"
+        ),
+        name=name,
+    )
+
+
+def trace_one_input_compile_graph(program, make_inputs, *, name=None):
+    return _trace_compile_graph(
+        program,
+        make_inputs,
+        allowed_input_counts=(1,),
+        input_count_message=(
+            "torch.compile trace currently supports exactly one input"
+        ),
+        name=name,
+    )
+
+
+def trace_two_input_compile_graph(program, make_inputs, *, name=None):
+    return _trace_compile_graph(
+        program,
+        make_inputs,
+        allowed_input_counts=(2,),
+        input_count_message=(
+            "torch.compile trace currently supports exactly two inputs"
+        ),
+        name=name,
+    )
 
 
 __all__ = [
@@ -985,5 +1032,7 @@ __all__ = [
     "execute_compile_trace_graph",
     "float",
     "float32",
+    "trace_compile_graph",
     "trace_one_input_compile_graph",
+    "trace_two_input_compile_graph",
 ]

@@ -15,7 +15,7 @@ from torch_rs import _compiler_state as _state
 
 UNSUPPORTED_MESSAGE = (
     "torch.compile(): only backend='eager', fullgraph=True straight-line "
-    "Tensor neg/abs/add functions with one positional exact native CPU "
+    "Tensor neg/abs/add functions with one or two positional exact native CPU "
     "float32 Tensor are supported; eager fallback, installed-PyTorch "
     "forwarding, callable backend invocation, CUDA compilation, and broader "
     "graph capture remain unsupported"
@@ -291,6 +291,52 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertIs(actual.dtype, expected.dtype)
         self.assertEqual(actual.device, expected.device)
 
+    def test_eager_fullgraph_executes_two_input_broadcasting_programs_natively(self):
+        def matrix_vector(x, y):
+            return (x + y).abs()
+
+        def tensor_scalar(x, y):
+            return x.neg().abs().add(y)
+
+        cases = (
+            (
+                "matrix vector",
+                matrix_vector,
+                (
+                    torch.tensor(
+                        [[-2.0, 0.5, 3.0], [4.25, -5.5, 6.0]],
+                        dtype=torch.float32,
+                    ),
+                    torch.tensor([0.25, -1.5, 2.0], dtype=torch.float32),
+                ),
+            ),
+            (
+                "tensor scalar",
+                tensor_scalar,
+                (
+                    torch.tensor(
+                        [[-2.0, 0.5, 3.0], [4.25, -5.5, 6.0]],
+                        dtype=torch.float32,
+                        requires_grad=True,
+                    ),
+                    torch.tensor(-0.75, dtype=torch.float32),
+                ),
+            ),
+        )
+
+        for case, program, inputs in cases:
+            with self.subTest(case=case):
+                compiled = torch.compile(program, backend="eager", fullgraph=True)
+                expected = program(*inputs)
+                actual = compiled(*inputs)
+
+                self.assertEqual(actual.tolist(), expected.tolist())
+                self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+                self.assertEqual(actual.stride(), expected.stride())
+                self.assertIs(actual.dtype, expected.dtype)
+                self.assertEqual(actual.device, expected.device)
+                self.assertEqual(actual.requires_grad, expected.requires_grad)
+
     def test_eager_fullgraph_caches_graphs_by_code_and_input_metadata(self):
         def program(x):
             return x.neg().abs() + x
@@ -320,6 +366,81 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             self.assertEqual(len(calls), 2)
         finally:
             _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_caches_graphs_by_all_input_metadata(self):
+        def program(x, y):
+            return x + y
+
+        original_lower = _compile_bytecode.lower_two_input_compile_graph
+        calls = []
+
+        def counting_lower(
+            requested_program,
+            left_metadata,
+            right_metadata,
+            *,
+            name=None,
+        ):
+            calls.append((requested_program, left_metadata, right_metadata, name))
+            return original_lower(
+                requested_program,
+                left_metadata,
+                right_metadata,
+                name=name,
+            )
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        matrix = torch.tensor(
+            [[-2.0, 3.0, 4.0], [1.0, -1.5, 2.5]],
+            dtype=torch.float32,
+        )
+        first_vector = torch.tensor([0.5, -1.0, 1.5], dtype=torch.float32)
+        second_vector = torch.tensor([2.0, 3.0, -4.0], dtype=torch.float32)
+        scalar = torch.tensor(-2.5, dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_two_input_compile_graph = counting_lower
+            self.assertEqual(
+                compiled(matrix, first_vector).tolist(),
+                program(matrix, first_vector).tolist(),
+            )
+            self.assertEqual(
+                compiled(matrix, second_vector).tolist(),
+                program(matrix, second_vector).tolist(),
+            )
+            self.assertEqual(len(calls), 1)
+
+            self.assertEqual(
+                compiled(matrix, scalar).tolist(),
+                program(matrix, scalar).tolist(),
+            )
+            self.assertEqual(len(calls), 2)
+        finally:
+            _compile_bytecode.lower_two_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_recompile_limit_observes_second_input_metadata(self):
+        def program(x, y):
+            return x + y
+
+        compiled = torch.compile(
+            program,
+            backend="eager",
+            fullgraph=True,
+            recompile_limit=1,
+        )
+        matrix = torch.tensor(
+            [[-2.0, 3.0, 4.0], [1.0, -1.5, 2.5]],
+            dtype=torch.float32,
+        )
+        vector = torch.tensor([0.5, -1.0, 1.5], dtype=torch.float32)
+        scalar = torch.tensor(-2.5, dtype=torch.float32)
+
+        self.assertEqual(
+            compiled(matrix, vector).tolist(),
+            program(matrix, vector).tolist(),
+        )
+        with self.assertRaisesRegex(NotImplementedError, "recompile_limit=1"):
+            compiled(matrix, scalar)
 
     def test_eager_fullgraph_recompile_limit_zero_rejects_first_graph(self):
         def program(x):
@@ -718,6 +839,33 @@ class TorchCompileEntrypointTests(unittest.TestCase):
                     compiled(input)
                 self.assertEqual(calls, [])
                 self.assertEqual(EAGER_COMPILE_MODEL_CALLS, [])
+
+    def test_eager_fullgraph_rejects_unsupported_two_input_forms_without_running(self):
+        calls = []
+
+        def program(x, y):
+            calls.append("program")
+            return x + y
+
+        def add_program(x, y):
+            return x + y
+
+        input = torch.tensor(
+            [[-2.0, 3.0, 4.0], [1.0, -1.5, 2.5]],
+            dtype=torch.float32,
+        )
+        vector = torch.tensor([0.5, -1.0, 1.5], dtype=torch.float32)
+        unbroadcastable = torch.tensor([1.0, 2.0], dtype=torch.float32)
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        add_compiled = torch.compile(add_program, backend="eager", fullgraph=True)
+
+        with self.assertRaisesRegex(NotImplementedError, "one or two positional"):
+            compiled(input, vector, vector)
+        with self.assertRaisesRegex(TypeError, "exact native torch_rs Tensor"):
+            compiled(input, 1.0)
+        with self.assertRaisesRegex(NotImplementedError, "not broadcastable"):
+            add_compiled(input, unbroadcastable)
+        self.assertEqual(calls, [])
 
     def test_eager_fullgraph_rejects_kwargs_without_running_model(self):
         calls = []
