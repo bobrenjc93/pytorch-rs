@@ -335,7 +335,9 @@ class CompilerSetDefaultBackendReferenceTests(unittest.TestCase):
         self.assertTrue(callable(reference_torch.compiler.compile))
         self.assertFalse(hasattr(torch, "compile"))
         self.assertFalse(hasattr(torch.compiler, "compile"))
-        self.assertFalse(hasattr(torch.compiler, "register_backend"))
+        self.assertFalse(hasattr(reference_torch.compiler, "register_backend"))
+        self.assertTrue(callable(reference_torch._dynamo.register_backend))
+        self.assertTrue(callable(torch.compiler.register_backend))
 
 
 if __name__ == "__main__":

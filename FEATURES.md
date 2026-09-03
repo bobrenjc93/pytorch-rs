@@ -17,6 +17,13 @@ forms return rank-preserving all-ones shapes. Dimension reductions, tuple/list
 dimensions, concrete `out`, dtype conversions, unsupported operands, and
 broader mean overloads remain outside the supported surface.
 
+`torch.compiler.register_backend` now provides a pure-Python process-global
+registry for native backend callables, and `torch.compiler.list_backends`
+discovers those registered names with tag-based exclusion. This does not add
+top-level `torch.compile`, graph capture, graph execution, eager fallback,
+installed-PyTorch forwarding, backend lookup/invocation, or CUDA compile
+execution.
+
 Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 
 | Area | Weight | Baseline |

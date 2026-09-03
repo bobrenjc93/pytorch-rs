@@ -6,3 +6,5 @@ from .torch_rs import (
 
 
 default_backend = "inductor"
+backends = {}
+compiler_fns = {}

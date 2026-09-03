@@ -150,7 +150,18 @@ class CompilerListBackendsTests(unittest.TestCase):
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
         self.assertFalse(hasattr(function, "__text_signature__"))
-        self.assertEqual(function.__code__.co_names, ())
+        self.assertEqual(
+            function.__code__.co_names,
+            (
+                "_state",
+                "backends",
+                "set",
+                "compiler_fns",
+                "intersection",
+                "_tags",
+                "sorted",
+            ),
+        )
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
@@ -243,7 +254,7 @@ class CompilerListBackendsTests(unittest.TestCase):
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch, "list_backends"))
         self.assertFalse(hasattr(torch.compiler, "compile"))
-        self.assertFalse(hasattr(torch.compiler, "register_backend"))
+        self.assertTrue(callable(torch.compiler.register_backend))
 
         unsupported_compiler_names = (
             "allow_in_graph",
