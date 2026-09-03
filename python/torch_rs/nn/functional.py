@@ -80,8 +80,10 @@ with CPU ``float32`` storage, broadcastable shapes, ``reduction='none'`` or
 ``reduce=None``, and ``weight=None``. It fuses subtraction and square into one
 native pass. For ``reduction='mean'`` or ``reduction='sum'``, same-shape
 row-major contiguous operands that are not recording autograd use a direct
-scalar reduction; other reduction cases compose the fused squared-error tensor
-with the supported full-tensor reduction.
+scalar reduction. For ``reduction='sum'``, a row-major rank-2 tensor paired
+with a matching row-major trailing rank-1 vector also uses a direct scalar
+reduction when no autograd edge would be recorded. Other reduction cases
+compose the fused squared-error tensor with the supported full-tensor reduction.
 The operation returns a fresh, independent tensor with PyTorch-compatible
 values, shape, strides, scalar metadata, and size-mismatch warning.
 

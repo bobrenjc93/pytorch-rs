@@ -711,6 +711,11 @@ fn _nn_functional_mse_loss(
                 .squared_difference_sum_same_shape_contiguous(target.inner())
             {
                 output
+            } else if let Some(output) = input
+                .inner()
+                .squared_difference_sum_rank_two_trailing_vector_contiguous(target.inner())
+            {
+                output
             } else {
                 input
                     .inner()
