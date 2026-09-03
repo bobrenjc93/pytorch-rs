@@ -3517,9 +3517,7 @@ impl Tensor {
         if !tensor.is_contiguous() {
             return None;
         }
-        let Some(values) = tensor.contiguous_slice() else {
-            return None;
-        };
+        let values = tensor.contiguous_slice()?;
 
         let total = sum_contiguous_scalar_absolute_difference(
             values,
