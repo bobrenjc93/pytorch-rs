@@ -7,6 +7,97 @@ Review update: 2026-09-01
 Candidate provenance: source snapshot based on
 `2231dec5e208f3545c05484d497b32b3981f640d`
 
+## Focused Update: Rank-2 by Trailing Vector `reduction="sum"`
+
+Date: 2026-09-03
+
+Candidate provenance: source snapshot based on
+`7f0c0ec261b7a956b24a39cfad770bdc584a2090`, plus the worktree changes that add
+the direct no-grad rank-2 by trailing rank-1 MSE sum path.
+
+Commands:
+
+```bash
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_NET_OFFLINE=true \
+  cargo fmt --check
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_NET_OFFLINE=true \
+  cargo clippy --locked --offline --all-targets -- -D warnings
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_NET_OFFLINE=true \
+  cargo test --locked --offline --all-targets squared_difference
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_NET_OFFLINE=true \
+  cargo test --locked --offline --release --all-targets \
+  squared_difference_sum_rank_two_trailing_vector
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_NET_OFFLINE=true \
+  PYO3_PYTHON="$PWD/.venv/bin/python" \
+  cargo clippy --locked --offline --all-targets --features python-bindings \
+  -- -D warnings
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_NET_OFFLINE=true \
+  TMPDIR="$PWD/target" \
+  VIRTUAL_ENV="$PWD/.venv" \
+  PYO3_PYTHON="$PWD/.venv/bin/python" \
+  .venv/bin/maturin develop --release --locked --offline
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest \
+  tests.test_nn_functional_mse_loss \
+  tests.test_nn_functional_mse_loss_reference
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest tests.test_readme_quickstart
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  taskset -c 24 .venv/bin/python \
+  target/mse_loss_sum_rank2_vector_timing.py \
+  > target/mse-loss-sum-rank2-vector-timing-pass1.json
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  MSE_LOSS_SUM_IMPL_ORDER=pytorch,torch_rs \
+  taskset -c 24 .venv/bin/python \
+  target/mse_loss_sum_rank2_vector_timing.py \
+  > target/mse-loss-sum-rank2-vector-timing-pass2.json
+```
+
+The one-off timing driver lives under ignored `target/` storage. It validates
+the broadcast warning, scalar output metadata, and scalar value bitwise against
+PyTorch 2.13 before timing. Each process used 15 warmup blocks and 81 measured
+blocks; each block repeated the operation 8 times and consumed the final scalar
+output with a BLAKE2b metadata/value checksum. Reported medians below are the
+medians of the two per-process medians, run once in each implementation order.
+
+Results: the focused native MSE tests and PyTorch 2.13 differentials passed 49
+tests, and the README/docs smoke tests passed 8 tests.
+
+Environment: worktree-local `.venv`, Python 3.12.14+meta, NumPy 2.5.1, PyTorch
+2.13.0+cu130, Rust `rustc 1.92.0 (ded5c06cf 2025-12-08)`, `cargo 1.92.0
+(344c4567c 2025-10-21)`, maturin 1.14.1, CPU AMD EPYC 9654, Linux
+6.13.2-0_fbk12_0_g0b66b3635210 x86_64, release profile, CPU float32,
+`CUDA_VISIBLE_DEVICES=`, CPU affinity `taskset -c 24`, and single-threaded
+BLAS/OpenMP/torch settings. `torch_rs.get_num_threads()` and
+`torch_rs.get_num_interop_threads()` both reported 1. The release extension
+build completed in 37.15s.
+
+| Workload | Category | Input / target | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Materialized checksums |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| `mse_sum_broadcast_640x768_by_768` | broadcast | `(640, 768), stride (768, 1), offset 0` / `(768,), stride (1,), offset 0` | `(), stride (), offset 0, requires_grad=False` | 8 | 409.474 us +/- 1.497 us, var 10.672 | 79.499 us +/- 0.850 us, var 11.750 | 5.15x | `f616fc8703cca9bc`/`f616fc8703cca9bc` |
+
 ## Review Update: `reduction="sum"`
 
 The 2026-09-01 review rerun used the current composite worktree's release

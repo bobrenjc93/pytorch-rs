@@ -3291,6 +3291,51 @@ impl Tensor {
         self.finish_squared_difference_vjp(other, output)
     }
 
+    /// Computes a sum of squared differences for the narrow no-grad rank-2 by
+    /// trailing rank-1 row-major broadcast case without materializing the
+    /// broadcast output.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn squared_difference_sum_rank_two_trailing_vector_contiguous(
+        &self,
+        other: &Self,
+    ) -> Option<Self> {
+        if self.records_grad() || other.records_grad() {
+            return None;
+        }
+        let (matrix, vector, vector_on_left) = match (self.shape.as_slice(), other.shape.as_slice())
+        {
+            ([_, columns], [vector_columns]) if columns == vector_columns => (self, other, false),
+            ([vector_columns], [_, columns]) if columns == vector_columns => (other, self, true),
+            _ => return None,
+        };
+        if matrix.dtype() != DType::Float32
+            || vector.dtype() != DType::Float32
+            || matrix.device() != Device::Cpu
+            || vector.device() != Device::Cpu
+            || !matrix.is_contiguous()
+            || !vector.is_contiguous()
+        {
+            return None;
+        }
+        let (Some(matrix_values), Some(vector_values)) =
+            (matrix.contiguous_slice(), vector.contiguous_slice())
+        else {
+            return None;
+        };
+
+        let [rows, columns] = matrix.shape.as_slice() else {
+            unreachable!("rank-2 matrix shape matched above");
+        };
+        let total = sum_contiguous_rank_two_trailing_vector_squared_difference(
+            matrix_values,
+            vector_values,
+            *rows,
+            *columns,
+            vector_on_left,
+        );
+        Some(Self::from_scalar(total, self.dtype(), self.device()))
+    }
+
     #[cfg(any(feature = "python-bindings", test))]
     fn squared_difference_same_shape_contiguous(
         &self,
@@ -6997,6 +7042,44 @@ fn sum_contiguous_rank_two_trailing_vector_absolute_difference(
                 total = accumulate_sum_value(
                     total,
                     absolute_value(l1_loss_difference_value(row[column], vector[column])),
+                );
+            }
+        }
+    }
+    total
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn sum_contiguous_rank_two_trailing_vector_squared_difference(
+    matrix: &[f32],
+    vector: &[f32],
+    rows: usize,
+    columns: usize,
+    vector_on_left: bool,
+) -> f32 {
+    debug_assert_eq!(matrix.len(), rows * columns);
+    debug_assert_eq!(vector.len(), columns);
+
+    if rows == 0 || columns == 0 {
+        return 0.0;
+    }
+
+    let mut total = 0.0_f32;
+    if vector_on_left {
+        for row in matrix.chunks_exact(columns) {
+            for column in 0..columns {
+                total = accumulate_sum_value(
+                    total,
+                    squared_difference_value(vector[column], row[column]),
+                );
+            }
+        }
+    } else {
+        for row in matrix.chunks_exact(columns) {
+            for column in 0..columns {
+                total = accumulate_sum_value(
+                    total,
+                    squared_difference_value(row[column], vector[column]),
                 );
             }
         }
@@ -12952,6 +13035,173 @@ mod tests {
                     .eq(expected.logical_values().map(f32::to_bits))
             );
         }
+    }
+
+    fn assert_mse_sum_rank_two_trailing_vector_fast_path_matches(
+        case: &str,
+        input: &Tensor,
+        target: &Tensor,
+    ) {
+        let expected = input.squared_difference(target).unwrap().sum();
+        let actual = input
+            .squared_difference_sum_rank_two_trailing_vector_contiguous(target)
+            .unwrap_or_else(|| panic!("{case} should use the MSE sum fast path"));
+
+        assert!(actual.shape().is_empty(), "{case}");
+        assert!(actual.stride().is_empty(), "{case}");
+        assert_eq!(actual.storage_offset(), 0, "{case}");
+        assert_eq!(actual.dtype(), expected.dtype(), "{case}");
+        assert_eq!(actual.device(), expected.device(), "{case}");
+        assert!(!actual.requires_grad(), "{case}");
+        assert!(actual.is_leaf(), "{case}");
+        assert!(!actual.shares_storage_with(input), "{case}");
+        assert!(!actual.shares_storage_with(target), "{case}");
+        let actual_value = actual.item().unwrap();
+        let expected_value = expected.item().unwrap();
+        if expected_value.is_nan() {
+            assert!(actual_value.is_nan(), "{case}");
+        } else {
+            assert_eq!(actual_value.to_bits(), expected_value.to_bits(), "{case}");
+        }
+    }
+
+    #[test]
+    fn squared_difference_sum_rank_two_trailing_vector_fast_path_matches_composition() {
+        let matrix = Tensor::from_vec(
+            (0_u16..15).map(|value| f32::from(value) - 7.0).collect(),
+            [3, 5],
+        )
+        .unwrap();
+        let vector = Tensor::from_vec(vec![1.0, -2.0, 3.5, -4.5, 0.25], [5]).unwrap();
+        assert_mse_sum_rank_two_trailing_vector_fast_path_matches(
+            "target broadcast",
+            &matrix,
+            &vector,
+        );
+        assert_mse_sum_rank_two_trailing_vector_fast_path_matches(
+            "input broadcast",
+            &vector,
+            &matrix,
+        );
+
+        let edge_matrix = offset_contiguous_tensor(
+            &[
+                0x0000_0000,
+                0x8000_0000,
+                0x7f80_0000,
+                0xff80_0000,
+                0x3f80_0000,
+                0xbf80_0000,
+                0x7f81_2345,
+                0xff85_4321,
+            ],
+            &[2, 4],
+        );
+        let edge_vector =
+            offset_contiguous_tensor(&[0x8000_0000, 0x0000_0000, 0xff80_0000, 0x7f82_abcd], &[4]);
+        assert_ne!(edge_matrix.storage_offset(), 0);
+        assert_ne!(edge_vector.storage_offset(), 0);
+        assert_mse_sum_rank_two_trailing_vector_fast_path_matches(
+            "target broadcast signed-zero nan inf",
+            &edge_matrix,
+            &edge_vector,
+        );
+        assert_mse_sum_rank_two_trailing_vector_fast_path_matches(
+            "input broadcast signed-zero nan inf",
+            &edge_vector,
+            &edge_matrix,
+        );
+
+        let empty_matrix = Tensor::zeros([0, 4]).unwrap();
+        let empty_vector = Tensor::from_vec(vec![1.0, -2.0, 3.5, -4.5], [4]).unwrap();
+        assert_mse_sum_rank_two_trailing_vector_fast_path_matches(
+            "empty leading dimension target broadcast",
+            &empty_matrix,
+            &empty_vector,
+        );
+        assert_mse_sum_rank_two_trailing_vector_fast_path_matches(
+            "empty leading dimension input broadcast",
+            &empty_vector,
+            &empty_matrix,
+        );
+    }
+
+    #[test]
+    fn squared_difference_sum_rank_two_trailing_vector_fast_path_records_no_grad_only() {
+        let input = Tensor::from_vec((0_u16..6).map(f32::from).collect(), [2, 3]).unwrap();
+        let target = Tensor::from_vec(vec![0.5, -1.5, 2.0], [3]).unwrap();
+        let tracked_input = input.clone().with_requires_grad(true);
+        assert!(
+            tracked_input
+                .squared_difference_sum_rank_two_trailing_vector_contiguous(&target)
+                .is_none()
+        );
+
+        let no_grad_output = {
+            let _guard = crate::no_grad();
+            tracked_input
+                .squared_difference_sum_rank_two_trailing_vector_contiguous(&target)
+                .expect("no_grad operands do not record a new graph")
+        };
+        let expected = {
+            let _guard = crate::no_grad();
+            tracked_input.squared_difference(&target).unwrap().sum()
+        };
+        assert_eq!(
+            no_grad_output.item().unwrap().to_bits(),
+            expected.item().unwrap().to_bits()
+        );
+        assert!(!no_grad_output.requires_grad());
+        assert!(no_grad_output.is_leaf());
+    }
+
+    #[test]
+    fn squared_difference_sum_rank_two_trailing_vector_fast_path_rejects_other_layouts() {
+        let matrix = Tensor::from_vec((0_u16..6).map(f32::from).collect(), [2, 3]).unwrap();
+        let same_shape = Tensor::from_vec((6_u16..12).map(f32::from).collect(), [2, 3]).unwrap();
+        let vector = Tensor::from_vec(vec![1.0, -2.0, 3.5], [3]).unwrap();
+        let singleton_vector = Tensor::from_vec(vec![2.0], [1]).unwrap();
+        let scalar = Tensor::from_vec(vec![2.0], []).unwrap();
+        let column = Tensor::from_vec(vec![1.0, -1.0], [2, 1]).unwrap();
+        let transposed = Tensor::from_vec((0_u16..6).map(f32::from).collect(), [3, 2])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let channels_last = Tensor::from_vec((0_u16..24).map(f32::from).collect(), [2, 3, 2, 2])
+            .unwrap()
+            .try_contiguous(MemoryFormat::ChannelsLast)
+            .unwrap();
+
+        assert!(
+            matrix
+                .squared_difference_sum_rank_two_trailing_vector_contiguous(&same_shape)
+                .is_none()
+        );
+        assert!(
+            matrix
+                .squared_difference_sum_rank_two_trailing_vector_contiguous(&singleton_vector)
+                .is_none()
+        );
+        assert!(
+            matrix
+                .squared_difference_sum_rank_two_trailing_vector_contiguous(&scalar)
+                .is_none()
+        );
+        assert!(
+            matrix
+                .squared_difference_sum_rank_two_trailing_vector_contiguous(&column)
+                .is_none()
+        );
+        assert!(
+            transposed
+                .squared_difference_sum_rank_two_trailing_vector_contiguous(&vector)
+                .is_none()
+        );
+        assert!(
+            channels_last
+                .squared_difference_sum_rank_two_trailing_vector_contiguous(&vector)
+                .is_none()
+        );
     }
 
     #[test]
