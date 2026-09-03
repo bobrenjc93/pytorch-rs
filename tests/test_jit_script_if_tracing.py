@@ -418,7 +418,7 @@ class JitScriptIfTracingTests(unittest.TestCase):
         for name in ("script", "trace", "trace_module"):
             with self.subTest(trace_name=name):
                 self.assertFalse(hasattr(torch.jit._trace, name))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
 
     def test_importing_the_package_does_not_import_pytorch(self):
         script = r"""

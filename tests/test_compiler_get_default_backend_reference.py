@@ -290,7 +290,7 @@ class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
         self.assertTrue(callable(torch.compiler.set_default_backend))
         self.assertTrue(callable(reference_torch.compile))
         self.assertTrue(callable(reference_torch.compiler.compile))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         self.assertFalse(hasattr(torch.compiler, "compile"))
 
 

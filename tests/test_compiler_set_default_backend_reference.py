@@ -346,7 +346,7 @@ class CompilerSetDefaultBackendReferenceTests(unittest.TestCase):
     def test_compilation_and_backend_registration_remain_unsupported(self):
         self.assertTrue(callable(reference_torch.compile))
         self.assertTrue(callable(reference_torch.compiler.compile))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         self.assertFalse(hasattr(torch.compiler, "compile"))
         self.assertTrue(callable(torch.compiler.register_backend))
 

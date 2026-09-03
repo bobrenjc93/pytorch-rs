@@ -358,7 +358,7 @@ class JitExportReferenceTests(unittest.TestCase):
         self.assertIs(torch.jit.is_scripting(), False)
 
         self.assertTrue(hasattr(reference_torch, "compile"))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         self.assertTrue(hasattr(reference_torch, "export"))
         self.assertFalse(hasattr(torch, "export"))
 

@@ -222,7 +222,7 @@ print(json.dumps({
                 "cuda_count": 0,
                 "sdpa_execution": False,
                 "nn_attention": False,
-                "torch_compile": False,
+                "torch_compile": True,
             },
         )
 
@@ -580,7 +580,7 @@ print(json.dumps({
                 hasattr(torch.nn.functional, "scaled_dot_product_attention")
             )
             self.assertFalse(hasattr(torch.nn, "attention"))
-            self.assertFalse(hasattr(torch, "compile"))
+            self.assertTrue(callable(torch.compile))
             self.assertIs(torch.cuda.is_available(), False)
             self.assertEqual(torch.cuda.device_count(), 0)
             with self.assertRaisesRegex(

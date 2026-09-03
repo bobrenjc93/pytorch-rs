@@ -489,7 +489,7 @@ class JitIgnoreTests(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch.jit, name))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
 
         value = {"items": [1, 2]}
         self.assertIs(torch.jit.annotate(list[int], value), value)
@@ -530,7 +530,7 @@ assert bare("value") == "value"
 assert factory(2) == 3
 assert not hasattr(torch.jit, "script")
 assert not hasattr(torch.jit, "trace")
-assert not hasattr(torch, "compile")
+assert callable(torch.compile)
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(

@@ -119,6 +119,7 @@ SUPPORTED_SURFACE_NAMESPACE_SUMMARIES = (
         (
             "`torch.tensor`",
             "`torch.sum`",
+            "`torch.compile`",
             "`torch.autograd.backward`",
             "[Creation](#creation)",
             "[Backend and compiler metadata](#backend-and-compiler-metadata)",
@@ -312,6 +313,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
     (
         "Integrate eager compiler, JIT, and distributed probes",
         (
+            "`torch.compile`",
             "`torch.compiler.disable`",
             "`torch.compiler.register_backend`",
             "`torch.jit.annotate`",
@@ -329,7 +331,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
             "`torch.distributed.get_node_local_rank`",
         ),
         (
-            "Actual `torch.compile`",
+            "`torch.compile` graph capture/execution",
             "installed-PyTorch forwarding",
             "TorchScript compilation",
             "process-group creation",

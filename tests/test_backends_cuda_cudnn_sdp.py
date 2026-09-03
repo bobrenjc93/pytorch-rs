@@ -198,7 +198,7 @@ print(json.dumps({
                 "can_use_cudnn_attention": False,
                 "sdp_kernel": True,
                 "execution": False,
-                "compile": False,
+                "compile": True,
                 "reference_torch_loaded": False,
                 "blocked_loaded": [],
             },

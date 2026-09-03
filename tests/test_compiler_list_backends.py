@@ -232,7 +232,7 @@ class CompilerListBackendsTests(unittest.TestCase):
                 self.assertEqual(raised.exception.args, (message,))
 
     def test_compile_registration_and_execution_paths_remain_unsupported(self):
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch, "list_backends"))
         self.assertFalse(hasattr(torch.compiler, "compile"))

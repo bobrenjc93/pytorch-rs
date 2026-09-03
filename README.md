@@ -53,11 +53,12 @@ flags such as `enable_flash_sdp(...)`, `enable_cudnn_sdp(...)`, and the
 attention-kernel dispatch, or CUDA `torch.compile` execution. Device selection,
 mutable default-device routing, streams, events, synchronization, allocator APIs, runtime initialization,
 additional tensor dtypes, and the full module, optimizer, model-serialization,
-compiler execution, and distributed stacks remain unsupported. The
-`torch.compiler` namespace includes eager metadata helpers and a pure-Python
-backend registry through `register_backend` and `list_backends`, but it does not
-provide `torch.compile`, graph capture, graph execution, eager fallback,
-installed-PyTorch forwarding, backend invocation, or CUDA compilation.
+compiler execution, and distributed stacks remain unsupported. Top-level
+`torch.compile` is present as a PyTorch 2.13-shaped argument-binding shell with
+`disable=True` pass-through and backend default/name resolution through the
+`torch.compiler` registry, but graph capture, graph execution, eager fallback,
+installed-PyTorch forwarding, backend invocation, and CUDA compilation remain
+unsupported.
 
 See the [exhaustive supported surface](docs/supported-surface.md) for exact API
 and limitation details, [FEATURES.md](FEATURES.md) for the weighted coverage

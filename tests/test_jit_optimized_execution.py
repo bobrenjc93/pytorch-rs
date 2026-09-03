@@ -507,7 +507,7 @@ class JitOptimizedExecutionTests(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch._C, name))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
 
     def test_supported_scope_is_documented(self):
         supported_surface = (ROOT / "docs" / "supported-surface.md").read_text(

@@ -581,7 +581,7 @@ assert not any(
             compiler.set_enable_guard_collectives(original_guard_collectives)
 
     def test_compile_graph_capture_and_execution_paths_remain_unsupported(self):
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch, "list_backends"))
         self.assertFalse(hasattr(torch, "register_backend"))

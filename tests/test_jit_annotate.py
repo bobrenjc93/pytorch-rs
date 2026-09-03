@@ -300,7 +300,7 @@ class JitAnnotateTests(unittest.TestCase):
         for name in unsupported_jit_names:
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch.jit, name))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
 
     def test_importing_the_package_does_not_import_pytorch(self):
         script = r"""
@@ -319,7 +319,7 @@ value = {"items": [1, 2]}
 assert torch.jit.annotate(list[int], value) is value
 assert not hasattr(torch.jit, "script")
 assert not hasattr(torch.jit, "trace")
-assert not hasattr(torch, "compile")
+assert callable(torch.compile)
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(

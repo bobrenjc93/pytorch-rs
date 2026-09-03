@@ -283,7 +283,7 @@ class CompilerListBackendsReferenceTests(unittest.TestCase):
     def test_compile_registration_and_execution_paths_remain_unsupported(self):
         self.assertTrue(callable(reference_torch.compile))
         self.assertTrue(callable(reference_torch.compiler.compile))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch, "list_backends"))
         self.assertFalse(hasattr(torch.compiler, "compile"))

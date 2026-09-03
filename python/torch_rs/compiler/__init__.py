@@ -8,6 +8,8 @@ from .. import _compiler_state as _state
 
 _torch = sys.modules[__name__.partition(".")[0]]
 _MISSING_PARAMETER_TYPES = ()
+_MISSING_BACKEND = object()
+_BUILTIN_COMPILE_BACKENDS = frozenset(("eager", "inductor"))
 
 
 __all__ = [
@@ -112,6 +114,49 @@ def register_backend(
     _state.registered_backends.setdefault(backend_name, None)
     _state.registered_backend_fns[backend_name] = compiler_fn
     return compiler_fn
+
+
+def _resolve_compile_backend(backend):
+    if backend is None:
+        backend = get_default_backend()
+
+    if isinstance(backend, str):
+        registered_backend = _state.registered_backend_fns.get(
+            backend,
+            _MISSING_BACKEND,
+        )
+        if registered_backend is not _MISSING_BACKEND:
+            return registered_backend
+        if (
+            backend in _state.registered_backends
+            or backend in _BUILTIN_COMPILE_BACKENDS
+        ):
+            return backend
+
+        available_backends = sorted(
+            {
+                *_BUILTIN_COMPILE_BACKENDS,
+                *(
+                    name
+                    for name in _state.registered_backends
+                    if isinstance(name, str)
+                ),
+            }
+        )
+        if available_backends:
+            available = ", ".join(repr(name) for name in available_backends)
+            raise RuntimeError(
+                "Invalid backend: "
+                f"{backend!r}. Available backend names are: {available}"
+            )
+        raise RuntimeError(
+            f"Invalid backend: {backend!r}. No backends are registered"
+        )
+
+    if callable(backend):
+        return backend
+
+    raise TypeError(f"backend must be a string or callable, got {type(backend)}")
 
 
 def _disable_function(fn, recursive, reason):

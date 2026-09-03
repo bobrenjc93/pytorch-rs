@@ -222,7 +222,7 @@ class CompilerIsExportingTests(unittest.TestCase):
                 self.assertEqual(raised.exception.args, (message,))
 
     def test_export_remains_unsupported(self):
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch, "is_exporting"))
 

@@ -311,7 +311,7 @@ class CompilerAssumeConstantResultReferenceTests(unittest.TestCase):
             )
 
         self.assertEqual(function(), (False, False, False))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch.compiler, "compile"))
         self.assertTrue(callable(reference_torch.compile))

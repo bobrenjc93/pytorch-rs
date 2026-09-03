@@ -222,7 +222,7 @@ class CompilerGetDefaultBackendTests(unittest.TestCase):
         self.assertIn("reset", torch.compiler.__all__)
         self.assertIn("set_default_backend", torch.compiler.__all__)
         self.assertFalse(hasattr(torch.compiler, "compile"))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
 
     def test_importing_and_calling_does_not_import_pytorch_or_a_registry(self):
         script = r'''

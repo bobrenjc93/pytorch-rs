@@ -393,7 +393,7 @@ class JitUnusedTests(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch.jit, name))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
 
         value = {"items": [1, 2]}
         self.assertIs(torch.jit.annotate(list[int], value), value)

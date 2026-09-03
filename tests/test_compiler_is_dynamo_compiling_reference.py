@@ -268,7 +268,7 @@ class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
     def test_compilation_remains_unsupported(self):
         self.assertTrue(callable(reference_torch.compile))
         self.assertTrue(hasattr(reference_torch, "export"))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch, "is_dynamo_compiling"))
 

@@ -274,7 +274,7 @@ class CompilerAssumeConstantResultTests(unittest.TestCase):
             )
 
         self.assertEqual(function(), (False, False, False))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch.compiler, "compile"))
         self.assertFalse(hasattr(torch.compiler, "allow_in_graph"))
