@@ -121,6 +121,44 @@ class CompileCorpusMetadataTests(unittest.TestCase):
 
 
 class CompileCorpusTraceTests(unittest.TestCase):
+    def assert_native_tensor_matches(self, actual, expected, *, case):
+        with self.subTest(case=case, metadata=True):
+            self.assertIsInstance(actual, torch.Tensor)
+            self.assertEqual(
+                tuple(actual.shape),
+                tuple(expected.shape),
+                msg=f"{case} shape mismatch",
+            )
+            self.assertEqual(
+                actual.stride(),
+                expected.stride(),
+                msg=f"{case} stride mismatch",
+            )
+            self.assertIs(
+                actual.dtype,
+                expected.dtype,
+                msg=f"{case} dtype mismatch",
+            )
+            self.assertEqual(
+                actual.device,
+                expected.device,
+                msg=f"{case} device mismatch",
+            )
+            self.assertEqual(
+                actual.requires_grad,
+                expected.requires_grad,
+                msg=f"{case} requires_grad mismatch",
+            )
+        with self.subTest(case=case, values=True):
+            self.assertEqual(
+                actual.tolist(),
+                expected.tolist(),
+                msg=(
+                    f"{case} value mismatch: expected {expected.tolist()!r}, "
+                    f"got {actual.tolist()!r}"
+                ),
+            )
+
     def test_unary_abs_neg_records_private_immutable_graph(self):
         graph = _compile_trace.trace_one_input_compile_graph(
             cpu_float32_unary_abs_neg,
@@ -160,6 +198,44 @@ class CompileCorpusTraceTests(unittest.TestCase):
             graph.output = "changed"
         with self.assertRaises(AttributeError):
             graph.operations.append(abs_op)
+
+    def test_unary_abs_neg_executes_private_native_graph(self):
+        case = COMPILE_CORPUS[0]
+        graph = _compile_trace.trace_one_input_compile_graph(
+            case.program,
+            case.make_inputs,
+            name=case.name,
+        )
+        inputs = case.make_inputs(torch)
+        expected = case.program(*inputs)
+
+        self.assert_native_tensor_matches(
+            graph.forward(*inputs),
+            expected,
+            case=case.name,
+        )
+        self.assert_native_tensor_matches(
+            _compile_trace.execute_compile_trace_graph(graph, *inputs),
+            expected,
+            case=f"{case.name} function executor",
+        )
+
+    def test_private_executor_rejects_runtime_metadata_mismatch_clearly(self):
+        graph = _compile_trace.trace_one_input_compile_graph(
+            cpu_float32_unary_abs_neg,
+            cpu_float32_unary_inputs,
+            name="cpu_float32_unary_abs_neg",
+        )
+        mismatched = torch.tensor([1.0], dtype=torch.float32)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            (
+                "metadata mismatch for 'arg0': "
+                r"shape expected \(2, 3\), got \(1,\)"
+            ),
+        ):
+            graph.forward(mismatched)
 
     def test_proxy_unsupported_operations_fail_clearly(self):
         recorder = _compile_trace.CompileTraceRecorder()
@@ -252,6 +328,18 @@ graph = _compile_trace.trace_one_input_compile_graph(
 )
 assert graph.output == "abs_1"
 assert [operation.target for operation in graph.operations] == ["neg", "abs"]
+native_input = make_inputs(torch)[0]
+expected = program(native_input)
+for actual in (
+    graph.forward(native_input),
+    _compile_trace.execute_compile_trace_graph(graph, native_input),
+):
+    assert actual.tolist() == expected.tolist()
+    assert actual.shape == expected.shape
+    assert actual.stride() == expected.stride()
+    assert actual.dtype is expected.dtype
+    assert actual.device == expected.device
+    assert actual.requires_grad is expected.requires_grad
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 

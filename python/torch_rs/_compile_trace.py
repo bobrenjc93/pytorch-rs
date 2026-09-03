@@ -7,6 +7,8 @@ import operator as _operator
 from collections.abc import Sequence as _Sequence
 from dataclasses import dataclass
 
+from . import torch_rs as _native
+
 
 class CompileTraceUnsupportedError(NotImplementedError):
     """Raised when the package-local trace prototype reaches an unsupported op."""
@@ -59,6 +61,9 @@ class CompileTraceGraph:
     operations: tuple[CompileTraceOperation, ...]
     output: str
     output_metadata: CompileTraceTensorMetadata
+
+    def forward(self, input):
+        return execute_compile_trace_graph(self, input)
 
 
 _SUPPORTED_UNARY_METHODS = (
@@ -160,6 +165,131 @@ def _metadata_from_data(data, *, dtype, device, requires_grad):
         device=_normalize_device(device),
         requires_grad=_normalize_requires_grad(requires_grad),
     )
+
+
+def _type_name(value):
+    value_type = _builtins.type(value)
+    module = _builtins.object.__getattribute__(value_type, "__module__")
+    name = _builtins.object.__getattribute__(value_type, "__qualname__")
+    if module == "builtins":
+        return name
+    return f"{module}.{name}"
+
+
+def _require_native_tensor(value, value_name):
+    if not _builtins.isinstance(value, _native.Tensor):
+        raise TypeError(
+            "torch.compile trace execution expected native torch_rs Tensor "
+            f"for {value_name!r}, got {_type_name(value)}"
+        )
+
+
+def _metadata_from_native_tensor(tensor):
+    return CompileTraceTensorMetadata(
+        shape=_normalize_shape(tensor.shape),
+        stride=_normalize_shape(tensor.stride()),
+        dtype=_normalize_dtype(tensor.dtype),
+        device=_normalize_device(tensor.device),
+        requires_grad=_normalize_requires_grad(tensor.requires_grad),
+    )
+
+
+def _require_matching_metadata(actual, expected, *, value_name):
+    if actual == expected:
+        return
+
+    mismatches = []
+    for field in ("shape", "stride", "dtype", "device", "requires_grad"):
+        actual_value = getattr(actual, field)
+        expected_value = getattr(expected, field)
+        if actual_value != expected_value:
+            mismatches.append(
+                f"{field} expected {expected_value!r}, got {actual_value!r}"
+            )
+    mismatch_details = "; ".join(mismatches)
+    raise ValueError(
+        "torch.compile trace execution metadata mismatch for "
+        f"{value_name!r}: {mismatch_details}"
+    )
+
+
+def _execute_operation(operation, values):
+    if operation.op != "call_method":
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace execution only supports recorded Tensor.neg "
+            f"and Tensor.abs call_method operations, got {operation.op!r}"
+        )
+    if operation.target not in _SUPPORTED_UNARY_TARGETS:
+        _unsupported_operation(f"Tensor.{operation.target}")
+    if len(operation.inputs) != 1:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace execution only supports unary operations, "
+            f"got {len(operation.inputs)} inputs for {operation.name!r}"
+        )
+
+    (input_name,) = operation.inputs
+    try:
+        input = values[input_name]
+    except KeyError:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace execution operation "
+            f"{operation.name!r} references unknown value {input_name!r}"
+        ) from None
+
+    if operation.target == "neg":
+        return _native.Tensor.neg(input)
+    if operation.target == "abs":
+        return _native.Tensor.abs(input)
+    _unsupported_operation(f"Tensor.{operation.target}")
+
+
+def execute_compile_trace_graph(graph, input):
+    if not _builtins.isinstance(graph, CompileTraceGraph):
+        raise TypeError(
+            "torch.compile trace execution expected CompileTraceGraph, "
+            f"got {_type_name(graph)}"
+        )
+    if len(graph.inputs) != 1:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace execution currently supports exactly one input"
+        )
+
+    graph_input = graph.inputs[0]
+    _require_native_tensor(input, graph_input.name)
+    _require_matching_metadata(
+        _metadata_from_native_tensor(input),
+        graph_input.metadata,
+        value_name=graph_input.name,
+    )
+
+    values = {graph_input.name: input}
+    for operation in graph.operations:
+        if operation.name in values:
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace execution encountered duplicate value "
+                f"name {operation.name!r}"
+            )
+        output = _execute_operation(operation, values)
+        _require_matching_metadata(
+            _metadata_from_native_tensor(output),
+            operation.metadata,
+            value_name=operation.name,
+        )
+        values[operation.name] = output
+
+    try:
+        output = values[graph.output]
+    except KeyError:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace execution graph output references unknown "
+            f"value {graph.output!r}"
+        ) from None
+    _require_matching_metadata(
+        _metadata_from_native_tensor(output),
+        graph.output_metadata,
+        value_name=graph.output,
+    )
+    return output
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -455,6 +585,7 @@ __all__ = [
     "CompileTraceTensorProxy",
     "CompileTraceTorchModule",
     "CompileTraceUnsupportedError",
+    "execute_compile_trace_graph",
     "float",
     "float32",
     "trace_one_input_compile_graph",
