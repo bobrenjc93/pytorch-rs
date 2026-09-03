@@ -108,9 +108,10 @@ exporting; do not create replacement PRs for an update.
 ## Documentation Ownership
 
 User-visible API changes should update the durable docs that describe that API:
-`README.md` for entry points, `FEATURES.md` for weighted coverage,
-`docs/supported-surface.md` for the exhaustive contract, `ARCHITECTURE.md` for
-source maps, and `BENCHMARKING.md` for performance policy.
+`README.md` for entry points, [docs/README.md](docs/README.md) for navigation,
+`FEATURES.md` for weighted coverage, `docs/supported-surface.md` for the
+exhaustive contract, `ARCHITECTURE.md` for source maps, and `BENCHMARKING.md`
+for performance policy.
 
 Burner owns the managed README progress section and the generated evaluation
 artifacts under `docs/burner-evaluation-history.json` and
