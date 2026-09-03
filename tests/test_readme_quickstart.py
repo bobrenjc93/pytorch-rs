@@ -472,6 +472,74 @@ class ReadmeQuickstartTests(unittest.TestCase):
         self.assertIn("## Contributor Preflight", contributing)
         self.assertLess(len(contributing.splitlines()), 120)
 
+    def test_readme_scope_table_preserves_supported_and_unsupported_contract(self):
+        readme = README.read_text(encoding="utf-8")
+        scope_match = re.search(
+            r"^## Scope\n(?P<section>.*?)^## Evaluation$",
+            readme,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(scope_match, "README scope section is missing")
+
+        scope = scope_match.group("section")
+        self.assertIn("| Surface | Supported now | Unsupported boundary |", scope)
+        self.assertIn("| --- | --- | --- |", scope)
+        self.assertEqual(scope.count("| Eager tensors |"), 1)
+        self.assertEqual(scope.count("| CPU-build device and backend probes |"), 1)
+        self.assertEqual(scope.count("| CUDA backend preferences |"), 1)
+        self.assertEqual(scope.count("| `torch.compile` |"), 1)
+        self.assertEqual(scope.count("| Higher-level stacks |"), 1)
+
+        for supported_claim in (
+            "Native CPU `float32` tensors",
+            "core construction, layout/view operations",
+            "selected math and neural-network functions",
+            "limited first-order autograd",
+            "`torch.cuda.device_count()` is `0`",
+            "`torch.cuda.is_available()` is `False`",
+            "`torch.cuda.is_initialized()` is `False`",
+            "`torch.set_default_device(...)` is a CPU-equivalent no-op",
+            "`None` or `\"cpu\"`",
+            "`torch.backends.cuda` includes preference flags",
+            "`enable_flash_sdp(...)`",
+            "`enable_cudnn_sdp(...)`",
+            "`sdp_kernel(...)` context manager/decorator",
+            "PyTorch 2.13-shaped argument-binding shell",
+            "`disable=True` pass-through",
+            "`torch.compiler` registry",
+        ):
+            with self.subTest(supported_claim=supported_claim):
+                self.assertIn(supported_claim, scope)
+
+        for unsupported_boundary in (
+            "Additional tensor dtypes",
+            "non-CPU tensor execution",
+            "Device selection",
+            "mutable default-device routing",
+            "CUDA tensors",
+            "streams",
+            "events",
+            "synchronization",
+            "allocator APIs",
+            "runtime initialization",
+            "`torch.nn.functional.scaled_dot_product_attention`",
+            "actual attention-kernel dispatch",
+            "CUDA `torch.compile` execution",
+            "Graph capture",
+            "graph execution",
+            "eager fallback",
+            "installed-PyTorch forwarding",
+            "backend invocation",
+            "CUDA compilation",
+            "full module",
+            "optimizer",
+            "model-serialization",
+            "compiler execution",
+            "distributed stacks",
+        ):
+            with self.subTest(unsupported_boundary=unsupported_boundary):
+                self.assertIn(unsupported_boundary, scope)
+
     def test_readme_routes_to_supported_surface_anchors(self):
         readme = README.read_text(encoding="utf-8")
         route = "docs/supported-surface.md"
