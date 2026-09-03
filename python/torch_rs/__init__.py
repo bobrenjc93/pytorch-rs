@@ -342,7 +342,8 @@ def _supports_native_eager_compile(
     shapes_spec,
 ):
     return (
-        resolved_backend == "eager"
+        _builtins.type(resolved_backend) is _builtins.str
+        and resolved_backend == "eager"
         and fullgraph is True
         and dynamic is None
         and mode is None

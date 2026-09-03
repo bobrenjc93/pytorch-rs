@@ -1062,6 +1062,11 @@ def _validate_bytecode_lowering_program(program):
         raise CompileTraceUnsupportedError(
             "torch.compile trace bytecode lowering does not support closures"
         )
+    if getattr(code, "co_exceptiontable", b""):
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace bytecode lowering does not support exception "
+            "handling"
+        )
     return code
 
 

@@ -1181,6 +1181,22 @@ assert not any(name == "torch" or name.startswith("torch.") for name in sys.modu
 
         self.assertEqual(mode_calls, [])
 
+    def test_public_eager_compile_rejects_exception_handling(self):
+        def program(x):
+            try:
+                return x.abs()
+            except Exception:
+                return x.neg()
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([-2.0], dtype=torch.float32)
+
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            "does not support exception handling",
+        ):
+            compiled(input)
+
     def test_public_eager_compile_rejects_non_arithmetic_boundaries(self):
         def two_inputs(x, y):
             return x + y

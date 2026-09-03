@@ -215,6 +215,32 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertEqual(model_calls, [])
         self.assertEqual(backend_calls, [])
 
+    def test_callable_backend_cannot_spoof_the_native_eager_path(self):
+        model_calls = []
+        backend_calls = []
+
+        class EqualToEagerBackend:
+            def __eq__(self, other):
+                return other == "eager"
+
+            def __call__(self, graph_module, example_inputs):
+                backend_calls.append((graph_module, example_inputs))
+                return graph_module.forward
+
+        def model(value):
+            model_calls.append(value)
+            return value + value
+
+        backend = EqualToEagerBackend()
+        compiled = torch.compile(model, backend=backend, fullgraph=True)
+
+        self.assertIs(compiled._torch_rs_compile_backend, backend)
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled(torch.tensor([1.0], dtype=torch.float32))
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(model_calls, [])
+        self.assertEqual(backend_calls, [])
+
     def test_eager_fullgraph_executes_supported_tensor_programs_natively(self):
         def program(x):
             y = x.neg()
