@@ -289,7 +289,9 @@ print(json.dumps({
                 ):
                     torch.tensor([1.0], device=specification)
 
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+        self.assertTrue(hasattr(torch.Tensor, "to"))
+        with self.assertRaises(RuntimeError):
+            torch.tensor([1.0]).to("xpu")
 
 
 if __name__ == "__main__":

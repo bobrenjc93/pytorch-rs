@@ -242,7 +242,12 @@ class CudaIsBuiltTests(unittest.TestCase):
         self.assertIs(sys.modules["torch_rs.cuda"], torch.cuda)
         self.assertIs(importlib.import_module("torch_rs.cuda"), torch.cuda)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+        self.assertTrue(hasattr(torch.Tensor, "to"))
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^to\(\): device 'cuda:0' is not supported; only 'cpu' is implemented$",
+        ):
+            torch.tensor([1.0]).to("cuda:0")
         with self.assertRaisesRegex(
             RuntimeError,
             r"^tensor\(\): device 'cuda:0' is not supported; only 'cpu' is implemented$",

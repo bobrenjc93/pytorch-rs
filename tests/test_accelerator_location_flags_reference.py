@@ -303,11 +303,14 @@ print(json.dumps(observations))
         )
 
     def test_ipu_mtia_and_maia_backends_remain_intentionally_unsupported(self):
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+        tensor = torch.tensor([1.0])
+        self.assertTrue(hasattr(torch.Tensor, "to"))
 
         for backend in ("ipu", "mtia", "maia"):
             self.assertFalse(hasattr(torch, backend))
             self.assertFalse(hasattr(torch.Tensor, backend))
+            with self.assertRaises(RuntimeError):
+                tensor.to(backend)
 
             for specification in (backend, f"{backend}:0"):
                 reference_device = reference_torch.device(specification)

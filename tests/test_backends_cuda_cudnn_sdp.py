@@ -550,7 +550,12 @@ print(json.dumps({
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+        self.assertTrue(hasattr(torch.Tensor, "to"))
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^to\(\): device 'cuda:0' is not supported; only 'cpu' is implemented$",
+        ):
+            torch.tensor([1.0]).to("cuda:0")
         with self.assertRaisesRegex(
             RuntimeError,
             r"^tensor\(\): device 'cuda:0' is not supported; only 'cpu' is implemented$",

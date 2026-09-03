@@ -154,7 +154,9 @@ class TensorIsMpsReferenceTests(unittest.TestCase):
                 ):
                     torch.tensor([1.0], device=specification)
 
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+        self.assertTrue(hasattr(torch.Tensor, "to"))
+        with self.assertRaises(RuntimeError):
+            torch.tensor([1.0]).to("mps")
 
     def error(self, action):
         try:

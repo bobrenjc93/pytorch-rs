@@ -260,7 +260,9 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+        self.assertTrue(hasattr(torch.Tensor, "to"))
+        with self.assertRaises(RuntimeError):
+            torch.tensor([2.0, 3.0]).to("cuda:0")
         with self.assertRaises(RuntimeError):
             torch.tensor([2.0, 3.0], device="cuda:0")
 

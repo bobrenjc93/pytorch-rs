@@ -312,7 +312,9 @@ print(json.dumps({
                         else:
                             function((1,), device=specification)
 
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+        self.assertTrue(hasattr(torch.Tensor, "to"))
+        with self.assertRaises(RuntimeError):
+            torch.tensor([1.0]).to("xla")
 
 
 if __name__ == "__main__":

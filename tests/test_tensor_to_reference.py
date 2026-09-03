@@ -228,6 +228,65 @@ class TensorToReferenceTests(unittest.TestCase):
             self.autograd_contract(reference_torch),
         )
 
+    def override_dispatch_contract(self, module, form):
+        marker = object()
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        tensor = module.tensor([1.0])
+        override = Override()
+        calls = {
+            "positional": lambda: tensor.to(override),
+            "tensor": lambda: tensor.to(tensor=override),
+            "dtype": lambda: tensor.to(dtype=override),
+            "device": lambda: tensor.to(device=override),
+            "memory_format": lambda: tensor.to(memory_format=override),
+            "copy": lambda: tensor.to(copy=override),
+            "non_blocking": lambda: tensor.to(non_blocking=override),
+        }
+        result = calls[form]()
+        self.assertIs(result, marker)
+        self.assertEqual(len(Override.calls), 1)
+        func, types, args, kwargs = Override.calls[0]
+
+        def describe(value):
+            if value is tensor:
+                return "tensor"
+            if value is override:
+                return "override"
+            return type(value).__name__
+
+        return {
+            "func_qualname": func.__qualname__,
+            "types": tuple(dispatch_type.__name__ for dispatch_type in types),
+            "args": tuple(describe(value) for value in args),
+            "kwargs": None
+            if kwargs is None
+            else {key: describe(value) for key, value in kwargs.items()},
+        }
+
+    def test_torch_function_override_arguments_match_pytorch_2_13(self):
+        for form in (
+            "positional",
+            "tensor",
+            "dtype",
+            "device",
+            "memory_format",
+            "copy",
+            "non_blocking",
+        ):
+            with self.subTest(form=form):
+                self.assertEqual(
+                    self.override_dispatch_contract(torch, form),
+                    self.override_dispatch_contract(reference_torch, form),
+                )
+
     def descriptor_contract(self, module):
         tensor = module.tensor([1.0])
         descriptor = inspect.getattr_static(module.Tensor, "to")
