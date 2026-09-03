@@ -15879,9 +15879,9 @@ fn bind_mm_arguments<'py>(
     Ok(([input, mat2], out, keyword_error))
 }
 
-fn parse_top_level_mm_out<'py>(
-    out: Option<ParsedCallArgument<'py>>,
-) -> PyResult<Option<BoundTensorOrTorchFunction<'py>>> {
+fn parse_top_level_mm_out(
+    out: Option<ParsedCallArgument<'_>>,
+) -> PyResult<Option<BoundTensorOrTorchFunction<'_>>> {
     let Some(out) = out else {
         return Ok(None);
     };
