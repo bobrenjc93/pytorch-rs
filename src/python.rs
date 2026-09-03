@@ -19279,7 +19279,7 @@ fn buffer_item_as_f32(format: u8, bytes: &[u8]) -> Option<f32> {
     Some(match (format, bytes.len()) {
         (b'b', 1) => f32::from(i8::from_ne_bytes(bytes.try_into().ok()?)),
         (b'B', 1) => f32::from(u8::from_ne_bytes(bytes.try_into().ok()?)),
-        (b'?', 1) => f32::from(bytes[0] & 1),
+        (b'?', 1) => f32::from(u8::from(bytes[0] != 0)),
         (b'h', 2) => f32::from(i16::from_ne_bytes(bytes.try_into().ok()?)),
         (b'H', 2) => f32::from(u16::from_ne_bytes(bytes.try_into().ok()?)),
         (b'i' | b'l' | b'n', 4) => i32::from_ne_bytes(bytes.try_into().ok()?) as f32,
@@ -19522,7 +19522,9 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
 #[cfg(test)]
 mod tests {
     use pyo3::exceptions::PyTypeError;
-    use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyMemoryView, PyModule, PySlice};
+    use pyo3::types::{
+        PyAnyMethods, PyBytes, PyDict, PyDictMethods, PyMemoryView, PyModule, PySlice,
+    };
 
     use super::{
         PyTensor, PythonAllocationFallback, flatten_buffer, half_to_f32, libcxx_string_hash,
@@ -19563,6 +19565,20 @@ mod tests {
 
             array.set_item(3, 99).unwrap();
             assert_eq!(values, [4.0, 3.0, 2.0, 1.0]);
+        });
+    }
+
+    #[test]
+    fn bool_buffer_treats_any_nonzero_byte_as_true() {
+        pyo3::Python::initialize();
+        pyo3::Python::attach(|py| {
+            let bytes = PyBytes::new(py, &[0_u8, 1, 2, 3, 254, 255]);
+            let view = PyMemoryView::from(bytes.as_any()).unwrap();
+            let bool_view = view.call_method1("cast", ("?",)).unwrap();
+
+            let (values, shape) = flatten_buffer(&bool_view, true).unwrap().unwrap();
+            assert_eq!(shape, [6]);
+            assert_eq!(values, [0.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
         });
     }
 
