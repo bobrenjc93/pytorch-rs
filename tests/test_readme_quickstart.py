@@ -223,7 +223,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
             "`torch.sum`",
         ),
         (
-            "scalar-left and scalar-only `torch.add` calls",
+            "scalar-only `torch.add` calls",
             "in-place variants",
             "dimension reductions",
         ),
