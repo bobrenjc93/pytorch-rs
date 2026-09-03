@@ -208,6 +208,43 @@ class FunctionalMseLossTests(unittest.TestCase):
             ("noncontiguous", transposed_input, transposed_target, False),
         )
 
+    def rank_two_vector_sum_cases(self):
+        matrix = torch.tensor(
+            np.linspace(-3.0, 4.0, 15, dtype=np.float32).reshape(3, 5).tolist()
+        )
+        vector = torch.tensor([1.0, -2.0, 3.5, -4.5, 0.25])
+        empty_matrix = torch.zeros((0, 5))
+        edge_matrix_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ],
+            dtype=np.uint32,
+        )
+        edge_vector_bits = np.asarray(
+            [0x8000_0000, 0x0000_0000, 0xFF80_0000, 0x7F82_ABCD],
+            dtype=np.uint32,
+        )
+        edge_matrix = torch.tensor(memoryview(edge_matrix_bits.view(np.float32))).view(
+            2, 4
+        )
+        edge_vector = torch.tensor(memoryview(edge_vector_bits.view(np.float32)))
+
+        return (
+            ("target broadcast", matrix, vector),
+            ("input broadcast", vector, matrix),
+            ("empty leading target broadcast", empty_matrix, vector),
+            ("empty leading input broadcast", vector, empty_matrix),
+            ("signed-zero-nan-inf target broadcast", edge_matrix, edge_vector),
+            ("signed-zero-nan-inf input broadcast", edge_vector, edge_matrix),
+        )
+
     def same_stride_noncontiguous_cases(self):
         edge_input_bits = np.asarray(
             [
@@ -598,6 +635,89 @@ class FunctionalMseLossTests(unittest.TestCase):
             RuntimeError, "backward through the graph a second time"
         ):
             loss.backward()
+
+    def test_rank_two_vector_sum_fast_path_cases_match_composition_warning_and_nonmutation(
+        self,
+    ):
+        for case, input, target in self.rank_two_vector_sum_cases():
+            expected = (input - target).square().sum()
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                actual = functional.mse_loss(input, target, reduction="sum")
+
+            self.assert_matches_composition(actual, expected, case=case)
+            with self.subTest(case=case, scalar_metadata=True):
+                self.assertEqual(actual.shape, ())
+                self.assertEqual(actual.stride(), ())
+                self.assertEqual(actual.storage_offset(), 0)
+                self.assertFalse(actual.requires_grad)
+                self.assertTrue(actual.is_leaf)
+            with self.subTest(case=case, warning=True):
+                self.assertEqual(len(caught), 1)
+                self.assertIs(caught[0].category, UserWarning)
+                self.assertEqual(str(caught[0].message), self.broadcast_warning(input, target))
+            with self.subTest(case=case, storage=True):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    repeated = functional.mse_loss(input, target, reduction="sum")
+                self.assertFalse(actual.is_set_to(repeated))
+                self.assertFalse(actual.is_set_to(input))
+                self.assertFalse(actual.is_set_to(target))
+                self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+            with self.subTest(case=case, nonmutation=True):
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1], input_state[-1]
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1], target_state[-1]
+                )
+
+    def test_rank_two_vector_sum_fast_path_matches_composition_inside_no_grad(self):
+        for input_requires_grad, target_requires_grad in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            for vector_on_left in (False, True):
+                matrix = torch.tensor(
+                    [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
+                    requires_grad=(
+                        input_requires_grad
+                        if not vector_on_left
+                        else target_requires_grad
+                    ),
+                )
+                vector = torch.tensor(
+                    [0.5, -1.5, 2.0],
+                    requires_grad=(
+                        target_requires_grad
+                        if not vector_on_left
+                        else input_requires_grad
+                    ),
+                )
+                input, target = (vector, matrix) if vector_on_left else (matrix, vector)
+                with self.subTest(
+                    input_requires_grad=input_requires_grad,
+                    target_requires_grad=target_requires_grad,
+                    vector_on_left=vector_on_left,
+                ):
+                    with warnings.catch_warnings(record=True) as caught, torch.no_grad():
+                        warnings.simplefilter("always")
+                        actual = functional.mse_loss(input, target, reduction="sum")
+                        expected = (input - target).square().sum()
+
+                    self.assert_matches_composition(actual, expected, case="no_grad sum")
+                    self.assertEqual(len(caught), 1)
+                    self.assertEqual(str(caught[0].message), self.broadcast_warning(input, target))
+                    self.assertFalse(actual.requires_grad)
+                    self.assertTrue(actual.is_leaf)
+                    self.assertIsNone(matrix.grad)
+                    self.assertIsNone(vector.grad)
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
     def test_high_rank_scalar_broadcast_warning_is_fallible(self):
