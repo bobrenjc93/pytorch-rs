@@ -294,6 +294,77 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ("noncontiguous", transposed_input, transposed_target, False),
         )
 
+    def make_rank_two_trailing_vector_sum_cases(self, module):
+        edge_matrix_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        edge_vector_bits = np.asarray(
+            [0x8000_0000, 0x0000_0000, 0xFF80_0000, 0x7F82_ABCD],
+            dtype=np.uint32,
+        )
+        signed_zero_matrix_bits = np.asarray(
+            [0x0000_0000, 0x8000_0000, 0x8000_0000, 0x0000_0000],
+            dtype=np.uint32,
+        )
+        signed_zero_vector_bits = np.asarray(
+            [0x8000_0000, 0x0000_0000],
+            dtype=np.uint32,
+        )
+        matrix = self.tensor(
+            module,
+            np.linspace(-6.0, 8.0, 12, dtype=np.float32).reshape(3, 4).tolist(),
+        )
+        vector = self.tensor(module, [1.0, -2.0, 3.5, -4.5])
+        edge_matrix = module.tensor(
+            memoryview(edge_matrix_bits.view(np.float32)),
+            dtype=module.float32,
+        ).view(2, 4)
+        edge_vector = module.tensor(
+            memoryview(edge_vector_bits.view(np.float32)),
+            dtype=module.float32,
+        )
+        signed_zero_matrix = module.tensor(
+            memoryview(signed_zero_matrix_bits.view(np.float32)),
+            dtype=module.float32,
+        ).view(2, 2)
+        signed_zero_vector = module.tensor(
+            memoryview(signed_zero_vector_bits.view(np.float32)),
+            dtype=module.float32,
+        )
+        empty_matrix = module.zeros((0, 4), dtype=module.float32)
+        empty_vector = self.tensor(module, [1.0, -2.0, 3.5, -4.5])
+
+        return (
+            ("target broadcast", matrix, vector, False),
+            ("input broadcast", vector, matrix, False),
+            ("target broadcast signed-zero", signed_zero_matrix, signed_zero_vector, False),
+            ("input broadcast signed-zero", signed_zero_vector, signed_zero_matrix, False),
+            ("target broadcast nan inf", edge_matrix, edge_vector, True),
+            ("input broadcast nan inf", edge_vector, edge_matrix, True),
+            (
+                "target broadcast empty leading dimension",
+                empty_matrix,
+                empty_vector,
+                False,
+            ),
+            (
+                "input broadcast empty leading dimension",
+                empty_vector,
+                empty_matrix,
+                False,
+            ),
+        )
+
     def make_same_stride_noncontiguous_cases(self, module):
         edge_input_bits = np.asarray(
             [
@@ -790,6 +861,268 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
                 )
+
+    def test_rank_two_trailing_vector_sum_broadcast_matches_pytorch_2_13(self):
+        def actual_bits(tensor):
+            return np.asarray(tensor).reshape(-1).view(np.uint32).copy()
+
+        def expected_bits(tensor):
+            return tensor.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+
+        def assert_scalar_matches(actual, expected, *, case, allow_nan):
+            with self.subTest(case=case, metadata=True):
+                self.assertEqual(actual.shape, tuple(expected.shape))
+                self.assertEqual(actual.stride(), expected.stride())
+                self.assertEqual(actual.storage_offset(), expected.storage_offset())
+                self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+                self.assertFalse(actual.requires_grad)
+                self.assertEqual(actual.is_leaf, expected.is_leaf)
+                self.assertIs(actual.dtype, torch.float32)
+                self.assertEqual(actual.device, torch.device("cpu"))
+                self.assertEqual(actual.numel(), expected.numel())
+
+            actual_values = np.asarray(actual).reshape(-1)
+            expected_values = expected.detach().cpu().numpy().reshape(-1)
+            with self.subTest(case=case, values=True):
+                if allow_nan:
+                    actual_nan = np.isnan(actual_values)
+                    expected_nan = np.isnan(expected_values)
+                    np.testing.assert_array_equal(actual_nan, expected_nan)
+                    non_nan = ~expected_nan
+                    if np.any(non_nan):
+                        np.testing.assert_array_max_ulp(
+                            actual_values[non_nan],
+                            expected_values[non_nan],
+                            maxulp=1,
+                        )
+                elif "signed-zero" in case:
+                    np.testing.assert_array_equal(
+                        actual_bits(actual),
+                        expected_bits(expected),
+                    )
+                else:
+                    np.testing.assert_array_max_ulp(
+                        actual_values,
+                        expected_values,
+                        maxulp=1,
+                    )
+
+        actual_cases = self.make_rank_two_trailing_vector_sum_cases(torch)
+        expected_cases = self.make_rank_two_trailing_vector_sum_cases(reference_torch)
+        for actual_case, expected_case in zip(actual_cases, expected_cases, strict=True):
+            case, actual_input, actual_target, allow_nan = actual_case
+            expected_name, expected_input, expected_target, expected_allow_nan = expected_case
+            self.assertEqual(case, expected_name)
+            self.assertEqual(allow_nan, expected_allow_nan)
+            actual_input_before = actual_bits(actual_input)
+            actual_target_before = actual_bits(actual_target)
+            expected_input_before = expected_bits(expected_input)
+            expected_target_before = expected_bits(expected_target)
+
+            actual, actual_warnings = self.call_with_warnings(
+                functional,
+                actual_input,
+                actual_target,
+                reduction="sum",
+            )
+            expected, expected_warnings = self.call_with_warnings(
+                reference_functional,
+                expected_input,
+                expected_target,
+                reduction="sum",
+            )
+
+            assert_scalar_matches(
+                actual,
+                expected,
+                case=case,
+                allow_nan=allow_nan,
+            )
+            with self.subTest(case=case, warnings=True):
+                self.assertEqual(actual_warnings, expected_warnings)
+                self.assertEqual(len(actual_warnings), 1)
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                actual_repeat = functional.mse_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="sum",
+                )
+                expected_repeat = reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="sum",
+                )
+            with self.subTest(case=case, storage=True):
+                self.assertFalse(actual.is_set_to(actual_repeat))
+                self.assertFalse(expected.is_set_to(expected_repeat))
+                self.assertFalse(actual.is_set_to(actual_input))
+                self.assertFalse(expected.is_set_to(expected_input))
+                self.assertFalse(actual.is_set_to(actual_target))
+                self.assertFalse(expected.is_set_to(expected_target))
+                self.assertNotEqual(actual.data_ptr(), actual_repeat.data_ptr())
+                self.assertNotEqual(expected.data_ptr(), expected_repeat.data_ptr())
+
+            with self.subTest(case=case, none_reduction=True):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    actual_none = functional.mse_loss(
+                        actual_input,
+                        actual_target,
+                        reduction="none",
+                    )
+                    expected_none = reference_functional.mse_loss(
+                        expected_input,
+                        expected_target,
+                        reduction="none",
+                    )
+                self.assert_matches(
+                    actual_none,
+                    expected_none,
+                    case=(case, "none"),
+                )
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(actual_bits(actual_input), actual_input_before)
+                np.testing.assert_array_equal(actual_bits(actual_target), actual_target_before)
+                np.testing.assert_array_equal(expected_bits(expected_input), expected_input_before)
+                np.testing.assert_array_equal(
+                    expected_bits(expected_target),
+                    expected_target_before,
+                )
+
+    def test_rank_two_trailing_vector_sum_requires_grad_matches_pytorch_2_13(
+        self,
+    ):
+        def actual_target_broadcast(input_requires_grad, target_requires_grad):
+            return (
+                torch.tensor(
+                    [[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0]],
+                    requires_grad=input_requires_grad,
+                ),
+                torch.tensor(
+                    [0.5, -1.5, 2.5],
+                    requires_grad=target_requires_grad,
+                ),
+            )
+
+        def expected_target_broadcast(input_requires_grad, target_requires_grad):
+            return (
+                reference_torch.tensor(
+                    [[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0]],
+                    dtype=reference_torch.float32,
+                    requires_grad=input_requires_grad,
+                ),
+                reference_torch.tensor(
+                    [0.5, -1.5, 2.5],
+                    dtype=reference_torch.float32,
+                    requires_grad=target_requires_grad,
+                ),
+            )
+
+        def actual_input_broadcast(input_requires_grad, target_requires_grad):
+            return (
+                torch.tensor(
+                    [0.5, -1.5, 2.5],
+                    requires_grad=input_requires_grad,
+                ),
+                torch.tensor(
+                    [[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0]],
+                    requires_grad=target_requires_grad,
+                ),
+            )
+
+        def expected_input_broadcast(input_requires_grad, target_requires_grad):
+            return (
+                reference_torch.tensor(
+                    [0.5, -1.5, 2.5],
+                    dtype=reference_torch.float32,
+                    requires_grad=input_requires_grad,
+                ),
+                reference_torch.tensor(
+                    [[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0]],
+                    dtype=reference_torch.float32,
+                    requires_grad=target_requires_grad,
+                ),
+            )
+
+        for case, actual_factory, expected_factory in (
+            ("target broadcast", actual_target_broadcast, expected_target_broadcast),
+            ("input broadcast", actual_input_broadcast, expected_input_broadcast),
+        ):
+            for input_requires_grad, target_requires_grad in (
+                (True, False),
+                (False, True),
+                (True, True),
+            ):
+                actual_input, actual_target = actual_factory(
+                    input_requires_grad,
+                    target_requires_grad,
+                )
+                expected_input, expected_target = expected_factory(
+                    input_requires_grad,
+                    target_requires_grad,
+                )
+                with self.subTest(
+                    case=case,
+                    input_requires_grad=input_requires_grad,
+                    target_requires_grad=target_requires_grad,
+                    grad_mode="active",
+                ):
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        actual = functional.mse_loss(
+                            actual_input,
+                            actual_target,
+                            reduction="sum",
+                        )
+                        expected = reference_functional.mse_loss(
+                            expected_input,
+                            expected_target,
+                            reduction="sum",
+                        )
+                    self.assert_matches(
+                        actual,
+                        expected,
+                        case=(case, "active"),
+                        max_value_ulp=1,
+                    )
+                    self.assertIsNone(actual_input.grad)
+                    self.assertIsNone(actual_target.grad)
+                    self.assertIsNone(expected_input.grad)
+                    self.assertIsNone(expected_target.grad)
+
+                with self.subTest(
+                    case=case,
+                    input_requires_grad=input_requires_grad,
+                    target_requires_grad=target_requires_grad,
+                    grad_mode="no_grad",
+                ):
+                    with warnings.catch_warnings(), torch.no_grad():
+                        warnings.simplefilter("ignore")
+                        actual = functional.mse_loss(
+                            actual_input,
+                            actual_target,
+                            reduction="sum",
+                        )
+                    with warnings.catch_warnings(), reference_torch.no_grad():
+                        warnings.simplefilter("ignore")
+                        expected = reference_functional.mse_loss(
+                            expected_input,
+                            expected_target,
+                            reduction="sum",
+                        )
+                    self.assert_matches(
+                        actual,
+                        expected,
+                        case=(case, "no_grad"),
+                        max_value_ulp=1,
+                    )
+                    self.assertIsNone(actual_input.grad)
+                    self.assertIsNone(actual_target.grad)
+                    self.assertIsNone(expected_input.grad)
+                    self.assertIsNone(expected_target.grad)
 
     def test_mean_reduction_cases_match_pytorch_2_13(self):
         actual_cases = self.make_sum_reduction_cases(torch)

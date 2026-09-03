@@ -7,6 +7,23 @@ Review update: 2026-09-01
 Candidate provenance: source snapshot based on
 `2231dec5e208f3545c05484d497b32b3981f640d`
 
+## Focused Update: Rank-2 Trailing-Vector Sum
+
+The 2026-09-03 focused check used the current worktree's release extension
+installed with `maturin develop --release --locked`. Inputs were CPU `float32`
+tensors created outside the timed region with NumPy seed `20260903`,
+`CUDA_VISIBLE_DEVICES=`, one PyTorch thread, one `torch_rs` thread, 15 warmup
+blocks, 81 measured blocks, and 8 repeated calls per measured block. The
+single cell below was measured twice in one process, first in `torch_rs`,
+PyTorch order and then in reversed order; values are medians of the two
+per-order medians. Each iteration materialized the scalar output with
+`item()`, and the correctness precheck compared output metadata and values
+against PyTorch 2.13 with `rtol=1e-4`, `atol=1e-4`, and `equal_nan=True`.
+
+| Workload | Category | Output | Repeats | `torch_rs` median +/- MAD | PyTorch median +/- MAD | `torch_rs` / PyTorch |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `mse_sum_rank2_trailing_vector_256x384_by_384` | broadcasted | `()`, stride `()`, offset 0, requires_grad=False | 8 | 82.232 +/- 0.374 us | 22.487 +/- 0.678 us | 3.66x |
+
 ## Review Update: `reduction="sum"`
 
 The 2026-09-01 review rerun used the current composite worktree's release
