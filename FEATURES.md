@@ -56,6 +56,12 @@ and `torch.autograd.grad_mode`. Grad-state mutation beyond those helpers
 anomaly mutation/context APIs, view-replay mutation, `autograd.grad`, and
 broader autograd APIs remain unsupported.
 
+The neural-network row's `torch.nn.functional.mse_loss` coverage includes
+direct scalar reductions for no-grad same-shape row-major contiguous
+`reduction="mean"` and `reduction="sum"` inputs; other supported reduction
+layouts still compose the fused squared-error tensor with the full-tensor
+reduction.
+
 Within an area, coverage includes ordinary use plus error behavior, empty tensors, numerical edge cases, non-contiguous layouts, and interactions with autograd and device/dtype dispatch. Newly supported cells are added to permanent regression and performance matrices; existing cells are not retired to improve a score.
 
 The compilation row's eager JIT helper coverage explicitly includes tested `torch.jit.annotate`, `torch.jit.export`, `torch.jit.ignore`, `torch.jit.unused`, `torch.jit.is_scripting`, `torch.jit.is_tracing`, `torch.jit.script_if_tracing`, and `torch.jit.optimized_execution` behavior. In scope are eager pass-through/no-op/state-query semantics, decorator marker attributes without changing Python call behavior, import and wildcard boundaries, canonical copy/pickle ownership, ordinary stateless reload behavior, and the boundary that TorchScript modules, `torch.jit.script`, `torch.jit.trace`, compilation/tracing execution, graph execution, graph executor optimization, `torch.jit.fork`, `torch.jit.wait`, and `torch.export` graph capture remain unsupported.
