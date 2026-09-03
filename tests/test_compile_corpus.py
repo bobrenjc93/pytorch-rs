@@ -33,9 +33,11 @@ CATEGORY_WEIGHTS = {
 }
 
 UNSUPPORTED_MESSAGE = (
-    "torch.compile(): graph capture, graph execution, and eager fallback are "
-    "not supported; only argument binding, disable=True pass-through, and "
-    "backend resolution are implemented"
+    "torch.compile(): only argument binding, disable=True pass-through, "
+    "backend resolution, and the built-in eager fullgraph CPU float32 "
+    "Tensor.neg().abs() graphlet are implemented; broader graph capture, "
+    "graph execution, eager fallback, installed-PyTorch forwarding, and "
+    "backend invocation are not supported"
 )
 
 
@@ -801,9 +803,11 @@ try:
     compiled(make_inputs(torch)[0])
 except NotImplementedError as error:
     assert str(error) == (
-        "torch.compile(): graph capture, graph execution, and eager fallback are "
-        "not supported; only argument binding, disable=True pass-through, and "
-        "backend resolution are implemented"
+        "torch.compile(): only argument binding, disable=True pass-through, "
+        "backend resolution, and the built-in eager fullgraph CPU float32 "
+        "Tensor.neg().abs() graphlet are implemented; broader graph capture, "
+        "graph execution, eager fallback, installed-PyTorch forwarding, and "
+        "backend invocation are not supported"
     )
 else:
     raise AssertionError("public torch.compile should reject self-add")
