@@ -40,25 +40,13 @@ assert ratio.tolist() == [[-1.0, 2.0], [3.0, -4.0]]
 
 ## Scope
 
-The current native backend supports eager CPU `float32` tensors, core
-construction and layout/view operations, selected math and neural-network
-functions, and limited first-order autograd. Top-level `torch.cuda` exposes
-CPU-build probes only: `device_count()` is `0`, `is_available()` is `False`,
-and `is_initialized()` is `False`. Top-level `torch.set_default_device(...)`
-is present only as a CPU-equivalent no-op for requests such as `None` or
-`"cpu"`. `torch.backends.cuda` includes preference
-flags such as `enable_flash_sdp(...)`, `enable_cudnn_sdp(...)`, and the
-`sdp_kernel(...)` context manager/decorator, but they do not add
-`torch.nn.functional.scaled_dot_product_attention`, CUDA tensors, actual
-attention-kernel dispatch, or CUDA `torch.compile` execution. Device selection,
-mutable default-device routing, streams, events, synchronization, allocator APIs, runtime initialization,
-additional tensor dtypes, and the full module, optimizer, model-serialization,
-compiler execution, and distributed stacks remain unsupported. Top-level
-`torch.compile` is present as a PyTorch 2.13-shaped argument-binding shell with
-`disable=True` pass-through and backend default/name resolution through the
-`torch.compiler` registry, but graph capture, graph execution, eager fallback,
-installed-PyTorch forwarding, backend invocation, and CUDA compilation remain
-unsupported.
+| Surface | Supported today | Unsupported boundary |
+| --- | --- | --- |
+| Eager CPU tensors | CPU `float32` tensors; core construction and layout/view operations; selected math and neural-network functions; limited first-order autograd. | Additional tensor dtypes and non-CPU tensor execution. |
+| CPU-build device probes | `torch.cuda.device_count() == 0`; `torch.cuda.is_available() is False`; `torch.cuda.is_initialized() is False`; `torch.set_default_device(...)` is a CPU-equivalent no-op for `None` or `"cpu"`. | Device selection, mutable default-device routing, CUDA tensors, streams, events, synchronization, allocator APIs, and runtime initialization. |
+| CPU-build backend probes | `torch.backends.cuda` preference flags such as `enable_flash_sdp(...)`, `enable_cudnn_sdp(...)`, and `sdp_kernel(...)` as a context manager/decorator. | No `torch.nn.functional.scaled_dot_product_attention`, actual attention-kernel dispatch, CUDA tensors, or CUDA `torch.compile` execution. |
+| `torch.compile` shell | Non-executing PyTorch 2.13-shaped argument binding; `disable=True` pass-through; backend default/name resolution through the `torch.compiler` registry. | No graph capture, graph execution, eager fallback, installed-PyTorch forwarding, backend invocation, or CUDA compilation. |
+| Larger PyTorch stacks | Metadata and helper shims only where listed in the supported surface. | Full module, optimizer, model-serialization, compiler execution, and distributed stacks remain unsupported. |
 
 See the [exhaustive supported surface](docs/supported-surface.md) for exact API
 and limitation details, [FEATURES.md](FEATURES.md) for the weighted coverage
