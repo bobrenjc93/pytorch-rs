@@ -19354,6 +19354,25 @@ fn nested_list(py: Python<'_>, data: &[f32], shape: &[usize]) -> PyResult<Py<PyA
     Ok(PyList::new(py, items)?.into_any().unbind())
 }
 
+fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add("_MAX_BACKWARD_LEAF_ROOTS", MAX_BACKWARD_LEAF_ROOTS)?;
+    module.add_function(wrap_pyfunction!(_backward_leaf_roots, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_trace_tensor_metadata, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_trace_grad_enabled, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_trace_unary, module)?)?;
+    let exports = module.getattr("__all__")?;
+    for name in [
+        "_MAX_BACKWARD_LEAF_ROOTS",
+        "_backward_leaf_roots",
+        "_compile_trace_tensor_metadata",
+        "_compile_trace_grad_enabled",
+        "_compile_trace_unary",
+    ] {
+        exports.call_method1("remove", (name,))?;
+    }
+    Ok(())
+}
+
 #[pymodule]
 fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
@@ -19420,21 +19439,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("is_tensor", is_tensor_helpers.getattr("is_tensor")?)?;
     add_no_argument_builtins(module)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
-    module.add("_MAX_BACKWARD_LEAF_ROOTS", MAX_BACKWARD_LEAF_ROOTS)?;
-    module.add_function(wrap_pyfunction!(_backward_leaf_roots, module)?)?;
-    module.add_function(wrap_pyfunction!(compile_trace_tensor_metadata, module)?)?;
-    module.add_function(wrap_pyfunction!(compile_trace_grad_enabled, module)?)?;
-    module.add_function(wrap_pyfunction!(compile_trace_unary, module)?)?;
-    let exports = module.getattr("__all__")?;
-    for name in [
-        "_MAX_BACKWARD_LEAF_ROOTS",
-        "_backward_leaf_roots",
-        "_compile_trace_tensor_metadata",
-        "_compile_trace_grad_enabled",
-        "_compile_trace_unary",
-    ] {
-        exports.call_method1("remove", (name,))?;
-    }
+    add_private_autograd_and_compile_trace_builtins(module)?;
     torch_function_mode_stack::add_torch_function_mode_stack(module)?;
     add_torch_function_probe(module)?;
     add_variable_functions(module)?;
