@@ -1009,12 +1009,12 @@ Adds :attr:`other`, scaled by :attr:`alpha`, to :attr:`input`.
     \text{{out}}_i = \text{{input}}_i + \text{{alpha}} \times \text{{other}}_i
 
 
-This compatibility layer supports exact native CPU ``float32`` Tensor/Tensor
-operands and Tensor input plus real-number ``other`` operands, broadcasting,
+This compatibility layer supports exact native CPU ``float32`` Tensor/Tensor,
+Tensor/real-number, and real-number/Tensor operands, broadcasting,
 default-equivalent ``alpha`` values, and omitted or ``None`` ``out`` only.
-Scalar-left operands, scalar-only calls, concrete ``out`` tensors, nondefault
-or boolean ``alpha``, unsupported dtype/device/subclass paths, and in-place
-variants remain unsupported.
+Scalar-only calls, concrete ``out`` tensors, nondefault or boolean ``alpha``,
+Tensor method scalar-left expansion, unsupported dtype/device/subclass paths,
+and in-place variants remain unsupported.
 
 Args:
     input (Tensor): the input tensor.
