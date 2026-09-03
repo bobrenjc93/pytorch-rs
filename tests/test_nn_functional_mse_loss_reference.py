@@ -657,6 +657,136 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                     expected_target_bits_before,
                 )
 
+    def test_same_shape_contiguous_mean_cases_match_pytorch_2_13(self):
+        actual_cases = tuple(
+            case
+            for case in self.make_same_shape_contiguous_cases(torch)
+            if case[0] != "bandwidth-sized"
+        ) + (
+            (
+                "large contiguous",
+                torch.ones((1024, 1024)),
+                torch.zeros((1024, 1024)),
+            ),
+        )
+        expected_cases = tuple(
+            case
+            for case in self.make_same_shape_contiguous_cases(reference_torch)
+            if case[0] != "bandwidth-sized"
+        ) + (
+            (
+                "large contiguous",
+                reference_torch.ones((1024, 1024), dtype=reference_torch.float32),
+                reference_torch.zeros((1024, 1024), dtype=reference_torch.float32),
+            ),
+        )
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            self.assertEqual(actual_input.shape, tuple(expected_input.shape))
+            self.assertEqual(actual_target.shape, tuple(expected_target.shape))
+            self.assertEqual(actual_input.shape, actual_target.shape)
+            self.assertTrue(actual_input.is_contiguous())
+            self.assertTrue(actual_target.is_contiguous())
+            self.assertTrue(expected_input.is_contiguous())
+            self.assertTrue(expected_target.is_contiguous())
+            actual_input_bits_before = np.asarray(actual_input).reshape(-1).view(np.uint32).copy()
+            actual_target_bits_before = np.asarray(actual_target).reshape(-1).view(np.uint32).copy()
+            expected_input_bits_before = (
+                expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            expected_target_bits_before = (
+                expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+
+            for form, call_kwargs in (
+                ("explicit mean", {"reduction": "mean"}),
+                ("default mean", {"use_default": True}),
+            ):
+                actual, actual_warnings = self.call_with_warnings(
+                    functional,
+                    actual_input,
+                    actual_target,
+                    **call_kwargs,
+                )
+                expected, expected_warnings = self.call_with_warnings(
+                    reference_functional,
+                    expected_input,
+                    expected_target,
+                    **call_kwargs,
+                )
+
+                with self.subTest(case=(case, form), metadata=True):
+                    self.assertEqual(actual.shape, tuple(expected.shape))
+                    self.assertEqual(actual.stride(), expected.stride())
+                    self.assertEqual(actual.storage_offset(), expected.storage_offset())
+                    self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+                    self.assertEqual(actual.requires_grad, expected.requires_grad)
+                    self.assertEqual(actual.is_leaf, expected.is_leaf)
+                    self.assertIs(actual.dtype, torch.float32)
+                    self.assertEqual(actual.device, torch.device("cpu"))
+                with self.subTest(case=(case, form), values=True):
+                    actual_values = np.asarray(actual)
+                    expected_values = expected.detach().cpu().numpy()
+                    np.testing.assert_array_max_ulp(
+                        actual_values,
+                        expected_values,
+                        maxulp=2,
+                    )
+                with self.subTest(case=(case, form), warnings=True):
+                    self.assertEqual(actual_warnings, expected_warnings)
+                    self.assertEqual(actual_warnings, [])
+
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    if call_kwargs.get("use_default", False):
+                        actual_repeat = functional.mse_loss(actual_input, actual_target)
+                        expected_repeat = reference_functional.mse_loss(
+                            expected_input,
+                            expected_target,
+                        )
+                    else:
+                        actual_repeat = functional.mse_loss(
+                            actual_input,
+                            actual_target,
+                            reduction="mean",
+                        )
+                        expected_repeat = reference_functional.mse_loss(
+                            expected_input,
+                            expected_target,
+                            reduction="mean",
+                        )
+                with self.subTest(case=(case, form), storage=True):
+                    self.assertFalse(actual.is_set_to(actual_repeat))
+                    self.assertFalse(expected.is_set_to(expected_repeat))
+                    self.assertFalse(actual.is_set_to(actual_input))
+                    self.assertFalse(expected.is_set_to(expected_input))
+                    self.assertFalse(actual.is_set_to(actual_target))
+                    self.assertFalse(expected.is_set_to(expected_target))
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input).reshape(-1).view(np.uint32),
+                    actual_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target).reshape(-1).view(np.uint32),
+                    actual_target_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_target_bits_before,
+                )
+
     def test_broadcasted_outputs_strides_warnings_storage_and_nonmutation_match(self):
         actual_cases = self.make_broadcast_cases(torch)
         expected_cases = self.make_broadcast_cases(reference_torch)

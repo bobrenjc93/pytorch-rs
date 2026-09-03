@@ -675,14 +675,20 @@ fn _nn_functional_mse_loss(
         ));
     }
 
-    let output = input
-        .inner()
-        .squared_difference(target.inner())
-        .map_err(|error| tensor_error(&error))?;
     let output = match reduction {
-        MseLossReduction::None => output,
-        MseLossReduction::Mean => output.mean().map_err(|error| tensor_error(&error))?,
-        MseLossReduction::Sum => output.sum(),
+        MseLossReduction::None => input
+            .inner()
+            .squared_difference(target.inner())
+            .map_err(|error| tensor_error(&error))?,
+        MseLossReduction::Mean => input
+            .inner()
+            .squared_difference_mean(target.inner())
+            .map_err(|error| tensor_error(&error))?,
+        MseLossReduction::Sum => input
+            .inner()
+            .squared_difference(target.inner())
+            .map_err(|error| tensor_error(&error))?
+            .sum(),
     };
     PyTensor::new(output).into_py_any(py)
 }

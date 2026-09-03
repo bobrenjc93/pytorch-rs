@@ -208,6 +208,55 @@ class FunctionalMseLossTests(unittest.TestCase):
             ("noncontiguous", transposed_input, transposed_target, False),
         )
 
+    def mean_reduction_fast_path_cases(self):
+        edge_input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        edge_target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0001,
+                0x0000_0001,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+            ],
+            dtype=np.uint32,
+        )
+        large_input = np.linspace(-3.0, 5.0, 1 << 20, dtype=np.float32)
+        large_target = np.linspace(4.0, -2.0, 1 << 20, dtype=np.float32)
+
+        return (
+            ("scalar", torch.tensor(-0.0), torch.tensor(2.5)),
+            ("empty", torch.zeros((0, 1024)), torch.ones((0, 1024))),
+            (
+                "signed-zero-nan-infinity",
+                torch.tensor(memoryview(edge_input_bits.view(np.float32))).view(2, 5),
+                torch.tensor(memoryview(edge_target_bits.view(np.float32))).view(2, 5),
+            ),
+            (
+                "large contiguous",
+                torch.tensor(memoryview(large_input)),
+                torch.tensor(memoryview(large_target)),
+            ),
+        )
+
     def same_stride_noncontiguous_cases(self):
         edge_input_bits = np.asarray(
             [
@@ -339,6 +388,7 @@ class FunctionalMseLossTests(unittest.TestCase):
             "``reduce=None``",
             "``weight=None``",
             "fuses subtraction and square into one native pass",
+            "directly reduces same-shape row-major contiguous no-grad",
             "supported full-tensor mean or sum",
             "fresh, independent tensor",
             "size-mismatch warning",
@@ -563,6 +613,41 @@ class FunctionalMseLossTests(unittest.TestCase):
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
                         repeated = call()
+                    self.assertFalse(actual.is_set_to(repeated))
+                    self.assertFalse(actual.is_set_to(input))
+                    self.assertFalse(actual.is_set_to(target))
+                    self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+
+            with self.subTest(case=case, nonmutation=True):
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1], input_state[-1]
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1], target_state[-1]
+                )
+
+    def test_mean_reduction_same_shape_contiguous_fast_path_cases_match_composition(self):
+        for case, input, target in self.mean_reduction_fast_path_cases():
+            self.assertEqual(input.shape, target.shape)
+            self.assertTrue(input.is_contiguous())
+            self.assertTrue(target.is_contiguous())
+            expected = (input - target).square().mean()
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+
+            for form, call in (
+                (
+                    "explicit mean",
+                    lambda: functional.mse_loss(input, target, reduction="mean"),
+                ),
+                ("default mean", lambda: functional.mse_loss(input, target)),
+            ):
+                actual = call()
+                self.assert_matches_composition(actual, expected, case=(case, form))
+                with self.subTest(case=(case, form), storage=True):
+                    repeated = call()
                     self.assertFalse(actual.is_set_to(repeated))
                     self.assertFalse(actual.is_set_to(input))
                     self.assertFalse(actual.is_set_to(target))

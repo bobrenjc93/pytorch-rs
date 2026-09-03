@@ -2,10 +2,84 @@
 
 Date: 2026-08-30
 
-Review update: 2026-09-01
+Review updates: 2026-09-01, 2026-09-03
 
 Candidate provenance: source snapshot based on
 `2231dec5e208f3545c05484d497b32b3981f640d`
+
+## Review Update: `reduction="mean"` Same-Shape Contiguous
+
+The 2026-09-03 review rerun used this worktree's release extension installed
+into the repo-local `.venv` with `maturin develop --release --locked`; the
+one-off timing driver and JSON output were kept under `target/`.
+
+This focused cell measures eager
+`torch.nn.functional.mse_loss(input, target, reduction="mean")` on same-shape
+row-major contiguous CPU `float32` operands with shape `(1024, 1024)`. Inputs
+were created outside the timed region from NumPy seed `20260903` as a
+deterministic base tensor and `target = base + 1.0`. The call ran under
+`torch.no_grad()` for both implementations, with `CUDA_VISIBLE_DEVICES=`, one
+PyTorch thread, one `torch_rs` thread, `taskset -c 24`, 15 warmup blocks, and
+81 measured blocks in each of two process-order passes. The first pass measured
+`torch_rs` before PyTorch; the second pass reversed that order. Values below
+are medians of the two per-order medians, and each measured block consumed the
+last scalar output with `.item()` as a dead-code and deferred-work guard.
+
+Correctness was checked before timing for output shape, stride, storage offset,
+contiguity, dtype, device, `requires_grad`, leaf status, and scalar value within
+one ULP against PyTorch 2.13.
+
+Focused checks for this update:
+
+```bash
+env CARGO_HOME=$PWD/target/cargo-home CARGO_TARGET_DIR=$PWD/target \
+  cargo fmt --check
+env CARGO_HOME=$PWD/target/cargo-home CARGO_TARGET_DIR=$PWD/target \
+  cargo clippy --offline --all-targets -- -D warnings
+env CARGO_HOME=$PWD/target/cargo-home CARGO_TARGET_DIR=$PWD/target \
+  cargo test --offline --all-targets
+env CARGO_HOME=$PWD/target/cargo-home CARGO_TARGET_DIR=$PWD/target \
+  PYO3_PYTHON=$PWD/.venv/bin/python \
+  cargo clippy --offline --all-targets --features python-bindings -- -D warnings
+env CARGO_HOME=$PWD/target/cargo-home CARGO_TARGET_DIR=$PWD/target \
+  PYO3_PYTHON=$PWD/.venv/bin/python \
+  cargo test --offline --all-targets --features python-bindings
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= PYTHONDONTWRITEBYTECODE=1 \
+  .venv/bin/python -m unittest \
+  tests.test_nn_functional_mse_loss \
+  tests.test_nn_functional_mse_loss_reference
+```
+
+Result: the focused MSE Python implementation and PyTorch 2.13 differential
+tests passed 47 tests. Native Rust tests passed 117 tests without Python
+bindings and 128 tests with Python bindings.
+
+Environment:
+
+- CPU: AMD EPYC 9654 96-Core Processor, 2 sockets, 96 cores/socket,
+  2 threads/core
+- OS: Linux 6.13.2-0_fbk12_0_g0b66b3635210 x86_64
+- Python: 3.12.13
+- NumPy: 2.5.1
+- Rust: `rustc 1.92.0-nightly (2300c2aef 2025-10-12)`,
+  `cargo 1.92.0-nightly (81c3f77a4 2025-10-10)`
+- PyTorch: 2.13.0+cu130 from `.venv/lib64/python3.12/site-packages/torch`
+- `torch_rs`: 0.1.0 from the release extension installed into `.venv`
+- Profile: release, Cargo `[profile.release]` with thin LTO and one codegen unit
+- Device/dtype: CPU float32; `CUDA_VISIBLE_DEVICES=` for the timing run
+- Threads: `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`,
+  `OPENBLAS_NUM_THREADS=1`, `NUMEXPR_NUM_THREADS=1`,
+  `torch.set_num_threads(1)`, `torch.set_num_interop_threads(1)`;
+  `torch_rs.get_num_threads()` and `torch_rs.get_num_interop_threads()` both
+  reported 1
+- Dependency installation: locked `uv sync` resolved in 27 ms, prepared packages
+  in 15.84 s, and installed in 948 ms
+- Build time: final release extension rebuild completed in 29.98 s
+
+| Workload | Input / target | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `mse_mean_same_contiguous_1024x1024` | `(1024, 1024)` / `(1024, 1024)` | `()`, stride `()`, offset 0, requires_grad=False | 8 | 870.502 us +/- 2.565, var 25.084 | 634.493 us +/- 70.850, var 60081.183 | 1.37x |
 
 ## Review Update: `reduction="sum"`
 

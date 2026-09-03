@@ -3291,6 +3291,21 @@ impl Tensor {
         self.finish_squared_difference_vjp(other, output)
     }
 
+    /// Computes the mean squared difference, fusing same-shape row-major
+    /// contiguous no-grad operands into one scalar reduction pass.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when fallback materialization or mean reduction fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn squared_difference_mean(&self, other: &Self) -> Result<Self, TensorError> {
+        if let Some(output) = self.squared_difference_mean_same_shape_contiguous(other) {
+            return Ok(output);
+        }
+
+        self.squared_difference(other)?.mean()
+    }
+
     #[cfg(any(feature = "python-bindings", test))]
     fn squared_difference_same_shape_contiguous(
         &self,
@@ -3315,6 +3330,31 @@ impl Tensor {
             self.dtype(),
             self.device(),
         )))
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn squared_difference_mean_same_shape_contiguous(&self, other: &Self) -> Option<Self> {
+        if self.shape != other.shape
+            || self.records_grad()
+            || other.records_grad()
+            || !self.is_contiguous()
+            || !other.is_contiguous()
+            || !layout_is_row_major_contiguous(&self.shape, &self.strides)
+            || !layout_is_row_major_contiguous(&other.shape, &other.strides)
+        {
+            return None;
+        }
+        let (Some(left), Some(right)) = (self.contiguous_slice(), other.contiguous_slice()) else {
+            return None;
+        };
+
+        let total = sum_contiguous_squared_difference(left, right, self.elements);
+        let divisor = full_reduction_mean_divisor(self.elements);
+        Some(Self::from_scalar(
+            total / divisor,
+            self.dtype(),
+            self.device(),
+        ))
     }
 
     #[cfg(any(feature = "python-bindings", test))]
@@ -5954,6 +5994,27 @@ fn layout_is_contiguous(shape: &[usize], strides: &[usize], elements: usize) -> 
     true
 }
 
+#[cfg(any(feature = "python-bindings", test))]
+fn layout_is_row_major_contiguous(shape: &[usize], strides: &[usize]) -> bool {
+    if shape.len() != strides.len() {
+        return false;
+    }
+
+    let mut expected_stride = 1_usize;
+    for axis in (0..shape.len()).rev() {
+        if strides[axis] != expected_stride {
+            return false;
+        }
+        if axis > 0 {
+            let Some(next_stride) = expected_stride.checked_mul(shape[axis].max(1)) else {
+                return false;
+            };
+            expected_stride = next_stride;
+        }
+    }
+    true
+}
+
 fn layout_is_non_overlapping_and_dense(
     shape: &[usize],
     strides: &[usize],
@@ -6920,6 +6981,37 @@ fn materialize_contiguous_squared_difference(
         *output = squared_difference_value(left, right);
     }
     Ok(data)
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn sum_contiguous_squared_difference(left: &[f32], right: &[f32], elements: usize) -> f32 {
+    debug_assert_eq!(left.len(), elements);
+    debug_assert_eq!(right.len(), elements);
+
+    let total = left
+        .iter()
+        .copied()
+        .zip(right.iter().copied())
+        .fold(0.0_f32, |total, (left, right)| {
+            total + squared_difference_value(left, right)
+        });
+    if !total.is_nan() || !left.iter().chain(right).any(|value| value.is_nan()) {
+        return total;
+    }
+
+    let mut total = 0.0_f32;
+    for (&left, &right) in left.iter().zip(right) {
+        if total.is_nan() {
+            continue;
+        }
+        let value = if left.is_nan() || right.is_nan() {
+            apply_binary_operation_scalar(&squared_difference_value, left, right)
+        } else {
+            squared_difference_value(left, right)
+        };
+        total = accumulate_sum_value(total, value);
+    }
+    total
 }
 
 #[cfg(any(feature = "python-bindings", test))]
@@ -11805,6 +11897,49 @@ mod tests {
         );
     }
 
+    fn assert_mse_mean_contiguous_fast_path_matches(case: &str, left: &Tensor, right: &Tensor) {
+        assert_eq!(left.shape(), right.shape(), "{case}");
+        assert!(left.is_contiguous(), "{case}");
+        assert!(right.is_contiguous(), "{case}");
+        let left_bits_before = left.logical_values().map(f32::to_bits).collect::<Vec<_>>();
+        let right_bits_before = right.logical_values().map(f32::to_bits).collect::<Vec<_>>();
+
+        let expected = left.squared_difference(right).unwrap().mean().unwrap();
+        let fast = left
+            .squared_difference_mean_same_shape_contiguous(right)
+            .unwrap_or_else(|| {
+                panic!("same-shape contiguous tensors should use the MSE mean fast path: {case}")
+            });
+        let public = left.squared_difference_mean(right).unwrap();
+
+        for actual in [&fast, &public] {
+            assert_eq!(actual.shape(), &[] as &[usize], "{case}");
+            assert_eq!(actual.stride(), &[] as &[usize], "{case}");
+            assert_eq!(actual.storage_offset(), 0, "{case}");
+            assert_eq!(actual.dtype(), expected.dtype(), "{case}");
+            assert_eq!(actual.device(), expected.device(), "{case}");
+            assert!(!actual.shares_storage_with(left), "{case}");
+            assert!(!actual.shares_storage_with(right), "{case}");
+            assert_eq!(
+                actual.item().unwrap().to_bits(),
+                expected.item().unwrap().to_bits(),
+                "{case}"
+            );
+        }
+
+        assert!(
+            left.logical_values().map(f32::to_bits).eq(left_bits_before),
+            "{case}"
+        );
+        assert!(
+            right
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(right_bits_before),
+            "{case}"
+        );
+    }
+
     fn assert_l1_sum_rank_two_trailing_vector_fast_path_matches(
         case: &str,
         left: &Tensor,
@@ -12254,6 +12389,194 @@ mod tests {
         assert_eq!(
             broadcast_actual.item().unwrap().to_bits(),
             broadcast_expected.item().unwrap().to_bits()
+        );
+    }
+
+    #[test]
+    fn squared_difference_mean_same_shape_contiguous_fast_path_matches_composition() {
+        let scalar_left = Tensor::from_vec(vec![-0.0], []).unwrap();
+        let scalar_right = Tensor::from_vec(vec![2.5], []).unwrap();
+        assert_mse_mean_contiguous_fast_path_matches("scalar", &scalar_left, &scalar_right);
+
+        let empty_left = Tensor::zeros([5, 0, 7]).unwrap();
+        let empty_right = Tensor::ones([5, 0, 7]).unwrap();
+        assert_mse_mean_contiguous_fast_path_matches("empty", &empty_left, &empty_right);
+
+        let left_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+            0xff85_4321,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+        ];
+        let right_bits = [
+            0x8000_0000,
+            0x0000_0000,
+            0x8000_0001,
+            0x0000_0001,
+            0xff80_0000,
+            0x7f80_0000,
+            0xffc6_789a,
+            0x7fc2_abcd,
+            0xff86_789a,
+            0x7f82_abcd,
+            0x0000_0000,
+            0x8000_0000,
+        ];
+        let edge_left = Tensor::from_vec(left_bits.map(f32::from_bits).to_vec(), [3, 4]).unwrap();
+        let edge_right = Tensor::from_vec(right_bits.map(f32::from_bits).to_vec(), [3, 4]).unwrap();
+        assert_mse_mean_contiguous_fast_path_matches(
+            "signed-zero nan inf",
+            &edge_left,
+            &edge_right,
+        );
+
+        let offset_left = offset_contiguous_tensor(&left_bits, &[3, 4]);
+        let offset_right = offset_contiguous_tensor(&right_bits, &[3, 4]);
+        assert_ne!(offset_left.storage_offset(), 0);
+        assert_ne!(offset_right.storage_offset(), 0);
+        assert_mse_mean_contiguous_fast_path_matches("offset", &offset_left, &offset_right);
+
+        let large_left = Tensor::from_vec(
+            (0_u32..1_048_576)
+                .map(|value| f32::from((value % 251) as u16) - 125.0)
+                .collect(),
+            [1024, 1024],
+        )
+        .unwrap();
+        let large_right = Tensor::from_vec(
+            (0_u32..1_048_576)
+                .map(|value| 127.0 - f32::from((value % 257) as u16))
+                .collect(),
+            [1024, 1024],
+        )
+        .unwrap();
+        assert_mse_mean_contiguous_fast_path_matches("large contiguous", &large_left, &large_right);
+    }
+
+    #[test]
+    fn squared_difference_mean_fast_path_requires_no_recorded_grad() {
+        let left = Tensor::from_vec((0_u8..6).map(f32::from).collect(), [2, 3]).unwrap();
+        let right = Tensor::from_vec(
+            (0_u8..6).map(|value| 3.0 - f32::from(value)).collect(),
+            [2, 3],
+        )
+        .unwrap();
+
+        let left_leaf = left.clone().with_requires_grad(true);
+        assert!(
+            left_leaf
+                .squared_difference_mean_same_shape_contiguous(&right)
+                .is_none()
+        );
+        let recorded = left_leaf.squared_difference_mean(&right).unwrap();
+        assert!(recorded.requires_grad());
+        assert!(!recorded.is_leaf());
+
+        let no_grad_mean = {
+            let _guard = crate::no_grad();
+            let output = left_leaf
+                .squared_difference_mean_same_shape_contiguous(&right)
+                .expect("no-grad leaf operands should use the MSE mean fast path");
+            assert_eq!(
+                output.item().unwrap().to_bits(),
+                left.squared_difference(&right)
+                    .unwrap()
+                    .mean()
+                    .unwrap()
+                    .item()
+                    .unwrap()
+                    .to_bits()
+            );
+            output
+        };
+        assert!(!no_grad_mean.requires_grad());
+        assert!(no_grad_mean.is_leaf());
+    }
+
+    #[test]
+    fn squared_difference_mean_fast_path_rejects_non_row_major_and_broadcast_layouts() {
+        let left = Tensor::from_vec((0_u8..6).map(f32::from).collect(), [2, 3]).unwrap();
+        let right = Tensor::from_vec(
+            (0_u8..6).map(|value| 3.0 - f32::from(value)).collect(),
+            [2, 3],
+        )
+        .unwrap();
+        let transposed_left = left.transpose(0, 1).unwrap();
+        let transposed_right = right.transpose(0, 1).unwrap();
+        assert!(
+            transposed_left
+                .squared_difference_mean_same_shape_contiguous(&transposed_right)
+                .is_none()
+        );
+        assert_eq!(
+            transposed_left
+                .squared_difference_mean(&transposed_right)
+                .unwrap()
+                .item()
+                .unwrap()
+                .to_bits(),
+            transposed_left
+                .squared_difference(&transposed_right)
+                .unwrap()
+                .mean()
+                .unwrap()
+                .item()
+                .unwrap()
+                .to_bits()
+        );
+
+        let empty_transposed_left = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        let empty_transposed_right = Tensor::ones([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        assert!(empty_transposed_left.is_contiguous());
+        assert!(empty_transposed_right.is_contiguous());
+        assert!(
+            empty_transposed_left
+                .squared_difference_mean_same_shape_contiguous(&empty_transposed_right)
+                .is_none()
+        );
+        assert_eq!(
+            empty_transposed_left
+                .squared_difference_mean(&empty_transposed_right)
+                .unwrap()
+                .item()
+                .unwrap()
+                .to_bits(),
+            empty_transposed_left
+                .squared_difference(&empty_transposed_right)
+                .unwrap()
+                .mean()
+                .unwrap()
+                .item()
+                .unwrap()
+                .to_bits()
+        );
+
+        let broadcast_target = Tensor::from_vec(vec![1.0, 2.0, 3.0], [3]).unwrap();
+        assert!(
+            left.squared_difference_mean_same_shape_contiguous(&broadcast_target)
+                .is_none()
+        );
+        assert_eq!(
+            left.squared_difference_mean(&broadcast_target)
+                .unwrap()
+                .item()
+                .unwrap()
+                .to_bits(),
+            left.squared_difference(&broadcast_target)
+                .unwrap()
+                .mean()
+                .unwrap()
+                .item()
+                .unwrap()
+                .to_bits()
         );
     }
 
