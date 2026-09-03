@@ -225,7 +225,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         (
             "scalar-only `torch.add` calls",
             "in-place variants",
-            "dimension reductions",
+            "dimension-specific reductions",
         ),
         ("[Elementwise and reductions](#elementwise-and-reductions)",),
     ),
