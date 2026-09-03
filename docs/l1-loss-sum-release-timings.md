@@ -2,6 +2,79 @@
 
 Date: 2026-09-02
 
+## Focused rank-2 trailing-vector broadcast update
+
+Candidate provenance: source snapshot based on
+`01e2cbb54db01081a133bf8bae95a0579787727f`, plus the worktree changes that add
+the direct rank-2 by trailing rank-1 broadcast sum path.
+
+This focused update remeasures the previously weak
+`l1_sum_broadcast_640x768_by_768` cell after a release extension build. The old
+full matrix below remains historical context for the other cells.
+
+Commands:
+
+```bash
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_NET_OFFLINE=true \
+  cargo fmt --check
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_NET_OFFLINE=true \
+  cargo test --all-targets absolute_difference
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_NET_OFFLINE=true \
+  TMPDIR="$PWD/target" \
+  VIRTUAL_ENV="$PWD/.venv" \
+  PYO3_PYTHON="$PWD/.venv/bin/python" \
+  .venv/bin/maturin develop --release --locked --offline
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest \
+  tests.test_nn_functional_l1_loss \
+  tests.test_nn_functional_l1_loss_reference
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  taskset -c 24 .venv/bin/python \
+  target/l1_loss_sum_rank2_vector_timing.py
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  L1_LOSS_SUM_IMPL_ORDER=pytorch,torch_rs \
+  taskset -c 24 .venv/bin/python \
+  target/l1_loss_sum_rank2_vector_timing.py
+```
+
+The timing driver was generated under ignored `target/` storage. It validates
+the broadcast warning, scalar output metadata, and scalar value against PyTorch
+2.13 before timing. Each process used 15 warmup blocks and 81 measured blocks;
+each block repeated the operation 8 times and consumed the final scalar output
+with a BLAKE2b metadata/value checksum. Reported medians below are the medians
+of the two per-process medians, run once in each implementation order.
+
+Environment matched the historical run unless noted: worktree-local `.venv`,
+Python 3.12.14+meta, NumPy 2.5.1, PyTorch 2.13.0+cu130, Rust
+`rustc 1.92.0 (ded5c06cf 2025-12-08)`, `cargo 1.92.0
+(344c4567c 2025-10-21)`, maturin 1.14.1, CPU AMD EPYC 9654, Linux
+6.13.2-0_fbk12_0_g0b66b3635210 x86_64, release profile, CPU float32,
+`CUDA_VISIBLE_DEVICES=`, CPU affinity `taskset -c 24`, and single-threaded
+BLAS/OpenMP/torch settings. `torch_rs.get_num_threads()` and
+`torch_rs.get_num_interop_threads()` both reported 1.
+
+| Workload | Category | Input / target | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Materialized checksums |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| `l1_sum_broadcast_640x768_by_768` | broadcast | `(640, 768), stride (768, 1), offset 0` / `(768,), stride (1,), offset 0` | `(), stride (), offset 0, requires_grad=False` | 8 | 408.433 us +/- 1.285 us, var 3380.115 | 158.364 us +/- 2.199 us, var 440.714 | 2.58x | `a0e07e2d0aeec319`/`a0e07e2d0aeec319` |
+
+Relative to the historical broadcast row below, the `torch_rs` median moved
+from 530.159 us to 408.433 us (-23.0%) while preserving the same warning and
+scalar output contract.
+
+## Historical full matrix
+
 Candidate provenance: source snapshot based on
 `123ad635c137da09765334b22b8dc29345dd4fa0`. This branch adds timing evidence
 only; it does not change the runtime implementation.
