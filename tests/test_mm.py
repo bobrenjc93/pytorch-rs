@@ -120,6 +120,17 @@ class TorchMmTests(unittest.TestCase):
             RuntimeError, r"^mm\(\): the 'out' argument is not supported$"
         ):
             torch.mm(left, right, out=torch.zeros((2, 2)))
+        for call in (
+            lambda: torch.mm(left, right, torch.float32),
+            lambda: torch.mm(left, right, out_dtype=torch.float32),
+            lambda: torch.mm(left, right, torch.float32, out=None),
+        ):
+            with self.subTest(out_dtype_call=call):
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    r"^mm\(\): the 'out_dtype' argument is not supported$",
+                ):
+                    call()
 
         rank_cases = (
             (torch.ones((2,)), torch.ones((2, 2))),
@@ -198,6 +209,110 @@ class TorchMmTests(unittest.TestCase):
         reloaded = importlib.reload(torch)
         self.assertIs(reloaded, torch)
         self.assertIs(torch.mm, function)
+
+    def test_out_dtype_participates_in_torch_function_dispatch(self):
+        left = torch.ones((1, 1))
+        right = torch.ones((1, 1))
+        function = torch.mm
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        calls = (
+            (
+                lambda: function(left, right, torch.float32),
+                lambda args, kwargs: len(args) == 3
+                and args[0] is left
+                and args[1] is right
+                and args[2] is torch.float32
+                and kwargs is None,
+            ),
+            (
+                lambda: function(left, right, out_dtype=torch.float32),
+                lambda args, kwargs: len(args) == 2
+                and args[0] is left
+                and args[1] is right
+                and tuple(kwargs) == ("out_dtype",)
+                and kwargs["out_dtype"] is torch.float32,
+            ),
+        )
+        for call, matches_arguments in calls:
+            mode = RecordingMode()
+            with mode:
+                result = call()
+            self.assertIs(result, marker)
+            func, dispatch_types, args, kwargs = mode.calls[0]
+            self.assertIs(func, function)
+            self.assertEqual(dispatch_types, ())
+            self.assertTrue(matches_arguments(args, kwargs))
+
+        class OutDTypeOverride:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        value = OutDTypeOverride()
+        result = function(left, right, value)
+        func, dispatch_types, args, kwargs = OutDTypeOverride.calls[-1]
+        self.assertIs(result, marker)
+        self.assertIs(func, function)
+        self.assertEqual(dispatch_types, (OutDTypeOverride,))
+        self.assertEqual(len(args), 3)
+        self.assertIs(args[2], value)
+        self.assertIsNone(kwargs)
+
+        value = OutDTypeOverride()
+        result = function(left, right, out_dtype=value)
+        func, dispatch_types, args, kwargs = OutDTypeOverride.calls[-1]
+        self.assertIs(result, marker)
+        self.assertIs(func, function)
+        self.assertEqual(dispatch_types, (OutDTypeOverride,))
+        self.assertEqual(len(args), 2)
+        self.assertEqual(tuple(kwargs), ("out_dtype",))
+        self.assertIs(kwargs["out_dtype"], value)
+
+    def test_out_dtype_override_order_matches_schema_order(self):
+        right = torch.ones((1, 1))
+        marker = object()
+        order = []
+
+        class LeftOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                order.append(("left", tuple(item.__name__ for item in types)))
+                return NotImplemented
+
+        class OutDTypeOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                order.append(("out_dtype", tuple(item.__name__ for item in types)))
+                return NotImplemented
+
+        class OutOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                order.append(("out", tuple(item.__name__ for item in types)))
+                return marker
+
+        result = torch.mm(LeftOverride(), right, OutDTypeOverride(), out=OutOverride())
+        self.assertIs(result, marker)
+        self.assertEqual(
+            order,
+            [
+                ("left", ("LeftOverride", "OutDTypeOverride", "OutOverride")),
+                ("out_dtype", ("LeftOverride", "OutDTypeOverride", "OutOverride")),
+                ("out", ("LeftOverride", "OutDTypeOverride", "OutOverride")),
+            ],
+        )
 
 
 if __name__ == "__main__":

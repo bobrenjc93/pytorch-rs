@@ -182,6 +182,135 @@ class TorchMmReferenceTests(unittest.TestCase):
                 self.assertEqual(type(actual_raised.exception), type(expected_raised.exception))
                 self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
 
+    def out_dtype_dispatch_contract(self, module):
+        left = module.ones((1, 1))
+        right = module.ones((1, 1))
+        function = module.mm
+        marker = object()
+        mode_observations = []
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        calls = (
+            (
+                lambda: function(left, right, module.float32),
+                lambda args, kwargs: len(args) == 3
+                and args[0] is left
+                and args[1] is right
+                and args[2] is module.float32
+                and kwargs is None,
+            ),
+            (
+                lambda: function(left, right, out_dtype=module.float32),
+                lambda args, kwargs: len(args) == 2
+                and args[0] is left
+                and args[1] is right
+                and tuple(kwargs) == ("out_dtype",)
+                and kwargs["out_dtype"] is module.float32,
+            ),
+        )
+        for call, matches_arguments in calls:
+            mode = RecordingMode()
+            with mode:
+                result = call()
+            func, dispatch_types, args, kwargs = mode.calls[0]
+            mode_observations.append(
+                (
+                    result is marker,
+                    func is function,
+                    dispatch_types == (),
+                    matches_arguments(args, kwargs),
+                )
+            )
+
+        override_observations = []
+
+        class OutDTypeOverride:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        for call in (
+            lambda value: function(left, right, value),
+            lambda value: function(left, right, out_dtype=value),
+        ):
+            value = OutDTypeOverride()
+            OutDTypeOverride.calls.clear()
+            result = call(value)
+            func, dispatch_types, args, kwargs = OutDTypeOverride.calls[0]
+            override_observations.append(
+                (
+                    result is marker,
+                    func is function,
+                    dispatch_types == (OutDTypeOverride,),
+                    len(args),
+                    kwargs is None,
+                    kwargs is not None
+                    and tuple(kwargs) == ("out_dtype",)
+                    and kwargs["out_dtype"] is value,
+                )
+            )
+
+        order = []
+
+        class LeftOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                order.append(("left", tuple(item.__name__ for item in types)))
+                return NotImplemented
+
+        class OrderedOutDTypeOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                order.append(("out_dtype", tuple(item.__name__ for item in types)))
+                return NotImplemented
+
+        class OutOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                order.append(("out", tuple(item.__name__ for item in types)))
+                return marker
+
+        ordered_result = function(
+            LeftOverride(), right, OrderedOutDTypeOverride(), out=OutOverride()
+        )
+
+        native_errors = []
+        for call in (
+            lambda: function(left, right, module.float32),
+            lambda: function(left, right, out_dtype=module.float32),
+            lambda: function(left, right, module.float32, out=None),
+        ):
+            try:
+                call()
+            except Exception as error:
+                native_errors.append(type(error).__name__)
+            else:
+                native_errors.append("ok")
+
+        return (
+            mode_observations,
+            override_observations,
+            ordered_result is marker,
+            order,
+            native_errors,
+        )
+
+    def test_out_dtype_dispatch_and_native_fallback_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.out_dtype_dispatch_contract(torch),
+            self.out_dtype_dispatch_contract(reference_torch),
+        )
+
     def callable_contract(self, module, package_name):
         function = module.mm
         owner = function.__reduce__()[1][0]
