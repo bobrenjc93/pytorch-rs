@@ -9,6 +9,7 @@ import typing
 import unittest
 
 import torch_rs as torch
+from torch_rs import _compiler_state as _state
 
 
 FUNCTION_DOC = """
@@ -22,6 +23,7 @@ COMPILER_EXPORTS = [
     "assume_constant_result",
     "reset",
     "list_backends",
+    "register_backend",
     "disable",
     "set_default_backend",
     "get_default_backend",
@@ -38,30 +40,19 @@ COMPILER_EXPORTS = [
 ]
 
 
-class _UninspectableTags:
-    def _fail(self, operation):
-        raise AssertionError(f"exclude_tags was inspected through {operation}")
-
-    def __bool__(self):
-        self._fail("bool")
-
-    def __contains__(self, value):
-        self._fail("contains")
-
-    def __iter__(self):
-        self._fail("iteration")
-
-    def __len__(self):
-        self._fail("length")
-
-    def __repr__(self):
-        self._fail("repr")
-
-    def __str__(self):
-        self._fail("str")
-
-
 class CompilerListBackendsTests(unittest.TestCase):
+    def setUp(self):
+        self._registered_backends = dict(_state.registered_backends)
+        self._registered_backend_fns = dict(_state.registered_backend_fns)
+        _state.registered_backends.clear()
+        _state.registered_backend_fns.clear()
+
+    def tearDown(self):
+        _state.registered_backends.clear()
+        _state.registered_backends.update(self._registered_backends)
+        _state.registered_backend_fns.clear()
+        _state.registered_backend_fns.update(self._registered_backend_fns)
+
     def test_empty_registry_returns_fresh_empty_lists_for_supported_argument_forms(self):
         function = torch.compiler.list_backends
         default = function()
@@ -71,7 +62,6 @@ class CompilerListBackendsTests(unittest.TestCase):
         list_tags = function([])
         none_tags = function(None)
         string_tags = function("debug")
-        opaque_tags = function(_UninspectableTags())
 
         results = (
             default,
@@ -81,7 +71,6 @@ class CompilerListBackendsTests(unittest.TestCase):
             list_tags,
             none_tags,
             string_tags,
-            opaque_tags,
         )
         for result in results:
             self.assertIs(type(result), list)
@@ -150,7 +139,7 @@ class CompilerListBackendsTests(unittest.TestCase):
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
         self.assertFalse(hasattr(function, "__text_signature__"))
-        self.assertEqual(function.__code__.co_names, ())
+        self.assertIn("_state", function.__code__.co_names)
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
@@ -230,6 +219,10 @@ class CompilerListBackendsTests(unittest.TestCase):
                 lambda: function(exclude_tags=(), unexpected=()),
                 "list_backends() got an unexpected keyword argument 'unexpected'",
             ),
+            (
+                lambda: function(object()),
+                "'object' object is not iterable",
+            ),
         )
         for call, message in cases:
             with self.subTest(message=message):
@@ -243,7 +236,7 @@ class CompilerListBackendsTests(unittest.TestCase):
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch, "list_backends"))
         self.assertFalse(hasattr(torch.compiler, "compile"))
-        self.assertFalse(hasattr(torch.compiler, "register_backend"))
+        self.assertTrue(callable(torch.compiler.register_backend))
 
         unsupported_compiler_names = (
             "allow_in_graph",
@@ -270,12 +263,27 @@ class RejectPytorchImport:
 sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
+calls = []
+
+def backend(graph_module, example_inputs):
+    calls.append((graph_module, example_inputs))
+    return graph_module.forward
+
 modules_before_call = set(sys.modules)
 first = torch.compiler.list_backends()
-second = torch.compiler.list_backends(exclude_tags=object())
+registered = torch.compiler.register_backend(
+    backend,
+    name="subprocess_backend",
+    tags=("debug",),
+)
+second = torch.compiler.list_backends(exclude_tags=())
+third = torch.compiler.list_backends()
 assert first == []
-assert second == []
+assert registered is backend
+assert second == ["subprocess_backend"]
+assert third == []
 assert first is not second
+assert calls == []
 assert set(sys.modules) == modules_before_call
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 assert not any(

@@ -9,10 +9,17 @@ import unittest
 
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import expose_reference_compiler_register_backend
+else:
+    from signature_utils import expose_reference_compiler_register_backend
+
 try:
     import torch as reference_torch
 except ImportError:
     reference_torch = None
+
+expose_reference_compiler_register_backend(reference_torch)
 
 
 @torch.compiler.assume_constant_result
@@ -203,6 +210,7 @@ class CompilerAssumeConstantResultReferenceTests(unittest.TestCase):
             "assume_constant_result",
             "reset",
             "list_backends",
+            "register_backend",
             "disable",
             "set_default_backend",
             "get_default_backend",

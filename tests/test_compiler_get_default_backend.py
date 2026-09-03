@@ -149,6 +149,7 @@ class CompilerGetDefaultBackendTests(unittest.TestCase):
                 "assume_constant_result",
                 "reset",
                 "list_backends",
+                "register_backend",
                 "disable",
                 "set_default_backend",
                 "get_default_backend",
