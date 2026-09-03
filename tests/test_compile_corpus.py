@@ -32,8 +32,6 @@ CATEGORY_WEIGHTS = {
     "dtype_device_transitions": 4,
 }
 
-TORCH_RS_POSITIVE_COMPILE_CASES = frozenset({"cpu_float32_unary_abs_neg"})
-
 UNSUPPORTED_MESSAGE = (
     "torch.compile(): graph capture, graph execution, and eager fallback are "
     "not supported; only argument binding, disable=True pass-through, and "
@@ -112,36 +110,6 @@ COMPILE_CORPUS = (
 )
 
 
-def compile_corpus_accounting():
-    accounting = {
-        category: {
-            "weight": weight,
-            "eligible": 0,
-            "positive": 0,
-            "unsupported": 0,
-            "weighted_positive": 0.0,
-        }
-        for category, weight in CATEGORY_WEIGHTS.items()
-    }
-    for case in COMPILE_CORPUS:
-        category_accounting = accounting[case.category]
-        category_accounting["eligible"] += 1
-        if case.name in TORCH_RS_POSITIVE_COMPILE_CASES:
-            category_accounting["positive"] += 1
-        else:
-            category_accounting["unsupported"] += 1
-
-    for category_accounting in accounting.values():
-        eligible = category_accounting["eligible"]
-        if eligible:
-            category_accounting["weighted_positive"] = (
-                category_accounting["weight"]
-                * category_accounting["positive"]
-                / eligible
-            )
-    return accounting
-
-
 def reset_reference_compile_state():
     dynamo = getattr(reference_torch, "_dynamo", None)
     if dynamo is not None:
@@ -155,10 +123,6 @@ class CompileCorpusMetadataTests(unittest.TestCase):
         self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v1")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
         self.assertEqual(len(COMPILE_CORPUS), 2)
-        self.assertEqual(
-            TORCH_RS_POSITIVE_COMPILE_CASES,
-            frozenset({"cpu_float32_unary_abs_neg"}),
-        )
 
         case_names = [case.name for case in COMPILE_CORPUS]
         self.assertEqual(
@@ -178,23 +142,6 @@ class CompileCorpusMetadataTests(unittest.TestCase):
         self.assertNotIn("_compile_trace_grad_enabled", torch._C.__all__)
         self.assertNotIn("_compile_trace_unary", torch._C.__all__)
         self.assertNotIn("_compile_trace_binary", torch._C.__all__)
-
-    def test_accounting_marks_only_abs_neg_positive(self):
-        accounting = compile_corpus_accounting()
-
-        self.assertEqual(accounting["tensor_arithmetic"]["eligible"], 2)
-        self.assertEqual(accounting["tensor_arithmetic"]["positive"], 1)
-        self.assertEqual(accounting["tensor_arithmetic"]["unsupported"], 1)
-        self.assertEqual(accounting["tensor_arithmetic"]["weighted_positive"], 6.0)
-
-        for category in CATEGORY_WEIGHTS:
-            with self.subTest(category=category):
-                if category == "tensor_arithmetic":
-                    continue
-                self.assertEqual(accounting[category]["eligible"], 0)
-                self.assertEqual(accounting[category]["positive"], 0)
-                self.assertEqual(accounting[category]["unsupported"], 0)
-                self.assertEqual(accounting[category]["weighted_positive"], 0.0)
 
 
 class CompileCorpusTraceTests(unittest.TestCase):
@@ -879,6 +826,50 @@ assert not any(name == "torch" or name.startswith("torch.") for name in sys.modu
             msg=completed.stdout + completed.stderr,
         )
 
+    def test_public_eager_compile_corpus_graphlet_boundary(self):
+        for case in COMPILE_CORPUS:
+            with self.subTest(case=case.name):
+                model_calls = []
+
+                def model(x):
+                    model_calls.append(x)
+                    return case.program(x)
+
+                compiled = torch.compile(model, **case.compile_kwargs("eager"))
+                self.assertEqual(compiled._torch_rs_compile_backend, "eager")
+                self.assertEqual(model_calls, [])
+                inputs = case.make_inputs(torch)
+
+                if case.program is cpu_float32_unary_abs_neg:
+                    actual = compiled(*inputs)
+                    expected = case.program(*case.make_inputs(torch))
+                    self.assert_native_tensor_matches(
+                        actual,
+                        expected,
+                        case=case.name,
+                    )
+                    self.assertEqual(len(model_calls), 1)
+                    self.assertIsInstance(
+                        model_calls[0],
+                        _compile_trace.CompileTraceTensorProxy,
+                    )
+                    self.assertEqual(
+                        [
+                            operation.target
+                            for operation in compiled._torch_rs_compile_trace_graph.operations
+                        ],
+                        ["neg", "abs"],
+                    )
+                else:
+                    with self.assertRaises(NotImplementedError) as raised:
+                        compiled(*inputs)
+                    self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+                    self.assertEqual(len(model_calls), 1)
+                    self.assertIsInstance(
+                        model_calls[0],
+                        _compile_trace.CompileTraceTensorProxy,
+                    )
+
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class TorchCompileCorpusReferenceTests(unittest.TestCase):
@@ -922,11 +913,7 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
         self.assertEqual(actual.requires_grad, expected.requires_grad, msg=case)
         self.assertEqual(actual.tolist(), expected.tolist(), msg=case)
 
-    def test_torch_rs_compile_corpus_accounting_matches_current_support(self):
-        accounting = compile_corpus_accounting()
-        self.assertEqual(accounting["tensor_arithmetic"]["positive"], 1)
-        self.assertEqual(accounting["tensor_arithmetic"]["unsupported"], 1)
-
+    def test_torch_rs_compile_matches_current_graphlet_boundary(self):
         for case in COMPILE_CORPUS:
             with self.subTest(case=case.name):
                 self.assert_reference_eligible(case)
@@ -942,7 +929,7 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                 self.assertEqual(model_calls, [])
                 inputs = case.make_inputs(torch)
 
-                if case.name in TORCH_RS_POSITIVE_COMPILE_CASES:
+                if case.program is cpu_float32_unary_abs_neg:
                     actual = compiled(*inputs)
                     expected = case.program(*case.make_inputs(torch))
                     self.assert_torch_rs_tensor_matches(

@@ -279,6 +279,14 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             calls.append(("self_add", x))
             return x + x
 
+        class EagerEqualBackend:
+            def __eq__(self, other):
+                return other == "eager"
+
+            def __call__(self, graph_module, example_inputs):
+                calls.append(("backend", graph_module, example_inputs))
+                return graph_module.forward
+
         input = torch.tensor([[-1.0, 2.0]], dtype=torch.float32)
 
         unsupported_before_trace = (
@@ -307,6 +315,7 @@ class TorchCompileEntrypointTests(unittest.TestCase):
                 shapes_spec=object(),
             ),
             torch.compile(CallableModel(), backend="eager", fullgraph=True),
+            torch.compile(abs_neg, backend=EagerEqualBackend(), fullgraph=True),
             torch.compile(abs_neg, fullgraph=True),
             torch.compile(abs_neg, backend="inductor", fullgraph=True),
         )

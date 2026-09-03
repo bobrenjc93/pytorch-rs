@@ -343,6 +343,7 @@ def _supports_public_eager_abs_neg_compile(
         _builtins.type(model) is _COMPILE_PYTHON_FUNCTION_TYPE
         and fullgraph is True
         and dynamic is None
+        and _builtins.type(resolved_backend) is _builtins.str
         and resolved_backend == "eager"
         and mode is None
         and options is None
