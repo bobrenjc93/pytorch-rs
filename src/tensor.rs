@@ -4074,9 +4074,11 @@ impl Tensor {
     /// Returns an error unless both tensors are matrices with compatible inner
     /// dimensions.
     pub fn matmul(&self, other: &Self) -> Result<Self, TensorError> {
-        self.matmul_with_initializer(other, |_, _, output_elements| {
-            filled_storage(output_elements, 0.0)
-        })
+        self.matmul_with_initializer(
+            other,
+            |_, _, output_elements| filled_storage(output_elements, 0.0),
+            MatmulAccumulation::ZeroInitialized,
+        )
     }
 
     /// Multiplies two rank-2 matrices after broadcasting a rank-1 bias across
@@ -4095,35 +4097,40 @@ impl Tensor {
         other: &Self,
         bias: &Self,
     ) -> Result<Self, TensorError> {
-        self.matmul_with_initializer(other, |rows, columns, output_elements| {
-            if bias.shape.len() != 1 || (bias.shape[0] != columns && bias.shape[0] != 1) {
-                let mut expected_bias_shape = try_result_vector(1, output_elements)?;
-                expected_bias_shape.push(columns);
-                return Err(TensorError::ShapeMismatch {
-                    left: expected_bias_shape,
-                    right: try_clone_result_shape(&bias.shape, bias.elements)?,
-                });
-            }
+        self.matmul_with_initializer(
+            other,
+            |rows, columns, output_elements| {
+                if bias.shape.len() != 1 || (bias.shape[0] != columns && bias.shape[0] != 1) {
+                    let mut expected_bias_shape = try_result_vector(1, output_elements)?;
+                    expected_bias_shape.push(columns);
+                    return Err(TensorError::ShapeMismatch {
+                        left: expected_bias_shape,
+                        right: try_clone_result_shape(&bias.shape, bias.elements)?,
+                    });
+                }
 
-            let mut output = try_result_vector(output_elements, output_elements)?;
-            if output_elements != 0 {
-                if bias.shape[0] == 1 {
-                    output.resize(output_elements, bias.value_at_linear_index(0));
-                } else {
-                    let bias_values = bias.try_to_vec()?;
-                    for _ in 0..rows {
-                        output.extend_from_slice(&bias_values);
+                let mut output = try_result_vector(output_elements, output_elements)?;
+                if output_elements != 0 {
+                    if bias.shape[0] == 1 {
+                        output.resize(output_elements, bias.value_at_linear_index(0));
+                    } else {
+                        let bias_values = bias.try_to_vec()?;
+                        for _ in 0..rows {
+                            output.extend_from_slice(&bias_values);
+                        }
                     }
                 }
-            }
-            Ok(output)
-        })
+                Ok(output)
+            },
+            MatmulAccumulation::AddIntoInitialized,
+        )
     }
 
     fn matmul_with_initializer(
         &self,
         other: &Self,
         initialize: impl FnOnce(usize, usize, usize) -> Result<Vec<f32>, TensorError>,
+        accumulation: MatmulAccumulation,
     ) -> Result<Self, TensorError> {
         if self.shape.len() != 2 || other.shape.len() != 2 {
             return Err(TensorError::MatmulRequiresMatrices {
@@ -4149,13 +4156,21 @@ impl Tensor {
         if let (Some(left_data), Some(right_data)) =
             (self.contiguous_slice(), other.contiguous_slice())
         {
-            accumulate_contiguous_matmul(left_data, right_data, &mut output, rows, inner, columns);
+            accumulate_contiguous_matmul(
+                left_data,
+                right_data,
+                &mut output,
+                rows,
+                inner,
+                columns,
+                accumulation,
+            );
         } else if output_elements != 0
             && inner != 0
             && self.storage.owned_values().is_some()
             && other.storage.owned_values().is_some()
         {
-            accumulate_packed_matmul(self, other, &mut output)?;
+            accumulate_packed_matmul(self, other, &mut output, accumulation)?;
         } else {
             for row in 0..rows {
                 for depth in 0..inner {
@@ -4170,7 +4185,12 @@ impl Tensor {
                             .storage
                             .value(right_offset)
                             .ok_or(TensorError::IndexCalculationOverflow)?;
-                        output[row * columns + column] += left * right;
+                        let output_value = &mut output[row * columns + column];
+                        if accumulation == MatmulAccumulation::ZeroInitialized && inner == 1 {
+                            *output_value = left * right;
+                        } else {
+                            *output_value += left * right;
+                        }
                     }
                 }
             }
@@ -6158,6 +6178,13 @@ fn checked_matrix_offset(tensor: &Tensor, row: usize, column: usize) -> Result<u
         .ok_or(TensorError::IndexCalculationOverflow)
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum MatmulAccumulation {
+    ZeroInitialized,
+    #[cfg(any(feature = "python-bindings", test))]
+    AddIntoInitialized,
+}
+
 // Isolate contiguous code generation from the unchanged strided dispatch.
 #[inline(never)]
 fn accumulate_contiguous_matmul(
@@ -6167,8 +6194,18 @@ fn accumulate_contiguous_matmul(
     rows: usize,
     inner: usize,
     columns: usize,
+    accumulation: MatmulAccumulation,
 ) {
     if output.is_empty() || inner == 0 {
+        return;
+    }
+    if accumulation == MatmulAccumulation::ZeroInitialized && inner == 1 {
+        let right_row = &right[..columns];
+        for (&left, output_row) in left.iter().zip(output.chunks_exact_mut(columns)) {
+            for (output_value, &right) in output_row.iter_mut().zip(right_row) {
+                *output_value = left * right;
+            }
+        }
         return;
     }
     if rows >= CONTIGUOUS_MATMUL_ROW_BLOCK && right.len() >= CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS {
@@ -6246,6 +6283,7 @@ fn accumulate_packed_matmul(
     left_tensor: &Tensor,
     right_tensor: &Tensor,
     output: &mut [f32],
+    accumulation: MatmulAccumulation,
 ) -> Result<(), TensorError> {
     let (rows, inner) = (left_tensor.shape[0], left_tensor.shape[1]);
     let columns = right_tensor.shape[1];
@@ -6283,7 +6321,7 @@ fn accumulate_packed_matmul(
         &right_packed
     };
 
-    accumulate_contiguous_matmul(left, right, output, rows, inner, columns);
+    accumulate_contiguous_matmul(left, right, output, rows, inner, columns, accumulation);
     Ok(())
 }
 

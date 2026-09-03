@@ -2580,6 +2580,22 @@ pub(crate) fn matmul_variable_function(
     dispatch_top_level_matmul(py, &input, &other, args, kwargs)
 }
 
+pub(crate) fn mm_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (arguments, out, keyword_error) = bind_top_level_mm_arguments(args, kwargs)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    let input = parse_exact_native_mm_tensor_or_torch_function_argument("input", &arguments[0])?;
+    let mat2 = parse_exact_native_mm_tensor_or_torch_function_argument("mat2", &arguments[1])?;
+    let out = parse_top_level_mm_out(out, args, kwargs)?;
+    let call = BoundTopLevelMmCall { input, mat2, out };
+    dispatch_top_level_mm(py, &call, args, kwargs)
+}
+
 pub(crate) fn mul_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -3077,6 +3093,12 @@ struct BoundTopLevelDivisionCall<'py> {
     input: BoundDivOperand<'py>,
     other: BoundDivOperand<'py>,
     rounding_mode: BoundDivisionRoundingMode<'py>,
+    out: Option<BoundTensorOrTorchFunction<'py>>,
+}
+
+struct BoundTopLevelMmCall<'py> {
+    input: BoundTensorOrTorchFunction<'py>,
+    mat2: BoundTensorOrTorchFunction<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
 }
 
@@ -4860,6 +4882,32 @@ fn ordered_matmul_overrides<'py>(
     ordered_binary_overrides(input, other, "unable to allocate matmul dispatch operands")
 }
 
+fn ordered_mm_overrides<'py>(
+    call: &BoundTopLevelMmCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let input = match &call.input {
+        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
+        BoundTensorOrTorchFunction::Tensor(_) => None,
+    };
+    let mat2 = match &call.mat2 {
+        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
+        BoundTensorOrTorchFunction::Tensor(_) => None,
+    };
+    let out = match &call.out {
+        Some(BoundTensorOrTorchFunction::Override(probed)) => Some(probed),
+        Some(BoundTensorOrTorchFunction::Tensor(_)) | None => None,
+    };
+
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(3)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate mm dispatch operands"))?;
+    for probed in [input, mat2, out].into_iter().flatten() {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
 fn ordered_dtype_overrides<'py>(
     operation: DTypeBinaryOperation,
     first: &BoundDTypeOperand<'py>,
@@ -4943,6 +4991,73 @@ fn dispatch_top_level_matmul(
         active_mode.get(),
         &overrides,
     )?)
+}
+
+fn dispatch_top_level_mm(
+    py: Python<'_>,
+    call: &BoundTopLevelMmCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_mm_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_mm(py, call);
+    }
+
+    let function = variable_function(py, "mm")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Generated variable functions validate their schema before dispatch, but
+    // delay native-only unsupported cases such as concrete out tensors until
+    // active handlers have had a chance to override.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_top_level_mm(py, call);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.mm",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_mm(py: Python<'_>, call: &BoundTopLevelMmCall<'_>) -> PyResult<Py<PyAny>> {
+    if call.out.is_some() {
+        return Err(PyRuntimeError::new_err(
+            "mm(): the 'out' argument is not supported",
+        ));
+    }
+
+    let (BoundTensorOrTorchFunction::Tensor(input), BoundTensorOrTorchFunction::Tensor(mat2)) =
+        (&call.input, &call.mat2)
+    else {
+        unreachable!("mm overrides were dispatched before the native path")
+    };
+    let mat2 = mat2.try_borrow()?;
+    let result = input.try_borrow()?.matrix_multiply(&mat2)?;
+    Ok(Py::new(py, result)?.into_any())
 }
 
 fn dispatch_top_level_multiplication(
@@ -14138,6 +14253,81 @@ fn bind_legacy_binary_arguments<'py>(
     Ok(([input, other], keyword_error))
 }
 
+fn bind_top_level_mm_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(
+    [ParsedCallArgument<'py>; 2],
+    Option<ParsedCallArgument<'py>>,
+    Option<PyErr>,
+)> {
+    if positional.len() > 2 {
+        return Err(mm_binding_error(positional, keywords)?);
+    }
+
+    let mut input = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut mat2 = if positional.len() < 2 {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    };
+    let mut out = None;
+    let mut keyword_error = None;
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "input" | "x" | "a" | "x1" if input.is_none() => {
+                    input = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "mat2" if mat2.is_none() => {
+                    mat2 = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "out" if out.is_none() => {
+                    out = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                _ => {
+                    keyword_error.get_or_insert(mm_binding_error(positional, Some(keywords))?);
+                }
+            }
+        }
+    }
+
+    let Some(input) = input else {
+        return Err(mm_binding_error(positional, keywords)?);
+    };
+    let Some(mat2) = mat2 else {
+        if keyword_error.is_some() {
+            return Err(PyTypeError::new_err(
+                "mm() missing 1 required positional arguments: \"mat2\"",
+            ));
+        }
+        return Err(mm_binding_error(positional, keywords)?);
+    };
+
+    Ok(([input, mat2], out, keyword_error))
+}
+
 fn bind_tensor_add_sub_method_arguments<'py>(
     operation: AddSubMethodOperation,
     positional: &Bound<'py, PyTuple>,
@@ -15272,6 +15462,50 @@ fn parse_tensor_or_torch_function_argument<'py>(
         .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
 }
 
+fn parse_exact_native_mm_tensor_or_torch_function_argument<'py>(
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+) -> PyResult<BoundTensorOrTorchFunction<'py>> {
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundTensorOrTorchFunction::Tensor(
+            value.value.cast::<PyTensor>()?.clone(),
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundTensorOrTorchFunction::Override(probed));
+    }
+    if value.value.is_instance_of::<PyTensor>() {
+        return Err(mm_unsupported_native_input());
+    }
+    parse_tensor_argument("mm", argument, value)
+        .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
+}
+
+fn parse_top_level_mm_out<'py>(
+    out: Option<ParsedCallArgument<'py>>,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<Option<BoundTensorOrTorchFunction<'py>>> {
+    let Some(out) = out else {
+        return Ok(None);
+    };
+    if out.value.is_none() {
+        return Ok(None);
+    }
+    if out.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(Some(BoundTensorOrTorchFunction::Tensor(
+            out.value.cast::<PyTensor>()?.clone(),
+        )));
+    }
+    if let Some(probed) = probe_torch_function_override(&out.value) {
+        return Ok(Some(BoundTensorOrTorchFunction::Override(probed)));
+    }
+    if out.value.is_instance_of::<PyTensor>() {
+        return Err(mm_unsupported_native_input());
+    }
+    Err(mm_binding_error(positional, keywords)?)
+}
+
 fn parse_exact_native_add_tensor_or_torch_function_argument<'py>(
     argument: &str,
     value: &ParsedCallArgument<'py>,
@@ -15570,6 +15804,12 @@ fn subtraction_unsupported_native_input(operation: SubtractionOperation) -> PyEr
 fn addition_unsupported_native_input() -> PyErr {
     PyNotImplementedError::new_err(
         "add(): only exact native CPU float32 Tensor/Tensor, Tensor/real-number, or real-number/Tensor operands are supported",
+    )
+}
+
+fn mm_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "mm(): only exact native CPU float32 rank-2 Tensor operands with out=None are supported",
     )
 }
 
@@ -15916,6 +16156,40 @@ fn top_level_multiply_binding_error(
     )?;
     try_push_string_with(&mut message, &mismatch, &allocation)?;
     try_push_string_with(&mut message, "\n", &allocation)?;
+    if let Some(nul) = message.find('\0') {
+        message.truncate(nul);
+    }
+    let py = positional.py();
+    let message = PyString::from_bytes(py, message.as_bytes()).map_err(|_| allocation.error())?;
+    let exception = py
+        .get_type::<PyTypeError>()
+        .call1((message,))
+        .map_err(|_| allocation.error())?;
+    Ok(PyErr::from_value(exception))
+}
+
+fn mm_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let allocation = PythonAllocationFallback::new(positional.py());
+    let summary = call_type_summary_with(
+        positional,
+        keywords,
+        CallKeywordOrder::PyTorchUnorderedMap,
+        &allocation,
+    )?;
+
+    let mut message = try_string_from_str_with(
+        "mm() received an invalid combination of arguments - got (",
+        &allocation,
+    )?;
+    try_push_string_with(&mut message, &summary, &allocation)?;
+    try_push_string_with(
+        &mut message,
+        "), but expected one of:\n * (Tensor input, Tensor mat2, *, Tensor out = None)\n * (Tensor input, Tensor mat2, torch.dtype out_dtype, *, Tensor out = None)\n",
+        &allocation,
+    )?;
     if let Some(nul) = message.find('\0') {
         message.truncate(nul);
     }
