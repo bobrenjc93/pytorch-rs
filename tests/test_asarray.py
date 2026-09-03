@@ -447,6 +447,43 @@ class AsArrayTests(unittest.TestCase):
                     f"too many dimensions '{type_name}'",
                 )
 
+    def test_malformed_float_sequences_with_copy_true_raise_conversion_errors(self):
+        recursive_list = []
+        recursive_list.append(recursive_list)
+        recursive_tuple = ([],)
+        recursive_tuple[0].append(recursive_tuple)
+        cases = (
+            (
+                "ragged list",
+                [[1.0], [2.0, 3.0]],
+                "expected a rectangular sequence, but nested shapes differ",
+            ),
+            (
+                "ragged tuple",
+                ((1.0,), (2.0, 3.0)),
+                "expected a rectangular sequence, but nested shapes differ",
+            ),
+            ("recursive list", recursive_list, "too many dimensions 'list'"),
+            ("recursive tuple", recursive_tuple, "too many dimensions 'tuple'"),
+            (
+                "overdeep list",
+                self.nested_singleton(1.0, 129, list),
+                "too many dimensions 'list'",
+            ),
+            (
+                "overdeep tuple",
+                self.nested_singleton(1.0, 129, tuple),
+                "too many dimensions 'tuple'",
+            ),
+        )
+        for case, data, message in cases:
+            with self.subTest(case=case):
+                self.assert_error(
+                    lambda data=data: torch.asarray(data, copy=True),
+                    ValueError,
+                    message,
+                )
+
     def test_copy_false_rejects_exact_sequences_before_conversion(self):
         recursive_list = []
         recursive_list.append(recursive_list)

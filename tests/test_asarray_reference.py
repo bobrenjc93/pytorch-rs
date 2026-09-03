@@ -496,11 +496,20 @@ class AsArrayReferenceTests(unittest.TestCase):
             ("overdeep tuple", self.nested_singleton(1.0, 129, tuple)),
         )
         for case, data in cases:
-            with self.subTest(case=case):
-                self.assertEqual(
-                    self.error_observation(lambda: torch.asarray(data)),
-                    self.error_observation(lambda: reference_torch.asarray(data)),
-                )
+            for options in ({}, {"copy": True}):
+                with self.subTest(case=case, options=options):
+                    self.assertEqual(
+                        self.error_observation(
+                            lambda data=data, options=options: torch.asarray(
+                                data, **options
+                            )
+                        ),
+                        self.error_observation(
+                            lambda data=data, options=options: reference_torch.asarray(
+                                data, **options
+                            )
+                        ),
+                    )
 
         for container in (list, tuple):
             with self.subTest(max_rank=container.__name__):
@@ -511,11 +520,24 @@ class AsArrayReferenceTests(unittest.TestCase):
                 )
 
     def test_malformed_rectangular_sequence_error_type_matches_pytorch_2_13(self):
-        data = [[1.0], [2.0, 3.0]]
-        self.assertEqual(
-            self.error_type_observation(lambda: torch.asarray(data)),
-            self.error_type_observation(lambda: reference_torch.asarray(data)),
-        )
+        for case, data in (
+            ("ragged list", [[1.0], [2.0, 3.0]]),
+            ("ragged tuple", ((1.0,), (2.0, 3.0))),
+        ):
+            for options in ({}, {"copy": True}):
+                with self.subTest(case=case, options=options):
+                    self.assertEqual(
+                        self.error_type_observation(
+                            lambda data=data, options=options: torch.asarray(
+                                data, **options
+                            )
+                        ),
+                        self.error_type_observation(
+                            lambda data=data, options=options: reference_torch.asarray(
+                                data, **options
+                            )
+                        ),
+                    )
 
     def test_copy_false_sequence_errors_match_pytorch_2_13(self):
         recursive_list = []

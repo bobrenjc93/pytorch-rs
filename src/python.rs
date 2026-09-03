@@ -1754,11 +1754,13 @@ fn asarray_sequence_for_copy_request(
         validate_asarray_copy(copy)?;
         return Ok(None);
     }
-    if let Ok(Some(sequence)) = as_tensor_float_sequence(obj) {
-        Ok(Some(sequence))
-    } else {
-        validate_asarray_copy(copy)?;
-        Ok(None)
+    match as_tensor_float_sequence(obj) {
+        Ok(Some(sequence)) => Ok(Some(sequence)),
+        Ok(None) => {
+            validate_asarray_copy(copy)?;
+            Ok(None)
+        }
+        Err(error) => Err(error),
     }
 }
 
