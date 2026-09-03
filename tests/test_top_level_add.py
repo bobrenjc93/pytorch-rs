@@ -570,6 +570,13 @@ class TopLevelAddTests(unittest.TestCase):
                 "\nadd(input, other, *, alpha=1, out=None) -> Tensor\n\n"
             )
         )
+        self.assertIn(
+            "real-number\n``input`` plus exact native CPU ``float32`` Tensor "
+            "``other`` operands",
+            function.__doc__,
+        )
+        self.assertIn("Scalar-only calls", function.__doc__)
+        self.assertNotIn("Scalar-left operands", function.__doc__)
         self.assertRegex(
             repr(function), r"^<built-in method add of type object at 0x[0-9a-f]+>$"
         )
