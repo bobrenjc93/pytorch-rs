@@ -78,7 +78,9 @@ with CPU ``float32`` storage, broadcastable shapes, ``reduction='none'`` or
 ``reduction='mean'`` or ``reduction='sum'``, ``size_average=None``,
 ``reduce=None``, and ``weight=None``. It fuses subtraction and square into one
 native pass and, for ``reduction='mean'`` or ``reduction='sum'``, composes that
-result with the supported full-tensor mean or sum.
+result with the supported full-tensor mean or sum. For no-grad row-major rank-2
+by trailing rank-1 vector ``reduction='sum'`` broadcasts, it computes the scalar
+sum directly without materializing the expanded tensor.
 The operation returns a fresh, independent tensor with PyTorch-compatible
 values, shape, strides, scalar metadata, and size-mismatch warning.
 

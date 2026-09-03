@@ -7,6 +7,110 @@ Review update: 2026-09-01
 Candidate provenance: source snapshot based on
 `2231dec5e208f3545c05484d497b32b3981f640d`
 
+## Focused Update: Rank-2 Trailing-Vector `reduction="sum"`
+
+Date: 2026-09-02
+
+Candidate provenance: source snapshot based on
+`c54198202b09ffcb58457cd1de3b826cf10895e4`, plus the worktree changes that
+add the direct no-grad rank-2 by trailing rank-1 broadcast MSE sum path.
+
+This focused update remeasures the existing
+`mse_sum_broadcasted_256x384_by_384` cell after a release extension build. The
+driver was generated under ignored `target/` storage and emitted JSON under
+`target/mse-loss-sum-rank2-vector-timing*.json`.
+
+Commands:
+
+```bash
+env UV_CACHE_DIR="$PWD/target/uv-cache" \
+  UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python" \
+  uv venv --python 3.12
+env UV_CACHE_DIR="$PWD/target/uv-cache" \
+  UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python" \
+  uv sync --locked --no-install-project --group dev --group reference
+mkdir -p target/cargo-home/registry
+cp -a /home/bobren/.cargo/registry/. target/cargo-home/registry/
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_NET_OFFLINE=true \
+  cargo fmt --check
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_NET_OFFLINE=true \
+  cargo test --all-targets
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_NET_OFFLINE=true \
+  cargo clippy --all-targets -- -D warnings
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_NET_OFFLINE=true \
+  PYO3_PYTHON="$PWD/.venv/bin/python" \
+  cargo clippy --all-targets --features python-bindings -- -D warnings
+env PATH="/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:$PATH" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_NET_OFFLINE=true \
+  TMPDIR="$PWD/target" \
+  VIRTUAL_ENV="$PWD/.venv" \
+  PYO3_PYTHON="$PWD/.venv/bin/python" \
+  .venv/bin/maturin develop --release --locked --offline
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest \
+  tests.test_nn_functional_mse_loss \
+  tests.test_nn_functional_mse_loss_reference
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest tests.test_readme_quickstart
+git diff --check
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  taskset -c 24 .venv/bin/python \
+  target/mse_loss_sum_rank2_vector_timing.py \
+  > target/mse-loss-sum-rank2-vector-timing.json
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  MSE_LOSS_SUM_IMPL_ORDER=pytorch,torch_rs \
+  taskset -c 24 .venv/bin/python \
+  target/mse_loss_sum_rank2_vector_timing.py \
+  > target/mse-loss-sum-rank2-vector-timing-pass2.json
+```
+
+The timing driver validates the broadcast warning, scalar output shape/stride,
+storage offset, contiguity, `requires_grad`, leaf status, and scalar value
+against PyTorch 2.13 before timing. Inputs are CPU `float32` tensors created
+outside the timed region with NumPy seed `20260902`. Each process used 15
+warmup blocks and 81 measured blocks; each block repeated the operation 8
+times and consumed the final scalar output with a BLAKE2b metadata/value
+checksum. Reported medians below are the medians of the two per-process
+medians, run once in each implementation order.
+
+Environment matched the 2026-09-01 review update unless noted: worktree-local
+`.venv`, Python 3.12.14+meta, NumPy 2.5.1, PyTorch 2.13.0+cu130 with CUDA
+runtime 13.0 installed but `CUDA_VISIBLE_DEVICES=`, Rust `rustc 1.92.0
+(ded5c06cf 2025-12-08)`, `cargo 1.92.0 (344c4567c 2025-10-21)`, maturin
+1.14.1, CPU AMD EPYC 9654, Linux 6.13.2-0_fbk12_0_g0b66b3635210 x86_64,
+release profile, CPU affinity `taskset -c 24`, and single-threaded
+BLAS/OpenMP/torch settings. `torch_rs.get_num_threads()` and
+`torch_rs.get_num_interop_threads()` both reported 1. No Conda environment was
+active in the shell; `uv venv` completed in 0.15s, locked `uv sync` resolved in
+29 ms, prepared packages in 15.78s, and installed them in 1.33s. The final
+release extension install build completed in 29.40s.
+
+| Workload | Category | Input / target | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Materialized checksums |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| `mse_sum_broadcasted_256x384_by_384` | broadcast | `(256, 384), stride (384, 1), offset 0` / `(384,), stride (1,), offset 0` | `(), stride (), offset 0, requires_grad=False` | 8 | 82.970 us +/- 0.427 us, var 1.787 | 24.222 us +/- 0.204 us, var 1.098 | 3.43x | `57329cb3e33203e7`/`57329cb3e33203e7` |
+
+Relative to the 2026-09-01 review update for the same broadcast row, the
+`torch_rs` median moved from 96.266 us to 82.970 us (-13.8%) while preserving
+the same scalar output contract.
+
 ## Review Update: `reduction="sum"`
 
 The 2026-09-01 review rerun used the current composite worktree's release
