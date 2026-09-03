@@ -147,7 +147,7 @@ def _contiguous_stride(shape):
     running = 1
     for dimension in reversed(shape):
         stride.append(running)
-        running *= dimension
+        running *= max(dimension, 1)
     return tuple(reversed(stride))
 
 
@@ -329,7 +329,7 @@ class CompileTraceRecorder:
         if target not in _SUPPORTED_UNARY_TARGETS:
             _unsupported_operation(f"Tensor.{target}")
         self._require_owned_proxy(input)
-        name = f"{target}_{len(self._operations)}"
+        name = self._next_operation_name(target)
         operation = CompileTraceOperation(
             name=name,
             op="call_method",
@@ -364,6 +364,14 @@ class CompileTraceRecorder:
         return any(input.name == name for input in self._inputs) or any(
             operation.name == name for operation in self._operations
         )
+
+    def _next_operation_name(self, target):
+        index = len(self._operations)
+        while True:
+            name = f"{target}_{index}"
+            if not self._has_value(name):
+                return name
+            index += 1
 
     def _require_owned_proxy(self, value):
         if not _builtins.isinstance(value, CompileTraceTensorProxy):

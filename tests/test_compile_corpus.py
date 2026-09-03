@@ -181,6 +181,39 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 self.assertIn("Tensor.neg", message)
                 self.assertIn("Tensor.abs", message)
 
+    def test_operation_names_skip_existing_input_names(self):
+        recorder = _compile_trace.CompileTraceRecorder()
+        x = recorder.input(name="neg_0", shape=(2,))
+        first = x.neg()
+        second = first.neg()
+        graph = recorder.finish(second)
+
+        value_names = (
+            *(input.name for input in graph.inputs),
+            *(operation.name for operation in graph.operations),
+        )
+        self.assertEqual(len(value_names), len(set(value_names)))
+        self.assertEqual(graph.inputs[0].name, "neg_0")
+        self.assertEqual(
+            [(operation.name, operation.inputs) for operation in graph.operations],
+            [
+                ("neg_1", ("neg_0",)),
+                ("neg_2", ("neg_1",)),
+            ],
+        )
+        self.assertEqual(graph.output, "neg_2")
+
+    def test_empty_inner_dimension_strides_match_native_tensor_constructor(self):
+        recorder = _compile_trace.CompileTraceRecorder()
+        trace_module = _compile_trace.CompileTraceTorchModule(recorder)
+        proxy = trace_module.tensor([[], []], dtype=trace_module.float32)
+        native = torch.tensor([[], []], dtype=torch.float32)
+
+        self.assertEqual(proxy.shape, tuple(native.shape))
+        self.assertEqual(proxy.stride(), native.stride())
+        self.assertEqual(proxy.shape, (2, 0))
+        self.assertEqual(proxy.stride(), (1, 1))
+
     def test_private_trace_does_not_import_pytorch_or_invoke_backend(self):
         script = r"""
 import sys
