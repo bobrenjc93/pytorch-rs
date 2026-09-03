@@ -220,6 +220,64 @@ class CompileCorpusTraceTests(unittest.TestCase):
             case=f"{case.name} function executor",
         )
 
+    def test_unary_output_metadata_matches_native_stride_planning(self):
+        cases = (
+            (
+                "singleton dimension",
+                torch.tensor([[1.0, 2.0, 3.0]], dtype=torch.float32).t(),
+            ),
+            (
+                "dense transpose",
+                torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32).t(),
+            ),
+            (
+                "empty transpose",
+                torch.zeros((2, 0, 3), dtype=torch.float32).transpose(0, 2)[1],
+            ),
+            (
+                "channels last",
+                torch.zeros((2, 3, 4, 5), dtype=torch.float32).contiguous(
+                    memory_format=torch.channels_last
+                ),
+            ),
+            (
+                "channels last 3d",
+                torch.zeros((2, 3, 4, 5, 6), dtype=torch.float32).contiguous(
+                    memory_format=torch.channels_last_3d
+                ),
+            ),
+        )
+        for case, input in cases:
+            with self.subTest(case=case):
+                recorder = _compile_trace.CompileTraceRecorder()
+                proxy = recorder.input(
+                    shape=tuple(input.shape),
+                    stride=input.stride(),
+                    dtype=_compile_trace.float32,
+                    device="cpu",
+                    requires_grad=input.requires_grad,
+                )
+                neg_proxy = proxy.neg()
+                output_proxy = neg_proxy.abs()
+                graph = recorder.finish(output_proxy)
+
+                expected_neg = input.neg()
+                expected = expected_neg.abs()
+                self.assertEqual(
+                    graph.operations[0].metadata.stride,
+                    expected_neg.stride(),
+                )
+                self.assertEqual(
+                    graph.operations[1].metadata.stride,
+                    expected.stride(),
+                )
+                self.assertEqual(graph.output_metadata.stride, expected.stride())
+                self.assert_native_tensor_matches(
+                    graph.forward(input),
+                    expected,
+                    case=case,
+                )
+
     def test_private_executor_rejects_runtime_metadata_mismatch_clearly(self):
         graph = _compile_trace.trace_one_input_compile_graph(
             cpu_float32_unary_abs_neg,
