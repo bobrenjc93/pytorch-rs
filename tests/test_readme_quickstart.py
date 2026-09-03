@@ -463,9 +463,11 @@ class ReadmeQuickstartTests(unittest.TestCase):
     def test_readme_links_contributing_guide(self):
         readme = README.read_text(encoding="utf-8")
         self.assertIn("[CONTRIBUTING.md](CONTRIBUTING.md)", readme)
+        self.assertIn("contributor preflight", readme)
         self.assertTrue(CONTRIBUTING.is_file())
 
         contributing = CONTRIBUTING.read_text(encoding="utf-8")
+        self.assertIn("## Contributor Preflight", contributing)
         self.assertLess(len(contributing.splitlines()), 120)
 
     def test_readme_routes_to_supported_surface_anchors(self):
