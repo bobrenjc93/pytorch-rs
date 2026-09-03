@@ -1,4 +1,5 @@
 import copy
+import functools
 import importlib
 import inspect
 import pickle
@@ -12,9 +13,9 @@ from torch_rs import _compiler_state as _state
 
 
 UNSUPPORTED_MESSAGE = (
-    "torch.compile(): graph capture, graph execution, and eager fallback are "
-    "not supported; only argument binding, disable=True pass-through, and "
-    "backend resolution are implemented"
+    "torch.compile(): graph capture/execution is supported only for exact CPU "
+    "float32 unary relu functions; eager fallback, installed-PyTorch forwarding, "
+    "backend invocation, and CUDA compilation are not supported"
 )
 
 
@@ -218,9 +219,7 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             compiled(torch.tensor([1.0], requires_grad=True))
         self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
 
-        with self.assertRaises(NotImplementedError) as raised:
-            compiled(x=torch.tensor([1.0]))
-        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(compiled(x=torch.tensor([-1.0, 2.0])).tolist(), [0.0, 2.0])
 
         with self.assertRaises(NotImplementedError) as raised:
             compiled("input")
@@ -231,6 +230,37 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             lambda_compiled(torch.tensor([-2.0, 3.0])).tolist(),
             [0.0, 3.0],
         )
+
+    def test_wrapped_relu_functions_are_not_miscompiled_or_executed(self):
+        calls = []
+
+        def original(x):
+            return x.relu()
+
+        @functools.wraps(original)
+        def wrapped(x):
+            calls.append("wrapped")
+            return x.relu()
+
+        wrapped_compiled = torch.compile(wrapped, backend="eager")
+        self.assertFalse(hasattr(wrapped_compiled, "_torch_rs_compile_graph"))
+        self.assertEqual(calls, [])
+        with self.assertRaises(NotImplementedError) as raised:
+            wrapped_compiled(torch.tensor([-1.0, 2.0]))
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(calls, [])
+
+        @functools.wraps(original)
+        def wrapped_other_method(x):
+            calls.append("wrapped_other_method")
+            return x.sqrt()
+
+        other_compiled = torch.compile(wrapped_other_method, backend="eager")
+        self.assertFalse(hasattr(other_compiled, "_torch_rs_compile_graph"))
+        with self.assertRaises(NotImplementedError) as raised:
+            other_compiled(torch.tensor([4.0]))
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(calls, [])
 
     def test_top_level_relu_graphlet_guards_the_public_relu_binding(self):
         original_relu = torch.relu

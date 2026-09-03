@@ -106,21 +106,27 @@ class TorchCompileReluReferenceTests(unittest.TestCase):
                     expected_model,
                     compile_form,
                 )
-                for case in cases:
-                    with self.subTest(
-                        compile_form=compile_form,
-                        model_form=model_form,
-                        case=case,
-                    ):
-                        actual_input = self.make_input(torch, case)
-                        expected_input = self.make_input(reference_torch, case)
-                        actual_output = actual_compiled(actual_input)
-                        expected_output = expected_compiled(expected_input)
-                        self.assert_tensor_matches(
-                            actual_output,
-                            expected_output,
-                            case=(compile_form, model_form, case),
-                        )
+                for call_form in ("positional", "keyword"):
+                    for case in cases:
+                        with self.subTest(
+                            compile_form=compile_form,
+                            model_form=model_form,
+                            call_form=call_form,
+                            case=case,
+                        ):
+                            actual_input = self.make_input(torch, case)
+                            expected_input = self.make_input(reference_torch, case)
+                            if call_form == "positional":
+                                actual_output = actual_compiled(actual_input)
+                                expected_output = expected_compiled(expected_input)
+                            else:
+                                actual_output = actual_compiled(x=actual_input)
+                                expected_output = expected_compiled(x=expected_input)
+                            self.assert_tensor_matches(
+                                actual_output,
+                                expected_output,
+                                case=(compile_form, model_form, call_form, case),
+                            )
 
     def test_capture_does_not_import_pytorch_or_execute_on_real_inputs(self):
         probe = Path(__file__).with_name("compile_no_pytorch_import_probe.py")

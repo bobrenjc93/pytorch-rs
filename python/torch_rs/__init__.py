@@ -261,9 +261,9 @@ def set_default_device(device: "Device") -> None:
 
 
 _COMPILE_UNSUPPORTED_MESSAGE = (
-    "torch.compile(): graph capture, graph execution, and eager fallback are "
-    "not supported; only argument binding, disable=True pass-through, and "
-    "backend resolution are implemented"
+    "torch.compile(): graph capture/execution is supported only for exact CPU "
+    "float32 unary relu functions; eager fallback, installed-PyTorch forwarding, "
+    "backend invocation, and CUDA compilation are not supported"
 )
 
 

@@ -1,10 +1,8 @@
 """Private helpers for the small supported ``torch.compile`` graph subset."""
 
-import ast as _ast
 import dis as _dis
 import inspect as _inspect
 import sys as _sys
-import textwrap as _textwrap
 import types as _types
 
 
@@ -29,7 +27,10 @@ class _ReluTraceProxy:
 
 def try_compile_supported_graphlet(model, unsupported_message):
     """Return a compiled callable for the exact supported graphlet, if any."""
-    relu_kind = _supported_relu_kind(model)
+    graphlet = _supported_relu_graphlet(model)
+    if graphlet is None:
+        return None
+    relu_kind, signature, parameter_name = graphlet
     if relu_kind is None:
         return None
 
@@ -45,61 +46,52 @@ def try_compile_supported_graphlet(model, unsupported_message):
             and _current_package_relu() is not captured_top_level_relu
         ):
             raise NotImplementedError(unsupported_message)
-        tensor = _bind_runtime_relu_argument(args, kwargs, unsupported_message)
+        tensor = _bind_runtime_relu_argument(
+            signature,
+            parameter_name,
+            args,
+            kwargs,
+            unsupported_message,
+        )
         return tensor.relu()
 
     return compiled_model
 
 
-def _supported_relu_kind(model):
+def _supported_relu_graphlet(model):
     if type(model) is not _types.FunctionType:
         return None
 
-    parameter_name = _single_positional_parameter_name(model)
-    if parameter_name is None:
+    signature, parameter_name = _single_positional_parameter(model)
+    if signature is None:
         return None
 
     relu_kind = _bytecode_relu_kind(model, parameter_name)
-    if relu_kind is not None:
-        return relu_kind
-
-    function_node = _source_function_node(model)
-    if function_node is None:
+    if relu_kind is None:
         return None
 
-    body = list(function_node.body)
-    if (
-        body
-        and isinstance(body[0], _ast.Expr)
-        and isinstance(body[0].value, _ast.Constant)
-        and isinstance(body[0].value.value, str)
-    ):
-        body = body[1:]
-    if len(body) != 1 or not isinstance(body[0], _ast.Return):
-        return None
-
-    return _exact_relu_return_kind(model, parameter_name, body[0].value)
+    return relu_kind, signature, parameter_name
 
 
-def _single_positional_parameter_name(model):
+def _single_positional_parameter(model):
     try:
         signature = _inspect.signature(model)
     except (TypeError, ValueError):
-        return None
+        return None, None
 
     parameters = tuple(signature.parameters.values())
     if len(parameters) != 1:
-        return None
+        return None, None
 
     parameter = parameters[0]
     if parameter.kind not in (
         _inspect.Parameter.POSITIONAL_ONLY,
         _inspect.Parameter.POSITIONAL_OR_KEYWORD,
     ):
-        return None
+        return None, None
     if parameter.default is not _inspect.Parameter.empty:
-        return None
-    return parameter.name
+        return None, None
+    return signature, parameter.name
 
 
 def _bytecode_relu_kind(model, parameter_name):
@@ -161,59 +153,6 @@ def _matches_top_level_relu_bytecode(model, instructions, parameter_name):
     return True
 
 
-def _source_function_node(model):
-    try:
-        source = _inspect.getsource(model)
-    except (OSError, TypeError):
-        return None
-
-    try:
-        module = _ast.parse(_textwrap.dedent(source))
-    except SyntaxError:
-        return None
-
-    for node in _ast.walk(module):
-        if isinstance(node, _ast.FunctionDef) and node.name == model.__name__:
-            return node
-    return None
-
-
-def _exact_relu_return_kind(model, parameter_name, expression):
-    if not isinstance(expression, _ast.Call):
-        return None
-    if expression.args or expression.keywords:
-        if _is_exact_top_level_relu_call(model, parameter_name, expression):
-            return "top_level"
-        return None
-
-    function = expression.func
-    if (
-        isinstance(function, _ast.Attribute)
-        and function.attr == "relu"
-        and isinstance(function.value, _ast.Name)
-        and function.value.id == parameter_name
-    ):
-        return "method"
-    return None
-
-
-def _is_exact_top_level_relu_call(model, parameter_name, expression):
-    if len(expression.args) != 1 or expression.keywords:
-        return False
-    argument = expression.args[0]
-    function = expression.func
-    if (
-        not isinstance(argument, _ast.Name)
-        or argument.id != parameter_name
-        or not isinstance(function, _ast.Attribute)
-        or function.attr != "relu"
-        or not isinstance(function.value, _ast.Name)
-    ):
-        return False
-
-    return _global_is_canonical_package_relu(model, function.value.id)
-
-
 def _global_is_canonical_package_relu(model, name):
     module = model.__globals__.get(name)
     package = _package_module()
@@ -250,11 +189,21 @@ def _trace_returns_unary_relu(model, relu_kind, captured_top_level_relu):
     return type(result) is _ReluTraceProxy and result._node == "relu"
 
 
-def _bind_runtime_relu_argument(args, kwargs, unsupported_message):
-    if len(args) != 1 or kwargs:
-        raise NotImplementedError(unsupported_message)
+def _bind_runtime_relu_argument(
+    signature,
+    parameter_name,
+    args,
+    kwargs,
+    unsupported_message,
+):
+    try:
+        bound = signature.bind(*args, **kwargs)
+    except TypeError as error:
+        raise NotImplementedError(unsupported_message) from error
 
-    tensor = args[0]
+    tensor = bound.arguments.get(parameter_name, _MISSING)
+    if tensor is _MISSING:
+        raise NotImplementedError(unsupported_message)
     package = _package_module()
     if type(tensor) is not package.Tensor:
         raise NotImplementedError(unsupported_message)
