@@ -1072,6 +1072,52 @@ def _pop_bytecode_value(stack, program, instruction):
         _unsupported_bytecode(program, instruction, "stack underflow")
 
 
+def _local_names_from_instruction(program, instruction, count):
+    argval = instruction.argval
+    if _builtins.isinstance(argval, tuple):
+        names = argval
+    elif _builtins.isinstance(argval, list):
+        names = tuple(argval)
+    elif count == 1 and _builtins.isinstance(argval, _builtins.str):
+        names = (argval,)
+    else:
+        argrepr = _builtins.str(instruction.argrepr).strip()
+        if argrepr.startswith("(") and argrepr.endswith(")"):
+            argrepr = argrepr[1:-1]
+        names = tuple(name.strip() for name in argrepr.split(",") if name.strip())
+
+    if len(names) != count or not all(
+        _builtins.isinstance(name, _builtins.str) and name for name in names
+    ):
+        _unsupported_bytecode(
+            program,
+            instruction,
+            f"local operand decoding for {count} locals",
+        )
+    return names
+
+
+def _load_bytecode_local(locals, stack, program, instruction, name):
+    try:
+        stack.append(locals[name])
+    except KeyError:
+        _unsupported_bytecode(
+            program,
+            instruction,
+            f"unbound local {name!r}",
+        )
+
+
+def _store_bytecode_local(locals, stack, program, instruction, name):
+    value = _require_bytecode_tensor(
+        _pop_bytecode_value(stack, program, instruction),
+        program,
+        instruction,
+        f"stored local {name!r}",
+    )
+    locals[name] = value
+
+
 def _require_bytecode_tensor(value, program, instruction, role):
     if not _builtins.isinstance(value, CompileTraceTensorProxy):
         _unsupported_bytecode(program, instruction, f"non-Tensor {role}")
@@ -1083,6 +1129,17 @@ def _load_attr_pushes_method(instruction):
         return True
     return instruction.opname == "LOAD_ATTR" and instruction.arg is not None and (
         instruction.arg & 1
+    )
+
+
+def _is_two_local_load_opcode(opname):
+    return (
+        opname in ("LOAD_FAST_LOAD_FAST", "LOAD_FAST_BORROW_LOAD_FAST_BORROW")
+        or (
+            opname.startswith("LOAD_FAST")
+            and "_LOAD_FAST" in opname
+            and "AND_CLEAR" not in opname
+        )
     )
 
 
@@ -1173,25 +1230,44 @@ def _lower_bytecode_instruction(
     if opname in ("KW_NAMES", "CALL_FUNCTION_KW", "CALL_METHOD_KW"):
         _unsupported_bytecode(program, instruction, "keyword arguments")
 
-    if opname in ("LOAD_FAST", "LOAD_FAST_CHECK"):
-        try:
-            stack.append(locals[instruction.argval])
-        except KeyError:
-            _unsupported_bytecode(
-                program,
-                instruction,
-                f"unbound local {instruction.argval!r}",
-            )
+    if opname in ("LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW"):
+        (name,) = _local_names_from_instruction(program, instruction, 1)
+        _load_bytecode_local(locals, stack, program, instruction, name)
+        return None
+
+    if _is_two_local_load_opcode(opname):
+        first_name, second_name = _local_names_from_instruction(
+            program,
+            instruction,
+            2,
+        )
+        _load_bytecode_local(locals, stack, program, instruction, first_name)
+        _load_bytecode_local(locals, stack, program, instruction, second_name)
         return None
 
     if opname == "STORE_FAST":
-        value = _require_bytecode_tensor(
-            _pop_bytecode_value(stack, program, instruction),
+        (name,) = _local_names_from_instruction(program, instruction, 1)
+        _store_bytecode_local(locals, stack, program, instruction, name)
+        return None
+
+    if opname == "STORE_FAST_LOAD_FAST":
+        store_name, load_name = _local_names_from_instruction(
             program,
             instruction,
-            f"stored local {instruction.argval!r}",
+            2,
         )
-        locals[instruction.argval] = value
+        _store_bytecode_local(locals, stack, program, instruction, store_name)
+        _load_bytecode_local(locals, stack, program, instruction, load_name)
+        return None
+
+    if opname == "STORE_FAST_STORE_FAST":
+        first_name, second_name = _local_names_from_instruction(
+            program,
+            instruction,
+            2,
+        )
+        _store_bytecode_local(locals, stack, program, instruction, first_name)
+        _store_bytecode_local(locals, stack, program, instruction, second_name)
         return None
 
     if opname in ("LOAD_METHOD", "LOAD_ATTR"):
@@ -1266,6 +1342,9 @@ def _lower_bytecode_instruction(
         if stack:
             _unsupported_bytecode(program, instruction, "residual stack values")
         return output
+
+    if opname == "RETURN_CONST":
+        _unsupported_bytecode(program, instruction, "non-Tensor return value")
 
     _unsupported_bytecode(program, instruction, "unsupported bytecode")
 

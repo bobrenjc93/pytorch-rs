@@ -333,6 +333,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         ),
         (
             "`torch.compile` graph capture/execution beyond the one-input",
+            "active `__torch_function__` modes",
             "installed-PyTorch forwarding",
             "TorchScript compilation",
             "process-group creation",
@@ -384,6 +385,7 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "straight-line one-input CPU `float32` Tensor functions",
     "Tensor `neg`, `abs`, and binary `add`",
     "broader graph capture/execution",
+    "active `__torch_function__` modes",
     "eager fallback",
     "installed-PyTorch forwarding",
     "callable backend invocation",

@@ -354,6 +354,7 @@ def _supports_native_eager_compile(
 def _native_eager_compile_implementation(model, name):
     def compiled_model(*args, **kwargs):
         from . import _compile_trace as _compile_trace
+        from . import overrides as _compile_overrides
 
         if kwargs:
             names = ", ".join(sorted(kwargs))
@@ -372,6 +373,12 @@ def _native_eager_compile_implementation(model, name):
             raise TypeError(
                 "torch.compile trace bytecode lowering expected exact native "
                 f"torch_rs Tensor input, got {_builtins.type(input)}"
+            )
+
+        if _compile_overrides._get_current_function_mode() is not None:
+            raise _compile_trace.CompileTraceUnsupportedError(
+                "torch.compile trace execution does not support active "
+                "__torch_function__ modes"
             )
 
         input_metadata = _compile_trace._metadata_from_native_tensor(input)
