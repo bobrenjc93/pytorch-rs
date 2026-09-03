@@ -289,6 +289,86 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertIs(actual.dtype, expected.dtype)
         self.assertEqual(actual.device, expected.device)
 
+    def test_eager_fullgraph_rejects_patched_tensor_operation_bindings(self):
+        def call_neg(value):
+            return value.neg()
+
+        def call_negative(value):
+            return value.negative()
+
+        def call_abs(value):
+            return value.abs()
+
+        def call_absolute(value):
+            return value.absolute()
+
+        def call_add(value):
+            return value.add(value)
+
+        def call_dunder_add(value):
+            return value + value
+
+        def call_dunder_radd(value):
+            return value.__radd__(value)
+
+        def call_dunder_neg(value):
+            return -value
+
+        def call_dunder_abs(value):
+            return value.__abs__()
+
+        def patched_getattribute(self, name):
+            if name == "neg":
+                return lambda: self + self
+            return object.__getattribute__(self, name)
+
+        input = torch.tensor([2.0], dtype=torch.float32)
+        cases = (
+            ("neg", lambda self: self + self, call_neg, [4.0]),
+            ("negative", lambda self: self + self, call_negative, [4.0]),
+            ("abs", lambda self: self + self, call_abs, [4.0]),
+            ("absolute", lambda self: self + self, call_absolute, [4.0]),
+            ("add", lambda self, other: self.neg(), call_add, [-2.0]),
+            ("__add__", lambda self, other: self.neg(), call_dunder_add, [-2.0]),
+            (
+                "__radd__",
+                lambda self, other: self.neg(),
+                call_dunder_radd,
+                [-2.0],
+            ),
+            ("__neg__", lambda self: self + self, call_dunder_neg, [4.0]),
+            ("__abs__", lambda self: self + self, call_dunder_abs, [4.0]),
+            (
+                "__getattribute__",
+                patched_getattribute,
+                call_neg,
+                [4.0],
+            ),
+        )
+
+        missing = object()
+        for name, replacement, program, expected_eager in cases:
+            with self.subTest(binding=name):
+                original = torch.Tensor.__dict__.get(name, missing)
+                setattr(torch.Tensor, name, replacement)
+                try:
+                    self.assertEqual(program(input).tolist(), expected_eager)
+                    compiled = torch.compile(
+                        program,
+                        backend="eager",
+                        fullgraph=True,
+                    )
+                    with self.assertRaisesRegex(
+                        NotImplementedError,
+                        f"patched Tensor operation bindings: .*Tensor\\.{name}",
+                    ):
+                        compiled(input)
+                finally:
+                    if original is missing:
+                        delattr(torch.Tensor, name)
+                    else:
+                        setattr(torch.Tensor, name, original)
+
     def test_eager_fullgraph_relowers_for_runtime_input_metadata(self):
         def program(x):
             return x.neg().abs() + x

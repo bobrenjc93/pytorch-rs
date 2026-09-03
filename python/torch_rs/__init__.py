@@ -3,6 +3,7 @@
 import builtins as _builtins
 import copyreg as _copyreg
 import functools as _functools
+import inspect as _inspect
 import multiprocessing.reduction as _multiprocessing_reduction
 import sys as _sys
 import types as _types
@@ -267,6 +268,19 @@ _COMPILE_UNSUPPORTED_MESSAGE = (
     "forwarding, callable backend invocation, CUDA compilation, and broader "
     "graph capture remain unsupported"
 )
+_COMPILE_TENSOR_METHOD_GUARD_NAMES = (
+    "__abs__",
+    "__add__",
+    "__getattribute__",
+    "__neg__",
+    "__radd__",
+    "abs",
+    "absolute",
+    "add",
+    "neg",
+    "negative",
+)
+_COMPILE_TENSOR_METHOD_GUARDS = globals().get("_COMPILE_TENSOR_METHOD_GUARDS")
 
 
 def _is_exact_python_function(model, _function_type=_types.FunctionType):
@@ -362,6 +376,44 @@ def _supports_native_eager_compile(
     )
 
 
+def _snapshot_compile_tensor_method_guards(
+    _static_getattr=_inspect.getattr_static,
+):
+    return tuple(
+        (name, _static_getattr(Tensor, name))
+        for name in _COMPILE_TENSOR_METHOD_GUARD_NAMES
+    )
+
+
+def _initialize_compile_tensor_method_guards():
+    global _COMPILE_TENSOR_METHOD_GUARDS
+    if _COMPILE_TENSOR_METHOD_GUARDS is None:
+        _COMPILE_TENSOR_METHOD_GUARDS = _snapshot_compile_tensor_method_guards()
+
+
+def _ensure_compile_tensor_method_guards(
+    compile_trace,
+    _static_getattr=_inspect.getattr_static,
+):
+    _initialize_compile_tensor_method_guards()
+    patched = []
+    for name, expected in _COMPILE_TENSOR_METHOD_GUARDS:
+        try:
+            current = _static_getattr(Tensor, name)
+        except AttributeError:
+            patched.append(f"Tensor.{name}")
+            continue
+        if current is not expected:
+            patched.append(f"Tensor.{name}")
+
+    if patched:
+        bindings = ", ".join(patched)
+        raise compile_trace.CompileTraceUnsupportedError(
+            "torch.compile trace bytecode lowering does not support patched "
+            f"Tensor operation bindings: {bindings}"
+        )
+
+
 def _native_eager_compile_implementation(model, name):
     def compiled_model(*args, **kwargs):
         from . import _compile_bytecode as _compile_bytecode
@@ -393,6 +445,7 @@ def _native_eager_compile_implementation(model, name):
                 "__torch_function__ modes"
             )
 
+        _ensure_compile_tensor_method_guards(_compile_trace)
         input_metadata = _compile_trace._metadata_from_native_tensor(input)
         graph = _compile_bytecode.lower_one_input_compile_graph(
             model,
@@ -870,6 +923,9 @@ from . import jit as jit
 from . import nn as nn
 from . import overrides as overrides
 from . import _tensor as _tensor
+
+_initialize_compile_tensor_method_guards()
+
 from . import serialization as serialization
 from . import utils as utils
 from . import version as version
@@ -882,6 +938,7 @@ from .functional import broadcast_tensors as broadcast_tensors
 del (
     _copyreg,
     _functools,
+    _inspect,
     _multiprocessing_reduction,
     _native,
     _sys,
