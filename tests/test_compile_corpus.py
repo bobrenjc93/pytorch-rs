@@ -110,14 +110,6 @@ COMPILE_CORPUS = (
 )
 
 
-def make_recording_backend(calls):
-    def backend(graph_module, example_inputs):
-        calls.append((graph_module, example_inputs))
-        return graph_module.forward
-
-    return backend
-
-
 def reset_reference_compile_state():
     dynamo = getattr(reference_torch, "_dynamo", None)
     if dynamo is not None:
@@ -786,7 +778,25 @@ for actual in (
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
-compiled = torch.compile(self_add, backend=backend)
+def public_abs_neg(x):
+    return x.neg().abs()
+
+compiled = torch.compile(public_abs_neg, backend="eager", fullgraph=True)
+actual = compiled(native_input)
+assert actual.tolist() == expected.tolist()
+assert actual.shape == expected.shape
+assert actual.stride() == expected.stride()
+assert actual.dtype is expected.dtype
+assert actual.device == expected.device
+assert actual.requires_grad is expected.requires_grad
+assert [
+    operation.target
+    for operation in compiled._torch_rs_compile_trace_graph.operations
+] == ["neg", "abs"]
+assert backend_calls == []
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
+compiled = torch.compile(self_add, backend="eager", fullgraph=True)
 try:
     compiled(make_inputs(torch)[0])
 except NotImplementedError as error:
@@ -796,7 +806,7 @@ except NotImplementedError as error:
         "backend resolution are implemented"
     )
 else:
-    raise AssertionError("public torch.compile should remain non-executing")
+    raise AssertionError("public torch.compile should reject self-add")
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
@@ -812,6 +822,36 @@ assert not any(name == "torch" or name.startswith("torch.") for name in sys.modu
             msg=completed.stdout + completed.stderr,
         )
 
+    def test_public_eager_compile_corpus_graphlet_boundary(self):
+        for case in COMPILE_CORPUS:
+            with self.subTest(case=case.name):
+                compiled = torch.compile(
+                    case.program,
+                    **case.compile_kwargs("eager"),
+                )
+                self.assertEqual(compiled._torch_rs_compile_backend, "eager")
+                inputs = case.make_inputs(torch)
+
+                if case.program is cpu_float32_unary_abs_neg:
+                    actual = compiled(*inputs)
+                    expected = case.program(*case.make_inputs(torch))
+                    self.assert_native_tensor_matches(
+                        actual,
+                        expected,
+                        case=case.name,
+                    )
+                    self.assertEqual(
+                        [
+                            operation.target
+                            for operation in compiled._torch_rs_compile_trace_graph.operations
+                        ],
+                        ["neg", "abs"],
+                    )
+                else:
+                    with self.assertRaises(NotImplementedError) as raised:
+                        compiled(*inputs)
+                    self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class TorchCompileCorpusReferenceTests(unittest.TestCase):
@@ -826,8 +866,6 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
     def assert_reference_eligible(self, case):
         reset_reference_compile_state()
         self.addCleanup(reset_reference_compile_state)
-        backend_calls = []
-        backend = make_recording_backend(backend_calls)
         inputs = case.make_inputs(reference_torch)
         expected = case.program(*case.make_inputs(reference_torch))
 
@@ -838,40 +876,56 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
 
         compiled = reference_torch.compile(
             case.program,
-            **case.compile_kwargs(backend),
+            **case.compile_kwargs("eager"),
         )
         actual = compiled(*inputs)
         reference_torch.testing.assert_close(actual, expected)
-        self.assertGreaterEqual(len(backend_calls), 1)
 
     def test_reference_pytorch_2_13_accepts_all_eligible_cases(self):
         for case in COMPILE_CORPUS:
             with self.subTest(case=case.name):
                 self.assert_reference_eligible(case)
 
-    def test_torch_rs_compile_keeps_eligible_cases_unsupported(self):
+    def assert_torch_rs_tensor_matches(self, actual, expected, *, case):
+        self.assertIsInstance(actual, torch.Tensor)
+        self.assertEqual(tuple(actual.shape), tuple(expected.shape), msg=case)
+        self.assertEqual(actual.stride(), expected.stride(), msg=case)
+        self.assertIs(actual.dtype, expected.dtype, msg=case)
+        self.assertEqual(actual.device, expected.device, msg=case)
+        self.assertEqual(actual.requires_grad, expected.requires_grad, msg=case)
+        self.assertEqual(actual.tolist(), expected.tolist(), msg=case)
+
+    def test_torch_rs_compile_matches_current_graphlet_boundary(self):
         for case in COMPILE_CORPUS:
             with self.subTest(case=case.name):
                 self.assert_reference_eligible(case)
 
-                model_calls = []
-                backend_calls = []
-                backend = make_recording_backend(backend_calls)
+                compiled = torch.compile(
+                    case.program,
+                    **case.compile_kwargs("eager"),
+                )
+                self.assertEqual(compiled._torch_rs_compile_backend, "eager")
+                inputs = case.make_inputs(torch)
 
-                def model(*args, **kwargs):
-                    model_calls.append((args, kwargs))
-                    return case.program(*args, **kwargs)
-
-                compiled = torch.compile(model, **case.compile_kwargs(backend))
-                self.assertIs(compiled._torch_rs_compile_backend, backend)
-                self.assertEqual(model_calls, [])
-                self.assertEqual(backend_calls, [])
-
-                with self.assertRaises(NotImplementedError) as raised:
-                    compiled(*case.make_inputs(torch))
-                self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
-                self.assertEqual(model_calls, [])
-                self.assertEqual(backend_calls, [])
+                if case.program is cpu_float32_unary_abs_neg:
+                    actual = compiled(*inputs)
+                    expected = case.program(*case.make_inputs(torch))
+                    self.assert_torch_rs_tensor_matches(
+                        actual,
+                        expected,
+                        case=case.name,
+                    )
+                    self.assertEqual(
+                        [
+                            operation.target
+                            for operation in compiled._torch_rs_compile_trace_graph.operations
+                        ],
+                        ["neg", "abs"],
+                    )
+                else:
+                    with self.assertRaises(NotImplementedError) as raised:
+                        compiled(*inputs)
+                    self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
 
 
 if __name__ == "__main__":

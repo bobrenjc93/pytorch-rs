@@ -8,6 +8,7 @@ import types
 import unittest
 
 import torch_rs as torch
+from torch_rs import _compile_trace
 from torch_rs import _compiler_state as _state
 
 
@@ -33,6 +34,17 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         _state.registered_backends.update(self.registered_backends)
         _state.registered_backend_fns.clear()
         _state.registered_backend_fns.update(self.registered_backend_fns)
+
+    def assert_native_tensor_matches(self, actual, expected):
+        self.assertIsInstance(actual, torch.Tensor)
+        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+        self.assertEqual(actual.stride(), expected.stride())
+        self.assertIs(actual.dtype, expected.dtype)
+        self.assertEqual(actual.device, expected.device)
+        self.assertEqual(actual.storage_offset(), expected.storage_offset())
+        self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+        self.assertEqual(actual.requires_grad, expected.requires_grad)
+        self.assertEqual(actual.tolist(), expected.tolist())
 
     def test_signature_metadata_exports_copy_pickle_and_reload(self):
         function = torch.compile
@@ -203,6 +215,174 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
         self.assertEqual(model_calls, [])
         self.assertEqual(backend_calls, [])
+
+    def test_eager_fullgraph_abs_neg_executes_private_trace_graph(self):
+        execute_calls = []
+
+        def model(x):
+            return x.neg().abs()
+
+        original_execute = _compile_trace.execute_compile_trace_graph
+
+        def recording_execute(graph, input):
+            execute_calls.append((graph, input))
+            return original_execute(graph, input)
+
+        input = torch.tensor(
+            [[-3.25, -0.0, 1.5], [2.0, -4.5, 0.25]],
+            dtype=torch.float32,
+        )
+        expected = input.neg().abs()
+        compiled = torch.compile(model, backend="eager", fullgraph=True)
+
+        _compile_trace.execute_compile_trace_graph = recording_execute
+        try:
+            actual = compiled(input)
+            second_actual = compiled(input)
+        finally:
+            _compile_trace.execute_compile_trace_graph = original_execute
+
+        self.assert_native_tensor_matches(actual, expected)
+        self.assert_native_tensor_matches(second_actual, expected)
+        self.assertEqual(len(execute_calls), 2)
+        graph, executed_input = execute_calls[0]
+        self.assertIs(executed_input, input)
+        second_graph, second_input = execute_calls[1]
+        self.assertIs(compiled._torch_rs_compile_trace_graph, second_graph)
+        self.assertIsNot(second_graph, graph)
+        self.assertIs(second_input, input)
+        self.assertEqual(graph.name, "model")
+        self.assertEqual(
+            [operation.target for operation in graph.operations],
+            ["neg", "abs"],
+        )
+        self.assertEqual(graph.operations[0].inputs, ("arg0",))
+        self.assertEqual(graph.operations[1].inputs, ("neg_0",))
+        self.assertEqual(graph.output, "abs_1")
+
+    def test_eager_fullgraph_abs_neg_rejects_nearby_public_variants(self):
+        calls = []
+
+        def abs_neg(x):
+            return x.neg().abs()
+
+        class CallableModel:
+            def __call__(self, x):
+                calls.append(("callable", x))
+                return x.neg().abs()
+
+        def self_add(x):
+            calls.append(("self_add", x))
+            return x + x
+
+        class EagerEqualBackend:
+            def __eq__(self, other):
+                return other == "eager"
+
+            def __call__(self, graph_module, example_inputs):
+                calls.append(("backend", graph_module, example_inputs))
+                return graph_module.forward
+
+        input = torch.tensor([[-1.0, 2.0]], dtype=torch.float32)
+
+        unsupported_before_trace = (
+            torch.compile(abs_neg, backend="eager"),
+            torch.compile(abs_neg, backend="eager", fullgraph=1),
+            torch.compile(abs_neg, backend="eager", fullgraph=True, dynamic=False),
+            torch.compile(abs_neg, backend="eager", fullgraph=True, mode="default"),
+            torch.compile(abs_neg, backend="eager", fullgraph=True, options={}),
+            torch.compile(abs_neg, backend="eager", fullgraph=True, name="named"),
+            torch.compile(
+                abs_neg,
+                backend="eager",
+                fullgraph=True,
+                recompile_limit=1,
+            ),
+            torch.compile(
+                abs_neg,
+                backend="eager",
+                fullgraph=True,
+                isolate_recompiles=True,
+            ),
+            torch.compile(
+                abs_neg,
+                backend="eager",
+                fullgraph=True,
+                shapes_spec=object(),
+            ),
+            torch.compile(CallableModel(), backend="eager", fullgraph=True),
+            torch.compile(abs_neg, backend=EagerEqualBackend(), fullgraph=True),
+            torch.compile(abs_neg, fullgraph=True),
+            torch.compile(abs_neg, backend="inductor", fullgraph=True),
+        )
+        for compiled in unsupported_before_trace:
+            with self.subTest(compiled=compiled):
+                with self.assertRaises(NotImplementedError) as raised:
+                    compiled(input)
+                self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(calls, [])
+
+        compiled = torch.compile(abs_neg, backend="eager", fullgraph=True)
+        for args, kwargs in (
+            ((), {}),
+            ((input, input), {}),
+            ((input,), {"scale": 1}),
+            ((), {"x": input}),
+        ):
+            with self.subTest(args=args, kwargs=kwargs):
+                with self.assertRaises(NotImplementedError) as raised:
+                    compiled(*args, **kwargs)
+                self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(calls, [])
+
+        compiled_self_add = torch.compile(self_add, backend="eager", fullgraph=True)
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled_self_add(input)
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(calls, [])
+
+    def test_eager_fullgraph_abs_neg_rejects_proxy_dependent_functions(self):
+        calls = []
+
+        def proxy_dependent(x):
+            calls.append(x)
+            if type(x) is torch.Tensor:
+                return x + x
+            return x.neg().abs()
+
+        input = torch.tensor([[-2.0, 3.0]], dtype=torch.float32)
+        compiled = torch.compile(proxy_dependent, backend="eager", fullgraph=True)
+
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled(input)
+
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(calls, [])
+
+    def test_eager_fullgraph_abs_neg_rejects_stateful_functions_after_reset(self):
+        calls = []
+        use_abs_neg = True
+
+        def stateful(x):
+            calls.append(x)
+            if use_abs_neg:
+                return x.neg().abs()
+            return x + x
+
+        input = torch.tensor([[-2.0, 3.0]], dtype=torch.float32)
+        compiled = torch.compile(stateful, backend="eager", fullgraph=True)
+
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled(input)
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+
+        use_abs_neg = False
+        torch.compiler.reset()
+
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled(input)
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(calls, [])
 
     def test_backend_none_resolves_default_and_registered_backend_names(self):
         backend_calls = []
@@ -395,6 +575,25 @@ else:
 assert calls == []
 assert torch.compile(disable=True)(model) is model
 assert set(sys.modules) == modules_before_call
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
+def abs_neg_model(x):
+    return x.neg().abs()
+
+input = torch.tensor([[-3.0, 0.0, 2.5]], dtype=torch.float32)
+expected = input.neg().abs()
+compiled = torch.compile(abs_neg_model, backend="eager", fullgraph=True)
+actual = compiled(input)
+assert actual.tolist() == expected.tolist()
+assert actual.shape == expected.shape
+assert actual.stride() == expected.stride()
+assert actual.dtype is expected.dtype
+assert actual.device == expected.device
+assert actual.requires_grad is expected.requires_grad
+assert [
+    operation.target
+    for operation in compiled._torch_rs_compile_trace_graph.operations
+] == ["neg", "abs"]
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
