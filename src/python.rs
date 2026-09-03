@@ -1625,6 +1625,11 @@ pub(crate) fn as_tensor_variable_function(
                 Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
             );
         }
+        if let Some(value) = extract_exact_numpy_float32_scalar(&data.value)? {
+            return Ok(
+                Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
+            );
+        }
         if let Some((flattened, shape)) = as_tensor_float_sequence(&data.value)? {
             return Ok(Py::new(
                 py,
@@ -1635,7 +1640,7 @@ pub(crate) fn as_tensor_variable_function(
             .into_any());
         }
         return Err(PyNotImplementedError::new_err(
-            "as_tensor(): only exact native CPU float32 Tensor inputs, Python float scalars, or exact list/tuple sequences of Python floats are supported; NumPy arrays/scalars, integer and boolean inference, and other conversions are not implemented",
+            "as_tensor(): only exact native CPU float32 Tensor inputs, Python float scalars, exact numpy.float32 scalars, or exact list/tuple sequences of Python floats are supported; NumPy arrays/non-float32 scalars, integer and boolean inference, and other conversions are not implemented",
         ));
     }
     Ok(data.value.unbind())
@@ -7205,6 +7210,51 @@ fn extract_exact_python_float_scalar(value: &Bound<'_, PyAny>) -> PyResult<Optio
     #[allow(clippy::cast_possible_truncation)]
     let value = value.extract::<f64>()? as f32;
     Ok(Some(value))
+}
+
+fn extract_exact_numpy_float32_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<f32>> {
+    let value_type = value.get_type();
+    if value_type.name()? != "float32" {
+        return Ok(None);
+    }
+    let Ok(value_module) = value_type
+        .getattr("__module__")
+        .and_then(|module| module.extract::<String>())
+    else {
+        return Ok(None);
+    };
+    if value_module != "numpy" {
+        return Ok(None);
+    }
+
+    let Some(numpy_float32_type) = canonical_numpy_float32_type(value.py()) else {
+        return Ok(None);
+    };
+    if !numpy_float32_type.is(value_type.as_any()) {
+        return Ok(None);
+    }
+
+    value.extract::<f32>().map(Some)
+}
+
+fn canonical_numpy_float32_type(py: Python<'_>) -> Option<Bound<'_, PyAny>> {
+    let multiarray = match PyModule::import(py, "numpy._core.multiarray") {
+        Ok(module) => module,
+        Err(_) => match PyModule::import(py, "numpy.core.multiarray") {
+            Ok(module) => module,
+            Err(_) => return None,
+        },
+    };
+    let Ok(dtype_constructor) = multiarray.getattr("dtype") else {
+        return None;
+    };
+    let Ok(descriptor) = dtype_constructor.call1(("float32",)) else {
+        return None;
+    };
+    let Ok(scalar_type) = descriptor.getattr("type") else {
+        return None;
+    };
+    Some(scalar_type)
 }
 
 fn as_tensor_float_sequence(value: &Bound<'_, PyAny>) -> PyResult<Option<(Vec<f32>, Vec<usize>)>> {
