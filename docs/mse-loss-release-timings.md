@@ -7,6 +7,87 @@ Review update: 2026-09-01
 Candidate provenance: source snapshot based on
 `2231dec5e208f3545c05484d497b32b3981f640d`
 
+## Review Update: no-grad same-shape contiguous `reduction="mean"`
+
+The 2026-09-03 focused rerun used the current worktree's release wheel, built
+and installed under `target/python-test-wheels.*` by `./scripts/test-python.sh`.
+The source snapshot was based on `527b0ef9656bb24c945e9f0e10e83f8e685ab598`
+plus the uncommitted direct MSE mean fast-path changes in this worktree.
+
+The timing cell used CPU `float32` inputs created outside the timed region with
+NumPy seed `20260903`, `CUDA_VISIBLE_DEVICES=`, one PyTorch thread, one
+`torch_rs` thread, `taskset -c 190`, 15 warmup blocks, and 81 measured blocks.
+Each implementation was measured in a fresh process to avoid cross-extension
+runtime interaction. Each block repeated 16 calls and consumed the scalar
+result with `.item()` inside the timed loop.
+
+Correctness was checked before timing against PyTorch 2.13 for output shape,
+stride, storage offset, contiguity, dtype, device, `requires_grad`, leaf status,
+and value. The value check used `rtol=5e-4`, `atol=1e-4`, and `equal_nan=True`
+because the current native full-reduction contract uses sequential float32
+accumulation while PyTorch groups larger CPU reductions differently. The checked
+values were `torch_rs=1.9987659454345703` and
+`PyTorch=1.999638319015503`.
+
+Focused checks for this update:
+
+```bash
+PATH=/home/bobren/.cargo/bin:$PATH cargo fmt --check
+PATH=/home/bobren/.cargo/bin:$PATH cargo clippy --all-targets -- -D warnings
+PATH=/home/bobren/.cargo/bin:$PATH cargo test --all-targets
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest \
+  tests.test_nn_functional_mse_loss \
+  tests.test_nn_functional_mse_loss_reference
+PATH=/home/bobren/.cargo/bin:$PATH \
+  PYO3_CONFIG_FILE="$PWD/target/pyo3-config-shared.txt" \
+  cargo clippy --all-targets --features python-bindings -- -D warnings
+PATH=/home/bobren/.cargo/bin:$PATH \
+  PYO3_CONFIG_FILE="$PWD/target/pyo3-config-shared.txt" \
+  cargo test --all-targets --features python-bindings
+PATH=/home/bobren/.cargo/bin:$PATH \
+  UV_CACHE_DIR="$PWD/target/uv-cache" \
+  ./scripts/test-python.sh
+```
+
+Results: the focused MSE Python implementation and PyTorch 2.13 differential
+tests passed 47 tests. The wheel-installed full Python suite passed 4637 tests
+with 3 skips.
+
+Geometric mean `torch_rs / PyTorch` slowdown for the optimized
+`reduction="mean"` cell:
+
+- Uncapped: 4.88x
+- Capped to `[0.10x, 10.00x]` per cell: 4.88x
+
+| Workload | Input / target | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `mse_mean_same_contiguous_1024x1024` | `(1024, 1024)` / `(1024, 1024)`, row-major contiguous | `()`, stride `()`, offset 0, requires_grad=False | 16 | 1019.508 us +/- 2.979, var 43.862 | 209.010 us +/- 1.117, var 6.064 | 4.88x |
+
+Environment:
+
+- CPU: AMD EPYC 9654 96-Core Processor, 2 sockets, 96 cores/socket,
+  2 threads/core
+- OS: Linux 6.13.2-0_fbk12_0_g0b66b3635210 x86_64, glibc 2.34
+- Python: 3.12.14+meta
+- NumPy: 2.5.1
+- Rust: `rustc 1.92.0 (ded5c06cf 2025-12-08)`,
+  `cargo 1.92.0 (344c4567c 2025-10-21)`
+- PyTorch: 2.13.0+cu130 from `.venv/lib/python3.12/site-packages/torch`
+- `torch_rs`: 0.1.0 from the wheel-installed
+  `.venv/lib/python3.12/site-packages/torch_rs`
+- Profile: release, Cargo `[profile.release]` with thin LTO and one codegen unit
+- Device/dtype: CPU float32; `CUDA_VISIBLE_DEVICES=` for the timing run
+- Threads: `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`,
+  `OPENBLAS_NUM_THREADS=1`, `NUMEXPR_NUM_THREADS=1`,
+  `torch.set_num_threads(1)`, `torch.set_num_interop_threads(1)`;
+  `torch_rs.get_num_threads()` and `torch_rs.get_num_interop_threads()` both
+  reported 1
+- Dependency installation: locked `uv sync` resolved in 30 ms and installed in
+  3.45s
+- Build time: release wheel build completed in 29.98s
+
 ## Review Update: `reduction="sum"`
 
 The 2026-09-01 review rerun used the current composite worktree's release

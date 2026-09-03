@@ -208,6 +208,57 @@ class FunctionalMseLossTests(unittest.TestCase):
             ("noncontiguous", transposed_input, transposed_target, False),
         )
 
+    def mean_contiguous_cases(self):
+        edge_input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        edge_target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0001,
+                0x0000_0001,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+            ],
+            dtype=np.uint32,
+        )
+
+        return (
+            ("scalar", torch.tensor(-0.0), torch.tensor(2.5)),
+            (
+                "empty",
+                torch.zeros((0, 1024)),
+                torch.ones((0, 1024)),
+            ),
+            (
+                "large contiguous",
+                torch.zeros((1024, 1024)),
+                torch.ones((1024, 1024)),
+            ),
+            (
+                "signed-zero nan inf",
+                torch.tensor(memoryview(edge_input_bits.view(np.float32))).view(2, 5),
+                torch.tensor(memoryview(edge_target_bits.view(np.float32))).view(2, 5),
+            ),
+        )
+
     def same_stride_noncontiguous_cases(self):
         edge_input_bits = np.asarray(
             [
@@ -339,6 +390,7 @@ class FunctionalMseLossTests(unittest.TestCase):
             "``reduce=None``",
             "``weight=None``",
             "fuses subtraction and square into one native pass",
+            "direct scalar mean reduction for no-grad same-shape row-major contiguous operands",
             "supported full-tensor mean or sum",
             "fresh, independent tensor",
             "size-mismatch warning",
@@ -563,6 +615,41 @@ class FunctionalMseLossTests(unittest.TestCase):
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
                         repeated = call()
+                    self.assertFalse(actual.is_set_to(repeated))
+                    self.assertFalse(actual.is_set_to(input))
+                    self.assertFalse(actual.is_set_to(target))
+                    self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+
+            with self.subTest(case=case, nonmutation=True):
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1], input_state[-1]
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1], target_state[-1]
+                )
+
+    def test_mean_reduction_same_shape_contiguous_fast_path_cases_match_composition(self):
+        for case, input, target in self.mean_contiguous_cases():
+            self.assertEqual(input.shape, target.shape)
+            self.assertTrue(input.is_contiguous())
+            self.assertTrue(target.is_contiguous())
+            expected = (input - target).square().mean()
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+
+            for form, call in (
+                (
+                    "explicit mean",
+                    lambda: functional.mse_loss(input, target, reduction="mean"),
+                ),
+                ("default mean", lambda: functional.mse_loss(input, target)),
+            ):
+                actual = call()
+                self.assert_matches_composition(actual, expected, case=(case, form))
+                with self.subTest(case=(case, form), storage=True):
+                    repeated = call()
                     self.assertFalse(actual.is_set_to(repeated))
                     self.assertFalse(actual.is_set_to(input))
                     self.assertFalse(actual.is_set_to(target))
@@ -970,6 +1057,8 @@ class FunctionalMseLossTests(unittest.TestCase):
                 [[0.5, 2.0], [-3.0, 4.5]],
                 requires_grad=target_requires_grad,
             )
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
             for form, call in (
                 (
                     "explicit mean",
@@ -990,6 +1079,14 @@ class FunctionalMseLossTests(unittest.TestCase):
                     self.assertTrue(actual.is_leaf)
                     self.assertIsNone(input.grad)
                     self.assertIsNone(target.grad)
+                    self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                    self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                    np.testing.assert_array_equal(
+                        self.tensor_state(input)[-1], input_state[-1]
+                    )
+                    np.testing.assert_array_equal(
+                        self.tensor_state(target)[-1], target_state[-1]
+                    )
 
     def test_sum_reduction_first_order_backward_matches_composition(self):
         def assert_gradients(actual_sources, expected_sources, *, case):
@@ -1215,6 +1312,33 @@ class FunctionalMseLossTests(unittest.TestCase):
             (actual_input, actual_target),
             (expected_input, expected_target),
             case="scalar",
+        )
+
+        actual_input = torch.tensor(
+            [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]], requires_grad=True
+        )
+        actual_target = torch.tensor(
+            [[0.5, 2.0, -3.0], [1.0, -1.0, 0.0]], requires_grad=True
+        )
+        expected_input = torch.tensor(
+            [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]], requires_grad=True
+        )
+        expected_target = torch.tensor(
+            [[0.5, 2.0, -3.0], [1.0, -1.0, 0.0]], requires_grad=True
+        )
+        actual_loss = functional.mse_loss(
+            actual_input, actual_target, reduction="mean"
+        )
+        expected_loss = (expected_input - expected_target).square().mean()
+        self.assert_matches_composition(actual_loss, expected_loss, case="same shape")
+        self.assertTrue(actual_loss.requires_grad)
+        self.assertFalse(actual_loss.is_leaf)
+        actual_loss.backward()
+        expected_loss.backward()
+        assert_gradients(
+            (actual_input, actual_target),
+            (expected_input, expected_target),
+            case="same shape",
         )
 
         actual_input = torch.tensor(
