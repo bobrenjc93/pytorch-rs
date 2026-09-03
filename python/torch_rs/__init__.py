@@ -487,20 +487,22 @@ def _native_eager_compile_implementation(model, name, recompile_limit):
         _ensure_compile_tensor_method_guards(_compile_trace)
         input_metadata = _compile_trace._metadata_from_native_tensor(input)
         cache_key = (model.__code__, input_metadata)
-        graph = cache.graphs.get(cache_key)
-        if graph is None:
-            if len(cache.graphs) >= recompile_limit:
-                raise _compile_trace.CompileTraceUnsupportedError(
-                    "torch.compile trace bytecode lowering hit "
-                    f"recompile_limit={recompile_limit}; no additional input "
-                    "metadata variants will be compiled for this wrapper"
+        with cache.lock:
+            graph = cache.graphs.get(cache_key)
+            if graph is None:
+                if len(cache.graphs) >= recompile_limit:
+                    raise _compile_trace.CompileTraceUnsupportedError(
+                        "torch.compile trace bytecode lowering hit "
+                        f"recompile_limit={recompile_limit}; no additional "
+                        "input metadata variants will be compiled for this "
+                        "wrapper"
+                    )
+                graph = _compile_bytecode.lower_one_input_compile_graph(
+                    model,
+                    input_metadata,
+                    name=name or getattr(model, "__name__", "compile_trace"),
                 )
-            graph = _compile_bytecode.lower_one_input_compile_graph(
-                model,
-                input_metadata,
-                name=name or getattr(model, "__name__", "compile_trace"),
-            )
-            cache.graphs[cache_key] = graph
+                cache.graphs[cache_key] = graph
         return _execute_native_eager_compile_graph(graph, input, _compile_trace)
 
     return compiled_model

@@ -4,6 +4,7 @@ import inspect
 import pickle
 import subprocess
 import sys
+import threading
 import types
 import unittest
 
@@ -383,6 +384,85 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             self.assertEqual(len(calls), 1)
             self.assertEqual(compiled(first).tolist(), program(first).tolist())
         finally:
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_recompile_limit_one_is_atomic_for_concurrent_misses(self):
+        def program(x):
+            return x.neg().abs() + x
+
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+        calls_lock = threading.Lock()
+        first_lower_started = threading.Event()
+        second_lower_started = threading.Event()
+        release_lowerers = threading.Event()
+
+        def blocking_lower(requested_program, input_metadata, *, name=None):
+            with calls_lock:
+                calls.append((requested_program, input_metadata, name))
+                is_first_call = len(calls) == 1
+            if is_first_call:
+                first_lower_started.set()
+            else:
+                second_lower_started.set()
+            release_lowerers.wait(5.0)
+            return original_lower(requested_program, input_metadata, name=name)
+
+        compiled = torch.compile(
+            program,
+            backend="eager",
+            fullgraph=True,
+            recompile_limit=1,
+        )
+        first = torch.tensor([[-2.0, 3.0], [4.0, -5.0]], dtype=torch.float32)
+        different_shape = torch.tensor([1.5, -2.5, 3.5], dtype=torch.float32)
+        results = []
+        results_lock = threading.Lock()
+
+        def call_compiled(label, input):
+            try:
+                result = ("ok", label, compiled(input).tolist())
+            except Exception as error:
+                result = ("error", label, type(error), str(error))
+            with results_lock:
+                results.append(result)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = blocking_lower
+            first_thread = threading.Thread(
+                target=call_compiled,
+                args=("first", first),
+            )
+            second_thread = threading.Thread(
+                target=call_compiled,
+                args=("second", different_shape),
+            )
+
+            first_thread.start()
+            self.assertTrue(first_lower_started.wait(5.0))
+            second_thread.start()
+            second_lower_started.wait(0.25)
+            release_lowerers.set()
+            first_thread.join(5.0)
+            second_thread.join(5.0)
+
+            self.assertFalse(first_thread.is_alive())
+            self.assertFalse(second_thread.is_alive())
+            self.assertFalse(second_lower_started.is_set())
+            self.assertEqual(len(calls), 1)
+            self.assertCountEqual(
+                [result[0] for result in results],
+                ["ok", "error"],
+            )
+            self.assertIn(("ok", "first", program(first).tolist()), results)
+
+            errors = [result for result in results if result[0] == "error"]
+            self.assertEqual(len(errors), 1)
+            self.assertEqual(errors[0][1], "second")
+            self.assertTrue(issubclass(errors[0][2], NotImplementedError))
+            self.assertIn("recompile_limit=1", errors[0][3])
+        finally:
+            release_lowerers.set()
             _compile_bytecode.lower_one_input_compile_graph = original_lower
 
     def test_compiler_reset_clears_eager_fullgraph_compile_cache(self):

@@ -76,8 +76,8 @@ env CARGO_HOME="$PWD/target/cargo-home" \
 ```
 
 Results: the focused public compile, compile corpus, PyTorch 2.13
-differential, and docs smoke tests passed 57 tests. The repository-managed
-pinned PyTorch 2.13 full Python suite passed 4685 tests with 3 skips. The
+differential, and docs smoke tests passed 58 tests. The repository-managed
+pinned PyTorch 2.13 full Python suite passed 4686 tests with 3 skips. The
 default Rust suite passed 308 tests across unit and integration targets plus
 0 doctests, default Clippy passed, and Python-bindings Clippy passed.
 
