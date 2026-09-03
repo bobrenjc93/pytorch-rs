@@ -65,6 +65,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-reciprocal-release-timings.md",
     ),
     (
+        "`torch.nn.functional.softsign` release timings",
+        "docs/softsign-release-timings.md",
+    ),
+    (
         "`Tensor.view`, reshape, flatten, ravel, unbind, and edge-unsqueeze release timings",
         "docs/tensor-view-release-timings.md",
     ),
