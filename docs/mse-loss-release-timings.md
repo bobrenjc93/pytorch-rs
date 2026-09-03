@@ -2,10 +2,102 @@
 
 Date: 2026-08-30
 
-Review update: 2026-09-01
+Review updates: 2026-09-01, 2026-09-03
 
 Candidate provenance: source snapshot based on
 `2231dec5e208f3545c05484d497b32b3981f640d`
+
+## Review Update: `reduction="mean"` No-Grad Contiguous
+
+The 2026-09-03 review rerun measured only the optimized
+`mse_loss(reduction="mean")` cell for same-shape row-major contiguous CPU
+`float32` tensors that do not record gradients. The worktree was based on
+`b708c018869fb678a15014fb7355143dfcea3f22` with this MSE mean fast-path change.
+
+The release extension was built and installed into the current worktree's
+`.venv` with `maturin develop --release --locked`. The ignored one-off timing
+driver was `target/mse_mean_release_timing.py`, with JSON outputs under
+`target/mse-mean-release-timing-pass*.json`.
+
+Inputs were created outside the timed region from NumPy seed-free deterministic
+`linspace` buffers, `CUDA_VISIBLE_DEVICES=` was set, PyTorch and `torch_rs`
+thread counts were fixed to one, and runs were pinned with `taskset -c 24`.
+Each process pass used 15 warmup blocks and 81 measured blocks, with 64 calls
+per block. The first pass measured `torch_rs` before PyTorch; the second pass
+reversed that order. Values below are medians of the two per-process medians.
+The scalar output was consumed with `.item()` after each block as the
+materialization guard.
+
+Correctness was checked before timing for output shape, stride, storage offset,
+contiguity, dtype, device, `requires_grad`, leaf status, and values against
+PyTorch 2.13. The large reduction value used `rtol=1e-5`, `atol=1e-5`, and
+`equal_nan=True` to allow equivalent float32 accumulation grouping; the focused
+native and differential tests retain stricter scalar, empty, signed-zero,
+NaN/inf, active-autograd, broadcast, noncontiguous, metadata, and nonmutation
+coverage.
+
+Focused checks for this update:
+
+```bash
+PATH="$PWD/target/rust-env/bin:$PATH" \
+  cargo fmt --check
+PATH="$PWD/target/rust-env/bin:$PATH" \
+  cargo clippy --all-targets -- -D warnings
+PATH="$PWD/target/rust-env/bin:$PATH" \
+  cargo test --all-targets
+PATH="$PWD/target/rust-env/bin:$PATH" \
+  PYO3_PYTHON="$PWD/.venv/bin/python" \
+  cargo clippy --all-targets --features python-bindings -- -D warnings
+PY_LIBDIR="$(.venv/bin/python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')" \
+PATH="$PWD/target/rust-env/bin:$PATH" \
+LD_LIBRARY_PATH="$PY_LIBDIR:${LD_LIBRARY_PATH:-}" \
+PYO3_PYTHON="$PWD/.venv/bin/python" \
+  cargo test --all-targets --features python-bindings
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest \
+  tests.test_nn_functional_mse_loss \
+  tests.test_nn_functional_mse_loss_reference
+```
+
+Results: Rust tests passed 303 tests without Python bindings and 314 tests with
+Python bindings. The focused MSE Python implementation and PyTorch 2.13
+differential tests passed 48 tests.
+
+Geometric mean `torch_rs / PyTorch` slowdown for the optimized
+`reduction="mean"` cell:
+
+- Uncapped: 2.67x
+- Capped to `[0.10x, 10.00x]` per cell: 2.67x
+
+| Workload | Category | Output | Repeats | `torch_rs` median +/- MAD | PyTorch median +/- MAD | `torch_rs` / PyTorch |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `mse_mean_contiguous_255x256` | same-shape row-major contiguous no-grad | `()`, stride `()`, offset 0, requires_grad=False | 64 | 54.137 +/- 0.122 us | 20.314 +/- 0.173 us | 2.67x |
+
+Environment:
+
+- CPU: AMD EPYC 9654 96-Core Processor, 2 sockets, 96 cores/socket,
+  2 threads/core
+- OS: Linux 6.13.2-0_fbk12_0_g0b66b3635210 x86_64, glibc 2.34
+- Python: 3.14.5
+- NumPy: 2.5.1
+- Rust: `rustc 1.92.0-nightly (2300c2aef 2025-10-12)`,
+  `cargo 1.92.0-nightly (81c3f77a4 2025-10-10)`
+- PyTorch: 2.13.0+cu130 from `.venv/lib/python3.14/site-packages/torch`
+- `torch_rs`: 0.1.0 from the release editable install in
+  `.venv/lib/python3.14/site-packages/torch_rs`
+- Profile: release, Cargo `[profile.release]` with thin LTO and one codegen unit
+- Device/dtype: CPU float32; `CUDA_VISIBLE_DEVICES=` for the timing run
+- Threads: `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`,
+  `OPENBLAS_NUM_THREADS=1`, `NUMEXPR_NUM_THREADS=1`,
+  `torch.set_num_threads(1)`, `torch.set_num_interop_threads(1)`;
+  `torch_rs.get_num_threads()` and `torch_rs.get_num_interop_threads()` both
+  reported 1
+- Dependency installation: locked `uv sync` resolved in 29 ms, prepared
+  packages in 15.84s, and installed in 861 ms
+- Build time: the first successful release rebuild after the code change
+  completed in 29.73s; the final benchmark reinstall reused cached artifacts
+  and completed in 0.02s
 
 ## Review Update: `reduction="sum"`
 
