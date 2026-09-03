@@ -31,6 +31,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/rank12-sum-release-timings.md",
     ),
     (
+        "`Tensor.mean` and `torch.mean` release timings",
+        "docs/tensor-mean-release-timings.md",
+    ),
+    (
         "`+` and `Tensor.add` release timings",
         "docs/tensor-add-release-timings.md",
     ),
