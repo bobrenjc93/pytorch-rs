@@ -265,6 +265,94 @@ _COMPILE_UNSUPPORTED_MESSAGE = (
     "not supported; only argument binding, disable=True pass-through, and "
     "backend resolution are implemented"
 )
+_COMPILE_CACHE_MISSING = _builtins.object()
+_PYTHON_FUNCTION_TYPE = _types.FunctionType
+
+
+class _CompileTensorProxy:
+    __slots__ = ("name", "dtype", "device", "shape", "requires_grad")
+
+    def __init__(self, name, tensor):
+        self.name = name
+        self.dtype = tensor.dtype
+        self.device = tensor.device
+        self.shape = tuple(tensor.shape)
+        self.requires_grad = tensor.requires_grad
+
+    @property
+    def ndim(self):
+        return len(self.shape)
+
+    def dim(self):
+        return len(self.shape)
+
+    def size(self, dim=None):
+        if dim is None:
+            return self.shape
+        return self.shape[dim]
+
+    def __repr__(self):
+        return (
+            "_CompileTensorProxy("
+            f"name={self.name!r}, shape={self.shape!r}, dtype={self.dtype!r}, "
+            f"device={self.device!r})"
+        )
+
+
+class _CompileIdentityGraph:
+    __slots__ = ("name", "inputs", "outputs", "operation")
+
+    def __init__(self, name):
+        self.name = name
+        self.inputs = ("arg0",)
+        self.outputs = ("arg0",)
+        self.operation = "identity"
+
+    def forward(self, arg0):
+        return arg0
+
+    def __call__(self, arg0):
+        return self.forward(arg0)
+
+    def __repr__(self):
+        return (
+            "_CompileIdentityGraph("
+            f"name={self.name!r}, inputs={self.inputs!r}, "
+            f"outputs={self.outputs!r})"
+        )
+
+
+def _is_compile_cpu_float32_tensor(value):
+    return (
+        _builtins.type(value) is Tensor
+        and value.dtype is float32
+        and value.device.type == "cpu"
+    )
+
+
+def _trace_compile_identity(model, example_input):
+    if _builtins.type(model) is not _PYTHON_FUNCTION_TYPE:
+        return None
+
+    proxy = _CompileTensorProxy("arg0", example_input)
+    try:
+        result = model(proxy)
+    except Exception:
+        return None
+
+    if result is not proxy:
+        return None
+    return proxy
+
+
+def _call_compile_backend(resolved_backend, graph_module, example_inputs):
+    if not _builtins.callable(resolved_backend):
+        raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
+
+    compiled = resolved_backend(graph_module, example_inputs)
+    if not _builtins.callable(compiled):
+        raise TypeError("torch.compile() backend must return a callable")
+    return compiled
 
 
 def _unsupported_compile_wrapper(
@@ -279,8 +367,33 @@ def _unsupported_compile_wrapper(
     isolate_recompiles,
     shapes_spec,
 ):
+    compiled_callable = _COMPILE_CACHE_MISSING
+
     def compiled_model(*args, **kwargs):
-        raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
+        nonlocal compiled_callable
+
+        if (
+            kwargs
+            or len(args) != 1
+            or not _is_compile_cpu_float32_tensor(args[0])
+        ):
+            raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
+
+        if not _builtins.callable(resolved_backend):
+            raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
+
+        if compiled_callable is _COMPILE_CACHE_MISSING:
+            proxy = _trace_compile_identity(model, args[0])
+            if proxy is None:
+                raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
+            graph_module = _CompileIdentityGraph(name or model.__name__)
+            compiled_callable = _call_compile_backend(
+                resolved_backend,
+                graph_module,
+                (proxy,),
+            )
+
+        return compiled_callable(args[0])
 
     import functools as _compile_functools
 
@@ -364,12 +477,14 @@ def compile(
     isolate_recompiles=False,
     shapes_spec=None,
 ):
-    """Return a ``torch.compile`` compatibility shell.
+    """Return a narrow ``torch.compile`` compatibility wrapper.
 
     This entrypoint implements Python argument binding, ``disable=True``
-    pass-through, and backend resolution through ``torch.compiler``. Graph
+    pass-through, backend resolution through ``torch.compiler``, and execution
+    of exact Python identity functions whose proxy trace returns their single
+    positional native CPU ``float32`` tensor argument unchanged. Other graph
     capture, graph execution, eager fallback, installed-PyTorch forwarding, and
-    backend invocation remain unsupported.
+    broader backend invocation remain unsupported.
     """
     if model is None:
         captured_backend = (

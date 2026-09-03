@@ -204,6 +204,90 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertEqual(model_calls, [])
         self.assertEqual(backend_calls, [])
 
+    def test_identity_function_compiles_backend_once_and_runs_backend_callable(self):
+        model_trace_inputs = []
+        backend_calls = []
+        compiled_calls = []
+
+        def model(value):
+            model_trace_inputs.append(value)
+            return value
+
+        def backend(graph_module, example_inputs):
+            backend_calls.append((graph_module, example_inputs))
+
+            def compiled(value):
+                compiled_calls.append(value)
+                return graph_module.forward(value)
+
+            return compiled
+
+        first = torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32)
+        second = torch.tensor([5.0, 6.0], dtype=torch.float32)
+        compiled = torch.compile(model, backend=backend, name="identity_graph")
+
+        self.assertIs(compiled(first), first)
+        self.assertEqual(len(model_trace_inputs), 1)
+        self.assertIsNot(model_trace_inputs[0], first)
+        self.assertEqual(type(model_trace_inputs[0]).__module__, "torch_rs")
+        self.assertEqual(type(model_trace_inputs[0]).__name__, "_CompileTensorProxy")
+        self.assertIs(model_trace_inputs[0].dtype, torch.float32)
+        self.assertEqual(model_trace_inputs[0].device, torch.device("cpu"))
+        self.assertEqual(model_trace_inputs[0].shape, (2, 2))
+
+        self.assertEqual(len(backend_calls), 1)
+        graph_module, example_inputs = backend_calls[0]
+        self.assertEqual(type(graph_module).__module__, "torch_rs")
+        self.assertEqual(type(graph_module).__name__, "_CompileIdentityGraph")
+        self.assertEqual(graph_module.name, "identity_graph")
+        self.assertEqual(graph_module.inputs, ("arg0",))
+        self.assertEqual(graph_module.outputs, ("arg0",))
+        self.assertEqual(graph_module.operation, "identity")
+        self.assertIs(graph_module.forward(first), first)
+        self.assertIs(example_inputs[0], model_trace_inputs[0])
+
+        self.assertEqual(len(compiled_calls), 1)
+        self.assertIs(compiled_calls[0], first)
+
+        self.assertIs(compiled(second), second)
+        self.assertEqual(len(model_trace_inputs), 1)
+        self.assertEqual(len(backend_calls), 1)
+        self.assertEqual(len(compiled_calls), 2)
+        self.assertIs(compiled_calls[1], second)
+
+        torch.compiler.register_backend(backend, name="zz_identity")
+        named_compiled = torch.compile(model, backend="zz_identity")
+        third = torch.tensor([7.0], dtype=torch.float32)
+        self.assertIs(named_compiled(third), third)
+        self.assertEqual(len(model_trace_inputs), 2)
+        self.assertEqual(len(backend_calls), 2)
+        self.assertEqual(len(compiled_calls), 3)
+        self.assertIs(compiled_calls[2], third)
+
+    def test_identity_decorator_form_compiles_and_non_identity_stays_unsupported(self):
+        backend_calls = []
+
+        def backend(graph_module, example_inputs):
+            backend_calls.append((graph_module, example_inputs))
+            return graph_module.forward
+
+        @torch.compile(backend=backend)
+        def decorated_identity(value):
+            return value
+
+        input_tensor = torch.tensor([1.25, -2.5], dtype=torch.float32)
+        self.assertIs(decorated_identity(input_tensor), input_tensor)
+        self.assertEqual(len(backend_calls), 1)
+
+        def non_identity(value):
+            return value.neg()
+
+        compiled_non_identity = torch.compile(non_identity, backend=backend)
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled_non_identity(input_tensor)
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(len(backend_calls), 1)
+
     def test_backend_none_resolves_default_and_registered_backend_names(self):
         backend_calls = []
 
@@ -394,6 +478,28 @@ else:
 
 assert calls == []
 assert torch.compile(disable=True)(model) is model
+
+def identity(value):
+    calls.append(("identity_trace", type(value).__module__, type(value).__name__))
+    return value
+
+def identity_backend(graph_module, example_inputs):
+    calls.append((
+        "identity_backend",
+        type(graph_module).__module__,
+        type(graph_module).__name__,
+        graph_module.operation,
+        len(example_inputs),
+    ))
+    return graph_module.forward
+
+tensor = torch.tensor([1.0], dtype=torch.float32)
+compiled_identity = torch.compile(identity, backend=identity_backend)
+assert compiled_identity(tensor) is tensor
+assert calls == [
+    ("identity_trace", "torch_rs", "_CompileTensorProxy"),
+    ("identity_backend", "torch_rs", "_CompileIdentityGraph", "identity", 1),
+]
 assert set(sys.modules) == modules_before_call
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """

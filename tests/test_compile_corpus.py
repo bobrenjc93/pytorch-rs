@@ -40,6 +40,10 @@ def cpu_float32_unary_abs_neg(x):
     return x.neg().abs()
 
 
+def cpu_float32_identity(x):
+    return x
+
+
 def cpu_float32_unary_inputs(module):
     return (
         module.tensor(
@@ -59,6 +63,7 @@ class CompileCorpusCase:
     dynamic: object = None
     mode: object = None
     options: object = None
+    torch_rs_supported: bool = False
 
     def compile_kwargs(self, backend):
         kwargs = {
@@ -75,6 +80,13 @@ class CompileCorpusCase:
 
 
 COMPILE_CORPUS = (
+    CompileCorpusCase(
+        name="cpu_float32_identity",
+        category="tensor_arithmetic",
+        program=cpu_float32_identity,
+        make_inputs=cpu_float32_unary_inputs,
+        torch_rs_supported=True,
+    ),
     CompileCorpusCase(
         name="cpu_float32_unary_abs_neg",
         category="tensor_arithmetic",
@@ -104,16 +116,17 @@ class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
         self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v1")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(len(COMPILE_CORPUS), 1)
+        self.assertEqual(len(COMPILE_CORPUS), 2)
 
         case = COMPILE_CORPUS[0]
-        self.assertEqual(case.name, "cpu_float32_unary_abs_neg")
+        self.assertEqual(case.name, "cpu_float32_identity")
         self.assertEqual(case.category, "tensor_arithmetic")
         self.assertIn(case.category, CATEGORY_WEIGHTS)
         self.assertTrue(case.fullgraph)
         self.assertIsNone(case.dynamic)
         self.assertIsNone(case.mode)
         self.assertIsNone(case.options)
+        self.assertTrue(case.torch_rs_supported)
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -170,10 +183,27 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                 self.assertEqual(model_calls, [])
                 self.assertEqual(backend_calls, [])
 
+                inputs = case.make_inputs(torch)
+                if case.torch_rs_supported:
+                    actual = compiled(*inputs)
+                    self.assertIs(actual, inputs[0])
+                    self.assertEqual(len(model_calls), 1)
+                    self.assertIsNot(model_calls[0][0][0], inputs[0])
+                    self.assertEqual(
+                        type(model_calls[0][0][0]).__name__,
+                        "_CompileTensorProxy",
+                    )
+                    self.assertEqual(len(backend_calls), 1)
+                    self.assertEqual(type(backend_calls[0][0]).__module__, "torch_rs")
+                    self.assertEqual(
+                        type(backend_calls[0][0]).__name__,
+                        "_CompileIdentityGraph",
+                    )
+                    continue
+
                 with self.assertRaises(NotImplementedError) as raised:
-                    compiled(*case.make_inputs(torch))
+                    compiled(*inputs)
                 self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
-                self.assertEqual(model_calls, [])
                 self.assertEqual(backend_calls, [])
 
 
