@@ -85,6 +85,47 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/l1-loss-sum-release-timings.md",
     ),
 )
+HISTORICAL_TIMING_GROUPS = (
+    (
+        "Reductions",
+        (
+            "docs/rank1-sum-release-timings.md",
+            "docs/rank9-sum-release-timings.md",
+            "docs/rank10-sum-release-timings.md",
+            "docs/rank11-sum-release-timings.md",
+            "docs/rank12-sum-release-timings.md",
+            "docs/tensor-mean-release-timings.md",
+        ),
+    ),
+    (
+        "Elementwise ops",
+        (
+            "docs/tensor-add-release-timings.md",
+            "docs/tensor-mul-release-timings.md",
+            "docs/top-level-division-release-timings.md",
+            "docs/tensor-abs-release-timings.md",
+            "docs/tensor-sqrt-release-timings.md",
+            "docs/tensor-reciprocal-release-timings.md",
+            "docs/softsign-release-timings.md",
+        ),
+    ),
+    (
+        "Layout/view ops",
+        ("docs/tensor-view-release-timings.md",),
+    ),
+    (
+        "Linear algebra",
+        ("docs/rank2-matmul-release-timings.md",),
+    ),
+    (
+        "NN losses",
+        (
+            "docs/mse-loss-release-timings.md",
+            "docs/l1-loss-release-timings.md",
+            "docs/l1-loss-sum-release-timings.md",
+        ),
+    ),
+)
 SUPPORTED_SURFACE_ANCHORS = (
     ("Tensors", "tensors"),
     ("Creation and math", "creation-and-math"),
@@ -581,6 +622,26 @@ class ReadmeQuickstartTests(unittest.TestCase):
                 self.assertTrue(path.is_relative_to(REPOSITORY_ROOT))
                 self.assertTrue(path.is_file())
 
+        previous_position = -1
+        for group, group_targets in HISTORICAL_TIMING_GROUPS:
+            with self.subTest(group=group):
+                heading = f"### {group}"
+                self.assertEqual(section.count(heading), 1)
+                position = section.index(heading)
+                self.assertGreater(position, previous_position)
+                previous_position = position
+
+                group_match = re.search(
+                    rf"^### {re.escape(group)}\n(?P<group>.*?)(?=^### |\Z)",
+                    section,
+                    flags=re.MULTILINE | re.DOTALL,
+                )
+                self.assertIsNotNone(group_match)
+                group_links = dict(
+                    re.findall(r"\[([^\]]+)\]\(([^)]+)\)", group_match.group("group"))
+                )
+                self.assertEqual(set(group_links.values()), set(group_targets))
+
     def test_docs_readme_indexes_contracts_guides_and_timing_evidence(self):
         docs_readme = DOCS_README.read_text(encoding="utf-8")
         sections = (
@@ -647,6 +708,32 @@ class ReadmeQuickstartTests(unittest.TestCase):
             with self.subTest(timing_report=target):
                 path = DOCS_README.parent / Path(target).name
                 self.assertTrue(path.is_file())
+
+        previous_position = -1
+        for group, group_targets in HISTORICAL_TIMING_GROUPS:
+            with self.subTest(group=group):
+                heading = f"### {group}"
+                self.assertEqual(timing_evidence.count(heading), 1)
+                position = timing_evidence.index(heading)
+                self.assertGreater(position, previous_position)
+                previous_position = position
+
+                group_match = re.search(
+                    rf"^### {re.escape(group)}\n(?P<group>.*?)(?=^### |\Z)",
+                    timing_evidence,
+                    flags=re.MULTILINE | re.DOTALL,
+                )
+                self.assertIsNotNone(group_match)
+                group_links = dict(
+                    re.findall(
+                        r"\[([^\]]+)\]\(([^)]+)\):",
+                        group_match.group("group"),
+                    )
+                )
+                self.assertEqual(
+                    set(group_links.values()),
+                    {Path(target).name for target in group_targets},
+                )
 
     def test_readme_links_contributing_guide(self):
         readme = README.read_text(encoding="utf-8")

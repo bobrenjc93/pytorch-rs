@@ -38,21 +38,35 @@ These reports are historical release evidence snapshots: they record the code,
 environment, checks, and timings from specific runs. They are not live gates and
 do not replace the benchmark policy or Burner-managed evaluation progress.
 
+### Reductions
+
 - [Rank-1 `Tensor.sum` release timings](docs/rank1-sum-release-timings.md)
 - [Rank-9 `Tensor.sum` release timings](docs/rank9-sum-release-timings.md)
 - [Rank-10 `Tensor.sum` release timings](docs/rank10-sum-release-timings.md)
 - [Rank-11 `Tensor.sum` release timings](docs/rank11-sum-release-timings.md)
 - [Rank-12 `Tensor.sum` release timings](docs/rank12-sum-release-timings.md)
 - [`Tensor.mean` and `torch.mean` full-reduction release timings](docs/tensor-mean-release-timings.md)
+
+### Elementwise ops
+
 - [`+` and `Tensor.add` release timings](docs/tensor-add-release-timings.md)
 - [`*`, `Tensor.mul`/`Tensor.multiply`, and `torch.mul`/`torch.multiply` release timings](docs/tensor-mul-release-timings.md)
 - [`torch.div` and `torch.divide` release timings](docs/top-level-division-release-timings.md)
-- [Rank-2 `@`, `Tensor.matmul`, and `torch.matmul` release timings](docs/rank2-matmul-release-timings.md)
 - [`Tensor.abs` and `torch.abs` release timings](docs/tensor-abs-release-timings.md)
 - [`Tensor.sqrt` and `torch.sqrt` release timings](docs/tensor-sqrt-release-timings.md)
 - [`Tensor.reciprocal` and `torch.reciprocal` release timings](docs/tensor-reciprocal-release-timings.md)
 - [`torch.nn.functional.softsign` release timings](docs/softsign-release-timings.md)
+
+### Layout/view ops
+
 - [`Tensor.view`, reshape, flatten, ravel, unbind, and edge-unsqueeze release timings](docs/tensor-view-release-timings.md)
+
+### Linear algebra
+
+- [Rank-2 `@`, `Tensor.matmul`, and `torch.matmul` release timings](docs/rank2-matmul-release-timings.md)
+
+### NN losses
+
 - [`torch.nn.functional.mse_loss` release timings](docs/mse-loss-release-timings.md)
 - [`torch.nn.functional.l1_loss(reduction="none")` release timings](docs/l1-loss-release-timings.md)
 - [`torch.nn.functional.l1_loss(reduction="sum")` release timings](docs/l1-loss-sum-release-timings.md)
