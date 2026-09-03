@@ -2,6 +2,7 @@ import subprocess
 import sys
 import unittest
 from dataclasses import FrozenInstanceError, dataclass
+from types import SimpleNamespace
 
 import torch_rs as torch
 from torch_rs import _compile_trace
@@ -13,7 +14,7 @@ except ImportError:
 
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-COMPILE_CORPUS_VERSION = "torch_compile_corpus_v1"
+COMPILE_CORPUS_VERSION = "torch_compile_corpus_v2"
 
 CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -33,9 +34,11 @@ CATEGORY_WEIGHTS = {
 }
 
 UNSUPPORTED_MESSAGE = (
-    "torch.compile(): graph capture, graph execution, and eager fallback are "
-    "not supported; only argument binding, disable=True pass-through, and "
-    "backend resolution are implemented"
+    "torch.compile(): only backend='eager', fullgraph=True straight-line "
+    "Tensor neg/abs/add functions with one positional exact native CPU "
+    "float32 Tensor are supported; eager fallback, installed-PyTorch "
+    "forwarding, callable backend invocation, CUDA compilation, and broader "
+    "graph capture remain unsupported"
 )
 
 
@@ -60,6 +63,20 @@ def cpu_float32_self_add_method(x):
     return x.add(x)
 
 
+def cpu_float32_abs_neg_reordered(x):
+    return x.abs().neg()
+
+
+def cpu_float32_repeated_unary_chain(x):
+    return x.neg().negative().abs().absolute().neg()
+
+
+def cpu_float32_add_unary_composition(x):
+    y = x.neg()
+    z = x.abs()
+    return (y + z).add(x.negative())
+
+
 def cpu_float32_self_add_inputs(module):
     return (
         module.tensor(
@@ -67,6 +84,14 @@ def cpu_float32_self_add_inputs(module):
             dtype=module.float32,
         ),
     )
+
+
+def cpu_float32_scalar_inputs(module):
+    return (module.tensor(-3.5, dtype=module.float32),)
+
+
+def cpu_float32_empty_matrix_inputs(module):
+    return (module.tensor([[], []], dtype=module.float32),)
 
 
 @dataclass(frozen=True)
@@ -107,6 +132,24 @@ COMPILE_CORPUS = (
         program=cpu_float32_self_add,
         make_inputs=cpu_float32_self_add_inputs,
     ),
+    CompileCorpusCase(
+        name="cpu_float32_abs_neg_reordered",
+        category="tensor_arithmetic",
+        program=cpu_float32_abs_neg_reordered,
+        make_inputs=cpu_float32_unary_inputs,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_repeated_unary_chain",
+        category="tensor_arithmetic",
+        program=cpu_float32_repeated_unary_chain,
+        make_inputs=cpu_float32_scalar_inputs,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_add_unary_composition",
+        category="tensor_arithmetic",
+        program=cpu_float32_add_unary_composition,
+        make_inputs=cpu_float32_empty_matrix_inputs,
+    ),
 )
 
 
@@ -128,14 +171,20 @@ def reset_reference_compile_state():
 
 class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
-        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v1")
+        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v2")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(len(COMPILE_CORPUS), 2)
+        self.assertEqual(len(COMPILE_CORPUS), 5)
 
         case_names = [case.name for case in COMPILE_CORPUS]
         self.assertEqual(
             case_names,
-            ["cpu_float32_unary_abs_neg", "cpu_float32_self_add"],
+            [
+                "cpu_float32_unary_abs_neg",
+                "cpu_float32_self_add",
+                "cpu_float32_abs_neg_reordered",
+                "cpu_float32_repeated_unary_chain",
+                "cpu_float32_add_unary_composition",
+            ],
         )
         for case in COMPILE_CORPUS:
             with self.subTest(case=case.name):
@@ -153,6 +202,32 @@ class CompileCorpusMetadataTests(unittest.TestCase):
 
 
 class CompileCorpusTraceTests(unittest.TestCase):
+    @staticmethod
+    def bytecode_instruction(opname, argval=None, argrepr="", arg=0):
+        return SimpleNamespace(
+            opname=opname,
+            argval=argval,
+            argrepr=argrepr,
+            arg=arg,
+        )
+
+    def lower_with_bytecode_instructions(self, program, instructions, input):
+        original_get_instructions = _compile_trace._dis.get_instructions
+
+        def fake_get_instructions(requested_program):
+            self.assertIs(requested_program, program)
+            return iter(instructions)
+
+        try:
+            _compile_trace._dis.get_instructions = fake_get_instructions
+            return _compile_trace.lower_one_input_compile_graph(
+                program,
+                _compile_trace._metadata_from_native_tensor(input),
+                name=program.__name__,
+            )
+        finally:
+            _compile_trace._dis.get_instructions = original_get_instructions
+
     def assert_native_tensor_matches(self, actual, expected, *, case):
         with self.subTest(case=case, metadata=True):
             self.assertIsInstance(actual, torch.Tensor)
@@ -281,6 +356,222 @@ class CompileCorpusTraceTests(unittest.TestCase):
                     add_op.metadata = None
                 with self.assertRaises(AttributeError):
                     graph.operations.append(add_op)
+
+    def test_bytecode_lowerer_records_general_tensor_arithmetic_graphs(self):
+        cases = (
+            (
+                cpu_float32_unary_abs_neg,
+                cpu_float32_unary_inputs,
+                ["neg", "abs"],
+            ),
+            (
+                cpu_float32_self_add,
+                cpu_float32_self_add_inputs,
+                ["add"],
+            ),
+            (
+                cpu_float32_abs_neg_reordered,
+                cpu_float32_unary_inputs,
+                ["abs", "neg"],
+            ),
+            (
+                cpu_float32_repeated_unary_chain,
+                cpu_float32_scalar_inputs,
+                ["neg", "neg", "abs", "abs", "neg"],
+            ),
+            (
+                cpu_float32_add_unary_composition,
+                cpu_float32_empty_matrix_inputs,
+                ["neg", "abs", "add", "neg", "add"],
+            ),
+        )
+        for program, make_inputs, expected_targets in cases:
+            with self.subTest(program=program.__name__):
+                (input,) = make_inputs(torch)
+                graph = _compile_trace.lower_one_input_compile_graph(
+                    program,
+                    _compile_trace._metadata_from_native_tensor(input),
+                    name=program.__name__,
+                )
+                expected = program(input)
+
+                self.assertEqual(graph.name, program.__name__)
+                self.assertEqual(graph.inputs[0].name, "x")
+                self.assertEqual(
+                    [operation.target for operation in graph.operations],
+                    expected_targets,
+                )
+                self.assert_native_tensor_matches(
+                    graph.forward(input),
+                    expected,
+                    case=program.__name__,
+                )
+
+    def test_bytecode_lowerer_accepts_cpython_314_borrowed_local_loads(self):
+        def program(x):
+            raise AssertionError("synthetic bytecode test must not run")
+
+        input = torch.tensor([[-3.0, 0.0, 4.5]], dtype=torch.float32)
+        instructions = (
+            self.bytecode_instruction("RESUME"),
+            self.bytecode_instruction("LOAD_FAST_BORROW", "x", "x"),
+            self.bytecode_instruction("LOAD_ATTR", "neg", "NULL|self + neg", 1),
+            self.bytecode_instruction("CALL", arg=0),
+            self.bytecode_instruction("LOAD_ATTR", "abs", "NULL|self + abs", 1),
+            self.bytecode_instruction("CALL", arg=0),
+            self.bytecode_instruction("RETURN_VALUE"),
+        )
+
+        graph = self.lower_with_bytecode_instructions(program, instructions, input)
+
+        self.assertEqual(
+            [operation.target for operation in graph.operations],
+            ["neg", "abs"],
+        )
+        self.assert_native_tensor_matches(
+            graph.forward(input),
+            input.neg().abs(),
+            case="LOAD_FAST_BORROW",
+        )
+
+    def test_bytecode_lowerer_rejects_cpython_310_keyword_method_call(self):
+        def program(x):
+            raise AssertionError("synthetic bytecode test must not run")
+
+        input = torch.tensor([-2.0, 0.5, 3.0], dtype=torch.float32)
+        instructions = (
+            self.bytecode_instruction("LOAD_FAST", "x", "x"),
+            self.bytecode_instruction("LOAD_ATTR", "add", "add", 0),
+            self.bytecode_instruction("LOAD_FAST", "x", "x"),
+            self.bytecode_instruction("LOAD_CONST", ("other",), "('other',)", 1),
+            self.bytecode_instruction("CALL_FUNCTION_KW", arg=1),
+            self.bytecode_instruction("RETURN_VALUE"),
+        )
+
+        with self.assertRaisesRegex(
+            _compile_trace.CompileTraceUnsupportedError,
+            "keyword arguments",
+        ):
+            self.lower_with_bytecode_instructions(program, instructions, input)
+
+    def test_bytecode_lowerer_rejects_cpython_313_keyword_method_call(self):
+        def program(x):
+            raise AssertionError("synthetic bytecode test must not run")
+
+        input = torch.tensor([-2.0, 0.5, 3.0], dtype=torch.float32)
+        instructions = (
+            self.bytecode_instruction("LOAD_FAST", "x", "x"),
+            self.bytecode_instruction("LOAD_ATTR", "add", "NULL|self + add", 1),
+            self.bytecode_instruction("LOAD_FAST", "x", "x"),
+            self.bytecode_instruction("LOAD_CONST", ("other",), "('other',)", 1),
+            self.bytecode_instruction("CALL_KW", arg=1),
+            self.bytecode_instruction("RETURN_VALUE"),
+        )
+
+        with self.assertRaisesRegex(
+            _compile_trace.CompileTraceUnsupportedError,
+            "keyword arguments",
+        ):
+            self.lower_with_bytecode_instructions(program, instructions, input)
+
+    def test_bytecode_lowerer_rejects_cpython_313_to_bool_as_control_flow(self):
+        def program(x):
+            raise AssertionError("synthetic bytecode test must not run")
+
+        input = torch.tensor([-2.0, 0.5, 3.0], dtype=torch.float32)
+        instructions = (
+            self.bytecode_instruction("LOAD_FAST", "x", "x"),
+            self.bytecode_instruction("TO_BOOL"),
+            self.bytecode_instruction("POP_JUMP_IF_FALSE"),
+            self.bytecode_instruction("LOAD_FAST", "x", "x"),
+            self.bytecode_instruction("RETURN_VALUE"),
+        )
+
+        with self.assertRaisesRegex(
+            _compile_trace.CompileTraceUnsupportedError,
+            "control flow",
+        ):
+            self.lower_with_bytecode_instructions(program, instructions, input)
+
+    def test_bytecode_lowerer_accepts_combined_local_load_opcodes(self):
+        def program(x):
+            raise AssertionError("synthetic bytecode test must not run")
+
+        input = torch.tensor([-2.0, 0.5, 3.0], dtype=torch.float32)
+        variants = (
+            (
+                "LOAD_FAST_LOAD_FAST",
+                ("x", "x"),
+                "",
+            ),
+            (
+                "LOAD_FAST_BORROW_LOAD_FAST_BORROW",
+                None,
+                "x, x",
+            ),
+            (
+                "LOAD_FAST_BORROW_LOAD_FAST",
+                None,
+                "(x, x)",
+            ),
+        )
+        for opname, argval, argrepr in variants:
+            with self.subTest(opname=opname):
+                instructions = (
+                    self.bytecode_instruction(opname, argval, argrepr),
+                    self.bytecode_instruction("BINARY_OP", argrepr="+"),
+                    self.bytecode_instruction("RETURN_VALUE"),
+                )
+
+                graph = self.lower_with_bytecode_instructions(
+                    program,
+                    instructions,
+                    input,
+                )
+
+                self.assertEqual(
+                    [operation.target for operation in graph.operations],
+                    ["add"],
+                )
+                self.assertEqual(graph.operations[0].inputs, ("x", "x"))
+                self.assert_native_tensor_matches(
+                    graph.forward(input),
+                    input + input,
+                    case=opname,
+                )
+
+    def test_bytecode_lowerer_accepts_combined_store_then_load_opcode(self):
+        def program(x):
+            y = x
+            z = y
+            return z
+
+        input = torch.tensor([[-2.0, 0.5], [3.0, -4.0]], dtype=torch.float32)
+        instructions = (
+            self.bytecode_instruction("RESUME"),
+            self.bytecode_instruction("LOAD_FAST_BORROW", "x", "x"),
+            self.bytecode_instruction("UNARY_NEGATIVE"),
+            self.bytecode_instruction("STORE_FAST_LOAD_FAST", ("y", "y")),
+            self.bytecode_instruction("LOAD_FAST_BORROW", "x", "x"),
+            self.bytecode_instruction("BINARY_OP", argrepr="+"),
+            self.bytecode_instruction("STORE_FAST_LOAD_FAST", None, "z, z"),
+            self.bytecode_instruction("LOAD_METHOD", "abs", "abs"),
+            self.bytecode_instruction("CALL", arg=0),
+            self.bytecode_instruction("RETURN_VALUE"),
+        )
+
+        graph = self.lower_with_bytecode_instructions(program, instructions, input)
+
+        self.assertEqual(
+            [operation.target for operation in graph.operations],
+            ["neg", "add", "abs"],
+        )
+        self.assertEqual(graph.operations[1].inputs, ("neg_0", "x"))
+        self.assert_native_tensor_matches(
+            graph.forward(input),
+            (input.neg() + input).abs(),
+            case="STORE_FAST_LOAD_FAST",
+        )
 
     def test_unary_abs_neg_executes_private_native_graph(self):
         case = COMPILE_CORPUS[0]
@@ -786,17 +1077,30 @@ for actual in (
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
-compiled = torch.compile(self_add, backend=backend)
+compiled = torch.compile(self_add, backend="eager", fullgraph=True)
+compiled_actual = compiled(native_input)
+assert compiled_actual.tolist() == self_add_expected.tolist()
+assert compiled_actual.shape == self_add_expected.shape
+assert compiled_actual.stride() == self_add_expected.stride()
+assert compiled_actual.dtype is self_add_expected.dtype
+assert compiled_actual.device == self_add_expected.device
+assert compiled_actual.requires_grad is self_add_expected.requires_grad
+assert backend_calls == []
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
+compiled_with_callable_backend = torch.compile(self_add, backend=backend)
 try:
-    compiled(make_inputs(torch)[0])
+    compiled_with_callable_backend(make_inputs(torch)[0])
 except NotImplementedError as error:
     assert str(error) == (
-        "torch.compile(): graph capture, graph execution, and eager fallback are "
-        "not supported; only argument binding, disable=True pass-through, and "
-        "backend resolution are implemented"
+        "torch.compile(): only backend='eager', fullgraph=True straight-line "
+        "Tensor neg/abs/add functions with one positional exact native CPU "
+        "float32 Tensor are supported; eager fallback, installed-PyTorch "
+        "forwarding, callable backend invocation, CUDA compilation, and broader "
+        "graph capture remain unsupported"
     )
 else:
-    raise AssertionError("public torch.compile should remain non-executing")
+    raise AssertionError("callable-backend torch.compile should remain unsupported")
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
@@ -811,6 +1115,183 @@ assert not any(name == "torch" or name.startswith("torch.") for name in sys.modu
             0,
             msg=completed.stdout + completed.stderr,
         )
+
+    def test_public_eager_compile_executes_tensor_arithmetic_corpus(self):
+        for case in COMPILE_CORPUS:
+            with self.subTest(case=case.name):
+                compiled = torch.compile(
+                    case.program,
+                    backend="eager",
+                    fullgraph=True,
+                )
+                inputs = case.make_inputs(torch)
+                expected = case.program(*inputs)
+
+                self.assertIs(compiled.__wrapped__, case.program)
+                self.assertIs(compiled._torch_rs_compile_backend, "eager")
+                self.assert_native_tensor_matches(
+                    compiled(*inputs),
+                    expected,
+                    case=case.name,
+                )
+
+    def test_public_eager_compile_executes_held_out_programs_across_shapes(self):
+        def abs_neg_reordering(x):
+            return x.absolute().negative().abs()
+
+        def repeated_unary_chain(x):
+            return x.neg().neg().abs().negative().absolute()
+
+        def add_unary_composition(x):
+            y = x + x
+            z = x.neg().abs()
+            return y.add(z)
+
+        def unary_operator_composition(x):
+            return (-x).abs() + x
+
+        programs = (
+            abs_neg_reordering,
+            repeated_unary_chain,
+            add_unary_composition,
+            unary_operator_composition,
+        )
+        inputs = (
+            ("scalar", torch.tensor(-2.5, dtype=torch.float32)),
+            ("vector", torch.tensor([-3.0, 0.0, 4.5], dtype=torch.float32)),
+            (
+                "matrix",
+                torch.tensor(
+                    [[-3.0, 0.0, 4.5], [1.25, -2.5, 6.0]],
+                    dtype=torch.float32,
+                ),
+            ),
+            ("empty matrix", torch.tensor([[], []], dtype=torch.float32)),
+            (
+                "noncontiguous",
+                torch.tensor(
+                    [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
+                    dtype=torch.float32,
+                ).transpose(0, 1)[1],
+            ),
+        )
+
+        for program in programs:
+            compiled = torch.compile(program, backend="eager", fullgraph=True)
+            for shape_case, input in inputs:
+                with self.subTest(program=program.__name__, input=shape_case):
+                    self.assert_native_tensor_matches(
+                        compiled(input),
+                        program(input),
+                        case=f"{program.__name__} {shape_case}",
+                    )
+
+    def test_public_eager_compile_executes_through_private_graph_executor(self):
+        calls = []
+        original_execute = _compile_trace.execute_compile_trace_graph
+
+        def spy_execute(graph, input):
+            calls.append(graph)
+            return original_execute(graph, input)
+
+        def program(x):
+            return (x + x).abs()
+
+        try:
+            _compile_trace.execute_compile_trace_graph = spy_execute
+            compiled = torch.compile(program, backend="eager", fullgraph=True)
+            input = torch.tensor([-2.0, 3.0], dtype=torch.float32)
+            expected = program(input)
+            actual = compiled(input)
+        finally:
+            _compile_trace.execute_compile_trace_graph = original_execute
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(
+            [operation.target for operation in calls[0].operations],
+            ["add", "abs"],
+        )
+        self.assert_native_tensor_matches(
+            actual,
+            expected,
+            case="public private executor dispatch",
+        )
+
+    def test_public_eager_compile_rejects_active_torch_function_mode(self):
+        def program(x):
+            return x.abs()
+
+        mode_calls = []
+
+        class ReplacingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                mode_calls.append(getattr(func, "__name__", repr(func)))
+                return torch.tensor([99.0], dtype=torch.float32)
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([-2.0], dtype=torch.float32)
+
+        with ReplacingMode():
+            with self.assertRaisesRegex(
+                NotImplementedError,
+                "active __torch_function__ modes",
+            ):
+                compiled(input)
+
+        self.assertEqual(mode_calls, [])
+
+    def test_public_eager_compile_rejects_exception_handling(self):
+        def program(x):
+            try:
+                return x.abs()
+            except Exception:
+                return x.neg()
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([-2.0], dtype=torch.float32)
+
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            "does not support exception handling",
+        ):
+            compiled(input)
+
+    def test_public_eager_compile_rejects_non_arithmetic_boundaries(self):
+        def two_inputs(x, y):
+            return x + y
+
+        def top_level_global(x):
+            return torch.abs(x)
+
+        def keyword_method(x):
+            return x.add(other=x)
+
+        def control_flow(x):
+            if x:
+                return x
+            return x.neg()
+
+        def mutation(x):
+            x += x
+            return x
+
+        def unsupported_tensor_method(x):
+            return x.relu()
+
+        input = torch.tensor([-1.0, 2.0], dtype=torch.float32)
+        cases = (
+            ("two inputs", two_inputs, "one positional Tensor argument"),
+            ("global", top_level_global, "global or import access"),
+            ("keyword method", keyword_method, "keyword arguments"),
+            ("control flow", control_flow, "control flow"),
+            ("mutation", mutation, "mutation"),
+            ("unsupported tensor method", unsupported_tensor_method, "Tensor.relu"),
+        )
+        for case, program, expected in cases:
+            with self.subTest(case=case):
+                compiled = torch.compile(program, backend="eager", fullgraph=True)
+                with self.assertRaisesRegex(NotImplementedError, expected):
+                    compiled(input)
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -849,28 +1330,38 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
             with self.subTest(case=case.name):
                 self.assert_reference_eligible(case)
 
-    def test_torch_rs_compile_keeps_eligible_cases_unsupported(self):
+    def test_torch_rs_compile_executes_eligible_cases_with_native_eager_backend(self):
         for case in COMPILE_CORPUS:
             with self.subTest(case=case.name):
                 self.assert_reference_eligible(case)
 
-                model_calls = []
                 backend_calls = []
                 backend = make_recording_backend(backend_calls)
 
-                def model(*args, **kwargs):
-                    model_calls.append((args, kwargs))
-                    return case.program(*args, **kwargs)
-
-                compiled = torch.compile(model, **case.compile_kwargs(backend))
-                self.assertIs(compiled._torch_rs_compile_backend, backend)
-                self.assertEqual(model_calls, [])
+                compiled = torch.compile(
+                    case.program,
+                    **case.compile_kwargs("eager"),
+                )
+                self.assertIs(compiled._torch_rs_compile_backend, "eager")
                 self.assertEqual(backend_calls, [])
 
+                inputs = case.make_inputs(torch)
+                expected = case.program(*inputs)
+                actual = compiled(*inputs)
+                self.assertEqual(actual.tolist(), expected.tolist())
+                self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+                self.assertEqual(actual.stride(), expected.stride())
+                self.assertIs(actual.dtype, expected.dtype)
+                self.assertEqual(actual.device, expected.device)
+                self.assertEqual(backend_calls, [])
+
+                callable_backend_compiled = torch.compile(
+                    case.program,
+                    **case.compile_kwargs(backend),
+                )
                 with self.assertRaises(NotImplementedError) as raised:
-                    compiled(*case.make_inputs(torch))
+                    callable_backend_compiled(*case.make_inputs(torch))
                 self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
-                self.assertEqual(model_calls, [])
                 self.assertEqual(backend_calls, [])
 
 
