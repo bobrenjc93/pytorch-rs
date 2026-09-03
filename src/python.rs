@@ -7316,6 +7316,62 @@ fn _backward_leaf_roots(roots: &Bound<'_, PyAny>) -> PyResult<()> {
     CoreTensor::backward_leaf_roots(&native_roots).map_err(|error| tensor_error(&error))
 }
 
+#[pyfunction(
+    name = "_compile_trace_tensor_metadata",
+    signature = (input, /),
+    text_signature = None
+)]
+fn compile_trace_tensor_metadata(py: Python<'_>, input: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    if !input.is_exact_instance_of::<PyTensor>() {
+        let type_name = python_type_name(input)?;
+        return Err(PyTypeError::new_err(format!(
+            "_compile_trace_tensor_metadata(): expected exact native Tensor, got {type_name}"
+        )));
+    }
+
+    let tensor = input.cast::<PyTensor>()?.try_borrow()?;
+    let shape = PyTuple::new(py, tensor.inner.shape().iter().copied())?;
+    let stride = PyTuple::new(py, tensor.inner.stride().iter().copied())?;
+    (shape, stride, tensor.inner.requires_grad()).into_py_any(py)
+}
+
+#[pyfunction(
+    name = "_compile_trace_grad_enabled",
+    signature = (),
+    text_signature = None
+)]
+fn compile_trace_grad_enabled() -> bool {
+    is_grad_enabled()
+}
+
+#[pyfunction(
+    name = "_compile_trace_unary",
+    signature = (input, target, /),
+    text_signature = None
+)]
+fn compile_trace_unary(input: &Bound<'_, PyAny>, target: &str) -> PyResult<PyTensor> {
+    if !input.is_exact_instance_of::<PyTensor>() {
+        let type_name = python_type_name(input)?;
+        return Err(PyTypeError::new_err(format!(
+            "_compile_trace_unary(): expected exact native Tensor, got {type_name}"
+        )));
+    }
+
+    let tensor = input.cast::<PyTensor>()?.try_borrow()?;
+    let output = match target {
+        "neg" => tensor.inner.negate(),
+        "abs" => tensor.inner.abs(),
+        _ => {
+            return Err(PyNotImplementedError::new_err(format!(
+                "_compile_trace_unary(): unsupported target {target:?}"
+            )));
+        }
+    };
+    output
+        .map(PyTensor::new)
+        .map_err(|error| tensor_error(&error))
+}
+
 fn scalar_tensor_impl(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
@@ -19298,6 +19354,25 @@ fn nested_list(py: Python<'_>, data: &[f32], shape: &[usize]) -> PyResult<Py<PyA
     Ok(PyList::new(py, items)?.into_any().unbind())
 }
 
+fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add("_MAX_BACKWARD_LEAF_ROOTS", MAX_BACKWARD_LEAF_ROOTS)?;
+    module.add_function(wrap_pyfunction!(_backward_leaf_roots, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_trace_tensor_metadata, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_trace_grad_enabled, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_trace_unary, module)?)?;
+    let exports = module.getattr("__all__")?;
+    for name in [
+        "_MAX_BACKWARD_LEAF_ROOTS",
+        "_backward_leaf_roots",
+        "_compile_trace_tensor_metadata",
+        "_compile_trace_grad_enabled",
+        "_compile_trace_unary",
+    ] {
+        exports.call_method1("remove", (name,))?;
+    }
+    Ok(())
+}
+
 #[pymodule]
 fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
@@ -19364,12 +19439,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("is_tensor", is_tensor_helpers.getattr("is_tensor")?)?;
     add_no_argument_builtins(module)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
-    module.add("_MAX_BACKWARD_LEAF_ROOTS", MAX_BACKWARD_LEAF_ROOTS)?;
-    module.add_function(wrap_pyfunction!(_backward_leaf_roots, module)?)?;
-    let exports = module.getattr("__all__")?;
-    for name in ["_MAX_BACKWARD_LEAF_ROOTS", "_backward_leaf_roots"] {
-        exports.call_method1("remove", (name,))?;
-    }
+    add_private_autograd_and_compile_trace_builtins(module)?;
     torch_function_mode_stack::add_torch_function_mode_stack(module)?;
     add_torch_function_probe(module)?;
     add_variable_functions(module)?;

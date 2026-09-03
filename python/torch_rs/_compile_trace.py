@@ -7,6 +7,8 @@ import operator as _operator
 from collections.abc import Sequence as _Sequence
 from dataclasses import dataclass
 
+from . import torch_rs as _native
+
 
 class CompileTraceUnsupportedError(NotImplementedError):
     """Raised when the package-local trace prototype reaches an unsupported op."""
@@ -59,6 +61,9 @@ class CompileTraceGraph:
     operations: tuple[CompileTraceOperation, ...]
     output: str
     output_metadata: CompileTraceTensorMetadata
+
+    def forward(self, input):
+        return execute_compile_trace_graph(self, input)
 
 
 _SUPPORTED_UNARY_METHODS = (
@@ -151,6 +156,156 @@ def _contiguous_stride(shape):
     return tuple(reversed(stride))
 
 
+def _element_count(shape):
+    elements = 1
+    for dimension in shape:
+        elements *= dimension
+    return elements
+
+
+def _layout_is_contiguous(shape, stride):
+    if _element_count(shape) == 0:
+        return True
+
+    expected_stride = 1
+    for axis in range(len(shape) - 1, -1, -1):
+        dimension = shape[axis]
+        if dimension == 1:
+            continue
+        if stride[axis] != expected_stride:
+            return False
+        expected_stride *= dimension
+    return True
+
+
+def _layout_is_contiguous_in_order(shape, stride, order):
+    if len(shape) != len(order) or len(stride) != len(order):
+        return False
+
+    expected_stride = 1
+    for axis in order:
+        dimension = shape[axis]
+        if dimension == 1:
+            continue
+        if stride[axis] != expected_stride:
+            return False
+        expected_stride *= dimension
+    return True
+
+
+def _channels_last_stride(shape):
+    return _stride_in_physical_order(shape, (1, 3, 2, 0))
+
+
+def _stride_in_physical_order(shape, order):
+    stride = [0] * len(shape)
+    running = 1
+    for position, axis in enumerate(order):
+        stride[axis] = running
+        if position + 1 < len(order):
+            running *= shape[axis]
+    return tuple(stride)
+
+
+def _layout_is_channels_last_contiguous(shape, stride):
+    return _layout_is_contiguous_in_order(shape, stride, (1, 3, 2, 0))
+
+
+def _layout_is_non_overlapping_and_dense(shape, stride):
+    if _element_count(shape) == 0:
+        return True
+
+    non_singleton_dimensions = sum(dimension > 1 for dimension in shape)
+    matched_dimensions = 0
+    expected_stride = 1
+    while matched_dimensions < non_singleton_dimensions:
+        matching_dimension = None
+        for axis, (dimension, axis_stride) in enumerate(zip(shape, stride)):
+            if dimension <= 1 or axis_stride != expected_stride:
+                continue
+            if matching_dimension is not None:
+                return False
+            matching_dimension = (axis, dimension)
+        if matching_dimension is None:
+            return False
+        _, dimension = matching_dimension
+        expected_stride *= dimension
+        matched_dimensions += 1
+    return True
+
+
+def _elementwise_output_stride(shape, input_stride):
+    rank = len(shape)
+    permutation = list(range(rank - 1, -1, -1))
+
+    for index in range(1, rank):
+        dimension_1 = index
+        for dimension_0 in range(index - 1, -1, -1):
+            comparison = _compare_elementwise_dimensions(
+                shape,
+                input_stride,
+                permutation[dimension_0],
+                permutation[dimension_1],
+            )
+            if comparison > 0:
+                permutation[dimension_0], permutation[dimension_1] = (
+                    permutation[dimension_1],
+                    permutation[dimension_0],
+                )
+                dimension_1 = dimension_0
+            elif comparison < 0:
+                break
+
+    if all(axis == rank - index - 1 for index, axis in enumerate(permutation)):
+        return _contiguous_stride(shape)
+
+    stride = [0] * rank
+    next_stride = 1
+    for position, axis in enumerate(permutation):
+        stride[axis] = next_stride
+        if position + 1 < rank:
+            next_stride *= shape[axis]
+    return tuple(stride)
+
+
+def _compare_elementwise_dimensions(shape, input_stride, dimension_0, dimension_1):
+    stride_0 = input_stride[dimension_0]
+    stride_1 = input_stride[dimension_1]
+    if stride_0 == 0 or stride_1 == 0:
+        return 0
+    if stride_0 < stride_1:
+        return -1
+    if stride_0 > stride_1 or shape[dimension_0] > shape[dimension_1]:
+        return 1
+    return 0
+
+
+def _unary_output_stride(shape, input_stride):
+    if _layout_is_contiguous(shape, input_stride):
+        return _contiguous_stride(shape)
+    if _layout_is_channels_last_contiguous(shape, input_stride):
+        return _channels_last_stride(shape)
+    if _layout_is_non_overlapping_and_dense(shape, input_stride):
+        return input_stride
+    return _elementwise_output_stride(shape, input_stride)
+
+
+def _grad_enabled():
+    return _native._compile_trace_grad_enabled()
+
+
+def _unary_output_metadata(input_metadata, *, grad_enabled=None):
+    if grad_enabled is None:
+        grad_enabled = _grad_enabled()
+    return CompileTraceTensorMetadata(
+        shape=input_metadata.shape,
+        stride=_unary_output_stride(input_metadata.shape, input_metadata.stride),
+        dtype=input_metadata.dtype,
+        device=input_metadata.device,
+        requires_grad=input_metadata.requires_grad and grad_enabled,
+    )
+
+
 def _metadata_from_data(data, *, dtype, device, requires_grad):
     shape = _normalize_shape(_infer_shape(data))
     return CompileTraceTensorMetadata(
@@ -160,6 +315,156 @@ def _metadata_from_data(data, *, dtype, device, requires_grad):
         device=_normalize_device(device),
         requires_grad=_normalize_requires_grad(requires_grad),
     )
+
+
+def _type_name(value):
+    value_type = _builtins.type(value)
+    module = _builtins.object.__getattribute__(value_type, "__module__")
+    name = _builtins.object.__getattribute__(value_type, "__qualname__")
+    if module == "builtins":
+        return name
+    return f"{module}.{name}"
+
+
+def _require_native_tensor(value, value_name):
+    if not _builtins.isinstance(value, _native.Tensor):
+        raise TypeError(
+            "torch.compile trace execution expected native torch_rs Tensor "
+            f"for {value_name!r}, got {_type_name(value)}"
+        )
+
+
+def _metadata_from_native_tensor(tensor):
+    shape, stride, requires_grad = _native._compile_trace_tensor_metadata(tensor)
+    return CompileTraceTensorMetadata(
+        shape=_normalize_shape(shape),
+        stride=_normalize_shape(stride),
+        dtype=float32,
+        device="cpu",
+        requires_grad=_normalize_requires_grad(requires_grad),
+    )
+
+
+def _require_matching_metadata(
+    actual,
+    expected,
+    *,
+    value_name,
+    check_requires_grad=True,
+):
+    if actual == expected and check_requires_grad:
+        return
+
+    mismatches = []
+    fields = ["shape", "stride", "dtype", "device"]
+    if check_requires_grad:
+        fields.append("requires_grad")
+    for field in fields:
+        actual_value = getattr(actual, field)
+        expected_value = getattr(expected, field)
+        if actual_value != expected_value:
+            mismatches.append(
+                f"{field} expected {expected_value!r}, got {actual_value!r}"
+            )
+    if not mismatches:
+        return
+    mismatch_details = "; ".join(mismatches)
+    raise ValueError(
+        "torch.compile trace execution metadata mismatch for "
+        f"{value_name!r}: {mismatch_details}"
+    )
+
+
+def _execute_operation(operation, values):
+    if operation.op != "call_method":
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace execution only supports recorded Tensor.neg "
+            f"and Tensor.abs call_method operations, got {operation.op!r}"
+        )
+    if operation.target not in _SUPPORTED_UNARY_TARGETS:
+        _unsupported_operation(f"Tensor.{operation.target}")
+    if len(operation.inputs) != 1:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace execution only supports unary operations, "
+            f"got {len(operation.inputs)} inputs for {operation.name!r}"
+        )
+
+    (input_name,) = operation.inputs
+    try:
+        input = values[input_name]
+    except KeyError:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace execution operation "
+            f"{operation.name!r} references unknown value {input_name!r}"
+        ) from None
+
+    return _native._compile_trace_unary(input, operation.target)
+
+
+def execute_compile_trace_graph(graph, input):
+    if not _builtins.isinstance(graph, CompileTraceGraph):
+        raise TypeError(
+            "torch.compile trace execution expected CompileTraceGraph, "
+            f"got {_type_name(graph)}"
+        )
+    if len(graph.inputs) != 1:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace execution currently supports exactly one input"
+        )
+
+    graph_input = graph.inputs[0]
+    _require_native_tensor(input, graph_input.name)
+    input_metadata = _metadata_from_native_tensor(input)
+    _require_matching_metadata(
+        input_metadata,
+        graph_input.metadata,
+        value_name=graph_input.name,
+    )
+
+    values = {graph_input.name: input}
+    metadata_values = {graph_input.name: input_metadata}
+    grad_enabled = _grad_enabled()
+    for operation in graph.operations:
+        if operation.name in values:
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace execution encountered duplicate value "
+                f"name {operation.name!r}"
+            )
+        output = _execute_operation(operation, values)
+        input_metadata = metadata_values[operation.inputs[0]]
+        expected_metadata = _unary_output_metadata(
+            input_metadata,
+            grad_enabled=grad_enabled,
+        )
+        output_metadata = _metadata_from_native_tensor(output)
+        _require_matching_metadata(
+            output_metadata,
+            expected_metadata,
+            value_name=operation.name,
+        )
+        _require_matching_metadata(
+            output_metadata,
+            operation.metadata,
+            value_name=operation.name,
+            check_requires_grad=False,
+        )
+        values[operation.name] = output
+        metadata_values[operation.name] = output_metadata
+
+    try:
+        output = values[graph.output]
+    except KeyError:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace execution graph output references unknown "
+            f"value {graph.output!r}"
+        ) from None
+    _require_matching_metadata(
+        _metadata_from_native_tensor(output),
+        graph.output_metadata,
+        value_name=graph.output,
+        check_requires_grad=False,
+    )
+    return output
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -330,15 +635,16 @@ class CompileTraceRecorder:
             _unsupported_operation(f"Tensor.{target}")
         self._require_owned_proxy(input)
         name = self._next_operation_name(target)
+        metadata = _unary_output_metadata(input.metadata)
         operation = CompileTraceOperation(
             name=name,
             op="call_method",
             target=target,
             inputs=(input.name,),
-            metadata=input.metadata,
+            metadata=metadata,
         )
         self._operations.append(operation)
-        return CompileTraceTensorProxy(self, name, input.metadata)
+        return CompileTraceTensorProxy(self, name, metadata)
 
     def finish(self, output):
         self._ensure_open()
@@ -455,6 +761,7 @@ __all__ = [
     "CompileTraceTensorProxy",
     "CompileTraceTorchModule",
     "CompileTraceUnsupportedError",
+    "execute_compile_trace_graph",
     "float",
     "float32",
     "trace_one_input_compile_graph",

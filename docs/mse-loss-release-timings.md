@@ -7,6 +7,90 @@ Review update: 2026-09-01
 Candidate provenance: source snapshot based on
 `2231dec5e208f3545c05484d497b32b3981f640d`
 
+## Review Update: `reduction="mean"` Same-Shape Contiguous
+
+The 2026-09-03 focused rerun used the current worktree based on
+`31f650b2fdb62c1328c6f884d0b53ff483d282b8` with the direct no-grad
+same-shape contiguous `mse_loss(reduction="mean")` fast path. The release
+extension was built and installed into the worktree `.venv` with
+`maturin develop --release --locked`, and the ignored one-off timing driver
+`target/mse_mean_release_timing.py` ran from the repository root.
+
+The measured cell used CPU `float32` row-major contiguous `(1024, 1024)` inputs
+created outside the timed region from NumPy seed `20260903`,
+`CUDA_VISIBLE_DEVICES=`, one PyTorch thread, one reported `torch_rs` thread,
+`taskset -c 24`, 15 warmup blocks, 81 measured blocks, and 16 eager calls per
+block in each of two process passes. The first pass measured `torch_rs` before
+PyTorch; the second pass reversed that order. Scalar outputs were consumed with
+`.item()` inside every timed call, and values below are medians of the two
+per-process medians.
+
+Correctness was checked against PyTorch 2.13 before timing for output shape,
+stride, storage offset, contiguity, dtype, device, `requires_grad`, leaf
+status, scalar value with `rtol=1e-5`, `atol=1e-5`, `equal_nan=True`, and
+operand nonmutation.
+
+Focused checks for this update:
+
+```bash
+PATH="/home/bobren/.cargo/bin:$PATH" cargo fmt --check
+PATH="/home/bobren/.cargo/bin:$PATH" cargo clippy --all-targets -- -D warnings
+PATH="/home/bobren/.cargo/bin:$PATH" \
+  PYO3_PYTHON="$PWD/.venv/bin/python" \
+  cargo clippy --all-targets --features python-bindings -- -D warnings
+PATH="/home/bobren/.cargo/bin:$PATH" \
+  cargo test tensor::tests::squared_difference_mean --all-targets
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest \
+  tests.test_nn_functional_mse_loss \
+  tests.test_nn_functional_mse_loss_reference
+```
+
+Results: the focused native Rust tests passed 2 tests, and the focused MSE
+Python implementation and PyTorch 2.13 differential tests passed 48 tests.
+
+Timing command:
+
+```bash
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  taskset -c 24 .venv/bin/python target/mse_mean_release_timing.py
+```
+
+Environment:
+
+- CPU: AMD EPYC 9654 96-Core Processor
+- OS: Linux 6.13.2-0_fbk12_0_g0b66b3635210 x86_64, glibc 2.34
+- Python: 3.12.12
+- NumPy: 2.5.1
+- Rust: `rustc 1.92.0 (ded5c06cf 2025-12-08)`,
+  `cargo 1.92.0 (344c4567c 2025-10-21)`
+- PyTorch: 2.13.0+cu130
+- Profile: release, Cargo `[profile.release]` with thin LTO and one codegen unit
+- Device/dtype: CPU float32; `CUDA_VISIBLE_DEVICES=` for the timing run
+- Threads: `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`,
+  `OPENBLAS_NUM_THREADS=1`, `NUMEXPR_NUM_THREADS=1`,
+  `torch.set_num_threads(1)`, `torch.set_num_interop_threads(1)`;
+  `torch_rs.get_num_threads()` and `torch_rs.get_num_interop_threads()` both
+  reported 1
+- Dependency installation: locked
+  `uv sync --locked --no-install-project --group dev --group reference`
+  resolved in 25 ms and completed in 0.09s against the already-populated
+  worktree `.venv`
+- Build time: the uncached release extension rebuild for this source completed
+  in 29.19s; the final reinstall after the dependency-sync check reused cached
+  artifacts and reported 0.01s
+
+Times are median microseconds per call. MAD is median absolute deviation in
+microseconds, and variance is sample variance of per-call sample timings in
+microseconds squared. `torch_rs / PyTorch` is a slowdown ratio, so lower is
+better and 1.00x is parity.
+
+| Workload | Category | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `mse_mean_same_contiguous_1024x1024` | same-shape contiguous no-grad mean | `()`, stride `()`, offset 0, requires_grad=False | 16 | 624.144 us +/- 3.160, var 1323.047 | 207.989 us +/- 1.542, var 11.631 | 3.00x |
+
 ## Review Update: `reduction="sum"`
 
 The 2026-09-01 review rerun used the current composite worktree's release
