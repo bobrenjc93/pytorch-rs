@@ -7217,39 +7217,44 @@ fn extract_exact_numpy_float32_scalar(value: &Bound<'_, PyAny>) -> PyResult<Opti
     if value_type.name()? != "float32" {
         return Ok(None);
     }
-    if value_type.getattr("__module__")?.extract::<String>()? != "numpy" {
+    let Ok(value_module) = value_type
+        .getattr("__module__")
+        .and_then(|module| module.extract::<String>())
+    else {
+        return Ok(None);
+    };
+    if value_module != "numpy" {
         return Ok(None);
     }
 
-    let Ok(dtype) = value.getattr("dtype") else {
+    let Some(numpy_float32_type) = canonical_numpy_float32_type(value.py()) else {
         return Ok(None);
     };
-    let Ok(dtype_type) = dtype.getattr("type") else {
-        return Ok(None);
-    };
-    if !dtype_type.is(value_type.as_any()) {
-        return Ok(None);
-    }
-    let Ok(dtype_name) = dtype
-        .getattr("name")
-        .and_then(|name| name.extract::<String>())
-    else {
-        return Ok(None);
-    };
-    if dtype_name != "float32" {
-        return Ok(None);
-    }
-    let Ok(item_size) = dtype
-        .getattr("itemsize")
-        .and_then(|itemsize| itemsize.extract::<usize>())
-    else {
-        return Ok(None);
-    };
-    if item_size != std::mem::size_of::<f32>() {
+    if !numpy_float32_type.is(value_type.as_any()) {
         return Ok(None);
     }
 
     value.extract::<f32>().map(Some)
+}
+
+fn canonical_numpy_float32_type(py: Python<'_>) -> Option<Bound<'_, PyAny>> {
+    let multiarray = match PyModule::import(py, "numpy._core.multiarray") {
+        Ok(module) => module,
+        Err(_) => match PyModule::import(py, "numpy.core.multiarray") {
+            Ok(module) => module,
+            Err(_) => return None,
+        },
+    };
+    let Ok(dtype_constructor) = multiarray.getattr("dtype") else {
+        return None;
+    };
+    let Ok(descriptor) = dtype_constructor.call1(("float32",)) else {
+        return None;
+    };
+    let Ok(scalar_type) = descriptor.getattr("type") else {
+        return None;
+    };
+    Some(scalar_type)
 }
 
 fn as_tensor_float_sequence(value: &Bound<'_, PyAny>) -> PyResult<Option<(Vec<f32>, Vec<usize>)>> {

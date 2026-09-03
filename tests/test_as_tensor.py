@@ -300,6 +300,28 @@ class AsTensorTests(unittest.TestCase):
         self.assertEqual(rebound_scalar.shape, ())
         self.assertEqual(self.float32_bits(rebound_scalar), [0x80000000])
 
+    def test_numpy_float32_scalar_detection_rejects_impostor_type(self):
+        class FakeDType:
+            name = "float32"
+            itemsize = 4
+
+        class float32:
+            __module__ = "numpy"
+            dtype = FakeDType()
+
+            def __float__(self):
+                return 1.25
+
+        float32.dtype.type = float32
+
+        self.assertEqual(float32.__name__, "float32")
+        self.assertEqual(float32.__module__, "numpy")
+        self.assert_error(
+            lambda: torch.as_tensor(float32()),
+            NotImplementedError,
+            UNSUPPORTED_AS_TENSOR_CONVERSION,
+        )
+
     def test_recursive_and_overdeep_float_sequences_raise_value_error(self):
         recursive_list = []
         recursive_list.append(recursive_list)
