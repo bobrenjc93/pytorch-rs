@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import builtins as _builtins
+import dis as _dis
 import operator as _operator
+import types as _types
 from collections.abc import Sequence as _Sequence
 from dataclasses import dataclass
 
@@ -82,12 +84,92 @@ _SUPPORTED_OPERATION_TARGETS = _SUPPORTED_UNARY_TARGETS | _SUPPORTED_BINARY_TARG
 _SUPPORTED_OPERATION_DESCRIPTION = ", ".join(
     (*_SUPPORTED_UNARY_METHODS, *_SUPPORTED_BINARY_METHODS)
 )
+_UNARY_METHOD_TARGETS = {
+    "neg": "neg",
+    "negative": "neg",
+    "__neg__": "neg",
+    "abs": "abs",
+    "absolute": "abs",
+    "__abs__": "abs",
+}
+_BINARY_METHOD_TARGETS = {
+    "add": "add",
+    "__add__": "add",
+    "__radd__": "add",
+}
+_IGNORED_BYTECODE_OPS = frozenset(
+    (
+        "CACHE",
+        "EXTENDED_ARG",
+        "NOP",
+        "RESUME",
+    )
+)
+_GLOBAL_BYTECODE_OPS = frozenset(
+    (
+        "DELETE_GLOBAL",
+        "IMPORT_FROM",
+        "IMPORT_NAME",
+        "LOAD_BUILD_CLASS",
+        "LOAD_GLOBAL",
+        "LOAD_NAME",
+        "STORE_GLOBAL",
+        "STORE_NAME",
+    )
+)
+_MUTATING_BYTECODE_OPS = frozenset(
+    (
+        "DELETE_ATTR",
+        "DELETE_DEREF",
+        "DELETE_FAST",
+        "DELETE_SUBSCR",
+        "STORE_ATTR",
+        "STORE_DEREF",
+        "STORE_SUBSCR",
+    )
+)
+_CONTROL_FLOW_BYTECODE_OPS = frozenset(
+    (
+        "FOR_ITER",
+        "GET_ITER",
+        "JUMP",
+        "JUMP_BACKWARD",
+        "JUMP_BACKWARD_NO_INTERRUPT",
+        "JUMP_FORWARD",
+        "POP_JUMP_BACKWARD_IF_FALSE",
+        "POP_JUMP_BACKWARD_IF_NONE",
+        "POP_JUMP_BACKWARD_IF_NOT_NONE",
+        "POP_JUMP_BACKWARD_IF_TRUE",
+        "POP_JUMP_FORWARD_IF_FALSE",
+        "POP_JUMP_FORWARD_IF_NONE",
+        "POP_JUMP_FORWARD_IF_NOT_NONE",
+        "POP_JUMP_FORWARD_IF_TRUE",
+        "POP_JUMP_IF_FALSE",
+        "POP_JUMP_IF_TRUE",
+        "SETUP_FINALLY",
+        "SETUP_WITH",
+    )
+)
+_CODE_FLAG_VARARGS = 0x04
+_CODE_FLAG_VARKEYWORDS = 0x08
 
 
 def _unsupported_operation(operation):
     raise CompileTraceUnsupportedError(
         "torch.compile trace does not support "
         f"{operation}; only {_SUPPORTED_OPERATION_DESCRIPTION} are implemented"
+    )
+
+
+def _unsupported_bytecode(program, instruction, reason):
+    program_name = getattr(
+        program,
+        "__qualname__",
+        getattr(program, "__name__", program),
+    )
+    raise CompileTraceUnsupportedError(
+        "torch.compile trace bytecode lowering does not support "
+        f"{reason} in {program_name!r}: {instruction.opname}"
     )
 
 
@@ -948,6 +1030,286 @@ class CompileTraceTorchModule:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _BytecodeMethod:
+    receiver: CompileTraceTensorProxy
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class _BytecodeConstant:
+    value: object
+
+
+def _validate_bytecode_lowering_program(program):
+    if _builtins.type(program) is not _types.FunctionType:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace bytecode lowering currently supports exact "
+            "Python functions only"
+        )
+
+    code = program.__code__
+    if (
+        code.co_argcount != 1
+        or code.co_kwonlyargcount != 0
+        or code.co_flags & (_CODE_FLAG_VARARGS | _CODE_FLAG_VARKEYWORDS)
+    ):
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace bytecode lowering currently supports exact "
+            "Python functions with one positional Tensor argument"
+        )
+    if program.__closure__ is not None or code.co_freevars or code.co_cellvars:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace bytecode lowering does not support closures"
+        )
+    return code
+
+
+def _pop_bytecode_value(stack, program, instruction):
+    try:
+        return stack.pop()
+    except IndexError:
+        _unsupported_bytecode(program, instruction, "stack underflow")
+
+
+def _require_bytecode_tensor(value, program, instruction, role):
+    if not _builtins.isinstance(value, CompileTraceTensorProxy):
+        _unsupported_bytecode(program, instruction, f"non-Tensor {role}")
+    return value
+
+
+def _load_attr_pushes_method(instruction):
+    if instruction.opname == "LOAD_METHOD":
+        return True
+    return instruction.opname == "LOAD_ATTR" and instruction.arg is not None and (
+        instruction.arg & 1
+    )
+
+
+def _record_bytecode_method_call(recorder, method, args, program, instruction):
+    target = _UNARY_METHOD_TARGETS.get(method.name)
+    if target is not None:
+        if args:
+            _unsupported_bytecode(
+                program,
+                instruction,
+                f"Tensor.{method.name} arguments",
+            )
+        return recorder.record_unary(target, method.receiver)
+
+    target = _BINARY_METHOD_TARGETS.get(method.name)
+    if target is not None:
+        if len(args) != 1:
+            _unsupported_bytecode(
+                program,
+                instruction,
+                f"Tensor.{method.name} argument count {len(args)}",
+            )
+        other = _require_bytecode_tensor(
+            args[0],
+            program,
+            instruction,
+            f"Tensor.{method.name} operand",
+        )
+        if method.name == "__radd__":
+            return recorder.record_binary(
+                target,
+                other,
+                method.receiver,
+                "Tensor.__radd__",
+            )
+        return recorder.record_binary(
+            target,
+            method.receiver,
+            other,
+            f"Tensor.{method.name}",
+        )
+
+    _unsupported_operation(f"Tensor.{method.name}")
+
+
+def _record_bytecode_binary_add(recorder, stack, program, instruction):
+    right = _require_bytecode_tensor(
+        _pop_bytecode_value(stack, program, instruction),
+        program,
+        instruction,
+        "right operand",
+    )
+    left = _require_bytecode_tensor(
+        _pop_bytecode_value(stack, program, instruction),
+        program,
+        instruction,
+        "left operand",
+    )
+    stack.append(recorder.record_binary("add", left, right, "Tensor.__add__"))
+
+
+def _record_bytecode_unary(recorder, stack, program, instruction, target):
+    input = _require_bytecode_tensor(
+        _pop_bytecode_value(stack, program, instruction),
+        program,
+        instruction,
+        "operand",
+    )
+    stack.append(recorder.record_unary(target, input))
+
+
+def _lower_bytecode_instruction(
+    recorder,
+    locals,
+    stack,
+    program,
+    instruction,
+):
+    opname = instruction.opname
+    if opname in _IGNORED_BYTECODE_OPS:
+        return None
+    if opname in _GLOBAL_BYTECODE_OPS:
+        _unsupported_bytecode(program, instruction, "global or import access")
+    if opname in _MUTATING_BYTECODE_OPS:
+        _unsupported_bytecode(program, instruction, "mutation")
+    if opname in _CONTROL_FLOW_BYTECODE_OPS or "JUMP" in opname:
+        _unsupported_bytecode(program, instruction, "control flow")
+    if opname in ("KW_NAMES", "CALL_FUNCTION_KW", "CALL_METHOD_KW"):
+        _unsupported_bytecode(program, instruction, "keyword arguments")
+
+    if opname in ("LOAD_FAST", "LOAD_FAST_CHECK"):
+        try:
+            stack.append(locals[instruction.argval])
+        except KeyError:
+            _unsupported_bytecode(
+                program,
+                instruction,
+                f"unbound local {instruction.argval!r}",
+            )
+        return None
+
+    if opname == "STORE_FAST":
+        value = _require_bytecode_tensor(
+            _pop_bytecode_value(stack, program, instruction),
+            program,
+            instruction,
+            f"stored local {instruction.argval!r}",
+        )
+        locals[instruction.argval] = value
+        return None
+
+    if opname in ("LOAD_METHOD", "LOAD_ATTR"):
+        if not _load_attr_pushes_method(instruction):
+            _unsupported_bytecode(program, instruction, "attribute access")
+        receiver = _require_bytecode_tensor(
+            _pop_bytecode_value(stack, program, instruction),
+            program,
+            instruction,
+            f"Tensor.{instruction.argval} receiver",
+        )
+        stack.append(_BytecodeMethod(receiver, _builtins.str(instruction.argval)))
+        return None
+
+    if opname in ("CALL", "CALL_METHOD", "CALL_FUNCTION"):
+        argument_count = instruction.arg or 0
+        args = [
+            _pop_bytecode_value(stack, program, instruction)
+            for _ in range(argument_count)
+        ]
+        args.reverse()
+        callable_value = _pop_bytecode_value(stack, program, instruction)
+        if not _builtins.isinstance(callable_value, _BytecodeMethod):
+            _unsupported_bytecode(program, instruction, "function calls")
+        stack.append(
+            _record_bytecode_method_call(
+                recorder,
+                callable_value,
+                tuple(args),
+                program,
+                instruction,
+            )
+        )
+        return None
+
+    if opname == "PRECALL":
+        return None
+
+    if opname == "LOAD_CONST":
+        stack.append(_BytecodeConstant(instruction.argval))
+        return None
+
+    if opname in ("BINARY_ADD", "INPLACE_ADD"):
+        if opname == "INPLACE_ADD":
+            _unsupported_bytecode(program, instruction, "mutation")
+        _record_bytecode_binary_add(recorder, stack, program, instruction)
+        return None
+
+    if opname == "BINARY_OP":
+        if instruction.argrepr == "+":
+            _record_bytecode_binary_add(recorder, stack, program, instruction)
+            return None
+        if instruction.argrepr == "+=":
+            _unsupported_bytecode(program, instruction, "mutation")
+        _unsupported_bytecode(
+            program,
+            instruction,
+            f"binary operator {instruction.argrepr!r}",
+        )
+
+    if opname == "UNARY_NEGATIVE":
+        _record_bytecode_unary(recorder, stack, program, instruction, "neg")
+        return None
+
+    if opname == "RETURN_VALUE":
+        output = _require_bytecode_tensor(
+            _pop_bytecode_value(stack, program, instruction),
+            program,
+            instruction,
+            "return value",
+        )
+        if stack:
+            _unsupported_bytecode(program, instruction, "residual stack values")
+        return output
+
+    _unsupported_bytecode(program, instruction, "unsupported bytecode")
+
+
+def lower_one_input_compile_graph(program, input_metadata, *, name=None):
+    """Lower a narrow straight-line Python function into a native trace graph."""
+    code = _validate_bytecode_lowering_program(program)
+    if not _builtins.isinstance(input_metadata, CompileTraceTensorMetadata):
+        raise TypeError(
+            "torch.compile trace bytecode lowering expected "
+            "CompileTraceTensorMetadata"
+        )
+
+    recorder = CompileTraceRecorder(
+        name or getattr(program, "__name__", "compile_trace")
+    )
+    input_name = code.co_varnames[0]
+    input_proxy = recorder.input(
+        name=input_name,
+        shape=input_metadata.shape,
+        stride=input_metadata.stride,
+        dtype=input_metadata.dtype,
+        device=input_metadata.device,
+        requires_grad=input_metadata.requires_grad,
+    )
+    locals = {input_name: input_proxy}
+    stack = []
+
+    for instruction in _dis.get_instructions(program):
+        output = _lower_bytecode_instruction(
+            recorder,
+            locals,
+            stack,
+            program,
+            instruction,
+        )
+        if output is not None:
+            return recorder.finish(output)
+
+    raise CompileTraceUnsupportedError(
+        "torch.compile trace bytecode lowering did not find a Tensor return"
+    )
+
+
 def trace_one_input_compile_graph(program, make_inputs, *, name=None):
     if not _builtins.callable(program):
         raise TypeError("torch.compile trace program must be callable")
@@ -985,5 +1347,6 @@ __all__ = [
     "execute_compile_trace_graph",
     "float",
     "float32",
+    "lower_one_input_compile_graph",
     "trace_one_input_compile_graph",
 ]
