@@ -14,6 +14,7 @@ merge time and are not source documentation.
 
 - [Repository README](../README.md): Install commands, first-success example, scope summary, and validation entry points.
 - [Contributing guide](../CONTRIBUTING.md): Locked setup, environment expectations, test selection, draft workflow, and documentation ownership.
+- [Setup troubleshooting](troubleshooting.md): Short fixes for common environment, import, reference dependency, and stale wheel failures.
 - [Architecture map](../ARCHITECTURE.md): Source map for the Rust core, Python bindings, wrappers, and test layout.
 
 ## Historical Timing Evidence

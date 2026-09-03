@@ -9,6 +9,7 @@ BENCHMARKING = REPOSITORY_ROOT / "BENCHMARKING.md"
 CONTRIBUTING = REPOSITORY_ROOT / "CONTRIBUTING.md"
 FEATURES = REPOSITORY_ROOT / "FEATURES.md"
 DOCS_README = REPOSITORY_ROOT / "docs" / "README.md"
+TROUBLESHOOTING = REPOSITORY_ROOT / "docs" / "troubleshooting.md"
 SUPPORTED_SURFACE = REPOSITORY_ROOT / "docs" / "supported-surface.md"
 HISTORICAL_TIMING_REPORTS = (
     (
@@ -466,6 +467,11 @@ DOCS_INDEX_GUIDES = (
         "Locked setup, environment expectations, test selection, draft workflow, and documentation ownership.",
     ),
     (
+        "Setup troubleshooting",
+        "troubleshooting.md",
+        "Short fixes for common environment, import, reference dependency, and stale wheel failures.",
+    ),
+    (
         "Architecture map",
         "../ARCHITECTURE.md",
         "Source map for the Rust core, Python bindings, wrappers, and test layout.",
@@ -745,8 +751,21 @@ class ReadmeQuickstartTests(unittest.TestCase):
 
         contributing = CONTRIBUTING.read_text(encoding="utf-8")
         self.assertIn("[docs/README.md](docs/README.md)", contributing)
+        self.assertIn(
+            "[docs/troubleshooting.md](docs/troubleshooting.md)", contributing
+        )
         self.assertIn("## Contributor Preflight", contributing)
         self.assertLess(len(contributing.splitlines()), 120)
+
+        troubleshooting = TROUBLESHOOTING.read_text(encoding="utf-8")
+        for snippet in (
+            "Ambient Python Missing Pytest",
+            "`PYTHONPATH=python` Finds Python Files But Not the Native Extension",
+            "Missing Reference PyTorch 2.13",
+            "Stale Wheel Installs",
+        ):
+            with self.subTest(troubleshooting=snippet):
+                self.assertIn(snippet, troubleshooting)
 
     def test_readme_routes_to_supported_surface_anchors(self):
         readme = README.read_text(encoding="utf-8")
