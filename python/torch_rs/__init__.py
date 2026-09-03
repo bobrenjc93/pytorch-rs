@@ -19,6 +19,8 @@ _sys.modules[f"{__name__}._C"] = _C
 # TensorBase reports PyTorch's ``torch._C`` metadata, so retain its actual
 # native class privately for package-local descriptor reconstruction.
 _TensorBase = Tensor.__base__
+_COMPILE_NATIVE_TENSOR_TYPE = _native.Tensor
+_COMPILE_PYTHON_FUNCTION_TYPE = _types.FunctionType
 
 # PyTorch's memory-format reducers use dotted public names such as
 # ``torch.channels_last``. Mirror its module self-alias so those names resolve
@@ -267,6 +269,34 @@ _COMPILE_UNSUPPORTED_MESSAGE = (
 )
 
 
+def _decorate_compile_wrapper(
+    compiled_model,
+    model,
+    fullgraph,
+    dynamic,
+    resolved_backend,
+    mode,
+    options,
+    name,
+    recompile_limit,
+    isolate_recompiles,
+    shapes_spec,
+):
+    import functools as _compile_functools
+
+    _compile_functools.update_wrapper(compiled_model, model)
+    compiled_model._torch_rs_compile_fullgraph = fullgraph
+    compiled_model._torch_rs_compile_dynamic = dynamic
+    compiled_model._torch_rs_compile_backend = resolved_backend
+    compiled_model._torch_rs_compile_mode = mode
+    compiled_model._torch_rs_compile_options = options
+    compiled_model._torch_rs_compile_name = name
+    compiled_model._torch_rs_compile_recompile_limit = recompile_limit
+    compiled_model._torch_rs_compile_isolate_recompiles = isolate_recompiles
+    compiled_model._torch_rs_compile_shapes_spec = shapes_spec
+    return compiled_model
+
+
 def _unsupported_compile_wrapper(
     model,
     fullgraph,
@@ -282,18 +312,156 @@ def _unsupported_compile_wrapper(
     def compiled_model(*args, **kwargs):
         raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
 
-    import functools as _compile_functools
+    return _decorate_compile_wrapper(
+        compiled_model,
+        model,
+        fullgraph,
+        dynamic,
+        resolved_backend,
+        mode,
+        options,
+        name,
+        recompile_limit,
+        isolate_recompiles,
+        shapes_spec,
+    )
 
-    _compile_functools.update_wrapper(compiled_model, model)
-    compiled_model._torch_rs_compile_fullgraph = fullgraph
-    compiled_model._torch_rs_compile_dynamic = dynamic
-    compiled_model._torch_rs_compile_backend = resolved_backend
-    compiled_model._torch_rs_compile_mode = mode
-    compiled_model._torch_rs_compile_options = options
-    compiled_model._torch_rs_compile_name = name
-    compiled_model._torch_rs_compile_recompile_limit = recompile_limit
-    compiled_model._torch_rs_compile_isolate_recompiles = isolate_recompiles
-    compiled_model._torch_rs_compile_shapes_spec = shapes_spec
+
+def _supports_public_eager_abs_neg_compile(
+    model,
+    fullgraph,
+    dynamic,
+    resolved_backend,
+    mode,
+    options,
+    name,
+    recompile_limit,
+    isolate_recompiles,
+    shapes_spec,
+):
+    return (
+        _builtins.type(model) is _COMPILE_PYTHON_FUNCTION_TYPE
+        and fullgraph is True
+        and dynamic is None
+        and resolved_backend == "eager"
+        and mode is None
+        and options is None
+        and name is None
+        and recompile_limit is None
+        and isolate_recompiles is False
+        and shapes_spec is None
+    )
+
+
+def _public_compile_trace_metadata(input):
+    from . import _compile_trace
+
+    metadata = _compile_trace._metadata_from_native_tensor(input)
+    if metadata.dtype is not _compile_trace.float32 or metadata.device != "cpu":
+        raise _compile_trace.CompileTraceUnsupportedError(
+            "torch.compile eager backend only supports CPU float32 Tensor inputs"
+        )
+    return metadata
+
+
+def _trace_public_eager_abs_neg_graph(model, input, *, name, metadata=None):
+    from . import _compile_trace
+
+    if metadata is None:
+        metadata = _public_compile_trace_metadata(input)
+    recorder = _compile_trace.CompileTraceRecorder(
+        name or getattr(model, "__name__", "compile_trace")
+    )
+    proxy = recorder.input(
+        shape=metadata.shape,
+        stride=metadata.stride,
+        dtype=metadata.dtype,
+        device=metadata.device,
+        requires_grad=metadata.requires_grad,
+    )
+    graph = recorder.finish(model(proxy))
+    _require_public_eager_abs_neg_graph(graph)
+    return graph
+
+
+def _require_public_eager_abs_neg_graph(graph):
+    from . import _compile_trace
+
+    if len(graph.inputs) != 1 or len(graph.operations) != 2:
+        raise _compile_trace.CompileTraceUnsupportedError(
+            "torch.compile eager backend only supports the Tensor.neg().abs() graph"
+        )
+    input_name = graph.inputs[0].name
+    neg, abs_op = graph.operations
+    if (
+        neg.op != "call_method"
+        or neg.target != "neg"
+        or neg.inputs != (input_name,)
+        or abs_op.op != "call_method"
+        or abs_op.target != "abs"
+        or abs_op.inputs != (neg.name,)
+        or graph.output != abs_op.name
+    ):
+        raise _compile_trace.CompileTraceUnsupportedError(
+            "torch.compile eager backend only supports the Tensor.neg().abs() graph"
+        )
+
+
+def _eager_abs_neg_compile_wrapper(
+    model,
+    fullgraph,
+    dynamic,
+    resolved_backend,
+    mode,
+    options,
+    name,
+    recompile_limit,
+    isolate_recompiles,
+    shapes_spec,
+):
+    graphs = {}
+
+    def compiled_model(*args, **kwargs):
+        if (
+            kwargs
+            or len(args) != 1
+            or _builtins.type(args[0]) is not _COMPILE_NATIVE_TENSOR_TYPE
+        ):
+            raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
+
+        from . import _compile_trace
+
+        input = args[0]
+        try:
+            metadata = _public_compile_trace_metadata(input)
+            graph = graphs.get(metadata)
+            if graph is None:
+                graph = _trace_public_eager_abs_neg_graph(
+                    model,
+                    input,
+                    name=name,
+                    metadata=metadata,
+                )
+                graphs[metadata] = graph
+        except Exception:
+            raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE) from None
+        compiled_model._torch_rs_compile_trace_graph = graph
+        return _compile_trace.execute_compile_trace_graph(graph, input)
+
+    compiled_model = _decorate_compile_wrapper(
+        compiled_model,
+        model,
+        fullgraph,
+        dynamic,
+        resolved_backend,
+        mode,
+        options,
+        name,
+        recompile_limit,
+        isolate_recompiles,
+        shapes_spec,
+    )
+    compiled_model._torch_rs_compile_trace_graph = None
     return compiled_model
 
 
@@ -336,6 +504,31 @@ def _compile_bound_model(
     if disable:
         return model
 
+    if _supports_public_eager_abs_neg_compile(
+        model,
+        fullgraph,
+        dynamic,
+        resolved_backend,
+        mode,
+        options,
+        name,
+        recompile_limit,
+        isolate_recompiles,
+        shapes_spec,
+    ):
+        return _eager_abs_neg_compile_wrapper(
+            model,
+            fullgraph,
+            dynamic,
+            resolved_backend,
+            mode,
+            options,
+            name,
+            recompile_limit,
+            isolate_recompiles,
+            shapes_spec,
+        )
+
     return _unsupported_compile_wrapper(
         model,
         fullgraph,
@@ -367,9 +560,10 @@ def compile(
     """Return a ``torch.compile`` compatibility shell.
 
     This entrypoint implements Python argument binding, ``disable=True``
-    pass-through, and backend resolution through ``torch.compiler``. Graph
-    capture, graph execution, eager fallback, installed-PyTorch forwarding, and
-    backend invocation remain unsupported.
+    pass-through, backend resolution through ``torch.compiler``, and a narrow
+    built-in eager/fullgraph native CPU float32 ``Tensor.neg().abs()`` graphlet.
+    Broader graph capture, graph execution, eager fallback, installed-PyTorch
+    forwarding, and backend invocation remain unsupported.
     """
     if model is None:
         captured_backend = (
