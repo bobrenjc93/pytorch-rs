@@ -41,6 +41,10 @@ gates.
 - [Reciprocal timings](tensor-reciprocal-release-timings.md): `Tensor.reciprocal` and `torch.reciprocal` release evidence.
 - [Softsign timings](softsign-release-timings.md): `torch.nn.functional.softsign` release evidence.
 
+### Compilation
+
+- [Compile CPU timings](torch-compile-cpu-release-timings.md): `torch.compile(..., backend="eager", fullgraph=True)` CPU release evidence.
+
 ### Layout/view ops
 
 - [View and reshape timings](tensor-view-release-timings.md): View, reshape, flatten, ravel, unbind, and edge-unsqueeze release evidence.
