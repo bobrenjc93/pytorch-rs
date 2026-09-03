@@ -9,6 +9,8 @@ import types
 import typing
 import unittest
 
+from signature_utils import expected_compiler_exports
+
 import torch_rs as torch
 
 try:
@@ -235,6 +237,7 @@ class CompilerSetDefaultBackendReferenceTests(unittest.TestCase):
             "assume_constant_result",
             "reset",
             "list_backends",
+            "register_backend",
             "disable",
             "set_default_backend",
             "get_default_backend",
@@ -251,13 +254,13 @@ class CompilerSetDefaultBackendReferenceTests(unittest.TestCase):
         }
         self.assertEqual(
             actual_compiler.__all__,
-            [name for name in expected_compiler.__all__ if name in supported],
+            expected_compiler_exports(expected_compiler, supported),
         )
 
         for module in (actual_compiler, expected_compiler):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            for name in supported:
+            for name in [name for name in module.__all__ if name in supported]:
                 self.assertIs(namespace[name], getattr(module, name))
 
         for module in (torch, reference_torch):
@@ -330,12 +333,12 @@ class CompilerSetDefaultBackendReferenceTests(unittest.TestCase):
                     sys.modules[original_module.__name__] = original_module
                     package.compiler = original_module
 
-    def test_compilation_and_backend_registration_remain_unsupported(self):
+    def test_compile_execution_remains_unsupported(self):
         self.assertTrue(callable(reference_torch.compile))
         self.assertTrue(callable(reference_torch.compiler.compile))
         self.assertFalse(hasattr(torch, "compile"))
         self.assertFalse(hasattr(torch.compiler, "compile"))
-        self.assertFalse(hasattr(torch.compiler, "register_backend"))
+        self.assertTrue(callable(torch.compiler.register_backend))
 
 
 if __name__ == "__main__":

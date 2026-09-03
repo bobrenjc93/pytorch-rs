@@ -9,6 +9,8 @@ import types
 import typing
 import unittest
 
+from signature_utils import expected_compiler_exports
+
 import torch_rs as torch
 
 try:
@@ -206,6 +208,7 @@ class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
             "assume_constant_result",
             "reset",
             "list_backends",
+            "register_backend",
             "disable",
             "set_default_backend",
             "get_default_backend",
@@ -223,7 +226,7 @@ class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
 
         self.assertEqual(
             actual_compiler.__all__,
-            [name for name in expected_compiler.__all__ if name in supported],
+            expected_compiler_exports(expected_compiler, supported),
         )
         self.assertEqual(
             torch.__all__.count("compiler"),
@@ -237,7 +240,7 @@ class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
         for module in (actual_compiler, expected_compiler):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            for name in supported:
+            for name in [name for name in module.__all__ if name in supported]:
                 self.assertIs(namespace[name], getattr(module, name))
 
         for module in (torch, reference_torch):

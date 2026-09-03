@@ -11,6 +11,8 @@ import types
 import typing
 import unittest
 
+from signature_utils import expected_compiler_exports
+
 import torch_rs as torch
 
 try:
@@ -429,6 +431,7 @@ print(repr((handler_results, outer_result, final_result)))
             "assume_constant_result",
             "reset",
             "list_backends",
+            "register_backend",
             "disable",
             "set_default_backend",
             "get_default_backend",
@@ -445,7 +448,7 @@ print(repr((handler_results, outer_result, final_result)))
         }
         self.assertEqual(
             actual_compiler.__all__,
-            [name for name in expected_compiler.__all__ if name in supported],
+            expected_compiler_exports(expected_compiler, supported),
         )
 
         for module, function in (

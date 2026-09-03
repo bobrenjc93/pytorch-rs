@@ -9,6 +9,8 @@ import types
 import typing
 import unittest
 
+from signature_utils import expected_compiler_exports
+
 import torch_rs as torch
 
 try:
@@ -134,32 +136,29 @@ class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
         expected_compiler = reference_torch.compiler
         actual = actual_compiler.is_dynamo_compiling
         expected = expected_compiler.is_dynamo_compiling
+        supported = {
+            "assume_constant_result",
+            "reset",
+            "list_backends",
+            "register_backend",
+            "disable",
+            "set_default_backend",
+            "get_default_backend",
+            "set_enable_guard_collectives",
+            "is_compiling",
+            "is_dynamo_compiling",
+            "is_exporting",
+            "keep_portable_guards_unsafe",
+            "skip_guard_on_inbuilt_nn_modules_unsafe",
+            "skip_guard_on_all_nn_modules_unsafe",
+            "keep_tensor_guards_unsafe",
+            "skip_guard_on_globals_unsafe",
+            "skip_all_guards_unsafe",
+        }
 
         self.assertEqual(
             actual_compiler.__all__,
-            [
-                name
-                for name in expected_compiler.__all__
-                if name
-                in {
-                    "assume_constant_result",
-                    "reset",
-                    "list_backends",
-                    "disable",
-                    "set_default_backend",
-                    "get_default_backend",
-                    "set_enable_guard_collectives",
-                    "is_compiling",
-                    "is_dynamo_compiling",
-                    "is_exporting",
-                    "keep_portable_guards_unsafe",
-                    "skip_guard_on_inbuilt_nn_modules_unsafe",
-                    "skip_guard_on_all_nn_modules_unsafe",
-                    "keep_tensor_guards_unsafe",
-                    "skip_guard_on_globals_unsafe",
-                    "skip_all_guards_unsafe",
-                }
-            ],
+            expected_compiler_exports(expected_compiler, supported),
         )
         self.assertEqual(
             torch.__all__.count("compiler"),

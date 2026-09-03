@@ -9,6 +9,8 @@ import types
 import typing
 import unittest
 
+from signature_utils import expected_compiler_exports
+
 import torch_rs as torch
 
 try:
@@ -36,6 +38,7 @@ COMPILER_EXPORTS = [
     "assume_constant_result",
     "reset",
     "list_backends",
+    "register_backend",
     "disable",
     "set_default_backend",
     "get_default_backend",
@@ -631,7 +634,7 @@ class CompilerSkipGuardOnInbuiltNnModulesUnsafeReferenceTests(unittest.TestCase)
         self.assertEqual(actual.__code__.co_cellvars, expected.__code__.co_cellvars)
         self.assertEqual(
             actual_compiler.__all__,
-            [name for name in expected_compiler.__all__ if name in COMPILER_EXPORTS],
+            expected_compiler_exports(expected_compiler, COMPILER_EXPORTS),
         )
         self.assertEqual(
             torch.__all__.count("skip_guard_on_inbuilt_nn_modules_unsafe"),

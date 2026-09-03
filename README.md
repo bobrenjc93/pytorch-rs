@@ -50,10 +50,14 @@ is present only as a CPU-equivalent no-op for requests such as `None` or
 flags such as `enable_flash_sdp(...)`, `enable_cudnn_sdp(...)`, and the
 `sdp_kernel(...)` context manager/decorator, but they do not add
 `torch.nn.functional.scaled_dot_product_attention`, CUDA tensors, actual
-attention-kernel dispatch, or CUDA `torch.compile` execution. Device selection,
-mutable default-device routing, streams, events, synchronization, allocator APIs, runtime initialization,
-additional tensor dtypes, and the full module, optimizer, model-serialization,
-compiler, and distributed stacks remain unsupported.
+attention-kernel dispatch, or CUDA `torch.compile` execution. `torch.compiler`
+supports backend registration/listing metadata only; top-level `torch.compile`,
+graph capture, graph execution, eager fallback, installed-PyTorch forwarding,
+and backend invocation remain unsupported. Device selection, mutable
+default-device routing, streams, events, synchronization, allocator APIs,
+runtime initialization, additional tensor dtypes, and the full module,
+optimizer, model-serialization, remaining compiler, and distributed stacks
+remain unsupported.
 
 See the [exhaustive supported surface](docs/supported-surface.md) for exact API
 and limitation details, [FEATURES.md](FEATURES.md) for the weighted coverage

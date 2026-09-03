@@ -8,6 +8,8 @@ import types
 import typing
 import unittest
 
+from signature_utils import expected_compiler_exports
+
 import torch_rs as torch
 
 try:
@@ -20,6 +22,7 @@ SUPPORTED_COMPILER_EXPORTS = {
     "assume_constant_result",
     "reset",
     "list_backends",
+    "register_backend",
     "disable",
     "set_default_backend",
     "get_default_backend",
@@ -558,11 +561,7 @@ class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
 
         self.assertEqual(
             actual_compiler.__all__,
-            [
-                name
-                for name in expected_compiler.__all__
-                if name in SUPPORTED_COMPILER_EXPORTS
-            ],
+            expected_compiler_exports(expected_compiler, SUPPORTED_COMPILER_EXPORTS),
         )
         self.assertEqual(
             torch.__all__.count("compiler"),
@@ -576,7 +575,11 @@ class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
         for compiler in (actual_compiler, expected_compiler):
             namespace = {}
             exec(f"from {compiler.__name__} import *", namespace)
-            for name in SUPPORTED_COMPILER_EXPORTS:
+            for name in [
+                name
+                for name in compiler.__all__
+                if name in SUPPORTED_COMPILER_EXPORTS
+            ]:
                 self.assertIs(namespace[name], getattr(compiler, name))
 
         for module in (torch, reference_torch):

@@ -7,6 +7,8 @@ import types
 import typing
 import unittest
 
+from signature_utils import expected_compiler_exports
+
 import torch_rs as torch
 
 try:
@@ -19,6 +21,7 @@ SUPPORTED_COMPILER_EXPORTS = {
     "assume_constant_result",
     "reset",
     "list_backends",
+    "register_backend",
     "disable",
     "set_default_backend",
     "get_default_backend",
@@ -33,6 +36,31 @@ SUPPORTED_COMPILER_EXPORTS = {
     "skip_guard_on_globals_unsafe",
     "skip_all_guards_unsafe",
 }
+TEST_BACKEND_PREFIX = "_torch_rs_test_compiler_backend_reference_"
+
+
+def _clear_actual_test_backends():
+    state = importlib.import_module("torch_rs._compiler_state")
+    for name in tuple(state.registered_backends):
+        if type(name) is str and name.startswith(TEST_BACKEND_PREFIX):
+            state.registered_backends.pop(name, None)
+            state.registered_backend_tags.pop(name, None)
+
+
+def _clear_reference_test_backends():
+    registry = importlib.import_module("torch._dynamo.backends.registry")
+    for name in tuple(registry._BACKENDS):
+        if type(name) is str and name.startswith(TEST_BACKEND_PREFIX):
+            registry._BACKENDS.pop(name, None)
+    for name in tuple(registry._COMPILER_FNS):
+        if type(name) is str and name.startswith(TEST_BACKEND_PREFIX):
+            registry._COMPILER_FNS.pop(name, None)
+
+
+def _clear_test_backends():
+    _clear_actual_test_backends()
+    if reference_torch is not None:
+        _clear_reference_test_backends()
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -43,6 +71,12 @@ class CompilerListBackendsReferenceTests(unittest.TestCase):
             raise AssertionError(
                 "compiler.list_backends differentials require pinned PyTorch 2.13.0"
             )
+
+    def setUp(self):
+        _clear_test_backends()
+
+    def tearDown(self):
+        _clear_test_backends()
 
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
@@ -157,11 +191,7 @@ class CompilerListBackendsReferenceTests(unittest.TestCase):
 
         self.assertEqual(
             actual_compiler.__all__,
-            [
-                name
-                for name in expected_compiler.__all__
-                if name in SUPPORTED_COMPILER_EXPORTS
-            ],
+            expected_compiler_exports(expected_compiler, SUPPORTED_COMPILER_EXPORTS),
         )
         self.assertEqual(
             torch.__all__.count("compiler"),
@@ -179,7 +209,11 @@ class CompilerListBackendsReferenceTests(unittest.TestCase):
 
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            for name in SUPPORTED_COMPILER_EXPORTS:
+            for name in [
+                name
+                for name in module.__all__
+                if name in SUPPORTED_COMPILER_EXPORTS
+            ]:
                 self.assertIs(namespace[name], getattr(module, name))
 
         for module in (torch, reference_torch):
@@ -270,14 +304,112 @@ class CompilerListBackendsReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_compile_registration_and_execution_paths_remain_unsupported(self):
+    def registration_outcome(self, registry):
+        invoked = []
+
+        def direct_backend(graph_module, example_inputs):
+            invoked.append("direct")
+            return graph_module.forward
+
+        def custom_backend(graph_module, example_inputs):
+            invoked.append("custom")
+            return graph_module.forward
+
+        def experimental_backend(graph_module, example_inputs):
+            invoked.append("experimental")
+            return graph_module.forward
+
+        experimental_backend.__name__ = f"{TEST_BACKEND_PREFIX}experimental"
+
+        direct = registry.register_backend(
+            direct_backend,
+            name=f"{TEST_BACKEND_PREFIX}direct",
+        )
+
+        @registry.register_backend(
+            name=f"{TEST_BACKEND_PREFIX}debug",
+            tags=("debug", "custom"),
+        )
+        def decorated_debug_backend(graph_module, example_inputs):
+            invoked.append("decorated_debug")
+            return graph_module.forward
+
+        custom = registry.register_backend(
+            compiler_fn=custom_backend,
+            name=f"{TEST_BACKEND_PREFIX}custom",
+            tags=("custom",),
+        )
+        experimental = registry.register_backend(tags=("experimental",))(
+            experimental_backend
+        )
+
+        def listed(exclude_tags):
+            return tuple(
+                name
+                for name in registry.list_backends(exclude_tags=exclude_tags)
+                if name.startswith(TEST_BACKEND_PREFIX)
+            )
+
+        return {
+            "direct_identity": direct is direct_backend,
+            "decorated_tags": decorated_debug_backend._tags,
+            "custom_identity": custom is custom_backend,
+            "custom_tags": custom_backend._tags,
+            "experimental_identity": experimental is experimental_backend,
+            "experimental_tags": experimental_backend._tags,
+            "default_visible": listed(("debug", "experimental")),
+            "all_visible": listed(()),
+            "custom_excluded": listed(("custom",)),
+            "invoked": tuple(invoked),
+        }
+
+    def test_registration_forms_and_tag_filtering_match_pytorch_2_13_registry(self):
+        reference_registry = importlib.import_module("torch._dynamo.backends.registry")
+        self.assertEqual(
+            self.registration_outcome(torch.compiler),
+            self.registration_outcome(reference_registry),
+        )
+
+    def error_outcome(self, registry):
+        def duplicate_backend(graph_module, example_inputs):
+            return graph_module.forward
+
+        name = f"{TEST_BACKEND_PREFIX}duplicate"
+        registry.register_backend(duplicate_backend, name=name)
+        outcomes = []
+        for call in (
+            lambda: registry.register_backend(
+                lambda graph_module, example_inputs: graph_module.forward,
+                name=name,
+            ),
+            lambda: registry.register_backend(
+                object(),
+                name=f"{TEST_BACKEND_PREFIX}object",
+            ),
+        ):
+            try:
+                call()
+            except Exception as error:
+                outcomes.append((type(error).__name__, str(error), error.args))
+            else:
+                outcomes.append(None)
+        return tuple(outcomes)
+
+    def test_duplicate_and_noncallable_errors_match_pytorch_2_13_registry(self):
+        reference_registry = importlib.import_module("torch._dynamo.backends.registry")
+        self.assertEqual(
+            self.error_outcome(torch.compiler),
+            self.error_outcome(reference_registry),
+        )
+
+    def test_compile_execution_paths_remain_unsupported(self):
         self.assertTrue(callable(reference_torch.compile))
         self.assertTrue(callable(reference_torch.compiler.compile))
         self.assertFalse(hasattr(torch, "compile"))
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch, "list_backends"))
         self.assertFalse(hasattr(torch.compiler, "compile"))
-        self.assertFalse(hasattr(torch.compiler, "register_backend"))
+        self.assertTrue(callable(torch.compiler.register_backend))
 
 
 if __name__ == "__main__":
