@@ -69,7 +69,9 @@ The compilation row's eager JIT helper coverage explicitly includes tested `torc
 The same row includes the public `torch.compile(..., backend="eager",
 fullgraph=True)` subset for exact one-argument Python functions whose
 straight-line bytecode is limited to native CPU `float32` Tensor `neg`, `abs`,
-and binary `add` compositions. Unsupported compiler programs fail before user
-code runs and without active `__torch_function__` modes, forwarding to installed
-PyTorch, eager fallback, callable backend invocation, or unguarded graph
-caching.
+and binary `add` compositions. Its per-wrapper input-metadata graph cache is
+bounded, honors exact non-negative integer `recompile_limit` values, and uses
+an internal default cap when `recompile_limit=None`. Unsupported compiler
+programs and `isolate_recompiles=True` fail before user code runs and without
+active `__torch_function__` modes, forwarding to installed PyTorch, eager
+fallback, callable backend invocation, or unguarded graph caching.

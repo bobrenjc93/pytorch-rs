@@ -320,6 +320,112 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         finally:
             _compile_bytecode.lower_one_input_compile_graph = original_lower
 
+    def test_eager_fullgraph_recompile_limit_zero_rejects_first_graph(self):
+        def program(x):
+            return x.neg().abs()
+
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def counting_lower(requested_program, input_metadata, *, name=None):
+            calls.append((requested_program, input_metadata, name))
+            return original_lower(requested_program, input_metadata, name=name)
+
+        compiled = torch.compile(
+            program,
+            backend="eager",
+            fullgraph=True,
+            recompile_limit=0,
+        )
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            with self.assertRaisesRegex(NotImplementedError, "recompile_limit=0"):
+                compiled(torch.tensor([1.0, -2.0], dtype=torch.float32))
+            self.assertEqual(calls, [])
+        finally:
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_recompile_limit_one_rejects_shape_change(self):
+        def program(x):
+            return x.neg().abs() + x
+
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def counting_lower(requested_program, input_metadata, *, name=None):
+            calls.append((requested_program, input_metadata, name))
+            return original_lower(requested_program, input_metadata, name=name)
+
+        compiled = torch.compile(
+            program,
+            backend="eager",
+            fullgraph=True,
+            recompile_limit=1,
+        )
+        first = torch.tensor([[-2.0, 3.0], [4.0, -5.0]], dtype=torch.float32)
+        same_metadata = torch.tensor(
+            [[1.0, -1.5], [2.5, -3.0]],
+            dtype=torch.float32,
+        )
+        different_shape = torch.tensor([1.5, -2.5, 3.5], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            self.assertEqual(compiled(first).tolist(), program(first).tolist())
+            self.assertEqual(
+                compiled(same_metadata).tolist(),
+                program(same_metadata).tolist(),
+            )
+            self.assertEqual(len(calls), 1)
+
+            with self.assertRaisesRegex(NotImplementedError, "recompile_limit=1"):
+                compiled(different_shape)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(compiled(first).tolist(), program(first).tolist())
+        finally:
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_recompile_limit_rejects_invalid_values(self):
+        def program(x):
+            return x + x
+
+        invalid_type_values = (True, False, "1", 1.0, object())
+        for value in invalid_type_values:
+            with self.subTest(value=repr(value)):
+                with self.assertRaisesRegex(TypeError, "recompile_limit"):
+                    torch.compile(
+                        program,
+                        backend="eager",
+                        fullgraph=True,
+                        recompile_limit=value,
+                    )
+
+        with self.assertRaisesRegex(ValueError, "recompile_limit"):
+            torch.compile(
+                program,
+                backend="eager",
+                fullgraph=True,
+                recompile_limit=-1,
+            )
+
+    def test_eager_fullgraph_rejects_isolate_recompiles_control(self):
+        calls = []
+
+        def program(x):
+            calls.append("program")
+            return x + x
+
+        compiled = torch.compile(
+            program,
+            backend="eager",
+            fullgraph=True,
+            isolate_recompiles=True,
+        )
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled(torch.tensor([1.0], dtype=torch.float32))
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(calls, [])
+
     def test_eager_fullgraph_cached_graphs_still_check_tensor_method_guards(self):
         def program(x):
             return x.neg()

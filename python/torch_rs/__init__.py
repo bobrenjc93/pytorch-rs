@@ -267,6 +267,7 @@ _COMPILE_UNSUPPORTED_MESSAGE = (
     "forwarding, callable backend invocation, CUDA compilation, and broader "
     "graph capture remain unsupported"
 )
+_COMPILE_DEFAULT_RECOMPILE_LIMIT = 8
 _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
     "__abs__",
     "__add__",
@@ -366,6 +367,7 @@ def _supports_native_eager_compile(
     resolved_backend,
     mode,
     options,
+    isolate_recompiles,
     shapes_spec,
 ):
     return (
@@ -375,8 +377,29 @@ def _supports_native_eager_compile(
         and dynamic is None
         and mode is None
         and options is None
+        and isolate_recompiles is False
         and shapes_spec is None
     )
+
+
+def _validated_compile_recompile_limit(recompile_limit):
+    if recompile_limit is None:
+        return _COMPILE_DEFAULT_RECOMPILE_LIMIT
+    if _builtins.type(recompile_limit) is not _builtins.int:
+        type_name = _builtins.object.__getattribute__(
+            _builtins.type(recompile_limit),
+            "__name__",
+        )
+        raise TypeError(
+            "torch.compile(): argument 'recompile_limit' must be a "
+            f"non-negative int or None, not {type_name}"
+        )
+    if recompile_limit < 0:
+        raise ValueError(
+            "torch.compile(): argument 'recompile_limit' must be "
+            "non-negative"
+        )
+    return recompile_limit
 
 
 def _snapshot_compile_tensor_method_guards():
@@ -426,7 +449,7 @@ def _execute_native_eager_compile_graph(graph, input, compile_trace):
     return values[graph.output]
 
 
-def _native_eager_compile_implementation(model, name):
+def _native_eager_compile_implementation(model, name, recompile_limit):
     cached_graphs = {}
 
     def compiled_model(*args, **kwargs):
@@ -464,6 +487,12 @@ def _native_eager_compile_implementation(model, name):
         cache_key = (model.__code__, input_metadata)
         graph = cached_graphs.get(cache_key)
         if graph is None:
+            if len(cached_graphs) >= recompile_limit:
+                raise _compile_trace.CompileTraceUnsupportedError(
+                    "torch.compile trace bytecode lowering hit "
+                    f"recompile_limit={recompile_limit}; no additional input "
+                    "metadata variants will be compiled for this wrapper"
+                )
             graph = _compile_bytecode.lower_one_input_compile_graph(
                 model,
                 input_metadata,
@@ -521,9 +550,14 @@ def _compile_bound_model(
         resolved_backend=resolved_backend,
         mode=mode,
         options=options,
+        isolate_recompiles=isolate_recompiles,
         shapes_spec=shapes_spec,
     ) and _is_exact_python_function(model):
-        implementation = _native_eager_compile_implementation(model, name)
+        implementation = _native_eager_compile_implementation(
+            model,
+            name,
+            _validated_compile_recompile_limit(recompile_limit),
+        )
 
     return _make_compile_wrapper(
         model,
