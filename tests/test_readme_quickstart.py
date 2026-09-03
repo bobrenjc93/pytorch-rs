@@ -39,6 +39,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-add-release-timings.md",
     ),
     (
+        "`torch.add` release timings",
+        "docs/top-level-add-release-timings.md",
+    ),
+    (
         "`*`, `Tensor.mul`/`Tensor.multiply`, and "
         "`torch.mul`/`torch.multiply` release timings",
         "docs/tensor-mul-release-timings.md",
