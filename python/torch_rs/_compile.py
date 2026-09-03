@@ -8,6 +8,9 @@ import textwrap as _textwrap
 import types as _types
 
 
+_MISSING = object()
+
+
 class _UnsupportedGraphlet(Exception):
     pass
 
@@ -26,32 +29,43 @@ class _ReluTraceProxy:
 
 def try_compile_supported_graphlet(model, unsupported_message):
     """Return a compiled callable for the exact supported graphlet, if any."""
-    if not _is_supported_relu_function(model):
+    relu_kind = _supported_relu_kind(model)
+    if relu_kind is None:
         return None
-    if not _trace_returns_unary_relu(model):
+
+    captured_top_level_relu = (
+        _package_module().relu if relu_kind == "top_level" else None
+    )
+    if not _trace_returns_unary_relu(model, relu_kind, captured_top_level_relu):
         return None
 
     def compiled_model(*args, **kwargs):
+        if (
+            captured_top_level_relu is not None
+            and _current_package_relu() is not captured_top_level_relu
+        ):
+            raise NotImplementedError(unsupported_message)
         tensor = _bind_runtime_relu_argument(args, kwargs, unsupported_message)
         return tensor.relu()
 
     return compiled_model
 
 
-def _is_supported_relu_function(model):
+def _supported_relu_kind(model):
     if type(model) is not _types.FunctionType:
-        return False
+        return None
 
     parameter_name = _single_positional_parameter_name(model)
     if parameter_name is None:
-        return False
+        return None
 
-    if _bytecode_returns_exact_relu(model, parameter_name):
-        return True
+    relu_kind = _bytecode_relu_kind(model, parameter_name)
+    if relu_kind is not None:
+        return relu_kind
 
     function_node = _source_function_node(model)
     if function_node is None:
-        return False
+        return None
 
     body = list(function_node.body)
     if (
@@ -62,9 +76,9 @@ def _is_supported_relu_function(model):
     ):
         body = body[1:]
     if len(body) != 1 or not isinstance(body[0], _ast.Return):
-        return False
+        return None
 
-    return _is_exact_relu_return(model, parameter_name, body[0].value)
+    return _exact_relu_return_kind(model, parameter_name, body[0].value)
 
 
 def _single_positional_parameter_name(model):
@@ -88,7 +102,7 @@ def _single_positional_parameter_name(model):
     return parameter.name
 
 
-def _bytecode_returns_exact_relu(model, parameter_name):
+def _bytecode_relu_kind(model, parameter_name):
     instructions = [
         instruction
         for instruction in _dis.get_instructions(model)
@@ -104,11 +118,13 @@ def _bytecode_returns_exact_relu(model, parameter_name):
         }
     ]
     if len(instructions) not in (4, 5):
-        return False
+        return None
 
     if _matches_method_relu_bytecode(instructions, parameter_name):
-        return True
-    return _matches_top_level_relu_bytecode(model, instructions, parameter_name)
+        return "method"
+    if _matches_top_level_relu_bytecode(model, instructions, parameter_name):
+        return "top_level"
+    return None
 
 
 def _matches_method_relu_bytecode(instructions, parameter_name):
@@ -132,7 +148,7 @@ def _matches_top_level_relu_bytecode(model, instructions, parameter_name):
     load_module, load_relu, load_input, call, return_value = instructions
     if (
         load_module.opname != "LOAD_GLOBAL"
-        or not _global_is_package_module(model, load_module.argval)
+        or not _global_is_canonical_package_relu(model, load_module.argval)
         or load_relu.opname not in {"LOAD_ATTR", "LOAD_METHOD"}
         or load_relu.argval != "relu"
         or load_input.opname != "LOAD_FAST"
@@ -162,19 +178,23 @@ def _source_function_node(model):
     return None
 
 
-def _is_exact_relu_return(model, parameter_name, expression):
+def _exact_relu_return_kind(model, parameter_name, expression):
     if not isinstance(expression, _ast.Call):
-        return False
+        return None
     if expression.args or expression.keywords:
-        return _is_exact_top_level_relu_call(model, parameter_name, expression)
+        if _is_exact_top_level_relu_call(model, parameter_name, expression):
+            return "top_level"
+        return None
 
     function = expression.func
-    return (
+    if (
         isinstance(function, _ast.Attribute)
         and function.attr == "relu"
         and isinstance(function.value, _ast.Name)
         and function.value.id == parameter_name
-    )
+    ):
+        return "method"
+    return None
 
 
 def _is_exact_top_level_relu_call(model, parameter_name, expression):
@@ -191,17 +211,22 @@ def _is_exact_top_level_relu_call(model, parameter_name, expression):
     ):
         return False
 
-    return _global_is_package_module(model, function.value.id)
+    return _global_is_canonical_package_relu(model, function.value.id)
 
 
-def _global_is_package_module(model, name):
+def _global_is_canonical_package_relu(model, name):
     module = model.__globals__.get(name)
-    return module is _package_module()
-
-
-def _trace_returns_unary_relu(model):
     package = _package_module()
-    original_relu = package.relu
+    return (
+        module is package
+        and _current_package_relu(package) is _canonical_package_relu(package)
+        and _current_package_relu(package) is not _MISSING
+    )
+
+
+def _trace_returns_unary_relu(model, relu_kind, captured_top_level_relu):
+    package = _package_module()
+    original_relu = None
 
     def trace_relu(input, *args, **kwargs):
         if type(input) is _ReluTraceProxy and not args and not kwargs:
@@ -209,13 +234,18 @@ def _trace_returns_unary_relu(model):
         return original_relu(input, *args, **kwargs)
 
     proxy = _ReluTraceProxy("input")
-    package.relu = trace_relu
+    if relu_kind == "top_level":
+        if _current_package_relu(package) is not captured_top_level_relu:
+            return False
+        original_relu = _current_package_relu(package)
+        package.relu = trace_relu
     try:
         result = model(proxy)
     except _UnsupportedGraphlet:
         return False
     finally:
-        package.relu = original_relu
+        if original_relu is not None:
+            package.relu = original_relu
 
     return type(result) is _ReluTraceProxy and result._node == "relu"
 
@@ -235,6 +265,19 @@ def _bind_runtime_relu_argument(args, kwargs, unsupported_message):
     if tensor.requires_grad:
         raise NotImplementedError(unsupported_message)
     return tensor
+
+
+def _current_package_relu(package=None):
+    if package is None:
+        package = _package_module()
+    return getattr(package, "relu", _MISSING)
+
+
+def _canonical_package_relu(package=None):
+    if package is None:
+        package = _package_module()
+    native = getattr(package, "_C", None)
+    return getattr(native, "relu", _MISSING)
 
 
 def _package_module():

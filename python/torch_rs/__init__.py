@@ -364,6 +364,20 @@ def _compile_bound_model(
     if disable:
         return model
 
+    if _builtins.callable(resolved_backend):
+        return _unsupported_compile_wrapper(
+            model,
+            fullgraph,
+            dynamic,
+            resolved_backend,
+            mode,
+            options,
+            name,
+            recompile_limit,
+            isolate_recompiles,
+            shapes_spec,
+        )
+
     from ._compile import try_compile_supported_graphlet as _try_compile_supported_graphlet
 
     compiled_graphlet = _try_compile_supported_graphlet(

@@ -232,6 +232,53 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             [0.0, 3.0],
         )
 
+    def test_top_level_relu_graphlet_guards_the_public_relu_binding(self):
+        original_relu = torch.relu
+
+        def model(x):
+            return torch.relu(x)
+
+        compiled = torch.compile(model, backend="eager")
+        self.assertEqual(compiled._torch_rs_compile_graph, "relu")
+        self.assertEqual(compiled(torch.tensor([-1.0, 2.0])).tolist(), [0.0, 2.0])
+
+        def replacement_relu(input):
+            return input
+
+        try:
+            torch.relu = replacement_relu
+            rebound_compiled = torch.compile(model, backend="eager")
+            self.assertFalse(hasattr(rebound_compiled, "_torch_rs_compile_graph"))
+            with self.assertRaises(NotImplementedError) as raised:
+                rebound_compiled(torch.tensor([-1.0, 2.0]))
+            self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+
+            with self.assertRaises(NotImplementedError) as raised:
+                compiled(torch.tensor([-1.0, 2.0]))
+            self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        finally:
+            torch.relu = original_relu
+
+        self.assertEqual(compiled(torch.tensor([-1.0, 2.0])).tolist(), [0.0, 2.0])
+
+    def test_unary_relu_graphlet_keeps_callable_backends_unsupported(self):
+        backend_calls = []
+
+        def backend(graph_module, example_inputs):
+            backend_calls.append((graph_module, example_inputs))
+            return graph_module.forward
+
+        def model(x):
+            return x.relu()
+
+        compiled = torch.compile(model, backend=backend)
+        self.assertIs(compiled._torch_rs_compile_backend, backend)
+        self.assertFalse(hasattr(compiled, "_torch_rs_compile_graph"))
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled(torch.tensor([-1.0, 2.0]))
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(backend_calls, [])
+
     def test_backend_none_resolves_default_and_registered_backend_names(self):
         backend_calls = []
 
