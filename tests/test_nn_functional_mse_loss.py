@@ -54,6 +54,40 @@ class FunctionalMseLossTests(unittest.TestCase):
                 self.tensor_bits(expected),
             )
 
+    def assert_mean_scalar_matches_composition(self, actual, expected, *, case):
+        with self.subTest(case=case, metadata=True):
+            self.assertEqual(actual.shape, expected.shape)
+            self.assertEqual(actual.stride(), expected.stride())
+            self.assertEqual(actual.storage_offset(), expected.storage_offset())
+            self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+            self.assertEqual(actual.requires_grad, expected.requires_grad)
+            self.assertEqual(actual.is_leaf, expected.is_leaf)
+            self.assertIs(actual.dtype, torch.float32)
+            self.assertEqual(actual.device, torch.device("cpu"))
+        with self.subTest(case=case, values=True):
+            actual_value = np.asarray(actual)
+            expected_value = np.asarray(expected)
+            if np.isnan(expected_value).all():
+                self.assertTrue(np.isnan(actual_value).all())
+            elif case[0] == "signed zero":
+                np.testing.assert_array_equal(
+                    self.tensor_bits(actual),
+                    self.tensor_bits(expected),
+                )
+            elif case[0] == "large contiguous":
+                np.testing.assert_allclose(
+                    actual_value,
+                    expected_value,
+                    rtol=1e-3,
+                    atol=1e-5,
+                )
+            else:
+                np.testing.assert_array_max_ulp(
+                    actual_value,
+                    expected_value,
+                    maxulp=2,
+                )
+
     def layout_cases(self):
         offset_input_base = torch.tensor(
             np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4).tolist()
@@ -208,6 +242,74 @@ class FunctionalMseLossTests(unittest.TestCase):
             ("noncontiguous", transposed_input, transposed_target, False),
         )
 
+    def same_shape_contiguous_mean_cases(self):
+        signed_zero_input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0000,
+            ],
+            dtype=np.uint32,
+        )
+        signed_zero_target_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x8000_0000,
+                0x0000_0000,
+            ],
+            dtype=np.uint32,
+        )
+        edge_input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        edge_target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+            ],
+            dtype=np.uint32,
+        )
+        large_input = np.linspace(-3.0, 5.0, 1 << 20, dtype=np.float32)
+        large_target = np.linspace(4.0, -2.0, 1 << 20, dtype=np.float32)
+
+        return (
+            ("scalar", torch.tensor(-0.0), torch.tensor(2.5)),
+            ("empty", torch.zeros((0, 1024)), torch.ones((0, 1024))),
+            (
+                "signed zero",
+                torch.tensor(memoryview(signed_zero_input_bits.view(np.float32))).view(2, 2),
+                torch.tensor(memoryview(signed_zero_target_bits.view(np.float32))).view(2, 2),
+            ),
+            (
+                "nan and infinity",
+                torch.tensor(memoryview(edge_input_bits.view(np.float32))).view(2, 4),
+                torch.tensor(memoryview(edge_target_bits.view(np.float32))).view(2, 4),
+            ),
+            (
+                "large contiguous",
+                torch.tensor(memoryview(large_input)).view(1024, 1024),
+                torch.tensor(memoryview(large_target)).view(1024, 1024),
+            ),
+        )
+
     def same_stride_noncontiguous_cases(self):
         edge_input_bits = np.asarray(
             [
@@ -339,7 +441,8 @@ class FunctionalMseLossTests(unittest.TestCase):
             "``reduce=None``",
             "``weight=None``",
             "fuses subtraction and square into one native pass",
-            "supported full-tensor mean or sum",
+            "direct scalar reduction",
+            "supported full-tensor reduction",
             "fresh, independent tensor",
             "size-mismatch warning",
             "Unbroadcastable shapes",
@@ -550,7 +653,9 @@ class FunctionalMseLossTests(unittest.TestCase):
                     warnings.simplefilter("always")
                     actual = call()
 
-                self.assert_matches_composition(actual, expected, case=(case, form))
+                self.assert_mean_scalar_matches_composition(
+                    actual, expected, case=(case, form)
+                )
                 with self.subTest(case=(case, form), warning=True):
                     self.assertEqual(len(caught), int(warns))
                     if warns:
@@ -577,6 +682,76 @@ class FunctionalMseLossTests(unittest.TestCase):
                 np.testing.assert_array_equal(
                     self.tensor_state(target)[-1], target_state[-1]
                 )
+
+    def test_mean_reduction_same_shape_contiguous_fast_path_cases(self):
+        for case, input, target in self.same_shape_contiguous_mean_cases():
+            self.assertEqual(input.shape, target.shape)
+            self.assertTrue(input.is_contiguous())
+            self.assertTrue(target.is_contiguous())
+            expected = (input - target).square().mean()
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+
+            for form, call in (
+                (
+                    "explicit mean",
+                    lambda: functional.mse_loss(input, target, reduction="mean"),
+                ),
+                ("default mean", lambda: functional.mse_loss(input, target)),
+            ):
+                actual = call()
+                self.assert_mean_scalar_matches_composition(
+                    actual, expected, case=(case, form)
+                )
+                with self.subTest(case=(case, form), scalar_metadata=True):
+                    self.assertEqual(actual.shape, ())
+                    self.assertEqual(actual.stride(), ())
+                    self.assertEqual(actual.storage_offset(), 0)
+                    self.assertTrue(actual.is_contiguous())
+                    self.assertFalse(actual.requires_grad)
+                    self.assertTrue(actual.is_leaf)
+                with self.subTest(case=(case, form), storage=True):
+                    repeated = call()
+                    self.assertFalse(actual.is_set_to(repeated))
+                    self.assertFalse(actual.is_set_to(input))
+                    self.assertFalse(actual.is_set_to(target))
+                    self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+
+            with self.subTest(case=case, nonmutation=True):
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1], input_state[-1]
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1], target_state[-1]
+                )
+
+    def test_mean_reduction_same_shape_contiguous_no_grad_leaves(self):
+        input = torch.tensor(
+            [[1.0, -2.0], [3.0, -4.0]],
+            requires_grad=True,
+        )
+        target = torch.tensor(
+            [[0.5, 2.0], [-3.0, 4.5]],
+            requires_grad=True,
+        )
+        input_state = self.tensor_state(input)
+        target_state = self.tensor_state(target)
+
+        with torch.no_grad():
+            actual = functional.mse_loss(input, target, reduction="mean")
+            expected = (input - target).square().mean()
+
+        self.assert_matches_composition(actual, expected, case="no_grad leaves")
+        self.assertFalse(actual.requires_grad)
+        self.assertTrue(actual.is_leaf)
+        self.assertIsNone(input.grad)
+        self.assertIsNone(target.grad)
+        self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+        self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+        np.testing.assert_array_equal(self.tensor_state(input)[-1], input_state[-1])
+        np.testing.assert_array_equal(self.tensor_state(target)[-1], target_state[-1])
 
     def test_sum_reduction_no_grad_view_repeated_backward_reports_freed_graph(self):
         leaf = torch.tensor(
