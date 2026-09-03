@@ -13,6 +13,7 @@ from ..torch_rs import (
     _nn_functional_l1_loss,
     _nn_functional_linear,
     _nn_functional_mse_loss,
+    _nn_functional_softsign,
 )
 
 
@@ -292,6 +293,8 @@ def silu(input: Tensor, inplace: bool = False) -> Tensor:
 def _softsign_impl(input):
     if isinstance(input, Tensor) and torch.is_grad_enabled() and input.requires_grad:
         raise RuntimeError("softsign(): autograd recording is not supported")
+    if type(input) is Tensor:
+        return _nn_functional_softsign(input)
     return input / (input.abs() + 1)
 
 

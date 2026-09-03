@@ -3873,6 +3873,22 @@ impl Tensor {
         self.finish_saved_input_unary_vjp(output, AutogradNode::Reciprocal, apply_reciprocal_vjp)
     }
 
+    /// Applies the softsign activation in one inference pass.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn softsign(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported {
+                operation: "softsign",
+            });
+        }
+        self.unary_map(softsign_value)
+    }
+
     /// Computes the reciprocal square root of every element using unary output
     /// layout planning.
     ///
@@ -6793,6 +6809,12 @@ fn sigmoid_value(value: f32) -> f32 {
 
 fn reciprocal_value(value: f32) -> f32 {
     1.0 * value.recip()
+}
+
+#[inline]
+#[cfg(any(feature = "python-bindings", test))]
+fn softsign_value(value: f32) -> f32 {
+    value / (absolute_value(value) + 1.0)
 }
 
 fn sqrt_value(value: f32) -> f32 {
@@ -14174,6 +14196,7 @@ mod tests {
             (tensor.sigmoid().unwrap(), shared.sigmoid().unwrap()),
             (tensor.tanh().unwrap(), shared.tanh().unwrap()),
             (tensor.sqrt().unwrap(), shared.sqrt().unwrap()),
+            (tensor.softsign().unwrap(), shared.softsign().unwrap()),
             (
                 tensor.add_scalar(1.25).unwrap(),
                 shared.add_scalar(1.25).unwrap(),
@@ -14214,6 +14237,100 @@ mod tests {
                     .eq(expected.logical_values().map(f32::to_bits))
             );
         }
+    }
+
+    #[test]
+    fn softsign_matches_primitive_composition_and_rejects_grad_recording() {
+        fn assert_matches_composition(input: &Tensor) {
+            let expected = input
+                .div(&input.abs().unwrap().add_scalar(1.0).unwrap())
+                .unwrap();
+            let actual = input.softsign().unwrap();
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert_eq!(actual.storage_offset(), expected.storage_offset());
+            assert_eq!(actual.dtype(), expected.dtype());
+            assert_eq!(actual.device(), expected.device());
+            assert!(!actual.shares_storage_with(input));
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+
+        let edge_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x0080_0000,
+            0x8080_0000,
+            0x3eaa_aaab,
+            0xbeaa_aaab,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7f81_2345,
+            0xff81_2345,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
+        let contiguous = Tensor::from_vec(
+            edge_bits.iter().copied().map(f32::from_bits).collect(),
+            [3, 6],
+        )
+        .unwrap();
+        let strided = contiguous.transpose(0, 1).unwrap();
+        let offset_strided = offset_strided_matrix([
+            0x0000_0000,
+            0x8000_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+        ]);
+        let channels_last = Tensor::from_vec(
+            (0_u16..120).map(|value| f32::from(value) - 60.0).collect(),
+            [2, 3, 4, 5],
+        )
+        .unwrap()
+        .try_contiguous(MemoryFormat::ChannelsLast)
+        .unwrap();
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+
+        for input in [
+            &contiguous,
+            &strided,
+            &offset_strided,
+            &channels_last,
+            &empty,
+        ] {
+            assert_matches_composition(input);
+        }
+
+        let tracked = Tensor::from_vec(vec![0.5], [1])
+            .unwrap()
+            .with_requires_grad(true);
+        assert_eq!(
+            tracked.softsign(),
+            Err(TensorError::AutogradRecordingUnsupported {
+                operation: "softsign"
+            })
+        );
+        let no_grad_output = {
+            let _guard = crate::no_grad();
+            tracked.softsign().unwrap()
+        };
+        assert!(!no_grad_output.requires_grad());
+        assert!(no_grad_output.is_leaf());
     }
 
     #[test]
@@ -14556,6 +14673,10 @@ mod tests {
         );
         assert_eq!(
             tensor.reciprocal(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.softsign(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(

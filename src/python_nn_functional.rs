@@ -25,6 +25,7 @@ const L1_LOSS_EXACT_TENSORS_ERROR: &str =
     "l1_loss() only supports exact native Tensor input and target operands";
 const MSE_LOSS_EXACT_TENSORS_ERROR: &str =
     "mse_loss() only supports exact native Tensor input and target operands";
+const SOFTSIGN_EXACT_TENSOR_ERROR: &str = "softsign() only supports an exact native Tensor input";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum L1LossReduction {
@@ -272,6 +273,16 @@ fn exact_mse_loss_tensor<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, 
 fn exact_l1_loss_tensor<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTensor>> {
     if !value.is_exact_instance_of::<PyTensor>() {
         return Err(PyTypeError::new_err(L1_LOSS_EXACT_TENSORS_ERROR));
+    }
+    Ok(value
+        .cast::<PyTensor>()
+        .expect("an exact PyTensor instance must downcast")
+        .clone())
+}
+
+fn exact_softsign_tensor<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTensor>> {
+    if !value.is_exact_instance_of::<PyTensor>() {
+        return Err(PyTypeError::new_err(SOFTSIGN_EXACT_TENSOR_ERROR));
     }
     Ok(value
         .cast::<PyTensor>()
@@ -712,6 +723,28 @@ fn _nn_functional_mse_loss(
     PyTensor::new(output).into_py_any(py)
 }
 
+#[pyfunction]
+fn _nn_functional_softsign(py: Python<'_>, input: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    if !python_torch_function_mode::is_empty() {
+        return Err(PyTypeError::new_err(
+            "softsign() does not support an active TorchFunctionMode",
+        ));
+    }
+
+    let input = exact_softsign_tensor(input)?;
+    let input = input.try_borrow()?;
+    if input.inner().dtype() != DType::Float32 || input.inner().device() != Device::Cpu {
+        return Err(PyNotImplementedError::new_err(
+            "torch_rs.nn.functional.softsign only supports CPU float32 tensors",
+        ));
+    }
+    let output = input
+        .inner()
+        .softsign()
+        .map_err(|error| tensor_error(&error))?;
+    PyTensor::new(output).into_py_any(py)
+}
+
 pub(crate) fn add_nn_functional_bridges(module: &Bound<'_, PyModule>) -> PyResult<()> {
     for function in [
         wrap_pyfunction!(_nn_functional_dropout, module)?,
@@ -719,6 +752,7 @@ pub(crate) fn add_nn_functional_bridges(module: &Bound<'_, PyModule>) -> PyResul
         wrap_pyfunction!(_nn_functional_linear, module)?,
         wrap_pyfunction!(_nn_functional_l1_loss, module)?,
         wrap_pyfunction!(_nn_functional_mse_loss, module)?,
+        wrap_pyfunction!(_nn_functional_softsign, module)?,
     ] {
         let name = function.getattr("__name__")?;
         module.add_function(function.clone())?;

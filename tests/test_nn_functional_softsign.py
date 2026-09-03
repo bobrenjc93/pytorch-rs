@@ -59,6 +59,7 @@ class FunctionalSoftsignTests(unittest.TestCase):
         return (
             ("scalar", torch.tensor(-0.0)),
             ("empty", torch.zeros((2, 0, 3)).transpose(0, 2)[1]),
+            ("contiguous", base),
             ("offset", base[1]),
             ("noncontiguous", base.transpose(0, 2)[1]),
             ("channels_last", channels_last),
@@ -123,6 +124,7 @@ class FunctionalSoftsignTests(unittest.TestCase):
         wildcard = {}
         exec("from torch_rs.nn.functional import *", wildcard)
         self.assertIs(wildcard["softsign"], function)
+        self.assertFalse(hasattr(torch, "_nn_functional_softsign"))
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):

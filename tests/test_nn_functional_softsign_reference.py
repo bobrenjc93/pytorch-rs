@@ -88,6 +88,7 @@ class FunctionalSoftsignReferenceTests(unittest.TestCase):
                 module.zeros((2, 0, 3), dtype=module.float32)
                 .transpose(0, 2)[1],
             ),
+            ("contiguous", base),
             ("offset", base[1]),
             ("noncontiguous", base.transpose(0, 2)[1]),
             ("channels_last", channels_last),
