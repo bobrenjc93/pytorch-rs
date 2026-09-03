@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "torch_compile_unary_relu_cpu_float32",
+      "category": "unary_relu",
+      "description": "Exact Python callable with one positional exact native CPU float32 Tensor argument returning x.relu() or torch.relu(x).",
+      "weight": 1,
+      "eligible": 1,
+      "passed": 1
+    }
+  ],
+  "totals": {
+    "weight": 1,
+    "eligible": 1,
+    "passed": 1
+  }
+}

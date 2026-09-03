@@ -204,6 +204,34 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertEqual(model_calls, [])
         self.assertEqual(backend_calls, [])
 
+    def test_unary_relu_graphlet_executes_natively_with_runtime_scope_guards(self):
+        def model(x):
+            return x.relu()
+
+        compiled = torch.compile(model, backend="eager")
+        self.assertIs(compiled.__wrapped__, model)
+        self.assertEqual(compiled._torch_rs_compile_graph, "relu")
+        self.assertEqual(compiled._torch_rs_compile_execution, "torch_rs")
+        self.assertEqual(compiled(torch.tensor([-1.0, 2.0])).tolist(), [0.0, 2.0])
+
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled(torch.tensor([1.0], requires_grad=True))
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled(x=torch.tensor([1.0]))
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled("input")
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+
+        lambda_compiled = torch.compile(lambda x: x.relu(), backend="eager")
+        self.assertEqual(
+            lambda_compiled(torch.tensor([-2.0, 3.0])).tolist(),
+            [0.0, 3.0],
+        )
+
     def test_backend_none_resolves_default_and_registered_backend_names(self):
         backend_calls = []
 

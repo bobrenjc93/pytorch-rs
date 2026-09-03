@@ -267,6 +267,34 @@ _COMPILE_UNSUPPORTED_MESSAGE = (
 )
 
 
+def _attach_compile_metadata(
+    compiled_model,
+    model,
+    fullgraph,
+    dynamic,
+    resolved_backend,
+    mode,
+    options,
+    name,
+    recompile_limit,
+    isolate_recompiles,
+    shapes_spec,
+):
+    import functools as _compile_functools
+
+    _compile_functools.update_wrapper(compiled_model, model)
+    compiled_model._torch_rs_compile_fullgraph = fullgraph
+    compiled_model._torch_rs_compile_dynamic = dynamic
+    compiled_model._torch_rs_compile_backend = resolved_backend
+    compiled_model._torch_rs_compile_mode = mode
+    compiled_model._torch_rs_compile_options = options
+    compiled_model._torch_rs_compile_name = name
+    compiled_model._torch_rs_compile_recompile_limit = recompile_limit
+    compiled_model._torch_rs_compile_isolate_recompiles = isolate_recompiles
+    compiled_model._torch_rs_compile_shapes_spec = shapes_spec
+    return compiled_model
+
+
 def _unsupported_compile_wrapper(
     model,
     fullgraph,
@@ -282,19 +310,19 @@ def _unsupported_compile_wrapper(
     def compiled_model(*args, **kwargs):
         raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
 
-    import functools as _compile_functools
-
-    _compile_functools.update_wrapper(compiled_model, model)
-    compiled_model._torch_rs_compile_fullgraph = fullgraph
-    compiled_model._torch_rs_compile_dynamic = dynamic
-    compiled_model._torch_rs_compile_backend = resolved_backend
-    compiled_model._torch_rs_compile_mode = mode
-    compiled_model._torch_rs_compile_options = options
-    compiled_model._torch_rs_compile_name = name
-    compiled_model._torch_rs_compile_recompile_limit = recompile_limit
-    compiled_model._torch_rs_compile_isolate_recompiles = isolate_recompiles
-    compiled_model._torch_rs_compile_shapes_spec = shapes_spec
-    return compiled_model
+    return _attach_compile_metadata(
+        compiled_model,
+        model,
+        fullgraph,
+        dynamic,
+        resolved_backend,
+        mode,
+        options,
+        name,
+        recompile_limit,
+        isolate_recompiles,
+        shapes_spec,
+    )
 
 
 def _validate_compile_configuration(mode, options):
@@ -336,6 +364,30 @@ def _compile_bound_model(
     if disable:
         return model
 
+    from ._compile import try_compile_supported_graphlet as _try_compile_supported_graphlet
+
+    compiled_graphlet = _try_compile_supported_graphlet(
+        model,
+        _COMPILE_UNSUPPORTED_MESSAGE,
+    )
+    if compiled_graphlet is not None:
+        compiled_graphlet = _attach_compile_metadata(
+            compiled_graphlet,
+            model,
+            fullgraph,
+            dynamic,
+            resolved_backend,
+            mode,
+            options,
+            name,
+            recompile_limit,
+            isolate_recompiles,
+            shapes_spec,
+        )
+        compiled_graphlet._torch_rs_compile_graph = "relu"
+        compiled_graphlet._torch_rs_compile_execution = "torch_rs"
+        return compiled_graphlet
+
     return _unsupported_compile_wrapper(
         model,
         fullgraph,
@@ -367,9 +419,11 @@ def compile(
     """Return a ``torch.compile`` compatibility shell.
 
     This entrypoint implements Python argument binding, ``disable=True``
-    pass-through, and backend resolution through ``torch.compiler``. Graph
-    capture, graph execution, eager fallback, installed-PyTorch forwarding, and
-    backend invocation remain unsupported.
+    pass-through, backend resolution through ``torch.compiler``, and a single
+    native CPU float32 unary graphlet whose body returns ``x.relu()`` or
+    ``torch.relu(x)``. The graph execution path is limited to that captured relu;
+    eager fallback, installed-PyTorch forwarding, backend invocation, and all
+    other graph capture and execution remain unsupported.
     """
     if model is None:
         captured_backend = (
@@ -741,6 +795,7 @@ from . import autograd as autograd
 from . import backends as backends
 from . import compiler as compiler
 from . import cpu as cpu
+from . import _compile as _compile
 from . import cuda as cuda
 from . import distributed as distributed
 from . import functional as functional
