@@ -197,10 +197,6 @@ def _channels_last_stride(shape):
     return _stride_in_physical_order(shape, (1, 3, 2, 0))
 
 
-def _channels_last_3d_stride(shape):
-    return _stride_in_physical_order(shape, (1, 4, 3, 2, 0))
-
-
 def _stride_in_physical_order(shape, order):
     stride = [0] * len(shape)
     running = 1
@@ -213,10 +209,6 @@ def _stride_in_physical_order(shape, order):
 
 def _layout_is_channels_last_contiguous(shape, stride):
     return _layout_is_contiguous_in_order(shape, stride, (1, 3, 2, 0))
-
-
-def _layout_is_channels_last_3d_contiguous(shape, stride):
-    return _layout_is_contiguous_in_order(shape, stride, (1, 4, 3, 2, 0))
 
 
 def _layout_is_non_overlapping_and_dense(shape, stride):
@@ -293,8 +285,6 @@ def _unary_output_stride(shape, input_stride):
         return _contiguous_stride(shape)
     if _layout_is_channels_last_contiguous(shape, input_stride):
         return _channels_last_stride(shape)
-    if _layout_is_channels_last_3d_contiguous(shape, input_stride):
-        return _channels_last_3d_stride(shape)
     if _layout_is_non_overlapping_and_dense(shape, input_stride):
         return input_stride
     return _elementwise_output_stride(shape, input_stride)
@@ -339,12 +329,13 @@ def _require_native_tensor(value, value_name):
 
 
 def _metadata_from_native_tensor(tensor):
+    shape, stride, requires_grad = _native._compile_trace_tensor_metadata(tensor)
     return CompileTraceTensorMetadata(
-        shape=_normalize_shape(tensor.shape),
-        stride=_normalize_shape(tensor.stride()),
-        dtype=_normalize_dtype(tensor.dtype),
-        device=_normalize_device(tensor.device),
-        requires_grad=_normalize_requires_grad(tensor.requires_grad),
+        shape=_normalize_shape(shape),
+        stride=_normalize_shape(stride),
+        dtype=float32,
+        device="cpu",
+        requires_grad=_normalize_requires_grad(requires_grad),
     )
 
 
@@ -390,11 +381,7 @@ def _execute_operation(operation, values):
             f"{operation.name!r} references unknown value {input_name!r}"
         ) from None
 
-    if operation.target == "neg":
-        return _native.Tensor.neg(input)
-    if operation.target == "abs":
-        return _native.Tensor.abs(input)
-    _unsupported_operation(f"Tensor.{operation.target}")
+    return _native._compile_trace_unary(input, operation.target)
 
 
 def execute_compile_trace_graph(graph, input):

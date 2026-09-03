@@ -118,6 +118,8 @@ class CompileCorpusMetadataTests(unittest.TestCase):
         self.assertIsNone(case.mode)
         self.assertIsNone(case.options)
         self.assertNotIn("_compile_trace", torch.__all__)
+        self.assertNotIn("_compile_trace_tensor_metadata", torch._C.__all__)
+        self.assertNotIn("_compile_trace_unary", torch._C.__all__)
 
 
 class CompileCorpusTraceTests(unittest.TestCase):
@@ -246,6 +248,15 @@ class CompileCorpusTraceTests(unittest.TestCase):
                     memory_format=torch.channels_last_3d
                 ),
             ),
+            (
+                "channels last 3d singleton transpose",
+                torch.zeros(
+                    (2, 3, 1, 5, 6),
+                    dtype=torch.float32,
+                )
+                .contiguous(memory_format=torch.channels_last_3d)
+                .transpose(0, 2),
+            ),
         )
         for case, input in cases:
             with self.subTest(case=case):
@@ -277,6 +288,40 @@ class CompileCorpusTraceTests(unittest.TestCase):
                     expected,
                     case=case,
                 )
+
+    def test_private_executor_bypasses_active_torch_function_mode(self):
+        from torch_rs.overrides import TorchFunctionMode
+
+        graph = _compile_trace.trace_one_input_compile_graph(
+            cpu_float32_unary_abs_neg,
+            lambda module: (
+                module.tensor([[-1.0, 2.0]], dtype=module.float32),
+            ),
+            name="cpu_float32_unary_abs_neg",
+        )
+        input = torch.tensor([[-1.0, 2.0]], dtype=torch.float32)
+        expected = cpu_float32_unary_abs_neg(input)
+        mode_calls = []
+
+        class ReplacingMode(TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                mode_calls.append(getattr(func, "__name__", repr(func)))
+                if getattr(func, "__name__", None) == "abs":
+                    return torch.tensor([[99.0, 100.0]], dtype=torch.float32)
+                raise AssertionError(
+                    "private compile trace execution dispatched through "
+                    f"TorchFunctionMode for {mode_calls[-1]}"
+                )
+
+        with ReplacingMode():
+            actual = graph.forward(input)
+
+        self.assertEqual(mode_calls, [])
+        self.assert_native_tensor_matches(
+            actual,
+            expected,
+            case="active TorchFunctionMode",
+        )
 
     def test_private_executor_rejects_runtime_metadata_mismatch_clearly(self):
         graph = _compile_trace.trace_one_input_compile_graph(
