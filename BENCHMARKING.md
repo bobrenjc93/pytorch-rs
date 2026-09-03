@@ -48,6 +48,7 @@ do not replace the benchmark policy or Burner-managed evaluation progress.
 - [`*`, `Tensor.mul`/`Tensor.multiply`, and `torch.mul`/`torch.multiply` release timings](docs/tensor-mul-release-timings.md)
 - [`torch.div` and `torch.divide` release timings](docs/top-level-division-release-timings.md)
 - [Rank-2 `@`, `Tensor.matmul`, and `torch.matmul` release timings](docs/rank2-matmul-release-timings.md)
+- [`torch.nn.functional.linear` release timings](docs/functional-linear-release-timings.md)
 - [`Tensor.abs` and `torch.abs` release timings](docs/tensor-abs-release-timings.md)
 - [`Tensor.sqrt` and `torch.sqrt` release timings](docs/tensor-sqrt-release-timings.md)
 - [`Tensor.reciprocal` and `torch.reciprocal` release timings](docs/tensor-reciprocal-release-timings.md)
