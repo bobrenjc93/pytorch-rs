@@ -42,7 +42,7 @@ rustc --version && cargo --version
 ```
 
 If `torch` is missing, run `uv sync --locked --no-install-project --group reference`.
-After a manual release wheel install, run `.venv/bin/python .github/scripts/verify_native_extension.py`; `./scripts/test-python.sh` runs that check before the suite.
+After a manual release wheel install, run `.venv/bin/python .github/scripts/verify_native_extension.py`; `./scripts/test-python.sh` runs that check before the suite. See [docs/troubleshooting.md](docs/troubleshooting.md) for setup recovery steps.
 
 ## Environment Expectations
 
