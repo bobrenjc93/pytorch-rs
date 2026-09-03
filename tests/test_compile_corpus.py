@@ -14,7 +14,6 @@ except ImportError:
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
 COMPILE_CORPUS_VERSION = "torch_compile_corpus_v1"
-TORCH_RS_COMPILE_CORPUS_PASS_COUNT = 0
 
 CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -131,7 +130,6 @@ class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
         self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v1")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(TORCH_RS_COMPILE_CORPUS_PASS_COUNT, 0)
         self.assertEqual(len(COMPILE_CORPUS), 2)
 
         case_names = [case.name for case in COMPILE_CORPUS]
