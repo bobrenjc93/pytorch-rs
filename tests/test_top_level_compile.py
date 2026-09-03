@@ -217,11 +217,9 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertEqual(backend_calls, [])
 
     def test_eager_fullgraph_abs_neg_executes_private_trace_graph(self):
-        model_inputs = []
         execute_calls = []
 
         def model(x):
-            model_inputs.append(x)
             return x.neg().abs()
 
         original_execute = _compile_trace.execute_compile_trace_graph
@@ -246,14 +244,13 @@ class TorchCompileEntrypointTests(unittest.TestCase):
 
         self.assert_native_tensor_matches(actual, expected)
         self.assert_native_tensor_matches(second_actual, expected)
-        self.assertEqual(len(model_inputs), 1)
-        self.assertIsInstance(model_inputs[0], _compile_trace.CompileTraceTensorProxy)
         self.assertEqual(len(execute_calls), 2)
         graph, executed_input = execute_calls[0]
         self.assertIs(executed_input, input)
-        self.assertIs(compiled._torch_rs_compile_trace_graph, graph)
-        self.assertIs(execute_calls[1][0], graph)
-        self.assertIs(execute_calls[1][1], input)
+        second_graph, second_input = execute_calls[1]
+        self.assertIs(compiled._torch_rs_compile_trace_graph, second_graph)
+        self.assertIsNot(second_graph, graph)
+        self.assertIs(second_input, input)
         self.assertEqual(graph.name, "model")
         self.assertEqual(
             [operation.target for operation in graph.operations],
@@ -267,7 +264,6 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         calls = []
 
         def abs_neg(x):
-            calls.append(x)
             return x.neg().abs()
 
         class CallableModel:
@@ -343,8 +339,50 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         with self.assertRaises(NotImplementedError) as raised:
             compiled_self_add(input)
         self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
-        self.assertEqual(len(calls), 1)
-        self.assertIsInstance(calls[0][1], _compile_trace.CompileTraceTensorProxy)
+        self.assertEqual(calls, [])
+
+    def test_eager_fullgraph_abs_neg_rejects_proxy_dependent_functions(self):
+        calls = []
+
+        def proxy_dependent(x):
+            calls.append(x)
+            if type(x) is torch.Tensor:
+                return x + x
+            return x.neg().abs()
+
+        input = torch.tensor([[-2.0, 3.0]], dtype=torch.float32)
+        compiled = torch.compile(proxy_dependent, backend="eager", fullgraph=True)
+
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled(input)
+
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(calls, [])
+
+    def test_eager_fullgraph_abs_neg_rejects_stateful_functions_after_reset(self):
+        calls = []
+        use_abs_neg = True
+
+        def stateful(x):
+            calls.append(x)
+            if use_abs_neg:
+                return x.neg().abs()
+            return x + x
+
+        input = torch.tensor([[-2.0, 3.0]], dtype=torch.float32)
+        compiled = torch.compile(stateful, backend="eager", fullgraph=True)
+
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled(input)
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+
+        use_abs_neg = False
+        torch.compiler.reset()
+
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled(input)
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(calls, [])
 
     def test_backend_none_resolves_default_and_registered_backend_names(self):
         backend_calls = []
@@ -539,19 +577,13 @@ assert torch.compile(disable=True)(model) is model
 assert set(sys.modules) == modules_before_call
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
-from torch_rs import _compile_trace
-
-model_inputs = []
-
 def abs_neg_model(x):
-    model_inputs.append(type(x))
     return x.neg().abs()
 
 input = torch.tensor([[-3.0, 0.0, 2.5]], dtype=torch.float32)
 expected = input.neg().abs()
 compiled = torch.compile(abs_neg_model, backend="eager", fullgraph=True)
 actual = compiled(input)
-assert model_inputs == [_compile_trace.CompileTraceTensorProxy]
 assert actual.tolist() == expected.tolist()
 assert actual.shape == expected.shape
 assert actual.stride() == expected.stride()

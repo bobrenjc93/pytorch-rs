@@ -778,15 +778,11 @@ for actual in (
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
-public_model_inputs = []
-
 def public_abs_neg(x):
-    public_model_inputs.append(type(x))
     return x.neg().abs()
 
 compiled = torch.compile(public_abs_neg, backend="eager", fullgraph=True)
 actual = compiled(native_input)
-assert public_model_inputs == [_compile_trace.CompileTraceTensorProxy]
 assert actual.tolist() == expected.tolist()
 assert actual.shape == expected.shape
 assert actual.stride() == expected.stride()
@@ -829,15 +825,11 @@ assert not any(name == "torch" or name.startswith("torch.") for name in sys.modu
     def test_public_eager_compile_corpus_graphlet_boundary(self):
         for case in COMPILE_CORPUS:
             with self.subTest(case=case.name):
-                model_calls = []
-
-                def model(x):
-                    model_calls.append(x)
-                    return case.program(x)
-
-                compiled = torch.compile(model, **case.compile_kwargs("eager"))
+                compiled = torch.compile(
+                    case.program,
+                    **case.compile_kwargs("eager"),
+                )
                 self.assertEqual(compiled._torch_rs_compile_backend, "eager")
-                self.assertEqual(model_calls, [])
                 inputs = case.make_inputs(torch)
 
                 if case.program is cpu_float32_unary_abs_neg:
@@ -847,11 +839,6 @@ assert not any(name == "torch" or name.startswith("torch.") for name in sys.modu
                         actual,
                         expected,
                         case=case.name,
-                    )
-                    self.assertEqual(len(model_calls), 1)
-                    self.assertIsInstance(
-                        model_calls[0],
-                        _compile_trace.CompileTraceTensorProxy,
                     )
                     self.assertEqual(
                         [
@@ -864,11 +851,6 @@ assert not any(name == "torch" or name.startswith("torch.") for name in sys.modu
                     with self.assertRaises(NotImplementedError) as raised:
                         compiled(*inputs)
                     self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
-                    self.assertEqual(len(model_calls), 1)
-                    self.assertIsInstance(
-                        model_calls[0],
-                        _compile_trace.CompileTraceTensorProxy,
-                    )
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -918,15 +900,11 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
             with self.subTest(case=case.name):
                 self.assert_reference_eligible(case)
 
-                model_calls = []
-
-                def model(x):
-                    model_calls.append(x)
-                    return case.program(x)
-
-                compiled = torch.compile(model, **case.compile_kwargs("eager"))
+                compiled = torch.compile(
+                    case.program,
+                    **case.compile_kwargs("eager"),
+                )
                 self.assertEqual(compiled._torch_rs_compile_backend, "eager")
-                self.assertEqual(model_calls, [])
                 inputs = case.make_inputs(torch)
 
                 if case.program is cpu_float32_unary_abs_neg:
@@ -936,11 +914,6 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                         actual,
                         expected,
                         case=case.name,
-                    )
-                    self.assertEqual(len(model_calls), 1)
-                    self.assertIsInstance(
-                        model_calls[0],
-                        _compile_trace.CompileTraceTensorProxy,
                     )
                     self.assertEqual(
                         [
@@ -953,11 +926,6 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                     with self.assertRaises(NotImplementedError) as raised:
                         compiled(*inputs)
                     self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
-                    self.assertEqual(len(model_calls), 1)
-                    self.assertIsInstance(
-                        model_calls[0],
-                        _compile_trace.CompileTraceTensorProxy,
-                    )
 
 
 if __name__ == "__main__":

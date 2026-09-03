@@ -21,6 +21,8 @@ _sys.modules[f"{__name__}._C"] = _C
 _TensorBase = Tensor.__base__
 _COMPILE_NATIVE_TENSOR_TYPE = _native.Tensor
 _COMPILE_PYTHON_FUNCTION_TYPE = _types.FunctionType
+_COMPILE_CODE_HAS_VARARGS = 0x04
+_COMPILE_CODE_HAS_VARKEYWORDS = 0x08
 
 # PyTorch's memory-format reducers use dotted public names such as
 # ``torch.channels_last``. Mirror its module self-alias so those names resolve
@@ -351,6 +353,72 @@ def _supports_public_eager_abs_neg_compile(
         and recompile_limit is None
         and isolate_recompiles is False
         and shapes_spec is None
+        and _public_eager_abs_neg_bytecode_is_supported(model)
+    )
+
+
+def _public_eager_abs_neg_bytecode_is_supported(model):
+    import dis as _dis
+
+    code = model.__code__
+    if (
+        code.co_argcount != 1
+        or code.co_kwonlyargcount != 0
+        or (
+            code.co_flags
+            & (_COMPILE_CODE_HAS_VARARGS | _COMPILE_CODE_HAS_VARKEYWORDS)
+        )
+        or code.co_freevars
+        or code.co_cellvars
+    ):
+        return False
+
+    arg_name = code.co_varnames[0]
+    ignored_opnames = frozenset(
+        (
+            "CACHE",
+            "COPY_FREE_VARS",
+            "EXTENDED_ARG",
+            "NOP",
+            "RESUME",
+        )
+    )
+    instructions = []
+    for instruction in _dis.get_instructions(model):
+        opname = instruction.opname
+        if opname in ignored_opnames:
+            continue
+        if opname == "LOAD_FAST_BORROW":
+            opname = "LOAD_FAST"
+        instructions.append((opname, instruction.argval))
+    instructions = tuple(instructions)
+    return instructions in (
+        (
+            ("LOAD_FAST", arg_name),
+            ("LOAD_METHOD", "neg"),
+            ("CALL_METHOD", 0),
+            ("LOAD_METHOD", "abs"),
+            ("CALL_METHOD", 0),
+            ("RETURN_VALUE", None),
+        ),
+        (
+            ("LOAD_FAST", arg_name),
+            ("LOAD_METHOD", "neg"),
+            ("PRECALL", 0),
+            ("CALL", 0),
+            ("LOAD_METHOD", "abs"),
+            ("PRECALL", 0),
+            ("CALL", 0),
+            ("RETURN_VALUE", None),
+        ),
+        (
+            ("LOAD_FAST", arg_name),
+            ("LOAD_ATTR", "neg"),
+            ("CALL", 0),
+            ("LOAD_ATTR", "abs"),
+            ("CALL", 0),
+            ("RETURN_VALUE", None),
+        ),
     )
 
 
@@ -380,7 +448,7 @@ def _trace_public_eager_abs_neg_graph(model, input, *, name, metadata=None):
         device=metadata.device,
         requires_grad=metadata.requires_grad,
     )
-    graph = recorder.finish(model(proxy))
+    graph = recorder.finish(proxy.neg().abs())
     _require_public_eager_abs_neg_graph(graph)
     return graph
 
@@ -420,8 +488,6 @@ def _eager_abs_neg_compile_wrapper(
     isolate_recompiles,
     shapes_spec,
 ):
-    graphs = {}
-
     def compiled_model(*args, **kwargs):
         if (
             kwargs
@@ -435,15 +501,12 @@ def _eager_abs_neg_compile_wrapper(
         input = args[0]
         try:
             metadata = _public_compile_trace_metadata(input)
-            graph = graphs.get(metadata)
-            if graph is None:
-                graph = _trace_public_eager_abs_neg_graph(
-                    model,
-                    input,
-                    name=name,
-                    metadata=metadata,
-                )
-                graphs[metadata] = graph
+            graph = _trace_public_eager_abs_neg_graph(
+                model,
+                input,
+                name=name,
+                metadata=metadata,
+            )
         except Exception:
             raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE) from None
         compiled_model._torch_rs_compile_trace_graph = graph
