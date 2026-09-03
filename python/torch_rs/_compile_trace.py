@@ -290,13 +290,19 @@ def _unary_output_stride(shape, input_stride):
     return _elementwise_output_stride(shape, input_stride)
 
 
-def _unary_output_metadata(input_metadata):
+def _grad_enabled():
+    return _native._compile_trace_grad_enabled()
+
+
+def _unary_output_metadata(input_metadata, *, grad_enabled=None):
+    if grad_enabled is None:
+        grad_enabled = _grad_enabled()
     return CompileTraceTensorMetadata(
         shape=input_metadata.shape,
         stride=_unary_output_stride(input_metadata.shape, input_metadata.stride),
         dtype=input_metadata.dtype,
         device=input_metadata.device,
-        requires_grad=input_metadata.requires_grad,
+        requires_grad=input_metadata.requires_grad and grad_enabled,
     )
 
 
@@ -339,18 +345,29 @@ def _metadata_from_native_tensor(tensor):
     )
 
 
-def _require_matching_metadata(actual, expected, *, value_name):
-    if actual == expected:
+def _require_matching_metadata(
+    actual,
+    expected,
+    *,
+    value_name,
+    check_requires_grad=True,
+):
+    if actual == expected and check_requires_grad:
         return
 
     mismatches = []
-    for field in ("shape", "stride", "dtype", "device", "requires_grad"):
+    fields = ["shape", "stride", "dtype", "device"]
+    if check_requires_grad:
+        fields.append("requires_grad")
+    for field in fields:
         actual_value = getattr(actual, field)
         expected_value = getattr(expected, field)
         if actual_value != expected_value:
             mismatches.append(
                 f"{field} expected {expected_value!r}, got {actual_value!r}"
             )
+    if not mismatches:
+        return
     mismatch_details = "; ".join(mismatches)
     raise ValueError(
         "torch.compile trace execution metadata mismatch for "
@@ -397,13 +414,16 @@ def execute_compile_trace_graph(graph, input):
 
     graph_input = graph.inputs[0]
     _require_native_tensor(input, graph_input.name)
+    input_metadata = _metadata_from_native_tensor(input)
     _require_matching_metadata(
-        _metadata_from_native_tensor(input),
+        input_metadata,
         graph_input.metadata,
         value_name=graph_input.name,
     )
 
     values = {graph_input.name: input}
+    metadata_values = {graph_input.name: input_metadata}
+    grad_enabled = _grad_enabled()
     for operation in graph.operations:
         if operation.name in values:
             raise CompileTraceUnsupportedError(
@@ -411,12 +431,25 @@ def execute_compile_trace_graph(graph, input):
                 f"name {operation.name!r}"
             )
         output = _execute_operation(operation, values)
+        input_metadata = metadata_values[operation.inputs[0]]
+        expected_metadata = _unary_output_metadata(
+            input_metadata,
+            grad_enabled=grad_enabled,
+        )
+        output_metadata = _metadata_from_native_tensor(output)
         _require_matching_metadata(
-            _metadata_from_native_tensor(output),
-            operation.metadata,
+            output_metadata,
+            expected_metadata,
             value_name=operation.name,
         )
+        _require_matching_metadata(
+            output_metadata,
+            operation.metadata,
+            value_name=operation.name,
+            check_requires_grad=False,
+        )
         values[operation.name] = output
+        metadata_values[operation.name] = output_metadata
 
     try:
         output = values[graph.output]
@@ -429,6 +462,7 @@ def execute_compile_trace_graph(graph, input):
         _metadata_from_native_tensor(output),
         graph.output_metadata,
         value_name=graph.output,
+        check_requires_grad=False,
     )
     return output
 

@@ -119,6 +119,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
         self.assertIsNone(case.options)
         self.assertNotIn("_compile_trace", torch.__all__)
         self.assertNotIn("_compile_trace_tensor_metadata", torch._C.__all__)
+        self.assertNotIn("_compile_trace_grad_enabled", torch._C.__all__)
         self.assertNotIn("_compile_trace_unary", torch._C.__all__)
 
 
@@ -220,6 +221,44 @@ class CompileCorpusTraceTests(unittest.TestCase):
             _compile_trace.execute_compile_trace_graph(graph, *inputs),
             expected,
             case=f"{case.name} function executor",
+        )
+
+    def test_unary_abs_neg_executor_matches_no_grad_requires_grad_outputs(self):
+        def make_inputs(module):
+            return (
+                module.tensor(
+                    [[-1.0, 2.0]],
+                    dtype=module.float32,
+                    requires_grad=True,
+                ),
+            )
+
+        graph = _compile_trace.trace_one_input_compile_graph(
+            cpu_float32_unary_abs_neg,
+            make_inputs,
+            name="cpu_float32_unary_abs_neg_requires_grad",
+        )
+        input = make_inputs(torch)[0]
+        expected_with_grad = cpu_float32_unary_abs_neg(input)
+
+        self.assertTrue(graph.inputs[0].metadata.requires_grad)
+        self.assertTrue(graph.operations[0].metadata.requires_grad)
+        self.assertTrue(graph.output_metadata.requires_grad)
+        self.assert_native_tensor_matches(
+            graph.forward(input),
+            expected_with_grad,
+            case="requires_grad grad-enabled",
+        )
+
+        with torch.no_grad():
+            expected_no_grad = cpu_float32_unary_abs_neg(input)
+            actual_no_grad = graph.forward(input)
+
+        self.assertFalse(expected_no_grad.requires_grad)
+        self.assert_native_tensor_matches(
+            actual_no_grad,
+            expected_no_grad,
+            case="requires_grad no_grad",
         )
 
     def test_unary_output_metadata_matches_native_stride_planning(self):

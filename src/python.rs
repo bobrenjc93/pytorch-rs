@@ -7336,6 +7336,15 @@ fn compile_trace_tensor_metadata(py: Python<'_>, input: &Bound<'_, PyAny>) -> Py
 }
 
 #[pyfunction(
+    name = "_compile_trace_grad_enabled",
+    signature = (),
+    text_signature = None
+)]
+fn compile_trace_grad_enabled() -> bool {
+    is_grad_enabled()
+}
+
+#[pyfunction(
     name = "_compile_trace_unary",
     signature = (input, target, /),
     text_signature = None
@@ -19414,12 +19423,14 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("_MAX_BACKWARD_LEAF_ROOTS", MAX_BACKWARD_LEAF_ROOTS)?;
     module.add_function(wrap_pyfunction!(_backward_leaf_roots, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_tensor_metadata, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_trace_grad_enabled, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_unary, module)?)?;
     let exports = module.getattr("__all__")?;
     for name in [
         "_MAX_BACKWARD_LEAF_ROOTS",
         "_backward_leaf_roots",
         "_compile_trace_tensor_metadata",
+        "_compile_trace_grad_enabled",
         "_compile_trace_unary",
     ] {
         exports.call_method1("remove", (name,))?;
