@@ -52,6 +52,23 @@ def cpu_float32_unary_inputs(module):
     )
 
 
+def cpu_float32_self_add(x):
+    return x + x
+
+
+def cpu_float32_self_add_method(x):
+    return x.add(x)
+
+
+def cpu_float32_self_add_inputs(module):
+    return (
+        module.tensor(
+            [[-2.5, 0.0, 1.25], [3.0, -4.75, 6.5]],
+            dtype=module.float32,
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class CompileCorpusCase:
     name: str
@@ -84,6 +101,12 @@ COMPILE_CORPUS = (
         program=cpu_float32_unary_abs_neg,
         make_inputs=cpu_float32_unary_inputs,
     ),
+    CompileCorpusCase(
+        name="cpu_float32_self_add",
+        category="tensor_arithmetic",
+        program=cpu_float32_self_add,
+        make_inputs=cpu_float32_self_add_inputs,
+    ),
 )
 
 
@@ -107,20 +130,26 @@ class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
         self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v1")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(len(COMPILE_CORPUS), 1)
+        self.assertEqual(len(COMPILE_CORPUS), 2)
 
-        case = COMPILE_CORPUS[0]
-        self.assertEqual(case.name, "cpu_float32_unary_abs_neg")
-        self.assertEqual(case.category, "tensor_arithmetic")
-        self.assertIn(case.category, CATEGORY_WEIGHTS)
-        self.assertTrue(case.fullgraph)
-        self.assertIsNone(case.dynamic)
-        self.assertIsNone(case.mode)
-        self.assertIsNone(case.options)
+        case_names = [case.name for case in COMPILE_CORPUS]
+        self.assertEqual(
+            case_names,
+            ["cpu_float32_unary_abs_neg", "cpu_float32_self_add"],
+        )
+        for case in COMPILE_CORPUS:
+            with self.subTest(case=case.name):
+                self.assertEqual(case.category, "tensor_arithmetic")
+                self.assertIn(case.category, CATEGORY_WEIGHTS)
+                self.assertTrue(case.fullgraph)
+                self.assertIsNone(case.dynamic)
+                self.assertIsNone(case.mode)
+                self.assertIsNone(case.options)
         self.assertNotIn("_compile_trace", torch.__all__)
         self.assertNotIn("_compile_trace_tensor_metadata", torch._C.__all__)
         self.assertNotIn("_compile_trace_grad_enabled", torch._C.__all__)
         self.assertNotIn("_compile_trace_unary", torch._C.__all__)
+        self.assertNotIn("_compile_trace_binary", torch._C.__all__)
 
 
 class CompileCorpusTraceTests(unittest.TestCase):
@@ -146,6 +175,16 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 actual.device,
                 expected.device,
                 msg=f"{case} device mismatch",
+            )
+            self.assertEqual(
+                actual.storage_offset(),
+                expected.storage_offset(),
+                msg=f"{case} storage offset mismatch",
+            )
+            self.assertEqual(
+                actual.is_contiguous(),
+                expected.is_contiguous(),
+                msg=f"{case} contiguity mismatch",
             )
             self.assertEqual(
                 actual.requires_grad,
@@ -202,6 +241,47 @@ class CompileCorpusTraceTests(unittest.TestCase):
         with self.assertRaises(AttributeError):
             graph.operations.append(abs_op)
 
+    def test_binary_self_add_records_private_immutable_graph(self):
+        for program, expected_name in (
+            (cpu_float32_self_add, "cpu_float32_self_add"),
+            (cpu_float32_self_add_method, "cpu_float32_self_add_method"),
+        ):
+            with self.subTest(program=expected_name):
+                graph = _compile_trace.trace_one_input_compile_graph(
+                    program,
+                    cpu_float32_self_add_inputs,
+                    name=expected_name,
+                )
+
+                self.assertEqual(graph.name, expected_name)
+                self.assertEqual(graph.output, "add_0")
+                self.assertEqual(len(graph.inputs), 1)
+                self.assertEqual(len(graph.operations), 1)
+
+                input_metadata = graph.inputs[0].metadata
+                self.assertEqual(graph.inputs[0].name, "arg0")
+                self.assertEqual(graph.inputs[0].index, 0)
+                self.assertEqual(input_metadata.shape, (2, 3))
+                self.assertEqual(input_metadata.stride, (3, 1))
+                self.assertIs(input_metadata.dtype, _compile_trace.float32)
+                self.assertEqual(input_metadata.device, "cpu")
+                self.assertFalse(input_metadata.requires_grad)
+
+                (add_op,) = graph.operations
+                self.assertEqual(add_op.name, "add_0")
+                self.assertEqual(add_op.op, "call_method")
+                self.assertEqual(add_op.target, "add")
+                self.assertEqual(add_op.inputs, ("arg0", "arg0"))
+                self.assertEqual(add_op.metadata, input_metadata)
+                self.assertEqual(graph.output_metadata, input_metadata)
+
+                with self.assertRaises(FrozenInstanceError):
+                    add_op.target = "sub"
+                with self.assertRaises(FrozenInstanceError):
+                    add_op.metadata = None
+                with self.assertRaises(AttributeError):
+                    graph.operations.append(add_op)
+
     def test_unary_abs_neg_executes_private_native_graph(self):
         case = COMPILE_CORPUS[0]
         graph = _compile_trace.trace_one_input_compile_graph(
@@ -222,6 +302,67 @@ class CompileCorpusTraceTests(unittest.TestCase):
             expected,
             case=f"{case.name} function executor",
         )
+
+    def test_binary_self_add_executes_private_native_graph_for_key_layouts(self):
+        cases = (
+            ("scalar operator", torch.tensor(2.5, dtype=torch.float32), False),
+            ("scalar method", torch.tensor(-0.0, dtype=torch.float32), True),
+            ("empty operator", torch.tensor([], dtype=torch.float32), False),
+            (
+                "contiguous method",
+                torch.tensor(
+                    [[-3.25, -0.0, 1.5], [2.0, -4.5, 0.25]],
+                    dtype=torch.float32,
+                ),
+                True,
+            ),
+            (
+                "offset noncontiguous operator",
+                torch.tensor(
+                    [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                    dtype=torch.float32,
+                ).transpose(0, 1)[1],
+                False,
+            ),
+        )
+        for case, input, use_method in cases:
+            with self.subTest(case=case):
+                if case.startswith("offset"):
+                    self.assertGreater(input.storage_offset(), 0)
+                    self.assertFalse(input.is_contiguous())
+
+                recorder = _compile_trace.CompileTraceRecorder(name=case)
+                proxy = recorder.input(
+                    shape=tuple(input.shape),
+                    stride=input.stride(),
+                    dtype=_compile_trace.float32,
+                    device="cpu",
+                    requires_grad=input.requires_grad,
+                )
+                output_proxy = proxy.add(proxy) if use_method else proxy + proxy
+                graph = recorder.finish(output_proxy)
+                expected = input.add(input) if use_method else input + input
+
+                self.assertEqual(graph.operations[0].target, "add")
+                self.assertEqual(graph.operations[0].inputs, ("arg0", "arg0"))
+                self.assertEqual(
+                    graph.operations[0].metadata.shape,
+                    tuple(expected.shape),
+                )
+                self.assertEqual(
+                    graph.operations[0].metadata.stride,
+                    expected.stride(),
+                )
+                self.assert_native_tensor_matches(
+                    graph.forward(input),
+                    expected,
+                    case=case,
+                )
+                self.assert_native_tensor_matches(
+                    _compile_trace.execute_compile_trace_graph(graph, input),
+                    expected,
+                    case=f"{case} function executor",
+                )
 
     def test_unary_abs_neg_executor_matches_no_grad_requires_grad_outputs(self):
         def make_inputs(module):
@@ -259,6 +400,44 @@ class CompileCorpusTraceTests(unittest.TestCase):
             actual_no_grad,
             expected_no_grad,
             case="requires_grad no_grad",
+        )
+
+    def test_binary_self_add_executor_matches_no_grad_requires_grad_outputs(self):
+        def make_inputs(module):
+            return (
+                module.tensor(
+                    [[-1.0, 2.0]],
+                    dtype=module.float32,
+                    requires_grad=True,
+                ),
+            )
+
+        graph = _compile_trace.trace_one_input_compile_graph(
+            cpu_float32_self_add,
+            make_inputs,
+            name="cpu_float32_self_add_requires_grad",
+        )
+        input = make_inputs(torch)[0]
+        expected_with_grad = cpu_float32_self_add(input)
+
+        self.assertTrue(graph.inputs[0].metadata.requires_grad)
+        self.assertTrue(graph.operations[0].metadata.requires_grad)
+        self.assertTrue(graph.output_metadata.requires_grad)
+        self.assert_native_tensor_matches(
+            graph.forward(input),
+            expected_with_grad,
+            case="binary requires_grad grad-enabled",
+        )
+
+        with torch.no_grad():
+            expected_no_grad = cpu_float32_self_add(input)
+            actual_no_grad = graph.forward(input)
+
+        self.assertFalse(expected_no_grad.requires_grad)
+        self.assert_native_tensor_matches(
+            actual_no_grad,
+            expected_no_grad,
+            case="binary requires_grad no_grad",
         )
 
     def test_unary_output_metadata_matches_native_stride_planning(self):
@@ -362,6 +541,40 @@ class CompileCorpusTraceTests(unittest.TestCase):
             case="active TorchFunctionMode",
         )
 
+    def test_binary_private_executor_bypasses_active_torch_function_mode(self):
+        from torch_rs.overrides import TorchFunctionMode
+
+        graph = _compile_trace.trace_one_input_compile_graph(
+            cpu_float32_self_add,
+            lambda module: (
+                module.tensor([[-1.0, 2.0]], dtype=module.float32),
+            ),
+            name="cpu_float32_self_add",
+        )
+        input = torch.tensor([[-1.0, 2.0]], dtype=torch.float32)
+        expected = cpu_float32_self_add(input)
+        mode_calls = []
+
+        class ReplacingMode(TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                mode_calls.append(getattr(func, "__name__", repr(func)))
+                if getattr(func, "__name__", None) == "add":
+                    return torch.tensor([[99.0, 100.0]], dtype=torch.float32)
+                raise AssertionError(
+                    "private compile trace execution dispatched through "
+                    f"TorchFunctionMode for {mode_calls[-1]}"
+                )
+
+        with ReplacingMode():
+            actual = graph.forward(input)
+
+        self.assertEqual(mode_calls, [])
+        self.assert_native_tensor_matches(
+            actual,
+            expected,
+            case="binary active TorchFunctionMode",
+        )
+
     def test_private_executor_rejects_runtime_metadata_mismatch_clearly(self):
         graph = _compile_trace.trace_one_input_compile_graph(
             cpu_float32_unary_abs_neg,
@@ -383,8 +596,14 @@ class CompileCorpusTraceTests(unittest.TestCase):
         recorder = _compile_trace.CompileTraceRecorder()
         x = recorder.input(shape=(2, 3))
 
+        def augmented_add():
+            value = x
+            value += x
+            return value
+
         for operation, call in (
-            ("Tensor.__add__", lambda: x + x),
+            ("Tensor.__iadd__", augmented_add),
+            ("Tensor.__sub__", lambda: x - x),
             ("Tensor.relu", lambda: x.relu()),
             ("Tensor.__bool__", lambda: bool(x)),
             ("Tensor.positive", lambda: x.positive()),
@@ -398,6 +617,63 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 self.assertIn(operation, message)
                 self.assertIn("Tensor.neg", message)
                 self.assertIn("Tensor.abs", message)
+                self.assertIn("Tensor.add", message)
+
+    def test_augmented_self_add_aliasing_rejects_instead_of_recording_add(self):
+        def augmented_alias_program(x):
+            y = x
+            x += x
+            return y
+
+        with self.assertRaisesRegex(
+            _compile_trace.CompileTraceUnsupportedError,
+            "Tensor.__iadd__",
+        ):
+            _compile_trace.trace_one_input_compile_graph(
+                augmented_alias_program,
+                cpu_float32_self_add_inputs,
+                name="cpu_float32_augmented_self_add",
+            )
+
+    def test_binary_proxy_rejects_non_tensor_or_mixed_recorder_operands_clearly(self):
+        recorder = _compile_trace.CompileTraceRecorder()
+        other_recorder = _compile_trace.CompileTraceRecorder()
+        x = recorder.input(shape=(2, 3))
+        y = other_recorder.input(shape=(2, 3))
+
+        for operation, call, expected in (
+            (
+                "Tensor.__add__",
+                lambda: x + 1,
+                r"Tensor\.__add__ only supports Tensor operands, got int for right operand",
+            ),
+            (
+                "Tensor.__radd__",
+                lambda: 1 + x,
+                r"Tensor\.__radd__ only supports Tensor operands, got int",
+            ),
+            (
+                "Tensor.add",
+                lambda: x.add("value"),
+                r"Tensor\.add only supports Tensor operands, got str for right operand",
+            ),
+            (
+                "Tensor.__add__ mixed recorder",
+                lambda: x + y,
+                "cannot mix Tensor operands from different recorders",
+            ),
+            (
+                "Tensor.add mixed recorder",
+                lambda: x.add(y),
+                "cannot mix Tensor operands from different recorders",
+            ),
+        ):
+            with self.subTest(operation=operation):
+                with self.assertRaisesRegex(
+                    _compile_trace.CompileTraceUnsupportedError,
+                    expected,
+                ):
+                    call()
 
     def test_operation_names_skip_existing_input_names(self):
         recorder = _compile_trace.CompileTraceRecorder()
@@ -449,6 +725,9 @@ from torch_rs import _compile_trace
 def program(x):
     return x.neg().abs()
 
+def self_add(x):
+    return x + x
+
 def make_inputs(module):
     return (
         module.tensor(
@@ -485,7 +764,29 @@ for actual in (
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
-compiled = torch.compile(program, backend=backend)
+self_add_graph = _compile_trace.trace_one_input_compile_graph(
+    self_add,
+    make_inputs,
+    name="cpu_float32_self_add",
+)
+assert self_add_graph.output == "add_0"
+assert [operation.target for operation in self_add_graph.operations] == ["add"]
+assert self_add_graph.operations[0].inputs == ("arg0", "arg0")
+self_add_expected = self_add(native_input)
+for actual in (
+    self_add_graph.forward(native_input),
+    _compile_trace.execute_compile_trace_graph(self_add_graph, native_input),
+):
+    assert actual.tolist() == self_add_expected.tolist()
+    assert actual.shape == self_add_expected.shape
+    assert actual.stride() == self_add_expected.stride()
+    assert actual.dtype is self_add_expected.dtype
+    assert actual.device == self_add_expected.device
+    assert actual.requires_grad is self_add_expected.requires_grad
+assert backend_calls == []
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
+compiled = torch.compile(self_add, backend=backend)
 try:
     compiled(make_inputs(torch)[0])
 except NotImplementedError as error:

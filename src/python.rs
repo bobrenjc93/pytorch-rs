@@ -7372,6 +7372,44 @@ fn compile_trace_unary(input: &Bound<'_, PyAny>, target: &str) -> PyResult<PyTen
         .map_err(|error| tensor_error(&error))
 }
 
+#[pyfunction(
+    name = "_compile_trace_binary",
+    signature = (left, right, target, /),
+    text_signature = None
+)]
+fn compile_trace_binary(
+    left: &Bound<'_, PyAny>,
+    right: &Bound<'_, PyAny>,
+    target: &str,
+) -> PyResult<PyTensor> {
+    if !left.is_exact_instance_of::<PyTensor>() {
+        let type_name = python_type_name(left)?;
+        return Err(PyTypeError::new_err(format!(
+            "_compile_trace_binary(): expected exact native Tensor for left, got {type_name}"
+        )));
+    }
+    if !right.is_exact_instance_of::<PyTensor>() {
+        let type_name = python_type_name(right)?;
+        return Err(PyTypeError::new_err(format!(
+            "_compile_trace_binary(): expected exact native Tensor for right, got {type_name}"
+        )));
+    }
+
+    let left = left.cast::<PyTensor>()?.try_borrow()?;
+    let right = right.cast::<PyTensor>()?.try_borrow()?;
+    let output = match target {
+        "add" => left.inner.add(&right.inner),
+        _ => {
+            return Err(PyNotImplementedError::new_err(format!(
+                "_compile_trace_binary(): unsupported target {target:?}"
+            )));
+        }
+    };
+    output
+        .map(PyTensor::new)
+        .map_err(|error| tensor_error(&error))
+}
+
 fn scalar_tensor_impl(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
@@ -19360,6 +19398,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     module.add_function(wrap_pyfunction!(compile_trace_tensor_metadata, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_grad_enabled, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_unary, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_trace_binary, module)?)?;
     let exports = module.getattr("__all__")?;
     for name in [
         "_MAX_BACKWARD_LEAF_ROOTS",
@@ -19367,6 +19406,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
         "_compile_trace_tensor_metadata",
         "_compile_trace_grad_enabled",
         "_compile_trace_unary",
+        "_compile_trace_binary",
     ] {
         exports.call_method1("remove", (name,))?;
     }

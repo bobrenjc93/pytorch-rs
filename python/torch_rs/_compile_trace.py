@@ -73,13 +73,21 @@ _SUPPORTED_UNARY_METHODS = (
     "Tensor.absolute",
 )
 _SUPPORTED_UNARY_TARGETS = frozenset(("neg", "abs"))
-_SUPPORTED_UNARY_DESCRIPTION = ", ".join(_SUPPORTED_UNARY_METHODS)
+_SUPPORTED_BINARY_METHODS = (
+    "Tensor.__add__",
+    "Tensor.add",
+)
+_SUPPORTED_BINARY_TARGETS = frozenset(("add",))
+_SUPPORTED_OPERATION_TARGETS = _SUPPORTED_UNARY_TARGETS | _SUPPORTED_BINARY_TARGETS
+_SUPPORTED_OPERATION_DESCRIPTION = ", ".join(
+    (*_SUPPORTED_UNARY_METHODS, *_SUPPORTED_BINARY_METHODS)
+)
 
 
 def _unsupported_operation(operation):
     raise CompileTraceUnsupportedError(
         "torch.compile trace does not support "
-        f"{operation}; only {_SUPPORTED_UNARY_DESCRIPTION} are implemented"
+        f"{operation}; only {_SUPPORTED_OPERATION_DESCRIPTION} are implemented"
     )
 
 
@@ -234,7 +242,7 @@ def _layout_is_non_overlapping_and_dense(shape, stride):
     return True
 
 
-def _elementwise_output_stride(shape, input_stride):
+def _elementwise_output_stride(shape, operand_layouts):
     rank = len(shape)
     permutation = list(range(rank - 1, -1, -1))
 
@@ -243,7 +251,7 @@ def _elementwise_output_stride(shape, input_stride):
         for dimension_0 in range(index - 1, -1, -1):
             comparison = _compare_elementwise_dimensions(
                 shape,
-                input_stride,
+                operand_layouts,
                 permutation[dimension_0],
                 permutation[dimension_1],
             )
@@ -268,15 +276,41 @@ def _elementwise_output_stride(shape, input_stride):
     return tuple(stride)
 
 
-def _compare_elementwise_dimensions(shape, input_stride, dimension_0, dimension_1):
-    stride_0 = input_stride[dimension_0]
-    stride_1 = input_stride[dimension_1]
-    if stride_0 == 0 or stride_1 == 0:
+def _aligned_broadcast_stride(input_shape, input_stride, output_rank, axis, output_dimension):
+    leading_dimensions = output_rank - len(input_shape)
+    if axis < leading_dimensions:
         return 0
-    if stride_0 < stride_1:
-        return -1
-    if stride_0 > stride_1 or shape[dimension_0] > shape[dimension_1]:
-        return 1
+
+    input_axis = axis - leading_dimensions
+    input_dimension = input_shape[input_axis]
+    if input_dimension == 1 and output_dimension != 1:
+        return 0
+    return input_stride[input_axis]
+
+
+def _compare_elementwise_dimensions(shape, operand_layouts, dimension_0, dimension_1):
+    rank = len(shape)
+    for input_shape, input_stride in operand_layouts:
+        stride_0 = _aligned_broadcast_stride(
+            input_shape,
+            input_stride,
+            rank,
+            dimension_0,
+            shape[dimension_0],
+        )
+        stride_1 = _aligned_broadcast_stride(
+            input_shape,
+            input_stride,
+            rank,
+            dimension_1,
+            shape[dimension_1],
+        )
+        if stride_0 == 0 or stride_1 == 0:
+            continue
+        if stride_0 < stride_1:
+            return -1
+        if stride_0 > stride_1 or shape[dimension_0] > shape[dimension_1]:
+            return 1
     return 0
 
 
@@ -287,7 +321,55 @@ def _unary_output_stride(shape, input_stride):
         return _channels_last_stride(shape)
     if _layout_is_non_overlapping_and_dense(shape, input_stride):
         return input_stride
-    return _elementwise_output_stride(shape, input_stride)
+    return _elementwise_output_stride(shape, ((shape, input_stride),))
+
+
+def _broadcast_shape(left_shape, right_shape):
+    rank = max(len(left_shape), len(right_shape))
+    output_shape = []
+    for axis in range(rank):
+        left_axis = axis - (rank - len(left_shape))
+        right_axis = axis - (rank - len(right_shape))
+        left_dimension = left_shape[left_axis] if left_axis >= 0 else 1
+        right_dimension = right_shape[right_axis] if right_axis >= 0 else 1
+        if left_dimension == 1:
+            output_shape.append(right_dimension)
+        elif right_dimension == 1 or left_dimension == right_dimension:
+            output_shape.append(left_dimension)
+        else:
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace Tensor.add operands are not broadcastable: "
+                f"{left_shape!r} and {right_shape!r}"
+            )
+    return tuple(output_shape)
+
+
+def _binary_output_stride(left_metadata, right_metadata, output_shape):
+    if left_metadata.shape == right_metadata.shape:
+        if _layout_is_contiguous(
+            output_shape,
+            left_metadata.stride,
+        ) and _layout_is_contiguous(output_shape, right_metadata.stride):
+            return _contiguous_stride(output_shape)
+        if _layout_is_channels_last_contiguous(
+            output_shape,
+            left_metadata.stride,
+        ) and _layout_is_channels_last_contiguous(output_shape, right_metadata.stride):
+            return _channels_last_stride(output_shape)
+        if (
+            _layout_is_non_overlapping_and_dense(output_shape, left_metadata.stride)
+            and _layout_is_non_overlapping_and_dense(output_shape, right_metadata.stride)
+            and left_metadata.stride == right_metadata.stride
+        ):
+            return left_metadata.stride
+
+    return _elementwise_output_stride(
+        output_shape,
+        (
+            (left_metadata.shape, left_metadata.stride),
+            (right_metadata.shape, right_metadata.stride),
+        ),
+    )
 
 
 def _grad_enabled():
@@ -303,6 +385,30 @@ def _unary_output_metadata(input_metadata, *, grad_enabled=None):
         dtype=input_metadata.dtype,
         device=input_metadata.device,
         requires_grad=input_metadata.requires_grad and grad_enabled,
+    )
+
+
+def _binary_output_metadata(left_metadata, right_metadata, *, grad_enabled=None):
+    if left_metadata.dtype is not right_metadata.dtype:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace Tensor.add only supports matching dtypes"
+        )
+    if left_metadata.device != right_metadata.device:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace Tensor.add only supports matching devices"
+        )
+    if grad_enabled is None:
+        grad_enabled = _grad_enabled()
+    shape = _broadcast_shape(left_metadata.shape, right_metadata.shape)
+    return CompileTraceTensorMetadata(
+        shape=shape,
+        stride=_binary_output_stride(left_metadata, right_metadata, shape),
+        dtype=left_metadata.dtype,
+        device=left_metadata.device,
+        requires_grad=(
+            left_metadata.requires_grad or right_metadata.requires_grad
+        )
+        and grad_enabled,
     )
 
 
@@ -378,27 +484,80 @@ def _require_matching_metadata(
 def _execute_operation(operation, values):
     if operation.op != "call_method":
         raise CompileTraceUnsupportedError(
-            "torch.compile trace execution only supports recorded Tensor.neg "
-            f"and Tensor.abs call_method operations, got {operation.op!r}"
+            "torch.compile trace execution only supports recorded Tensor "
+            f"call_method operations, got {operation.op!r}"
         )
-    if operation.target not in _SUPPORTED_UNARY_TARGETS:
+    if operation.target not in _SUPPORTED_OPERATION_TARGETS:
         _unsupported_operation(f"Tensor.{operation.target}")
-    if len(operation.inputs) != 1:
+
+    if operation.target in _SUPPORTED_UNARY_TARGETS:
+        if len(operation.inputs) != 1:
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace execution only supports unary operations "
+                f"with one input, got {len(operation.inputs)} inputs for "
+                f"{operation.name!r}"
+            )
+
+        (input_name,) = operation.inputs
+        try:
+            input = values[input_name]
+        except KeyError:
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace execution operation "
+                f"{operation.name!r} references unknown value {input_name!r}"
+            ) from None
+
+        return _native._compile_trace_unary(input, operation.target)
+
+    if len(operation.inputs) != 2:
         raise CompileTraceUnsupportedError(
-            "torch.compile trace execution only supports unary operations, "
+            "torch.compile trace execution only supports binary operations "
+            "with two inputs, "
             f"got {len(operation.inputs)} inputs for {operation.name!r}"
         )
 
-    (input_name,) = operation.inputs
+    left_name, right_name = operation.inputs
     try:
-        input = values[input_name]
-    except KeyError:
+        left = values[left_name]
+        right = values[right_name]
+    except KeyError as error:
         raise CompileTraceUnsupportedError(
             "torch.compile trace execution operation "
-            f"{operation.name!r} references unknown value {input_name!r}"
+            f"{operation.name!r} references unknown value {error.args[0]!r}"
         ) from None
 
-    return _native._compile_trace_unary(input, operation.target)
+    return _native._compile_trace_binary(left, right, operation.target)
+
+
+def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
+    if operation.target in _SUPPORTED_UNARY_TARGETS:
+        if len(operation.inputs) != 1:
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace execution only supports unary operations "
+                f"with one input, got {len(operation.inputs)} inputs for "
+                f"{operation.name!r}"
+            )
+        (input_name,) = operation.inputs
+        return _unary_output_metadata(
+            metadata_values[input_name],
+            grad_enabled=grad_enabled,
+        )
+
+    if operation.target not in _SUPPORTED_BINARY_TARGETS:
+        _unsupported_operation(f"Tensor.{operation.target}")
+    if len(operation.inputs) != 2:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace execution only supports binary operations "
+            "with two inputs, "
+            f"got {len(operation.inputs)} inputs for {operation.name!r}"
+        )
+
+    left_name, right_name = operation.inputs
+    return _binary_output_metadata(
+        metadata_values[left_name],
+        metadata_values[right_name],
+        grad_enabled=grad_enabled,
+    )
 
 
 def execute_compile_trace_graph(graph, input):
@@ -430,12 +589,18 @@ def execute_compile_trace_graph(graph, input):
                 "torch.compile trace execution encountered duplicate value "
                 f"name {operation.name!r}"
             )
-        output = _execute_operation(operation, values)
-        input_metadata = metadata_values[operation.inputs[0]]
-        expected_metadata = _unary_output_metadata(
-            input_metadata,
+        for input_name in operation.inputs:
+            if input_name not in values:
+                raise CompileTraceUnsupportedError(
+                    "torch.compile trace execution operation "
+                    f"{operation.name!r} references unknown value {input_name!r}"
+                )
+        expected_metadata = _expected_operation_metadata(
+            operation,
+            metadata_values,
             grad_enabled=grad_enabled,
         )
+        output = _execute_operation(operation, values)
         output_metadata = _metadata_from_native_tensor(output)
         _require_matching_metadata(
             output_metadata,
@@ -514,10 +679,28 @@ class CompileTraceTensorProxy:
         return self.abs()
 
     def __add__(self, other):
-        _unsupported_operation("Tensor.__add__")
+        return self._recorder.record_binary("add", self, other, "Tensor.__add__")
 
     def __radd__(self, other):
-        _unsupported_operation("Tensor.__radd__")
+        if not _builtins.isinstance(other, CompileTraceTensorProxy):
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace Tensor.__radd__ only supports Tensor "
+                f"operands, got {_type_name(other)}"
+            )
+        return other._recorder.record_binary("add", other, self, "Tensor.__radd__")
+
+    def add(self, other, *, alpha=1):
+        if (
+            _builtins.type(alpha) not in (_builtins.int, _builtins.float)
+            or alpha != 1
+        ):
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace Tensor.add only supports alpha=1"
+            )
+        return self._recorder.record_binary("add", self, other, "Tensor.add")
+
+    def __iadd__(self, other):
+        _unsupported_operation("Tensor.__iadd__")
 
     def __sub__(self, other):
         _unsupported_operation("Tensor.__sub__")
@@ -646,6 +829,32 @@ class CompileTraceRecorder:
         self._operations.append(operation)
         return CompileTraceTensorProxy(self, name, metadata)
 
+    def record_binary(self, target, left, right, operation_name):
+        self._ensure_open()
+        if target not in _SUPPORTED_BINARY_TARGETS:
+            _unsupported_operation(operation_name)
+        self._require_owned_proxy(
+            left,
+            operation_name=operation_name,
+            role="left operand",
+        )
+        self._require_owned_proxy(
+            right,
+            operation_name=operation_name,
+            role="right operand",
+        )
+        name = self._next_operation_name(target)
+        metadata = _binary_output_metadata(left.metadata, right.metadata)
+        operation = CompileTraceOperation(
+            name=name,
+            op="call_method",
+            target=target,
+            inputs=(left.name, right.name),
+            metadata=metadata,
+        )
+        self._operations.append(operation)
+        return CompileTraceTensorProxy(self, name, metadata)
+
     def finish(self, output):
         self._ensure_open()
         self._require_owned_proxy(output)
@@ -679,14 +888,26 @@ class CompileTraceRecorder:
                 return name
             index += 1
 
-    def _require_owned_proxy(self, value):
+    def _require_owned_proxy(
+        self,
+        value,
+        *,
+        operation_name=None,
+        role="value",
+    ):
         if not _builtins.isinstance(value, CompileTraceTensorProxy):
+            if operation_name is None:
+                raise CompileTraceUnsupportedError(
+                    "torch.compile trace only supports Tensor proxy values"
+                )
             raise CompileTraceUnsupportedError(
-                "torch.compile trace only supports Tensor proxy values"
+                f"torch.compile trace {operation_name} only supports Tensor "
+                f"operands, got {_type_name(value)} for {role}"
             )
         if value._recorder is not self:
             raise CompileTraceUnsupportedError(
-                "torch.compile trace cannot mix values from different recorders"
+                "torch.compile trace cannot mix Tensor operands from different "
+                "recorders"
             )
 
 
