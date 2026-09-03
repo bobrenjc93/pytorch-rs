@@ -174,11 +174,7 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                 backend_calls = []
                 backend = make_recording_backend(backend_calls)
 
-                def model(*args, **kwargs):
-                    model_calls.append((args, kwargs))
-                    return case.program(*args, **kwargs)
-
-                compiled = torch.compile(model, **case.compile_kwargs(backend))
+                compiled = torch.compile(case.program, **case.compile_kwargs(backend))
                 self.assertIs(compiled._torch_rs_compile_backend, backend)
                 self.assertEqual(model_calls, [])
                 self.assertEqual(backend_calls, [])
@@ -187,17 +183,18 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                 if case.torch_rs_supported:
                     actual = compiled(*inputs)
                     self.assertIs(actual, inputs[0])
-                    self.assertEqual(len(model_calls), 1)
-                    self.assertIsNot(model_calls[0][0][0], inputs[0])
-                    self.assertEqual(
-                        type(model_calls[0][0][0]).__name__,
-                        "_CompileTensorProxy",
-                    )
+                    self.assertEqual(model_calls, [])
                     self.assertEqual(len(backend_calls), 1)
                     self.assertEqual(type(backend_calls[0][0]).__module__, "torch_rs")
                     self.assertEqual(
                         type(backend_calls[0][0]).__name__,
                         "_CompileIdentityGraph",
+                    )
+                    self.assertEqual(len(backend_calls[0][1]), 1)
+                    self.assertIsNot(backend_calls[0][1][0], inputs[0])
+                    self.assertEqual(
+                        type(backend_calls[0][1][0]).__name__,
+                        "_CompileTensorProxy",
                     )
                     continue
 

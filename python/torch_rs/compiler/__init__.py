@@ -59,6 +59,16 @@ def reset() -> None:
     process-local state used by :func:`torch.compile`. It does not delete
     filesystem caches, such as Inductor's disk cache.
     """
+    live_wrapper_refs = []
+    for wrapper_ref in getattr(_state, "compile_wrapper_refs", ()):
+        wrapper = wrapper_ref()
+        if wrapper is None:
+            continue
+        reset_cache = getattr(wrapper, "_torch_rs_compile_reset_cache", None)
+        if reset_cache is not None:
+            reset_cache()
+        live_wrapper_refs.append(wrapper_ref)
+    _state.compile_wrapper_refs = live_wrapper_refs
 
 
 def list_backends(exclude_tags=("debug", "experimental")) -> list[str]:

@@ -2,13 +2,16 @@
 
 import builtins as _builtins
 import copyreg as _copyreg
+import dis as _dis
 import functools as _functools
 import multiprocessing.reduction as _multiprocessing_reduction
 import sys as _sys
 import threading as _threading
 import types as _types
+import weakref as _weakref
 from math import e, inf, nan, pi
 
+from . import _compiler_state as _compile_state
 from . import torch_rs as _native
 from .torch_rs import *
 
@@ -267,6 +270,17 @@ _COMPILE_UNSUPPORTED_MESSAGE = (
     "backend resolution are implemented"
 )
 _PYTHON_FUNCTION_TYPE = _types.FunctionType
+_COMPILE_IGNORED_BYTECODE_OPS = frozenset(
+    (
+        "CACHE",
+        "COPY_FREE_VARS",
+        "EXTENDED_ARG",
+        "NOP",
+        "RESUME",
+    )
+)
+_COMPILE_VARARGS = 0x04
+_COMPILE_VARKEYWORDS = 0x08
 
 
 class _CompileTensorProxy:
@@ -374,8 +388,33 @@ def _is_compile_cpu_float32_tensor(value):
     )
 
 
-def _trace_compile_identity(model, example_input):
+def _is_literal_compile_identity_function(model):
     if _builtins.type(model) is not _PYTHON_FUNCTION_TYPE:
+        return False
+
+    code = model.__code__
+    if (
+        code.co_argcount != 1
+        or code.co_kwonlyargcount != 0
+        or code.co_flags & (_COMPILE_VARARGS | _COMPILE_VARKEYWORDS)
+    ):
+        return False
+
+    instructions = [
+        instruction
+        for instruction in _dis.get_instructions(model)
+        if instruction.opname not in _COMPILE_IGNORED_BYTECODE_OPS
+    ]
+    return (
+        len(instructions) == 2
+        and instructions[0].opname == "LOAD_FAST"
+        and instructions[0].argval == code.co_varnames[0]
+        and instructions[1].opname == "RETURN_VALUE"
+    )
+
+
+def _trace_compile_identity(model, example_input):
+    if not _is_literal_compile_identity_function(model):
         return None
 
     proxy = _CompileTensorProxy("arg0", example_input)
@@ -415,6 +454,12 @@ def _unsupported_compile_wrapper(
     compiled_callable = cache_missing
     compile_lock = _threading.Lock()
 
+    def reset_compiled_callable():
+        nonlocal compiled_callable
+
+        with compile_lock:
+            compiled_callable = cache_missing
+
     def compiled_model(*args, **kwargs):
         nonlocal compiled_callable
 
@@ -432,17 +477,17 @@ def _unsupported_compile_wrapper(
         if proxy is None:
             raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
 
-        if compiled_callable is cache_missing:
-            with compile_lock:
-                if compiled_callable is cache_missing:
-                    graph_module = _CompileIdentityGraph(name or model.__name__)
-                    compiled_callable = _call_compile_backend(
-                        resolved_backend,
-                        graph_module,
-                        (proxy,),
-                    )
+        with compile_lock:
+            if compiled_callable is cache_missing:
+                graph_module = _CompileIdentityGraph(name or model.__name__)
+                compiled_callable = _call_compile_backend(
+                    resolved_backend,
+                    graph_module,
+                    (proxy,),
+                )
+            cached_callable = compiled_callable
 
-        return compiled_callable(args[0])
+        return cached_callable(args[0])
 
     import functools as _compile_functools
 
@@ -456,6 +501,10 @@ def _unsupported_compile_wrapper(
     compiled_model._torch_rs_compile_recompile_limit = recompile_limit
     compiled_model._torch_rs_compile_isolate_recompiles = isolate_recompiles
     compiled_model._torch_rs_compile_shapes_spec = shapes_spec
+    compiled_model._torch_rs_compile_reset_cache = reset_compiled_callable
+    if not hasattr(_compile_state, "compile_wrapper_refs"):
+        _compile_state.compile_wrapper_refs = []
+    _compile_state.compile_wrapper_refs.append(_weakref.ref(compiled_model))
     return compiled_model
 
 

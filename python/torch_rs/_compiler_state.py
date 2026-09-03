@@ -8,3 +8,4 @@ from .torch_rs import (
 default_backend = "inductor"
 registered_backends = {}
 registered_backend_fns = {}
+compile_wrapper_refs = []

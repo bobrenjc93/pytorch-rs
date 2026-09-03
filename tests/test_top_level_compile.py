@@ -206,12 +206,10 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertEqual(backend_calls, [])
 
     def test_identity_function_compiles_backend_once_and_runs_backend_callable(self):
-        model_trace_inputs = []
         backend_calls = []
         compiled_calls = []
 
         def model(value):
-            model_trace_inputs.append(value)
             return value
 
         def backend(graph_module, example_inputs):
@@ -228,16 +226,17 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         compiled = torch.compile(model, backend=backend, name="identity_graph")
 
         self.assertIs(compiled(first), first)
-        self.assertEqual(len(model_trace_inputs), 1)
-        self.assertIsNot(model_trace_inputs[0], first)
-        self.assertEqual(type(model_trace_inputs[0]).__module__, "torch_rs")
-        self.assertEqual(type(model_trace_inputs[0]).__name__, "_CompileTensorProxy")
-        self.assertIs(model_trace_inputs[0].dtype, torch.float32)
-        self.assertEqual(model_trace_inputs[0].device, torch.device("cpu"))
-        self.assertEqual(model_trace_inputs[0].shape, (2, 2))
 
         self.assertEqual(len(backend_calls), 1)
         graph_module, example_inputs = backend_calls[0]
+        self.assertEqual(len(example_inputs), 1)
+        proxy = example_inputs[0]
+        self.assertIsNot(proxy, first)
+        self.assertEqual(type(proxy).__module__, "torch_rs")
+        self.assertEqual(type(proxy).__name__, "_CompileTensorProxy")
+        self.assertIs(proxy.dtype, torch.float32)
+        self.assertEqual(proxy.device, torch.device("cpu"))
+        self.assertEqual(proxy.shape, (2, 2))
         self.assertEqual(type(graph_module).__module__, "torch_rs")
         self.assertEqual(type(graph_module).__name__, "_CompileIdentityGraph")
         self.assertEqual(graph_module.name, "identity_graph")
@@ -245,13 +244,12 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertEqual(graph_module.outputs, ("arg0",))
         self.assertEqual(graph_module.operation, "identity")
         self.assertIs(graph_module.forward(first), first)
-        self.assertIs(example_inputs[0], model_trace_inputs[0])
+        self.assertIs(example_inputs[0], proxy)
 
         self.assertEqual(len(compiled_calls), 1)
         self.assertIs(compiled_calls[0], first)
 
         self.assertIs(compiled(second), second)
-        self.assertEqual(len(model_trace_inputs), 2)
         self.assertEqual(len(backend_calls), 1)
         self.assertEqual(len(compiled_calls), 2)
         self.assertIs(compiled_calls[1], second)
@@ -260,7 +258,6 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         named_compiled = torch.compile(model, backend="zz_identity")
         third = torch.tensor([7.0], dtype=torch.float32)
         self.assertIs(named_compiled(third), third)
-        self.assertEqual(len(model_trace_inputs), 3)
         self.assertEqual(len(backend_calls), 2)
         self.assertEqual(len(compiled_calls), 3)
         self.assertIs(compiled_calls[2], third)
@@ -303,18 +300,33 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
         self.assertEqual(len(backend_calls), 1)
 
+        def proxy_type_conditional(value):
+            if not isinstance(value, torch.Tensor):
+                return value
+            return value.neg()
+
+        compiled_proxy_type = torch.compile(proxy_type_conditional, backend=backend)
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled_proxy_type(input_tensor)
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(len(backend_calls), 1)
+
     def test_identity_backend_is_invoked_once_under_concurrent_first_calls(self):
-        trace_barrier = threading.Barrier(2)
+        backend_entered = threading.Event()
+        release_backend = threading.Event()
+        second_worker_started = threading.Event()
         backend_calls = []
         results = []
         errors = []
 
         def model(value):
-            trace_barrier.wait(timeout=10)
             return value
 
         def backend(graph_module, example_inputs):
             backend_calls.append((graph_module, example_inputs))
+            backend_entered.set()
+            if not release_backend.wait(timeout=10):
+                raise RuntimeError("timed out waiting to release backend")
             return graph_module.forward
 
         compiled = torch.compile(model, backend=backend)
@@ -323,15 +335,26 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             torch.tensor([2.0], dtype=torch.float32),
         )
 
-        def worker(input_tensor):
+        def worker(input_tensor, started=None):
             try:
+                if started is not None:
+                    started.set()
                 results.append(compiled(input_tensor))
             except BaseException as error:
                 errors.append(error)
 
-        threads = [threading.Thread(target=worker, args=(input,)) for input in inputs]
-        for thread in threads:
-            thread.start()
+        first_thread = threading.Thread(target=worker, args=(inputs[0],))
+        second_thread = threading.Thread(
+            target=worker,
+            args=(inputs[1], second_worker_started),
+        )
+        first_thread.start()
+        self.assertTrue(backend_entered.wait(timeout=10))
+        second_thread.start()
+        self.assertTrue(second_worker_started.wait(timeout=10))
+        release_backend.set()
+
+        threads = [first_thread, second_thread]
         for thread in threads:
             thread.join(timeout=10)
 
@@ -339,6 +362,25 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(set(map(id, results)), {id(input) for input in inputs})
         self.assertEqual(len(backend_calls), 1)
+
+    def test_compiler_reset_clears_identity_backend_cache(self):
+        backend_calls = []
+
+        def model(value):
+            return value
+
+        def backend(graph_module, example_inputs):
+            backend_calls.append((graph_module, example_inputs))
+            return graph_module.forward
+
+        compiled = torch.compile(model, backend=backend)
+        input_tensor = torch.tensor([1.0], dtype=torch.float32)
+        self.assertIs(compiled(input_tensor), input_tensor)
+        self.assertEqual(len(backend_calls), 1)
+
+        self.assertIs(torch.compiler.reset(), None)
+        self.assertIs(compiled(input_tensor), input_tensor)
+        self.assertEqual(len(backend_calls), 2)
 
     def test_compiled_identity_wrapper_survives_reload_before_first_call(self):
         backend_calls = []
@@ -549,7 +591,6 @@ assert calls == []
 assert torch.compile(disable=True)(model) is model
 
 def identity(value):
-    calls.append(("identity_trace", type(value).__module__, type(value).__name__))
     return value
 
 def identity_backend(graph_module, example_inputs):
@@ -559,6 +600,8 @@ def identity_backend(graph_module, example_inputs):
         type(graph_module).__name__,
         graph_module.operation,
         len(example_inputs),
+        type(example_inputs[0]).__module__,
+        type(example_inputs[0]).__name__,
     ))
     return graph_module.forward
 
@@ -566,8 +609,15 @@ tensor = torch.tensor([1.0], dtype=torch.float32)
 compiled_identity = torch.compile(identity, backend=identity_backend)
 assert compiled_identity(tensor) is tensor
 assert calls == [
-    ("identity_trace", "torch_rs", "_CompileTensorProxy"),
-    ("identity_backend", "torch_rs", "_CompileIdentityGraph", "identity", 1),
+    (
+        "identity_backend",
+        "torch_rs",
+        "_CompileIdentityGraph",
+        "identity",
+        1,
+        "torch_rs",
+        "_CompileTensorProxy",
+    ),
 ]
 assert set(sys.modules) == modules_before_call
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
