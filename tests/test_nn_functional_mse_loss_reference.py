@@ -791,6 +791,217 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                     reference_torch.equal(expected_target, expected_target_before)
                 )
 
+    def test_rank_two_trailing_vector_sum_matches_pytorch_2_13(self):
+        infinity_matrix_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x4000_0000,
+                0xC000_0000,
+            ],
+            dtype=np.uint32,
+        )
+        infinity_vector_bits = np.asarray(
+            [0x8000_0000, 0x0000_0000, 0x3F80_0000, 0xBF80_0000],
+            dtype=np.uint32,
+        )
+        nan_matrix_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        nan_vector_bits = np.asarray(
+            [0x8000_0000, 0x0000_0000, 0xFF80_0000, 0x7F82_ABCD],
+            dtype=np.uint32,
+        )
+
+        actual_infinity_matrix = torch.tensor(
+            memoryview(infinity_matrix_bits.view(np.float32))
+        ).view(2, 4)
+        actual_infinity_vector = torch.tensor(
+            memoryview(infinity_vector_bits.view(np.float32))
+        )
+        actual_nan_matrix = torch.tensor(memoryview(nan_matrix_bits.view(np.float32))).view(2, 4)
+        actual_nan_vector = torch.tensor(memoryview(nan_vector_bits.view(np.float32)))
+        expected_infinity_matrix = reference_torch.tensor(
+            memoryview(infinity_matrix_bits.view(np.float32))
+        ).view(2, 4)
+        expected_infinity_vector = reference_torch.tensor(
+            memoryview(infinity_vector_bits.view(np.float32))
+        )
+        expected_nan_matrix = reference_torch.tensor(
+            memoryview(nan_matrix_bits.view(np.float32))
+        ).view(2, 4)
+        expected_nan_vector = reference_torch.tensor(
+            memoryview(nan_vector_bits.view(np.float32))
+        )
+        actual_empty_matrix = torch.zeros((0, 4))
+        actual_finite_vector = torch.tensor([1.0, -2.0, 3.5, -4.5])
+        expected_empty_matrix = reference_torch.zeros(
+            (0, 4),
+            dtype=reference_torch.float32,
+        )
+        expected_finite_vector = reference_torch.tensor(
+            [1.0, -2.0, 3.5, -4.5],
+            dtype=reference_torch.float32,
+        )
+
+        cases = (
+            (
+                "target broadcast signed-zero infinity",
+                actual_infinity_matrix,
+                actual_infinity_vector,
+                expected_infinity_matrix,
+                expected_infinity_vector,
+            ),
+            (
+                "input broadcast signed-zero infinity",
+                actual_infinity_vector,
+                actual_infinity_matrix,
+                expected_infinity_vector,
+                expected_infinity_matrix,
+            ),
+            (
+                "target broadcast nan",
+                actual_nan_matrix,
+                actual_nan_vector,
+                expected_nan_matrix,
+                expected_nan_vector,
+            ),
+            (
+                "input broadcast nan",
+                actual_nan_vector,
+                actual_nan_matrix,
+                expected_nan_vector,
+                expected_nan_matrix,
+            ),
+            (
+                "empty leading dimension target broadcast",
+                actual_empty_matrix,
+                actual_finite_vector,
+                expected_empty_matrix,
+                expected_finite_vector,
+            ),
+            (
+                "empty leading dimension input broadcast",
+                actual_finite_vector,
+                actual_empty_matrix,
+                expected_finite_vector,
+                expected_empty_matrix,
+            ),
+        )
+
+        for case, actual_input, actual_target, expected_input, expected_target in cases:
+            actual_input_before = (
+                np.asarray(actual_input).reshape(-1).view(np.uint32).copy()
+            )
+            actual_target_before = (
+                np.asarray(actual_target).reshape(-1).view(np.uint32).copy()
+            )
+            expected_input_before = (
+                expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            expected_target_before = (
+                expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+
+            with torch.no_grad():
+                actual, actual_warnings = self.call_with_warnings(
+                    functional,
+                    actual_input,
+                    actual_target,
+                    reduction="sum",
+                )
+            with reference_torch.no_grad():
+                expected, expected_warnings = self.call_with_warnings(
+                    reference_functional,
+                    expected_input,
+                    expected_target,
+                    reduction="sum",
+                )
+
+            with self.subTest(case=case, metadata=True):
+                self.assertEqual(actual.shape, tuple(expected.shape))
+                self.assertEqual(actual.shape, ())
+                self.assertEqual(actual.stride(), expected.stride())
+                self.assertEqual(actual.stride(), ())
+                self.assertEqual(actual.storage_offset(), expected.storage_offset())
+                self.assertEqual(actual.storage_offset(), 0)
+                self.assertEqual(actual.requires_grad, expected.requires_grad)
+                self.assertFalse(actual.requires_grad)
+                self.assertEqual(actual.is_leaf, expected.is_leaf)
+                self.assertTrue(actual.is_leaf)
+                self.assertIs(actual.dtype, torch.float32)
+                self.assertEqual(actual.device, torch.device("cpu"))
+            with self.subTest(case=case, values=True):
+                actual_values = np.asarray(actual)
+                expected_values = expected.detach().cpu().numpy()
+                if np.isnan(expected_values).any():
+                    np.testing.assert_array_equal(
+                        np.isnan(actual_values),
+                        np.isnan(expected_values),
+                    )
+                else:
+                    np.testing.assert_array_equal(
+                        actual_values.reshape(-1).view(np.uint32),
+                        expected_values.reshape(-1).view(np.uint32),
+                    )
+            with self.subTest(case=case, warnings=True):
+                self.assertEqual(actual_warnings, expected_warnings)
+                self.assertEqual(len(actual_warnings), 1)
+
+            with warnings.catch_warnings(), torch.no_grad():
+                warnings.simplefilter("ignore")
+                actual_repeat = functional.mse_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="sum",
+                )
+            with warnings.catch_warnings(), reference_torch.no_grad():
+                warnings.simplefilter("ignore")
+                expected_repeat = reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="sum",
+                )
+            with self.subTest(case=case, storage=True):
+                self.assertFalse(actual.is_set_to(actual_repeat))
+                self.assertFalse(expected.is_set_to(expected_repeat))
+                self.assertFalse(actual.is_set_to(actual_input))
+                self.assertFalse(expected.is_set_to(expected_input))
+                self.assertFalse(actual.is_set_to(actual_target))
+                self.assertFalse(expected.is_set_to(expected_target))
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input).reshape(-1).view(np.uint32),
+                    actual_input_before,
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target).reshape(-1).view(np.uint32),
+                    actual_target_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_input_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_target_before,
+                )
+
     def test_mean_reduction_cases_match_pytorch_2_13(self):
         actual_cases = self.make_sum_reduction_cases(torch)
         expected_cases = self.make_sum_reduction_cases(reference_torch)

@@ -7,6 +7,24 @@ Review update: 2026-09-01
 Candidate provenance: source snapshot based on
 `2231dec5e208f3545c05484d497b32b3981f640d`
 
+## Focused Update: rank-2 vector `reduction="sum"` fast path
+
+Date: 2026-09-02
+
+This focused release check used the worktree `.venv` with the edited
+`torch_rs` extension rebuilt by `maturin develop --release --locked`.
+Inputs were CPU `float32`, generated outside the timed region with NumPy seed
+`20260902`, Python 3.14.5, PyTorch 2.13.0+cu130, one PyTorch thread, one
+`torch_rs` thread, `CUDA_VISIBLE_DEVICES=`, and `taskset -c 24`. Each
+implementation ran in both orders with 15 warmup blocks and 81 measured blocks
+of 8 calls; each scalar output was consumed with `.item()`, and size-mismatch
+warnings were ignored symmetrically inside the timed region after a correctness
+precheck.
+
+| Workload | Category | Output | Repeats | `torch_rs` median +/- MAD | PyTorch median +/- MAD | `torch_rs` / PyTorch |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `mse_sum_rank2_vector_256x384_by_384` | broadcasted | `()`, stride `()`, offset 0, requires_grad=False | 8 | 82.378 +/- 0.428 us | 22.884 +/- 0.172 us | 3.60x |
+
 ## Review Update: `reduction="sum"`
 
 The 2026-09-01 review rerun used the current composite worktree's release

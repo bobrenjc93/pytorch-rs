@@ -77,8 +77,11 @@ The current native implementation requires exact ``torch_rs.Tensor`` operands
 with CPU ``float32`` storage, broadcastable shapes, ``reduction='none'`` or
 ``reduction='mean'`` or ``reduction='sum'``, ``size_average=None``,
 ``reduce=None``, and ``weight=None``. It fuses subtraction and square into one
-native pass and, for ``reduction='mean'`` or ``reduction='sum'``, composes that
-result with the supported full-tensor mean or sum.
+native pass and, for ``reduction='mean'``, composes that result with the
+supported full-tensor mean. For no-grad ``reduction='sum'``, a row-major rank-2
+tensor paired with a row-major rank-1 tensor over its trailing dimension uses a
+direct fused squared-difference scalar reduction; other supported layouts
+compose the squared-difference result with the supported full-tensor sum.
 The operation returns a fresh, independent tensor with PyTorch-compatible
 values, shape, strides, scalar metadata, and size-mismatch warning.
 

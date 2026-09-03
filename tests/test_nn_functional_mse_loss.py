@@ -339,7 +339,12 @@ class FunctionalMseLossTests(unittest.TestCase):
             "``reduce=None``",
             "``weight=None``",
             "fuses subtraction and square into one native pass",
-            "supported full-tensor mean or sum",
+            "supported full-tensor mean",
+            "For no-grad ``reduction='sum'``",
+            "row-major rank-2 tensor paired with a row-major rank-1 tensor",
+            "direct fused squared-difference scalar reduction",
+            "other supported layouts",
+            "supported full-tensor sum",
             "fresh, independent tensor",
             "size-mismatch warning",
             "Unbroadcastable shapes",
@@ -532,6 +537,125 @@ class FunctionalMseLossTests(unittest.TestCase):
                 np.testing.assert_array_equal(
                     self.tensor_state(target)[-1], target_state[-1]
                 )
+
+    def test_rank_two_trailing_vector_sum_edges_no_grad_warning_and_nonmutation(self):
+        infinity_matrix_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x4000_0000,
+                0xC000_0000,
+            ],
+            dtype=np.uint32,
+        )
+        infinity_vector_bits = np.asarray(
+            [0x8000_0000, 0x0000_0000, 0x3F80_0000, 0xBF80_0000],
+            dtype=np.uint32,
+        )
+        nan_matrix_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        nan_vector_bits = np.asarray(
+            [0x8000_0000, 0x0000_0000, 0xFF80_0000, 0x7F82_ABCD],
+            dtype=np.uint32,
+        )
+        infinity_matrix = torch.tensor(memoryview(infinity_matrix_bits.view(np.float32))).view(
+            2,
+            4,
+        )
+        infinity_vector = torch.tensor(memoryview(infinity_vector_bits.view(np.float32)))
+        nan_matrix = torch.tensor(memoryview(nan_matrix_bits.view(np.float32))).view(2, 4)
+        nan_vector = torch.tensor(memoryview(nan_vector_bits.view(np.float32)))
+        empty_matrix = torch.zeros((0, 4))
+        finite_vector = torch.tensor([1.0, -2.0, 3.5, -4.5])
+
+        for case, input, target in (
+            ("target broadcast signed-zero infinity", infinity_matrix, infinity_vector),
+            ("input broadcast signed-zero infinity", infinity_vector, infinity_matrix),
+            ("target broadcast nan", nan_matrix, nan_vector),
+            ("input broadcast nan", nan_vector, nan_matrix),
+            ("empty leading dimension target broadcast", empty_matrix, finite_vector),
+            ("empty leading dimension input broadcast", finite_vector, empty_matrix),
+        ):
+            with self.subTest(case=case):
+                self.assertTrue(input.is_contiguous())
+                self.assertTrue(target.is_contiguous())
+                input_state = self.tensor_state(input)
+                target_state = self.tensor_state(target)
+                with torch.no_grad():
+                    expected = (input - target).square().sum()
+                    with warnings.catch_warnings(record=True) as caught:
+                        warnings.simplefilter("always")
+                        actual = functional.mse_loss(
+                            input,
+                            target,
+                            reduction="sum",
+                        )
+
+                self.assert_matches_composition(actual, expected, case=case)
+                self.assertEqual(actual.shape, ())
+                self.assertEqual(actual.stride(), ())
+                self.assertEqual(actual.storage_offset(), 0)
+                self.assertFalse(actual.requires_grad)
+                self.assertTrue(actual.is_leaf)
+                self.assertEqual(len(caught), 1)
+                self.assertIs(caught[0].category, UserWarning)
+                self.assertEqual(str(caught[0].message), self.broadcast_warning(input, target))
+
+                with warnings.catch_warnings(), torch.no_grad():
+                    warnings.simplefilter("ignore")
+                    repeated = functional.mse_loss(input, target, reduction="sum")
+                self.assertFalse(actual.is_set_to(repeated))
+                self.assertFalse(actual.is_set_to(input))
+                self.assertFalse(actual.is_set_to(target))
+                self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1],
+                    input_state[-1],
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1],
+                    target_state[-1],
+                )
+
+    def test_rank_two_trailing_vector_sum_requires_grad_operands_match_inside_no_grad(self):
+        for case, input_shape in (
+            ("target broadcast", "matrix-vector"),
+            ("input broadcast", "vector-matrix"),
+        ):
+            matrix = torch.tensor(
+                [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
+                requires_grad=True,
+            )
+            vector = torch.tensor([0.5, -1.5, 2.0], requires_grad=True)
+            input, target = (matrix, vector) if input_shape == "matrix-vector" else (vector, matrix)
+            with self.subTest(case=case):
+                with warnings.catch_warnings(), torch.no_grad():
+                    warnings.simplefilter("ignore")
+                    actual = functional.mse_loss(input, target, reduction="sum")
+                    expected = (input - target).square().sum()
+                self.assert_matches_composition(actual, expected, case=case)
+                self.assertFalse(actual.requires_grad)
+                self.assertTrue(actual.is_leaf)
+                self.assertIsNone(matrix.grad)
+                self.assertIsNone(vector.grad)
 
     def test_mean_reduction_cases_match_composition_warning_storage_and_default(self):
         for case, input, target, warns in self.sum_reduction_cases():
