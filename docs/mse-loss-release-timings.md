@@ -7,6 +7,27 @@ Review update: 2026-09-01
 Candidate provenance: source snapshot based on
 `2231dec5e208f3545c05484d497b32b3981f640d`
 
+## Focused Update: `reduction="sum"` Rank-2 Vector Broadcast
+
+Date: 2026-09-02
+
+Candidate provenance: uncommitted worktree based on
+`efece72c17043c0ef36015b4ac3c9ef5cd76f05c`
+
+This focused check timed the new direct no-grad row-major rank-2 by trailing
+rank-1 vector sum path after a release extension build installed into the
+worktree `.venv`. Inputs were CPU `float32`, created outside the timed region
+from exact integer-valued NumPy arrays so the scalar sum was bit-identical to
+PyTorch 2.13 before timing. Broadcast warning messages were compared before
+timing, then `UserWarning` was ignored symmetrically. The process used
+`CUDA_VISIBLE_DEVICES=`, `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`,
+`OPENBLAS_NUM_THREADS=1`, `taskset -c 24`, `torch.set_num_threads(1)`, 15
+warmup blocks, 81 measured blocks, and 8 calls per block.
+
+| Workload | Category | Output | Repeats | `torch_rs` median +/- stdev | PyTorch median +/- stdev | `torch_rs` / PyTorch |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `mse_sum_broadcast_640x768_by_768` | broadcasted | `()`, stride `()`, offset 0, requires_grad=False | 8 | 408.375 +/- 2.185 us | 78.653 +/- 1.856 us | 5.19x |
+
 ## Review Update: `reduction="sum"`
 
 The 2026-09-01 review rerun used the current composite worktree's release
