@@ -341,6 +341,56 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         ("[Backend and compiler metadata](#backend-and-compiler-metadata)",),
     ),
 )
+README_SCOPE_ROW_LABELS = (
+    "Eager CPU tensors",
+    "CPU-build device probes",
+    "CPU-build backend probes",
+    "`torch.compile` shell",
+    "Larger PyTorch stacks",
+)
+README_SCOPE_REQUIRED_SNIPPETS = (
+    "CPU `float32` tensors",
+    "core construction and layout/view operations",
+    "selected math and neural-network functions",
+    "limited first-order autograd",
+    "`torch.cuda.device_count() == 0`",
+    "`torch.cuda.is_available() is False`",
+    "`torch.cuda.is_initialized() is False`",
+    "`torch.set_default_device(...)`",
+    "CPU-equivalent no-op",
+    "`None` or `\"cpu\"`",
+    "`torch.backends.cuda` preference flags",
+    "`enable_flash_sdp(...)`",
+    "`enable_cudnn_sdp(...)`",
+    "`sdp_kernel(...)` as a context manager/decorator",
+    "`torch.nn.functional.scaled_dot_product_attention`",
+    "CUDA tensors",
+    "actual attention-kernel dispatch",
+    "CUDA `torch.compile` execution",
+    "Device selection",
+    "mutable default-device routing",
+    "streams",
+    "events",
+    "synchronization",
+    "allocator APIs",
+    "runtime initialization",
+    "Additional tensor dtypes",
+    "non-CPU tensor execution",
+    "Non-executing PyTorch 2.13-shaped argument binding",
+    "`disable=True` pass-through",
+    "backend default/name resolution through the `torch.compiler` registry",
+    "graph capture",
+    "graph execution",
+    "eager fallback",
+    "installed-PyTorch forwarding",
+    "backend invocation",
+    "CUDA compilation",
+    "Full module",
+    "optimizer",
+    "model-serialization",
+    "compiler execution",
+    "distributed stacks",
+)
 
 
 class ReadmeQuickstartTests(unittest.TestCase):
@@ -375,6 +425,36 @@ class ReadmeQuickstartTests(unittest.TestCase):
         commands = match.group("commands")
         self.assertIn("uv sync --locked", commands)
         self.assertIn("maturin develop --release --locked", commands)
+
+    def test_readme_scope_is_scan_friendly_table(self):
+        readme = README.read_text(encoding="utf-8")
+        match = re.search(
+            r"^## Scope\n(?P<section>.*?)^## Evaluation$",
+            readme,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(match, "README scope section is missing")
+
+        section = match.group("section")
+        table, route = section.strip().split("\n\n", maxsplit=1)
+        table_lines = table.splitlines()
+        self.assertEqual(
+            table_lines[0],
+            "| Surface | Supported today | Unsupported boundary |",
+        )
+        self.assertEqual(table_lines[1], "| --- | --- | --- |")
+        self.assertEqual(len(table_lines), len(README_SCOPE_ROW_LABELS) + 2)
+        self.assertIn(
+            "[exhaustive supported surface](docs/supported-surface.md)", route
+        )
+        self.assertNotIn("The current native backend supports eager CPU", section)
+
+        for row_label in README_SCOPE_ROW_LABELS:
+            with self.subTest(scope_row=row_label):
+                self.assertIn(f"| {row_label} |", table)
+        for snippet in README_SCOPE_REQUIRED_SNIPPETS:
+            with self.subTest(scope_snippet=snippet):
+                self.assertIn(snippet, table)
 
     def test_first_success_example_is_short_and_runs(self):
         readme = README.read_text(encoding="utf-8")
