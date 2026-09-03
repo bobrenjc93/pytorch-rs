@@ -3,6 +3,7 @@
 import builtins as _builtins
 import copyreg as _copyreg
 import functools as _functools
+import inspect as _inspect
 import multiprocessing.reduction as _multiprocessing_reduction
 import sys as _sys
 import types as _types
@@ -261,14 +262,34 @@ def set_default_device(device: "Device") -> None:
 
 
 _COMPILE_UNSUPPORTED_MESSAGE = (
-    "torch.compile(): graph capture, graph execution, and eager fallback are "
-    "not supported; only argument binding, disable=True pass-through, and "
-    "backend resolution are implemented"
+    "torch.compile(): only backend='eager', fullgraph=True straight-line "
+    "Tensor neg/abs/add functions with one positional exact native CPU "
+    "float32 Tensor are supported; eager fallback, installed-PyTorch "
+    "forwarding, callable backend invocation, CUDA compilation, and broader "
+    "graph capture remain unsupported"
 )
+_COMPILE_TENSOR_METHOD_GUARD_NAMES = (
+    "__abs__",
+    "__add__",
+    "__getattribute__",
+    "__neg__",
+    "__radd__",
+    "abs",
+    "absolute",
+    "add",
+    "neg",
+    "negative",
+)
+_COMPILE_TENSOR_METHOD_GUARDS = globals().get("_COMPILE_TENSOR_METHOD_GUARDS")
 
 
-def _unsupported_compile_wrapper(
-    model,
+def _is_exact_python_function(model, _function_type=_types.FunctionType):
+    return _builtins.type(model) is _function_type
+
+
+def _set_compile_wrapper_metadata(
+    compiled_model,
+    *,
     fullgraph,
     dynamic,
     resolved_backend,
@@ -279,12 +300,6 @@ def _unsupported_compile_wrapper(
     isolate_recompiles,
     shapes_spec,
 ):
-    def compiled_model(*args, **kwargs):
-        raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
-
-    import functools as _compile_functools
-
-    _compile_functools.update_wrapper(compiled_model, model)
     compiled_model._torch_rs_compile_fullgraph = fullgraph
     compiled_model._torch_rs_compile_dynamic = dynamic
     compiled_model._torch_rs_compile_backend = resolved_backend
@@ -294,6 +309,151 @@ def _unsupported_compile_wrapper(
     compiled_model._torch_rs_compile_recompile_limit = recompile_limit
     compiled_model._torch_rs_compile_isolate_recompiles = isolate_recompiles
     compiled_model._torch_rs_compile_shapes_spec = shapes_spec
+    return compiled_model
+
+
+def _make_compile_wrapper(
+    model,
+    *,
+    fullgraph,
+    dynamic,
+    resolved_backend,
+    mode,
+    options,
+    name,
+    recompile_limit,
+    isolate_recompiles,
+    shapes_spec,
+    implementation,
+):
+    if implementation is None:
+
+        def compiled_model(*args, **kwargs):
+            raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
+
+    else:
+
+        def compiled_model(*args, **kwargs):
+            return implementation(*args, **kwargs)
+
+    import functools as _compile_functools
+
+    if _is_exact_python_function(model):
+        _compile_functools.update_wrapper(compiled_model, model)
+    else:
+        compiled_model.__wrapped__ = model
+    return _set_compile_wrapper_metadata(
+        compiled_model,
+        fullgraph=fullgraph,
+        dynamic=dynamic,
+        resolved_backend=resolved_backend,
+        mode=mode,
+        options=options,
+        name=name,
+        recompile_limit=recompile_limit,
+        isolate_recompiles=isolate_recompiles,
+        shapes_spec=shapes_spec,
+    )
+
+
+def _supports_native_eager_compile(
+    *,
+    fullgraph,
+    dynamic,
+    resolved_backend,
+    mode,
+    options,
+    shapes_spec,
+):
+    return (
+        _builtins.type(resolved_backend) is _builtins.str
+        and resolved_backend == "eager"
+        and fullgraph is True
+        and dynamic is None
+        and mode is None
+        and options is None
+        and shapes_spec is None
+    )
+
+
+def _snapshot_compile_tensor_method_guards(
+    _static_getattr=_inspect.getattr_static,
+):
+    return tuple(
+        (name, _static_getattr(Tensor, name))
+        for name in _COMPILE_TENSOR_METHOD_GUARD_NAMES
+    )
+
+
+def _initialize_compile_tensor_method_guards():
+    global _COMPILE_TENSOR_METHOD_GUARDS
+    if _COMPILE_TENSOR_METHOD_GUARDS is None:
+        _COMPILE_TENSOR_METHOD_GUARDS = _snapshot_compile_tensor_method_guards()
+
+
+def _ensure_compile_tensor_method_guards(
+    compile_trace,
+    _static_getattr=_inspect.getattr_static,
+):
+    _initialize_compile_tensor_method_guards()
+    patched = []
+    for name, expected in _COMPILE_TENSOR_METHOD_GUARDS:
+        try:
+            current = _static_getattr(Tensor, name)
+        except AttributeError:
+            patched.append(f"Tensor.{name}")
+            continue
+        if current is not expected:
+            patched.append(f"Tensor.{name}")
+
+    if patched:
+        bindings = ", ".join(patched)
+        raise compile_trace.CompileTraceUnsupportedError(
+            "torch.compile trace bytecode lowering does not support patched "
+            f"Tensor operation bindings: {bindings}"
+        )
+
+
+def _native_eager_compile_implementation(model, name):
+    def compiled_model(*args, **kwargs):
+        from . import _compile_bytecode as _compile_bytecode
+        from . import _compile_trace as _compile_trace
+        from . import overrides as _compile_overrides
+
+        if kwargs:
+            names = ", ".join(sorted(kwargs))
+            raise _compile_trace.CompileTraceUnsupportedError(
+                "torch.compile trace bytecode lowering does not support "
+                f"keyword arguments: {names}"
+            )
+        if len(args) != 1:
+            raise _compile_trace.CompileTraceUnsupportedError(
+                "torch.compile trace bytecode lowering currently supports "
+                "exactly one positional Tensor argument"
+            )
+
+        input = args[0]
+        if _builtins.type(input) is not Tensor:
+            raise TypeError(
+                "torch.compile trace bytecode lowering expected exact native "
+                f"torch_rs Tensor input, got {_builtins.type(input)}"
+            )
+
+        if _compile_overrides._get_current_function_mode() is not None:
+            raise _compile_trace.CompileTraceUnsupportedError(
+                "torch.compile trace execution does not support active "
+                "__torch_function__ modes"
+            )
+
+        _ensure_compile_tensor_method_guards(_compile_trace)
+        input_metadata = _compile_trace._metadata_from_native_tensor(input)
+        graph = _compile_bytecode.lower_one_input_compile_graph(
+            model,
+            input_metadata,
+            name=name or getattr(model, "__name__", "compile_trace"),
+        )
+        return _compile_trace.execute_compile_trace_graph(graph, input)
+
     return compiled_model
 
 
@@ -336,17 +496,29 @@ def _compile_bound_model(
     if disable:
         return model
 
-    return _unsupported_compile_wrapper(
+    implementation = None
+    if _supports_native_eager_compile(
+        fullgraph=fullgraph,
+        dynamic=dynamic,
+        resolved_backend=resolved_backend,
+        mode=mode,
+        options=options,
+        shapes_spec=shapes_spec,
+    ) and _is_exact_python_function(model):
+        implementation = _native_eager_compile_implementation(model, name)
+
+    return _make_compile_wrapper(
         model,
-        fullgraph,
-        dynamic,
-        resolved_backend,
-        mode,
-        options,
-        name,
-        recompile_limit,
-        isolate_recompiles,
-        shapes_spec,
+        fullgraph=fullgraph,
+        dynamic=dynamic,
+        resolved_backend=resolved_backend,
+        mode=mode,
+        options=options,
+        name=name,
+        recompile_limit=recompile_limit,
+        isolate_recompiles=isolate_recompiles,
+        shapes_spec=shapes_spec,
+        implementation=implementation,
     )
 
 
@@ -367,9 +539,12 @@ def compile(
     """Return a ``torch.compile`` compatibility shell.
 
     This entrypoint implements Python argument binding, ``disable=True``
-    pass-through, and backend resolution through ``torch.compiler``. Graph
-    capture, graph execution, eager fallback, installed-PyTorch forwarding, and
-    backend invocation remain unsupported.
+    pass-through, and backend resolution through ``torch.compiler``. It also
+    lowers one-input exact Python functions made only from Tensor ``neg``,
+    ``abs``, and binary ``add`` operations for ``backend="eager"`` with
+    ``fullgraph=True``. Eager fallback, installed-PyTorch forwarding, callable
+    backend invocation, CUDA compilation, and broader graph capture remain
+    unsupported.
     """
     if model is None:
         captured_backend = (
@@ -748,6 +923,9 @@ from . import jit as jit
 from . import nn as nn
 from . import overrides as overrides
 from . import _tensor as _tensor
+
+_initialize_compile_tensor_method_guards()
+
 from . import serialization as serialization
 from . import utils as utils
 from . import version as version
@@ -760,6 +938,7 @@ from .functional import broadcast_tensors as broadcast_tensors
 del (
     _copyreg,
     _functools,
+    _inspect,
     _multiprocessing_reduction,
     _native,
     _sys,

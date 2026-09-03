@@ -69,10 +69,7 @@ class TensorBufferReferenceTests(unittest.TestCase):
         cases.extend(
             (
                 ("bytearray", bytearray((0, 1, 127, 128, 255))),
-                (
-                    "bool including noncanonical bytes",
-                    memoryview(b"\x00\x01\x02\x03\xfe\xff").cast("?"),
-                ),
+                ("bool canonical bytes", memoryview(b"\x00\x01").cast("?")),
                 (
                     "ssize_t",
                     memoryview(bytes(2 * ctypes.sizeof(ctypes.c_ssize_t))).cast("n"),
@@ -89,11 +86,21 @@ class TensorBufferReferenceTests(unittest.TestCase):
                     "native-prefixed float32",
                     memoryview(struct.pack("@ff", -2.5, 3.25)).cast("@f"),
                 ),
-                ("native-prefixed bool", memoryview(b"\x02\x03").cast("@?")),
+                ("native-prefixed bool canonical", memoryview(b"\x00\x01").cast("@?")),
                 ("pointer", memoryview(pointer_bytes).cast("P")),
                 ("native-prefixed pointer", memoryview(pointer_bytes).cast("@P")),
             )
         )
+        if sys.version_info >= (3, 14):
+            cases.extend(
+                (
+                    (
+                        "bool including noncanonical bytes",
+                        memoryview(b"\x00\x01\x02\x03\xfe\xff").cast("?"),
+                    ),
+                    ("native-prefixed bool", memoryview(b"\x02\x03").cast("@?")),
+                )
+            )
         if sys.version_info >= (3, 12):
             cases.append(
                 (
