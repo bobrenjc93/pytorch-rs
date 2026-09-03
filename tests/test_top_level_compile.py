@@ -8,14 +8,25 @@ import types
 import unittest
 
 import torch_rs as torch
+from torch_rs import _compile_bytecode
 from torch_rs import _compiler_state as _state
 
 
 UNSUPPORTED_MESSAGE = (
-    "torch.compile(): graph capture, graph execution, and eager fallback are "
-    "not supported; only argument binding, disable=True pass-through, and "
-    "backend resolution are implemented"
+    "torch.compile(): only backend='eager', fullgraph=True straight-line "
+    "Tensor neg/abs/add functions with one positional exact native CPU "
+    "float32 Tensor are supported; eager fallback, installed-PyTorch "
+    "forwarding, callable backend invocation, CUDA compilation, and broader "
+    "graph capture remain unsupported"
 )
+
+
+EAGER_COMPILE_MODEL_CALLS = []
+
+
+def eager_compile_global_side_effect(value):
+    EAGER_COMPILE_MODEL_CALLS.append("ran")
+    return value + value
 
 
 class TorchCompileEntrypointTests(unittest.TestCase):
@@ -71,7 +82,8 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         )
         self.assertIn("argument binding", inspect.cleandoc(function.__doc__))
         self.assertIn("backend resolution", inspect.cleandoc(function.__doc__))
-        self.assertIn("graph execution", inspect.cleandoc(function.__doc__))
+        self.assertIn("Tensor ``neg``", inspect.cleandoc(function.__doc__))
+        self.assertIn("broader graph capture", inspect.cleandoc(function.__doc__))
 
         self.assertEqual(torch.__all__.count("compile"), 1)
         self.assertFalse(hasattr(torch._C, "compile"))
@@ -203,6 +215,299 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
         self.assertEqual(model_calls, [])
         self.assertEqual(backend_calls, [])
+
+    def test_callable_backend_cannot_spoof_the_native_eager_path(self):
+        model_calls = []
+        backend_calls = []
+
+        class EqualToEagerBackend:
+            def __eq__(self, other):
+                return other == "eager"
+
+            def __call__(self, graph_module, example_inputs):
+                backend_calls.append((graph_module, example_inputs))
+                return graph_module.forward
+
+        def model(value):
+            model_calls.append(value)
+            return value + value
+
+        backend = EqualToEagerBackend()
+        compiled = torch.compile(model, backend=backend, fullgraph=True)
+
+        self.assertIs(compiled._torch_rs_compile_backend, backend)
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled(torch.tensor([1.0], dtype=torch.float32))
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(model_calls, [])
+        self.assertEqual(backend_calls, [])
+
+    def test_eager_fullgraph_rejects_callable_object_without_metadata_side_effects(self):
+        events = []
+
+        class CallableObject:
+            def __getattribute__(self, name):
+                if name in (
+                    "__annotations__",
+                    "__dict__",
+                    "__doc__",
+                    "__module__",
+                    "__name__",
+                    "__qualname__",
+                ):
+                    events.append(name)
+                return object.__getattribute__(self, name)
+
+            def __call__(self, value):
+                events.append("__call__")
+                return value + value
+
+        model = CallableObject()
+        compiled = torch.compile(model, backend="eager", fullgraph=True)
+
+        self.assertIs(compiled.__wrapped__, model)
+        self.assertEqual(events, [])
+        with self.assertRaises(NotImplementedError) as raised:
+            compiled(torch.tensor([1.0], dtype=torch.float32))
+        self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
+        self.assertEqual(events, [])
+
+    def test_eager_fullgraph_executes_supported_tensor_programs_natively(self):
+        def program(x):
+            y = x.neg()
+            return (y.abs() + x).add(x.neg())
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([[-2.0, 0.5, 3.0], [4.25, -5.5, 6.0]])
+        expected = program(input)
+        actual = compiled(input)
+
+        self.assertIs(compiled.__wrapped__, program)
+        self.assertIs(compiled._torch_rs_compile_backend, "eager")
+        self.assertEqual(actual.tolist(), expected.tolist())
+        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+        self.assertEqual(actual.stride(), expected.stride())
+        self.assertIs(actual.dtype, expected.dtype)
+        self.assertEqual(actual.device, expected.device)
+
+    def test_eager_fullgraph_caches_graphs_by_code_and_input_metadata(self):
+        def program(x):
+            return x.neg().abs() + x
+
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def counting_lower(requested_program, input_metadata, *, name=None):
+            calls.append((requested_program, input_metadata, name))
+            return original_lower(requested_program, input_metadata, name=name)
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        first = torch.tensor([[-2.0, 3.0], [4.0, -5.0]], dtype=torch.float32)
+        second = torch.tensor([[1.0, -1.5], [2.5, -3.0]], dtype=torch.float32)
+        different_shape = torch.tensor([1.5, -2.5, 3.5], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            self.assertEqual(compiled(first).tolist(), program(first).tolist())
+            self.assertEqual(compiled(second).tolist(), program(second).tolist())
+            self.assertEqual(len(calls), 1)
+
+            self.assertEqual(
+                compiled(different_shape).tolist(),
+                program(different_shape).tolist(),
+            )
+            self.assertEqual(len(calls), 2)
+        finally:
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_cached_graphs_still_check_tensor_method_guards(self):
+        def program(x):
+            return x.neg()
+
+        input = torch.tensor([2.0], dtype=torch.float32)
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        self.assertEqual(compiled(input).tolist(), [-2.0])
+
+        missing = object()
+        original = torch.Tensor.__dict__.get("neg", missing)
+        torch.Tensor.neg = lambda self: self + self
+        try:
+            with self.assertRaisesRegex(
+                NotImplementedError,
+                "patched Tensor operation bindings: .*Tensor\\.neg",
+            ):
+                compiled(input)
+        finally:
+            if original is missing:
+                delattr(torch.Tensor, "neg")
+            else:
+                torch.Tensor.neg = original
+
+    def test_eager_fullgraph_rejects_patched_tensor_operation_bindings(self):
+        def call_neg(value):
+            return value.neg()
+
+        def call_negative(value):
+            return value.negative()
+
+        def call_abs(value):
+            return value.abs()
+
+        def call_absolute(value):
+            return value.absolute()
+
+        def call_add(value):
+            return value.add(value)
+
+        def call_dunder_add(value):
+            return value + value
+
+        def call_dunder_radd(value):
+            return value.__radd__(value)
+
+        def call_dunder_neg(value):
+            return -value
+
+        def call_dunder_abs(value):
+            return value.__abs__()
+
+        def patched_getattribute(self, name):
+            if name == "neg":
+                return lambda: self + self
+            return object.__getattribute__(self, name)
+
+        input = torch.tensor([2.0], dtype=torch.float32)
+        cases = (
+            ("neg", lambda self: self + self, call_neg, [4.0]),
+            ("negative", lambda self: self + self, call_negative, [4.0]),
+            ("abs", lambda self: self + self, call_abs, [4.0]),
+            ("absolute", lambda self: self + self, call_absolute, [4.0]),
+            ("add", lambda self, other: self.neg(), call_add, [-2.0]),
+            ("__add__", lambda self, other: self.neg(), call_dunder_add, [-2.0]),
+            (
+                "__radd__",
+                lambda self, other: self.neg(),
+                call_dunder_radd,
+                [-2.0],
+            ),
+            ("__neg__", lambda self: self + self, call_dunder_neg, [4.0]),
+            ("__abs__", lambda self: self + self, call_dunder_abs, [4.0]),
+            (
+                "__getattribute__",
+                patched_getattribute,
+                call_neg,
+                [4.0],
+            ),
+        )
+
+        missing = object()
+        for name, replacement, program, expected_eager in cases:
+            with self.subTest(binding=name):
+                original = torch.Tensor.__dict__.get(name, missing)
+                setattr(torch.Tensor, name, replacement)
+                try:
+                    self.assertEqual(program(input).tolist(), expected_eager)
+                    compiled = torch.compile(
+                        program,
+                        backend="eager",
+                        fullgraph=True,
+                    )
+                    with self.assertRaisesRegex(
+                        NotImplementedError,
+                        f"patched Tensor operation bindings: .*Tensor\\.{name}",
+                    ):
+                        compiled(input)
+                finally:
+                    if original is missing:
+                        delattr(torch.Tensor, name)
+                    else:
+                        setattr(torch.Tensor, name, original)
+
+    def test_eager_fullgraph_relowers_for_runtime_input_metadata(self):
+        def program(x):
+            return x.neg().abs() + x
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        first = torch.tensor([[-2.0, 3.0], [4.0, -5.0]], dtype=torch.float32)
+        second = torch.tensor([1.5, -2.5, 3.5], dtype=torch.float32)
+
+        first_actual = compiled(first)
+        second_actual = compiled(second)
+
+        self.assertEqual(first_actual.tolist(), program(first).tolist())
+        self.assertEqual(tuple(first_actual.shape), (2, 2))
+        self.assertEqual(second_actual.tolist(), program(second).tolist())
+        self.assertEqual(tuple(second_actual.shape), (3,))
+
+    def test_eager_fullgraph_rejects_unsupported_programs_without_running_them(self):
+        calls = []
+
+        def closure_factory():
+            flag = True
+
+            def closure(value):
+                calls.append("closure")
+                if flag:
+                    return value + value
+                return value
+
+            return closure
+
+        def global_call(value):
+            return torch.abs(value)
+
+        def control_flow(value):
+            if value:
+                return value
+            return value.neg()
+
+        def exception_handling(value):
+            try:
+                return value + value
+            except Exception:
+                return value
+
+        def mutation(value):
+            value += value
+            return value
+
+        def unsupported_method(value):
+            return value.relu()
+
+        input = torch.tensor([1.0, -2.0], dtype=torch.float32)
+        cases = (
+            ("closure", closure_factory(), "closures"),
+            ("global", global_call, "global or import access"),
+            (
+                "global side effect",
+                eager_compile_global_side_effect,
+                "global or import access",
+            ),
+            ("control flow", control_flow, "control flow"),
+            ("exception handling", exception_handling, "exception handling"),
+            ("mutation", mutation, "mutation"),
+            ("unsupported method", unsupported_method, "Tensor.relu"),
+        )
+        EAGER_COMPILE_MODEL_CALLS.clear()
+        for case, program, message in cases:
+            with self.subTest(case=case):
+                compiled = torch.compile(program, backend="eager", fullgraph=True)
+                with self.assertRaisesRegex(NotImplementedError, message):
+                    compiled(input)
+                self.assertEqual(calls, [])
+                self.assertEqual(EAGER_COMPILE_MODEL_CALLS, [])
+
+    def test_eager_fullgraph_rejects_kwargs_without_running_model(self):
+        calls = []
+
+        def program(value):
+            calls.append("program")
+            return value + value
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        with self.assertRaisesRegex(NotImplementedError, "keyword arguments: value"):
+            compiled(value=torch.tensor([1.0], dtype=torch.float32))
+        self.assertEqual(calls, [])
 
     def test_backend_none_resolves_default_and_registered_backend_names(self):
         backend_calls = []

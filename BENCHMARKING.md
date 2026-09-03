@@ -57,6 +57,10 @@ do not replace the benchmark policy or Burner-managed evaluation progress.
 - [`Tensor.reciprocal` and `torch.reciprocal` release timings](docs/tensor-reciprocal-release-timings.md)
 - [`torch.nn.functional.softsign` release timings](docs/softsign-release-timings.md)
 
+### Compilation
+
+- [`torch.compile` eager CPU release timings](docs/torch-compile-cpu-release-timings.md)
+
 ### Layout/view ops
 
 - [`Tensor.view`, reshape, flatten, ravel, unbind, and edge-unsqueeze release timings](docs/tensor-view-release-timings.md)
