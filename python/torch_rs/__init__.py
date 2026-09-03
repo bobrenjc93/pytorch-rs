@@ -274,6 +274,10 @@ def _unsupported_compile_wrapper(
     resolved_backend,
     mode,
     options,
+    name,
+    recompile_limit,
+    isolate_recompiles,
+    shapes_spec,
 ):
     def compiled_model(*args, **kwargs):
         raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
@@ -286,7 +290,64 @@ def _unsupported_compile_wrapper(
     compiled_model._torch_rs_compile_backend = resolved_backend
     compiled_model._torch_rs_compile_mode = mode
     compiled_model._torch_rs_compile_options = options
+    compiled_model._torch_rs_compile_name = name
+    compiled_model._torch_rs_compile_recompile_limit = recompile_limit
+    compiled_model._torch_rs_compile_isolate_recompiles = isolate_recompiles
+    compiled_model._torch_rs_compile_shapes_spec = shapes_spec
     return compiled_model
+
+
+def _validate_compile_configuration(mode, options):
+    if mode is not None and options is not None:
+        raise RuntimeError(
+            "Either mode or options can be specified, but both can't be "
+            "specified at the same time."
+        )
+
+
+def _validate_compile_model(model):
+    if model is None:
+        raise RuntimeError("Model can't be None")
+
+    if not _builtins.callable(model):
+        raise AssertionError(
+            "A callable function is expected, but "
+            f"{_builtins.type(model)} is provided."
+        )
+
+
+def _compile_bound_model(
+    model,
+    fullgraph,
+    dynamic,
+    backend,
+    mode,
+    options,
+    name,
+    disable,
+    recompile_limit,
+    isolate_recompiles,
+    shapes_spec,
+):
+    _validate_compile_configuration(mode, options)
+    resolved_backend = torch.compiler._resolve_compile_backend(backend)
+    _validate_compile_model(model)
+
+    if disable:
+        return model
+
+    return _unsupported_compile_wrapper(
+        model,
+        fullgraph,
+        dynamic,
+        resolved_backend,
+        mode,
+        options,
+        name,
+        recompile_limit,
+        isolate_recompiles,
+        shapes_spec,
+    )
 
 
 def compile(
@@ -297,7 +358,11 @@ def compile(
     backend=None,
     mode=None,
     options=None,
+    name=None,
     disable=False,
+    recompile_limit=None,
+    isolate_recompiles=False,
+    shapes_spec=None,
 ):
     """Return a ``torch.compile`` compatibility shell.
 
@@ -307,31 +372,42 @@ def compile(
     backend invocation remain unsupported.
     """
     if model is None:
+        captured_backend = (
+            torch.compiler.get_default_backend() if backend is None else backend
+        )
+
         def compile_decorator(model):
-            return compile(
+            if model is None:
+                raise RuntimeError("Model can't be None")
+
+            return _compile_bound_model(
                 model,
-                fullgraph=fullgraph,
-                dynamic=dynamic,
-                backend=backend,
-                mode=mode,
-                options=options,
-                disable=disable,
+                fullgraph,
+                dynamic,
+                captured_backend,
+                mode,
+                options,
+                name,
+                disable,
+                recompile_limit,
+                isolate_recompiles,
+                shapes_spec,
             )
 
         return compile_decorator
 
-    if disable:
-        return model
-
-    resolved_backend = torch.compiler._resolve_compile_backend(backend)
-
-    return _unsupported_compile_wrapper(
+    return _compile_bound_model(
         model,
         fullgraph,
         dynamic,
-        resolved_backend,
+        backend,
         mode,
         options,
+        name,
+        disable,
+        recompile_limit,
+        isolate_recompiles,
+        shapes_spec,
     )
 
 

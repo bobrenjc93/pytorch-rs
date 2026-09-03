@@ -119,6 +119,7 @@ SUPPORTED_SURFACE_NAMESPACE_SUMMARIES = (
         (
             "`torch.tensor`",
             "`torch.sum`",
+            "`torch.compile`",
             "`torch.autograd.backward`",
             "[Creation](#creation)",
             "[Backend and compiler metadata](#backend-and-compiler-metadata)",

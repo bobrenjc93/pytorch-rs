@@ -50,7 +50,11 @@ class TorchCompileEntrypointTests(unittest.TestCase):
                 "backend": None,
                 "mode": None,
                 "options": None,
+                "name": None,
                 "disable": False,
+                "recompile_limit": None,
+                "isolate_recompiles": False,
+                "shapes_spec": None,
             },
         )
         self.assertEqual(function.__annotations__, {})
@@ -60,7 +64,9 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             str(inspect.signature(function)),
             (
                 "(model=None, *, fullgraph=False, dynamic=None, backend=None, "
-                "mode=None, options=None, disable=False)"
+                "mode=None, options=None, name=None, disable=False, "
+                "recompile_limit=None, isolate_recompiles=False, "
+                "shapes_spec=None)"
             ),
         )
         self.assertIn("argument binding", inspect.cleandoc(function.__doc__))
@@ -105,6 +111,10 @@ class TorchCompileEntrypointTests(unittest.TestCase):
     def test_disable_true_returns_the_original_callable(self):
         calls = []
 
+        def backend(graph_module, example_inputs):
+            calls.append(("backend", graph_module, example_inputs))
+            return graph_module.forward
+
         def model(value):
             calls.append(value)
             return value + 1
@@ -113,10 +123,10 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertEqual(model(2), 3)
         self.assertEqual(calls, [2])
 
-        disabled_decorator = torch.compile(backend="missing_backend", disable=True)
+        disabled_decorator = torch.compile(backend=backend, disable=True)
         self.assertIs(disabled_decorator(model), model)
 
-        @torch.compile(disable=True, backend="also_missing")
+        @torch.compile(disable=True, backend=backend)
         def decorated(value):
             calls.append(value)
             return value + 2
@@ -136,13 +146,17 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             model_calls.append((args, kwargs))
             return "ran"
 
+        shapes_spec = object()
         compiled = torch.compile(
             model,
             fullgraph=True,
             dynamic=False,
             backend=backend,
             mode="reduce-overhead",
-            options={"trace": True},
+            name="named_compile",
+            recompile_limit=3,
+            isolate_recompiles=True,
+            shapes_spec=shapes_spec,
         )
         self.assertTrue(callable(compiled))
         self.assertIs(compiled.__wrapped__, model)
@@ -150,7 +164,11 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertIs(compiled._torch_rs_compile_fullgraph, True)
         self.assertIs(compiled._torch_rs_compile_dynamic, False)
         self.assertEqual(compiled._torch_rs_compile_mode, "reduce-overhead")
-        self.assertEqual(compiled._torch_rs_compile_options, {"trace": True})
+        self.assertIs(compiled._torch_rs_compile_options, None)
+        self.assertEqual(compiled._torch_rs_compile_name, "named_compile")
+        self.assertEqual(compiled._torch_rs_compile_recompile_limit, 3)
+        self.assertIs(compiled._torch_rs_compile_isolate_recompiles, True)
+        self.assertIs(compiled._torch_rs_compile_shapes_spec, shapes_spec)
         self.assertEqual(model_calls, [])
         self.assertEqual(backend_calls, [])
         with self.assertRaises(NotImplementedError) as raised:
@@ -158,6 +176,10 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertEqual(str(raised.exception), UNSUPPORTED_MESSAGE)
         self.assertEqual(model_calls, [])
         self.assertEqual(backend_calls, [])
+
+        options = {"trace": True}
+        options_compiled = torch.compile(model, backend=backend, options=options)
+        self.assertIs(options_compiled._torch_rs_compile_options, options)
 
         @torch.compile
         def bare_decorated(value):
@@ -222,6 +244,32 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             callable_default_compiled("value")
         self.assertEqual(backend_calls, [])
 
+    def test_decorator_form_snapshots_default_backend_at_factory_time(self):
+        def model(value):
+            raise AssertionError(f"model should not run: {value!r}")
+
+        def first_backend(graph_module, example_inputs):
+            raise AssertionError("first backend should not be invoked")
+
+        def second_backend(graph_module, example_inputs):
+            raise AssertionError("second backend should not be invoked")
+
+        torch.compiler.register_backend(first_backend, name="zz_first")
+        torch.compiler.register_backend(second_backend, name="zz_second")
+
+        torch.compiler.set_default_backend("zz_first")
+        configured = torch.compile()
+        torch.compiler.set_default_backend("zz_second")
+        compiled = configured(model)
+        self.assertIs(compiled._torch_rs_compile_backend, first_backend)
+
+        torch.compiler.set_default_backend("missing_at_factory")
+        invalid_configured = torch.compile()
+        torch.compiler.set_default_backend("zz_second")
+        with self.assertRaises(RuntimeError) as raised:
+            invalid_configured(model)
+        self.assertIn("Invalid backend: 'missing_at_factory'", str(raised.exception))
+
     def test_invalid_backend_names_and_types_fail_without_invocation(self):
         calls = []
 
@@ -257,11 +305,58 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertIn("Invalid backend: 'missing'", str(raised.exception))
         self.assertEqual(calls, [])
 
+        disabled_missing_decorator = torch.compile(backend="missing", disable=True)
+        with self.assertRaises(RuntimeError) as raised:
+            disabled_missing_decorator(model)
+        self.assertIn("Invalid backend: 'missing'", str(raised.exception))
+        self.assertEqual(calls, [])
+
         with self.assertRaises(TypeError) as raised:
             torch.compile(model, backend=object())
         self.assertEqual(
             str(raised.exception),
             "backend must be a string or callable, got <class 'object'>",
+        )
+        self.assertEqual(calls, [])
+
+    def test_invalid_bound_models_and_configurations_fail_before_execution(self):
+        calls = []
+
+        def model(value):
+            calls.append(value)
+            return value
+
+        with self.assertRaises(RuntimeError) as raised:
+            torch.compile()(None)
+        self.assertEqual(str(raised.exception), "Model can't be None")
+
+        with self.assertRaises(AssertionError) as raised:
+            torch.compile(123, disable=True)
+        self.assertEqual(
+            str(raised.exception),
+            "A callable function is expected, but <class 'int'> is provided.",
+        )
+
+        with self.assertRaises(RuntimeError) as raised:
+            torch.compile(model, mode="default", options={})
+        self.assertEqual(
+            str(raised.exception),
+            (
+                "Either mode or options can be specified, but both can't be "
+                "specified at the same time."
+            ),
+        )
+        self.assertEqual(calls, [])
+
+        configured = torch.compile(mode="default", options={}, disable=True)
+        with self.assertRaises(RuntimeError) as raised:
+            configured(model)
+        self.assertEqual(
+            str(raised.exception),
+            (
+                "Either mode or options can be specified, but both can't be "
+                "specified at the same time."
+            ),
         )
         self.assertEqual(calls, [])
 
@@ -298,7 +393,7 @@ else:
     raise AssertionError("compiled shell should raise")
 
 assert calls == []
-assert torch.compile(disable=True, backend="missing")(model) is model
+assert torch.compile(disable=True)(model) is model
 assert set(sys.modules) == modules_before_call
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """

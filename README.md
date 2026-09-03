@@ -54,10 +54,11 @@ attention-kernel dispatch, or CUDA `torch.compile` execution. Device selection,
 mutable default-device routing, streams, events, synchronization, allocator APIs, runtime initialization,
 additional tensor dtypes, and the full module, optimizer, model-serialization,
 compiler execution, and distributed stacks remain unsupported. Top-level
-`torch.compile` is present as an argument-binding shell with `disable=True`
-pass-through and backend name resolution through the `torch.compiler` registry,
-but graph capture, graph execution, eager fallback, installed-PyTorch
-forwarding, backend invocation, and CUDA compilation remain unsupported.
+`torch.compile` is present as a PyTorch 2.13-shaped argument-binding shell with
+`disable=True` pass-through and backend default/name resolution through the
+`torch.compiler` registry, but graph capture, graph execution, eager fallback,
+installed-PyTorch forwarding, backend invocation, and CUDA compilation remain
+unsupported.
 
 See the [exhaustive supported surface](docs/supported-surface.md) for exact API
 and limitation details, [FEATURES.md](FEATURES.md) for the weighted coverage
