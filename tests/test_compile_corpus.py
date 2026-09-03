@@ -118,9 +118,50 @@ class CompileCorpusMetadataTests(unittest.TestCase):
         self.assertIsNone(case.mode)
         self.assertIsNone(case.options)
         self.assertNotIn("_compile_trace", torch.__all__)
+        self.assertNotIn("_compile_trace_tensor_metadata", torch._C.__all__)
+        self.assertNotIn("_compile_trace_grad_enabled", torch._C.__all__)
+        self.assertNotIn("_compile_trace_unary", torch._C.__all__)
 
 
 class CompileCorpusTraceTests(unittest.TestCase):
+    def assert_native_tensor_matches(self, actual, expected, *, case):
+        with self.subTest(case=case, metadata=True):
+            self.assertIsInstance(actual, torch.Tensor)
+            self.assertEqual(
+                tuple(actual.shape),
+                tuple(expected.shape),
+                msg=f"{case} shape mismatch",
+            )
+            self.assertEqual(
+                actual.stride(),
+                expected.stride(),
+                msg=f"{case} stride mismatch",
+            )
+            self.assertIs(
+                actual.dtype,
+                expected.dtype,
+                msg=f"{case} dtype mismatch",
+            )
+            self.assertEqual(
+                actual.device,
+                expected.device,
+                msg=f"{case} device mismatch",
+            )
+            self.assertEqual(
+                actual.requires_grad,
+                expected.requires_grad,
+                msg=f"{case} requires_grad mismatch",
+            )
+        with self.subTest(case=case, values=True):
+            self.assertEqual(
+                actual.tolist(),
+                expected.tolist(),
+                msg=(
+                    f"{case} value mismatch: expected {expected.tolist()!r}, "
+                    f"got {actual.tolist()!r}"
+                ),
+            )
+
     def test_unary_abs_neg_records_private_immutable_graph(self):
         graph = _compile_trace.trace_one_input_compile_graph(
             cpu_float32_unary_abs_neg,
@@ -160,6 +201,183 @@ class CompileCorpusTraceTests(unittest.TestCase):
             graph.output = "changed"
         with self.assertRaises(AttributeError):
             graph.operations.append(abs_op)
+
+    def test_unary_abs_neg_executes_private_native_graph(self):
+        case = COMPILE_CORPUS[0]
+        graph = _compile_trace.trace_one_input_compile_graph(
+            case.program,
+            case.make_inputs,
+            name=case.name,
+        )
+        inputs = case.make_inputs(torch)
+        expected = case.program(*inputs)
+
+        self.assert_native_tensor_matches(
+            graph.forward(*inputs),
+            expected,
+            case=case.name,
+        )
+        self.assert_native_tensor_matches(
+            _compile_trace.execute_compile_trace_graph(graph, *inputs),
+            expected,
+            case=f"{case.name} function executor",
+        )
+
+    def test_unary_abs_neg_executor_matches_no_grad_requires_grad_outputs(self):
+        def make_inputs(module):
+            return (
+                module.tensor(
+                    [[-1.0, 2.0]],
+                    dtype=module.float32,
+                    requires_grad=True,
+                ),
+            )
+
+        graph = _compile_trace.trace_one_input_compile_graph(
+            cpu_float32_unary_abs_neg,
+            make_inputs,
+            name="cpu_float32_unary_abs_neg_requires_grad",
+        )
+        input = make_inputs(torch)[0]
+        expected_with_grad = cpu_float32_unary_abs_neg(input)
+
+        self.assertTrue(graph.inputs[0].metadata.requires_grad)
+        self.assertTrue(graph.operations[0].metadata.requires_grad)
+        self.assertTrue(graph.output_metadata.requires_grad)
+        self.assert_native_tensor_matches(
+            graph.forward(input),
+            expected_with_grad,
+            case="requires_grad grad-enabled",
+        )
+
+        with torch.no_grad():
+            expected_no_grad = cpu_float32_unary_abs_neg(input)
+            actual_no_grad = graph.forward(input)
+
+        self.assertFalse(expected_no_grad.requires_grad)
+        self.assert_native_tensor_matches(
+            actual_no_grad,
+            expected_no_grad,
+            case="requires_grad no_grad",
+        )
+
+    def test_unary_output_metadata_matches_native_stride_planning(self):
+        cases = (
+            (
+                "singleton dimension",
+                torch.tensor([[1.0, 2.0, 3.0]], dtype=torch.float32).t(),
+            ),
+            (
+                "dense transpose",
+                torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32).t(),
+            ),
+            (
+                "empty transpose",
+                torch.zeros((2, 0, 3), dtype=torch.float32).transpose(0, 2)[1],
+            ),
+            (
+                "channels last",
+                torch.zeros((2, 3, 4, 5), dtype=torch.float32).contiguous(
+                    memory_format=torch.channels_last
+                ),
+            ),
+            (
+                "channels last 3d",
+                torch.zeros((2, 3, 4, 5, 6), dtype=torch.float32).contiguous(
+                    memory_format=torch.channels_last_3d
+                ),
+            ),
+            (
+                "channels last 3d singleton transpose",
+                torch.zeros(
+                    (2, 3, 1, 5, 6),
+                    dtype=torch.float32,
+                )
+                .contiguous(memory_format=torch.channels_last_3d)
+                .transpose(0, 2),
+            ),
+        )
+        for case, input in cases:
+            with self.subTest(case=case):
+                recorder = _compile_trace.CompileTraceRecorder()
+                proxy = recorder.input(
+                    shape=tuple(input.shape),
+                    stride=input.stride(),
+                    dtype=_compile_trace.float32,
+                    device="cpu",
+                    requires_grad=input.requires_grad,
+                )
+                neg_proxy = proxy.neg()
+                output_proxy = neg_proxy.abs()
+                graph = recorder.finish(output_proxy)
+
+                expected_neg = input.neg()
+                expected = expected_neg.abs()
+                self.assertEqual(
+                    graph.operations[0].metadata.stride,
+                    expected_neg.stride(),
+                )
+                self.assertEqual(
+                    graph.operations[1].metadata.stride,
+                    expected.stride(),
+                )
+                self.assertEqual(graph.output_metadata.stride, expected.stride())
+                self.assert_native_tensor_matches(
+                    graph.forward(input),
+                    expected,
+                    case=case,
+                )
+
+    def test_private_executor_bypasses_active_torch_function_mode(self):
+        from torch_rs.overrides import TorchFunctionMode
+
+        graph = _compile_trace.trace_one_input_compile_graph(
+            cpu_float32_unary_abs_neg,
+            lambda module: (
+                module.tensor([[-1.0, 2.0]], dtype=module.float32),
+            ),
+            name="cpu_float32_unary_abs_neg",
+        )
+        input = torch.tensor([[-1.0, 2.0]], dtype=torch.float32)
+        expected = cpu_float32_unary_abs_neg(input)
+        mode_calls = []
+
+        class ReplacingMode(TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                mode_calls.append(getattr(func, "__name__", repr(func)))
+                if getattr(func, "__name__", None) == "abs":
+                    return torch.tensor([[99.0, 100.0]], dtype=torch.float32)
+                raise AssertionError(
+                    "private compile trace execution dispatched through "
+                    f"TorchFunctionMode for {mode_calls[-1]}"
+                )
+
+        with ReplacingMode():
+            actual = graph.forward(input)
+
+        self.assertEqual(mode_calls, [])
+        self.assert_native_tensor_matches(
+            actual,
+            expected,
+            case="active TorchFunctionMode",
+        )
+
+    def test_private_executor_rejects_runtime_metadata_mismatch_clearly(self):
+        graph = _compile_trace.trace_one_input_compile_graph(
+            cpu_float32_unary_abs_neg,
+            cpu_float32_unary_inputs,
+            name="cpu_float32_unary_abs_neg",
+        )
+        mismatched = torch.tensor([1.0], dtype=torch.float32)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            (
+                "metadata mismatch for 'arg0': "
+                r"shape expected \(2, 3\), got \(1,\)"
+            ),
+        ):
+            graph.forward(mismatched)
 
     def test_proxy_unsupported_operations_fail_clearly(self):
         recorder = _compile_trace.CompileTraceRecorder()
@@ -252,6 +470,18 @@ graph = _compile_trace.trace_one_input_compile_graph(
 )
 assert graph.output == "abs_1"
 assert [operation.target for operation in graph.operations] == ["neg", "abs"]
+native_input = make_inputs(torch)[0]
+expected = program(native_input)
+for actual in (
+    graph.forward(native_input),
+    _compile_trace.execute_compile_trace_graph(graph, native_input),
+):
+    assert actual.tolist() == expected.tolist()
+    assert actual.shape == expected.shape
+    assert actual.stride() == expected.stride()
+    assert actual.dtype is expected.dtype
+    assert actual.device == expected.device
+    assert actual.requires_grad is expected.requires_grad
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
