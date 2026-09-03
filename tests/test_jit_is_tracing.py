@@ -259,7 +259,7 @@ class JitIsTracingTests(unittest.TestCase):
                 self.assertFalse(hasattr(torch.jit, name))
         self.assertFalse(hasattr(torch.jit._trace, "trace"))
         self.assertFalse(hasattr(torch.jit._trace, "trace_module"))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         self.assertIs(torch.jit.is_scripting(), False)
 
     def test_importing_the_package_does_not_import_pytorch(self):

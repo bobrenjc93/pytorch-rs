@@ -447,7 +447,7 @@ class JitScriptIfTracingReferenceTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch.jit, name))
         self.assertIs(torch.jit.is_tracing(), False)
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
 
 
 if __name__ == "__main__":

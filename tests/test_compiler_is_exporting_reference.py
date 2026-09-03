@@ -275,7 +275,7 @@ class CompilerIsExportingReferenceTests(unittest.TestCase):
 
     def test_export_and_other_compiler_apis_remain_unsupported(self):
         self.assertTrue(callable(reference_torch.export.export))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch, "is_exporting"))
 

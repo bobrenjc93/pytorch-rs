@@ -514,7 +514,7 @@ class CompilerDisableTests(unittest.TestCase):
             )
 
         self.assertEqual(state(), (False, False, False))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch.compiler, "compile"))
 

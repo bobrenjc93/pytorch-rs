@@ -371,7 +371,7 @@ class JitIsinstanceTests(unittest.TestCase):
                 self.assertFalse(hasattr(torch.jit, name))
         self.assertIs(torch.jit.is_scripting(), False)
         self.assertIs(torch.jit.is_tracing(), False)
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
 
     def test_import_and_eager_checks_do_not_import_pytorch(self):
         script = r"""
@@ -396,7 +396,7 @@ with warnings.catch_warnings(record=True) as caught:
 assert len(caught) == 1
 assert not hasattr(torch.jit, "script")
 assert not hasattr(torch.jit, "trace")
-assert not hasattr(torch, "compile")
+assert callable(torch.compile)
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(

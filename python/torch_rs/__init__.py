@@ -260,6 +260,81 @@ def set_default_device(device: "Device") -> None:
     )
 
 
+_COMPILE_UNSUPPORTED_MESSAGE = (
+    "torch.compile(): graph capture, graph execution, and eager fallback are "
+    "not supported; only argument binding, disable=True pass-through, and "
+    "backend resolution are implemented"
+)
+
+
+def _unsupported_compile_wrapper(
+    model,
+    fullgraph,
+    dynamic,
+    resolved_backend,
+    mode,
+    options,
+):
+    def compiled_model(*args, **kwargs):
+        raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
+
+    import functools as _compile_functools
+
+    _compile_functools.update_wrapper(compiled_model, model)
+    compiled_model._torch_rs_compile_fullgraph = fullgraph
+    compiled_model._torch_rs_compile_dynamic = dynamic
+    compiled_model._torch_rs_compile_backend = resolved_backend
+    compiled_model._torch_rs_compile_mode = mode
+    compiled_model._torch_rs_compile_options = options
+    return compiled_model
+
+
+def compile(
+    model=None,
+    *,
+    fullgraph=False,
+    dynamic=None,
+    backend=None,
+    mode=None,
+    options=None,
+    disable=False,
+):
+    """Return a ``torch.compile`` compatibility shell.
+
+    This entrypoint implements Python argument binding, ``disable=True``
+    pass-through, and backend resolution through ``torch.compiler``. Graph
+    capture, graph execution, eager fallback, installed-PyTorch forwarding, and
+    backend invocation remain unsupported.
+    """
+    if model is None:
+        def compile_decorator(model):
+            return compile(
+                model,
+                fullgraph=fullgraph,
+                dynamic=dynamic,
+                backend=backend,
+                mode=mode,
+                options=options,
+                disable=disable,
+            )
+
+        return compile_decorator
+
+    if disable:
+        return model
+
+    resolved_backend = torch.compiler._resolve_compile_backend(backend)
+
+    return _unsupported_compile_wrapper(
+        model,
+        fullgraph,
+        dynamic,
+        resolved_backend,
+        mode,
+        options,
+    )
+
+
 @_functools.cache
 def get_device_module(device: torch.device | str | None = None):
     """
@@ -566,6 +641,7 @@ __all__ = [
     "is_deterministic_algorithms_warn_only_enabled",
     "get_default_device",
     "set_default_device",
+    "compile",
     "get_device_module",
     "get_float32_matmul_precision",
     "set_float32_matmul_precision",

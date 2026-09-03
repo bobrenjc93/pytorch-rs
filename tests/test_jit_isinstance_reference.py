@@ -335,7 +335,7 @@ class JitIsinstanceReferenceTests(unittest.TestCase):
         self.assertIs(torch.jit.is_scripting(), False)
         self.assertIs(torch.jit.is_tracing(), False)
         self.assertTrue(hasattr(reference_torch, "compile"))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
 
 
 if __name__ == "__main__":

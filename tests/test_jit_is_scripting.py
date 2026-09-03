@@ -235,7 +235,7 @@ class JitIsScriptingTests(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch.jit, name))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
 
         def exported():
             return "exported"

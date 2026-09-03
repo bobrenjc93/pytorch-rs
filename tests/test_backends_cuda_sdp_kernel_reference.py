@@ -479,7 +479,7 @@ class CudaSdpKernelReferenceTests(unittest.TestCase):
         self.assertFalse(hasattr(torch.nn, "attention"))
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         if reference_torch.cuda.is_available():
             device = reference_torch.device("cuda", 0)
             tensor = reference_torch.tensor([1.0], device=device)

@@ -162,7 +162,7 @@ print(json.dumps({
                 "cudnn_sdp": True,
                 "sdp_kernel": True,
                 "sdpa_execution": False,
-                "compile": False,
+                "compile": True,
                 "reference_torch_loaded": False,
             },
         )
@@ -592,7 +592,7 @@ print(json.dumps({
         self.assertIs(cuda.enable_cudnn_sdp(cudnn_state), None)
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         self.assertFalse(hasattr(torch.nn.functional, "scaled_dot_product_attention"))
         self.assertIs(sys.modules["torch_rs.cuda"], torch.cuda)
         self.assertIs(importlib.import_module("torch_rs.cuda"), torch.cuda)

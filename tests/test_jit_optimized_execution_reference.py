@@ -561,7 +561,7 @@ class JitOptimizedExecutionReferenceTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertTrue(hasattr(reference_torch._C, name))
                 self.assertFalse(hasattr(torch._C, name))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
 
 
 if __name__ == "__main__":

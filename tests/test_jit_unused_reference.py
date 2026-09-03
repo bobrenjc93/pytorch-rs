@@ -345,7 +345,7 @@ class JitUnusedReferenceTests(unittest.TestCase):
         self.assertIs(torch.jit.is_scripting(), False)
 
         self.assertTrue(hasattr(reference_torch, "compile"))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
 
         actual_value = object()
         expected_value = object()

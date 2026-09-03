@@ -232,7 +232,7 @@ class JitOnednnFusionEnabledTests(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch.jit, name))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
 
     def test_importing_the_package_does_not_import_pytorch(self):
         script = r"""

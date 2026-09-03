@@ -295,7 +295,7 @@ class JitOnednnFusionEnabledReferenceTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIn(name, expected_public)
                 self.assertFalse(hasattr(torch.jit, name))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
 
 
 if __name__ == "__main__":

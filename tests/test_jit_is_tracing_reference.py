@@ -308,7 +308,7 @@ class JitIsTracingReferenceTests(unittest.TestCase):
     def test_tracing_scripting_and_compilation_remain_unsupported(self):
         self.assertTrue(callable(reference_torch.jit.trace))
         self.assertTrue(callable(reference_torch.jit.script))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         for name in (
             "CompilationUnit",
             "ScriptFunction",

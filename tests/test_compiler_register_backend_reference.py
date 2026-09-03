@@ -186,7 +186,7 @@ class CompilerRegisterBackendReferenceTests(unittest.TestCase):
                     function,
                 )
 
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch, "register_backend"))
         self.assertFalse(hasattr(torch.compiler, "compile"))

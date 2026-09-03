@@ -382,7 +382,7 @@ class JitStrictFusionTests(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch.jit, name))
-        self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(callable(torch.compile))
 
     def test_importing_the_package_does_not_import_pytorch(self):
         script = r"""
@@ -408,7 +408,7 @@ assert str(caught[0].message) == "Only works in script mode"
 assert torch.jit.strict_fusion.__module__ == "torch_rs.jit"
 assert not hasattr(torch.jit, "script")
 assert not hasattr(torch.jit, "set_fusion_strategy")
-assert not hasattr(torch, "compile")
+assert callable(torch.compile)
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
