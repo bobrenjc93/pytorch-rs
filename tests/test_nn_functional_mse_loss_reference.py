@@ -174,6 +174,86 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ),
         )
 
+    def make_same_shape_contiguous_sum_cases(self, module):
+        signed_zero_input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0000,
+            ],
+            dtype=np.uint32,
+        )
+        signed_zero_target_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x8000_0000,
+                0x0000_0000,
+            ],
+            dtype=np.uint32,
+        )
+        edge_input_bits = np.asarray(
+            [
+                0x0000_0001,
+                0x8000_0001,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+                0x3F80_0000,
+                0xBF80_0000,
+            ],
+            dtype=np.uint32,
+        )
+        edge_target_bits = np.asarray(
+            [
+                0x8000_0001,
+                0x0000_0001,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+                0xBF80_0000,
+                0x3F80_0000,
+            ],
+            dtype=np.uint32,
+        )
+        large_input = np.ones(1 << 20, dtype=np.float32)
+        large_target = np.zeros(1 << 20, dtype=np.float32)
+
+        return (
+            (
+                "scalar",
+                self.tensor(module, -0.0),
+                self.tensor(module, 2.5),
+            ),
+            (
+                "empty",
+                module.zeros((0, 1024), dtype=module.float32),
+                module.ones((0, 1024), dtype=module.float32),
+            ),
+            (
+                "signed zero",
+                module.tensor(memoryview(signed_zero_input_bits.view(np.float32))).view(2, 2),
+                module.tensor(memoryview(signed_zero_target_bits.view(np.float32))).view(2, 2),
+            ),
+            (
+                "nan and infinity",
+                module.tensor(memoryview(edge_input_bits.view(np.float32))).view(2, 5),
+                module.tensor(memoryview(edge_target_bits.view(np.float32))).view(2, 5),
+            ),
+            (
+                "large contiguous",
+                module.tensor(memoryview(large_input)).view(1024, 1024),
+                module.tensor(memoryview(large_target)).view(1024, 1024),
+            ),
+        )
+
     def make_broadcast_cases(self, module):
         scalar = self.tensor(module, -0.0)
         offset_scalar = self.tensor(module, [17.0, 0.5])[1]
@@ -445,6 +525,37 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 np.testing.assert_array_equal(
                     actual_values.reshape(-1).view(np.uint32),
                     expected_values.reshape(-1).view(np.uint32),
+                )
+
+    def assert_sum_scalar_matches(self, actual, expected, *, case):
+        with self.subTest(case=case, metadata=True):
+            self.assertEqual(actual.shape, tuple(expected.shape))
+            self.assertEqual(actual.stride(), expected.stride())
+            self.assertEqual(actual.storage_offset(), expected.storage_offset())
+            self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+            self.assertEqual(actual.requires_grad, expected.requires_grad)
+            self.assertEqual(actual.is_leaf, expected.is_leaf)
+            self.assertIs(actual.dtype, torch.float32)
+            self.assertEqual(actual.device, torch.device("cpu"))
+            self.assertEqual(actual.numel(), expected.numel())
+
+        actual_values = np.asarray(actual)
+        expected_values = expected.detach().cpu().numpy()
+        with self.subTest(case=case, values=True):
+            if np.isnan(expected_values).all():
+                self.assertTrue(np.isnan(actual_values).all())
+            elif case == "large contiguous":
+                np.testing.assert_allclose(
+                    actual_values,
+                    expected_values,
+                    rtol=1e-4,
+                    atol=1e-4,
+                )
+            else:
+                np.testing.assert_array_max_ulp(
+                    actual_values,
+                    expected_values,
+                    maxulp=1,
                 )
 
     def test_name_signature_defaults_and_annotations_match_pytorch_2_13(self):
@@ -914,6 +1025,89 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                     reference_torch.equal(expected_target, expected_target_before)
                 )
 
+    def test_sum_reduction_same_shape_contiguous_cases_match_pytorch_2_13(self):
+        actual_cases = self.make_same_shape_contiguous_sum_cases(torch)
+        expected_cases = self.make_same_shape_contiguous_sum_cases(reference_torch)
+        for actual_case, expected_case in zip(actual_cases, expected_cases, strict=True):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            self.assertEqual(actual_input.shape, tuple(expected_input.shape))
+            self.assertEqual(actual_target.shape, tuple(expected_target.shape))
+            self.assertEqual(actual_input.shape, actual_target.shape)
+            self.assertTrue(actual_input.is_contiguous())
+            self.assertTrue(actual_target.is_contiguous())
+            self.assertTrue(expected_input.is_contiguous())
+            self.assertTrue(expected_target.is_contiguous())
+            actual_input_bits_before = (
+                np.asarray(actual_input).reshape(-1).view(np.uint32).copy()
+            )
+            actual_target_bits_before = (
+                np.asarray(actual_target).reshape(-1).view(np.uint32).copy()
+            )
+            expected_input_bits_before = (
+                expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            expected_target_bits_before = (
+                expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+
+            actual, actual_warnings = self.call_with_warnings(
+                functional,
+                actual_input,
+                actual_target,
+                reduction="sum",
+            )
+            expected, expected_warnings = self.call_with_warnings(
+                reference_functional,
+                expected_input,
+                expected_target,
+                reduction="sum",
+            )
+
+            self.assert_sum_scalar_matches(actual, expected, case=case)
+            with self.subTest(case=case, warnings=True):
+                self.assertEqual(actual_warnings, expected_warnings)
+                self.assertEqual(actual_warnings, [])
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                actual_repeat = functional.mse_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="sum",
+                )
+                expected_repeat = reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="sum",
+                )
+            with self.subTest(case=case, storage=True):
+                self.assertFalse(actual.is_set_to(actual_repeat))
+                self.assertFalse(expected.is_set_to(expected_repeat))
+                self.assertFalse(actual.is_set_to(actual_input))
+                self.assertFalse(expected.is_set_to(expected_input))
+                self.assertFalse(actual.is_set_to(actual_target))
+                self.assertFalse(expected.is_set_to(expected_target))
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input).reshape(-1).view(np.uint32),
+                    actual_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target).reshape(-1).view(np.uint32),
+                    actual_target_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_input_bits_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    expected_target_bits_before,
+                )
+
     def test_mean_reduction_cases_match_pytorch_2_13(self):
         actual_cases = self.make_sum_reduction_cases(torch)
         expected_cases = self.make_sum_reduction_cases(reference_torch)
@@ -1353,6 +1547,18 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 dtype=reference_torch.float32,
                 requires_grad=target_requires_grad,
             )
+            actual_input_bits_before = (
+                np.asarray(actual_input).reshape(-1).view(np.uint32).copy()
+            )
+            actual_target_bits_before = (
+                np.asarray(actual_target).reshape(-1).view(np.uint32).copy()
+            )
+            expected_input_bits_before = (
+                expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            expected_target_bits_before = (
+                expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
             with torch.no_grad():
                 actual = functional.mse_loss(
                     actual_input,
@@ -1370,6 +1576,26 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 expected,
                 case=(input_requires_grad, target_requires_grad),
                 max_value_ulp=1,
+            )
+            self.assertIsNone(actual_input.grad)
+            self.assertIsNone(actual_target.grad)
+            self.assertIsNone(expected_input.grad)
+            self.assertIsNone(expected_target.grad)
+            np.testing.assert_array_equal(
+                np.asarray(actual_input).reshape(-1).view(np.uint32),
+                actual_input_bits_before,
+            )
+            np.testing.assert_array_equal(
+                np.asarray(actual_target).reshape(-1).view(np.uint32),
+                actual_target_bits_before,
+            )
+            np.testing.assert_array_equal(
+                expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                expected_input_bits_before,
+            )
+            np.testing.assert_array_equal(
+                expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                expected_target_bits_before,
             )
 
     def test_mean_reduction_requires_grad_operands_match_inside_no_grad(self):

@@ -88,6 +88,34 @@ class FunctionalMseLossTests(unittest.TestCase):
                     maxulp=2,
                 )
 
+    def assert_sum_scalar_matches_composition(self, actual, expected, *, case):
+        with self.subTest(case=case, metadata=True):
+            self.assertEqual(actual.shape, expected.shape)
+            self.assertEqual(actual.stride(), expected.stride())
+            self.assertEqual(actual.storage_offset(), expected.storage_offset())
+            self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+            self.assertEqual(actual.requires_grad, expected.requires_grad)
+            self.assertEqual(actual.is_leaf, expected.is_leaf)
+            self.assertIs(actual.dtype, torch.float32)
+            self.assertEqual(actual.device, torch.device("cpu"))
+        with self.subTest(case=case, values=True):
+            actual_value = np.asarray(actual)
+            expected_value = np.asarray(expected)
+            if np.isnan(expected_value).all():
+                self.assertTrue(np.isnan(actual_value).all())
+            elif case == "large contiguous":
+                np.testing.assert_allclose(
+                    actual_value,
+                    expected_value,
+                    rtol=1e-3,
+                    atol=1e-5,
+                )
+            else:
+                np.testing.assert_array_equal(
+                    self.tensor_bits(actual),
+                    self.tensor_bits(expected),
+                )
+
     def layout_cases(self):
         offset_input_base = torch.tensor(
             np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4).tolist()
@@ -609,7 +637,7 @@ class FunctionalMseLossTests(unittest.TestCase):
                 warnings.simplefilter("always")
                 actual = functional.mse_loss(input, target, reduction="sum")
 
-            self.assert_matches_composition(actual, expected, case=case)
+            self.assert_sum_scalar_matches_composition(actual, expected, case=case)
             with self.subTest(case=case, warning=True):
                 self.assertEqual(len(caught), int(warns))
                 if warns:
@@ -622,6 +650,45 @@ class FunctionalMseLossTests(unittest.TestCase):
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     repeated = functional.mse_loss(input, target, reduction="sum")
+                self.assertFalse(actual.is_set_to(repeated))
+                self.assertFalse(actual.is_set_to(input))
+                self.assertFalse(actual.is_set_to(target))
+                self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+            with self.subTest(case=case, nonmutation=True):
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1], input_state[-1]
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1], target_state[-1]
+                )
+
+    def test_sum_reduction_same_shape_contiguous_fast_path_cases(self):
+        for case, input, target in self.same_shape_contiguous_mean_cases():
+            self.assertEqual(input.shape, target.shape)
+            self.assertTrue(input.is_contiguous())
+            self.assertTrue(target.is_contiguous())
+            expected = functional.mse_loss(input, target, reduction="none").sum()
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                actual = functional.mse_loss(input, target, reduction="sum")
+
+            self.assertEqual(caught, [])
+            self.assert_sum_scalar_matches_composition(actual, expected, case=case)
+            with self.subTest(case=case, scalar_metadata=True):
+                self.assertEqual(actual.shape, ())
+                self.assertEqual(actual.stride(), ())
+                self.assertEqual(actual.storage_offset(), 0)
+                self.assertTrue(actual.is_contiguous())
+                self.assertEqual(actual.numel(), 1)
+                self.assertFalse(actual.requires_grad)
+                self.assertTrue(actual.is_leaf)
+            with self.subTest(case=case, storage=True):
+                repeated = functional.mse_loss(input, target, reduction="sum")
                 self.assertFalse(actual.is_set_to(repeated))
                 self.assertFalse(actual.is_set_to(input))
                 self.assertFalse(actual.is_set_to(target))
@@ -1118,6 +1185,8 @@ class FunctionalMseLossTests(unittest.TestCase):
                 [[0.5, 2.0], [-3.0, 4.5]],
                 requires_grad=target_requires_grad,
             )
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
             with self.subTest(
                 input_requires_grad=input_requires_grad,
                 target_requires_grad=target_requires_grad,
@@ -1130,6 +1199,14 @@ class FunctionalMseLossTests(unittest.TestCase):
                 self.assertTrue(actual.is_leaf)
                 self.assertIsNone(input.grad)
                 self.assertIsNone(target.grad)
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1], input_state[-1]
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1], target_state[-1]
+                )
 
     def test_mean_reduction_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (

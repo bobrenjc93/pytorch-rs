@@ -696,9 +696,8 @@ fn _nn_functional_mse_loss(
         }
         MseLossReduction::Sum => input
             .inner()
-            .squared_difference(target.inner())
-            .map_err(|error| tensor_error(&error))?
-            .sum(),
+            .squared_difference_sum(target.inner())
+            .map_err(|error| tensor_error(&error))?,
     };
     PyTensor::new(output).into_py_any(py)
 }
