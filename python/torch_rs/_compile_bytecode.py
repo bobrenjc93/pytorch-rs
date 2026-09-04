@@ -179,7 +179,7 @@ _OPCODE_FORMS = (
     _OpcodeForm("load_method", frozenset(("LOAD_ATTR", "LOAD_METHOD"))),
     _OpcodeForm("call", frozenset(("CALL", "CALL_FUNCTION", "CALL_METHOD"))),
     _OpcodeForm("precall", frozenset(("PRECALL",))),
-    _OpcodeForm("load_const", frozenset(("LOAD_CONST",))),
+    _OpcodeForm("load_const", frozenset(("LOAD_CONST", "LOAD_SMALL_INT"))),
     _OpcodeForm("binary", frozenset(("BINARY_ADD", "BINARY_OP", "INPLACE_ADD"))),
     _OpcodeForm("unary_neg", frozenset(("UNARY_NEGATIVE",))),
     _OpcodeForm("return", frozenset(("RETURN_VALUE", "RETURN_CONST"))),
