@@ -22,7 +22,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "torch_compile_cpu_eager_benchmark_v2"
+BENCHMARK_VERSION = "torch_compile_cpu_eager_benchmark_v3"
 DEFAULT_WARMUPS = 7
 DEFAULT_SAMPLES = 31
 IMPLEMENTATION_ORDERS = (
@@ -251,6 +251,15 @@ def _package_version(distribution_name, module):
         return getattr(module, "__version__", None)
 
 
+def _exception_name(error):
+    error_type = type(error)
+    module = error_type.__module__
+    name = error_type.__qualname__
+    if module == "builtins":
+        return name
+    return f"{module}.{name}"
+
+
 def _environment(torch_rs, reference_torch, corpus_version, args):
     return {
         "benchmark_version": BENCHMARK_VERSION,
@@ -475,6 +484,126 @@ def _run_cell(
     }
 
 
+def _run_guard_sequence_pass(
+    *,
+    module,
+    implementation,
+    scenario,
+    corpus_module,
+    reference_torch,
+):
+    case = scenario.case
+    _reset_compile_state(module, implementation, corpus_module)
+    compiled = module.compile(case.program, **case.compile_kwargs("eager"))
+    steps = []
+
+    for step in scenario.steps:
+        if step.reset_before:
+            _reset_compile_state(module, implementation, corpus_module)
+
+        inputs = step.make_inputs(module)
+        started_ns = time.perf_counter_ns()
+        try:
+            output = compiled(*inputs)
+            _synchronize(module)
+            elapsed_us = (time.perf_counter_ns() - started_ns) / 1000.0
+        except Exception as error:
+            elapsed_us = (time.perf_counter_ns() - started_ns) / 1000.0
+            if not step.expect_limit_error:
+                raise
+            steps.append(
+                {
+                    "step": step.name,
+                    "guard_change": step.guard_change,
+                    "status": "expected_error",
+                    "elapsed_us": elapsed_us,
+                    "input_metadata": [_tensor_metadata(input) for input in inputs],
+                    "error_type": _exception_name(error),
+                    "error_message": str(error).splitlines()[0],
+                }
+            )
+            continue
+
+        if step.expect_limit_error:
+            raise AssertionError(
+                f"{scenario.name}/{implementation}/{step.name} expected "
+                "a recompile-limit error"
+            )
+
+        expected_inputs = step.make_inputs(module)
+        expected = case.program(*expected_inputs)
+        cell_name = f"{scenario.name}/{step.name}/{implementation}"
+        _assert_outputs_match(output, expected, cell_name=cell_name)
+        checksum = _checksum_tensor(output)
+        _assert_timing_checksums_match(
+            {
+                "cold_checksum": checksum,
+                "steady_checksums": [checksum],
+            },
+            expected,
+            cell_name=cell_name,
+        )
+
+        if implementation == "torch_rs":
+            reference_inputs = step.make_inputs(reference_torch)
+            reference_expected = case.program(*reference_inputs)
+            _assert_outputs_match(
+                output,
+                reference_expected,
+                cell_name=f"{scenario.name}/{step.name}",
+            )
+            _assert_timing_checksums_match(
+                {
+                    "cold_checksum": checksum,
+                    "steady_checksums": [checksum],
+                },
+                reference_expected,
+                cell_name=f"{scenario.name}/{step.name}",
+            )
+
+        steps.append(
+            {
+                "step": step.name,
+                "guard_change": step.guard_change,
+                "status": "ok",
+                "elapsed_us": elapsed_us,
+                "input_metadata": [_tensor_metadata(input) for input in inputs],
+                "output_metadata": _tensor_metadata(output),
+                "checksum": checksum,
+            }
+        )
+
+    return {
+        "scenario": scenario.name,
+        "case": case.name,
+        "implementation": implementation,
+        "recompile_limit": case.recompile_limit,
+        "steps": steps,
+    }
+
+
+def _run_guard_sequences(corpus_module, torch_rs, reference_torch):
+    rows = []
+    scenarios = tuple(
+        getattr(corpus_module, "COMPILE_RECOMPILATION_GUARD_SCENARIOS", ())
+    )
+    for order_index, order in enumerate(IMPLEMENTATION_ORDERS):
+        for implementation in order:
+            module = torch_rs if implementation == "torch_rs" else reference_torch
+            for scenario in scenarios:
+                row = _run_guard_sequence_pass(
+                    module=module,
+                    implementation=implementation,
+                    scenario=scenario,
+                    corpus_module=corpus_module,
+                    reference_torch=reference_torch,
+                )
+                row["order_index"] = order_index
+                row["order"] = list(order)
+                rows.append(row)
+    return rows
+
+
 def _geomean(values):
     if not values:
         return None
@@ -591,6 +720,7 @@ def run_benchmark(args):
             variants,
             args,
         )
+        guard_sequences = _run_guard_sequences(corpus_module, torch_rs, reference_torch)
     finally:
         if gc_was_enabled:
             gc.enable()
@@ -609,8 +739,13 @@ def run_benchmark(args):
             args,
         ),
         "cases": rows,
+        "recompilation_guard_sequences": guard_sequences,
         "aggregates": {
             "timed_supported_cell_count": len(rows),
+            "recompilation_guard_sequence_count": len(guard_sequences),
+            "recompilation_guard_step_count": sum(
+                len(row["steps"]) for row in guard_sequences
+            ),
             "steady_geomean_torch_rs_over_pytorch": _geomean(steady_ratios),
             "steady_geomean_capped_0_10_10_0": _geomean(
                 [min(10.0, max(0.10, ratio)) for ratio in steady_ratios]
