@@ -1,4 +1,6 @@
 import re
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -7,6 +9,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 README = REPOSITORY_ROOT / "README.md"
 BENCHMARKING = REPOSITORY_ROOT / "BENCHMARKING.md"
 CONTRIBUTING = REPOSITORY_ROOT / "CONTRIBUTING.md"
+FIRST_SUCCESS_EXAMPLE = REPOSITORY_ROOT / "examples" / "first_success.py"
 FEATURES = REPOSITORY_ROOT / "FEATURES.md"
 DOCS_README = REPOSITORY_ROOT / "docs" / "README.md"
 TROUBLESHOOTING = REPOSITORY_ROOT / "docs" / "troubleshooting.md"
@@ -479,6 +482,11 @@ DOCS_INDEX_GUIDES = (
         "Install commands, first-success example, scope summary, and validation entry points.",
     ),
     (
+        "First-success example",
+        "../examples/first_success.py",
+        "Runnable assertion-only version of the README first-success snippet.",
+    ),
+    (
         "Contributing guide",
         "../CONTRIBUTING.md",
         "Locked setup, environment expectations, test selection, draft workflow, and documentation ownership.",
@@ -561,6 +569,9 @@ class ReadmeQuickstartTests(unittest.TestCase):
 
     def test_first_success_example_is_short_and_runs(self):
         readme = README.read_text(encoding="utf-8")
+        self.assertIn(
+            "[examples/first_success.py](examples/first_success.py)", readme
+        )
         matches = list(
             re.finditer(
                 r"^### First success\n\n```python\n(?P<source>.*?)^```$",
@@ -572,7 +583,15 @@ class ReadmeQuickstartTests(unittest.TestCase):
 
         source = matches[0].group("source").rstrip()
         self.assertLessEqual(len(source.splitlines()), 15)
+        self.assertEqual(
+            FIRST_SUCCESS_EXAMPLE.read_text(encoding="utf-8"), source + "\n"
+        )
         exec(compile(source, f"{README}#first-success", "exec"), {})
+        subprocess.run(
+            [sys.executable, str(FIRST_SUCCESS_EXAMPLE)],
+            cwd=REPOSITORY_ROOT,
+            check=True,
+        )
 
     def test_readme_routes_benchmark_policy_to_focused_docs(self):
         readme = README.read_text(encoding="utf-8")

@@ -14,6 +14,7 @@ merge time and are not source documentation.
 ## Contributor Guides
 
 - [Repository README](../README.md): Install commands, first-success example, scope summary, and validation entry points.
+- [First-success example](../examples/first_success.py): Runnable assertion-only version of the README first-success snippet.
 - [Contributing guide](../CONTRIBUTING.md): Locked setup, environment expectations, test selection, draft workflow, and documentation ownership.
 - [Setup troubleshooting](troubleshooting.md): Short fixes for common environment, import, reference dependency, and stale wheel failures.
 - [Architecture map](../ARCHITECTURE.md): Source map for the Rust core, Python bindings, wrappers, and test layout.
