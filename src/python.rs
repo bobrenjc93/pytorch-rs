@@ -6271,6 +6271,19 @@ struct ArangeCallArguments<'py> {
     keyword_error: Option<PyErr>,
 }
 
+struct ParsedArange {
+    start: f64,
+    elements: usize,
+    requires_grad: bool,
+    generation: ArangeGeneration,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ArangeGeneration {
+    FloatStart,
+    ValueThenCast,
+}
+
 struct CreationCallArguments<'py> {
     size: Option<CreationSizeArgument<'py>>,
     shape: Option<Bound<'py, PyAny>>,
@@ -7591,16 +7604,21 @@ fn arange_impl(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyTensor> {
-    let (start, elements, requires_grad) =
-        parse_arange_arguments(bind_arange_arguments(args, kwargs)?)?;
-    let inner = if start.to_bits() == 0.0_f64.to_bits() {
-        CoreTensor::arange_float32(elements)
-    } else {
-        CoreTensor::arange_float32_from(start, elements)
+    let parsed = parse_arange_arguments(bind_arange_arguments(args, kwargs)?)?;
+    let inner = match parsed.generation {
+        ArangeGeneration::FloatStart => {
+            CoreTensor::arange_float32_from_float_start(parsed.start, parsed.elements)
+        }
+        ArangeGeneration::ValueThenCast if parsed.start.to_bits() == 0.0_f64.to_bits() => {
+            CoreTensor::arange_float32(parsed.elements)
+        }
+        ArangeGeneration::ValueThenCast => {
+            CoreTensor::arange_float32_from(parsed.start, parsed.elements)
+        }
     };
     inner
-        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-        .map_err(|error| scalar_creation_error(&error, Some(elements)))
+        .map(|inner| PyTensor::new(inner.with_requires_grad(parsed.requires_grad)))
+        .map_err(|error| scalar_creation_error(&error, Some(parsed.elements)))
 }
 
 fn parse_requires_grad(function: &str, requires_grad: &Bound<'_, PyAny>) -> PyResult<bool> {
@@ -9128,7 +9146,7 @@ fn bind_arange_arguments<'py>(
     Ok(arguments)
 }
 
-fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(f64, usize, bool)> {
+fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<ParsedArange> {
     if arguments.explicit_step {
         return Err(arange_explicit_step_unsupported());
     }
@@ -9201,12 +9219,15 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(f64, 
         ));
     }
     let elements = arange_element_count(extract_arange_endpoint(&end.value, end_kind)?)?;
-    Ok((0.0, elements, requires_grad))
+    Ok(ParsedArange {
+        start: 0.0,
+        elements,
+        requires_grad,
+        generation: ArangeGeneration::ValueThenCast,
+    })
 }
 
-fn parse_two_bound_arange_arguments(
-    arguments: ArangeCallArguments<'_>,
-) -> PyResult<(f64, usize, bool)> {
+fn parse_two_bound_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<ParsedArange> {
     let ArangeCallArguments {
         start,
         end,
@@ -9237,10 +9258,8 @@ fn parse_two_bound_arange_arguments(
         if !arange_endpoint_is_float(end_kind) {
             return Err(arange_two_bound_float_endpoint_type_error("end", &end)?);
         }
-    } else if integer_range {
-        if !arange_endpoint_is_integer(end_kind) {
-            return Err(arange_two_bound_integer_endpoint_type_error("end", &end)?);
-        }
+    } else if integer_range && !arange_endpoint_is_integer(end_kind) {
+        return Err(arange_two_bound_integer_endpoint_type_error("end", &end)?);
     }
 
     let explicit_float32_dtype = arange_has_explicit_float32_dtype(dtype.as_ref())?;
@@ -9276,7 +9295,16 @@ fn parse_two_bound_arange_arguments(
     let start = extract_arange_endpoint(&start.value, start_kind)?;
     let end = extract_arange_endpoint(&end.value, end_kind)?;
     let elements = arange_two_bound_element_count(start, end)?;
-    Ok((start, elements, requires_grad))
+    Ok(ParsedArange {
+        start,
+        elements,
+        requires_grad,
+        generation: if float_range {
+            ArangeGeneration::FloatStart
+        } else {
+            ArangeGeneration::ValueThenCast
+        },
+    })
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

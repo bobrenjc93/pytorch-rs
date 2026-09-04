@@ -234,6 +234,7 @@ class ArangeReferenceTests(unittest.TestCase):
             (0.25, 2.26),
             (-2.5, 2.5),
             (-2.5, -0.5),
+            (-2.999, 13.001),
             (math.nextafter(1.0, 0.0), 2.0),
             (math.nextafter(1.0, 2.0), 2.0),
             (float(2**63), float(2**63)),
@@ -286,6 +287,7 @@ class ArangeReferenceTests(unittest.TestCase):
         ) + (
             (np.float32(-1.5), 1.5),
             (-1.5, np.float64(1.5)),
+            (np.float64(-2.999), np.float64(13.001)),
         )
         for start, end in cases:
             for dtype_name in (None, "float32", "float"):
