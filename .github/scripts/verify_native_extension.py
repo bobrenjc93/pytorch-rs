@@ -5,10 +5,14 @@ import importlib.machinery
 import importlib.metadata
 import importlib.util
 import sys
-import tomllib
 from pathlib import Path
 from types import ModuleType
 from typing import TextIO
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 support.
+    import tomli as tomllib
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
