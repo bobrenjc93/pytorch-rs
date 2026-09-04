@@ -1,38 +1,30 @@
 # `torch.compile` Eager CPU Release Timings
 
-Date: 2026-09-03
+Date: 2026-09-04
 
 Candidate provenance: source snapshot based on
-`f0c323a5b2e4101f38aa435ed66a660cb68bc972`, plus the worktree changes that
-restore recompilation-guard corpus coverage and retain the full raw benchmark
-artifact for corpus v4.
+`6c4f90fa968718d1830d517f0550b3aec99504ef`, plus the worktree changes that
+validate training-autograd CPU benchmark gradients and refresh the raw
+benchmark artifact for corpus v6.
 
-Exact setup, build, check, and timing commands were run from the repository
-root. The reusable timing driver is checked in as
+Exact setup, build, focused check, and timing commands were run from the
+repository root. The reusable timing driver is checked in as
 `scripts/benchmark_compile_cpu.py`; its complete raw JSON output is committed
-at `docs/benchmark-data/torch-compile-cpu-v4.json`. The active Conda
-environment held ambient Python 3.10, so the PyTorch 2.13 reference evidence
-used this worktree's local `.venv`; uv and Cargo state were redirected under
-`target/`. The local Cargo cache was populated from the existing read-only user
-cache because direct crates.io metadata fetches failed local certificate
-validation during this run.
+at `docs/benchmark-data/torch-compile-cpu-v4.json`. The PyTorch 2.13 reference
+evidence used this worktree's local `.venv`; uv and Cargo state were redirected
+under `target/`.
 
 ```bash
 env UV_CACHE_DIR="$PWD/target/uv-cache" \
   UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python" \
-  uv venv --clear --python 3.12 .venv
+  uv venv --python 3.12 .venv
 env UV_CACHE_DIR="$PWD/target/uv-cache" \
   UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python" \
   uv sync --locked --python "$PWD/.venv/bin/python" \
   --no-install-project --group dev --group reference
-mkdir -p target/cargo-home/registry
-cp -a /home/bobren/.cargo/registry/cache \
-  /home/bobren/.cargo/registry/index \
-  /home/bobren/.cargo/registry/src target/cargo-home/registry/
 env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
   CARGO_HOME="$PWD/target/cargo-home" \
   CARGO_TARGET_DIR="$PWD/target" \
-  CARGO_NET_OFFLINE=true \
   TMPDIR="$PWD/target" \
   VIRTUAL_ENV="$PWD/.venv" \
   PYO3_PYTHON="$PWD/.venv/bin/python" \
@@ -40,51 +32,12 @@ env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
 env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
   OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
   NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
-  .venv/bin/python -m unittest \
-  tests.test_compile_corpus tests.test_top_level_compile \
-  tests.test_readme_quickstart tests.test_compile_benchmark_artifact
-env CARGO_HOME="$PWD/target/cargo-home" \
-  CARGO_TARGET_DIR="$PWD/target" \
-  CARGO_NET_OFFLINE=true \
-  cargo fmt --check
-env CARGO_HOME="$PWD/target/cargo-home" \
-  CARGO_TARGET_DIR="$PWD/target" \
-  CARGO_NET_OFFLINE=true \
-  cargo clippy --locked --all-targets -- -D warnings
-env CARGO_HOME="$PWD/target/cargo-home" \
-  CARGO_TARGET_DIR="$PWD/target" \
-  CARGO_NET_OFFLINE=true \
-  cargo test --locked --all-targets
-env CARGO_HOME="$PWD/target/cargo-home" \
-  CARGO_TARGET_DIR="$PWD/target" \
-  CARGO_NET_OFFLINE=true \
-  cargo test --locked --doc
-env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
-  CARGO_HOME="$PWD/target/cargo-home" \
-  CARGO_TARGET_DIR="$PWD/target" \
-  CARGO_NET_OFFLINE=true \
-  VIRTUAL_ENV="$PWD/.venv" \
-  PYO3_PYTHON="$PWD/.venv/bin/python" \
-  cargo clippy --locked --all-targets --features python-bindings -- -D warnings
-mkdir -p target/pyo3
-printf "%s\n" implementation=CPython version=3.12 shared=true abi3=true \
-  lib_name=python3.12 lib_dir=/usr/local/fbcode/platform010/lib \
-  executable="$PWD/.venv/bin/python" pointer_width=64 build_flags= \
-  suppress_build_script_link_lines=false > target/pyo3/config.txt
-env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
-  CARGO_HOME="$PWD/target/cargo-home" \
-  CARGO_TARGET_DIR="$PWD/target" \
-  CARGO_NET_OFFLINE=true \
-  VIRTUAL_ENV="$PWD/.venv" \
-  PYO3_CONFIG_FILE="$PWD/target/pyo3/config.txt" \
-  PYO3_PYTHON="$PWD/.venv/bin/python" \
-  cargo test --locked --all-targets --features python-bindings
-env CARGO_HOME="$PWD/target/cargo-home" \
-  CARGO_TARGET_DIR="$PWD/target" \
-  CARGO_NET_OFFLINE=true \
-  UV_CACHE_DIR="$PWD/target/uv-cache" \
-  UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python" \
-  ./scripts/test-python.sh
+  .venv/bin/python scripts/benchmark_compile_cpu.py \
+  --cases cpu_float32_training_unary_neg_abs_add \
+  --variants case_default \
+  --warmups 0 \
+  --samples 1 \
+  --output target/quick-compile-cpu-training.json
 env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
   OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
   NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
@@ -97,64 +50,38 @@ env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
   > target/torch-compile-cpu-v4-summary.md
 env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
   .venv/bin/python scripts/benchmark_compile_cpu.py --validate-artifact
+env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
+  OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest \
+  tests.test_compile_benchmark_artifact tests.test_compile_corpus
+env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
+  .venv/bin/python -m py_compile \
+  scripts/benchmark_compile_cpu.py tests/test_compile_benchmark_artifact.py
+cargo fmt --check
 ```
 
 Checks run for this evidence:
 
 ```bash
 env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
+  .venv/bin/python scripts/benchmark_compile_cpu.py --validate-artifact
+env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
   OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
   NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
   .venv/bin/python -m unittest \
-  tests.test_compile_corpus tests.test_top_level_compile \
-  tests.test_readme_quickstart tests.test_compile_benchmark_artifact
-env CARGO_HOME="$PWD/target/cargo-home" \
-  CARGO_TARGET_DIR="$PWD/target" \
-  CARGO_NET_OFFLINE=true \
-  cargo fmt --check
-env CARGO_HOME="$PWD/target/cargo-home" \
-  CARGO_TARGET_DIR="$PWD/target" \
-  CARGO_NET_OFFLINE=true \
-  cargo clippy --locked --all-targets -- -D warnings
-env CARGO_HOME="$PWD/target/cargo-home" \
-  CARGO_TARGET_DIR="$PWD/target" \
-  CARGO_NET_OFFLINE=true \
-  cargo test --locked --all-targets
-env CARGO_HOME="$PWD/target/cargo-home" \
-  CARGO_TARGET_DIR="$PWD/target" \
-  CARGO_NET_OFFLINE=true \
-  cargo test --locked --doc
+  tests.test_compile_benchmark_artifact tests.test_compile_corpus
 env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
-  CARGO_HOME="$PWD/target/cargo-home" \
-  CARGO_TARGET_DIR="$PWD/target" \
-  CARGO_NET_OFFLINE=true \
-  VIRTUAL_ENV="$PWD/.venv" \
-  PYO3_PYTHON="$PWD/.venv/bin/python" \
-  cargo clippy --locked --all-targets --features python-bindings -- -D warnings
-env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
-  CARGO_HOME="$PWD/target/cargo-home" \
-  CARGO_TARGET_DIR="$PWD/target" \
-  CARGO_NET_OFFLINE=true \
-  VIRTUAL_ENV="$PWD/.venv" \
-  PYO3_CONFIG_FILE="$PWD/target/pyo3/config.txt" \
-  PYO3_PYTHON="$PWD/.venv/bin/python" \
-  cargo test --locked --all-targets --features python-bindings
-env CARGO_HOME="$PWD/target/cargo-home" \
-  CARGO_TARGET_DIR="$PWD/target" \
-  CARGO_NET_OFFLINE=true \
-  UV_CACHE_DIR="$PWD/target/uv-cache" \
-  UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python" \
-  ./scripts/test-python.sh
-env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
-  .venv/bin/python scripts/benchmark_compile_cpu.py --validate-artifact
+  .venv/bin/python -m py_compile \
+  scripts/benchmark_compile_cpu.py tests/test_compile_benchmark_artifact.py
+cargo fmt --check
 ```
 
-Results: the focused public compile, compile corpus, PyTorch 2.13
-differential, guard-sequence, benchmark-artifact validation, and docs smoke
-tests passed 76 tests. The repository-managed pinned PyTorch 2.13 full Python
-suite passed 4710 tests with 3 skips. The default Rust suite passed 311 tests
-across unit and integration targets plus 0 doctests; the Python-bindings Rust
-suite passed 322 tests. Default Clippy and Python-bindings Clippy both passed.
+Results: the quick one-sample training benchmark, full fixed-affinity CPU
+benchmark, raw-artifact/markdown validation, and focused compile-corpus plus
+benchmark-artifact unittest suite passed. The focused unittest run passed 50
+tests. Python bytecode compilation for the edited benchmark/test files and
+`cargo fmt --check` also passed.
 
 Environment:
 
@@ -165,9 +92,9 @@ Environment:
 - Rust: `rustc 1.92.0 (ded5c06cf 2025-12-08)`,
   `cargo 1.92.0 (344c4567c 2025-10-21)`
 - Maturin: 1.14.1
-- PyTorch: 2.13.0+cu130 from `/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_36ef84f9/.venv/lib/python3.12/site-packages/torch/__init__.py`
+- PyTorch: 2.13.0+cu130 from `/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88a75639/.venv/lib/python3.12/site-packages/torch/__init__.py`
 - PyTorch CUDA runtime: 13.0; CUDA availability disabled for CPU timing with `CUDA_VISIBLE_DEVICES=`
-- `torch_rs`: 0.1.0 from `/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_36ef84f9/python/torch_rs/__init__.py`
+- `torch_rs`: 0.1.0 from `/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88a75639/python/torch_rs/__init__.py`
 - Profile: release, Cargo `[profile.release]` with thin LTO and one codegen
   unit
 - Device/dtype: CPU float32
@@ -179,13 +106,13 @@ Environment:
   `torch_rs.get_num_threads()` and `torch_rs.get_num_interop_threads()` both
   reported 1
 - Dependency installation: locked `uv sync` used the worktree-local uv cache
-- Build time: initial release extension build completed in 37.92s
+- Build time: initial release extension build completed in 37.19s
 
-The benchmark uses the checked-in `torch_compile_corpus_v4` programs. The timed supported set contains every public native compile case: five one-input tensor-arithmetic programs, four two-input broadcasting programs, and three recompilation-guard programs. One-input programs run across the corpus default input plus scalar, vector, row-major matrix, larger row-major matrix, empty, and non-contiguous transpose inputs. Two-input programs run across the corpus default input plus row-major matrix/vector, larger row-major matrix/vector, tensor/scalar, scalar/tensor, empty broadcast, and non-contiguous matrix/vector broadcast inputs. Recompilation-guard programs run across shape, stride, and `requires_grad` metadata variants; separate guard-sequence rows exercise cache reuse, bounded `recompile_limit` behavior, `torch.compiler.reset()` semantics, and both implementation orders. Inputs are created outside timed regions from deterministic values.
+The benchmark uses the checked-in `torch_compile_corpus_v6` programs. The timed supported set contains every public native compile case: five one-input tensor-arithmetic programs, one one-input no-grad inference program, one one-input training-autograd program, four two-input broadcasting programs, and three recompilation-guard programs. One-input programs run across the corpus default input plus scalar, vector, row-major matrix, larger row-major matrix, empty, and non-contiguous transpose inputs. Two-input programs run across the corpus default input plus row-major matrix/vector, larger row-major matrix/vector, tensor/scalar, scalar/tensor, empty broadcast, and non-contiguous matrix/vector broadcast inputs. Inference-category cells execute inside `torch.no_grad()`, and the corpus-default ReLU inference input requires grad while every timed inference output records `requires_grad=False`. Grad-enabled training-autograd cells validate forward output metadata and expected input gradients after backward through a materialized sum, and assert measured and reference inputs remain unchanged after backward. Recompilation-guard programs run across shape, stride, and `requires_grad` metadata variants; separate guard-sequence rows exercise cache reuse, bounded `recompile_limit` behavior, `torch.compiler.reset()` semantics, and both implementation orders. Inputs are created outside timed regions from deterministic values.
 
 For PyTorch, the driver requires pinned PyTorch 2.13 and uses stock `torch.compile(backend="eager", fullgraph=True)`. For `torch_rs`, it uses the native guarded eager/fullgraph path. Both implementations run in both orders: `torch_rs,pytorch` and `pytorch,torch_rs`. Each order pass resets the relevant compiler state for cold timing, measures the first materialized compiled call separately, then runs 7 untimed warmup blocks and 31 measured blocks. A measured block repeats the operation according to the table's `Repeats` column; medians below are microseconds per compiled call. The CPU workload has no asynchronous device queue, but the driver still calls synchronization hooks when an implementation exposes an available CUDA runtime.
 
-Before timing each cell, the driver checks exact output values, shape, stride, storage offset, contiguity, dtype, device, and `requires_grad` against the same eager program. The `torch_rs` result is also checked against the PyTorch result. After every warmup and measured block, the driver materializes the last output and records a 64-bit BLAKE2b checksum over values and metadata. All 84 timed cells had matching `torch_rs` and PyTorch checksums.
+Before timing each cell, the driver checks exact output values, shape, stride, storage offset, contiguity, dtype, device, and `requires_grad` against the same eager program. The `torch_rs` result is also checked against the PyTorch result. For cases marked `backward_through_sum`, grad-enabled cells compare leaf-input gradients after backward through a materialized sum and verify input values and metadata are unchanged by backward. After every warmup and measured block, the driver materializes the last output and records a 64-bit BLAKE2b checksum over values and metadata. All 98 timed cells had matching `torch_rs` and PyTorch checksums.
 
 Benchmark integrity gate: pass for the >=99 requirement. The evidence is generated by the reusable fixed-affinity driver, uses equivalent work in both implementation orders, pins the reference version, materializes and checks outputs instead of timing dead code, keeps held-out corpus cases in differential tests, validates guard sequences separately from timed cells, and retains every unsupported category in the explicit zero-credit denominator.
 
@@ -195,101 +122,115 @@ parity. Capped geomeans clamp each per-cell ratio to `[0.10x, 10.00x]`.
 ## Aggregate
 
 - Raw JSON artifact: `docs/benchmark-data/torch-compile-cpu-v4.json`
-- Benchmark/corpus: `torch_compile_cpu_eager_benchmark_v3` / `torch_compile_corpus_v4`
-- Cold first compiled call: 0.025x uncapped, 0.114x capped
-- Steady-state materialized compiled call: 1.733x uncapped, 1.733x capped
-- Timed supported cells: 84 (35 tensor-arithmetic, 28 broadcasting, 21 recompilation-guard)
+- Benchmark/corpus: `torch_compile_cpu_eager_benchmark_v3` / `torch_compile_corpus_v6`
+- Cold first compiled call: 0.026x uncapped, 0.112x capped
+- Steady-state materialized compiled call: 1.828x uncapped, 1.828x capped
+- Timed supported cells: 98 (35 tensor-arithmetic, 28 broadcasting, 7 inference, 7 training-autograd, 21 recompilation-guard)
 - Recompilation guard sequences: 12 rows, 60 checked steps, statuses expected_error, ok
-- Versioned denominator coverage: 24.0% supported by native compile cases, 76% zero-credit unsupported category weight
+- Versioned denominator coverage: 38.0% supported by native compile cases, 62% zero-credit unsupported category weight
 
 ## Supported Timed Cells
 
 | Program | Input variant | Inputs | Repeats | Output metadata | `torch_rs` cold us | PyTorch cold us | Cold ratio | `torch_rs` steady us +/- MAD | PyTorch steady us +/- MAD | Steady ratio | Checksum |
 | --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| `cpu_float32_unary_abs_neg` | `case_default` | 1 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False | 344.786 | 117061.804 | 0.003x | 22.663 +/- 0.108 | 13.784 +/- 0.126 | 1.644x | `e7effd8599e8fd3e` |
-| `cpu_float32_unary_abs_neg` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 250.183 | 24896.319 | 0.010x | 19.394 +/- 0.064 | 13.481 +/- 0.121 | 1.439x | `96474978e4b2c20f` |
-| `cpu_float32_unary_abs_neg` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 225.471 | 26421.281 | 0.009x | 21.439 +/- 0.056 | 13.745 +/- 0.180 | 1.560x | `df430381d21069c0` |
-| `cpu_float32_unary_abs_neg` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 809.544 | 24846.565 | 0.033x | 27.552 +/- 0.191 | 18.502 +/- 0.093 | 1.489x | `a6615e9dbd215dce` |
-| `cpu_float32_unary_abs_neg` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 8777.858 | 34776.834 | 0.252x | 546.678 +/- 4.070 | 530.479 +/- 4.185 | 1.031x | `4bb9338c2bde3594` |
-| `cpu_float32_unary_abs_neg` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 270.414 | 24013.230 | 0.011x | 22.253 +/- 0.103 | 12.982 +/- 0.106 | 1.714x | `e99a6c9902c3119e` |
-| `cpu_float32_unary_abs_neg` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 841.642 | 26653.367 | 0.032x | 29.499 +/- 0.365 | 19.215 +/- 0.269 | 1.535x | `3083af797face788` |
-| `cpu_float32_self_add` | `case_default` | 1 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False | 206.051 | 24166.321 | 0.009x | 19.179 +/- 0.213 | 12.259 +/- 0.146 | 1.564x | `cf580eb9d53f4ab8` |
-| `cpu_float32_self_add` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 182.096 | 23220.275 | 0.008x | 15.578 +/- 0.090 | 12.016 +/- 0.084 | 1.296x | `2893378e1c7355c5` |
-| `cpu_float32_self_add` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 196.918 | 25903.883 | 0.008x | 17.465 +/- 0.141 | 12.207 +/- 0.322 | 1.431x | `8f9b9bdd6cd9bd2a` |
-| `cpu_float32_self_add` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 859.134 | 26288.515 | 0.033x | 23.627 +/- 0.407 | 17.004 +/- 0.145 | 1.390x | `6f4a9fa909165974` |
-| `cpu_float32_self_add` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 9110.015 | 32940.238 | 0.277x | 563.691 +/- 4.109 | 555.742 +/- 11.294 | 1.014x | `831f2172069daaaf` |
-| `cpu_float32_self_add` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 236.463 | 23562.058 | 0.010x | 17.755 +/- 0.076 | 11.633 +/- 0.035 | 1.526x | `e99a6c9902c3119e` |
-| `cpu_float32_self_add` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 871.829 | 25247.100 | 0.035x | 25.518 +/- 0.198 | 17.192 +/- 0.152 | 1.484x | `cb2131b53d3b05d5` |
-| `cpu_float32_abs_neg_reordered` | `case_default` | 1 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False | 226.637 | 22698.396 | 0.010x | 22.555 +/- 0.142 | 13.935 +/- 0.170 | 1.619x | `abbc312073a422dc` |
-| `cpu_float32_abs_neg_reordered` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 216.738 | 23224.096 | 0.009x | 19.546 +/- 0.058 | 13.529 +/- 0.081 | 1.445x | `e75a1d3233117514` |
-| `cpu_float32_abs_neg_reordered` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 226.052 | 23344.118 | 0.010x | 21.459 +/- 0.111 | 13.700 +/- 0.164 | 1.566x | `ba2eaa9e2ad0830d` |
-| `cpu_float32_abs_neg_reordered` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 802.474 | 24902.128 | 0.032x | 27.714 +/- 0.194 | 18.367 +/- 0.156 | 1.509x | `323b11b354c9b7a8` |
-| `cpu_float32_abs_neg_reordered` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 8600.008 | 37081.754 | 0.232x | 548.655 +/- 3.285 | 532.247 +/- 4.527 | 1.031x | `f9feb1c7c3003aea` |
-| `cpu_float32_abs_neg_reordered` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 256.513 | 23942.057 | 0.011x | 22.142 +/- 0.085 | 12.996 +/- 0.076 | 1.704x | `e99a6c9902c3119e` |
-| `cpu_float32_abs_neg_reordered` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 865.514 | 24942.815 | 0.035x | 29.742 +/- 0.288 | 19.018 +/- 0.123 | 1.564x | `013ec8b4a8ced6ed` |
-| `cpu_float32_repeated_unary_chain` | `case_default` | 1 | 256 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 300.554 | 27279.448 | 0.011x | 32.910 +/- 0.205 | 17.368 +/- 0.142 | 1.895x | `e23ed4736483131b` |
-| `cpu_float32_repeated_unary_chain` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 272.722 | 26993.997 | 0.010x | 33.046 +/- 0.174 | 17.227 +/- 0.212 | 1.918x | `e75a1d3233117514` |
-| `cpu_float32_repeated_unary_chain` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 321.897 | 24062.018 | 0.013x | 36.713 +/- 0.118 | 17.254 +/- 0.237 | 2.128x | `ba2eaa9e2ad0830d` |
-| `cpu_float32_repeated_unary_chain` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 899.074 | 25562.623 | 0.035x | 44.214 +/- 0.211 | 22.489 +/- 0.159 | 1.966x | `323b11b354c9b7a8` |
-| `cpu_float32_repeated_unary_chain` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 8604.100 | 33014.019 | 0.261x | 567.750 +/- 4.684 | 535.900 +/- 2.769 | 1.059x | `f9feb1c7c3003aea` |
-| `cpu_float32_repeated_unary_chain` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 326.649 | 22924.813 | 0.014x | 37.394 +/- 0.096 | 15.917 +/- 0.084 | 2.349x | `e99a6c9902c3119e` |
-| `cpu_float32_repeated_unary_chain` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 928.915 | 156673.696 | 0.006x | 48.584 +/- 0.295 | 23.233 +/- 0.203 | 2.091x | `013ec8b4a8ced6ed` |
-| `cpu_float32_add_unary_composition` | `case_default` | 1 | 256 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 328.622 | 99254.689 | 0.003x | 39.358 +/- 0.219 | 16.093 +/- 0.185 | 2.446x | `e99a6c9902c3119e` |
-| `cpu_float32_add_unary_composition` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 315.236 | 25323.210 | 0.012x | 34.077 +/- 0.129 | 17.813 +/- 0.293 | 1.913x | `72f27995b7dd0815` |
-| `cpu_float32_add_unary_composition` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 347.520 | 24887.216 | 0.014x | 38.340 +/- 0.140 | 17.576 +/- 0.300 | 2.181x | `e33edbb6040ef154` |
-| `cpu_float32_add_unary_composition` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 968.239 | 26044.176 | 0.037x | 46.695 +/- 0.353 | 22.937 +/- 0.167 | 2.036x | `8b4cf5faabeff82f` |
-| `cpu_float32_add_unary_composition` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 9016.794 | 36488.993 | 0.247x | 592.879 +/- 5.301 | 565.233 +/- 3.669 | 1.049x | `2cab6c3527a20afd` |
-| `cpu_float32_add_unary_composition` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 368.428 | 31259.626 | 0.012x | 39.413 +/- 0.149 | 19.102 +/- 0.171 | 2.063x | `e99a6c9902c3119e` |
-| `cpu_float32_add_unary_composition` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 971.059 | 33010.234 | 0.029x | 53.572 +/- 0.278 | 29.154 +/- 0.560 | 1.838x | `fedf1f495675c5ac` |
-| `cpu_float32_matrix_vector_add` | `case_default` | 2 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False | 297.355 | 34949.196 | 0.009x | 39.461 +/- 0.560 | 16.950 +/- 0.185 | 2.328x | `98a179ecb42242f2` |
-| `cpu_float32_matrix_vector_add` | `matrix_vector_31x37_by_37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 906.771 | 30152.914 | 0.030x | 44.656 +/- 0.245 | 22.083 +/- 0.266 | 2.022x | `ad5274b06474f25a` |
-| `cpu_float32_matrix_vector_add` | `matrix_vector_127x131_by_131` | 2 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 9252.215 | 39611.666 | 0.234x | 592.546 +/- 3.910 | 567.740 +/- 4.230 | 1.044x | `2d29b8c5db7cf3a3` |
-| `cpu_float32_matrix_vector_add` | `tensor_scalar_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 995.341 | 30952.622 | 0.032x | 43.416 +/- 0.259 | 21.874 +/- 0.165 | 1.985x | `789e567fe16ee50d` |
-| `cpu_float32_matrix_vector_add` | `scalar_tensor_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 957.277 | 27987.870 | 0.034x | 42.475 +/- 0.234 | 21.723 +/- 0.201 | 1.955x | `fd2a8cc8274a95a3` |
-| `cpu_float32_matrix_vector_add` | `empty_2x0_by_0` | 2 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 293.118 | 26236.056 | 0.011x | 38.714 +/- 0.120 | 15.322 +/- 0.184 | 2.527x | `e99a6c9902c3119e` |
-| `cpu_float32_matrix_vector_add` | `transpose_31x37_by_37` | 2 | 128 | shape (31, 37), stride (1, 31), offset 0, torch.float32, cpu, requires_grad=False | 983.567 | 28702.199 | 0.034x | 64.212 +/- 0.407 | 23.017 +/- 0.447 | 2.790x | `dba903ec40510312` |
-| `cpu_float32_matrix_vector_add_method` | `case_default` | 2 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=True | 253.147 | 26949.735 | 0.009x | 28.555 +/- 0.193 | 20.501 +/- 0.159 | 1.393x | `0d899ef0331555c3` |
-| `cpu_float32_matrix_vector_add_method` | `matrix_vector_31x37_by_37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 861.623 | 28266.490 | 0.030x | 33.410 +/- 0.270 | 19.082 +/- 0.141 | 1.751x | `a50cc7734a507f4b` |
-| `cpu_float32_matrix_vector_add_method` | `matrix_vector_127x131_by_131` | 2 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 9036.338 | 34679.342 | 0.261x | 574.440 +/- 3.439 | 555.398 +/- 2.458 | 1.034x | `7f09321c9dd8f431` |
-| `cpu_float32_matrix_vector_add_method` | `tensor_scalar_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 904.233 | 24570.723 | 0.037x | 32.086 +/- 0.192 | 19.242 +/- 0.181 | 1.668x | `d14229933b8a4e37` |
-| `cpu_float32_matrix_vector_add_method` | `scalar_tensor_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 847.206 | 26454.842 | 0.032x | 33.087 +/- 0.132 | 19.048 +/- 0.120 | 1.737x | `5bf5343414da1f5c` |
-| `cpu_float32_matrix_vector_add_method` | `empty_2x0_by_0` | 2 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 244.514 | 26982.245 | 0.009x | 28.161 +/- 0.127 | 13.387 +/- 0.073 | 2.104x | `e99a6c9902c3119e` |
-| `cpu_float32_matrix_vector_add_method` | `transpose_31x37_by_37` | 2 | 128 | shape (31, 37), stride (1, 31), offset 0, torch.float32, cpu, requires_grad=False | 900.777 | 28272.655 | 0.032x | 50.732 +/- 0.291 | 19.725 +/- 0.136 | 2.572x | `ea3197d484cde28e` |
-| `cpu_float32_tensor_scalar_add` | `case_default` | 2 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=True | 251.425 | 25545.296 | 0.010x | 28.415 +/- 0.135 | 15.476 +/- 0.106 | 1.836x | `5b94f7e5a6a718c6` |
-| `cpu_float32_tensor_scalar_add` | `matrix_vector_31x37_by_37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 872.344 | 26655.284 | 0.033x | 34.069 +/- 0.235 | 19.595 +/- 0.162 | 1.739x | `82c540110f39c215` |
-| `cpu_float32_tensor_scalar_add` | `matrix_vector_127x131_by_131` | 2 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 12038.598 | 34639.452 | 0.348x | 588.589 +/- 9.220 | 564.735 +/- 3.388 | 1.042x | `689c76d673bbbf07` |
-| `cpu_float32_tensor_scalar_add` | `tensor_scalar_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 903.637 | 28030.464 | 0.032x | 38.552 +/- 0.350 | 19.300 +/- 0.128 | 1.997x | `fd2a8cc8274a95a3` |
-| `cpu_float32_tensor_scalar_add` | `scalar_tensor_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 831.848 | 25437.539 | 0.033x | 33.278 +/- 0.245 | 19.245 +/- 0.113 | 1.729x | `fd2a8cc8274a95a3` |
-| `cpu_float32_tensor_scalar_add` | `empty_2x0_by_0` | 2 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 231.334 | 23907.164 | 0.010x | 28.386 +/- 0.102 | 13.581 +/- 0.054 | 2.090x | `e99a6c9902c3119e` |
-| `cpu_float32_tensor_scalar_add` | `transpose_31x37_by_37` | 2 | 128 | shape (31, 37), stride (1, 31), offset 0, torch.float32, cpu, requires_grad=False | 898.238 | 24859.970 | 0.036x | 64.227 +/- 1.963 | 20.315 +/- 0.137 | 3.162x | `79703a9e62d5f513` |
-| `cpu_float32_scalar_tensor_add` | `case_default` | 2 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=True | 334.661 | 26712.421 | 0.013x | 35.464 +/- 0.264 | 14.642 +/- 0.159 | 2.422x | `48c8ec8bd2aa6e72` |
-| `cpu_float32_scalar_tensor_add` | `matrix_vector_31x37_by_37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 997.278 | 28467.560 | 0.035x | 41.379 +/- 0.186 | 18.716 +/- 0.223 | 2.211x | `32e11c81cc753c53` |
-| `cpu_float32_scalar_tensor_add` | `matrix_vector_127x131_by_131` | 2 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 10832.720 | 36914.076 | 0.293x | 685.776 +/- 8.728 | 538.141 +/- 3.035 | 1.274x | `2833a8dd1f6e9453` |
-| `cpu_float32_scalar_tensor_add` | `tensor_scalar_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 1083.423 | 27441.583 | 0.039x | 40.694 +/- 0.224 | 18.527 +/- 0.132 | 2.196x | `d14229933b8a4e37` |
-| `cpu_float32_scalar_tensor_add` | `scalar_tensor_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 1030.313 | 25599.198 | 0.040x | 42.448 +/- 0.202 | 18.533 +/- 0.164 | 2.290x | `c86610390c9eadb5` |
-| `cpu_float32_scalar_tensor_add` | `empty_2x0_by_0` | 2 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 285.738 | 23471.220 | 0.012x | 28.076 +/- 0.086 | 13.147 +/- 0.158 | 2.135x | `e99a6c9902c3119e` |
-| `cpu_float32_scalar_tensor_add` | `transpose_31x37_by_37` | 2 | 128 | shape (31, 37), stride (1, 31), offset 0, torch.float32, cpu, requires_grad=False | 893.186 | 31679.101 | 0.028x | 50.402 +/- 0.352 | 19.118 +/- 0.190 | 2.636x | `2bd384aefcaaa397` |
-| `cpu_float32_recompile_guard_unary_metadata` | `case_default` | 1 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False | 272.187 | 26850.054 | 0.010x | 28.664 +/- 0.169 | 15.631 +/- 0.253 | 1.834x | `0e17c6493745a257` |
-| `cpu_float32_recompile_guard_unary_metadata` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 249.842 | 23439.146 | 0.011x | 24.339 +/- 0.079 | 15.242 +/- 0.214 | 1.597x | `292485c676f9433a` |
-| `cpu_float32_recompile_guard_unary_metadata` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 324.661 | 24993.387 | 0.013x | 27.184 +/- 0.120 | 15.210 +/- 0.184 | 1.787x | `62c3654eb7d82d74` |
-| `cpu_float32_recompile_guard_unary_metadata` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 717.821 | 25079.872 | 0.029x | 32.096 +/- 0.115 | 18.475 +/- 0.175 | 1.737x | `5d7b4862cd84174c` |
-| `cpu_float32_recompile_guard_unary_metadata` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 5258.461 | 28520.630 | 0.184x | 349.811 +/- 2.856 | 341.084 +/- 3.190 | 1.026x | `69ce9a45017fa7db` |
-| `cpu_float32_recompile_guard_unary_metadata` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 312.563 | 24168.704 | 0.013x | 27.959 +/- 0.147 | 14.215 +/- 0.065 | 1.967x | `e99a6c9902c3119e` |
-| `cpu_float32_recompile_guard_unary_metadata` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 687.951 | 24764.110 | 0.028x | 36.315 +/- 0.235 | 19.105 +/- 0.146 | 1.901x | `7af03502688e9f8f` |
-| `cpu_float32_recompile_guard_binary_metadata` | `case_default` | 2 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False | 297.880 | 26535.208 | 0.011x | 33.468 +/- 0.130 | 15.906 +/- 0.171 | 2.104x | `3ee8bcca8b6a65b6` |
-| `cpu_float32_recompile_guard_binary_metadata` | `matrix_vector_31x37_by_37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 860.461 | 26913.976 | 0.032x | 39.012 +/- 0.305 | 20.798 +/- 0.134 | 1.876x | `c92ef12c0bea0b39` |
-| `cpu_float32_recompile_guard_binary_metadata` | `matrix_vector_127x131_by_131` | 2 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 8849.671 | 34678.250 | 0.255x | 579.349 +/- 3.573 | 562.512 +/- 3.348 | 1.030x | `5fe26f494117f54c` |
-| `cpu_float32_recompile_guard_binary_metadata` | `tensor_scalar_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 932.686 | 25461.139 | 0.037x | 37.633 +/- 0.222 | 20.596 +/- 0.170 | 1.827x | `53f7a4127e94cf26` |
-| `cpu_float32_recompile_guard_binary_metadata` | `scalar_tensor_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 849.870 | 25575.557 | 0.033x | 38.672 +/- 0.164 | 20.362 +/- 0.116 | 1.899x | `bc7dbda4eb0dc81a` |
-| `cpu_float32_recompile_guard_binary_metadata` | `empty_2x0_by_0` | 2 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 266.533 | 23695.855 | 0.011x | 33.491 +/- 0.221 | 14.418 +/- 0.054 | 2.323x | `e99a6c9902c3119e` |
-| `cpu_float32_recompile_guard_binary_metadata` | `transpose_31x37_by_37` | 2 | 128 | shape (31, 37), stride (1, 31), offset 0, torch.float32, cpu, requires_grad=False | 934.583 | 30549.978 | 0.031x | 57.247 +/- 0.506 | 21.265 +/- 0.124 | 2.692x | `256365df8d5f4628` |
-| `cpu_float32_recompile_limit_reset` | `case_default` | 1 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False | 278.256 | 23843.703 | 0.012x | 28.702 +/- 0.189 | 15.223 +/- 0.138 | 1.885x | `9b27d4997fd00973` |
-| `cpu_float32_recompile_limit_reset` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 264.395 | 24120.577 | 0.011x | 24.446 +/- 0.096 | 15.999 +/- 0.248 | 1.528x | `5c2ffe407931c8ee` |
-| `cpu_float32_recompile_limit_reset` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 275.567 | 26349.056 | 0.010x | 27.320 +/- 0.181 | 15.968 +/- 0.415 | 1.711x | `d701faefd13d63e3` |
-| `cpu_float32_recompile_limit_reset` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 639.772 | 25742.069 | 0.025x | 32.399 +/- 0.170 | 18.425 +/- 0.129 | 1.758x | `fd8f6faa30e6834e` |
-| `cpu_float32_recompile_limit_reset` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 5324.536 | 31128.162 | 0.171x | 347.805 +/- 2.140 | 339.030 +/- 2.166 | 1.026x | `89b634c0d077be1b` |
-| `cpu_float32_recompile_limit_reset` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 296.824 | 25041.590 | 0.012x | 28.042 +/- 0.127 | 13.865 +/- 0.051 | 2.023x | `e99a6c9902c3119e` |
-| `cpu_float32_recompile_limit_reset` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 672.783 | 27915.505 | 0.024x | 36.501 +/- 0.249 | 19.031 +/- 0.125 | 1.918x | `9348bfb9afa1f8c3` |
+| `cpu_float32_unary_abs_neg` | `case_default` | 1 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False | 411.447 | 88227.737 | 0.005x | 25.271 +/- 0.185 | 14.034 +/- 0.167 | 1.801x | `e7effd8599e8fd3e` |
+| `cpu_float32_unary_abs_neg` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 274.204 | 24159.527 | 0.011x | 23.869 +/- 1.328 | 13.915 +/- 0.285 | 1.715x | `96474978e4b2c20f` |
+| `cpu_float32_unary_abs_neg` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 265.236 | 25193.965 | 0.011x | 24.249 +/- 0.190 | 13.882 +/- 0.210 | 1.747x | `df430381d21069c0` |
+| `cpu_float32_unary_abs_neg` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 865.303 | 25432.896 | 0.034x | 30.412 +/- 0.266 | 18.831 +/- 0.245 | 1.615x | `a6615e9dbd215dce` |
+| `cpu_float32_unary_abs_neg` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 8907.312 | 33644.321 | 0.265x | 542.270 +/- 5.906 | 532.796 +/- 4.835 | 1.018x | `4bb9338c2bde3594` |
+| `cpu_float32_unary_abs_neg` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 331.070 | 25452.972 | 0.013x | 24.598 +/- 0.149 | 13.325 +/- 0.097 | 1.846x | `e99a6c9902c3119e` |
+| `cpu_float32_unary_abs_neg` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 1010.672 | 27882.353 | 0.036x | 31.878 +/- 0.280 | 19.098 +/- 0.264 | 1.669x | `3083af797face788` |
+| `cpu_float32_self_add` | `case_default` | 1 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False | 244.169 | 25099.282 | 0.010x | 20.580 +/- 0.234 | 12.611 +/- 0.142 | 1.632x | `cf580eb9d53f4ab8` |
+| `cpu_float32_self_add` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 238.109 | 25600.139 | 0.009x | 17.694 +/- 0.091 | 12.316 +/- 0.105 | 1.437x | `2893378e1c7355c5` |
+| `cpu_float32_self_add` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 234.565 | 23857.951 | 0.010x | 19.344 +/- 0.133 | 12.417 +/- 0.158 | 1.558x | `8f9b9bdd6cd9bd2a` |
+| `cpu_float32_self_add` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 849.153 | 27566.901 | 0.031x | 25.766 +/- 0.490 | 17.429 +/- 0.177 | 1.478x | `6f4a9fa909165974` |
+| `cpu_float32_self_add` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 8861.972 | 32201.425 | 0.275x | 558.591 +/- 4.115 | 552.872 +/- 3.866 | 1.010x | `831f2172069daaaf` |
+| `cpu_float32_self_add` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 313.243 | 26144.247 | 0.012x | 20.119 +/- 0.104 | 12.034 +/- 0.092 | 1.672x | `e99a6c9902c3119e` |
+| `cpu_float32_self_add` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 871.868 | 29587.009 | 0.029x | 28.380 +/- 0.669 | 17.635 +/- 0.205 | 1.609x | `cb2131b53d3b05d5` |
+| `cpu_float32_abs_neg_reordered` | `case_default` | 1 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False | 331.996 | 26208.488 | 0.013x | 25.133 +/- 0.383 | 14.038 +/- 0.131 | 1.790x | `abbc312073a422dc` |
+| `cpu_float32_abs_neg_reordered` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 252.026 | 24131.088 | 0.010x | 21.841 +/- 0.138 | 13.834 +/- 0.155 | 1.579x | `e75a1d3233117514` |
+| `cpu_float32_abs_neg_reordered` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 274.525 | 24762.758 | 0.011x | 23.843 +/- 0.189 | 13.992 +/- 0.200 | 1.704x | `ba2eaa9e2ad0830d` |
+| `cpu_float32_abs_neg_reordered` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 841.631 | 25584.926 | 0.033x | 29.950 +/- 0.386 | 18.659 +/- 0.170 | 1.605x | `323b11b354c9b7a8` |
+| `cpu_float32_abs_neg_reordered` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 8638.505 | 36759.003 | 0.235x | 547.121 +/- 3.603 | 534.480 +/- 4.840 | 1.024x | `f9feb1c7c3003aea` |
+| `cpu_float32_abs_neg_reordered` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 325.162 | 29119.438 | 0.011x | 24.342 +/- 0.163 | 13.175 +/- 0.072 | 1.848x | `e99a6c9902c3119e` |
+| `cpu_float32_abs_neg_reordered` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 868.517 | 29274.262 | 0.030x | 31.627 +/- 0.242 | 19.124 +/- 0.166 | 1.654x | `013ec8b4a8ced6ed` |
+| `cpu_float32_repeated_unary_chain` | `case_default` | 1 | 256 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 331.781 | 26921.506 | 0.012x | 36.839 +/- 0.367 | 17.587 +/- 0.203 | 2.095x | `e23ed4736483131b` |
+| `cpu_float32_repeated_unary_chain` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 327.630 | 24015.394 | 0.014x | 36.982 +/- 0.117 | 17.567 +/- 0.223 | 2.105x | `e75a1d3233117514` |
+| `cpu_float32_repeated_unary_chain` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 338.221 | 25117.329 | 0.013x | 41.187 +/- 0.285 | 17.479 +/- 0.246 | 2.356x | `ba2eaa9e2ad0830d` |
+| `cpu_float32_repeated_unary_chain` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 969.185 | 26180.857 | 0.037x | 48.703 +/- 0.327 | 22.717 +/- 0.229 | 2.144x | `323b11b354c9b7a8` |
+| `cpu_float32_repeated_unary_chain` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 8812.793 | 34875.767 | 0.253x | 571.429 +/- 5.680 | 540.449 +/- 8.738 | 1.057x | `f9feb1c7c3003aea` |
+| `cpu_float32_repeated_unary_chain` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 384.871 | 25011.560 | 0.015x | 41.636 +/- 0.211 | 16.232 +/- 0.149 | 2.565x | `e99a6c9902c3119e` |
+| `cpu_float32_repeated_unary_chain` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 950.061 | 29571.556 | 0.032x | 53.359 +/- 0.454 | 23.567 +/- 0.304 | 2.264x | `013ec8b4a8ced6ed` |
+| `cpu_float32_add_unary_composition` | `case_default` | 1 | 256 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 403.480 | 25169.112 | 0.016x | 43.656 +/- 0.294 | 16.571 +/- 0.262 | 2.634x | `e99a6c9902c3119e` |
+| `cpu_float32_add_unary_composition` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 405.693 | 24338.452 | 0.017x | 38.353 +/- 0.222 | 18.046 +/- 0.296 | 2.125x | `72f27995b7dd0815` |
+| `cpu_float32_add_unary_composition` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 391.136 | 27002.273 | 0.014x | 42.625 +/- 0.212 | 17.703 +/- 0.231 | 2.408x | `e33edbb6040ef154` |
+| `cpu_float32_add_unary_composition` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 1006.646 | 27206.923 | 0.037x | 51.102 +/- 0.271 | 23.372 +/- 0.166 | 2.186x | `8b4cf5faabeff82f` |
+| `cpu_float32_add_unary_composition` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 9004.828 | 33808.029 | 0.266x | 591.012 +/- 4.488 | 562.118 +/- 3.647 | 1.051x | `2cab6c3527a20afd` |
+| `cpu_float32_add_unary_composition` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 422.228 | 26359.136 | 0.016x | 43.619 +/- 0.277 | 16.350 +/- 0.106 | 2.668x | `e99a6c9902c3119e` |
+| `cpu_float32_add_unary_composition` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 1039.311 | 133296.388 | 0.008x | 58.060 +/- 0.356 | 27.687 +/- 2.445 | 2.097x | `fedf1f495675c5ac` |
+| `cpu_float32_inference_relu_no_grad` | `case_default` | 1 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False | 264.360 | 111044.600 | 0.002x | 19.427 +/- 0.090 | 16.205 +/- 0.398 | 1.199x | `11b2aee46363d5ff` |
+| `cpu_float32_inference_relu_no_grad` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 216.036 | 69094.000 | 0.003x | 17.315 +/- 0.241 | 13.316 +/- 0.112 | 1.300x | `292485c676f9433a` |
+| `cpu_float32_inference_relu_no_grad` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 243.738 | 23684.508 | 0.010x | 18.568 +/- 0.130 | 13.509 +/- 0.179 | 1.374x | `99fbf7ee8cd20333` |
+| `cpu_float32_inference_relu_no_grad` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 599.911 | 24980.702 | 0.024x | 22.699 +/- 0.281 | 16.588 +/- 0.180 | 1.368x | `4295284801db4ec1` |
+| `cpu_float32_inference_relu_no_grad` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 5164.625 | 30831.811 | 0.168x | 334.689 +/- 4.507 | 324.478 +/- 2.709 | 1.031x | `c459941c9565e750` |
+| `cpu_float32_inference_relu_no_grad` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 271.440 | 26147.166 | 0.010x | 19.259 +/- 0.203 | 13.119 +/- 0.082 | 1.468x | `e99a6c9902c3119e` |
+| `cpu_float32_inference_relu_no_grad` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 624.504 | 27762.552 | 0.022x | 23.384 +/- 0.184 | 16.493 +/- 0.150 | 1.418x | `b065276a7b7f64c3` |
+| `cpu_float32_training_unary_neg_abs_add` | `case_default` | 1 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=True | 379.924 | 26198.022 | 0.015x | 38.903 +/- 0.230 | 18.415 +/- 0.217 | 2.113x | `9dcffd23ae8a957d` |
+| `cpu_float32_training_unary_neg_abs_add` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 405.373 | 24485.965 | 0.017x | 32.643 +/- 0.179 | 16.546 +/- 0.244 | 1.973x | `5c2ffe407931c8ee` |
+| `cpu_float32_training_unary_neg_abs_add` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 358.997 | 24526.937 | 0.015x | 36.461 +/- 0.225 | 16.292 +/- 0.225 | 2.238x | `d701faefd13d63e3` |
+| `cpu_float32_training_unary_neg_abs_add` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 747.084 | 27497.677 | 0.027x | 42.488 +/- 0.462 | 19.877 +/- 0.177 | 2.138x | `fd8f6faa30e6834e` |
+| `cpu_float32_training_unary_neg_abs_add` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 5445.089 | 30422.588 | 0.179x | 366.272 +/- 2.427 | 342.584 +/- 3.097 | 1.069x | `89b634c0d077be1b` |
+| `cpu_float32_training_unary_neg_abs_add` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 435.899 | 25165.131 | 0.017x | 37.499 +/- 0.243 | 15.204 +/- 0.078 | 2.466x | `e99a6c9902c3119e` |
+| `cpu_float32_training_unary_neg_abs_add` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 788.712 | 26792.756 | 0.029x | 47.434 +/- 0.495 | 20.447 +/- 0.140 | 2.320x | `9348bfb9afa1f8c3` |
+| `cpu_float32_matrix_vector_add` | `case_default` | 2 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False | 361.366 | 27503.080 | 0.013x | 44.463 +/- 0.413 | 17.239 +/- 0.207 | 2.579x | `98a179ecb42242f2` |
+| `cpu_float32_matrix_vector_add` | `matrix_vector_31x37_by_37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 1002.660 | 27236.111 | 0.037x | 50.085 +/- 0.425 | 22.166 +/- 0.190 | 2.260x | `ad5274b06474f25a` |
+| `cpu_float32_matrix_vector_add` | `matrix_vector_127x131_by_131` | 2 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 9253.189 | 37218.367 | 0.249x | 606.492 +/- 5.024 | 560.272 +/- 4.583 | 1.082x | `2d29b8c5db7cf3a3` |
+| `cpu_float32_matrix_vector_add` | `tensor_scalar_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 1040.773 | 30875.942 | 0.034x | 48.167 +/- 0.295 | 22.149 +/- 0.173 | 2.175x | `789e567fe16ee50d` |
+| `cpu_float32_matrix_vector_add` | `scalar_tensor_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 979.666 | 26044.355 | 0.038x | 47.465 +/- 0.389 | 21.944 +/- 0.178 | 2.163x | `fd2a8cc8274a95a3` |
+| `cpu_float32_matrix_vector_add` | `empty_2x0_by_0` | 2 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 340.659 | 25657.851 | 0.013x | 43.223 +/- 0.304 | 15.655 +/- 0.078 | 2.761x | `e99a6c9902c3119e` |
+| `cpu_float32_matrix_vector_add` | `transpose_31x37_by_37` | 2 | 128 | shape (31, 37), stride (1, 31), offset 0, torch.float32, cpu, requires_grad=False | 1058.209 | 31955.244 | 0.033x | 75.285 +/- 0.480 | 23.597 +/- 0.393 | 3.190x | `dba903ec40510312` |
+| `cpu_float32_matrix_vector_add_method` | `case_default` | 2 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=True | 284.014 | 28002.255 | 0.010x | 31.801 +/- 0.169 | 15.602 +/- 0.469 | 2.038x | `0d899ef0331555c3` |
+| `cpu_float32_matrix_vector_add_method` | `matrix_vector_31x37_by_37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 938.959 | 29428.730 | 0.032x | 36.924 +/- 0.272 | 19.661 +/- 0.211 | 1.878x | `a50cc7734a507f4b` |
+| `cpu_float32_matrix_vector_add_method` | `matrix_vector_127x131_by_131` | 2 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 9165.477 | 35731.956 | 0.257x | 587.589 +/- 4.837 | 558.340 +/- 2.319 | 1.052x | `7f09321c9dd8f431` |
+| `cpu_float32_matrix_vector_add_method` | `tensor_scalar_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 976.265 | 33411.950 | 0.029x | 35.996 +/- 0.265 | 19.495 +/- 0.189 | 1.846x | `d14229933b8a4e37` |
+| `cpu_float32_matrix_vector_add_method` | `scalar_tensor_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 898.974 | 26187.868 | 0.034x | 47.555 +/- 1.974 | 19.516 +/- 0.200 | 2.437x | `5bf5343414da1f5c` |
+| `cpu_float32_matrix_vector_add_method` | `empty_2x0_by_0` | 2 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 322.958 | 27200.452 | 0.012x | 31.494 +/- 0.211 | 13.616 +/- 0.052 | 2.313x | `e99a6c9902c3119e` |
+| `cpu_float32_matrix_vector_add_method` | `transpose_31x37_by_37` | 2 | 128 | shape (31, 37), stride (1, 31), offset 0, torch.float32, cpu, requires_grad=False | 1044.113 | 26279.030 | 0.040x | 60.866 +/- 0.361 | 19.915 +/- 0.139 | 3.056x | `ea3197d484cde28e` |
+| `cpu_float32_tensor_scalar_add` | `case_default` | 2 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=True | 322.582 | 24715.872 | 0.013x | 31.834 +/- 0.187 | 15.716 +/- 0.159 | 2.026x | `5b94f7e5a6a718c6` |
+| `cpu_float32_tensor_scalar_add` | `matrix_vector_31x37_by_37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 915.790 | 27444.721 | 0.033x | 37.423 +/- 0.345 | 19.811 +/- 0.313 | 1.889x | `82c540110f39c215` |
+| `cpu_float32_tensor_scalar_add` | `matrix_vector_127x131_by_131` | 2 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 9238.212 | 36211.822 | 0.255x | 590.097 +/- 4.621 | 562.317 +/- 4.736 | 1.049x | `689c76d673bbbf07` |
+| `cpu_float32_tensor_scalar_add` | `tensor_scalar_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 986.762 | 26743.822 | 0.037x | 36.558 +/- 0.279 | 19.674 +/- 0.159 | 1.858x | `fd2a8cc8274a95a3` |
+| `cpu_float32_tensor_scalar_add` | `scalar_tensor_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 956.861 | 25344.713 | 0.038x | 36.959 +/- 0.214 | 19.437 +/- 0.140 | 1.901x | `fd2a8cc8274a95a3` |
+| `cpu_float32_tensor_scalar_add` | `empty_2x0_by_0` | 2 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 296.969 | 24527.668 | 0.012x | 31.910 +/- 0.243 | 13.748 +/- 0.067 | 2.321x | `e99a6c9902c3119e` |
+| `cpu_float32_tensor_scalar_add` | `transpose_31x37_by_37` | 2 | 128 | shape (31, 37), stride (1, 31), offset 0, torch.float32, cpu, requires_grad=False | 974.859 | 29165.297 | 0.033x | 62.927 +/- 0.388 | 20.457 +/- 0.165 | 3.076x | `79703a9e62d5f513` |
+| `cpu_float32_scalar_tensor_add` | `case_default` | 2 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=True | 314.832 | 25706.319 | 0.012x | 32.181 +/- 0.240 | 14.720 +/- 0.149 | 2.186x | `48c8ec8bd2aa6e72` |
+| `cpu_float32_scalar_tensor_add` | `matrix_vector_31x37_by_37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 900.861 | 25643.499 | 0.035x | 36.777 +/- 0.392 | 18.928 +/- 0.135 | 1.943x | `32e11c81cc753c53` |
+| `cpu_float32_scalar_tensor_add` | `matrix_vector_127x131_by_131` | 2 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 8643.307 | 35538.689 | 0.243x | 555.998 +/- 3.609 | 538.437 +/- 3.783 | 1.033x | `2833a8dd1f6e9453` |
+| `cpu_float32_scalar_tensor_add` | `tensor_scalar_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 987.773 | 25714.632 | 0.038x | 35.762 +/- 0.417 | 18.982 +/- 0.162 | 1.884x | `d14229933b8a4e37` |
+| `cpu_float32_scalar_tensor_add` | `scalar_tensor_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 878.948 | 26162.018 | 0.034x | 36.814 +/- 0.398 | 19.022 +/- 0.242 | 1.935x | `c86610390c9eadb5` |
+| `cpu_float32_scalar_tensor_add` | `empty_2x0_by_0` | 2 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 304.039 | 28087.969 | 0.011x | 31.439 +/- 0.172 | 13.214 +/- 0.113 | 2.379x | `e99a6c9902c3119e` |
+| `cpu_float32_scalar_tensor_add` | `transpose_31x37_by_37` | 2 | 128 | shape (31, 37), stride (1, 31), offset 0, torch.float32, cpu, requires_grad=False | 966.786 | 27701.540 | 0.035x | 60.326 +/- 0.385 | 19.602 +/- 0.237 | 3.078x | `2bd384aefcaaa397` |
+| `cpu_float32_recompile_guard_unary_metadata` | `case_default` | 1 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False | 334.185 | 27908.728 | 0.012x | 32.115 +/- 0.398 | 15.812 +/- 0.180 | 2.031x | `0e17c6493745a257` |
+| `cpu_float32_recompile_guard_unary_metadata` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 307.910 | 23966.755 | 0.013x | 27.751 +/- 0.176 | 15.419 +/- 0.182 | 1.800x | `292485c676f9433a` |
+| `cpu_float32_recompile_guard_unary_metadata` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 347.205 | 25589.142 | 0.014x | 30.367 +/- 0.170 | 15.278 +/- 0.272 | 1.988x | `62c3654eb7d82d74` |
+| `cpu_float32_recompile_guard_unary_metadata` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 709.047 | 27433.524 | 0.026x | 35.891 +/- 0.247 | 18.808 +/- 0.207 | 1.908x | `5d7b4862cd84174c` |
+| `cpu_float32_recompile_guard_unary_metadata` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 5582.092 | 32232.633 | 0.173x | 357.150 +/- 3.840 | 344.020 +/- 5.882 | 1.038x | `69ce9a45017fa7db` |
+| `cpu_float32_recompile_guard_unary_metadata` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 423.114 | 27678.285 | 0.015x | 31.528 +/- 0.172 | 14.518 +/- 0.081 | 2.172x | `e99a6c9902c3119e` |
+| `cpu_float32_recompile_guard_unary_metadata` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 738.566 | 27992.719 | 0.026x | 39.691 +/- 0.332 | 19.338 +/- 0.190 | 2.053x | `7af03502688e9f8f` |
+| `cpu_float32_recompile_guard_binary_metadata` | `case_default` | 2 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False | 351.036 | 25269.544 | 0.014x | 37.335 +/- 0.275 | 16.421 +/- 0.157 | 2.274x | `3ee8bcca8b6a65b6` |
+| `cpu_float32_recompile_guard_binary_metadata` | `matrix_vector_31x37_by_37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 937.882 | 27599.370 | 0.034x | 42.637 +/- 0.445 | 21.256 +/- 0.197 | 2.006x | `c92ef12c0bea0b39` |
+| `cpu_float32_recompile_guard_binary_metadata` | `matrix_vector_127x131_by_131` | 2 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 9136.448 | 34733.087 | 0.263x | 590.179 +/- 8.548 | 566.035 +/- 4.523 | 1.043x | `5fe26f494117f54c` |
+| `cpu_float32_recompile_guard_binary_metadata` | `tensor_scalar_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 1007.412 | 25297.031 | 0.040x | 41.462 +/- 0.235 | 21.021 +/- 0.146 | 1.972x | `53f7a4127e94cf26` |
+| `cpu_float32_recompile_guard_binary_metadata` | `scalar_tensor_31x37` | 2 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 954.327 | 27378.172 | 0.035x | 42.626 +/- 0.304 | 21.068 +/- 0.241 | 2.023x | `bc7dbda4eb0dc81a` |
+| `cpu_float32_recompile_guard_binary_metadata` | `empty_2x0_by_0` | 2 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 356.224 | 27773.683 | 0.013x | 37.151 +/- 0.235 | 14.740 +/- 0.052 | 2.520x | `e99a6c9902c3119e` |
+| `cpu_float32_recompile_guard_binary_metadata` | `transpose_31x37_by_37` | 2 | 128 | shape (31, 37), stride (1, 31), offset 0, torch.float32, cpu, requires_grad=False | 988.434 | 32247.770 | 0.031x | 67.920 +/- 0.651 | 21.507 +/- 0.152 | 3.158x | `256365df8d5f4628` |
+| `cpu_float32_recompile_limit_reset` | `case_default` | 1 | 256 | shape (2, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False | 328.246 | 24672.141 | 0.013x | 32.119 +/- 0.238 | 15.441 +/- 0.183 | 2.080x | `9b27d4997fd00973` |
+| `cpu_float32_recompile_limit_reset` | `scalar` | 1 | 2048 | shape (), stride (), offset 0, torch.float32, cpu, requires_grad=False | 319.062 | 23870.886 | 0.013x | 27.736 +/- 0.124 | 15.360 +/- 0.189 | 1.806x | `5c2ffe407931c8ee` |
+| `cpu_float32_recompile_limit_reset` | `vector_17` | 1 | 1024 | shape (17,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False | 344.245 | 25027.278 | 0.014x | 30.440 +/- 0.292 | 15.104 +/- 0.150 | 2.015x | `d701faefd13d63e3` |
+| `cpu_float32_recompile_limit_reset` | `matrix_31x37` | 1 | 128 | shape (31, 37), stride (37, 1), offset 0, torch.float32, cpu, requires_grad=False | 693.508 | 25131.505 | 0.028x | 35.792 +/- 0.188 | 18.730 +/- 0.151 | 1.911x | `fd8f6faa30e6834e` |
+| `cpu_float32_recompile_limit_reset` | `matrix_127x131` | 1 | 16 | shape (127, 131), stride (131, 1), offset 0, torch.float32, cpu, requires_grad=False | 5407.207 | 32809.649 | 0.165x | 357.697 +/- 6.179 | 339.157 +/- 3.014 | 1.055x | `89b634c0d077be1b` |
+| `cpu_float32_recompile_limit_reset` | `empty_2x0` | 1 | 2048 | shape (2, 0), stride (1, 1), offset 0, torch.float32, cpu, requires_grad=False | 344.110 | 25280.531 | 0.014x | 31.553 +/- 0.275 | 14.414 +/- 0.088 | 2.189x | `e99a6c9902c3119e` |
+| `cpu_float32_recompile_limit_reset` | `transpose_37x31` | 1 | 128 | shape (37, 31), stride (1, 37), offset 0, torch.float32, cpu, requires_grad=False | 716.067 | 24558.059 | 0.029x | 39.792 +/- 0.308 | 19.195 +/- 0.197 | 2.073x | `9348bfb9afa1f8c3` |
 
 ## Recompilation Guard Sequences
 
@@ -297,31 +238,31 @@ These rows are behavioral evidence, not throughput cells. Each scenario runs onc
 
 | Scenario | Order | Implementation | Limit | Steps | Total us |
 | --- | --- | --- | ---: | --- | ---: |
-| `unary_shape_stride_requires_grad_guards` | `torch_rs,pytorch` | `torch_rs` | 4 | base ok(initial); same_metadata ok(same_metadata); shape_change ok(shape); stride_change ok(stride); requires_grad_change ok(requires_grad) | 1096.819 |
-| `binary_argument_metadata_guards` | `torch_rs,pytorch` | `torch_rs` | 4 | base ok(initial); same_metadata ok(same_metadata); left_stride_change ok(stride); right_shape_change ok(shape); right_requires_grad_change ok(requires_grad) | 865.339 |
-| `bounded_limit_then_reset` | `torch_rs,pytorch` | `torch_rs` | 2 | base ok(initial); shape_change ok(shape); limit_rejects_stride_change expected_error(recompile_limit: CompileTraceUnsupportedError); cached_base_after_limit ok(same_metadata); reset_allows_stride_change ok(reset) | 577.253 |
-| `unary_shape_stride_requires_grad_guards` | `torch_rs,pytorch` | `pytorch` | 4 | base ok(initial); same_metadata ok(same_metadata); shape_change ok(shape); stride_change ok(stride); requires_grad_change ok(requires_grad) | 258880.575 |
-| `binary_argument_metadata_guards` | `torch_rs,pytorch` | `pytorch` | 4 | base ok(initial); same_metadata ok(same_metadata); left_stride_change ok(stride); right_shape_change ok(shape); right_requires_grad_change ok(requires_grad) | 138626.009 |
-| `bounded_limit_then_reset` | `torch_rs,pytorch` | `pytorch` | 2 | base ok(initial); shape_change ok(shape); limit_rejects_stride_change expected_error(recompile_limit: FailOnRecompileLimitHit); cached_base_after_limit ok(same_metadata); reset_allows_stride_change ok(reset) | 79219.917 |
-| `unary_shape_stride_requires_grad_guards` | `pytorch,torch_rs` | `pytorch` | 4 | base ok(initial); same_metadata ok(same_metadata); shape_change ok(shape); stride_change ok(stride); requires_grad_change ok(requires_grad) | 121026.140 |
-| `binary_argument_metadata_guards` | `pytorch,torch_rs` | `pytorch` | 4 | base ok(initial); same_metadata ok(same_metadata); left_stride_change ok(stride); right_shape_change ok(shape); right_requires_grad_change ok(requires_grad) | 108202.648 |
-| `bounded_limit_then_reset` | `pytorch,torch_rs` | `pytorch` | 2 | base ok(initial); shape_change ok(shape); limit_rejects_stride_change expected_error(recompile_limit: FailOnRecompileLimitHit); cached_base_after_limit ok(same_metadata); reset_allows_stride_change ok(reset) | 74392.816 |
-| `unary_shape_stride_requires_grad_guards` | `pytorch,torch_rs` | `torch_rs` | 4 | base ok(initial); same_metadata ok(same_metadata); shape_change ok(shape); stride_change ok(stride); requires_grad_change ok(requires_grad) | 897.368 |
-| `binary_argument_metadata_guards` | `pytorch,torch_rs` | `torch_rs` | 4 | base ok(initial); same_metadata ok(same_metadata); left_stride_change ok(stride); right_shape_change ok(shape); right_requires_grad_change ok(requires_grad) | 787.380 |
-| `bounded_limit_then_reset` | `pytorch,torch_rs` | `torch_rs` | 2 | base ok(initial); shape_change ok(shape); limit_rejects_stride_change expected_error(recompile_limit: CompileTraceUnsupportedError); cached_base_after_limit ok(same_metadata); reset_allows_stride_change ok(reset) | 589.030 |
+| `unary_shape_stride_requires_grad_guards` | `torch_rs,pytorch` | `torch_rs` | 4 | base ok(initial); same_metadata ok(same_metadata); shape_change ok(shape); stride_change ok(stride); requires_grad_change ok(requires_grad) | 938.538 |
+| `binary_argument_metadata_guards` | `torch_rs,pytorch` | `torch_rs` | 4 | base ok(initial); same_metadata ok(same_metadata); left_stride_change ok(stride); right_shape_change ok(shape); right_requires_grad_change ok(requires_grad) | 779.758 |
+| `bounded_limit_then_reset` | `torch_rs,pytorch` | `torch_rs` | 2 | base ok(initial); shape_change ok(shape); limit_rejects_stride_change expected_error(recompile_limit: CompileTraceUnsupportedError); cached_base_after_limit ok(same_metadata); reset_allows_stride_change ok(reset) | 558.064 |
+| `unary_shape_stride_requires_grad_guards` | `torch_rs,pytorch` | `pytorch` | 4 | base ok(initial); same_metadata ok(same_metadata); shape_change ok(shape); stride_change ok(stride); requires_grad_change ok(requires_grad) | 172224.960 |
+| `binary_argument_metadata_guards` | `torch_rs,pytorch` | `pytorch` | 4 | base ok(initial); same_metadata ok(same_metadata); left_stride_change ok(stride); right_shape_change ok(shape); right_requires_grad_change ok(requires_grad) | 144522.835 |
+| `bounded_limit_then_reset` | `torch_rs,pytorch` | `pytorch` | 2 | base ok(initial); shape_change ok(shape); limit_rejects_stride_change expected_error(recompile_limit: FailOnRecompileLimitHit); cached_base_after_limit ok(same_metadata); reset_allows_stride_change ok(reset) | 84601.936 |
+| `unary_shape_stride_requires_grad_guards` | `pytorch,torch_rs` | `pytorch` | 4 | base ok(initial); same_metadata ok(same_metadata); shape_change ok(shape); stride_change ok(stride); requires_grad_change ok(requires_grad) | 131245.639 |
+| `binary_argument_metadata_guards` | `pytorch,torch_rs` | `pytorch` | 4 | base ok(initial); same_metadata ok(same_metadata); left_stride_change ok(stride); right_shape_change ok(shape); right_requires_grad_change ok(requires_grad) | 111942.797 |
+| `bounded_limit_then_reset` | `pytorch,torch_rs` | `pytorch` | 2 | base ok(initial); shape_change ok(shape); limit_rejects_stride_change expected_error(recompile_limit: FailOnRecompileLimitHit); cached_base_after_limit ok(same_metadata); reset_allows_stride_change ok(reset) | 79238.874 |
+| `unary_shape_stride_requires_grad_guards` | `pytorch,torch_rs` | `torch_rs` | 4 | base ok(initial); same_metadata ok(same_metadata); shape_change ok(shape); stride_change ok(stride); requires_grad_change ok(requires_grad) | 1281.657 |
+| `binary_argument_metadata_guards` | `pytorch,torch_rs` | `torch_rs` | 4 | base ok(initial); same_metadata ok(same_metadata); left_stride_change ok(stride); right_shape_change ok(shape); right_requires_grad_change ok(requires_grad) | 974.803 |
+| `bounded_limit_then_reset` | `pytorch,torch_rs` | `torch_rs` | 2 | base ok(initial); shape_change ok(shape); limit_rejects_stride_change expected_error(recompile_limit: CompileTraceUnsupportedError); cached_base_after_limit ok(same_metadata); reset_allows_stride_change ok(reset) | 681.389 |
 
 ## Zero-Credit Unsupported Denominator
 
-The compile corpus keeps the full 100-point category denominator. The native `torch_rs` path currently has executable public cases for tensor arithmetic, broadcasting, and recompilation guards. Every remaining category below stays in the denominator as zero credit instead of being dropped from the report.
+The compile corpus keeps the full 100-point category denominator. The native `torch_rs` path currently has executable public cases for tensor arithmetic, broadcasting, inference, training autograd, and recompilation guards. Every remaining category below stays in the denominator as zero credit instead of being dropped from the report.
 
 | Category | Weight | Accounting |
 | --- | ---: | --- |
 | `tensor_arithmetic` | 12 | Supported and timed public cases: `cpu_float32_unary_abs_neg`, `cpu_float32_self_add`, `cpu_float32_abs_neg_reordered`, `cpu_float32_repeated_unary_chain`, `cpu_float32_add_unary_composition` |
 | `broadcasting` | 8 | Supported and timed public cases: `cpu_float32_matrix_vector_add`, `cpu_float32_matrix_vector_add_method`, `cpu_float32_tensor_scalar_add`, `cpu_float32_scalar_tensor_add` |
+| `inference` | 6 | Supported and timed public cases: `cpu_float32_inference_relu_no_grad` |
+| `training_autograd` | 8 | Supported and timed public cases: `cpu_float32_training_unary_neg_abs_add` |
 | `recompilation_guards` | 4 | Supported and timed public cases: `cpu_float32_recompile_guard_unary_metadata`, `cpu_float32_recompile_guard_binary_metadata`, `cpu_float32_recompile_limit_reset` |
 | `modules_parameters_buffers` | 8 | Zero credit: no native torch_rs eager/fullgraph compile cases are implemented for this category in the checked-in corpus |
-| `inference` | 6 | Zero credit: no native torch_rs eager/fullgraph compile cases are implemented for this category in the checked-in corpus |
-| `training_autograd` | 8 | Zero credit: no native torch_rs eager/fullgraph compile cases are implemented for this category in the checked-in corpus |
 | `python_control_flow` | 8 | Zero credit: no native torch_rs eager/fullgraph compile cases are implemented for this category in the checked-in corpus |
 | `graph_breaks_fullgraph` | 8 | Zero credit: no native torch_rs eager/fullgraph compile cases are implemented for this category in the checked-in corpus |
 | `dynamic_shapes_symbolics` | 8 | Zero credit: no native torch_rs eager/fullgraph compile cases are implemented for this category in the checked-in corpus |
@@ -331,5 +272,5 @@ The compile corpus keeps the full 100-point category denominator. The native `to
 | `custom_functions` | 6 | Zero credit: no native torch_rs eager/fullgraph compile cases are implemented for this category in the checked-in corpus |
 | `dtype_device_transitions` | 4 | Zero credit: no native torch_rs eager/fullgraph compile cases are implemented for this category in the checked-in corpus |
 
-Supported category weight: 24 / 100. Zero-credit unsupported category weight: 76 / 100.
-The v4 corpus also keeps 2 held-out broadcasting programs and 2 held-out recompilation-guard scenarios in tests to guard against case-specific specialization; they are not included in the public timing table.
+Supported category weight: 38 / 100. Zero-credit unsupported category weight: 62 / 100.
+The torch_compile_corpus_v6 corpus also keeps 2 held-out broadcasting programs, 1 held-out inference program, 2 held-out recompilation-guard programs, 1 held-out training-autograd program, and 2 held-out recompilation-guard scenarios in tests to guard against case-specific specialization; they are not included in the public timing table.
