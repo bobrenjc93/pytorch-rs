@@ -443,7 +443,7 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "backend default/name resolution through the `torch.compiler` registry",
     "native `backend=\"eager\", fullgraph=True` execution",
     "straight-line one- or two-input CPU `float32` Tensor functions",
-    "Tensor `neg`, `abs`, and binary `add`",
+    "Tensor `neg`, `abs`, `relu`, and binary `add`",
     "Tensor broadcasting",
     "broader graph capture/execution",
     "active `__torch_function__` modes",
