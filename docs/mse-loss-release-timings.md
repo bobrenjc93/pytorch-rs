@@ -2,16 +2,16 @@
 
 Date: 2026-08-30
 
-Review update: 2026-09-03
+Review update: 2026-09-04
 
 Candidate provenance: source snapshot based on
-`2231dec5e208f3545c05484d497b32b3981f640d`
+`18b14623e6d2b0feed592315e1bb92c16743e9b4`
 
 ## Review Update: `reduction="sum"` Same-Shape Contiguous
 
-The 2026-09-03 focused rerun used the current worktree based on
-`a8b28c9235d03a14be1498c787d00f65712faaeb` plus this branch's direct no-grad
-same-shape contiguous `mse_loss(reduction="sum")` fast path guard restoration,
+The 2026-09-04 focused rerun used the current worktree based on
+`18b14623e6d2b0feed592315e1bb92c16743e9b4` with the direct no-grad
+same-shape contiguous `mse_loss(reduction="sum")` fast path,
 active-autograd fallback tests, and reusable benchmark driver. The release
 extension was built and wheel-installed into the worktree `.venv`, and the
 checked-in timing driver `scripts/benchmark_mse_sum.py` emitted JSON under
@@ -52,9 +52,9 @@ VIRTUAL_ENV="$PWD/.venv" \
 env -u CONDA_PREFIX TMPDIR="$PWD/target" \
   VIRTUAL_ENV="$PWD/.venv" \
   PYO3_PYTHON="$PWD/.venv/bin/python" \
-  .venv/bin/maturin build --release --locked --out target/mse-wheel
+  .venv/bin/maturin build --release --locked --out target/mse-wheel-current
 uv pip install --python "$PWD/.venv/bin/python" --force-reinstall --no-deps \
-  target/mse-wheel/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl
+  target/mse-wheel-current/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl
 .venv/bin/python .github/scripts/verify_native_extension.py
 cargo test tensor::tests::squared_difference_sum --all-targets
 VIRTUAL_ENV="$PWD/.venv" \
@@ -102,9 +102,9 @@ Environment:
   reported 1
 - Dependency installation: locked
   `UV_CACHE_DIR="$PWD/target/uv-cache" uv sync --locked --no-install-project --group dev --group reference`
-  resolved in 32 ms, prepared 31 packages in 16.36s, and installed them in
-  1.68s into the worktree `.venv`
-- Build time: the final release wheel build for this source completed in 30.13s
+  resolved in 26 ms, prepared 31 packages in 15.61s, and installed them in
+  984 ms into the worktree `.venv`
+- Build time: the final release wheel build for this source completed in 37.67s
   before wheel installation
 
 Times are median microseconds per call. MAD is median absolute deviation in
@@ -115,7 +115,7 @@ the driver records 81 measured blocks in each implementation order.
 
 | Workload | Category | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Materialized checksum |
 | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
-| `mse_sum_same_contiguous_1024x1024` | same-shape contiguous no-grad sum | `()`, stride `()`, offset 0, requires_grad=False | 16 | 624.991 us +/- 2.624, var 281.221 | 302.794 us +/- 11.011, var 397.739 | 2.06x | `ea91fd1cbcd5054b` |
+| `mse_sum_same_contiguous_1024x1024` | same-shape contiguous no-grad sum | `()`, stride `()`, offset 0, requires_grad=False | 16 | 629.635 us +/- 3.730, var 366.075 | 299.715 us +/- 10.163, var 330.296 | 2.10x | `ea91fd1cbcd5054b` |
 
 ## Review Update: `reduction="mean"` Same-Shape Contiguous
 
