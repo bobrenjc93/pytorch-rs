@@ -610,6 +610,96 @@ class ReadmeQuickstartTests(unittest.TestCase):
             "production tensor operations forwarded to Python or PyTorch",
             normalized_features,
         )
+        self.assertIn("## Quick-scan map", features)
+        quick_scan_start = features.index("## Quick-scan map")
+        detailed_start = features.index("Full-tensor `Tensor.mean")
+        weights_start = features.index("Fixed top-level weights")
+        self.assertLess(quick_scan_start, detailed_start)
+        self.assertLess(detailed_start, weights_start)
+
+        quick_scan = features[quick_scan_start:detailed_start]
+        table_lines = [
+            line for line in quick_scan.splitlines() if line.startswith("| ")
+        ]
+        self.assertEqual(
+            table_lines[0],
+            "| Weighted area | Weight | Primary supported examples | Main unsupported boundary |",
+        )
+        self.assertEqual(table_lines[1], "| --- | ---: | --- | --- |")
+
+        feature_quick_scan_rows = (
+            (
+                "tensor storage, shapes, strides, views, indexing",
+                "15%",
+                ("shared-storage views", "contiguous materialization"),
+                ("advanced indexing", "storage-object APIs"),
+            ),
+            (
+                "dtypes, promotion, devices, dispatch",
+                "10%",
+                ("CPU-build CUDA probes", "float32 dtype helpers"),
+                ("Actual CUDA tensors/runtime",),
+            ),
+            (
+                "creation, elementwise, reductions",
+                "15%",
+                ("full-tensor `sum`/`mean`",),
+                ("dimension reductions",),
+            ),
+            (
+                "linear algebra and signal operations",
+                "10%",
+                ("Rank-2 `matmul`/`mm`",),
+                ("`bmm`", "spectral ops"),
+            ),
+            (
+                "autograd and higher-order differentiation",
+                "15%",
+                ("`Tensor.backward`", "grad-mode helpers"),
+                ("`autograd.grad`",),
+            ),
+            (
+                "neural-network functional API and modules",
+                "15%",
+                ("`l1_loss`/`mse_loss`", "`linear`"),
+                ("Modules/parameters",),
+            ),
+            (
+                "optimizers, initialization, data utilities",
+                "5%",
+                ("`torch.nn.init.calculate_gain`", "dataset and sampler helpers"),
+                ("Optimizers", "`DataLoader`"),
+            ),
+            (
+                "serialization, state dictionaries, model interchange",
+                "5%",
+                ("Serialization option state", "state-dict prefix removal"),
+                ("`torch.save`", "`torch.load`"),
+            ),
+            (
+                "compilation, parallelism, distributed execution",
+                "5%",
+                ("Eager JIT helpers", "narrow eager `torch.compile`"),
+                ("TorchScript", "process groups/collectives"),
+            ),
+            (
+                "ergonomics, diagnostics, documentation, ecosystem integration",
+                "5%",
+                ("Rank-0 `Tensor.__format__`", "native warning policy"),
+                ("Deterministic enforcement",),
+            ),
+        )
+        self.assertEqual(len(table_lines), len(feature_quick_scan_rows) + 2)
+        for area, weight, supported_examples, unsupported_boundaries in (
+            feature_quick_scan_rows
+        ):
+            with self.subTest(feature_quick_scan_area=area):
+                row_prefix = f"| {area} | {weight} |"
+                self.assertIn(row_prefix, quick_scan)
+                row_start = quick_scan.index(row_prefix)
+                row = quick_scan[row_start : quick_scan.index("\n", row_start)]
+                for snippet in supported_examples + unsupported_boundaries:
+                    self.assertIn(snippet, row)
 
     def test_benchmarking_indexes_historical_release_timing_reports(self):
         benchmarking = BENCHMARKING.read_text(encoding="utf-8")
