@@ -5,7 +5,7 @@ from __future__ import annotations
 import builtins as _builtins
 import operator as _operator
 from collections.abc import Sequence as _Sequence
-from dataclasses import dataclass
+from dataclasses import FrozenInstanceError, dataclass
 
 from . import torch_rs as _native
 
@@ -29,13 +29,105 @@ float32 = CompileTraceDType("torch.float32")
 float = float32
 
 
+class CompileTraceDeviceMetadata(str):
+    """Immutable private device metadata with string-compatible rendering."""
+
+    __slots__ = ("type", "index")
+
+    def __new__(cls, device_type="cpu", index=None):
+        if (
+            _builtins.isinstance(device_type, CompileTraceDeviceMetadata)
+            and index is None
+        ):
+            return device_type
+
+        device_type = _builtins.str(device_type)
+        if index is None and ":" in device_type:
+            device_type, index_text = device_type.split(":", 1)
+            index = _parse_device_index_text(index_text)
+
+        if device_type not in ("cpu", "cuda"):
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace tensor() only supports CPU or CUDA inputs"
+            )
+
+        if index is not None:
+            index = _normalize_device_index(index)
+            if device_type == "cpu":
+                raise CompileTraceUnsupportedError(
+                    "torch.compile trace tensor() only supports unindexed CPU "
+                    "metadata"
+                )
+
+        value = device_type if index is None else f"{device_type}:{index}"
+        self = _builtins.str.__new__(cls, value)
+        _builtins.object.__setattr__(self, "type", device_type)
+        _builtins.object.__setattr__(self, "index", index)
+        return self
+
+    def __setattr__(self, name, value):
+        raise FrozenInstanceError(f"cannot assign to field {name!r}")
+
+    @classmethod
+    def cpu(cls):
+        return cls("cpu")
+
+    @classmethod
+    def cuda(cls, index=None):
+        return cls("cuda", index)
+
+    def is_cpu(self):
+        return self.type == "cpu"
+
+    def is_cuda(self):
+        return self.type == "cuda"
+
+
+def _parse_device_index_text(index_text):
+    if (
+        not index_text
+        or not index_text.isdigit()
+        or (len(index_text) > 1 and index_text.startswith("0"))
+    ):
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace tensor() expected a non-negative decimal "
+            "CUDA device index"
+        )
+    return _builtins.int(index_text)
+
+
+def _normalize_device_index(index):
+    if _builtins.type(index) is _builtins.bool:
+        raise TypeError(
+            "torch.compile trace tensor(): CUDA device index must be int, "
+            "not bool"
+        )
+    index = _operator.index(index)
+    if index < 0:
+        raise ValueError(
+            "torch.compile trace tensor(): CUDA device index must be "
+            "non-negative"
+        )
+    return index
+
+
+cpu = CompileTraceDeviceMetadata.cpu()
+
+
+def cuda(index=None):
+    return CompileTraceDeviceMetadata.cuda(index)
+
+
 @dataclass(frozen=True, slots=True)
 class CompileTraceTensorMetadata:
     shape: tuple[int, ...]
     stride: tuple[int, ...]
     dtype: CompileTraceDType
-    device: str
+    device: CompileTraceDeviceMetadata
     requires_grad: bool
+
+    def __post_init__(self):
+        _builtins.object.__setattr__(self, "device", _normalize_device(self.device))
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,12 +197,11 @@ def _normalize_dtype(dtype):
 
 def _normalize_device(device):
     if device is None:
-        return "cpu"
-    if device == "cpu" or _builtins.str(device) == "cpu":
-        return "cpu"
-    raise CompileTraceUnsupportedError(
-        "torch.compile trace tensor() only supports CPU inputs"
-    )
+        return cpu
+    metadata = CompileTraceDeviceMetadata(device)
+    if metadata == cpu:
+        return cpu
+    return metadata
 
 
 def _normalize_requires_grad(requires_grad):
@@ -446,7 +537,7 @@ def _metadata_from_native_tensor(tensor):
         shape=_normalize_shape(shape),
         stride=_normalize_shape(stride),
         dtype=float32,
-        device="cpu",
+        device=cpu,
         requires_grad=_normalize_requires_grad(requires_grad),
     )
 
@@ -990,6 +1081,7 @@ def trace_one_input_compile_graph(program, make_inputs, *, name=None):
 
 __all__ = [
     "CompileTraceDType",
+    "CompileTraceDeviceMetadata",
     "CompileTraceGraph",
     "CompileTraceInput",
     "CompileTraceOperation",
@@ -998,6 +1090,8 @@ __all__ = [
     "CompileTraceTensorProxy",
     "CompileTraceTorchModule",
     "CompileTraceUnsupportedError",
+    "cpu",
+    "cuda",
     "execute_compile_trace_graph",
     "float",
     "float32",
