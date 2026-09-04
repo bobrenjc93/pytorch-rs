@@ -12179,6 +12179,14 @@ mod tests {
 
     #[test]
     fn subtract_matching_dense_no_grad_fast_path_matches_pytorch_edge_bits() {
+        // Invalid infinity subtraction produces the architecture's default NaN:
+        // x86 uses a negative quiet NaN while AArch64 uses a positive one. PyTorch
+        // follows the same native floating-point convention on each platform.
+        let positive_infinity_difference_bits =
+            (std::hint::black_box(f32::INFINITY) - std::hint::black_box(f32::INFINITY)).to_bits();
+        let negative_infinity_difference_bits = (std::hint::black_box(f32::NEG_INFINITY)
+            - std::hint::black_box(f32::NEG_INFINITY))
+        .to_bits();
         let left_bits = [
             0x0000_0000,
             0x8000_0000,
@@ -12202,8 +12210,8 @@ mod tests {
         let expected_physical_bits = [
             0x0000_0000,
             0x8000_0000,
-            0xffc0_0000,
-            0xffc0_0000,
+            positive_infinity_difference_bits,
+            negative_infinity_difference_bits,
             0x7fca_bcde,
             0x7fca_bcde,
             0xffc5_6789,
@@ -12214,9 +12222,9 @@ mod tests {
             0x7fca_bcde,
             0x8000_0000,
             0x7fca_bcde,
-            0xffc0_0000,
+            positive_infinity_difference_bits,
             0xffc5_6789,
-            0xffc0_0000,
+            negative_infinity_difference_bits,
             0x7fc5_6789,
         ];
 
