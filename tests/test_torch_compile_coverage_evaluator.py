@@ -31,7 +31,7 @@ def _make_inputs(module):
     return (module.tensor([1.0], dtype=module.float32),)
 
 
-def _case(name, category, *, recompile_limit=None):
+def _case(name, category, *, recompile_limit=None, backward_through_sum=False):
     return SimpleNamespace(
         name=name,
         category=category,
@@ -42,6 +42,7 @@ def _case(name, category, *, recompile_limit=None):
         mode=None,
         options=None,
         recompile_limit=recompile_limit,
+        backward_through_sum=backward_through_sum,
     )
 
 
@@ -238,7 +239,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
 
         self.assertIn("duplicate case name 'tensor_0'", str(raised.exception))
 
-    def test_current_v4_corpus_matches_pinned_manifest(self):
+    def test_current_v5_corpus_matches_pinned_manifest(self):
         evaluator._validate_corpus_metadata(_real_corpus_namespace())
 
     def test_pinned_manifest_rejects_case_program_replacement(self):
@@ -253,7 +254,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v4 case cpu_float32_unary_abs_neg program changed",
+            "public v5 case cpu_float32_unary_abs_neg program changed",
             str(raised.exception),
         )
 
@@ -269,7 +270,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v4 case cpu_float32_unary_abs_neg make_inputs changed",
+            "public v5 case cpu_float32_unary_abs_neg make_inputs changed",
             str(raised.exception),
         )
 
@@ -301,7 +302,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v4 guard scenario "
+            "public v5 guard scenario "
             "unary_shape_stride_requires_grad_guards/same_metadata "
             "guard_change changed",
             str(raised.exception),
@@ -587,6 +588,53 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
         self.assertEqual(len(verdicts), 1)
         self.assertFalse(verdicts[0].passed)
         self.assertEqual(verdicts[0].failure_kind, "reference_mismatch")
+
+    def test_candidate_backward_gradient_mismatch_zeroes_case(self):
+        case = _case(
+            "training_probe",
+            "training_autograd",
+            backward_through_sum=True,
+        )
+        corpus = SimpleNamespace(COMPILE_HELD_OUT_CORPUS=())
+        output = {"metadata": {"shape": [1]}, "values": [1.0]}
+        reference_case_results = {
+            case.name: {
+                "name": case.name,
+                "category": case.category,
+                "output": output,
+                "leaf_gradients": [
+                    {"metadata": {"shape": [1]}, "values": [1.0]},
+                ],
+            }
+        }
+        worker_payload = {
+            "ok": True,
+            "cases": [
+                {
+                    "name": case.name,
+                    "category": case.category,
+                    "status": "passed",
+                    "output": output,
+                    "leaf_gradients": [
+                        {"metadata": {"shape": [1]}, "values": [2.0]},
+                    ],
+                }
+            ],
+            "guard_scenarios": [],
+        }
+
+        verdicts, _ = evaluator._compare_worker_to_reference(
+            corpus,
+            (case,),
+            reference_case_results,
+            {},
+            worker_payload,
+        )
+
+        self.assertEqual(len(verdicts), 1)
+        self.assertFalse(verdicts[0].passed)
+        self.assertEqual(verdicts[0].failure_kind, "reference_mismatch")
+        self.assertIn("leaf_gradients", verdicts[0].message)
 
     def test_candidate_skipped_case_gets_zero_credit(self):
         corpus = _valid_fake_corpus()

@@ -23,8 +23,8 @@ import traceback
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CORPUS_PATH = REPOSITORY_ROOT / "tests" / "test_compile_corpus.py"
 EVALUATION_ID = "eval_a61c0e71"
-EVALUATOR_VERSION = "torch_compile_program_coverage_evaluator_v1"
-EXPECTED_CORPUS_VERSION = "torch_compile_corpus_v4"
+EVALUATOR_VERSION = "torch_compile_program_coverage_evaluator_v2"
+EXPECTED_CORPUS_VERSION = "torch_compile_corpus_v5"
 REFERENCE_PYTORCH_VERSION = "2.13.0"
 EXPECTED_CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -52,7 +52,7 @@ EXPECTED_HELD_OUT_GUARD_SCENARIOS = (
     "heldout_unary_rank3_metadata_mix",
     "heldout_binary_broadcast_metadata_mix",
 )
-EXPECTED_V4_CASE_MANIFEST = (
+EXPECTED_V5_CASE_MANIFEST = (
     {
         "name": "cpu_float32_unary_abs_neg",
         "held_out": False,
@@ -132,6 +132,23 @@ EXPECTED_V4_CASE_MANIFEST = (
         "mode": None,
         "options": None,
         "recompile_limit": None,
+    },
+    {
+        "name": "cpu_float32_training_unary_neg_abs_add",
+        "held_out": False,
+        "category": "training_autograd",
+        "program": "cpu_float32_training_unary_neg_abs_add",
+        "program_sha256": "c24711b0dd929213cde7039c5e652d4f95b735f8b3f095b580eb71ff1c862a40",
+        "make_inputs": "cpu_float32_training_unary_requires_grad_inputs",
+        "make_inputs_sha256": "38ebeb4d744d9eb946ca1b9dc2dbaa095c212f63849bc4595836a831b6a1c8e1",
+        "inputs_sha256": "b09579150ba5b84bebd343c7250b4eebb35db0b147302b9fbf53226533aa051a",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": True,
     },
     {
         "name": "cpu_float32_matrix_vector_add",
@@ -278,6 +295,23 @@ EXPECTED_V4_CASE_MANIFEST = (
         "recompile_limit": None,
     },
     {
+        "name": "cpu_float32_heldout_training_broadcast_neg_abs_add",
+        "held_out": True,
+        "category": "training_autograd",
+        "program": "cpu_float32_heldout_training_broadcast_neg_abs_add",
+        "program_sha256": "3dcec8f052c681ba85a6082a8547ebebbf682b0e37841ad351da434d41b70f57",
+        "make_inputs": "cpu_float32_training_broadcast_requires_grad_inputs",
+        "make_inputs_sha256": "a4880ef2eb26bc6f2becf62d1787b9ef4a9b72a4f850b8b4e07a076f47e32d33",
+        "inputs_sha256": "ce11da368b183505a90f58cbe29494ae7e14cc8893827cf530c47eebcfe4d743",
+        "arity": 2,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": True,
+    },
+    {
         "name": "cpu_float32_heldout_guard_unary_metadata",
         "held_out": True,
         "category": "recompilation_guards",
@@ -310,7 +344,7 @@ EXPECTED_V4_CASE_MANIFEST = (
         "recompile_limit": 4,
     },
 )
-EXPECTED_V4_GUARD_SCENARIO_MANIFEST = (
+EXPECTED_V5_GUARD_SCENARIO_MANIFEST = (
     {
         "name": "unary_shape_stride_requires_grad_guards",
         "held_out": False,
@@ -756,6 +790,7 @@ def _case_manifest_entry(corpus_module, case, *, held_out, tensor_module, errors
         "mode": getattr(case, "mode", None),
         "options": getattr(case, "options", None),
         "recompile_limit": getattr(case, "recompile_limit", None),
+        "backward_through_sum": getattr(case, "backward_through_sum", None),
     }
 
 
@@ -842,19 +877,19 @@ def _compare_manifest_entry(actual, expected, *, context, errors):
 
 def _expected_case_manifest(held_out):
     return tuple(
-        entry for entry in EXPECTED_V4_CASE_MANIFEST if entry["held_out"] is held_out
+        entry for entry in EXPECTED_V5_CASE_MANIFEST if entry["held_out"] is held_out
     )
 
 
 def _expected_guard_scenario_manifest(held_out):
     return tuple(
         entry
-        for entry in EXPECTED_V4_GUARD_SCENARIO_MANIFEST
+        for entry in EXPECTED_V5_GUARD_SCENARIO_MANIFEST
         if entry["held_out"] is held_out
     )
 
 
-def _validate_v4_case_manifest(
+def _validate_v5_case_manifest(
     corpus_module,
     cases,
     *,
@@ -868,7 +903,7 @@ def _validate_v4_case_manifest(
     actual_names = [getattr(case, "name", None) for case in cases]
     if actual_names != expected_names:
         errors.append(
-            f"{label} v4 case names/order changed: {actual_names!r} != {expected_names!r}"
+            f"{label} v5 case names/order changed: {actual_names!r} != {expected_names!r}"
         )
 
     expected_by_name = {entry["name"]: entry for entry in expected_entries}
@@ -886,12 +921,12 @@ def _validate_v4_case_manifest(
         _compare_manifest_entry(
             actual_entry,
             expected_entry,
-            context=f"{label} v4 case {case.name}",
+            context=f"{label} v5 case {case.name}",
             errors=errors,
         )
 
 
-def _validate_v4_guard_scenario_manifest(
+def _validate_v5_guard_scenario_manifest(
     corpus_module,
     scenarios,
     *,
@@ -905,7 +940,7 @@ def _validate_v4_guard_scenario_manifest(
     actual_names = [getattr(scenario, "name", None) for scenario in scenarios]
     if actual_names != expected_names:
         errors.append(
-            f"{label} v4 guard scenarios changed: {actual_names!r} != {expected_names!r}"
+            f"{label} v5 guard scenarios changed: {actual_names!r} != {expected_names!r}"
         )
 
     expected_by_name = {entry["name"]: entry for entry in expected_entries}
@@ -923,7 +958,7 @@ def _validate_v4_guard_scenario_manifest(
         _compare_manifest_entry(
             actual_entry,
             expected_entry,
-            context=f"{label} v4 guard scenario {scenario.name}",
+            context=f"{label} v5 guard scenario {scenario.name}",
             errors=errors,
         )
 
@@ -963,10 +998,10 @@ def _validate_corpus_metadata(corpus_module):
 
     public_cases = tuple(getattr(corpus_module, "COMPILE_CORPUS", ()))
     held_out_cases = tuple(getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ()))
-    if len(public_cases) != 12:
-        errors.append(f"expected 12 public v4 cases, found {len(public_cases)}")
-    if len(held_out_cases) != 4:
-        errors.append(f"expected 4 held-out v4 cases, found {len(held_out_cases)}")
+    if len(public_cases) != 13:
+        errors.append(f"expected 13 public v5 cases, found {len(public_cases)}")
+    if len(held_out_cases) != 5:
+        errors.append(f"expected 5 held-out v5 cases, found {len(held_out_cases)}")
 
     seen_names = set()
     for case in (*public_cases, *held_out_cases):
@@ -1000,6 +1035,13 @@ def _validate_corpus_metadata(corpus_module):
                 errors.append(f"{name} has invalid guard recompile_limit")
         elif recompile_limit is not None:
             errors.append(f"{name} has unexpected recompile_limit")
+        backward_through_sum = getattr(case, "backward_through_sum", None)
+        if type(backward_through_sum) is not bool:
+            errors.append(f"{name} has invalid backward_through_sum metadata")
+        if category == "training_autograd" and backward_through_sum is not True:
+            errors.append(f"{name} must enable backward_through_sum")
+        if category != "training_autograd" and backward_through_sum is not False:
+            errors.append(f"{name} unexpectedly enables backward_through_sum")
 
     public_scenarios = tuple(
         getattr(corpus_module, "COMPILE_RECOMPILATION_GUARD_SCENARIOS", ())
@@ -1008,11 +1050,11 @@ def _validate_corpus_metadata(corpus_module):
         getattr(corpus_module, "COMPILE_HELD_OUT_RECOMPILATION_GUARD_SCENARIOS", ())
     )
     if _guard_scenario_names(public_scenarios) != list(EXPECTED_PUBLIC_GUARD_SCENARIOS):
-        errors.append("public recompilation guard scenarios do not match v4")
+        errors.append("public recompilation guard scenarios do not match v5")
     if _guard_scenario_names(held_out_scenarios) != list(
         EXPECTED_HELD_OUT_GUARD_SCENARIOS
     ):
-        errors.append("held-out recompilation guard scenarios do not match v4")
+        errors.append("held-out recompilation guard scenarios do not match v5")
     for scenario in (*public_scenarios, *held_out_scenarios):
         scenario_name = getattr(scenario, "name", None)
         case_name = getattr(scenario, "case_name", None)
@@ -1037,28 +1079,28 @@ def _validate_corpus_metadata(corpus_module):
             last_compile_count = expected_count if type(expected_count) is int else 0
 
     tensor_module = _manifest_tensor_module(corpus_module, errors)
-    _validate_v4_case_manifest(
+    _validate_v5_case_manifest(
         corpus_module,
         public_cases,
         held_out=False,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v4_case_manifest(
+    _validate_v5_case_manifest(
         corpus_module,
         held_out_cases,
         held_out=True,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v4_guard_scenario_manifest(
+    _validate_v5_guard_scenario_manifest(
         corpus_module,
         public_scenarios,
         held_out=False,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v4_guard_scenario_manifest(
+    _validate_v5_guard_scenario_manifest(
         corpus_module,
         held_out_scenarios,
         held_out=True,
@@ -1089,6 +1131,17 @@ def _tensor_payload(tensor):
 
 def _inputs_payload(inputs):
     return [_tensor_payload(input) for input in inputs]
+
+
+def _leaf_gradients_payload(inputs):
+    gradients = []
+    for input in inputs:
+        gradient = getattr(input, "grad", None)
+        if gradient is None:
+            gradients.append(None)
+        else:
+            gradients.append(_tensor_payload(gradient))
+    return gradients
 
 
 def _assert_payload_match(actual, expected, *, label):
@@ -1133,31 +1186,58 @@ def _reference_case_result(reference_torch, case):
     _reset_reference_compile_state(reference_torch)
     backend_calls = []
     backend = _make_recording_backend(backend_calls)
+    backward_through_sum = getattr(case, "backward_through_sum", False)
     inputs = case.make_inputs(reference_torch)
     before_inputs = _inputs_payload(inputs)
-    expected = case.program(*case.make_inputs(reference_torch))
+    expected_inputs = case.make_inputs(reference_torch)
+    expected = case.program(*expected_inputs)
+    expected_gradients = None
+    if backward_through_sum:
+        expected.sum().backward()
+        expected_gradients = _leaf_gradients_payload(expected_inputs)
     compiled = reference_torch.compile(
         case.program,
         **_compile_kwargs_from_case(case, backend),
     )
     actual = compiled(*inputs)
-    after_inputs = _inputs_payload(inputs)
+    after_forward_inputs = _inputs_payload(inputs)
 
     _assert_payload_match(
         _tensor_payload(actual),
         _tensor_payload(expected),
         label=f"{case.name}/reference",
     )
-    _assert_payload_match(after_inputs, before_inputs, label=f"{case.name}/inputs")
+    _assert_payload_match(
+        after_forward_inputs,
+        before_inputs,
+        label=f"{case.name}/inputs",
+    )
+    actual_gradients = None
+    if backward_through_sum:
+        actual.sum().backward()
+        actual_gradients = _leaf_gradients_payload(inputs)
+        _assert_payload_match(
+            actual_gradients,
+            expected_gradients,
+            label=f"{case.name}/reference_backward_sum",
+        )
+        _assert_payload_match(
+            _inputs_payload(inputs),
+            before_inputs,
+            label=f"{case.name}/inputs_after_backward",
+        )
     if len(backend_calls) < 1:
         raise AssertionError(f"{case.name} did not invoke the reference backend")
-    return {
+    result = {
         "name": case.name,
         "category": case.category,
         "output": _tensor_payload(actual),
         "input_count": len(inputs),
         "backend_call_count": len(backend_calls),
     }
+    if backward_through_sum:
+        result["leaf_gradients"] = actual_gradients
+    return result
 
 
 def _reference_guard_scenario_result(corpus_module, reference_torch, scenario):
@@ -1358,7 +1438,13 @@ def _program_call_counter(program):
 def _candidate_case_result(corpus_module, case):
     torch_rs = corpus_module.torch
     torch_rs.compiler.reset()
-    expected = case.program(*case.make_inputs(torch_rs))
+    backward_through_sum = getattr(case, "backward_through_sum", False)
+    expected_inputs = case.make_inputs(torch_rs)
+    expected = case.program(*expected_inputs)
+    expected_gradients = None
+    if backward_through_sum:
+        expected.sum().backward()
+        expected_gradients = _leaf_gradients_payload(expected_inputs)
     inputs = case.make_inputs(torch_rs)
     before_inputs = _inputs_payload(inputs)
     with _candidate_compile_counters() as counters:
@@ -1384,9 +1470,12 @@ def _candidate_case_result(corpus_module, case):
                 f"{case.name} executed {counters['execute_compile_trace_graph']} "
                 "native trace graphs, expected exactly 1"
             )
+        after_forward_inputs = _inputs_payload(inputs)
 
+        second_inputs = case.make_inputs(torch_rs)
+        before_second_inputs = _inputs_payload(second_inputs)
         with _program_call_counter(case.program) as second_program_calls:
-            second_actual = compiled(*case.make_inputs(torch_rs))
+            second_actual = compiled(*second_inputs)
         if second_program_calls["count"] != 0:
             raise AssertionError(
                 f"{case.name} executed the original Python program on cache hit"
@@ -1398,7 +1487,6 @@ def _candidate_case_result(corpus_module, case):
                 f"{case.name} cache hit did not execute the native trace graph"
             )
 
-    after_inputs = _inputs_payload(inputs)
     output = _tensor_payload(actual)
     _assert_payload_match(
         output,
@@ -1410,9 +1498,44 @@ def _candidate_case_result(corpus_module, case):
         _tensor_payload(expected),
         label=f"{case.name}/torch_rs/cache_hit",
     )
-    _assert_payload_match(after_inputs, before_inputs, label=f"{case.name}/inputs")
+    _assert_payload_match(
+        after_forward_inputs,
+        before_inputs,
+        label=f"{case.name}/inputs",
+    )
+    _assert_payload_match(
+        _inputs_payload(second_inputs),
+        before_second_inputs,
+        label=f"{case.name}/cache_hit_inputs",
+    )
+    actual_gradients = None
+    if backward_through_sum:
+        actual.sum().backward()
+        actual_gradients = _leaf_gradients_payload(inputs)
+        _assert_payload_match(
+            actual_gradients,
+            expected_gradients,
+            label=f"{case.name}/torch_rs_backward_sum",
+        )
+        _assert_payload_match(
+            _inputs_payload(inputs),
+            before_inputs,
+            label=f"{case.name}/inputs_after_backward",
+        )
+
+        second_actual.sum().backward()
+        _assert_payload_match(
+            _leaf_gradients_payload(second_inputs),
+            expected_gradients,
+            label=f"{case.name}/torch_rs_cache_hit_backward_sum",
+        )
+        _assert_payload_match(
+            _inputs_payload(second_inputs),
+            before_second_inputs,
+            label=f"{case.name}/cache_hit_inputs_after_backward",
+        )
     _assert_no_pytorch_modules(case.name)
-    return {
+    result = {
         "name": case.name,
         "category": case.category,
         "status": "passed",
@@ -1420,6 +1543,9 @@ def _candidate_case_result(corpus_module, case):
         "lower_compile_graph_count": counters["lower_compile_graph"],
         "execute_compile_trace_graph_count": counters["execute_compile_trace_graph"],
     }
+    if backward_through_sum:
+        result["leaf_gradients"] = actual_gradients
+    return result
 
 
 def _candidate_guard_scenario_result(corpus_module, scenario):
@@ -1800,6 +1926,25 @@ def _compare_worker_to_reference(
                 )
             )
             continue
+        if getattr(case, "backward_through_sum", False):
+            try:
+                _assert_payload_match(
+                    candidate_case.get("leaf_gradients"),
+                    reference_case.get("leaf_gradients"),
+                    label=f"{case.name}/leaf_gradients",
+                )
+            except AssertionError as error:
+                verdicts.append(
+                    CaseVerdict(
+                        case.name,
+                        case.category,
+                        held_out,
+                        False,
+                        "reference_mismatch",
+                        str(error),
+                    )
+                )
+                continue
         guard_failures = guard_failure_by_case.get(case.name)
         if guard_failures:
             verdicts.append(
