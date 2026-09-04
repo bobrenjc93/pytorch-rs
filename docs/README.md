@@ -1,8 +1,8 @@
 # Documentation Index
 
-Use this page to find the durable project contracts, contributor guides, and
-historical timing evidence. Burner-managed progress artifacts are generated at
-merge time and are not source documentation.
+Use this page to find the durable project contracts, runnable examples,
+contributor guides, and historical timing evidence. Burner-managed progress
+artifacts are generated at merge time and are not source documentation.
 
 ## Current Contracts
 
@@ -10,6 +10,10 @@ merge time and are not source documentation.
 - [Feature coverage contract](../FEATURES.md): Weighted feature areas and what counts toward coverage.
 - [Benchmark policy](../BENCHMARKING.md): Correctness gates, measurement rules, provenance, and anti-gaming policy.
 - [Compile coverage evaluator](torch-compile-coverage-evaluator.md): Command-backed Burner evaluator for the v4 reference-eligible `torch.compile` corpus.
+
+## Examples
+
+- [First-success example](../examples/first_success.py): Runnable version of the README first-success assertions.
 
 ## Contributor Guides
 

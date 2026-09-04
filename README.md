@@ -38,6 +38,9 @@ assert delta.tolist() == [[2.0, -1.0], [-2.0, 5.0]]
 assert ratio.tolist() == [[-1.0, 2.0], [3.0, -4.0]]
 ```
 
+The same assertion-only smoke check is available as
+[examples/first_success.py](examples/first_success.py).
+
 ## Scope
 
 | Surface | Supported today | Unsupported boundary |

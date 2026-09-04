@@ -1,4 +1,5 @@
 import re
+import runpy
 import unittest
 from pathlib import Path
 
@@ -7,6 +8,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 README = REPOSITORY_ROOT / "README.md"
 BENCHMARKING = REPOSITORY_ROOT / "BENCHMARKING.md"
 CONTRIBUTING = REPOSITORY_ROOT / "CONTRIBUTING.md"
+FIRST_SUCCESS_EXAMPLE = REPOSITORY_ROOT / "examples" / "first_success.py"
 FEATURES = REPOSITORY_ROOT / "FEATURES.md"
 DOCS_README = REPOSITORY_ROOT / "docs" / "README.md"
 TROUBLESHOOTING = REPOSITORY_ROOT / "docs" / "troubleshooting.md"
@@ -472,6 +474,13 @@ DOCS_INDEX_CONTRACTS = (
         "Correctness gates, measurement rules, provenance, and anti-gaming policy.",
     ),
 )
+DOCS_INDEX_EXAMPLES = (
+    (
+        "First-success example",
+        "../examples/first_success.py",
+        "Runnable version of the README first-success assertions.",
+    ),
+)
 DOCS_INDEX_GUIDES = (
     (
         "Repository README",
@@ -572,7 +581,14 @@ class ReadmeQuickstartTests(unittest.TestCase):
 
         source = matches[0].group("source").rstrip()
         self.assertLessEqual(len(source.splitlines()), 15)
+        self.assertIn(
+            "[examples/first_success.py](examples/first_success.py)", readme
+        )
+        example_source = FIRST_SUCCESS_EXAMPLE.read_text(encoding="utf-8").rstrip()
+        self.assertEqual(example_source, source)
+
         exec(compile(source, f"{README}#first-success", "exec"), {})
+        runpy.run_path(str(FIRST_SUCCESS_EXAMPLE))
 
     def test_readme_routes_benchmark_policy_to_focused_docs(self):
         readme = README.read_text(encoding="utf-8")
@@ -759,6 +775,7 @@ class ReadmeQuickstartTests(unittest.TestCase):
         docs_readme = DOCS_README.read_text(encoding="utf-8")
         sections = (
             "## Current Contracts",
+            "## Examples",
             "## Contributor Guides",
             "## Historical Timing Evidence",
         )
@@ -776,15 +793,28 @@ class ReadmeQuickstartTests(unittest.TestCase):
                     self.assertRegex(line, r"^- \[[^\]]+\]\([^)]+\): \S")
 
         current_contracts = docs_readme[
-            docs_readme.index("## Current Contracts") : docs_readme.index(
-                "## Contributor Guides"
-            )
+            docs_readme.index("## Current Contracts") : docs_readme.index("## Examples")
         ]
         for label, target, description in DOCS_INDEX_CONTRACTS:
             with self.subTest(contract=target):
                 self.assertIn(
                     f"- [{label}]({target}): {description}",
                     current_contracts,
+                )
+                path = (DOCS_README.parent / target).resolve()
+                self.assertTrue(path.is_relative_to(REPOSITORY_ROOT))
+                self.assertTrue(path.is_file())
+
+        examples = docs_readme[
+            docs_readme.index("## Examples") : docs_readme.index(
+                "## Contributor Guides"
+            )
+        ]
+        for label, target, description in DOCS_INDEX_EXAMPLES:
+            with self.subTest(example=target):
+                self.assertIn(
+                    f"- [{label}]({target}): {description}",
+                    examples,
                 )
                 path = (DOCS_README.parent / target).resolve()
                 self.assertTrue(path.is_relative_to(REPOSITORY_ROOT))
