@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 import torch_rs as torch
-from torch_rs import _cuda_driver_probe
+from torch_rs import _cuda_driver_probe, _cuda_runtime_roundtrip
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -92,6 +92,147 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
         self.assertIn("driver", probe)
         self.assertIn("runtime", probe)
         self.assertIn("cuda_visible_devices", probe)
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
+        self.assertIs(torch.cuda.is_initialized(), False)
+
+    def test_private_cuda_runtime_roundtrip_is_not_public_cuda_support(self):
+        self.assertNotIn("_cuda_runtime_roundtrip", torch.__all__)
+        self.assertFalse(hasattr(torch.cuda, "_cuda_runtime_roundtrip"))
+        self.assertFalse(hasattr(torch.cuda, "runtime_roundtrip"))
+        self.assertEqual(
+            _cuda_runtime_roundtrip.DEFAULT_ROUNDTRIP_CHECKSUM,
+            "89c5ee9507c6f91487b4bad190da4a7f",
+        )
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
+        self.assertIs(torch.cuda.is_initialized(), False)
+
+    def test_private_cuda_runtime_roundtrip_reports_no_visible_cuda_cleanly(self):
+        script = r"""
+import json
+import torch_rs as torch
+from torch_rs import _cuda_runtime_roundtrip
+
+roundtrip = _cuda_runtime_roundtrip.roundtrip_float32_device0()
+print(json.dumps({
+    "status": roundtrip["status"],
+    "reason": roundtrip["reason"],
+    "cuda_visible_devices": roundtrip["cuda_visible_devices"],
+    "cpu_fallback": roundtrip["cpu_fallback"],
+    "checksum_match": roundtrip["checksum_match"],
+    "public_cuda_is_available": torch.cuda.is_available(),
+    "public_cuda_device_count": torch.cuda.device_count(),
+    "public_cuda_is_initialized": torch.cuda.is_initialized(),
+}))
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            env={**os.environ, "CUDA_VISIBLE_DEVICES": ""},
+            text=True,
+            timeout=60,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+        probe = json.loads(completed.stdout)
+        self.assertEqual(probe["cuda_visible_devices"], "")
+        self.assertEqual(probe["status"], "unavailable")
+        self.assertIs(probe["cpu_fallback"], False)
+        self.assertIs(probe["checksum_match"], False)
+        self.assertIs(probe["public_cuda_is_available"], False)
+        self.assertEqual(probe["public_cuda_device_count"], 0)
+        self.assertIs(probe["public_cuda_is_initialized"], False)
+
+    def test_private_cuda_runtime_roundtrip_validator_rejects_cpu_fallback(self):
+        with self.assertRaisesRegex(AssertionError, "CPU fallback"):
+            benchmark_compile_cuda._require_private_cuda_runtime_roundtrip(
+                {
+                    "status": "ok",
+                    "cpu_fallback": True,
+                    "device_type": "cpu",
+                    "device_index": None,
+                    "checksum_match": True,
+                    "device_roundtrip_checksum": (
+                        _cuda_runtime_roundtrip.DEFAULT_ROUNDTRIP_CHECKSUM
+                    ),
+                    "expected_checksum": (
+                        _cuda_runtime_roundtrip.DEFAULT_ROUNDTRIP_CHECKSUM
+                    ),
+                }
+            )
+
+    def test_private_cuda_runtime_roundtrip_allocates_copies_and_syncs_on_h100(self):
+        probe = _reference_cuda_probe()
+        if not probe.get("imported"):
+            self.skipTest("requires reference PyTorch")
+        if not probe.get("available"):
+            self.skipTest("requires a CUDA-visible reference PyTorch runtime")
+        if "H100" not in probe.get("device_name", ""):
+            self.skipTest(
+                f"requires an H100 CUDA device, got {probe['device_name']!r}"
+            )
+        if os.environ.get("CUDA_VISIBLE_DEVICES") != "0":
+            self.skipTest("requires CUDA_VISIBLE_DEVICES=0")
+
+        roundtrip = _cuda_runtime_roundtrip.roundtrip_float32_device0()
+        self.assertEqual(
+            roundtrip["status"],
+            "ok",
+            msg=json.dumps(roundtrip, indent=2, sort_keys=True),
+        )
+        self.assertIs(roundtrip["public_torch_cuda_api"], False)
+        self.assertIs(roundtrip["cpu_fallback"], False)
+        self.assertEqual(roundtrip["device_type"], "cuda")
+        self.assertEqual(roundtrip["device_index"], 0)
+        self.assertEqual(roundtrip["cuda_visible_devices"], "0")
+        self.assertTrue(roundtrip["cuda_visible_devices_match"])
+        self.assertEqual(roundtrip["dtype"], "float32")
+        self.assertEqual(
+            roundtrip["element_count"],
+            _cuda_runtime_roundtrip.DEFAULT_ELEMENT_COUNT,
+        )
+        self.assertEqual(
+            roundtrip["host_input_checksum"],
+            _cuda_runtime_roundtrip.DEFAULT_ROUNDTRIP_CHECKSUM,
+        )
+        self.assertEqual(
+            roundtrip["device_roundtrip_checksum"],
+            _cuda_runtime_roundtrip.DEFAULT_ROUNDTRIP_CHECKSUM,
+        )
+        self.assertIs(roundtrip["checksum_match"], True)
+        self.assertIs(roundtrip["device_pointer_nonzero"], True)
+        self.assertEqual(roundtrip["calls"]["cudaGetDeviceCount"]["result"], 0)
+        self.assertGreaterEqual(roundtrip["calls"]["cudaGetDeviceCount"]["value"], 1)
+        self.assertEqual(roundtrip["calls"]["cudaSetDevice"]["result"], 0)
+        self.assertEqual(roundtrip["calls"]["cudaGetDevice"]["result"], 0)
+        self.assertEqual(roundtrip["calls"]["cudaMalloc"]["result"], 0)
+        self.assertEqual(
+            roundtrip["calls"]["cudaMemcpyHostToDevice"]["result"],
+            0,
+        )
+        self.assertEqual(
+            roundtrip["calls"]["cudaMemcpyDeviceToHost"]["result"],
+            0,
+        )
+        self.assertEqual(
+            roundtrip["calls"]["cudaDeviceSynchronize_after_device_to_host"][
+                "result"
+            ],
+            0,
+        )
+        self.assertEqual(roundtrip["calls"]["cudaFree"]["result"], 0)
+        self.assertIn("H100", roundtrip["device_0"]["name"])
+        self.assertEqual(roundtrip["device_0"]["compute_capability"], [9, 0])
+        self.assertIsInstance(
+            roundtrip["driver"]["version"]["version_text"],
+            str,
+        )
+        self.assertIsInstance(roundtrip["runtime"]["runtime_version_text"], str)
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertIs(torch.cuda.is_initialized(), False)
@@ -216,6 +357,27 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
             str,
         )
         self.assertIsInstance(driver_probe["runtime"]["runtime_version_text"], str)
+        runtime_roundtrip = report["torch_rs_cuda_runtime_roundtrip"]
+        self.assertEqual(
+            runtime_roundtrip["schema_version"],
+            _cuda_runtime_roundtrip.ROUNDTRIP_SCHEMA_VERSION,
+        )
+        self.assertEqual(runtime_roundtrip["status"], "ok")
+        self.assertIs(runtime_roundtrip["cpu_fallback"], False)
+        self.assertEqual(runtime_roundtrip["device_type"], "cuda")
+        self.assertEqual(runtime_roundtrip["device_index"], 0)
+        self.assertEqual(runtime_roundtrip["cuda_visible_devices"], "0")
+        self.assertEqual(
+            runtime_roundtrip["host_input_checksum"],
+            _cuda_runtime_roundtrip.DEFAULT_ROUNDTRIP_CHECKSUM,
+        )
+        self.assertEqual(
+            runtime_roundtrip["device_roundtrip_checksum"],
+            _cuda_runtime_roundtrip.DEFAULT_ROUNDTRIP_CHECKSUM,
+        )
+        self.assertIs(runtime_roundtrip["checksum_match"], True)
+        self.assertIn("H100", runtime_roundtrip["device_0"]["name"])
+        self.assertEqual(runtime_roundtrip["device_0"]["compute_capability"], [9, 0])
         self.assertGreater(report["reference_workload"]["cold_first_call_us"], 0.0)
         self.assertGreater(
             report["reference_workload"]["steady"]["median_us"],
