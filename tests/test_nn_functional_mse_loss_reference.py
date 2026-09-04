@@ -1733,6 +1733,74 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 max_value_ulp=1,
             )
 
+    def test_sum_reduction_same_shape_contiguous_active_autograd_accumulates_like_pytorch_2_13(
+        self,
+    ):
+        def assert_grads_match(actual_sources, expected_sources, *, case):
+            for actual, expected in zip(actual_sources, expected_sources, strict=True):
+                with self.subTest(case=case, source=tuple(expected.shape)):
+                    self.assertEqual(actual.grad.shape, tuple(expected.grad.shape))
+                    self.assertEqual(actual.grad.stride(), expected.grad.stride())
+                    np.testing.assert_array_equal(
+                        np.asarray(actual.grad).reshape(-1).view(np.uint32),
+                        expected.grad.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                    )
+
+        actual_input = torch.tensor(
+            [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]], requires_grad=True
+        )
+        actual_target = torch.tensor(
+            [[0.5, 2.0, -3.0], [1.0, -1.0, 0.0]], requires_grad=True
+        )
+        expected_input = reference_torch.tensor(
+            [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        expected_target = reference_torch.tensor(
+            [[0.5, 2.0, -3.0], [1.0, -1.0, 0.0]],
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+
+        self.assertTrue(actual_input.is_contiguous())
+        self.assertTrue(actual_target.is_contiguous())
+        self.assertTrue(expected_input.is_contiguous())
+        self.assertTrue(expected_target.is_contiguous())
+        (actual_input * 3.0).sum().backward()
+        (actual_target * -4.0).sum().backward()
+        (expected_input * 3.0).sum().backward()
+        (expected_target * -4.0).sum().backward()
+
+        actual_loss = functional.mse_loss(
+            actual_input,
+            actual_target,
+            reduction="sum",
+        )
+        expected_loss = reference_functional.mse_loss(
+            expected_input,
+            expected_target,
+            reduction="sum",
+        )
+        self.assert_matches(
+            actual_loss,
+            expected_loss,
+            case="same-shape active autograd",
+            max_value_ulp=1,
+        )
+        self.assertTrue(actual_loss.requires_grad)
+        self.assertTrue(expected_loss.requires_grad)
+        self.assertFalse(actual_loss.is_leaf)
+        self.assertFalse(expected_loss.is_leaf)
+
+        actual_loss.backward()
+        expected_loss.backward()
+        assert_grads_match(
+            (actual_input, actual_target),
+            (expected_input, expected_target),
+            case="same-shape active autograd",
+        )
+
     def test_rank_two_trailing_vector_sum_requires_grad_matches_no_grad_and_active_autograd(
         self,
     ):
