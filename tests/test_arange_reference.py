@@ -163,6 +163,8 @@ class ArangeReferenceTests(unittest.TestCase):
             (1.25, 4.75),
             (-2.5, 2.5),
             (-0.6, 15.4),
+            (-10.84, 5.16),
+            (-0.37, 23.63),
             (float(2**63), float(2**63)),
             (
                 math.nextafter(float(2**63), 0.0),
@@ -226,6 +228,8 @@ class ArangeReferenceTests(unittest.TestCase):
                     (0.5, 3.5),
                     (-1.5, 2.5),
                     (-0.6, 15.4),
+                    (-10.84, 5.16),
+                    (-0.37, 23.63),
                 )
             )
             for start, end in cases:

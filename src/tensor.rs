@@ -760,10 +760,20 @@ impl Tensor {
         validate_storage_capacity(elements)?;
 
         let mut data = try_result_vector(elements, elements)?;
-        let vectorized_elements = elements - (elements % 16);
-        let start_float = start as f32;
-        for index in 0..vectorized_elements {
-            data.push(start_float + index as f32);
+        // PyTorch 2.13's CPU float arange kernel vectorizes complete
+        // 16-element blocks as two 8-lane vectors and seeds each vector from
+        // the double-domain start + index expression before float32 increments.
+        let vector_width = 8;
+        let vectorized_block = vector_width * 2;
+        let vectorized_elements = elements - (elements % vectorized_block);
+        for block_start in (0..vectorized_elements).step_by(vectorized_block) {
+            for vector_start in (block_start..block_start + vectorized_block).step_by(vector_width)
+            {
+                let base = (start + vector_start as f64) as f32;
+                for lane in 0..vector_width {
+                    data.push(base + lane as f32);
+                }
+            }
         }
         for index in vectorized_elements..elements {
             data.push((start + index as f64) as f32);

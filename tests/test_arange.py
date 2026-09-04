@@ -367,6 +367,100 @@ class ArangeTests(unittest.TestCase):
                     expected_bits,
                 )
 
+    def test_two_bound_inexact_float_chunk_boundaries_match_pytorch_2_13(self):
+        cases = (
+            (
+                "python_second_vector_seed",
+                lambda: torch.arange(
+                    start=-10.84, end=5.16, dtype=torch.float32
+                ),
+                [
+                    0xC12D70A4,
+                    0xC11D70A4,
+                    0xC10D70A4,
+                    0xC0FAE148,
+                    0xC0DAE148,
+                    0xC0BAE148,
+                    0xC09AE148,
+                    0xC075C290,
+                    0xC035C28F,
+                    0xBFEB851E,
+                    0xBF570A3C,
+                    0x3E23D710,
+                    0x3F947AE2,
+                    0x400A3D71,
+                    0x404A3D71,
+                    0x40851EB8,
+                ],
+            ),
+            (
+                "numpy_float64_second_vector_seed",
+                lambda: torch.arange(
+                    np.float64(-10.84),
+                    np.float64(5.16),
+                    dtype=torch.float,
+                ),
+                [
+                    0xC12D70A4,
+                    0xC11D70A4,
+                    0xC10D70A4,
+                    0xC0FAE148,
+                    0xC0DAE148,
+                    0xC0BAE148,
+                    0xC09AE148,
+                    0xC075C290,
+                    0xC035C28F,
+                    0xBFEB851E,
+                    0xBF570A3C,
+                    0x3E23D710,
+                    0x3F947AE2,
+                    0x400A3D71,
+                    0x404A3D71,
+                    0x40851EB8,
+                ],
+            ),
+            (
+                "python_scalar_tail",
+                lambda: torch.arange(
+                    start=-0.37, end=23.63, dtype=torch.float32
+                ),
+                [
+                    0xBEBD70A4,
+                    0x3F2147AE,
+                    0x3FD0A3D7,
+                    0x402851EC,
+                    0x406851EC,
+                    0x409428F6,
+                    0x40B428F6,
+                    0x40D428F6,
+                    0x40F428F6,
+                    0x410A147B,
+                    0x411A147B,
+                    0x412A147B,
+                    0x413A147B,
+                    0x414A147B,
+                    0x415A147B,
+                    0x416A147B,
+                    0x417A147B,
+                    0x41850A3D,
+                    0x418D0A3D,
+                    0x41950A3D,
+                    0x419D0A3D,
+                    0x41A50A3D,
+                    0x41AD0A3D,
+                    0x41B50A3D,
+                ],
+            ),
+        )
+        for name, call, expected_bits in cases:
+            with self.subTest(name=name):
+                tensor = call()
+                self.assert_default_tensor_metadata(tensor, len(expected_bits))
+                self.assertEqual(
+                    [float32_bits(value) for value in tensor.tolist()],
+                    expected_bits,
+                )
+
     def test_two_bound_numpy_floating_endpoints_support_implicit_step(self):
         scalar_types = (*NUMPY_FLOAT_TYPES, NumpyFloatSubclass)
         raw_cases = (
