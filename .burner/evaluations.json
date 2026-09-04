@@ -62,7 +62,8 @@
       "enabled": true,
       "id": "eval_a61c0e71",
       "createdAt": "2026-08-28T21:17:58.000Z",
-      "definitionVersion": "evaldef_repo_a61c0e71_v1"
+      "definitionVersion": "evaldef_repo_a61c0e71_v2",
+      "command": "bash scripts/evaluate_torch_compile_coverage.sh"
     },
     {
       "name": "torch.compile CUDA performance parity",
