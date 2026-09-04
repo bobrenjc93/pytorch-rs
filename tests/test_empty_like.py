@@ -318,13 +318,21 @@ class EmptyLikeTests(unittest.TestCase):
         self.assertIs(package.empty_like, function)
         self.assertEqual(package.__all__.count("empty_like"), 1)
 
-    def test_top_level_empty_remains_out_of_scope(self):
+    def test_top_level_empty_is_exported(self):
         package = importlib.import_module("torch_rs")
         native = package._C
-        self.assertFalse(hasattr(package, "empty"))
-        self.assertFalse(hasattr(native, "empty"))
-        self.assertNotIn("empty", package.__all__)
-        self.assertNotIn("empty", native.__all__)
+        function = package.empty
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "empty")
+        self.assertEqual(function.__qualname__, "empty")
+        self.assertEqual(function.__module__, "torch_rs.torch_rs")
+        self.assertIs(native.empty, function)
+        self.assertIs(wildcard_namespace["empty"], function)
+        self.assertEqual(package.__all__.count("empty"), 1)
+        self.assertEqual(native.__all__.count("empty"), 1)
 
 
 if __name__ == "__main__":
