@@ -1500,6 +1500,24 @@ class CompileCorpusTraceTests(unittest.TestCase):
         ):
             self.lower_with_bytecode_instructions(program, instructions, input)
 
+    def test_bytecode_lowerer_rejects_cpython_314_small_int_output_leaf(self):
+        def program(x):
+            raise AssertionError("synthetic bytecode test must not run")
+
+        input = torch.tensor([-2.0, 0.5, 3.0], dtype=torch.float32)
+        instructions = (
+            self.bytecode_instruction("LOAD_FAST", "x", "x"),
+            self.bytecode_instruction("LOAD_SMALL_INT", 1, "1", 1),
+            self.bytecode_instruction("BUILD_TUPLE", arg=2),
+            self.bytecode_instruction("RETURN_VALUE"),
+        )
+
+        with self.assertRaisesRegex(
+            _compile_trace.CompileTraceUnsupportedError,
+            r"non-Tensor tuple return value\[1\]",
+        ):
+            self.lower_with_bytecode_instructions(program, instructions, input)
+
     def test_bytecode_lowerer_rejects_unsupported_input_counts(self):
         def no_inputs():
             raise AssertionError("unsupported program should not run")
