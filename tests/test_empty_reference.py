@@ -144,6 +144,12 @@ class EmptyReferenceTests(unittest.TestCase):
             ("variadic bool true", lambda module: module.empty(2, True)),
             ("tuple", lambda module: module.empty((2, 3))),
             ("list", lambda module: module.empty([2, 3])),
+            ("tuple bool false", lambda module: module.empty((2, False))),
+            ("tuple bool true", lambda module: module.empty((2, True))),
+            ("list bool false", lambda module: module.empty([2, False])),
+            ("list bool true", lambda module: module.empty([2, True])),
+            ("size keyword tuple bool", lambda module: module.empty(size=(2, False))),
+            ("size keyword list bool", lambda module: module.empty(size=[2, True])),
             ("tuple subclass", lambda module: module.empty(TupleSubclass((2, 3)))),
             ("list subclass", lambda module: module.empty(ListSubclass([2, 3]))),
             ("size object", lambda module: module.empty(module.Size([2, 3]))),
@@ -279,6 +285,10 @@ class EmptyReferenceTests(unittest.TestCase):
                 self.assertIn("Overflow when unpacking long long", expected_message)
 
         sequence_exact_cases = (
+            (False,),
+            [False],
+            (False, 2),
+            [False, 2],
             (-1,),
             [-1],
             (IndexDimension(-1),),
@@ -293,6 +303,23 @@ class EmptyReferenceTests(unittest.TestCase):
                 )
                 expected_type, expected_message = self.capture_error(
                     lambda dimensions=dimensions: reference_torch.empty(dimensions)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(actual_message, expected_message)
+
+        keyword_sequence_exact_cases = (
+            (False,),
+            [False],
+            (False, 2),
+            [False, 2],
+        )
+        for dimensions in keyword_sequence_exact_cases:
+            with self.subTest(keyword_dimensions=dimensions):
+                actual_type, actual_message = self.capture_error(
+                    lambda dimensions=dimensions: torch.empty(size=dimensions)
+                )
+                expected_type, expected_message = self.capture_error(
+                    lambda dimensions=dimensions: reference_torch.empty(size=dimensions)
                 )
                 self.assertIs(actual_type, expected_type)
                 self.assertEqual(actual_message, expected_message)

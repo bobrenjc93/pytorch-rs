@@ -242,6 +242,30 @@ class ZerosReferenceTests(unittest.TestCase):
             ("tuple", lambda module, options: module.zeros((2, 3), **options)),
             ("list", lambda module, options: module.zeros([2, 3], **options)),
             (
+                "tuple bool false",
+                lambda module, options: module.zeros((2, False), **options),
+            ),
+            (
+                "tuple bool true",
+                lambda module, options: module.zeros((2, True), **options),
+            ),
+            (
+                "list bool false",
+                lambda module, options: module.zeros([2, False], **options),
+            ),
+            (
+                "list bool true",
+                lambda module, options: module.zeros([2, True], **options),
+            ),
+            (
+                "size keyword tuple bool",
+                lambda module, options: module.zeros(size=(2, False), **options),
+            ),
+            (
+                "size keyword list bool",
+                lambda module, options: module.zeros(size=[2, True], **options),
+            ),
+            (
                 "integer protocol dimensions",
                 lambda module, options: module.zeros(
                     [IndexDimension(2), np.int64(3), IntSubclass(1)],

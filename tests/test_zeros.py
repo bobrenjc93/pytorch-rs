@@ -340,6 +340,8 @@ class ZerosTests(unittest.TestCase):
         for size, expected_shape in (
             ((2,), (2,)),
             ([2], (2,)),
+            ((2, False), (2, 0)),
+            ([2, True], (2, 1)),
             (np.array([2]), (2,)),
             (range(2, 4), (2, 3)),
             (UserList([2]), (2,)),

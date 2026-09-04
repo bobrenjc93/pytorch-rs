@@ -10560,7 +10560,7 @@ fn parse_creation_size<'py>(
         }
     };
 
-    let sequence_error = if validate_creation_sequence_size(function, value)? {
+    let sequence_error = if validate_creation_sequence_size(function, origin, value)? {
         return Ok(PendingCreationSize::Dimensions(value.clone()));
     } else {
         creation_sequence_type_error(function, origin, value)?
@@ -10572,13 +10572,25 @@ fn parse_creation_size<'py>(
     bind_creation_positional_dimension(function, value, sequence_error)
 }
 
-fn validate_creation_sequence_size(function: &str, value: &Bound<'_, PyAny>) -> PyResult<bool> {
+fn validate_creation_sequence_size(
+    function: &str,
+    origin: CreationSizeOrigin,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<bool> {
     if !is_creation_sequence_size(function, value)? {
         return Ok(false);
     }
     let length = value.len()?;
     for index in 0..length {
         let dimension = value.get_item(index)?;
+        if dimension.is_instance_of::<PyBool>() && index == 0 {
+            if origin == CreationSizeOrigin::Positional {
+                return Err(creation_sequence_dimension_type_error_at(
+                    function, index, &dimension,
+                )?);
+            }
+            return Ok(false);
+        }
         validate_creation_sequence_dimension_type(function, index, &dimension)?;
     }
     Ok(true)
@@ -10596,11 +10608,6 @@ fn validate_creation_sequence_dimension_type(
     index: usize,
     dimension: &Bound<'_, PyAny>,
 ) -> PyResult<()> {
-    if dimension.is_instance_of::<PyBool>() {
-        return Err(creation_sequence_dimension_type_error_at(
-            function, index, dimension,
-        )?);
-    }
     if dimension.is_instance_of::<PyInt>() {
         return Ok(());
     }
@@ -10691,7 +10698,7 @@ fn parse_creation_dimensions(
     let mut negative_dimension = None;
     for index in 0..length {
         let dimension = dimensions.get_item(index)?;
-        if dimension.is_instance_of::<PyBool>() {
+        if dimension.is_instance_of::<PyBool>() && index == 0 {
             return Err(creation_sequence_dimension_type_error_at(
                 function, index, &dimension,
             )?);
