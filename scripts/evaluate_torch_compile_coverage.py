@@ -1098,6 +1098,22 @@ def _assert_payload_match(actual, expected, *, label):
         )
 
 
+def _compile_kwargs_from_case(case, backend):
+    kwargs = {
+        "backend": backend,
+        "fullgraph": case.fullgraph,
+    }
+    if case.dynamic is not None:
+        kwargs["dynamic"] = case.dynamic
+    if case.mode is not None:
+        kwargs["mode"] = case.mode
+    if case.options is not None:
+        kwargs["options"] = dict(case.options)
+    if case.recompile_limit is not None:
+        kwargs["recompile_limit"] = case.recompile_limit
+    return kwargs
+
+
 def _make_recording_backend(calls):
     def backend(graph_module, example_inputs):
         calls.append((graph_module, example_inputs))
@@ -1120,7 +1136,10 @@ def _reference_case_result(reference_torch, case):
     inputs = case.make_inputs(reference_torch)
     before_inputs = _inputs_payload(inputs)
     expected = case.program(*case.make_inputs(reference_torch))
-    compiled = reference_torch.compile(case.program, **case.compile_kwargs(backend))
+    compiled = reference_torch.compile(
+        case.program,
+        **_compile_kwargs_from_case(case, backend),
+    )
     actual = compiled(*inputs)
     after_inputs = _inputs_payload(inputs)
 
@@ -1146,7 +1165,10 @@ def _reference_guard_scenario_result(corpus_module, reference_torch, scenario):
     backend_calls = []
     backend = _make_recording_backend(backend_calls)
     case = _case_by_name(corpus_module, scenario.case_name)
-    compiled = reference_torch.compile(case.program, **case.compile_kwargs(backend))
+    compiled = reference_torch.compile(
+        case.program,
+        **_compile_kwargs_from_case(case, backend),
+    )
     steps = []
 
     for step in scenario.steps:
@@ -1340,7 +1362,10 @@ def _candidate_case_result(corpus_module, case):
     inputs = case.make_inputs(torch_rs)
     before_inputs = _inputs_payload(inputs)
     with _candidate_compile_counters() as counters:
-        compiled = torch_rs.compile(case.program, **case.compile_kwargs("eager"))
+        compiled = torch_rs.compile(
+            case.program,
+            **_compile_kwargs_from_case(case, "eager"),
+        )
         if getattr(compiled, "_torch_rs_compile_backend", None) != "eager":
             raise AssertionError(f"{case.name} did not resolve backend='eager'")
         with _program_call_counter(case.program) as program_calls:
@@ -1403,7 +1428,10 @@ def _candidate_guard_scenario_result(corpus_module, scenario):
     torch_rs.compiler.reset()
     steps = []
     with _candidate_compile_counters() as counters:
-        compiled = torch_rs.compile(case.program, **case.compile_kwargs("eager"))
+        compiled = torch_rs.compile(
+            case.program,
+            **_compile_kwargs_from_case(case, "eager"),
+        )
         for step in scenario.steps:
             if step.reset_before:
                 torch_rs.compiler.reset()

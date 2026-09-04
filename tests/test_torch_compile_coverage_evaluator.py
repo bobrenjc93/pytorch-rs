@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 import unittest
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -61,6 +62,69 @@ def _scenario(name, case_name):
         case_name=case_name,
         steps=(_step("base", "initial", 1),),
     )
+
+
+class _FakeTensor:
+    dtype = "fake.float32"
+    device = "cpu"
+    requires_grad = False
+
+    def __init__(self, values):
+        self._values = list(values)
+        self.shape = (len(self._values),)
+
+    def stride(self):
+        return (1,)
+
+    def storage_offset(self):
+        return 0
+
+    def is_contiguous(self):
+        return True
+
+    def tolist(self):
+        return list(self._values)
+
+
+class _FakeGraphModule:
+    def forward(self, *inputs):
+        return inputs[0]
+
+
+class _FakeCompiler:
+    def reset(self):
+        return None
+
+
+class _FakeTorchModule:
+    float32 = "fake.float32"
+
+    def __init__(self):
+        self.compiler = _FakeCompiler()
+        self.compile_calls = []
+        self.active_compile_counters = None
+
+    def tensor(self, values, *, dtype=None, requires_grad=False):
+        del dtype, requires_grad
+        return _FakeTensor(values)
+
+    def compile(self, program, **kwargs):
+        del program
+        self.compile_calls.append(kwargs)
+
+        def compiled(*inputs):
+            if self.active_compile_counters is not None:
+                if self.active_compile_counters["lower_compile_graph"] == 0:
+                    self.active_compile_counters["lower_compile_graph"] = 1
+                self.active_compile_counters["execute_compile_trace_graph"] += 1
+            backend = kwargs["backend"]
+            if callable(backend):
+                forward = backend(_FakeGraphModule(), inputs)
+                return forward(*inputs)
+            return inputs[0]
+
+        compiled._torch_rs_compile_backend = kwargs["backend"]
+        return compiled
 
 
 def _valid_fake_corpus():
@@ -272,6 +336,65 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._case_by_name(corpus, "guard_limit"),
             corpus.COMPILE_CORPUS[-1],
         )
+
+    def test_compile_execution_uses_pinned_fields_not_case_helper(self):
+        def forbidden_compile_kwargs(_backend):
+            raise AssertionError("case.compile_kwargs must not be used by evaluator")
+
+        case = SimpleNamespace(
+            name="compile_kwargs_probe",
+            category="tensor_arithmetic",
+            program=_program,
+            make_inputs=_make_inputs,
+            fullgraph=True,
+            dynamic=None,
+            mode=None,
+            options=None,
+            recompile_limit=2,
+            compile_kwargs=forbidden_compile_kwargs,
+        )
+        reference_torch = _FakeTorchModule()
+
+        reference_result = evaluator._reference_case_result(reference_torch, case)
+
+        self.assertEqual(reference_result["backend_call_count"], 1)
+        self.assertEqual(len(reference_torch.compile_calls), 1)
+        self.assertTrue(callable(reference_torch.compile_calls[0]["backend"]))
+        self.assertIs(reference_torch.compile_calls[0]["fullgraph"], True)
+        self.assertEqual(reference_torch.compile_calls[0]["recompile_limit"], 2)
+
+        @contextmanager
+        def fake_compile_counters():
+            counters = {
+                "lower_compile_graph": 0,
+                "execute_compile_trace_graph": 0,
+            }
+            candidate_torch.active_compile_counters = counters
+            try:
+                yield counters
+            finally:
+                candidate_torch.active_compile_counters = None
+
+        candidate_torch = _FakeTorchModule()
+        original_counters = evaluator._candidate_compile_counters
+        original_assert_no_pytorch = evaluator._assert_no_pytorch_modules
+        try:
+            evaluator._candidate_compile_counters = fake_compile_counters
+            evaluator._assert_no_pytorch_modules = lambda context: None
+
+            candidate_result = evaluator._candidate_case_result(
+                SimpleNamespace(torch=candidate_torch),
+                case,
+            )
+        finally:
+            evaluator._candidate_compile_counters = original_counters
+            evaluator._assert_no_pytorch_modules = original_assert_no_pytorch
+
+        self.assertEqual(candidate_result["status"], "passed")
+        self.assertEqual(len(candidate_torch.compile_calls), 1)
+        self.assertEqual(candidate_torch.compile_calls[0]["backend"], "eager")
+        self.assertIs(candidate_torch.compile_calls[0]["fullgraph"], True)
+        self.assertEqual(candidate_torch.compile_calls[0]["recompile_limit"], 2)
 
     def test_candidate_worker_blocks_pytorch_imports_during_metadata_validation(self):
         class FakeTorchImporter:
