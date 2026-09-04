@@ -31,7 +31,7 @@ PROTECTED_OUTPUT_PATHS = {
 }
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v1"
+BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v2"
 WORKLOAD_VERSION = "h100_cuda_pointwise_reduce_float32_v1"
 WORKLOAD_SHAPE = (1024, 1024)
 WORKLOAD_SEED = 20260904
@@ -365,7 +365,7 @@ def classify_torch_rs_cuda_compile_evidence(evidence):
     }
 
 
-def _torch_rs_cuda_probes(torch_rs):
+def _torch_rs_public_cuda_probes(torch_rs):
     return {
         "cuda_is_available": bool(torch_rs.cuda.is_available()),
         "cuda_device_count": int(torch_rs.cuda.device_count()),
@@ -373,6 +373,12 @@ def _torch_rs_cuda_probes(torch_rs):
         "accelerator_is_available": bool(torch_rs.accelerator.is_available()),
         "accelerator_device_count": int(torch_rs.accelerator.device_count()),
     }
+
+
+def _torch_rs_private_cuda_driver_probe():
+    from torch_rs import _cuda_driver_probe
+
+    return _cuda_driver_probe.probe_cuda_driver_device0()
 
 
 def torch_rs_zero_credit_unsupported_row(torch_rs):
@@ -399,7 +405,7 @@ def torch_rs_zero_credit_unsupported_row(torch_rs):
             "cell explicitly instead of substituting CPU execution, "
             "backend='eager', eager fallback, or installed-PyTorch forwarding."
         ),
-        "cuda_probes": _torch_rs_cuda_probes(torch_rs),
+        "cuda_probes": _torch_rs_public_cuda_probes(torch_rs),
         "rejected_fallbacks": [
             "CPU tensor execution",
             "backend='eager' compile execution",
@@ -476,9 +482,10 @@ def _environment(reference_torch, torch_rs, args):
 def run_benchmark(args):
     _validate_counts(args)
     import torch as reference_torch
-
-    _require_reference_environment(reference_torch, args)
     import torch_rs
+
+    torch_rs_cuda_driver_probe = _torch_rs_private_cuda_driver_probe()
+    _require_reference_environment(reference_torch, args)
 
     gc_was_enabled = gc.isenabled()
     gc.disable()
@@ -492,6 +499,7 @@ def run_benchmark(args):
     return {
         "environment": _environment(reference_torch, torch_rs, args),
         "reference_workload": pytorch_reference,
+        "torch_rs_cuda_driver_probe": torch_rs_cuda_driver_probe,
         "candidate": torch_rs_row,
         "aggregates": {
             "common_success_geomean_speed_ratio": None,
