@@ -10127,6 +10127,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 95
       }
+    },
+    {
+      "key": "pr:1817",
+      "recordedAt": "2026-09-04T04:54:59.239Z",
+      "label": "PR #1817",
+      "kind": "leaf",
+      "prNumber": 1817,
+      "title": "Add torch.compile recompilation-guard corpus coverage",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 95,
+        "eval_39340456": 99.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 12,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 95
+      }
     }
   ]
 }
