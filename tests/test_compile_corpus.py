@@ -1554,6 +1554,17 @@ for actual in (
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
+compiled_broadcast = torch.compile(broadcast_add, backend="eager", fullgraph=True)
+compiled_broadcast_actual = compiled_broadcast(*two_inputs)
+assert compiled_broadcast_actual.tolist() == two_expected.tolist()
+assert compiled_broadcast_actual.shape == two_expected.shape
+assert compiled_broadcast_actual.stride() == two_expected.stride()
+assert compiled_broadcast_actual.dtype is two_expected.dtype
+assert compiled_broadcast_actual.device == two_expected.device
+assert compiled_broadcast_actual.requires_grad is two_expected.requires_grad
+assert backend_calls == []
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
 compiled = torch.compile(self_add, backend="eager", fullgraph=True)
 compiled_actual = compiled(native_input)
 assert compiled_actual.tolist() == self_add_expected.tolist()

@@ -443,23 +443,7 @@ def _ensure_compile_tensor_method_guards(
 
 
 def _execute_native_eager_compile_graph(graph, inputs, compile_trace):
-    if len(graph.inputs) not in (1, 2):
-        raise compile_trace.CompileTraceUnsupportedError(
-            "torch.compile trace execution currently supports one or two "
-            "recorded inputs"
-        )
-    if len(inputs) != len(graph.inputs):
-        raise compile_trace.CompileTraceUnsupportedError(
-            "torch.compile trace execution expected "
-            f"{len(graph.inputs)} positional Tensor inputs, got {len(inputs)}"
-        )
-
-    values = {
-        graph_input.name: input for graph_input, input in zip(graph.inputs, inputs)
-    }
-    for operation in graph.operations:
-        values[operation.name] = compile_trace._execute_operation(operation, values)
-    return values[graph.output]
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
 
 
 def _native_eager_compile_implementation(model, name, recompile_limit):

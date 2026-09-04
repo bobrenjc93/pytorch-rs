@@ -385,6 +385,15 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         )
         same_shape_vector = torch.tensor([1.0, -1.5, 2.5], dtype=torch.float32)
         same_metadata_vector = torch.tensor([-3.0, 0.25, 4.0], dtype=torch.float32)
+        strided_matrix = torch.tensor(
+            [[-2.0, 5.0], [3.0, -6.0], [4.0, 7.0]],
+            dtype=torch.float32,
+        ).t()
+        requires_grad_vector = torch.tensor(
+            [1.0, -1.5, 2.5],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
         reshaped_vector = torch.tensor([[1.0, -1.5, 2.5]], dtype=torch.float32)
         changed_left = torch.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
@@ -404,16 +413,28 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             self.assertEqual(len(calls), 1)
 
             self.assertEqual(
+                compiled(strided_matrix, same_shape_vector).tolist(),
+                program(strided_matrix, same_shape_vector).tolist(),
+            )
+            self.assertEqual(len(calls), 2)
+
+            self.assertEqual(
+                compiled(matrix, requires_grad_vector).tolist(),
+                program(matrix, requires_grad_vector).tolist(),
+            )
+            self.assertEqual(len(calls), 3)
+
+            self.assertEqual(
                 compiled(matrix, reshaped_vector).tolist(),
                 program(matrix, reshaped_vector).tolist(),
             )
-            self.assertEqual(len(calls), 2)
+            self.assertEqual(len(calls), 4)
 
             self.assertEqual(
                 compiled(changed_left, same_shape_vector).tolist(),
                 program(changed_left, same_shape_vector).tolist(),
             )
-            self.assertEqual(len(calls), 3)
+            self.assertEqual(len(calls), 5)
         finally:
             _compile_bytecode.lower_compile_graph = original_lower
 
