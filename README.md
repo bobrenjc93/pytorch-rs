@@ -61,18 +61,6 @@ denominator. See [BENCHMARKING.md](BENCHMARKING.md) for benchmark methodology
 and anti-gaming rules, and [FEATURES.md](FEATURES.md) for weighted feature
 coverage.
 
-The deterministic `torch.compile` program-coverage evaluator builds the current
-worktree wheel, installs the locked PyTorch 2.13 reference dependency, executes
-the public plus held-out v4 compile corpus, and prints Burner EvaluationOutput
-JSON:
-
-```bash
-bash scripts/evaluate_torch_compile_coverage.sh
-```
-
-For a faster local preflight, `--subset public` runs the public strict subset of
-the same corpus and scoring rules.
-
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup preflight, focused test
