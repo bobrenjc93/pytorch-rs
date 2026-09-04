@@ -3,6 +3,7 @@ import json
 import subprocess
 import sys
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -103,6 +104,22 @@ def _valid_fake_corpus():
     )
 
 
+def _real_corpus_namespace():
+    try:
+        corpus = evaluator._load_compile_corpus_module()
+    except evaluator.EvaluationFatalError as error:
+        if "No module named 'torch_rs'" in str(error):
+            raise unittest.SkipTest("torch_rs is not installed in this environment")
+        raise
+    return SimpleNamespace(
+        **{
+            name: value
+            for name, value in vars(corpus).items()
+            if not name.startswith("__")
+        }
+    )
+
+
 class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
     def test_weighted_score_counts_missing_categories_as_zero(self):
         weights = {
@@ -149,6 +166,75 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn("duplicate case name 'tensor_0'", str(raised.exception))
+
+    def test_current_v4_corpus_matches_pinned_manifest(self):
+        evaluator._validate_corpus_metadata(_real_corpus_namespace())
+
+    def test_pinned_manifest_rejects_case_program_replacement(self):
+        corpus = _real_corpus_namespace()
+        replacement = replace(
+            corpus.COMPILE_CORPUS[0],
+            program=corpus.cpu_float32_self_add,
+        )
+        corpus.COMPILE_CORPUS = (replacement, *corpus.COMPILE_CORPUS[1:])
+
+        with self.assertRaises(evaluator.EvaluationFatalError) as raised:
+            evaluator._validate_corpus_metadata(corpus)
+
+        self.assertIn(
+            "public v4 case cpu_float32_unary_abs_neg program changed",
+            str(raised.exception),
+        )
+
+    def test_pinned_manifest_rejects_case_input_factory_replacement(self):
+        corpus = _real_corpus_namespace()
+        replacement = replace(
+            corpus.COMPILE_CORPUS[0],
+            make_inputs=corpus.cpu_float32_scalar_inputs,
+        )
+        corpus.COMPILE_CORPUS = (replacement, *corpus.COMPILE_CORPUS[1:])
+
+        with self.assertRaises(evaluator.EvaluationFatalError) as raised:
+            evaluator._validate_corpus_metadata(corpus)
+
+        self.assertIn(
+            "public v4 case cpu_float32_unary_abs_neg make_inputs changed",
+            str(raised.exception),
+        )
+
+    def test_pinned_manifest_rejects_category_weight_shift(self):
+        corpus = _real_corpus_namespace()
+        corpus.CATEGORY_WEIGHTS = dict(corpus.CATEGORY_WEIGHTS)
+        corpus.CATEGORY_WEIGHTS["tensor_arithmetic"] -= 1
+        corpus.CATEGORY_WEIGHTS["broadcasting"] += 1
+
+        with self.assertRaises(evaluator.EvaluationFatalError) as raised:
+            evaluator._validate_corpus_metadata(corpus)
+
+        self.assertIn("CATEGORY_WEIGHTS values changed", str(raised.exception))
+
+    def test_pinned_manifest_rejects_guard_step_replacement(self):
+        corpus = _real_corpus_namespace()
+        scenario = corpus.COMPILE_RECOMPILATION_GUARD_SCENARIOS[0]
+        bad_step = replace(scenario.steps[1], guard_change="shape")
+        bad_scenario = replace(
+            scenario,
+            steps=(scenario.steps[0], bad_step, *scenario.steps[2:]),
+        )
+        corpus.COMPILE_RECOMPILATION_GUARD_SCENARIOS = (
+            bad_scenario,
+            *corpus.COMPILE_RECOMPILATION_GUARD_SCENARIOS[1:],
+        )
+
+        with self.assertRaises(evaluator.EvaluationFatalError) as raised:
+            evaluator._validate_corpus_metadata(corpus)
+
+        self.assertIn(
+            "public v4 guard scenario "
+            "unary_shape_stride_requires_grad_guards/same_metadata "
+            "guard_change changed",
+            str(raised.exception),
+        )
 
     def test_candidate_output_mismatch_zeroes_case(self):
         corpus = _valid_fake_corpus()

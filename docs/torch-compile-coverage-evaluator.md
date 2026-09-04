@@ -6,6 +6,8 @@ reference-eligible corpus against stock PyTorch 2.13 and the current
 reference-import or compile failures, candidate import, compile, runtime, output
 or observable-semantic mismatches, eager fallback, installed-PyTorch forwarding,
 unsupported candidate cases, skipped eligible cases, and invalid guard coverage.
+The evaluator pins the v4 category weights, case order, case callables, input
+factories, input payload hashes, and guard-step definitions before scoring.
 
 Run the full Burner evaluator from the repository root:
 
