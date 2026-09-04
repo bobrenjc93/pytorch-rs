@@ -1,5 +1,7 @@
 import sys
 import unittest
+from collections import UserList
+from collections.abc import Sequence
 
 import numpy as np
 import torch_rs as torch
@@ -11,6 +13,14 @@ except ImportError:
 
 
 class IntSubclass(int):
+    pass
+
+
+class TupleSubclass(tuple):
+    pass
+
+
+class ListSubclass(list):
     pass
 
 
@@ -33,6 +43,17 @@ class StatefulIndexDimension:
         value = self.values[min(self.calls, len(self.values) - 1)]
         self.calls += 1
         return value
+
+
+class CustomSequence(Sequence):
+    def __init__(self, values):
+        self.values = tuple(values)
+
+    def __len__(self):
+        return len(self.values)
+
+    def __getitem__(self, index):
+        return self.values[index]
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -123,6 +144,9 @@ class EmptyReferenceTests(unittest.TestCase):
             ("variadic bool true", lambda module: module.empty(2, True)),
             ("tuple", lambda module: module.empty((2, 3))),
             ("list", lambda module: module.empty([2, 3])),
+            ("tuple subclass", lambda module: module.empty(TupleSubclass((2, 3)))),
+            ("list subclass", lambda module: module.empty(ListSubclass([2, 3]))),
+            ("size object", lambda module: module.empty(module.Size([2, 3]))),
             (
                 "integer protocol list",
                 lambda module: module.empty(
@@ -333,6 +357,35 @@ class EmptyReferenceTests(unittest.TestCase):
                 self.assertIn(marker, expected_message)
                 self.assertIn("Overflow when unpacking long long", actual_message)
                 self.assertIn("Overflow when unpacking long long", expected_message)
+
+    def test_unsupported_sequence_size_objects_match_pytorch_2_13(self):
+        cases = (
+            ("range", lambda module: range(3)),
+            ("bytes", lambda module: b"23"),
+            ("bytearray", lambda module: bytearray(b"23")),
+            ("memoryview", lambda module: memoryview(b"23")),
+            ("numpy array", lambda module: np.array([2, 3], dtype=np.int64)),
+            ("tensor", lambda module: module.tensor([2.0, 3.0])),
+            ("user list", lambda module: UserList([2, 3])),
+            ("custom sequence", lambda module: CustomSequence([2, 3])),
+        )
+        forms = (
+            ("positional", lambda module, value: module.empty(value)),
+            ("size keyword", lambda module, value: module.empty(size=value)),
+        )
+        for case, factory in cases:
+            for form, call in forms:
+                actual_value = factory(torch)
+                expected_value = factory(reference_torch)
+                with self.subTest(case=case, form=form):
+                    actual_type, actual_message = self.capture_error(
+                        lambda: call(torch, actual_value)
+                    )
+                    expected_type, expected_message = self.capture_error(
+                        lambda: call(reference_torch, expected_value)
+                    )
+                    self.assertIs(actual_type, expected_type)
+                    self.assertEqual(actual_message, expected_message)
 
     def test_unsupported_dtype_device_layout_out_and_pin_memory_boundaries_are_pinned(
         self,

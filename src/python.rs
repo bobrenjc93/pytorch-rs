@@ -10573,7 +10573,7 @@ fn parse_creation_size<'py>(
 }
 
 fn validate_creation_sequence_size(function: &str, value: &Bound<'_, PyAny>) -> PyResult<bool> {
-    if !is_sequence_input(value)? {
+    if !is_creation_sequence_size(function, value)? {
         return Ok(false);
     }
     let length = value.len()?;
@@ -10582,6 +10582,13 @@ fn validate_creation_sequence_size(function: &str, value: &Bound<'_, PyAny>) -> 
         validate_creation_sequence_dimension_type(function, index, &dimension)?;
     }
     Ok(true)
+}
+
+fn is_creation_sequence_size(function: &str, value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if function == "empty" {
+        return Ok(value.is_instance_of::<PyTuple>() || value.is_instance_of::<PyList>());
+    }
+    is_sequence_input(value)
 }
 
 fn validate_creation_sequence_dimension_type(
