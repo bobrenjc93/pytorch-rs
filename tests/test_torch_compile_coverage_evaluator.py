@@ -1,3 +1,4 @@
+import importlib
 import importlib.util
 import json
 import subprocess
@@ -234,6 +235,140 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             "unary_shape_stride_requires_grad_guards/same_metadata "
             "guard_change changed",
             str(raised.exception),
+        )
+
+    def test_subset_selection_uses_pinned_constants_not_corpus_helpers(self):
+        corpus = _valid_fake_corpus()
+        corpus.compile_corpus_cases = lambda include_held_out=False: (
+            corpus.COMPILE_CORPUS[0],
+        )
+        corpus.compile_recompilation_guard_scenarios = (
+            lambda include_held_out=False: ()
+        )
+
+        self.assertEqual(
+            evaluator._select_subset(corpus, "public"),
+            corpus.COMPILE_CORPUS,
+        )
+        self.assertEqual(
+            evaluator._select_subset(corpus, "full"),
+            corpus.COMPILE_CORPUS + corpus.COMPILE_HELD_OUT_CORPUS,
+        )
+        self.assertEqual(
+            evaluator._select_guard_subset(corpus, "public"),
+            corpus.COMPILE_RECOMPILATION_GUARD_SCENARIOS,
+        )
+        self.assertEqual(
+            evaluator._select_guard_subset(corpus, "full"),
+            corpus.COMPILE_RECOMPILATION_GUARD_SCENARIOS
+            + corpus.COMPILE_HELD_OUT_RECOMPILATION_GUARD_SCENARIOS,
+        )
+
+    def test_guard_case_resolution_uses_pinned_constants_not_helper(self):
+        corpus = _valid_fake_corpus()
+        corpus.compile_corpus_case = lambda name: corpus.COMPILE_CORPUS[0]
+
+        self.assertIs(
+            evaluator._case_by_name(corpus, "guard_limit"),
+            corpus.COMPILE_CORPUS[-1],
+        )
+
+    def test_candidate_worker_blocks_pytorch_imports_during_metadata_validation(self):
+        class FakeTorchImporter:
+            def find_spec(self, fullname, path=None, target=None):
+                del path, target
+                if fullname == "torch":
+                    return importlib.util.spec_from_loader(fullname, self)
+                return None
+
+            def create_module(self, spec):
+                del spec
+                return None
+
+            def exec_module(self, module):
+                module.__version__ = "review-fixture"
+
+        fake_corpus = SimpleNamespace(
+            torch=SimpleNamespace(__version__="0", __file__="<fake torch_rs>"),
+            COMPILE_HELD_OUT_CORPUS=(),
+        )
+        validation_calls = []
+
+        def fake_validate(corpus):
+            self.assertIs(corpus, fake_corpus)
+            validation_calls.append("called")
+            with self.assertRaises(ImportError):
+                importlib.import_module("torch")
+
+        removed_torch_modules = evaluator._drop_pytorch_modules()
+        fake_importer = FakeTorchImporter()
+        original_load = evaluator._load_compile_corpus_module
+        original_validate = evaluator._validate_corpus_metadata
+        original_select = evaluator._select_subset
+        original_select_guards = evaluator._select_guard_subset
+        sys.meta_path.insert(0, fake_importer)
+        try:
+            evaluator._load_compile_corpus_module = lambda: fake_corpus
+            evaluator._validate_corpus_metadata = fake_validate
+            evaluator._select_subset = lambda corpus, subset: ()
+            evaluator._select_guard_subset = lambda corpus, subset: ()
+
+            payload = evaluator._run_candidate_worker(
+                SimpleNamespace(subset="public")
+            )
+        finally:
+            if fake_importer in sys.meta_path:
+                sys.meta_path.remove(fake_importer)
+            for name in list(sys.modules):
+                if name == "torch" or name.startswith("torch."):
+                    sys.modules.pop(name)
+            sys.modules.update(removed_torch_modules)
+            evaluator._load_compile_corpus_module = original_load
+            evaluator._validate_corpus_metadata = original_validate
+            evaluator._select_subset = original_select
+            evaluator._select_guard_subset = original_select_guards
+
+        self.assertTrue(payload["ok"], payload)
+        self.assertEqual(validation_calls, ["called"])
+
+    def test_candidate_worker_rejects_cached_pytorch_during_metadata_validation(self):
+        fake_corpus = SimpleNamespace(
+            torch=SimpleNamespace(__version__="0", __file__="<fake torch_rs>"),
+            COMPILE_HELD_OUT_CORPUS=(),
+        )
+
+        def fake_validate(corpus):
+            self.assertIs(corpus, fake_corpus)
+            sys.modules["torch"] = type(sys)("torch")
+
+        removed_torch_modules = evaluator._drop_pytorch_modules()
+        original_load = evaluator._load_compile_corpus_module
+        original_validate = evaluator._validate_corpus_metadata
+        original_select = evaluator._select_subset
+        original_select_guards = evaluator._select_guard_subset
+        try:
+            evaluator._load_compile_corpus_module = lambda: fake_corpus
+            evaluator._validate_corpus_metadata = fake_validate
+            evaluator._select_subset = lambda corpus, subset: ()
+            evaluator._select_guard_subset = lambda corpus, subset: ()
+
+            payload = evaluator._run_candidate_worker(
+                SimpleNamespace(subset="public")
+            )
+        finally:
+            for name in list(sys.modules):
+                if name == "torch" or name.startswith("torch."):
+                    sys.modules.pop(name)
+            sys.modules.update(removed_torch_modules)
+            evaluator._load_compile_corpus_module = original_load
+            evaluator._validate_corpus_metadata = original_validate
+            evaluator._select_subset = original_select
+            evaluator._select_guard_subset = original_select_guards
+
+        self.assertFalse(payload["ok"], payload)
+        self.assertIn(
+            "candidate metadata validation imported installed PyTorch modules: torch",
+            payload["fatal_error"],
         )
 
     def test_candidate_output_mismatch_zeroes_case(self):

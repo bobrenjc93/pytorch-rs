@@ -616,15 +616,34 @@ def _package_version(distribution_name, module):
 
 
 def _all_cases(corpus_module, *, include_held_out):
-    return tuple(corpus_module.compile_corpus_cases(include_held_out=include_held_out))
+    public_cases = tuple(getattr(corpus_module, "COMPILE_CORPUS", ()))
+    if include_held_out:
+        return public_cases + tuple(
+            getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ())
+        )
+    return public_cases
 
 
 def _all_guard_scenarios(corpus_module, *, include_held_out):
-    return tuple(
-        corpus_module.compile_recompilation_guard_scenarios(
-            include_held_out=include_held_out,
-        )
+    public_scenarios = tuple(
+        getattr(corpus_module, "COMPILE_RECOMPILATION_GUARD_SCENARIOS", ())
     )
+    if include_held_out:
+        return public_scenarios + tuple(
+            getattr(
+                corpus_module,
+                "COMPILE_HELD_OUT_RECOMPILATION_GUARD_SCENARIOS",
+                (),
+            )
+        )
+    return public_scenarios
+
+
+def _case_by_name(corpus_module, case_name):
+    for case in _all_cases(corpus_module, include_held_out=True):
+        if getattr(case, "name", None) == case_name:
+            return case
+    raise EvaluationFatalError(f"guard scenario references unknown case {case_name!r}")
 
 
 def _case_names(cases):
@@ -1122,11 +1141,11 @@ def _reference_case_result(reference_torch, case):
     }
 
 
-def _reference_guard_scenario_result(reference_torch, scenario):
+def _reference_guard_scenario_result(corpus_module, reference_torch, scenario):
     _reset_reference_compile_state(reference_torch)
     backend_calls = []
     backend = _make_recording_backend(backend_calls)
-    case = scenario.case
+    case = _case_by_name(corpus_module, scenario.case_name)
     compiled = reference_torch.compile(case.program, **case.compile_kwargs(backend))
     steps = []
 
@@ -1199,6 +1218,7 @@ def _reference_results(corpus_module, reference_torch, cases, scenarios):
     for scenario in scenarios:
         try:
             scenario_results[scenario.name] = _reference_guard_scenario_result(
+                corpus_module,
                 reference_torch,
                 scenario,
             )
@@ -1232,12 +1252,20 @@ def _drop_pytorch_modules():
 
 
 @contextmanager
-def _blocked_pytorch_imports(exception_type=ImportError):
+def _blocked_pytorch_imports(
+    exception_type=ImportError,
+    *,
+    context="blocked PyTorch import context",
+):
     removed = _drop_pytorch_modules()
     blocker = _PytorchImportBlocker(exception_type)
     sys.meta_path.insert(0, blocker)
     try:
         yield
+    except Exception:
+        raise
+    else:
+        _assert_no_pytorch_modules(context)
     finally:
         sys.meta_path.remove(blocker)
         for name in list(sys.modules):
@@ -1371,7 +1399,7 @@ def _candidate_case_result(corpus_module, case):
 
 def _candidate_guard_scenario_result(corpus_module, scenario):
     torch_rs = corpus_module.torch
-    case = scenario.case
+    case = _case_by_name(corpus_module, scenario.case_name)
     torch_rs.compiler.reset()
     steps = []
     with _candidate_compile_counters() as counters:
@@ -1477,14 +1505,20 @@ def _failed_candidate_result(name, category, error):
 
 def _run_candidate_worker(args):
     try:
-        with _blocked_pytorch_imports(ImportError):
+        with _blocked_pytorch_imports(
+            ImportError,
+            context="candidate metadata validation",
+        ):
             corpus_module = _load_compile_corpus_module()
-        _validate_corpus_metadata(corpus_module)
+            _validate_corpus_metadata(corpus_module)
         cases = _select_subset(corpus_module, args.subset)
         scenarios = _select_guard_subset(corpus_module, args.subset)
         case_results = []
         scenario_results = []
-        with _blocked_pytorch_imports(RuntimeError):
+        with _blocked_pytorch_imports(
+            RuntimeError,
+            context="candidate execution",
+        ):
             _assert_no_pytorch_modules("candidate worker startup")
             for case in cases:
                 try:
@@ -1502,7 +1536,7 @@ def _run_candidate_worker(args):
                     scenario_results.append(
                         {
                             "name": scenario.name,
-                            "case": scenario.case.name,
+                            "case": scenario.case_name,
                             "status": "failed",
                             "failure_kind": _exception_name(error),
                             "message": str(error).splitlines()[0],
