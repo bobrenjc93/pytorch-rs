@@ -291,6 +291,45 @@ class EmptyReferenceTests(unittest.TestCase):
                 self.assertIn("Overflow when unpacking long long", actual_message)
                 self.assertIn("Overflow when unpacking long long", expected_message)
 
+        sequence_exact_cases = (
+            (False, 2),
+            [True, 2],
+            (np.bool_(True), 2),
+            (-1, 2),
+            [2, -1],
+            (IndexDimension(-1), 2),
+        )
+        for dimensions in sequence_exact_cases:
+            with self.subTest(dimensions=dimensions):
+                actual_type, actual_message = self.capture_error(
+                    lambda dimensions=dimensions: torch.empty(dimensions)
+                )
+                expected_type, expected_message = self.capture_error(
+                    lambda dimensions=dimensions: reference_torch.empty(dimensions)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(actual_message, expected_message)
+
+        sequence_overflow_cases = (
+            ((2**63, 2), "pos 1"),
+            ([2, 2**63], "pos 2"),
+            ((IndexDimension(2**63), 2), "pos 1"),
+        )
+        for dimensions, position_marker in sequence_overflow_cases:
+            with self.subTest(dimensions=dimensions):
+                actual_type, actual_message = self.capture_error(
+                    lambda dimensions=dimensions: torch.empty(dimensions)
+                )
+                expected_type, expected_message = self.capture_error(
+                    lambda dimensions=dimensions: reference_torch.empty(dimensions)
+                )
+                self.assertIs(actual_type, expected_type)
+                marker = f"failed to unpack the object at {position_marker} with error"
+                self.assertIn(marker, actual_message)
+                self.assertIn(marker, expected_message)
+                self.assertIn("Overflow when unpacking long long", actual_message)
+                self.assertIn("Overflow when unpacking long long", expected_message)
+
     def test_unsupported_dtype_device_layout_out_and_pin_memory_boundaries_are_pinned(
         self,
     ):

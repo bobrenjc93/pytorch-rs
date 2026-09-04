@@ -6321,6 +6321,7 @@ enum CreationSizeArgument<'py> {
 
 enum PendingCreationSize<'py> {
     Dimensions(Vec<usize>),
+    SequenceDimensions(Vec<Bound<'py, PyAny>>),
     PositionalScalar(Bound<'py, PyAny>),
     Variadic(Bound<'py, PyTuple>),
 }
@@ -8878,7 +8879,9 @@ fn creation_variadic_size_start(function: &str, dimension: &Bound<'_, PyAny>) ->
     // PyTorch's SymInt argument parser probes an arbitrary leading __index__
     // provider once more before the variadic dimensions are unpacked.
     if !dimension.is_instance_of::<PyInt>() && python_number_index(dimension).is_err() {
-        return Err(creation_sequence_dimension_type_error(function, dimension)?);
+        return Err(creation_sequence_dimension_type_error(
+            function, 0, dimension,
+        )?);
     }
     Ok(true)
 }
@@ -10560,6 +10563,10 @@ fn parse_creation_size<'py>(
         }
     };
 
+    if let Some(dimensions) = bind_creation_sequence_dimensions(function, value)? {
+        return Ok(PendingCreationSize::SequenceDimensions(dimensions));
+    }
+
     let sequence_error = match value.extract::<Vec<usize>>() {
         Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
         Err(error) => error,
@@ -10569,6 +10576,53 @@ fn parse_creation_size<'py>(
     }
 
     bind_creation_positional_dimension(function, value, sequence_error)
+}
+
+fn bind_creation_sequence_dimensions<'py>(
+    function: &str,
+    value: &Bound<'py, PyAny>,
+) -> PyResult<Option<Vec<Bound<'py, PyAny>>>> {
+    if value.cast::<PyString>().is_ok() || value.cast::<PyBytes>().is_ok() {
+        return Ok(None);
+    }
+    let Ok(sequence) = value.cast::<PySequence>() else {
+        return Ok(None);
+    };
+
+    let length = sequence.len()?;
+    let mut dimensions = try_size_vector(length)?;
+    for index in 0..length {
+        let dimension = sequence.get_item(index)?;
+        let dimension = bind_creation_sequence_dimension(function, index, &dimension)?;
+        try_push_size(&mut dimensions, dimension)?;
+    }
+    Ok(Some(dimensions))
+}
+
+fn bind_creation_sequence_dimension<'py>(
+    function: &str,
+    index: usize,
+    dimension: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    if dimension.is_instance_of::<PyBool>() {
+        return Err(creation_sequence_dimension_type_error(
+            function, index, dimension,
+        )?);
+    }
+
+    if dimension.is_instance_of::<PyInt>() {
+        return Ok(dimension.clone());
+    }
+
+    let indexed = PyModule::import(dimension.py(), "operator")
+        .and_then(|operator| operator.getattr("index"))
+        .and_then(|index| index.call1((dimension,)));
+    match indexed {
+        Ok(indexed) => Ok(indexed),
+        Err(_) => Err(creation_sequence_dimension_type_error(
+            function, index, dimension,
+        )?),
+    }
 }
 
 fn bind_creation_positional_dimension<'py>(
@@ -10615,6 +10669,13 @@ fn finish_creation_size(
                 scalar_dimension: None,
             });
         }
+        PendingCreationSize::SequenceDimensions(dimensions) => {
+            let dimensions = finish_creation_sequence_dimensions(function, &dimensions)?;
+            return Ok(ParsedCreationSize {
+                dimensions,
+                scalar_dimension: None,
+            });
+        }
         PendingCreationSize::PositionalScalar(dimension) => dimension,
     };
     let dimension = extract_creation_dimension(function, &dimension)?;
@@ -10635,22 +10696,41 @@ fn finish_creation_size(
     })
 }
 
+fn finish_creation_sequence_dimensions(
+    function: &str,
+    dimensions: &[Bound<'_, PyAny>],
+) -> PyResult<Vec<usize>> {
+    let mut signed = try_size_vector(dimensions.len())?;
+    for (index, dimension) in dimensions.iter().enumerate() {
+        let position = index + 1;
+        let dimension = dimension
+            .extract::<i64>()
+            .map_err(|_| creation_dimension_overflow_at(function, position))?;
+        try_push_size(&mut signed, dimension)?;
+    }
+    finish_creation_signed_dimensions(function, signed)
+}
+
 fn parse_variadic_creation_dimensions(
     function: &str,
     dimensions: &Bound<'_, PyTuple>,
 ) -> PyResult<Vec<usize>> {
-    let mut parsed = try_size_vector(dimensions.len())?;
     let mut signed = try_size_vector(dimensions.len())?;
     for (index, dimension) in dimensions.iter().enumerate() {
         let position = index + 1;
         let dimension = extract_variadic_creation_dimension(function, position, &dimension)?;
         try_push_size(&mut signed, dimension)?;
     }
+    finish_creation_signed_dimensions(function, signed)
+}
+
+fn finish_creation_signed_dimensions(function: &str, signed: Vec<i64>) -> PyResult<Vec<usize>> {
     if let Some(dimension) = signed.iter().find(|dimension| **dimension < 0) {
         return Err(creation_negative_dimension_error(
             function, *dimension, &signed,
         ));
     }
+    let mut parsed = try_size_vector(signed.len())?;
     for dimension in signed {
         try_push_size(
             &mut parsed,
@@ -10698,11 +10778,12 @@ fn creation_dimension_type_error(function: &str, dimension: &Bound<'_, PyAny>) -
 
 fn creation_sequence_dimension_type_error(
     function: &str,
+    index: usize,
     dimension: &Bound<'_, PyAny>,
 ) -> PyResult<PyErr> {
     let type_name = python_type_name(dimension)?;
     Ok(PyTypeError::new_err(format!(
-        "{function}(): argument 'size' (position 1) must be tuple of ints, but found element of type {type_name} at pos 0"
+        "{function}(): argument 'size' (position 1) must be tuple of ints, but found element of type {type_name} at pos {index}"
     )))
 }
 
