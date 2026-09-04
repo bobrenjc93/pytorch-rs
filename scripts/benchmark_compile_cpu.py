@@ -22,7 +22,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "torch_compile_cpu_eager_benchmark_v3"
+BENCHMARK_VERSION = "torch_compile_cpu_eager_benchmark_v4"
 DEFAULT_WARMUPS = 7
 DEFAULT_SAMPLES = 31
 IMPLEMENTATION_ORDERS = (
@@ -294,6 +294,10 @@ def _environment(torch_rs, reference_torch, corpus_version, args):
         "warmups": args.warmups,
         "samples": args.samples,
         "required_single_cpu_affinity": args.require_single_cpu_affinity,
+        "thresholds": {
+            "max_steady_geomean_ratio": args.max_steady_geomean_ratio,
+            "max_steady_cell_ratio": args.max_steady_cell_ratio,
+        },
         "implementation_orders": IMPLEMENTATION_ORDERS,
     }
 
@@ -684,7 +688,58 @@ def _output_path(path):
         resolved.relative_to(REPOSITORY_ROOT)
     except ValueError:
         raise SystemExit(f"output path must stay inside the worktree: {resolved}") from None
+    protected_paths = {
+        REPOSITORY_ROOT / "docs" / "burner-evaluation-history.json",
+        REPOSITORY_ROOT / "docs" / "burner-evaluation-progress.svg",
+    }
+    if (
+        resolved == REPOSITORY_ROOT / ".burner"
+        or (REPOSITORY_ROOT / ".burner") in resolved.parents
+        or resolved in protected_paths
+    ):
+        raise SystemExit(f"refusing to write Burner-managed output path: {resolved}")
     return resolved
+
+
+def _threshold_gate(report, args):
+    failures = []
+    geomean_limit = args.max_steady_geomean_ratio
+    cell_limit = args.max_steady_cell_ratio
+
+    if geomean_limit is not None and geomean_limit <= 0.0:
+        raise SystemExit("--max-steady-geomean-ratio must be positive")
+    if cell_limit is not None and cell_limit <= 0.0:
+        raise SystemExit("--max-steady-cell-ratio must be positive")
+
+    geomean = report["aggregates"]["steady_geomean_torch_rs_over_pytorch"]
+    if geomean_limit is not None and geomean > geomean_limit:
+        failures.append(
+            "steady geomean "
+            f"{geomean:.6g} exceeded --max-steady-geomean-ratio "
+            f"{geomean_limit:.6g}"
+        )
+
+    if cell_limit is not None:
+        for row in report["cases"]:
+            ratio = row["ratios"]["steady_torch_rs_over_pytorch"]
+            if ratio > cell_limit:
+                failures.append(
+                    f"{row['case']}/{row['variant']} steady ratio "
+                    f"{ratio:.6g} exceeded --max-steady-cell-ratio "
+                    f"{cell_limit:.6g}"
+                )
+
+    report["threshold_gate"] = {
+        "max_steady_geomean_ratio": geomean_limit,
+        "max_steady_cell_ratio": cell_limit,
+        "status": "failed" if failures else "passed",
+        "failures": failures,
+    }
+    if failures:
+        message = "benchmark threshold gate failed:\n" + "\n".join(
+            f"- {item}" for item in failures
+        )
+        raise SystemExit(message)
 
 
 def run_benchmark(args):
@@ -923,18 +978,29 @@ def parse_args():
     parser.add_argument("--require-single-cpu-affinity", action="store_true")
     parser.add_argument("--cases", nargs="*", default=())
     parser.add_argument("--variants", nargs="*", default=())
+    parser.add_argument(
+        "--max-steady-geomean-ratio",
+        type=float,
+        help="Fail when the steady-state torch_rs/PyTorch geomean exceeds this ratio.",
+    )
+    parser.add_argument(
+        "--max-steady-cell-ratio",
+        type=float,
+        help="Fail when any steady-state timed cell exceeds this torch_rs/PyTorch ratio.",
+    )
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    output = _output_path(args.output) if args.output is not None else None
     report = run_benchmark(args)
+    _threshold_gate(report, args)
     encoded = json.dumps(report, indent=2, sort_keys=True)
-    if args.output is None:
+    if output is None:
         print(encoded)
     else:
-        output = _output_path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(encoded + "\n", encoding="utf-8")
 

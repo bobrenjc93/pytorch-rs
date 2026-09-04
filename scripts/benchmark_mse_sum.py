@@ -23,7 +23,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "mse_sum_reduction_benchmark_v1"
+BENCHMARK_VERSION = "mse_sum_reduction_benchmark_v2"
 DEFAULT_WARMUPS = 15
 DEFAULT_SAMPLES = 81
 DEFAULT_THREADS = 1
@@ -37,12 +37,20 @@ IMPLEMENTATION_ORDERS = (
     ("torch_rs", "pytorch"),
     ("pytorch", "torch_rs"),
 )
+BENCHMARK_CATEGORY_WEIGHTS = {
+    "public_fixed_shape": 40,
+    "generated_same_shape": 30,
+    "held_out_same_shape": 20,
+    "unsupported_boundaries": 10,
+}
 
 
 @dataclass(frozen=True)
 class Workload:
     name: str
     category: str
+    denominator_category: str
+    split: str
     description: str
     shape: tuple[int, ...]
     seed: int
@@ -51,16 +59,107 @@ class Workload:
     atol: float
 
 
+@dataclass(frozen=True)
+class UnsupportedCell:
+    name: str
+    category: str
+    reason: str
+
+
 WORKLOADS = (
     Workload(
         name="mse_sum_same_contiguous_1024x1024",
         category="same-shape contiguous no-grad sum",
+        denominator_category="public_fixed_shape",
+        split="public",
         description="row-major contiguous same-shape CPU float32 tensors",
         shape=(1024, 1024),
         seed=20260903,
         repeats=16,
         rtol=1.0e-4,
         atol=1.0e-4,
+    ),
+    Workload(
+        name="mse_sum_generated_vector_65537",
+        category="same-shape contiguous no-grad sum",
+        denominator_category="generated_same_shape",
+        split="generated",
+        description="generated rank-1 prime-length CPU float32 tensors",
+        shape=(65537,),
+        seed=20260904,
+        repeats=64,
+        rtol=1.0e-4,
+        atol=1.0e-4,
+    ),
+    Workload(
+        name="mse_sum_generated_rank3_17x19x23",
+        category="same-shape contiguous no-grad sum",
+        denominator_category="generated_same_shape",
+        split="generated",
+        description="generated row-major rank-3 CPU float32 tensors",
+        shape=(17, 19, 23),
+        seed=20260905,
+        repeats=128,
+        rtol=1.0e-4,
+        atol=1.0e-4,
+    ),
+    Workload(
+        name="mse_sum_heldout_prime_matrix_257x263",
+        category="same-shape contiguous no-grad sum",
+        denominator_category="held_out_same_shape",
+        split="held_out",
+        description="held-out row-major prime-shape CPU float32 tensors",
+        shape=(257, 263),
+        seed=20260906,
+        repeats=64,
+        rtol=1.0e-4,
+        atol=1.0e-4,
+    ),
+    Workload(
+        name="mse_sum_heldout_skinny_matrix_1x8192",
+        category="same-shape contiguous no-grad sum",
+        denominator_category="held_out_same_shape",
+        split="held_out",
+        description="held-out skinny row-major CPU float32 tensors",
+        shape=(1, 8192),
+        seed=20260907,
+        repeats=128,
+        rtol=1.0e-4,
+        atol=1.0e-4,
+    ),
+)
+
+ZERO_CREDIT_UNSUPPORTED_CELLS = (
+    UnsupportedCell(
+        name="mse_sum_broadcasted_operands",
+        category="unsupported_boundaries",
+        reason=(
+            "this same-shape contiguous benchmark campaign does not claim "
+            "broadcast-reduction coverage"
+        ),
+    ),
+    UnsupportedCell(
+        name="mse_sum_noncontiguous_same_shape",
+        category="unsupported_boundaries",
+        reason=(
+            "non-contiguous layouts are validated by correctness tests but are "
+            "not timed as supported direct fast-path cells"
+        ),
+    ),
+    UnsupportedCell(
+        name="mse_sum_active_autograd",
+        category="unsupported_boundaries",
+        reason=(
+            "active-autograd inputs intentionally fall back to the composed "
+            "differentiable path and are not counted as fast-path timing cells"
+        ),
+    ),
+    UnsupportedCell(
+        name="mse_sum_dtype_or_device_expansion",
+        category="unsupported_boundaries",
+        reason=(
+            "non-float32 or non-CPU tensors remain outside this native fast path"
+        ),
     ),
 )
 
@@ -418,6 +517,73 @@ def _geomean(values):
     return math.exp(sum(math.log(value) for value in values) / len(values))
 
 
+def _split_counts(workloads):
+    counts = {}
+    for workload in workloads:
+        counts[workload.split] = counts.get(workload.split, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _coverage_denominator(workloads):
+    timed_by_category = {}
+    for workload in workloads:
+        timed_by_category.setdefault(workload.denominator_category, []).append(
+            workload.name
+        )
+    unsupported_by_category = {}
+    for cell in ZERO_CREDIT_UNSUPPORTED_CELLS:
+        unsupported_by_category.setdefault(cell.category, []).append(
+            {
+                "name": cell.name,
+                "reason": cell.reason,
+            }
+        )
+
+    supported_categories = []
+    zero_credit_categories = []
+    supported_weight = 0
+    for category, weight in BENCHMARK_CATEGORY_WEIGHTS.items():
+        timed_workloads = timed_by_category.get(category, [])
+        if timed_workloads:
+            supported_weight += weight
+            supported_categories.append(
+                {
+                    "category": category,
+                    "weight": weight,
+                    "timed_workloads": timed_workloads,
+                }
+            )
+        else:
+            unsupported_cells = unsupported_by_category.get(category, [])
+            reason = None
+            if not unsupported_cells:
+                reason = "no timed workload selected for this category"
+            zero_credit_categories.append(
+                {
+                    "category": category,
+                    "weight": weight,
+                    "reason": reason,
+                    "unsupported_cells": unsupported_cells,
+                }
+            )
+
+    total_weight = sum(BENCHMARK_CATEGORY_WEIGHTS.values())
+    return {
+        "category_weights": BENCHMARK_CATEGORY_WEIGHTS,
+        "total_weight": total_weight,
+        "supported_weight": supported_weight,
+        "zero_credit_weight": total_weight - supported_weight,
+        "weighted_supported_percent": (supported_weight / total_weight * 100.0)
+        if total_weight
+        else None,
+        "timed_workload_count": len(workloads),
+        "timed_workload_split_counts": _split_counts(workloads),
+        "zero_credit_unsupported_cell_count": len(ZERO_CREDIT_UNSUPPORTED_CELLS),
+        "supported_categories": supported_categories,
+        "zero_credit_categories": zero_credit_categories,
+    }
+
+
 def _select_workloads(selected_names):
     if not selected_names:
         return WORKLOADS
@@ -448,6 +614,46 @@ def _output_path(path):
     ):
         raise SystemExit(f"refusing to write Burner-managed output path: {resolved}")
     return resolved
+
+
+def _threshold_gate(report, args):
+    failures = []
+    geomean_limit = args.max_steady_geomean_ratio
+    cell_limit = args.max_steady_cell_ratio
+
+    if geomean_limit is not None and geomean_limit <= 0.0:
+        raise SystemExit("--max-steady-geomean-ratio must be positive")
+    if cell_limit is not None and cell_limit <= 0.0:
+        raise SystemExit("--max-steady-cell-ratio must be positive")
+
+    geomean = report["aggregates"]["steady_geomean_torch_rs_over_pytorch"]
+    if geomean_limit is not None and geomean > geomean_limit:
+        failures.append(
+            "steady geomean "
+            f"{geomean:.6g} exceeded --max-steady-geomean-ratio "
+            f"{geomean_limit:.6g}"
+        )
+
+    if cell_limit is not None:
+        for row in report["cases"]:
+            ratio = row["ratios"]["steady_torch_rs_over_pytorch"]
+            if ratio > cell_limit:
+                failures.append(
+                    f"{row['name']} steady ratio {ratio:.6g} exceeded "
+                    f"--max-steady-cell-ratio {cell_limit:.6g}"
+                )
+
+    report["threshold_gate"] = {
+        "max_steady_geomean_ratio": geomean_limit,
+        "max_steady_cell_ratio": cell_limit,
+        "status": "failed" if failures else "passed",
+        "failures": failures,
+    }
+    if failures:
+        message = "benchmark threshold gate failed:\n" + "\n".join(
+            f"- {item}" for item in failures
+        )
+        raise SystemExit(message)
 
 
 def _environment(torch_rs, reference_torch, np, affinity, args):
@@ -492,6 +698,10 @@ def _environment(torch_rs, reference_torch, np, affinity, args):
         "warmups": args.warmups,
         "samples": args.samples,
         "threads": args.threads,
+        "thresholds": {
+            "max_steady_geomean_ratio": args.max_steady_geomean_ratio,
+            "max_steady_cell_ratio": args.max_steady_cell_ratio,
+        },
         "implementation_orders": IMPLEMENTATION_ORDERS,
     }
 
@@ -614,6 +824,8 @@ def run_benchmark(args):
                 {
                     "name": workload.name,
                     "category": workload.category,
+                    "denominator_category": workload.denominator_category,
+                    "split": workload.split,
                     "description": workload.description,
                     "shape": list(workload.shape),
                     "seed": workload.seed,
@@ -654,6 +866,7 @@ def run_benchmark(args):
                 [min(10.0, max(0.10, ratio)) for ratio in ratios]
             ),
         },
+        "coverage_denominator": _coverage_denominator(workloads),
     }
 
 
@@ -665,6 +878,16 @@ def parse_args():
     parser.add_argument("--cpu", type=int)
     parser.add_argument("--cuda-visible-devices", default="")
     parser.add_argument("--workloads", nargs="*", default=())
+    parser.add_argument(
+        "--max-steady-geomean-ratio",
+        type=float,
+        help="Fail when the steady-state torch_rs/PyTorch geomean exceeds this ratio.",
+    )
+    parser.add_argument(
+        "--max-steady-cell-ratio",
+        type=float,
+        help="Fail when any steady-state timed cell exceeds this torch_rs/PyTorch ratio.",
+    )
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
 
@@ -673,6 +896,7 @@ def main():
     args = parse_args()
     output = _output_path(args.output) if args.output is not None else None
     report = run_benchmark(args)
+    _threshold_gate(report, args)
     encoded = json.dumps(report, indent=2, sort_keys=True)
     if output is None:
         print(encoded)

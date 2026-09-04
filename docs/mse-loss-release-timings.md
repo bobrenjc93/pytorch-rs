@@ -14,28 +14,35 @@ The 2026-09-03 focused rerun used the current worktree based on
 same-shape contiguous `mse_loss(reduction="sum")` fast path guard restoration,
 active-autograd fallback tests, and reusable benchmark driver. The release
 extension was built and wheel-installed into the worktree `.venv`, and the
-checked-in timing driver `scripts/benchmark_mse_sum.py` emitted JSON under
-`target/mse-sum-release-timings.json`.
+checked-in timing driver `scripts/benchmark_mse_sum.py` emitted benchmark v2
+JSON under `target/mse-sum-release-timings-v2.json`.
 
-The measured cell used CPU `float32` row-major contiguous `(1024, 1024)` inputs
-created outside the timed region from NumPy seed `20260903`. The generated
-operands use exact `float32` quarter-step values so the scalar output can be
-checked by exact BLAKE2b metadata/value checksum as well as tolerance. The
-driver set `CUDA_VISIBLE_DEVICES=`, pinned the process to CPU 24 with
+The v2 driver broadens the evidence from one fixed public shape to five CPU
+`float32` row-major contiguous same-shape cells: one public fixed shape, two
+generated shapes, and two held-out shapes. Inputs are created outside the timed
+region from per-workload NumPy seeds. The generated operands use exact
+`float32` quarter-step values so scalar outputs can be checked by exact BLAKE2b
+metadata/value checksum as well as tolerance. The driver keeps an explicit
+100-point denominator: 90 points are timed by public/generated/held-out
+same-shape workloads, and 10 points stay zero-credit for unsupported benchmark
+boundaries: broadcasted operands, non-contiguous layouts, active-autograd
+fallback, and dtype/device expansion.
+
+The driver set `CUDA_VISIBLE_DEVICES=`, pinned the process to CPU 24 with
 `os.sched_setaffinity`, set `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`,
 `OPENBLAS_NUM_THREADS=1`, and `NUMEXPR_NUM_THREADS=1` before importing either
 backend, set PyTorch intra-op and inter-op thread counts to 1, and checked that
-both backends reported one thread. It used 15 warmup blocks, 81 measured
-blocks, and 16 eager calls per block in each of two implementation-order
-passes. The first pass measured `torch_rs` before PyTorch; the second pass
-reversed that order. Scalar outputs were consumed with `.item()` inside every
-timed call, and values below are medians of the two per-order-pass medians.
+both backends reported one thread. It used 15 warmup blocks and 81 measured
+blocks per workload in each of two implementation-order passes. The first pass
+measured `torch_rs` before PyTorch; the second pass reversed that order. Scalar
+outputs were consumed with `.item()` inside every timed call, and values below
+are medians of the two per-order-pass medians.
 
 Correctness was checked against PyTorch 2.13 before timing for input and output
 shape, stride, storage offset, contiguity, dtype, device, `requires_grad`, leaf
 status, scalar value with `rtol=1e-4`, `atol=1e-4`, exact output checksum, and
-operand nonmutation. The materialized output checksum was stable and identical
-for both implementations: `ea91fd1cbcd5054b`.
+operand nonmutation. Materialized output checksums were stable and identical
+for both implementations; per-workload checksums are shown in the table.
 
 Focused checks for this update:
 
@@ -78,7 +85,7 @@ Timing command:
   --cpu 24 \
   --warmups 15 \
   --samples 81 \
-  --output target/mse-sum-release-timings.json
+  --output target/mse-sum-release-timings-v2.json
 ```
 
 Environment:
@@ -87,7 +94,7 @@ Environment:
 - CPU affinity: the driver selected and pinned CPU 24 from the initial
   available set
 - OS: Linux 6.13.2-0_fbk12_0_g0b66b3635210 x86_64, glibc 2.34
-- Python: 3.12.12 from the worktree `.venv`
+- Python: 3.12.14+meta from the worktree `.venv`
 - NumPy: 2.5.1 from the worktree `.venv`
 - Rust: `rustc 1.92.0 (ded5c06cf 2025-12-08)`,
   `cargo 1.92.0 (344c4567c 2025-10-21)`
@@ -102,9 +109,9 @@ Environment:
   reported 1
 - Dependency installation: locked
   `UV_CACHE_DIR="$PWD/target/uv-cache" uv sync --locked --no-install-project --group dev --group reference`
-  resolved in 32 ms, prepared 31 packages in 16.36s, and installed them in
-  1.68s into the worktree `.venv`
-- Build time: the final release wheel build for this source completed in 30.13s
+  resolved in 32 ms, prepared 31 packages in 17.01s, and installed them in
+  1.27s into the worktree `.venv`
+- Build time: the final release wheel build for this source completed in 32.88s
   before wheel installation
 
 Times are median microseconds per call. MAD is median absolute deviation in
@@ -113,9 +120,32 @@ microseconds squared. `torch_rs / PyTorch` is a slowdown ratio, so lower is
 better and 1.00x is parity. The per-implementation sample count is 162 because
 the driver records 81 measured blocks in each implementation order.
 
-| Workload | Category | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Materialized checksum |
+Aggregate steady-state `torch_rs / PyTorch` geomean: 1.192x uncapped and
+capped to `[0.10x, 10.00x]`. Timed denominator coverage is 90 / 100; the
+remaining 10 / 100 is explicit zero credit for unsupported benchmark
+boundaries.
+
+| Workload | Split | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Materialized checksum |
 | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
-| `mse_sum_same_contiguous_1024x1024` | same-shape contiguous no-grad sum | `()`, stride `()`, offset 0, requires_grad=False | 16 | 624.991 us +/- 2.624, var 281.221 | 302.794 us +/- 11.011, var 397.739 | 2.06x | `ea91fd1cbcd5054b` |
+| `mse_sum_same_contiguous_1024x1024` | public | `()`, stride `()`, offset 0, requires_grad=False | 16 | 626.528 us +/- 3.054, var 58.683 | 285.480 us +/- 6.536, var 172.593 | 2.19x | `ea91fd1cbcd5054b` |
+| `mse_sum_generated_vector_65537` | generated | `()`, stride `()`, offset 0, requires_grad=False | 64 | 40.028 us +/- 0.307, var 0.327 | 23.182 us +/- 0.219, var 0.413 | 1.73x | `2a4dd128348649f6` |
+| `mse_sum_generated_rank3_17x19x23` | generated | `()`, stride `()`, offset 0, requires_grad=False | 128 | 5.650 us +/- 0.042, var 0.020 | 9.804 us +/- 0.080, var 0.026 | 0.58x | `0d495b99a1e505bb` |
+| `mse_sum_heldout_prime_matrix_257x263` | held-out | `()`, stride `()`, offset 0, requires_grad=False | 64 | 41.350 us +/- 0.260, var 0.323 | 22.761 us +/- 0.204, var 0.146 | 1.82x | `4a13ab024142107f` |
+| `mse_sum_heldout_skinny_matrix_1x8192` | held-out | `()`, stride `()`, offset 0, requires_grad=False | 128 | 6.105 us +/- 0.046, var 0.029 | 10.075 us +/- 0.098, var 0.053 | 0.61x | `c0797afe61b817a2` |
+
+Zero-credit unsupported benchmark cells:
+
+| Cell | Accounting |
+| --- | --- |
+| `mse_sum_broadcasted_operands` | This same-shape contiguous benchmark campaign does not claim broadcast-reduction coverage. |
+| `mse_sum_noncontiguous_same_shape` | Non-contiguous layouts are validated by correctness tests but are not timed as supported direct fast-path cells. |
+| `mse_sum_active_autograd` | Active-autograd inputs intentionally fall back to the composed differentiable path and are not counted as fast-path timing cells. |
+| `mse_sum_dtype_or_device_expansion` | Non-float32 or non-CPU tensors remain outside this native fast path. |
+
+The driver exposes opt-in `--max-steady-geomean-ratio` and
+`--max-steady-cell-ratio` checks for callers that want threshold failures for
+finalized cells. This composite does not add repo-side CI or Burner progress
+infrastructure for those thresholds.
 
 ## Review Update: `reduction="mean"` Same-Shape Contiguous
 
