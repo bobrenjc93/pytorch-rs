@@ -6321,9 +6321,15 @@ enum CreationSizeArgument<'py> {
 
 enum PendingCreationSize<'py> {
     Dimensions(Vec<usize>),
-    SequenceDimensions(Vec<Bound<'py, PyAny>>),
+    DeferredSequenceError(DeferredCreationSizeError),
     PositionalScalar(Bound<'py, PyAny>),
     Variadic(Bound<'py, PyTuple>),
+}
+
+enum DeferredCreationSizeError {
+    Negative { dimension: i64, shape: Vec<i64> },
+    Overflow { position: usize },
+    UnpackType { position: usize, actual: String },
 }
 
 struct ParsedCreationSize {
@@ -10563,8 +10569,8 @@ fn parse_creation_size<'py>(
         }
     };
 
-    if let Some(dimensions) = bind_creation_sequence_dimensions(function, value)? {
-        return Ok(PendingCreationSize::SequenceDimensions(dimensions));
+    if let Some(size) = parse_creation_sequence_size(function, value)? {
+        return Ok(size);
     }
 
     let sequence_error = match value.extract::<Vec<usize>>() {
@@ -10578,10 +10584,10 @@ fn parse_creation_size<'py>(
     bind_creation_positional_dimension(function, value, sequence_error)
 }
 
-fn bind_creation_sequence_dimensions<'py>(
+fn parse_creation_sequence_size<'py>(
     function: &str,
     value: &Bound<'py, PyAny>,
-) -> PyResult<Option<Vec<Bound<'py, PyAny>>>> {
+) -> PyResult<Option<PendingCreationSize<'py>>> {
     if value.cast::<PyString>().is_ok() || value.cast::<PyBytes>().is_ok() {
         return Ok(None);
     }
@@ -10591,37 +10597,79 @@ fn bind_creation_sequence_dimensions<'py>(
 
     let length = sequence.len()?;
     let mut dimensions = try_size_vector(length)?;
+    let mut negative_shape: Option<(i64, Vec<i64>)> = None;
     for index in 0..length {
         let dimension = sequence.get_item(index)?;
-        let dimension = bind_creation_sequence_dimension(function, index, &dimension)?;
+        let indexed = match index_creation_sequence_dimension(function, index, &dimension)? {
+            Ok(indexed) => indexed,
+            Err(error) => return Ok(Some(PendingCreationSize::DeferredSequenceError(error))),
+        };
+        let position = index + 1;
+        let Ok(dimension) = indexed.extract::<i64>() else {
+            return Ok(Some(PendingCreationSize::DeferredSequenceError(
+                DeferredCreationSizeError::Overflow { position },
+            )));
+        };
+
+        if let Some((_, shape)) = &mut negative_shape {
+            try_push_size(shape, dimension)?;
+            continue;
+        }
+        if dimension < 0 {
+            let mut shape = try_size_vector(length)?;
+            for previous in &dimensions {
+                let previous =
+                    i64::try_from(*previous).map_err(|_| creation_dimension_overflow(function))?;
+                try_push_size(&mut shape, previous)?;
+            }
+            try_push_size(&mut shape, dimension)?;
+            negative_shape = Some((dimension, shape));
+            continue;
+        }
+        let Ok(dimension) = usize::try_from(dimension) else {
+            return Ok(Some(PendingCreationSize::DeferredSequenceError(
+                DeferredCreationSizeError::Overflow { position },
+            )));
+        };
         try_push_size(&mut dimensions, dimension)?;
     }
-    Ok(Some(dimensions))
+
+    if let Some((dimension, shape)) = negative_shape {
+        return Ok(Some(PendingCreationSize::DeferredSequenceError(
+            DeferredCreationSizeError::Negative { dimension, shape },
+        )));
+    }
+    Ok(Some(PendingCreationSize::Dimensions(dimensions)))
 }
 
-fn bind_creation_sequence_dimension<'py>(
+fn index_creation_sequence_dimension<'py>(
     function: &str,
     index: usize,
     dimension: &Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyAny>> {
+) -> PyResult<Result<Bound<'py, PyAny>, DeferredCreationSizeError>> {
     if dimension.is_instance_of::<PyBool>() {
-        return Err(creation_sequence_dimension_type_error(
-            function, index, dimension,
-        )?);
+        return if index == 0 {
+            Err(creation_sequence_dimension_type_error(
+                function, index, dimension,
+            )?)
+        } else {
+            Ok(Ok(dimension.clone()))
+        };
     }
 
     if dimension.is_instance_of::<PyInt>() {
-        return Ok(dimension.clone());
+        return Ok(Ok(dimension.clone()));
     }
 
-    let indexed = PyModule::import(dimension.py(), "operator")
-        .and_then(|operator| operator.getattr("index"))
-        .and_then(|index| index.call1((dimension,)));
-    match indexed {
-        Ok(indexed) => Ok(indexed),
-        Err(_) => Err(creation_sequence_dimension_type_error(
+    match python_number_index(dimension) {
+        Ok(indexed) => Ok(Ok(indexed.into_any())),
+        Err(_) if index == 0 => Err(creation_sequence_dimension_type_error(
             function, index, dimension,
         )?),
+        Err(_) => Ok(Err(DeferredCreationSizeError::UnpackType {
+            position: index + 1,
+            actual: python_type_name(dimension)?,
+        })),
     }
 }
 
@@ -10669,12 +10717,8 @@ fn finish_creation_size(
                 scalar_dimension: None,
             });
         }
-        PendingCreationSize::SequenceDimensions(dimensions) => {
-            let dimensions = finish_creation_sequence_dimensions(function, &dimensions)?;
-            return Ok(ParsedCreationSize {
-                dimensions,
-                scalar_dimension: None,
-            });
+        PendingCreationSize::DeferredSequenceError(error) => {
+            return Err(finish_deferred_creation_size_error(function, error));
         }
         PendingCreationSize::PositionalScalar(dimension) => dimension,
     };
@@ -10694,21 +10738,6 @@ fn finish_creation_size(
         dimensions,
         scalar_dimension: Some(dimension),
     })
-}
-
-fn finish_creation_sequence_dimensions(
-    function: &str,
-    dimensions: &[Bound<'_, PyAny>],
-) -> PyResult<Vec<usize>> {
-    let mut signed = try_size_vector(dimensions.len())?;
-    for (index, dimension) in dimensions.iter().enumerate() {
-        let position = index + 1;
-        let dimension = dimension
-            .extract::<i64>()
-            .map_err(|_| creation_dimension_overflow_at(function, position))?;
-        try_push_size(&mut signed, dimension)?;
-    }
-    finish_creation_signed_dimensions(function, signed)
 }
 
 fn parse_variadic_creation_dimensions(
@@ -10738,6 +10767,20 @@ fn finish_creation_signed_dimensions(function: &str, signed: Vec<i64>) -> PyResu
         )?;
     }
     Ok(parsed)
+}
+
+fn finish_deferred_creation_size_error(function: &str, error: DeferredCreationSizeError) -> PyErr {
+    match error {
+        DeferredCreationSizeError::Negative { dimension, shape } => {
+            creation_negative_dimension_error(function, dimension, &shape)
+        }
+        DeferredCreationSizeError::Overflow { position } => {
+            creation_dimension_overflow_at(function, position)
+        }
+        DeferredCreationSizeError::UnpackType { position, actual } => {
+            creation_dimension_unpack_type_error_from_name(function, position, &actual)
+        }
+    }
 }
 
 fn extract_creation_dimension(function: &str, dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
@@ -10803,9 +10846,19 @@ fn creation_dimension_unpack_type_error(
     dimension: &Bound<'_, PyAny>,
 ) -> PyResult<PyErr> {
     let actual = python_type_name(dimension)?;
-    Ok(PyTypeError::new_err(format!(
+    Ok(creation_dimension_unpack_type_error_from_name(
+        function, position, &actual,
+    ))
+}
+
+fn creation_dimension_unpack_type_error_from_name(
+    function: &str,
+    position: usize,
+    actual: &str,
+) -> PyErr {
+    PyTypeError::new_err(format!(
         "{function}(): argument 'size' failed to unpack the object at pos {position} with error \"type must be tuple of ints,but got {actual}\""
-    )))
+    ))
 }
 
 fn creation_negative_dimension_error(function: &str, dimension: i64, shape: &[i64]) -> PyErr {
