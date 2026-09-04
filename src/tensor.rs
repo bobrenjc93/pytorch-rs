@@ -12,6 +12,7 @@ use crate::storage::Storage;
 use crate::tensor_error::TensorError;
 
 const F32_SIGN_MASK: u32 = 0x8000_0000;
+const F32_QUIET_NAN_MASK: u32 = 0x0040_0000;
 #[cfg(feature = "python-bindings")]
 const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
@@ -3239,8 +3240,62 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn sub(&self, other: &Self) -> Result<Self, TensorError> {
-        let output = self.zip_map(other, |left, right| left - right)?;
+        if let Some(output) = self.sub_same_shape_matching_dense_no_grad(other)? {
+            return Ok(output);
+        }
+        let output = self.zip_map(other, subtract_value_matching_pytorch)?;
         self.finish_add_subtract_vjp(other, output, AutogradNode::Subtract, -1.0)
+    }
+
+    fn sub_same_shape_matching_dense_no_grad(
+        &self,
+        other: &Self,
+    ) -> Result<Option<Self>, TensorError> {
+        if self.shape != other.shape
+            || self.records_grad()
+            || other.records_grad()
+            || self.dtype() != DType::Float32
+            || other.dtype() != DType::Float32
+            || self.device() != Device::Cpu
+            || other.device() != Device::Cpu
+            || self.strides != other.strides
+            || !self.is_non_overlapping_and_dense()
+            || !other.is_non_overlapping_and_dense()
+        {
+            return Ok(None);
+        }
+
+        let elements = self.elements;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = self.same_shape_elementwise_output_strides(other, &shape, elements)?;
+        if elements == 0 {
+            return Ok(Some(Self::from_owned_parts(
+                Vec::new(),
+                shape,
+                strides,
+                self.dtype(),
+                self.device(),
+            )));
+        }
+        if self.is_contiguous() && other.is_contiguous() && self.offset == 0 && other.offset == 0 {
+            return Ok(None);
+        }
+        if self.strides != strides || other.strides != strides {
+            return Ok(None);
+        }
+        let (Some(left), Some(right)) = (self.dense_physical_slice(), other.dense_physical_slice())
+        else {
+            return Ok(None);
+        };
+
+        let data = materialize_matching_dense_subtract(left, right, elements)?;
+        Ok(Some(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        )))
     }
 
     /// Computes a squared difference in one binary elementwise pass.
@@ -5661,6 +5716,35 @@ fn apply_binary_operation_scalar(
     operation(left, right)
 }
 
+#[inline]
+fn subtract_value_matching_pytorch(left: f32, right: f32) -> f32 {
+    let right_bits = right.to_bits();
+    if right_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        f32::from_bits(right_bits | F32_QUIET_NAN_MASK)
+    } else {
+        left - right
+    }
+}
+
+#[inline(never)]
+fn materialize_matching_dense_subtract(
+    left: &[f32],
+    right: &[f32],
+    elements: usize,
+) -> Result<Vec<f32>, TensorError> {
+    debug_assert_eq!(left.len(), elements);
+    debug_assert_eq!(right.len(), elements);
+
+    let mut data = try_result_vector(elements, elements)?;
+    data.extend(
+        left.iter()
+            .copied()
+            .zip(right.iter().copied())
+            .map(|(left, right)| subtract_value_matching_pytorch(left, right)),
+    );
+    Ok(data)
+}
+
 #[inline(never)]
 fn materialize_contiguous_trailing_singleton_broadcast(
     left: &Tensor,
@@ -6838,18 +6922,14 @@ fn absolute_value(value: f32) -> f32 {
 #[inline]
 #[cfg(any(feature = "python-bindings", test))]
 fn l1_loss_difference_value(left: f32, right: f32) -> f32 {
-    const QUIET_NAN_MASK: u32 = 0x0040_0000;
-
-    let right_bits = right.to_bits();
-    if right_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
-        return f32::from_bits(right_bits | QUIET_NAN_MASK);
-    }
-    left - right
+    subtract_value_matching_pytorch(left, right)
 }
 
 #[inline]
 #[cfg(any(feature = "python-bindings", test))]
 fn squared_difference_value(left: f32, right: f32) -> f32 {
+    // PyTorch's fused MSE kernels preserve the input-side NaN payload when
+    // both operands are NaN, unlike the standalone subtract kernel.
     let difference = left - right;
     difference * difference
 }
@@ -7414,8 +7494,8 @@ mod tests {
         MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor,
         TensorError, contiguous_values_equal, full_reduction_mean_divisor,
         l1_loss_difference_value, log_value, logical_offset_for_linear_index,
-        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
-        validate_view_bounds,
+        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value,
+        squared_difference_value, try_result_vector, validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -12025,6 +12105,232 @@ mod tests {
         assert_eq!(left == right, expected);
     }
 
+    fn assert_sub_matching_dense_no_grad_fast_path_matches(
+        case: &str,
+        left: &Tensor,
+        right: &Tensor,
+        expected_shape: &[usize],
+        expected_strides: &[usize],
+        expected_logical_bits: &[u32],
+        expected_physical_bits: &[u32],
+    ) {
+        assert_eq!(left.shape(), right.shape(), "{case}");
+        assert_eq!(left.stride(), right.stride(), "{case}");
+        assert!(left.is_non_overlapping_and_dense(), "{case}");
+        assert!(right.is_non_overlapping_and_dense(), "{case}");
+        assert!(
+            left.numel() == 0
+                || !left.is_contiguous()
+                || !right.is_contiguous()
+                || left.storage_offset() != 0
+                || right.storage_offset() != 0,
+            "{case}"
+        );
+        let left_bits_before = left.logical_values().map(f32::to_bits).collect::<Vec<_>>();
+        let right_bits_before = right.logical_values().map(f32::to_bits).collect::<Vec<_>>();
+
+        let fast = left
+            .sub_same_shape_matching_dense_no_grad(right)
+            .unwrap()
+            .expect("matching dense no-grad tensors should use the subtract fast path");
+        let public = left.sub(right).unwrap();
+
+        for (label, actual) in [("fast", &fast), ("public", &public)] {
+            assert_eq!(actual.shape(), expected_shape, "{case}/{label}");
+            assert_eq!(actual.stride(), expected_strides, "{case}/{label}");
+            assert_eq!(actual.storage_offset(), 0, "{case}/{label}");
+            assert_eq!(actual.dtype(), DType::Float32, "{case}/{label}");
+            assert_eq!(actual.device(), Device::Cpu, "{case}/{label}");
+            assert!(!actual.requires_grad(), "{case}/{label}");
+            assert!(actual.is_leaf(), "{case}/{label}");
+            assert!(!actual.shares_storage_with(left), "{case}/{label}");
+            assert!(!actual.shares_storage_with(right), "{case}/{label}");
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected_logical_bits.iter().copied()),
+                "{case}/{label}"
+            );
+            assert!(
+                actual
+                    .dense_physical_slice()
+                    .unwrap()
+                    .iter()
+                    .copied()
+                    .map(f32::to_bits)
+                    .eq(expected_physical_bits.iter().copied()),
+                "{case}/{label}"
+            );
+        }
+
+        assert!(
+            left.logical_values().map(f32::to_bits).eq(left_bits_before),
+            "{case}"
+        );
+        assert!(
+            right
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(right_bits_before),
+            "{case}"
+        );
+    }
+
+    #[test]
+    fn subtract_matching_dense_no_grad_fast_path_matches_pytorch_edge_bits() {
+        // Invalid infinity subtraction produces the architecture's default NaN:
+        // x86 uses a negative quiet NaN while AArch64 uses a positive one. PyTorch
+        // follows the same native floating-point convention on each platform.
+        let positive_infinity_difference_bits =
+            (std::hint::black_box(f32::INFINITY) - std::hint::black_box(f32::INFINITY)).to_bits();
+        let negative_infinity_difference_bits = (std::hint::black_box(f32::NEG_INFINITY)
+            - std::hint::black_box(f32::NEG_INFINITY))
+        .to_bits();
+        let left_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0x3f80_0000,
+            0x7f81_2345,
+            0xff81_2345,
+        ];
+        let right_bits = [
+            0x8000_0000,
+            0x0000_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fca_bcde,
+            0x7fca_bcde,
+            0xff85_6789,
+            0x7f85_6789,
+        ];
+        let expected_physical_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            positive_infinity_difference_bits,
+            negative_infinity_difference_bits,
+            0x7fca_bcde,
+            0x7fca_bcde,
+            0xffc5_6789,
+            0x7fc5_6789,
+        ];
+        let expected_logical_bits = [
+            0x0000_0000,
+            0x7fca_bcde,
+            0x8000_0000,
+            0x7fca_bcde,
+            positive_infinity_difference_bits,
+            0xffc5_6789,
+            negative_infinity_difference_bits,
+            0x7fc5_6789,
+        ];
+
+        let transposed_left = Tensor::from_vec(left_bits.map(f32::from_bits).to_vec(), [2, 4])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let transposed_right = Tensor::from_vec(right_bits.map(f32::from_bits).to_vec(), [2, 4])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        assert_sub_matching_dense_no_grad_fast_path_matches(
+            "transposed",
+            &transposed_left,
+            &transposed_right,
+            &[4, 2],
+            &[1, 4],
+            &expected_logical_bits,
+            &expected_physical_bits,
+        );
+
+        let offset_left = offset_contiguous_tensor(&left_bits, &[2, 4])
+            .transpose(0, 1)
+            .unwrap();
+        let offset_right = offset_contiguous_tensor(&right_bits, &[2, 4])
+            .transpose(0, 1)
+            .unwrap();
+        assert_eq!(offset_left.storage_offset(), 8);
+        assert_eq!(offset_right.storage_offset(), 8);
+        assert_sub_matching_dense_no_grad_fast_path_matches(
+            "offset transposed",
+            &offset_left,
+            &offset_right,
+            &[4, 2],
+            &[1, 4],
+            &expected_logical_bits,
+            &expected_physical_bits,
+        );
+    }
+
+    #[test]
+    fn subtract_matching_dense_no_grad_fast_path_handles_empty_views() {
+        let empty_left = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        let empty_right = Tensor::ones([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+
+        assert_sub_matching_dense_no_grad_fast_path_matches(
+            "empty transposed",
+            &empty_left,
+            &empty_right,
+            &[3, 0, 2],
+            &[2, 2, 1],
+            &[],
+            &[],
+        );
+    }
+
+    #[test]
+    fn subtract_matching_dense_fast_path_respects_active_autograd_guard() {
+        let base_left = Tensor::from_vec((0_u8..8).map(f32::from).collect(), [2, 4])
+            .unwrap()
+            .with_requires_grad(true);
+        let base_right = Tensor::from_vec(
+            (0_u8..8).map(|value| 16.0 - f32::from(value)).collect(),
+            [2, 4],
+        )
+        .unwrap()
+        .with_requires_grad(true);
+        let left = base_left.transpose(0, 1).unwrap();
+        let right = base_right.transpose(0, 1).unwrap();
+
+        assert!(
+            left.sub_same_shape_matching_dense_no_grad(&right)
+                .unwrap()
+                .is_none()
+        );
+        let output = left.sub(&right).unwrap();
+        assert!(output.requires_grad());
+        assert!(!output.is_leaf());
+        output.sum().backward().unwrap();
+        assert!(
+            base_left
+                .grad()
+                .unwrap()
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq([1.0_f32; 8].map(f32::to_bits))
+        );
+        assert!(
+            base_right
+                .grad()
+                .unwrap()
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq([-1.0_f32; 8].map(f32::to_bits))
+        );
+
+        let no_grad_output = {
+            let _guard = crate::no_grad();
+            left.sub(&right).unwrap()
+        };
+        assert!(!no_grad_output.requires_grad());
+        assert!(no_grad_output.is_leaf());
+    }
+
     fn assert_l1_channels_last_fast_path_matches(left: &Tensor, right: &Tensor) {
         assert_eq!(left.shape(), right.shape());
         assert_eq!(left.stride(), right.stride());
@@ -12207,14 +12513,15 @@ mod tests {
     }
 
     #[test]
-    fn squared_difference_same_shape_matches_the_established_composition() {
+    fn squared_difference_same_shape_matches_fused_kernel_value_bits() {
         let assert_matches = |left: &Tensor, right: &Tensor| {
-            let difference = left.sub(right).unwrap();
-            let expected = difference.square().unwrap();
+            let expected = left
+                .zip_map_same_shape(right, squared_difference_value)
+                .unwrap();
             let actual = left.squared_difference(right).unwrap();
 
             assert_eq!(actual.shape(), expected.shape());
-            assert_eq!(actual.stride(), difference.stride());
+            assert_eq!(actual.stride(), expected.stride());
             assert_eq!(actual.storage_offset(), expected.storage_offset());
             assert_eq!(actual.dtype(), expected.dtype());
             assert_eq!(actual.device(), expected.device());
