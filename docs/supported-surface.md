@@ -789,20 +789,22 @@ and explicit `requires_grad` mutation requests remain unsupported.
 
 `torch.arange` creates fresh one-dimensional CPU `float32` tensors for the
 supported numeric overloads. One-bound exact Python `float` and NumPy floating
-endpoints accept omitted, `None`, or explicit `torch.float32`/`torch.float`
-dtype metadata. One-bound exact Python or NumPy integer endpoints, and
-two-bound implicit-step exact Python or NumPy integer `start, end` endpoints,
-require an explicit `dtype=torch.float32` or `dtype=torch.float`. Supported
-two-bound integer calls produce values in `[start, end)` with step `1`,
-including negative starts and zero-length ranges when PyTorch 2.13's floating
-shape calculation does so. Supported metadata is limited to `out=None`,
-`layout=None` or
-`torch.strided`, `device=None` or CPU, `pin_memory=None` or `False`, and
-`requires_grad=False` or `True`; `requires_grad=True` creates a fresh leaf even
-under `torch.no_grad()`. Omitted-dtype integer inference, Python and NumPy
-boolean endpoints, float two-bound ranges, explicit `step`, concrete `out`
-tensors, non-CPU devices, non-float32 dtypes, pinned allocation, sparse or
-foreign layouts, and backend-specific allocation behavior remain unsupported.
+endpoints, and two-bound implicit-step exact Python `float` or NumPy floating
+`start, end` endpoint pairs, accept omitted, `None`, or explicit
+`torch.float32`/`torch.float` dtype metadata. One-bound exact Python or NumPy
+integer endpoints, and two-bound implicit-step exact Python or NumPy integer
+`start, end` endpoint pairs, require an explicit `dtype=torch.float32` or
+`dtype=torch.float`. Supported two-bound calls produce values in `[start, end)`
+with step `1`, including fractional spans, negative starts, and zero-length
+ranges when PyTorch 2.13's floating shape calculation does so. Supported
+metadata is limited to `out=None`, `layout=None` or `torch.strided`,
+`device=None` or CPU, `pin_memory=None` or `False`, and `requires_grad=False`
+or `True`; `requires_grad=True` creates a fresh leaf even under
+`torch.no_grad()`. Omitted-dtype integer inference, Python and NumPy boolean
+endpoints, mixed integer/floating or boolean/integer two-bound endpoint pairs,
+explicit `step`, concrete `out` tensors, non-CPU devices, non-float32 dtypes,
+pinned allocation, sparse or foreign layouts, and backend-specific allocation
+behavior remain unsupported.
 
 `torch.zeros(*size, shape=None, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)` and `torch.ones(*size, shape=None, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)` create fresh CPU float32 tensors for scalar, empty, and multidimensional sizes. Single positional integers, integer-protocol values, and variadic positional integer-compatible dimensions such as `torch.zeros(2, 3)` are accepted, while tuple/list-like sizes retain their existing PyTorch-compatible shape, stride, dtype, device, layout, pinning, and `requires_grad` metadata. Python bools are accepted in non-leading variadic positions following PyTorch 2.13, such as `torch.zeros(2, False)`, while a single positional bool or leading variadic bool remains outside the supported size forms. `out=None`, `layout=None`, `layout=torch.strided`, `pin_memory=None`, and `pin_memory=False` are accepted and behave like omitted defaults without reusing storage or pinning allocation. Concrete `out` tensors, `size=` combined with positional dimensions, NumPy boolean scalar dimensions, negative or overflowing dimensions, non-float32 dtype or non-CPU device allocation, `pin_memory=True`, sparse or foreign layouts, and backend-specific allocation behavior remain unsupported.
 
