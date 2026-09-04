@@ -14,6 +14,51 @@ except ImportError:
     reference_torch = None
 
 
+MATCHING_DENSE_LEFT_BITS = np.asarray(
+    (
+        0x0000_0000,
+        0x8000_0000,
+        0x7F80_0000,
+        0xFF80_0000,
+        0x7FC1_2345,
+        0x3F80_0000,
+        0x7F81_2345,
+        0xFF81_2345,
+    ),
+    dtype=np.uint32,
+)
+MATCHING_DENSE_RIGHT_BITS = np.asarray(
+    (
+        0x8000_0000,
+        0x0000_0000,
+        0x7F80_0000,
+        0xFF80_0000,
+        0x7FCA_BCDE,
+        0x7FCA_BCDE,
+        0xFF85_6789,
+        0x7F85_6789,
+    ),
+    dtype=np.uint32,
+)
+
+
+def matching_dense_view(module, bits, *, offset=False, requires_grad=False):
+    storage_bits = bits
+    if offset:
+        storage_bits = np.concatenate([np.zeros(bits.size, dtype=np.uint32), bits])
+    tensor = module.tensor(
+        memoryview(storage_bits.view(np.float32)),
+        requires_grad=requires_grad,
+    )
+    if offset:
+        return tensor.reshape((2, 2, 4))[1].transpose(0, 1)
+    return tensor.reshape((2, 4)).transpose(0, 1)
+
+
+def tensor_bits(tensor):
+    return np.asarray(tensor).reshape(-1).view(np.uint32).copy()
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class TopLevelSubReferenceTests(unittest.TestCase):
     @classmethod
@@ -199,6 +244,105 @@ class TopLevelSubReferenceTests(unittest.TestCase):
         self.assert_matches(actual_untracked, expected_untracked, case="no_grad view")
         self.assertTrue(torch.sub(actual_no_grad, 2.0).requires_grad)
         self.assertTrue(reference_torch.sub(expected_no_grad, 2.0).requires_grad)
+
+    def test_same_shape_matching_dense_views_match_pytorch_2_13(self):
+        for function_name in ("sub", "subtract"):
+            function = getattr(torch, function_name)
+            reference_function = getattr(reference_torch, function_name)
+            for offset in (False, True):
+                actual_left = matching_dense_view(
+                    torch, MATCHING_DENSE_LEFT_BITS, offset=offset
+                )
+                actual_right = matching_dense_view(
+                    torch, MATCHING_DENSE_RIGHT_BITS, offset=offset
+                )
+                expected_left = matching_dense_view(
+                    reference_torch, MATCHING_DENSE_LEFT_BITS, offset=offset
+                )
+                expected_right = matching_dense_view(
+                    reference_torch, MATCHING_DENSE_RIGHT_BITS, offset=offset
+                )
+                actual_left_before = tensor_bits(actual_left)
+                actual_right_before = tensor_bits(actual_right)
+
+                self.assert_matches(
+                    function(actual_left, actual_right),
+                    reference_function(expected_left, expected_right),
+                    case=(function_name, "offset transposed" if offset else "transposed"),
+                )
+                np.testing.assert_array_equal(tensor_bits(actual_left), actual_left_before)
+                np.testing.assert_array_equal(tensor_bits(actual_right), actual_right_before)
+
+            actual_empty = torch.zeros((2, 0, 3)).transpose(0, 2)
+            expected_empty = reference_torch.zeros((2, 0, 3)).transpose(0, 2)
+            self.assert_matches(
+                function(actual_empty, actual_empty),
+                reference_function(expected_empty, expected_empty),
+                case=(function_name, "empty transposed"),
+            )
+
+            actual_no_grad_left = matching_dense_view(
+                torch, MATCHING_DENSE_LEFT_BITS, offset=True, requires_grad=True
+            )
+            actual_no_grad_right = matching_dense_view(
+                torch, MATCHING_DENSE_RIGHT_BITS, offset=True, requires_grad=True
+            )
+            expected_no_grad_left = matching_dense_view(
+                reference_torch,
+                MATCHING_DENSE_LEFT_BITS,
+                offset=True,
+                requires_grad=True,
+            )
+            expected_no_grad_right = matching_dense_view(
+                reference_torch,
+                MATCHING_DENSE_RIGHT_BITS,
+                offset=True,
+                requires_grad=True,
+            )
+            with torch.no_grad():
+                actual_untracked = function(actual_no_grad_left, actual_no_grad_right)
+            with reference_torch.no_grad():
+                expected_untracked = reference_function(
+                    expected_no_grad_left, expected_no_grad_right
+                )
+            self.assert_matches(
+                actual_untracked,
+                expected_untracked,
+                case=(function_name, "no_grad offset transposed"),
+            )
+
+    def test_same_shape_matching_dense_active_autograd_matches_pytorch_2_13(self):
+        values = np.arange(8, dtype=np.float32).reshape(2, 4)
+        other_values = (16.0 - values).astype(np.float32)
+        for function_name in ("sub", "subtract"):
+            actual_left_leaf = torch.tensor(values.tolist(), requires_grad=True)
+            actual_right_leaf = torch.tensor(other_values.tolist(), requires_grad=True)
+            expected_left_leaf = reference_torch.tensor(
+                values.tolist(), requires_grad=True
+            )
+            expected_right_leaf = reference_torch.tensor(
+                other_values.tolist(), requires_grad=True
+            )
+            actual_output = getattr(torch, function_name)(
+                actual_left_leaf.transpose(0, 1),
+                actual_right_leaf.transpose(0, 1),
+            )
+            expected_output = getattr(reference_torch, function_name)(
+                expected_left_leaf.transpose(0, 1),
+                expected_right_leaf.transpose(0, 1),
+            )
+
+            self.assert_matches(
+                actual_output, expected_output, case=(function_name, "tracked transposed")
+            )
+            actual_output.sum().backward()
+            expected_output.sum().backward()
+            np.testing.assert_array_equal(
+                np.asarray(actual_left_leaf.grad), expected_left_leaf.grad.numpy()
+            )
+            np.testing.assert_array_equal(
+                np.asarray(actual_right_leaf.grad), expected_right_leaf.grad.numpy()
+            )
 
     @staticmethod
     def dispatch_observation(module, function_name):
