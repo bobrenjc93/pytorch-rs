@@ -557,6 +557,7 @@ class PythonApiBaselineTests(unittest.TestCase):
         creators = (
             ("tensor scalar", lambda **kw: torch.tensor(-2.5, **kw), (), -2.5),
             ("zeros empty", lambda **kw: torch.zeros((2, 0, 3), **kw), (2, 0, 3), [[], []]),
+            ("empty ordinary", lambda **kw: torch.empty((2, 2), **kw), (2, 2), None),
             ("ones ordinary", lambda **kw: torch.ones((2, 2), **kw), (2, 2), [[1.0, 1.0], [1.0, 1.0]]),
             ("full ordinary", lambda **kw: torch.full((2,), 3.25, **kw), (2,), [3.25, 3.25]),
         )
@@ -576,15 +577,18 @@ class PythonApiBaselineTests(unittest.TestCase):
                 with self.subTest(name=name, dtype=dtype, device=device):
                     tensor = create(dtype=dtype, device=device)
                     self.assertEqual(tensor.shape, shape)
-                    self.assertEqual(tensor.tolist(), values)
+                    if values is not None:
+                        self.assertEqual(tensor.tolist(), values)
                     self.assertIs(tensor.dtype, torch.float32)
                     self.assertEqual(tensor.device, torch.device("cpu"))
 
+        self.assertEqual(torch.empty(size=(2,), dtype=torch.float32).shape, (2,))
         self.assertEqual(torch.zeros(size=(2,), dtype=torch.float32).tolist(), [0.0, 0.0])
         self.assertEqual(torch.ones(size=(2,), device="cpu").tolist(), [1.0, 1.0])
 
-    def test_zeros_and_ones_accept_size_and_legacy_shape_keywords(self):
+    def test_empty_zeros_and_ones_accept_size_and_legacy_shape_keywords(self):
         for name, create, expected in (
+            ("empty", torch.empty, None),
             ("zeros", torch.zeros, [[0.0, 0.0], [0.0, 0.0]]),
             ("ones", torch.ones, [[1.0, 1.0], [1.0, 1.0]]),
         ):
@@ -595,7 +599,9 @@ class PythonApiBaselineTests(unittest.TestCase):
                         dtype=torch.float32,
                         device=torch.device("cpu"),
                     )
-                    self.assertEqual(tensor.tolist(), expected)
+                    if expected is not None:
+                        self.assertEqual(tensor.tolist(), expected)
+                    self.assertEqual(tensor.shape, (2, 2))
                     self.assertIs(tensor.dtype, torch.float32)
                     self.assertEqual(tensor.device, torch.device("cpu"))
 
@@ -778,6 +784,7 @@ class PythonApiBaselineTests(unittest.TestCase):
     def test_creation_rejects_invalid_dtype_and_device_types(self):
         creators = (
             lambda **kw: torch.tensor([1.0], **kw),
+            lambda **kw: torch.empty((1,), **kw),
             lambda **kw: torch.zeros((1,), **kw),
             lambda **kw: torch.ones((1,), **kw),
             lambda **kw: torch.full((1,), 2.0, **kw),
@@ -798,6 +805,7 @@ class PythonApiBaselineTests(unittest.TestCase):
     def test_creation_rejects_unimplemented_or_invalid_devices(self):
         creators = (
             lambda **kw: torch.tensor(1.0, **kw),
+            lambda **kw: torch.empty((), **kw),
             lambda **kw: torch.zeros((), **kw),
             lambda **kw: torch.ones((), **kw),
             lambda **kw: torch.full((), 2.0, **kw),
@@ -811,6 +819,8 @@ class PythonApiBaselineTests(unittest.TestCase):
     def test_creation_metadata_parameters_are_keyword_only(self):
         with self.assertRaises(TypeError):
             torch.tensor([1.0], torch.float32)
+        with self.assertRaises(TypeError):
+            torch.empty((1,), torch.float32)
         with self.assertRaises(TypeError):
             torch.zeros((1,), torch.float32)
         with self.assertRaises(TypeError):

@@ -7803,6 +7803,23 @@ fn flatten(
     signature = (*args, **kwargs),
     text_signature = "(*size, shape=None, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)"
 )]
+fn empty(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let arguments = bind_creation_arguments("empty", args, kwargs)?;
+    let (size, dtype, device, requires_grad) = parse_creation_arguments("empty", arguments)?;
+    let ParsedCreationSize {
+        dimensions,
+        scalar_dimension,
+    } = size;
+    let shape = dimensions.clone();
+    CoreTensor::empty_with_metadata(dimensions, dtype, device)
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
+        .map_err(|error| creation_factory_error(&error, &shape, scalar_dimension))
+}
+
+#[pyfunction(
+    signature = (*args, **kwargs),
+    text_signature = "(*size, shape=None, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)"
+)]
 fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("zeros", args, kwargs)?;
     let (size, dtype, device, requires_grad) = parse_creation_arguments("zeros", arguments)?;
@@ -10547,7 +10564,7 @@ fn parse_creation_size<'py>(
         Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
         Err(error) => error,
     };
-    if !matches!(function, "zeros" | "ones") || origin != CreationSizeOrigin::Positional {
+    if !matches!(function, "empty" | "zeros" | "ones") || origin != CreationSizeOrigin::Positional {
         return Err(sequence_error);
     }
 
@@ -10714,7 +10731,7 @@ fn creation_negative_dimension_error(function: &str, dimension: i64, shape: &[i6
     if function == "zeros" {
         PyRuntimeError::new_err("zeros: Dimension size must be non-negative.")
     } else {
-        debug_assert_eq!(function, "ones");
+        debug_assert!(matches!(function, "empty" | "ones"));
         PyRuntimeError::new_err(format!(
             "Trying to create tensor with negative dimension {dimension}: {shape:?}"
         ))
@@ -19497,6 +19514,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
     add_tensor_queries(module)?;
+    module.add_function(wrap_pyfunction!(empty, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
