@@ -188,6 +188,19 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
             benchmark_compile_cpu._checksum_tensor(expected),
         )
 
+    def test_validator_rejects_previous_corpus_version_artifact(self):
+        report = benchmark_compile_cpu._load_artifact(
+            benchmark_compile_cpu.DEFAULT_ARTIFACT_PATH,
+        )
+        stale = copy.deepcopy(report)
+        stale["environment"]["corpus_version"] = "torch_compile_corpus_v7"
+
+        with self.assertRaisesRegex(
+            AssertionError,
+            "environment corpus version mismatch",
+        ):
+            benchmark_compile_cpu._validate_expected_artifact_shape(stale)
+
     def test_validator_rejects_stale_pre_inference_artifact_shape(self):
         report = benchmark_compile_cpu._load_artifact(
             benchmark_compile_cpu.DEFAULT_ARTIFACT_PATH,

@@ -1578,15 +1578,17 @@ def _validate_expected_artifact_shape(report):
     if corpus.get("version") != environment.get("corpus_version"):
         errors.append("corpus metadata version does not match environment")
 
-    if environment.get("corpus_version") == current_corpus_version:
-        expected_corpus = current_corpus
-        if corpus != expected_corpus:
-            errors.append(
-                "corpus metadata mismatch: "
-                f"actual={corpus!r} expected={expected_corpus!r}"
-            )
-    else:
-        expected_corpus = corpus
+    if environment.get("corpus_version") != current_corpus_version:
+        errors.append(
+            "environment corpus version mismatch: "
+            f"{environment.get('corpus_version')!r} != {current_corpus_version!r}"
+        )
+    expected_corpus = current_corpus
+    if corpus != expected_corpus:
+        errors.append(
+            "corpus metadata mismatch: "
+            f"actual={corpus!r} expected={expected_corpus!r}"
+        )
     expected_public_cases = tuple(expected_corpus.get("public_cases", ()))
     expected_category_counts = Counter()
     for case in expected_public_cases:
