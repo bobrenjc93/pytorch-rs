@@ -745,6 +745,42 @@ impl Tensor {
         ))
     }
 
+    /// Creates the default float32 CPU range for two-bound float endpoints.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the one-dimensional shape or storage allocation
+    /// exceeds the platform capacity.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn arange_float32_from_float_bounds(
+        start: f64,
+        elements: usize,
+    ) -> Result<Self, TensorError> {
+        validate_storage_capacity(elements)?;
+
+        let mut data = try_result_vector(elements, elements)?;
+        let vectorized_elements = elements - (elements % 16);
+        let start_float = start as f32;
+        for index in 0..vectorized_elements {
+            data.push(start_float + index as f32);
+        }
+        for index in vectorized_elements..elements {
+            data.push((start + index as f64) as f32);
+        }
+
+        let mut shape = try_result_vector(1, elements)?;
+        shape.push(elements);
+        let (_, strides) = validated_layout(&shape)?;
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            DType::Float32,
+            Device::Cpu,
+        ))
+    }
+
     /// Creates a two-dimensional tensor with ones on the main diagonal and
     /// zeros elsewhere.
     ///

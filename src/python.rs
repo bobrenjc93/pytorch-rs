@@ -7591,12 +7591,14 @@ fn arange_impl(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyTensor> {
-    let (start, elements, requires_grad) =
+    let (start, elements, requires_grad, generation) =
         parse_arange_arguments(bind_arange_arguments(args, kwargs)?)?;
-    let inner = if start == 0.0 {
-        CoreTensor::arange_float32(elements)
-    } else {
-        CoreTensor::arange_float32_from(start, elements)
+    let inner = match generation {
+        ArangeGeneration::FloatBounds => {
+            CoreTensor::arange_float32_from_float_bounds(start, elements)
+        }
+        ArangeGeneration::DoubleThenCast if start == 0.0 => CoreTensor::arange_float32(elements),
+        ArangeGeneration::DoubleThenCast => CoreTensor::arange_float32_from(start, elements),
     };
     inner
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
@@ -9128,7 +9130,15 @@ fn bind_arange_arguments<'py>(
     Ok(arguments)
 }
 
-fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(f64, usize, bool)> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ArangeGeneration {
+    DoubleThenCast,
+    FloatBounds,
+}
+
+fn parse_arange_arguments(
+    arguments: ArangeCallArguments<'_>,
+) -> PyResult<(f64, usize, bool, ArangeGeneration)> {
     if arguments.explicit_step {
         return Err(arange_explicit_step_unsupported());
     }
@@ -9201,12 +9211,17 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(f64, 
         ));
     }
     let elements = arange_element_count(extract_arange_endpoint(&end.value, end_kind)?)?;
-    Ok((0.0, elements, requires_grad))
+    Ok((
+        0.0,
+        elements,
+        requires_grad,
+        ArangeGeneration::DoubleThenCast,
+    ))
 }
 
 fn parse_two_bound_arange_arguments(
     arguments: ArangeCallArguments<'_>,
-) -> PyResult<(f64, usize, bool)> {
+) -> PyResult<(f64, usize, bool, ArangeGeneration)> {
     let ArangeCallArguments {
         start,
         end,
@@ -9277,7 +9292,12 @@ fn parse_two_bound_arange_arguments(
     let start = extract_arange_endpoint(&start.value, start_kind)?;
     let end = extract_arange_endpoint(&end.value, end_kind)?;
     let elements = arange_two_bound_element_count(start, end)?;
-    Ok((start, elements, requires_grad))
+    let generation = if float_endpoint_pair {
+        ArangeGeneration::FloatBounds
+    } else {
+        ArangeGeneration::DoubleThenCast
+    };
+    Ok((start, elements, requires_grad, generation))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

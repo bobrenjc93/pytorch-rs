@@ -2,6 +2,7 @@ import inspect
 import math
 import pickle
 import re
+import struct
 import types
 import unittest
 
@@ -52,6 +53,10 @@ class SpoofedNumpyFloat:
     def __float__(self):
         self.float_calls += 1
         return 3.0
+
+
+def float32_bits(value):
+    return struct.unpack("<I", struct.pack("<f", float(value)))[0]
 
 
 class ArangeTests(unittest.TestCase):
@@ -318,6 +323,49 @@ class ArangeTests(unittest.TestCase):
                         start=start, end=end, dtype=dtype_name, form=form
                     ):
                         self.assert_default_tensor(call(), expected)
+
+    def test_two_bound_inexact_float_long_span_matches_pytorch_2_13(self):
+        expected_bits = [
+            0xBF19999A,
+            0x3ECCCCCC,
+            0x3FB33333,
+            0x4019999A,
+            0x4059999A,
+            0x408CCCCD,
+            0x40ACCCCD,
+            0x40CCCCCD,
+            0x40ECCCCD,
+            0x41066666,
+            0x41166666,
+            0x41266666,
+            0x41366666,
+            0x41466666,
+            0x41566666,
+            0x41666666,
+        ]
+        cases = (
+            ("python_positional", lambda: torch.arange(-0.6, 15.4)),
+            (
+                "python_keywords",
+                lambda: torch.arange(
+                    start=-0.6, end=15.4, dtype=torch.float32
+                ),
+            ),
+            (
+                "numpy_float64",
+                lambda: torch.arange(
+                    np.float64(-0.6), np.float64(15.4), dtype=torch.float
+                ),
+            ),
+        )
+        for name, call in cases:
+            with self.subTest(name=name):
+                tensor = call()
+                self.assert_default_tensor_metadata(tensor, len(expected_bits))
+                self.assertEqual(
+                    [float32_bits(value) for value in tensor.tolist()],
+                    expected_bits,
+                )
 
     def test_two_bound_numpy_floating_endpoints_support_implicit_step(self):
         scalar_types = (*NUMPY_FLOAT_TYPES, NumpyFloatSubclass)
