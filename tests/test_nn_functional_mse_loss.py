@@ -1,5 +1,6 @@
 import importlib
 import inspect
+import platform
 import re
 import subprocess
 import sys
@@ -60,7 +61,32 @@ class FunctionalMseLossTests(unittest.TestCase):
         left, right = np.broadcast_arrays(np.asarray(input), np.asarray(target))
         with np.errstate(invalid="ignore", over="ignore"):
             values = (left - right) * (left - right)
-        return values.reshape(-1).view(np.uint32)
+        value_bits = values.reshape(-1).view(np.uint32).copy()
+
+        # AArch64 floating-point instructions prioritize a signaling NaN in
+        # either operand before selecting the first quiet NaN. NumPy's
+        # broadcast ufunc instead keeps the first NaN, so repair the oracle for
+        # the native scalar operation used by both the Rust and PyTorch MSE
+        # kernels on ARM.
+        if platform.machine().lower() in {"aarch64", "arm64"}:
+            left_bits = np.ascontiguousarray(left).reshape(-1).view(np.uint32)
+            right_bits = np.ascontiguousarray(right).reshape(-1).view(np.uint32)
+            magnitude_mask = np.uint32(0x7FFF_FFFF)
+            infinity_bits = np.uint32(0x7F80_0000)
+            quiet_nan_mask = np.uint32(0x0040_0000)
+            left_nan = (left_bits & magnitude_mask) > infinity_bits
+            right_nan = (right_bits & magnitude_mask) > infinity_bits
+            both_nan = left_nan & right_nan
+            left_signaling = left_nan & ((left_bits & quiet_nan_mask) == 0)
+            right_signaling = right_nan & ((right_bits & quiet_nan_mask) == 0)
+            selected = np.where(
+                left_signaling,
+                left_bits,
+                np.where(right_signaling, right_bits, left_bits),
+            )
+            value_bits[both_nan] = selected[both_nan] | quiet_nan_mask
+
+        return value_bits
 
     def assert_mean_scalar_matches_composition(self, actual, expected, *, case):
         with self.subTest(case=case, metadata=True):
@@ -1274,6 +1300,7 @@ class FunctionalMseLossTests(unittest.TestCase):
         contiguous_tensor = torch.tensor(
             memoryview(tensor_bits.view(np.float32))
         ).view(3, 4)
+        contiguous_reference = tensor_bits.view(np.float32).reshape(3, 4)
 
         for scalar_bits in (
             0x0000_0000,
@@ -1286,17 +1313,28 @@ class FunctionalMseLossTests(unittest.TestCase):
         ):
             scalar_values = np.asarray([scalar_bits], dtype=np.uint32).view(np.float32)
             scalar = torch.tensor(memoryview(scalar_values))[0]
-            for layout, tensor in (
-                ("contiguous", contiguous_tensor),
-                ("noncontiguous", contiguous_tensor.transpose(0, 1)),
+            for layout, tensor, reference_tensor in (
+                ("contiguous", contiguous_tensor, contiguous_reference),
+                (
+                    "noncontiguous",
+                    contiguous_tensor.transpose(0, 1),
+                    contiguous_reference.transpose(1, 0),
+                ),
             ):
                 for scalar_on_left in (True, False):
                     input, target = (
                         (scalar, tensor) if scalar_on_left else (tensor, scalar)
                     )
+                    reference_input, reference_target = (
+                        (scalar_values[0], reference_tensor)
+                        if scalar_on_left
+                        else (reference_tensor, scalar_values[0])
+                    )
                     difference = input - target
                     expected = difference.square()
-                    expected_bits = self.mse_kernel_bits(input, target)
+                    expected_bits = self.mse_kernel_bits(
+                        reference_input, reference_target
+                    )
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
                         actual = functional.mse_loss(input, target, reduction="none")
