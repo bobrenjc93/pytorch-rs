@@ -7810,6 +7810,7 @@
   "corpus": {
     "held_out_cases": [
       {
+        "backward_through_sum": false,
         "category": "broadcasting",
         "dynamic": null,
         "fullgraph": true,
@@ -7820,6 +7821,7 @@
         "recompile_limit": null
       },
       {
+        "backward_through_sum": false,
         "category": "broadcasting",
         "dynamic": null,
         "fullgraph": true,
@@ -7830,6 +7832,7 @@
         "recompile_limit": null
       },
       {
+        "backward_through_sum": true,
         "category": "training_autograd",
         "dynamic": null,
         "fullgraph": true,
@@ -7840,6 +7843,7 @@
         "recompile_limit": null
       },
       {
+        "backward_through_sum": false,
         "category": "inference",
         "dynamic": null,
         "fullgraph": true,
@@ -7850,6 +7854,7 @@
         "recompile_limit": null
       },
       {
+        "backward_through_sum": false,
         "category": "recompilation_guards",
         "dynamic": null,
         "fullgraph": true,
@@ -7860,6 +7865,7 @@
         "recompile_limit": 4
       },
       {
+        "backward_through_sum": false,
         "category": "recompilation_guards",
         "dynamic": null,
         "fullgraph": true,
@@ -7928,6 +7934,7 @@
     ],
     "public_cases": [
       {
+        "backward_through_sum": false,
         "category": "tensor_arithmetic",
         "dynamic": null,
         "fullgraph": true,
@@ -7938,6 +7945,7 @@
         "recompile_limit": null
       },
       {
+        "backward_through_sum": false,
         "category": "tensor_arithmetic",
         "dynamic": null,
         "fullgraph": true,
@@ -7948,6 +7956,7 @@
         "recompile_limit": null
       },
       {
+        "backward_through_sum": false,
         "category": "tensor_arithmetic",
         "dynamic": null,
         "fullgraph": true,
@@ -7958,6 +7967,7 @@
         "recompile_limit": null
       },
       {
+        "backward_through_sum": false,
         "category": "tensor_arithmetic",
         "dynamic": null,
         "fullgraph": true,
@@ -7968,6 +7978,7 @@
         "recompile_limit": null
       },
       {
+        "backward_through_sum": false,
         "category": "tensor_arithmetic",
         "dynamic": null,
         "fullgraph": true,
@@ -7978,6 +7989,7 @@
         "recompile_limit": null
       },
       {
+        "backward_through_sum": true,
         "category": "training_autograd",
         "dynamic": null,
         "fullgraph": true,
@@ -7988,6 +8000,7 @@
         "recompile_limit": null
       },
       {
+        "backward_through_sum": false,
         "category": "broadcasting",
         "dynamic": null,
         "fullgraph": true,
@@ -7998,6 +8011,7 @@
         "recompile_limit": null
       },
       {
+        "backward_through_sum": false,
         "category": "broadcasting",
         "dynamic": null,
         "fullgraph": true,
@@ -8008,6 +8022,7 @@
         "recompile_limit": null
       },
       {
+        "backward_through_sum": false,
         "category": "broadcasting",
         "dynamic": null,
         "fullgraph": true,
@@ -8018,6 +8033,7 @@
         "recompile_limit": null
       },
       {
+        "backward_through_sum": false,
         "category": "broadcasting",
         "dynamic": null,
         "fullgraph": true,
@@ -8028,6 +8044,7 @@
         "recompile_limit": null
       },
       {
+        "backward_through_sum": false,
         "category": "inference",
         "dynamic": null,
         "fullgraph": true,
@@ -8038,6 +8055,7 @@
         "recompile_limit": null
       },
       {
+        "backward_through_sum": false,
         "category": "recompilation_guards",
         "dynamic": null,
         "fullgraph": true,
@@ -8048,6 +8066,7 @@
         "recompile_limit": 4
       },
       {
+        "backward_through_sum": false,
         "category": "recompilation_guards",
         "dynamic": null,
         "fullgraph": true,
@@ -8058,6 +8077,7 @@
         "recompile_limit": 4
       },
       {
+        "backward_through_sum": false,
         "category": "recompilation_guards",
         "dynamic": null,
         "fullgraph": true,

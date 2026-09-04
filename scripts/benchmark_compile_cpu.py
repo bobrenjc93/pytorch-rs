@@ -342,6 +342,7 @@ def _corpus_metadata(corpus_module):
             "mode": case.mode,
             "options": case.options,
             "recompile_limit": case.recompile_limit,
+            "backward_through_sum": getattr(case, "backward_through_sum", False),
         }
 
     def step_summary(step):
@@ -453,6 +454,35 @@ def _materialized_payload(tensor):
     }
 
 
+def _input_payloads(inputs):
+    return [_materialized_payload(input) for input in inputs]
+
+
+def _tensor_grad_payload(tensor):
+    grad = getattr(tensor, "grad", None)
+    if grad is None:
+        return None
+    return _materialized_payload(grad)
+
+
+def _input_grad_payloads(inputs):
+    return [_tensor_grad_payload(input) for input in inputs]
+
+
+def _retain_grad_for_backward(inputs):
+    for input in inputs:
+        if getattr(input, "requires_grad", False):
+            input.retain_grad()
+
+
+def _assert_payload_match(actual, expected, *, cell_name, label):
+    if actual != expected:
+        raise AssertionError(
+            f"{cell_name} {label} mismatch:\n"
+            f"actual={actual!r}\nexpected={expected!r}"
+        )
+
+
 def _checksum_tensor(tensor):
     payload = json.dumps(
         _materialized_payload(tensor),
@@ -464,13 +494,66 @@ def _checksum_tensor(tensor):
 
 
 def _assert_outputs_match(actual, expected, *, cell_name):
-    actual_payload = _materialized_payload(actual)
-    expected_payload = _materialized_payload(expected)
-    if actual_payload != expected_payload:
-        raise AssertionError(
-            f"{cell_name} output mismatch:\n"
-            f"actual={actual_payload!r}\nexpected={expected_payload!r}"
-        )
+    _assert_payload_match(
+        _materialized_payload(actual),
+        _materialized_payload(expected),
+        cell_name=cell_name,
+        label="output",
+    )
+
+
+def _assert_backward_through_sum_matches(
+    actual_output,
+    actual_inputs,
+    expected_output,
+    expected_inputs,
+    *,
+    cell_name,
+):
+    if not getattr(actual_output, "requires_grad", False):
+        raise AssertionError(f"{cell_name} output does not require grad")
+    if not getattr(expected_output, "requires_grad", False):
+        raise AssertionError(f"{cell_name} reference output does not require grad")
+
+    _retain_grad_for_backward(actual_inputs)
+    _retain_grad_for_backward(expected_inputs)
+    actual_inputs_before = _input_payloads(actual_inputs)
+    expected_inputs_before = _input_payloads(expected_inputs)
+    _assert_payload_match(
+        _input_grad_payloads(actual_inputs),
+        _input_grad_payloads(expected_inputs),
+        cell_name=cell_name,
+        label="input gradients before backward",
+    )
+
+    expected_output.sum().backward()
+    actual_output.sum().backward()
+
+    _assert_payload_match(
+        _input_grad_payloads(actual_inputs),
+        _input_grad_payloads(expected_inputs),
+        cell_name=cell_name,
+        label="leaf gradients after backward-through-sum",
+    )
+    _assert_payload_match(
+        _input_payloads(actual_inputs),
+        actual_inputs_before,
+        cell_name=cell_name,
+        label="inputs after backward-through-sum",
+    )
+    _assert_payload_match(
+        _input_payloads(expected_inputs),
+        expected_inputs_before,
+        cell_name=cell_name,
+        label="reference inputs after backward-through-sum",
+    )
+
+
+def _should_validate_backward_through_sum(case, measured):
+    return (
+        getattr(case, "backward_through_sum", False)
+        and measured["output_metadata"]["requires_grad"]
+    )
 
 
 def _assert_timing_checksums_match(measured, expected, *, cell_name):
@@ -577,6 +660,7 @@ def _run_cell(
         "steady": _summarize_samples(sample_ns, variant.repeats),
         "steady_checksums": sorted(set(sample_checksums)),
         "cold_output": cold_output,
+        "inputs": inputs,
         "input_metadata": [_tensor_metadata(input) for input in inputs],
         "output_metadata": _tensor_metadata(cold_output),
     }
@@ -908,6 +992,7 @@ def _measure_one_pass(
         "input_metadata": result["input_metadata"],
         "output_metadata": result["output_metadata"],
         "cold_output": result["cold_output"],
+        "inputs": result["inputs"],
     }
 
 
@@ -947,6 +1032,8 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                         expected,
                         cell_name=f"{cell_key}/{implementation}",
                     )
+                    backward_expected = expected
+                    backward_expected_inputs = expected_inputs
                     if implementation == "torch_rs":
                         reference_inputs = _cell_input_factory(
                             case,
@@ -959,10 +1046,20 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                             reference_expected,
                             cell_name=cell_key,
                         )
+                        backward_expected = reference_expected
+                        backward_expected_inputs = reference_inputs
                         _assert_timing_checksums_match(
                             measured,
                             reference_expected,
                             cell_name=cell_key,
+                        )
+                    if _should_validate_backward_through_sum(case, measured):
+                        _assert_backward_through_sum_matches(
+                            measured["cold_output"],
+                            measured["inputs"],
+                            backward_expected,
+                            backward_expected_inputs,
+                            cell_name=f"{cell_key}/{implementation}",
                         )
 
     rows = []
@@ -1370,6 +1467,25 @@ def _validate_expected_artifact_shape(report):
         )
     if report.get("aggregates", {}).get("timed_supported_cell_count") != len(cases):
         errors.append("aggregate timed cell count does not match cases")
+    expected_training_backward_cases = {
+        case.name
+        for case in expected_public_cases
+        if getattr(case, "backward_through_sum", False)
+    }
+    grad_enabled_training_cases = {
+        row.get("case")
+        for row in cases
+        if row.get("case") in expected_training_backward_cases
+        and row.get("output_metadata", {}).get("requires_grad") is True
+    }
+    missing_training_backward_cases = (
+        expected_training_backward_cases - grad_enabled_training_cases
+    )
+    if missing_training_backward_cases:
+        errors.append(
+            "missing grad-enabled training-autograd timed cells: "
+            f"{sorted(missing_training_backward_cases)!r}"
+        )
 
     guard_sequences = report.get("recompilation_guard_sequences", [])
     guard_step_count = sum(len(row.get("steps", ())) for row in guard_sequences)
