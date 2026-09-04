@@ -15,7 +15,7 @@ except ImportError:
 
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-COMPILE_CORPUS_VERSION = "torch_compile_corpus_v4"
+COMPILE_CORPUS_VERSION = "torch_compile_corpus_v5"
 
 CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -69,6 +69,12 @@ def cpu_float32_add_unary_composition(x):
     return (y + z).add(x.negative())
 
 
+def cpu_float32_training_unary_neg_abs_add(x):
+    y = x.neg()
+    z = y.abs()
+    return z.add(x.negative())
+
+
 def cpu_float32_self_add_inputs(module):
     return (
         module.tensor(
@@ -100,6 +106,11 @@ def cpu_float32_tensor_scalar_add(x, y):
 
 def cpu_float32_scalar_tensor_add(x, y):
     return x.add(y.neg())
+
+
+def cpu_float32_heldout_training_broadcast_neg_abs_add(x, y):
+    z = x.neg() + y.abs()
+    return z.add(y.negative()).abs()
 
 
 def cpu_float32_heldout_broadcast_chain(x, y):
@@ -155,6 +166,31 @@ def cpu_float32_matrix_vector_requires_grad_inputs(module):
             requires_grad=True,
         ),
         module.tensor([0.5, -1.5, 2.5], dtype=module.float32),
+    )
+
+
+def cpu_float32_training_unary_requires_grad_inputs(module):
+    return (
+        module.tensor(
+            [[-1.5, 2.0, -3.25], [4.5, -5.75, 6.25]],
+            dtype=module.float32,
+            requires_grad=True,
+        ),
+    )
+
+
+def cpu_float32_training_broadcast_requires_grad_inputs(module):
+    return (
+        module.tensor(
+            [[-1.0, 2.0, -3.0], [4.0, -5.0, 6.0]],
+            dtype=module.float32,
+            requires_grad=True,
+        ),
+        module.tensor(
+            [0.5, -1.5, 2.5],
+            dtype=module.float32,
+            requires_grad=True,
+        ),
     )
 
 
@@ -351,6 +387,7 @@ class CompileCorpusCase:
     mode: object = None
     options: object = None
     recompile_limit: object = None
+    backward_through_sum: bool = False
 
     def compile_kwargs(self, backend):
         kwargs = {
@@ -421,6 +458,13 @@ COMPILE_CORPUS = (
         make_inputs=cpu_float32_empty_matrix_inputs,
     ),
     CompileCorpusCase(
+        name="cpu_float32_training_unary_neg_abs_add",
+        category="training_autograd",
+        program=cpu_float32_training_unary_neg_abs_add,
+        make_inputs=cpu_float32_training_unary_requires_grad_inputs,
+        backward_through_sum=True,
+    ),
+    CompileCorpusCase(
         name="cpu_float32_matrix_vector_add",
         category="broadcasting",
         program=cpu_float32_matrix_vector_add,
@@ -480,6 +524,13 @@ COMPILE_HELD_OUT_CORPUS = (
         category="broadcasting",
         program=cpu_float32_heldout_scalar_left_broadcast,
         make_inputs=cpu_float32_scalar_tensor_inputs,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_heldout_training_broadcast_neg_abs_add",
+        category="training_autograd",
+        program=cpu_float32_heldout_training_broadcast_neg_abs_add,
+        make_inputs=cpu_float32_training_broadcast_requires_grad_inputs,
+        backward_through_sum=True,
     ),
     CompileCorpusCase(
         name="cpu_float32_heldout_guard_unary_metadata",
@@ -748,12 +799,32 @@ def assert_tensor_observables_match(testcase, actual, expected, *, case):
     )
 
 
+def assert_leaf_gradients_match(testcase, actual_inputs, expected_inputs, *, case):
+    testcase.assertEqual(len(actual_inputs), len(expected_inputs), msg=case)
+    for index, (actual_input, expected_input) in enumerate(
+        zip(actual_inputs, expected_inputs)
+    ):
+        actual_grad = actual_input.grad
+        expected_grad = expected_input.grad
+        with testcase.subTest(case=case, input=index, gradient=True):
+            if expected_grad is None:
+                testcase.assertIsNone(actual_grad)
+                continue
+            testcase.assertIsNotNone(actual_grad)
+            assert_tensor_observables_match(
+                testcase,
+                actual_grad,
+                expected_grad,
+                case=f"{case}/input{index}/grad",
+            )
+
+
 class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
-        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v4")
+        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v5")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(len(COMPILE_CORPUS), 12)
-        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 4)
+        self.assertEqual(len(COMPILE_CORPUS), 13)
+        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 5)
 
         case_names = [case.name for case in COMPILE_CORPUS]
         self.assertEqual(
@@ -764,6 +835,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_abs_neg_reordered",
                 "cpu_float32_repeated_unary_chain",
                 "cpu_float32_add_unary_composition",
+                "cpu_float32_training_unary_neg_abs_add",
                 "cpu_float32_matrix_vector_add",
                 "cpu_float32_matrix_vector_add_method",
                 "cpu_float32_tensor_scalar_add",
@@ -779,6 +851,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
             [
                 "cpu_float32_heldout_broadcast_chain",
                 "cpu_float32_heldout_scalar_left_broadcast",
+                "cpu_float32_heldout_training_broadcast_neg_abs_add",
                 "cpu_float32_heldout_guard_unary_metadata",
                 "cpu_float32_heldout_guard_binary_metadata",
             ],
@@ -787,7 +860,12 @@ class CompileCorpusMetadataTests(unittest.TestCase):
         categories = {case.category for case in COMPILE_CORPUS}
         self.assertEqual(
             categories,
-            {"tensor_arithmetic", "broadcasting", "recompilation_guards"},
+            {
+                "tensor_arithmetic",
+                "broadcasting",
+                "training_autograd",
+                "recompilation_guards",
+            },
         )
         for case in COMPILE_CORPUS:
             with self.subTest(case=case.name):
@@ -800,14 +878,25 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                     self.assertIn(case.recompile_limit, (2, 4))
                 else:
                     self.assertIsNone(case.recompile_limit)
+                self.assertIs(
+                    case.backward_through_sum,
+                    case.category == "training_autograd",
+                )
         for case in COMPILE_HELD_OUT_CORPUS:
             with self.subTest(held_out_case=case.name):
-                self.assertIn(case.category, {"broadcasting", "recompilation_guards"})
+                self.assertIn(
+                    case.category,
+                    {"broadcasting", "training_autograd", "recompilation_guards"},
+                )
                 self.assertIn(case.category, CATEGORY_WEIGHTS)
                 self.assertTrue(case.fullgraph)
                 self.assertIsNone(case.dynamic)
                 self.assertIsNone(case.mode)
                 self.assertIsNone(case.options)
+                self.assertIs(
+                    case.backward_through_sum,
+                    case.category == "training_autograd",
+                )
         self.assertNotIn("_compile_trace", torch.__all__)
         self.assertNotIn("_compile_trace_tensor_metadata", torch._C.__all__)
         self.assertNotIn("_compile_trace_grad_enabled", torch._C.__all__)
@@ -894,6 +983,9 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                     self.assertIs(type(input), torch.Tensor)
                     self.assertIs(input.dtype, torch.float32)
                     self.assertEqual(input.device, torch.device("cpu"))
+                if case.category == "training_autograd":
+                    self.assertTrue(case.backward_through_sum)
+                    self.assertTrue(all(input.requires_grad for input in inputs))
 
         for scenario in compile_recompilation_guard_scenarios(include_held_out=True):
             for step in scenario.steps:
@@ -1013,6 +1105,11 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 cpu_float32_add_unary_composition,
                 cpu_float32_empty_matrix_inputs,
                 ["neg", "abs", "add", "neg", "add"],
+            ),
+            (
+                cpu_float32_training_unary_neg_abs_add,
+                cpu_float32_training_unary_requires_grad_inputs,
+                ["neg", "abs", "neg", "add"],
             ),
             (
                 cpu_float32_matrix_vector_add,
@@ -2484,7 +2581,11 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
         backend_calls = []
         backend = make_recording_backend(backend_calls)
         inputs = case.make_inputs(reference_torch)
-        expected = case.program(*case.make_inputs(reference_torch))
+        expected_inputs = case.make_inputs(reference_torch)
+        expected = case.program(*expected_inputs)
+        if case.backward_through_sum:
+            self.assertTrue(any(input.requires_grad for input in expected_inputs))
+            expected.sum().backward()
 
         for index, tensor in enumerate(inputs):
             with self.subTest(case=case.name, input=index):
@@ -2502,6 +2603,14 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
         self.assertIs(actual.dtype, expected.dtype)
         self.assertEqual(actual.device, expected.device)
         self.assertEqual(actual.requires_grad, expected.requires_grad)
+        if case.backward_through_sum:
+            actual.sum().backward()
+            assert_leaf_gradients_match(
+                self,
+                inputs,
+                expected_inputs,
+                case=f"{case.name}/reference_backward_sum",
+            )
         self.assertGreaterEqual(len(backend_calls), 1)
 
     def test_reference_pytorch_2_13_accepts_all_eligible_cases(self):
@@ -2551,7 +2660,10 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
 
                 inputs = case.make_inputs(torch)
                 expected = case.program(*case.make_inputs(torch))
-                reference_expected = case.program(*case.make_inputs(reference_torch))
+                reference_inputs = case.make_inputs(reference_torch)
+                reference_expected = case.program(*reference_inputs)
+                if case.backward_through_sum:
+                    reference_expected.sum().backward()
                 compiled = torch.compile(
                     case.program,
                     **case.compile_kwargs("eager"),
@@ -2573,6 +2685,14 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                     actual.requires_grad,
                     reference_expected.requires_grad,
                 )
+                if case.backward_through_sum:
+                    actual.sum().backward()
+                    assert_leaf_gradients_match(
+                        self,
+                        inputs,
+                        reference_inputs,
+                        case=f"{case.name}/torch_rs_backward_sum",
+                    )
 
 
 if __name__ == "__main__":
