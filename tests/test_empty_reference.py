@@ -159,6 +159,25 @@ class EmptyReferenceTests(unittest.TestCase):
         )
         self.assertEqual(actual_dimension.calls, expected_dimension.calls)
 
+    def test_arbitrary_sequence_size_containers_match_pytorch_2_13_rejections(self):
+        cases = (
+            ("range", lambda module: module.empty(range(2))),
+            ("numpy array", lambda module: module.empty(np.array([2, 3]))),
+            ("bytearray", lambda module: module.empty(bytearray([2, 3]))),
+            (
+                "memoryview",
+                lambda module: module.empty(memoryview(bytearray([2, 3]))),
+            ),
+        )
+        for case, call in cases:
+            with self.subTest(case=case):
+                actual_type, actual_message = self.capture_error(lambda: call(torch))
+                expected_type, expected_message = self.capture_error(
+                    lambda: call(reference_torch)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(actual_message, expected_message)
+
     def test_requires_grad_leaf_behavior_matches_pytorch_2_13_under_no_grad(self):
         with torch.no_grad():
             actual_default = torch.empty((2, 3))

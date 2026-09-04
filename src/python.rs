@@ -10573,42 +10573,45 @@ fn parse_creation_size<'py>(
         return Ok(size);
     }
 
-    let sequence_error = match value.extract::<Vec<usize>>() {
-        Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
-        Err(error) => error,
-    };
     if !matches!(function, "empty" | "zeros" | "ones") || origin != CreationSizeOrigin::Positional {
-        return Err(sequence_error);
+        return Err(creation_dimension_type_error(function, value)?);
     }
 
-    bind_creation_positional_dimension(function, value, sequence_error)
+    bind_creation_positional_dimension(function, value)
 }
 
 fn parse_creation_sequence_size<'py>(
     function: &str,
     value: &Bound<'py, PyAny>,
 ) -> PyResult<Option<PendingCreationSize<'py>>> {
-    if value.cast::<PyString>().is_ok() || value.cast::<PyBytes>().is_ok() {
-        return Ok(None);
+    if let Ok(sequence) = value.cast::<PyList>() {
+        return parse_creation_sequence_dimensions(function, sequence.len(), sequence.iter())
+            .map(Some);
     }
-    let Ok(sequence) = value.cast::<PySequence>() else {
-        return Ok(None);
-    };
+    if let Ok(sequence) = value.cast::<PyTuple>() {
+        return parse_creation_sequence_dimensions(function, sequence.len(), sequence.iter())
+            .map(Some);
+    }
+    Ok(None)
+}
 
-    let length = sequence.len()?;
+fn parse_creation_sequence_dimensions<'py>(
+    function: &str,
+    length: usize,
+    dimension_values: impl Iterator<Item = Bound<'py, PyAny>>,
+) -> PyResult<PendingCreationSize<'py>> {
     let mut dimensions = try_size_vector(length)?;
     let mut negative_shape: Option<(i64, Vec<i64>)> = None;
-    for index in 0..length {
-        let dimension = sequence.get_item(index)?;
+    for (index, dimension) in dimension_values.enumerate() {
         let indexed = match index_creation_sequence_dimension(function, index, &dimension)? {
             Ok(indexed) => indexed,
-            Err(error) => return Ok(Some(PendingCreationSize::DeferredSequenceError(error))),
+            Err(error) => return Ok(PendingCreationSize::DeferredSequenceError(error)),
         };
         let position = index + 1;
         let Ok(dimension) = indexed.extract::<i64>() else {
-            return Ok(Some(PendingCreationSize::DeferredSequenceError(
+            return Ok(PendingCreationSize::DeferredSequenceError(
                 DeferredCreationSizeError::Overflow { position },
-            )));
+            ));
         };
 
         if let Some((_, shape)) = &mut negative_shape {
@@ -10627,19 +10630,19 @@ fn parse_creation_sequence_size<'py>(
             continue;
         }
         let Ok(dimension) = usize::try_from(dimension) else {
-            return Ok(Some(PendingCreationSize::DeferredSequenceError(
+            return Ok(PendingCreationSize::DeferredSequenceError(
                 DeferredCreationSizeError::Overflow { position },
-            )));
+            ));
         };
         try_push_size(&mut dimensions, dimension)?;
     }
 
     if let Some((dimension, shape)) = negative_shape {
-        return Ok(Some(PendingCreationSize::DeferredSequenceError(
+        return Ok(PendingCreationSize::DeferredSequenceError(
             DeferredCreationSizeError::Negative { dimension, shape },
-        )));
+        ));
     }
-    Ok(Some(PendingCreationSize::Dimensions(dimensions)))
+    Ok(PendingCreationSize::Dimensions(dimensions))
 }
 
 fn index_creation_sequence_dimension<'py>(
@@ -10676,7 +10679,6 @@ fn index_creation_sequence_dimension<'py>(
 fn bind_creation_positional_dimension<'py>(
     function: &str,
     dimension: &Bound<'py, PyAny>,
-    sequence_error: PyErr,
 ) -> PyResult<PendingCreationSize<'py>> {
     if dimension.is_instance_of::<PyBool>() {
         return Err(creation_dimension_type_error(function, dimension)?);
@@ -10689,9 +10691,6 @@ fn bind_creation_positional_dimension<'py>(
             .and_then(|operator| operator.getattr("index"))
             .and_then(|index| index.call1((dimension,)));
         let Ok(indexed) = indexed else {
-            if dimension.cast::<PySequence>().is_ok() {
-                return Err(sequence_error);
-            }
             return Err(creation_dimension_type_error(function, dimension)?);
         };
         indexed

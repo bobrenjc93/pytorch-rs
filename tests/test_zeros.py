@@ -307,7 +307,7 @@ class ZerosTests(unittest.TestCase):
         ):
             torch.zeros(sys.maxsize, 2)
 
-    def test_existing_sequence_and_keyword_forms_are_unchanged(self):
+    def test_tuple_list_keyword_forms_and_sequence_rejections(self):
         class CustomSequence(Sequence):
             def __init__(self, values):
                 self.values = values
@@ -340,21 +340,50 @@ class ZerosTests(unittest.TestCase):
         for size, expected_shape in (
             ((2,), (2,)),
             ([2], (2,)),
-            (np.array([2]), (2,)),
-            (range(2, 4), (2, 3)),
-            (UserList([2]), (2,)),
-            (CustomSequence([2]), (2,)),
+            (torch.Size([2, 3]), (2, 3)),
+            (TupleIndex((4,)), (4,)),
+            (ListIndex([4]), (4,)),
         ):
             with self.subTest(size=size):
                 tensor = torch.zeros(size)
                 self.assertEqual(tensor.shape, expected_shape)
                 self.assertEqual(tensor.numel(), int(np.prod(expected_shape)))
+                if isinstance(size, (TupleIndex, ListIndex)):
+                    self.assertEqual(size.calls, 0)
 
         self.assertEqual(torch.zeros(size=(2,)).tolist(), [0.0, 0.0])
         self.assertEqual(torch.zeros(shape=(2,)).tolist(), [0.0, 0.0])
-        self.assertEqual(torch.zeros(size=np.array([2])).shape, (2,))
-        self.assertEqual(torch.zeros(shape=UserList([2])).shape, (2,))
+        self.assertEqual(torch.zeros(size=torch.Size([2])).tolist(), [0.0, 0.0])
         self.assertEqual(torch.zeros(None, shape=(2,)).tolist(), [0.0, 0.0])
+
+        unsupported_containers = (
+            ("numpy array", np.array([2])),
+            ("range", range(2, 4)),
+            ("UserList", UserList([2])),
+            ("custom sequence", CustomSequence([2])),
+            ("bytearray", bytearray([2])),
+            ("memoryview", memoryview(bytearray([2]))),
+        )
+        for case, size in unsupported_containers:
+            with self.subTest(case=case):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"zeros\(\): argument 'size' \(position 1\) "
+                    r"must be tuple of ints, not .+$",
+                ):
+                    torch.zeros(size)
+
+        for case, kwargs in (
+            ("size numpy array", {"size": np.array([2])}),
+            ("shape UserList", {"shape": UserList([2])}),
+        ):
+            with self.subTest(case=case):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"zeros\(\): argument 'size' \(position 1\) "
+                    r"must be tuple of ints, not .+$",
+                ):
+                    torch.zeros(**kwargs)
 
         with self.assertRaises(Exception) as direct_shape_error:
             torch.zeros(shape=2)
