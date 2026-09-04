@@ -157,6 +157,37 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
                 cell_name="mutation_probe",
             )
 
+    def test_output_pytree_payloads_include_tensor_observables(self):
+        actual = (
+            torch.tensor([1.0, -2.0], dtype=torch.float32),
+            [torch.tensor([[3.0]], dtype=torch.float32, requires_grad=True)],
+        )
+        expected = (
+            torch.tensor([1.0, -2.0], dtype=torch.float32),
+            [torch.tensor([[3.0]], dtype=torch.float32, requires_grad=True)],
+        )
+
+        benchmark_compile_cpu._assert_outputs_match(
+            actual,
+            expected,
+            cell_name="pytree_output",
+        )
+        payload = benchmark_compile_cpu._materialized_output_payload(actual)
+        metadata = benchmark_compile_cpu._output_metadata(actual)
+
+        self.assertEqual(payload["container"], "tuple")
+        self.assertEqual(payload["elements"][1]["container"], "list")
+        self.assertEqual(metadata["container"], "tuple")
+        self.assertTrue(benchmark_compile_cpu._metadata_requires_grad(metadata))
+        self.assertIn(
+            "tuple[",
+            benchmark_compile_cpu._format_output_metadata(metadata),
+        )
+        self.assertEqual(
+            benchmark_compile_cpu._checksum_tensor(actual),
+            benchmark_compile_cpu._checksum_tensor(expected),
+        )
+
     def test_validator_rejects_stale_pre_inference_artifact_shape(self):
         report = benchmark_compile_cpu._load_artifact(
             benchmark_compile_cpu.DEFAULT_ARTIFACT_PATH,

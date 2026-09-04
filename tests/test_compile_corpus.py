@@ -1855,6 +1855,31 @@ class CompileCorpusTraceTests(unittest.TestCase):
             case="container output graph",
         )
 
+    def test_tuple_list_outputs_preserve_container_aliasing(self):
+        def program(x):
+            y = [x.neg()]
+            return (y, y)
+
+        input = torch.tensor([1.0, -2.0], dtype=torch.float32)
+        graph = _compile_bytecode.lower_compile_graph(
+            program,
+            (_compile_trace._metadata_from_native_tensor(input),),
+            name="container_aliasing",
+        )
+
+        self.assertIs(graph.output.elements[0], graph.output.elements[1])
+        actual = graph.forward(input)
+        expected = program(input)
+
+        self.assertIs(actual[0], actual[1])
+        self.assertIs(expected[0], expected[1])
+        assert_output_observables_match(
+            self,
+            actual,
+            expected,
+            case="container aliasing",
+        )
+
     def test_tuple_list_outputs_reject_non_tensor_leaves_and_dicts(self):
         def scalar_leaf(x):
             return (x, 1)

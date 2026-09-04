@@ -604,7 +604,14 @@ def _output_container_kind(value):
     return None
 
 
-def _output_spec_and_metadata(value, recorder, *, role):
+def _output_spec_and_metadata(
+    value,
+    recorder,
+    *,
+    role,
+    memo=None,
+    in_progress=None,
+):
     if _builtins.isinstance(value, CompileTraceTensorProxy):
         recorder._require_owned_proxy(value)
         return value.name, value.metadata
@@ -617,23 +624,51 @@ def _output_spec_and_metadata(value, recorder, *, role):
             f"got {_type_name(value)} for {role}"
         )
 
+    if memo is None:
+        memo = {}
+    if in_progress is None:
+        in_progress = set()
+    value_id = _builtins.id(value)
+    if value_id in memo:
+        return memo[value_id]
+    if value_id in in_progress:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace does not support cyclic tuple/list output "
+            "containers"
+        )
+
+    in_progress.add(value_id)
     output_elements = []
     metadata_elements = []
-    for index, element in enumerate(value):
-        output_element, metadata_element = _output_spec_and_metadata(
-            element,
-            recorder,
-            role=f"{role}[{index}]",
+    try:
+        for index, element in enumerate(value):
+            output_element, metadata_element = _output_spec_and_metadata(
+                element,
+                recorder,
+                role=f"{role}[{index}]",
+                memo=memo,
+                in_progress=in_progress,
+            )
+            output_elements.append(output_element)
+            metadata_elements.append(metadata_element)
+        result = (
+            CompileTraceOutputContainer(kind, tuple(output_elements)),
+            CompileTraceOutputContainer(kind, tuple(metadata_elements)),
         )
-        output_elements.append(output_element)
-        metadata_elements.append(metadata_element)
-    return (
-        CompileTraceOutputContainer(kind, tuple(output_elements)),
-        CompileTraceOutputContainer(kind, tuple(metadata_elements)),
-    )
+        memo[value_id] = result
+        return result
+    finally:
+        in_progress.remove(value_id)
 
 
-def _materialize_graph_output(output_spec, metadata_spec, values, *, value_name):
+def _materialize_graph_output(
+    output_spec,
+    metadata_spec,
+    values,
+    *,
+    value_name,
+    memo=None,
+):
     if _builtins.isinstance(output_spec, _builtins.str):
         try:
             output = values[output_spec]
@@ -655,6 +690,8 @@ def _materialize_graph_output(output_spec, metadata_spec, values, *, value_name)
         )
         return output
 
+    if memo is None:
+        memo = {}
     if not _builtins.isinstance(output_spec, CompileTraceOutputContainer):
         raise CompileTraceUnsupportedError(
             "torch.compile trace execution graph output is malformed"
@@ -668,20 +705,41 @@ def _materialize_graph_output(output_spec, metadata_spec, values, *, value_name)
             "torch.compile trace execution graph output metadata is malformed"
         )
 
-    elements = tuple(
+    output_spec_id = _builtins.id(output_spec)
+    if output_spec_id in memo:
+        return memo[output_spec_id]
+
+    if output_spec.kind == "list":
+        materialized = []
+        memo[output_spec_id] = materialized
+        materialized.extend(
+            _materialize_graph_output(
+                child_output,
+                child_metadata,
+                values,
+                value_name=f"{value_name}[{index}]",
+                memo=memo,
+            )
+            for index, (child_output, child_metadata) in enumerate(
+                zip(output_spec.elements, metadata_spec.elements)
+            )
+        )
+        return materialized
+
+    materialized = tuple(
         _materialize_graph_output(
             child_output,
             child_metadata,
             values,
             value_name=f"{value_name}[{index}]",
+            memo=memo,
         )
         for index, (child_output, child_metadata) in enumerate(
             zip(output_spec.elements, metadata_spec.elements)
         )
     )
-    if output_spec.kind == "tuple":
-        return elements
-    return list(elements)
+    memo[output_spec_id] = materialized
+    return materialized
 
 
 def _execute_operation(operation, values):
