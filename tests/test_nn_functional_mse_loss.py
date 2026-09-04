@@ -1366,6 +1366,61 @@ class FunctionalMseLossTests(unittest.TestCase):
                 self.assertIsNone(input.grad)
                 self.assertIsNone(target.grad)
 
+    def test_sum_reduction_same_shape_contiguous_active_autograd_accumulates_existing_gradients(
+        self,
+    ):
+        def assert_gradients(actual_sources, expected_sources, *, case):
+            for actual, expected in zip(actual_sources, expected_sources, strict=True):
+                with self.subTest(case=case, source=actual.shape):
+                    self.assertEqual(actual.grad.shape, expected.grad.shape)
+                    self.assertEqual(actual.grad.stride(), expected.grad.stride())
+                    np.testing.assert_array_equal(
+                        self.tensor_bits(actual.grad),
+                        self.tensor_bits(expected.grad),
+                    )
+
+        actual_input = torch.tensor(
+            [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]], requires_grad=True
+        )
+        actual_target = torch.tensor(
+            [[0.5, 2.0, -3.0], [1.0, -1.0, 0.0]], requires_grad=True
+        )
+        expected_input = torch.tensor(
+            [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]], requires_grad=True
+        )
+        expected_target = torch.tensor(
+            [[0.5, 2.0, -3.0], [1.0, -1.0, 0.0]], requires_grad=True
+        )
+
+        self.assertTrue(actual_input.is_contiguous())
+        self.assertTrue(actual_target.is_contiguous())
+        (actual_input * 3.0).sum().backward()
+        (actual_target * -4.0).sum().backward()
+        (expected_input * 3.0).sum().backward()
+        (expected_target * -4.0).sum().backward()
+
+        actual_loss = functional.mse_loss(
+            actual_input,
+            actual_target,
+            reduction="sum",
+        )
+        expected_loss = (expected_input - expected_target).square().sum()
+        self.assert_matches_composition(
+            actual_loss,
+            expected_loss,
+            case="same-shape active autograd",
+        )
+        self.assertTrue(actual_loss.requires_grad)
+        self.assertFalse(actual_loss.is_leaf)
+
+        actual_loss.backward()
+        expected_loss.backward()
+        assert_gradients(
+            (actual_input, actual_target),
+            (expected_input, expected_target),
+            case="same-shape active autograd",
+        )
+
     def test_rank_two_trailing_vector_sum_requires_grad_uses_no_grad_and_active_autograd_fallback(
         self,
     ):

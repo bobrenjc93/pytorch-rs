@@ -3446,6 +3446,10 @@ impl Tensor {
         if self.shape != other.shape
             || self.records_grad()
             || other.records_grad()
+            || self.dtype() != DType::Float32
+            || other.dtype() != DType::Float32
+            || self.device() != Device::Cpu
+            || other.device() != Device::Cpu
             || !self.is_contiguous()
             || !other.is_contiguous()
         {
@@ -12882,6 +12886,39 @@ mod tests {
             shared_left
                 .squared_difference_sum_same_shape_contiguous(&shared_right)
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn squared_difference_sum_active_autograd_fallback_preserves_existing_gradients() {
+        let left = Tensor::from_vec(vec![1.0, -2.0, 3.0, 4.0, -5.0, 6.0], [2, 3])
+            .unwrap()
+            .with_requires_grad(true);
+        let right = Tensor::from_vec(vec![0.5, 2.0, -3.0, 1.0, -1.0, 0.0], [2, 3])
+            .unwrap()
+            .with_requires_grad(true);
+
+        left.mul_scalar(3.0).unwrap().sum().backward().unwrap();
+        right.mul_scalar(-4.0).unwrap().sum().backward().unwrap();
+        assert_eq!(left.grad().unwrap().unwrap().as_slice(), [3.0; 6]);
+        assert_eq!(right.grad().unwrap().unwrap().as_slice(), [-4.0; 6]);
+
+        assert!(
+            left.squared_difference_sum_same_shape_contiguous(&right)
+                .is_none()
+        );
+        let loss = left.squared_difference(&right).unwrap().sum();
+        assert!(loss.requires_grad());
+        assert!(!loss.is_leaf());
+        loss.backward().unwrap();
+
+        assert_eq!(
+            left.grad().unwrap().unwrap().as_slice(),
+            [4.0, -5.0, 15.0, 9.0, -5.0, 15.0]
+        );
+        assert_eq!(
+            right.grad().unwrap().unwrap().as_slice(),
+            [-5.0, 4.0, -16.0, -10.0, 4.0, -16.0]
         );
     }
 
