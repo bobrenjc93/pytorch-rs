@@ -3427,6 +3427,10 @@ impl Tensor {
         if self.shape != other.shape
             || self.records_grad()
             || other.records_grad()
+            || self.dtype() != DType::Float32
+            || other.dtype() != DType::Float32
+            || self.device() != Device::Cpu
+            || other.device() != Device::Cpu
             || !self.is_contiguous()
             || !other.is_contiguous()
         {
