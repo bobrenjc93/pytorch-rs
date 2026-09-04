@@ -143,8 +143,7 @@ class EmptyReferenceTests(unittest.TestCase):
                     self.tensor_metadata(torch, actual),
                     self.tensor_metadata(reference_torch, expected),
                 )
-        self.assertEqual(actual_dynamic.calls, 1)
-        self.assertGreaterEqual(expected_dynamic.calls, 1)
+        self.assertEqual(actual_dynamic.calls, expected_dynamic.calls)
 
     def test_variadic_leading_index_provider_calls_match_pytorch_2_13(self):
         actual_dimension = StatefulIndexDimension((2, 3, 4))
@@ -250,6 +249,50 @@ class EmptyReferenceTests(unittest.TestCase):
                 )
                 self.assertIs(actual_type, expected_type)
                 marker = "failed to unpack the object at pos 1 with error"
+                self.assertIn(marker, actual_message)
+                self.assertIn(marker, expected_message)
+                self.assertIn("Overflow when unpacking long long", actual_message)
+                self.assertIn("Overflow when unpacking long long", expected_message)
+
+        sequence_exact_cases = (
+            (-1,),
+            [-1],
+            (IndexDimension(-1),),
+            [IndexDimension(-1)],
+            (2, -1),
+            [2, -1],
+        )
+        for dimensions in sequence_exact_cases:
+            with self.subTest(dimensions=dimensions):
+                actual_type, actual_message = self.capture_error(
+                    lambda dimensions=dimensions: torch.empty(dimensions)
+                )
+                expected_type, expected_message = self.capture_error(
+                    lambda dimensions=dimensions: reference_torch.empty(dimensions)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(actual_message, expected_message)
+
+        sequence_overflow_cases = (
+            ((2**63, 0), 1),
+            ([2**63, 0], 1),
+            ((0, 2**63), 2),
+            ([0, 2**63], 2),
+            ((np.uint64(2**63), 0), 1),
+            ([np.uint64(2**63), 0], 1),
+            ((IndexDimension(2**63), 0), 1),
+            ([IndexDimension(2**63), 0], 1),
+        )
+        for dimensions, position in sequence_overflow_cases:
+            with self.subTest(dimensions=dimensions):
+                actual_type, actual_message = self.capture_error(
+                    lambda dimensions=dimensions: torch.empty(dimensions)
+                )
+                expected_type, expected_message = self.capture_error(
+                    lambda dimensions=dimensions: reference_torch.empty(dimensions)
+                )
+                self.assertIs(actual_type, expected_type)
+                marker = f"failed to unpack the object at pos {position} with error"
                 self.assertIn(marker, actual_message)
                 self.assertIn(marker, expected_message)
                 self.assertIn("Overflow when unpacking long long", actual_message)

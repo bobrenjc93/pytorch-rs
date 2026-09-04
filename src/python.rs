@@ -6320,7 +6320,7 @@ enum CreationSizeArgument<'py> {
 }
 
 enum PendingCreationSize<'py> {
-    Dimensions(Vec<usize>),
+    Dimensions(Bound<'py, PyAny>),
     PositionalScalar(Bound<'py, PyAny>),
     Variadic(Bound<'py, PyTuple>),
 }
@@ -10560,15 +10560,53 @@ fn parse_creation_size<'py>(
         }
     };
 
-    let sequence_error = match value.extract::<Vec<usize>>() {
-        Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
-        Err(error) => error,
+    let sequence_error = if validate_creation_sequence_size(function, value)? {
+        return Ok(PendingCreationSize::Dimensions(value.clone()));
+    } else {
+        creation_sequence_type_error(function, origin, value)?
     };
     if !matches!(function, "empty" | "zeros" | "ones") || origin != CreationSizeOrigin::Positional {
         return Err(sequence_error);
     }
 
     bind_creation_positional_dimension(function, value, sequence_error)
+}
+
+fn validate_creation_sequence_size(function: &str, value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if !is_sequence_input(value)? {
+        return Ok(false);
+    }
+    let length = value.len()?;
+    for index in 0..length {
+        let dimension = value.get_item(index)?;
+        validate_creation_sequence_dimension_type(function, index, &dimension)?;
+    }
+    Ok(true)
+}
+
+fn validate_creation_sequence_dimension_type(
+    function: &str,
+    index: usize,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    if dimension.is_instance_of::<PyBool>() {
+        return Err(creation_sequence_dimension_type_error_at(
+            function, index, dimension,
+        )?);
+    }
+    if dimension.is_instance_of::<PyInt>() {
+        return Ok(());
+    }
+
+    let indexed = PyModule::import(dimension.py(), "operator")
+        .and_then(|operator| operator.getattr("index"))
+        .and_then(|index| index.call1((dimension,)));
+    let Ok(_) = indexed else {
+        return Err(creation_sequence_dimension_type_error_at(
+            function, index, dimension,
+        )?);
+    };
+    Ok(())
 }
 
 fn bind_creation_positional_dimension<'py>(
@@ -10603,6 +10641,7 @@ fn finish_creation_size(
 ) -> PyResult<ParsedCreationSize> {
     let dimension = match size {
         PendingCreationSize::Dimensions(dimensions) => {
+            let dimensions = parse_creation_dimensions(function, &dimensions)?;
             return Ok(ParsedCreationSize {
                 dimensions,
                 scalar_dimension: None,
@@ -10635,22 +10674,71 @@ fn finish_creation_size(
     })
 }
 
+fn parse_creation_dimensions(
+    function: &str,
+    dimensions: &Bound<'_, PyAny>,
+) -> PyResult<Vec<usize>> {
+    let length = dimensions.len()?;
+    let mut parsed = try_size_vector(length)?;
+    let mut signed_error_shape = None;
+    let mut negative_dimension = None;
+    for index in 0..length {
+        let dimension = dimensions.get_item(index)?;
+        if dimension.is_instance_of::<PyBool>() {
+            return Err(creation_sequence_dimension_type_error_at(
+                function, index, &dimension,
+            )?);
+        }
+        let dimension = extract_variadic_creation_dimension(function, index + 1, &dimension)?;
+        if let Some(signed) = signed_error_shape.as_mut() {
+            try_push_size(signed, dimension)?;
+        } else if dimension < 0 {
+            let mut signed = try_size_vector(length)?;
+            for parsed_dimension in &parsed {
+                try_push_size(
+                    &mut signed,
+                    i64::try_from(*parsed_dimension)
+                        .map_err(|_| creation_dimension_overflow(function))?,
+                )?;
+            }
+            try_push_size(&mut signed, dimension)?;
+            signed_error_shape = Some(signed);
+            negative_dimension = Some(dimension);
+        } else {
+            try_push_size(
+                &mut parsed,
+                usize::try_from(dimension).map_err(|_| creation_dimension_overflow(function))?,
+            )?;
+        }
+    }
+    if let (Some(dimension), Some(shape)) = (negative_dimension, signed_error_shape) {
+        return Err(creation_negative_dimension_error(
+            function, dimension, &shape,
+        ));
+    }
+    Ok(parsed)
+}
+
 fn parse_variadic_creation_dimensions(
     function: &str,
     dimensions: &Bound<'_, PyTuple>,
 ) -> PyResult<Vec<usize>> {
-    let mut parsed = try_size_vector(dimensions.len())?;
     let mut signed = try_size_vector(dimensions.len())?;
     for (index, dimension) in dimensions.iter().enumerate() {
         let position = index + 1;
         let dimension = extract_variadic_creation_dimension(function, position, &dimension)?;
         try_push_size(&mut signed, dimension)?;
     }
+    validate_creation_dimensions(function, signed)
+}
+
+fn validate_creation_dimensions(function: &str, signed: Vec<i64>) -> PyResult<Vec<usize>> {
     if let Some(dimension) = signed.iter().find(|dimension| **dimension < 0) {
         return Err(creation_negative_dimension_error(
             function, *dimension, &signed,
         ));
     }
+    let mut parsed = try_size_vector(signed.len())?;
     for dimension in signed {
         try_push_size(
             &mut parsed,
@@ -10700,9 +10788,33 @@ fn creation_sequence_dimension_type_error(
     function: &str,
     dimension: &Bound<'_, PyAny>,
 ) -> PyResult<PyErr> {
+    creation_sequence_dimension_type_error_at(function, 0, dimension)
+}
+
+fn creation_sequence_dimension_type_error_at(
+    function: &str,
+    index: usize,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
     let type_name = python_type_name(dimension)?;
     Ok(PyTypeError::new_err(format!(
-        "{function}(): argument 'size' (position 1) must be tuple of ints, but found element of type {type_name} at pos 0"
+        "{function}(): argument 'size' (position 1) must be tuple of ints, but found element of type {type_name} at pos {index}"
+    )))
+}
+
+fn creation_sequence_type_error(
+    function: &str,
+    origin: CreationSizeOrigin,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    let type_name = python_type_name(value)?;
+    let position = if origin == CreationSizeOrigin::Positional {
+        " (position 1)"
+    } else {
+        ""
+    };
+    Ok(PyTypeError::new_err(format!(
+        "{function}(): argument 'size'{position} must be tuple of ints, not {type_name}"
     )))
 }
 
