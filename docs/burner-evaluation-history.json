@@ -10357,12 +10357,12 @@
       }
     },
     {
-      "key": "pr:1842",
-      "recordedAt": "2026-09-04T15:59:41.823Z",
-      "label": "PR #1842",
+      "key": "pr:1843",
+      "recordedAt": "2026-09-04T16:17:42.498Z",
+      "label": "PR #1843",
       "kind": "leaf",
-      "prNumber": 1842,
-      "title": "Fast dense transposed subtract",
+      "prNumber": 1843,
+      "title": "Add private CUDA driver probe",
       "scores": {
         "eval_7af648fb": 100,
         "eval_8417a4a8": 100,
