@@ -111,28 +111,30 @@ def cpu_float32_heldout_scalar_left_broadcast(x, y):
     return (x.neg() + y).absolute()
 
 
-def cpu_float32_guard_shape_change(x):
-    return x.neg().abs() + x
+def cpu_float32_recompile_guard_unary_metadata(x):
+    y = x.neg()
+    return y.abs().add(x)
 
 
-def cpu_float32_guard_stride_change(x):
-    return x.abs().neg() + x
+def cpu_float32_recompile_guard_binary_metadata(x, y):
+    z = x + y.abs()
+    return z.negative()
 
 
-def cpu_float32_guard_requires_grad_change(x):
-    return x + x.abs()
+def cpu_float32_recompile_limit_reset(x):
+    y = x.abs()
+    return y.add(x.neg())
 
 
-def cpu_float32_guard_two_input_metadata_change(x, y):
-    return x.add(y.abs())
+def cpu_float32_heldout_guard_unary_metadata(x):
+    y = x.abs()
+    z = y.add(x.negative())
+    return z.neg()
 
 
-def cpu_float32_heldout_guard_unary_chain(x):
-    return x.negative().abs().add(x.neg())
-
-
-def cpu_float32_heldout_guard_broadcast_chain(x, y):
-    return (x.neg() + y.absolute()).abs()
+def cpu_float32_heldout_guard_binary_metadata(x, y):
+    y_abs = y.abs()
+    return (x.neg().add(y_abs)).absolute()
 
 
 def cpu_float32_matrix_vector_inputs(module):
@@ -177,197 +179,164 @@ def cpu_float32_scalar_tensor_inputs(module):
     )
 
 
-def cpu_float32_guard_dense_2x3_inputs(module):
+def cpu_float32_recompile_guard_unary_inputs(module):
     return (
         module.tensor(
-            [[-2.0, 3.0, -4.0], [5.0, -6.0, 7.0]],
+            [[-2.0, 3.0, -4.0], [5.5, -6.5, 7.25]],
             dtype=module.float32,
         ),
     )
 
 
-def cpu_float32_guard_dense_2x3_same_metadata_inputs(module):
+def cpu_float32_recompile_guard_unary_same_metadata_inputs(module):
     return (
         module.tensor(
-            [[1.5, -2.5, 3.5], [-4.5, 5.5, -6.5]],
+            [[1.0, -1.5, 2.5], [-3.5, 4.5, -5.5]],
             dtype=module.float32,
         ),
     )
 
 
-def cpu_float32_guard_vector_5_inputs(module):
+def cpu_float32_recompile_guard_unary_shape_inputs(module):
     return (
         module.tensor(
-            [-3.5, 0.0, 4.5, -5.5, 6.5],
+            [-1.25, 2.5, -3.75, 4.0, -5.5],
             dtype=module.float32,
         ),
     )
 
 
-def cpu_float32_guard_stride_contiguous_inputs(module):
-    return (
-        module.tensor(
-            [[-1.0, 2.0, -3.0], [4.0, -5.0, 6.0]],
-            dtype=module.float32,
-        ),
-    )
-
-
-def cpu_float32_guard_stride_same_metadata_inputs(module):
-    return (
-        module.tensor(
-            [[6.0, -5.0, 4.0], [-3.0, 2.0, -1.0]],
-            dtype=module.float32,
-        ),
-    )
-
-
-def cpu_float32_guard_stride_transposed_inputs(module):
+def cpu_float32_recompile_guard_unary_stride_inputs(module):
     base = module.tensor(
-        [[-1.0, 4.0], [2.0, -5.0], [-3.0, 6.0]],
+        [[-2.0, 5.5], [3.0, -6.5], [-4.0, 7.25]],
         dtype=module.float32,
+    )
+    return (base.t(),)
+
+
+def cpu_float32_recompile_guard_unary_requires_grad_inputs(module):
+    return (
+        module.tensor(
+            [[-2.0, 3.0, -4.0], [5.5, -6.5, 7.25]],
+            dtype=module.float32,
+            requires_grad=True,
+        ),
+    )
+
+
+def cpu_float32_recompile_guard_binary_inputs(module):
+    return (
+        module.tensor(
+            [[-3.0, 0.5, 4.0], [2.25, -5.5, 6.75]],
+            dtype=module.float32,
+        ),
+        module.tensor([1.0, -2.0, 0.25], dtype=module.float32),
+    )
+
+
+def cpu_float32_recompile_guard_binary_same_metadata_inputs(module):
+    return (
+        module.tensor(
+            [[1.25, -2.5, 3.75], [-4.0, 5.5, -6.25]],
+            dtype=module.float32,
+        ),
+        module.tensor([-0.75, 1.5, -2.25], dtype=module.float32),
+    )
+
+
+def cpu_float32_recompile_guard_binary_left_stride_inputs(module):
+    base = module.tensor(
+        [[-3.0, 2.25], [0.5, -5.5], [4.0, 6.75]],
+        dtype=module.float32,
+    )
+    return (
+        base.t(),
+        module.tensor([1.0, -2.0, 0.25], dtype=module.float32),
+    )
+
+
+def cpu_float32_recompile_guard_binary_right_shape_inputs(module):
+    return (
+        module.tensor(
+            [[-3.0, 0.5, 4.0], [2.25, -5.5, 6.75]],
+            dtype=module.float32,
+        ),
+        module.tensor([[-0.25, 0.5, -0.75]], dtype=module.float32),
+    )
+
+
+def cpu_float32_recompile_guard_binary_requires_grad_inputs(module):
+    return (
+        module.tensor(
+            [[-3.0, 0.5, 4.0], [2.25, -5.5, 6.75]],
+            dtype=module.float32,
+        ),
+        module.tensor(
+            [1.0, -2.0, 0.25],
+            dtype=module.float32,
+            requires_grad=True,
+        ),
+    )
+
+
+def cpu_float32_heldout_guard_unary_inputs(module):
+    return (
+        module.tensor(
+            [[[-1.0, 2.0], [3.5, -4.5], [5.25, -6.25]]],
+            dtype=module.float32,
+        ),
+    )
+
+
+def cpu_float32_heldout_guard_unary_shape_inputs(module):
+    return (
+        module.tensor(
+            [[[1.0], [-2.0]], [[3.0], [-4.0]]],
+            dtype=module.float32,
+        ),
+    )
+
+
+def cpu_float32_heldout_guard_unary_stride_requires_grad_inputs(module):
+    base = module.tensor(
+        [[[-1.0], [2.0]], [[3.5], [-4.5]], [[5.25], [-6.25]]],
+        dtype=module.float32,
+        requires_grad=True,
     )
     return (base.transpose(0, 1),)
 
 
-def cpu_float32_guard_no_grad_inputs(module):
-    return (
-        module.tensor(
-            [[-2.5, 3.5], [4.5, -5.5]],
-            dtype=module.float32,
-        ),
-    )
-
-
-def cpu_float32_guard_no_grad_same_metadata_inputs(module):
-    return (
-        module.tensor(
-            [[1.25, -2.25], [-3.25, 4.25]],
-            dtype=module.float32,
-        ),
-    )
-
-
-def cpu_float32_guard_requires_grad_inputs(module):
-    return (
-        module.tensor(
-            [[-2.5, 3.5], [4.5, -5.5]],
-            dtype=module.float32,
-            requires_grad=True,
-        ),
-    )
-
-
-def cpu_float32_guard_two_input_base_inputs(module):
-    return (
-        module.tensor(
-            [[-2.0, 3.0, -4.0], [5.0, -6.0, 7.0]],
-            dtype=module.float32,
-        ),
-        module.tensor([1.0, -1.5, 2.5], dtype=module.float32),
-    )
-
-
-def cpu_float32_guard_two_input_same_metadata_inputs(module):
-    return (
-        module.tensor(
-            [[4.0, -3.0, 2.0], [-1.0, 0.5, -0.25]],
-            dtype=module.float32,
-        ),
-        module.tensor([-2.0, 3.5, -4.5], dtype=module.float32),
-    )
-
-
-def cpu_float32_guard_two_input_right_shape_inputs(module):
-    return (
-        module.tensor(
-            [[-2.0, 3.0, -4.0], [5.0, -6.0, 7.0]],
-            dtype=module.float32,
-        ),
-        module.tensor([[1.0, -1.5, 2.5]], dtype=module.float32),
-    )
-
-
-def cpu_float32_guard_two_input_left_stride_inputs(module):
-    base = module.tensor(
-        [[-2.0, 5.0], [3.0, -6.0], [-4.0, 7.0]],
-        dtype=module.float32,
-    )
-    return (
-        base.transpose(0, 1),
-        module.tensor([1.0, -1.5, 2.5], dtype=module.float32),
-    )
-
-
-def cpu_float32_guard_two_input_requires_grad_inputs(module):
-    return (
-        module.tensor(
-            [[-2.0, 3.0, -4.0], [5.0, -6.0, 7.0]],
-            dtype=module.float32,
-        ),
-        module.tensor(
-            [1.0, -1.5, 2.5],
-            dtype=module.float32,
-            requires_grad=True,
-        ),
-    )
-
-
-def cpu_float32_heldout_guard_scalar_inputs(module):
-    return (module.tensor(-2.25, dtype=module.float32),)
-
-
-def cpu_float32_heldout_guard_empty_inputs(module):
-    return (module.tensor([[], []], dtype=module.float32),)
-
-
-def cpu_float32_heldout_guard_empty_requires_grad_inputs(module):
-    return (
-        module.tensor(
-            [[], []],
-            dtype=module.float32,
-            requires_grad=True,
-        ),
-    )
-
-
-def cpu_float32_heldout_guard_offset_stride_inputs(module):
-    base = module.tensor(
-        [[-3.0, 1.0, 4.0], [2.0, -5.0, 6.0]],
-        dtype=module.float32,
-    )
-    return (base.transpose(0, 1)[1],)
-
-
-def cpu_float32_heldout_guard_broadcast_base_inputs(module):
+def cpu_float32_heldout_guard_binary_inputs(module):
     return (
         module.tensor(
             [[[-1.0, 2.0, -3.0]], [[4.0, -5.0, 6.0]]],
             dtype=module.float32,
         ),
-        module.tensor([[0.5, -1.5, 2.5]], dtype=module.float32),
+        module.tensor([[0.25, -0.5, 0.75]], dtype=module.float32),
     )
 
 
-def cpu_float32_heldout_guard_broadcast_stride_inputs(module):
-    base = module.tensor(
-        [[[-1.0, 4.0], [2.0, -5.0], [-3.0, 6.0]]],
-        dtype=module.float32,
-    )
+def cpu_float32_heldout_guard_binary_shape_inputs(module):
     return (
-        base.transpose(1, 2),
-        module.tensor([[0.5, -1.5, 2.5]], dtype=module.float32),
+        module.tensor(
+            [[[-1.0, 2.0, -3.0], [4.0, -5.0, 6.0]]],
+            dtype=module.float32,
+        ),
+        module.tensor(
+            [[-0.25, 0.5, -0.75], [1.25, -1.5, 1.75]],
+            dtype=module.float32,
+        ),
     )
 
 
-def cpu_float32_heldout_guard_broadcast_requires_grad_inputs(module):
+def cpu_float32_heldout_guard_binary_requires_grad_inputs(module):
     return (
         module.tensor(
             [[[-1.0, 2.0, -3.0]], [[4.0, -5.0, 6.0]]],
             dtype=module.float32,
             requires_grad=True,
         ),
-        module.tensor([[0.5, -1.5, 2.5]], dtype=module.float32),
+        module.tensor([[0.25, -0.5, 0.75]], dtype=module.float32),
     )
 
 
@@ -381,7 +350,7 @@ class CompileCorpusCase:
     dynamic: object = None
     mode: object = None
     options: object = None
-    benchmark_variant_names: tuple[str, ...] | None = None
+    recompile_limit: object = None
 
     def compile_kwargs(self, backend):
         kwargs = {
@@ -394,6 +363,8 @@ class CompileCorpusCase:
             kwargs["mode"] = self.mode
         if self.options is not None:
             kwargs["options"] = dict(self.options)
+        if self.recompile_limit is not None:
+            kwargs["recompile_limit"] = self.recompile_limit
         return kwargs
 
 
@@ -401,57 +372,21 @@ class CompileCorpusCase:
 class CompileGuardStep:
     name: str
     make_inputs: object
-    expected_graph_count: int
+    guard_change: str
+    expected_compile_count: int
+    reset_before: bool = False
+    expect_limit_error: bool = False
 
 
 @dataclass(frozen=True)
 class CompileRecompilationGuardScenario:
-    case: CompileCorpusCase
+    name: str
+    case_name: str
     steps: tuple[CompileGuardStep, ...]
 
-
-CPU_FLOAT32_GUARD_SHAPE_CASE = CompileCorpusCase(
-    name="cpu_float32_guard_shape_change",
-    category="recompilation_guards",
-    program=cpu_float32_guard_shape_change,
-    make_inputs=cpu_float32_guard_dense_2x3_inputs,
-    benchmark_variant_names=("case_default",),
-)
-CPU_FLOAT32_GUARD_STRIDE_CASE = CompileCorpusCase(
-    name="cpu_float32_guard_stride_change",
-    category="recompilation_guards",
-    program=cpu_float32_guard_stride_change,
-    make_inputs=cpu_float32_guard_stride_contiguous_inputs,
-    benchmark_variant_names=("case_default",),
-)
-CPU_FLOAT32_GUARD_REQUIRES_GRAD_CASE = CompileCorpusCase(
-    name="cpu_float32_guard_requires_grad_change",
-    category="recompilation_guards",
-    program=cpu_float32_guard_requires_grad_change,
-    make_inputs=cpu_float32_guard_no_grad_inputs,
-    benchmark_variant_names=("case_default",),
-)
-CPU_FLOAT32_GUARD_TWO_INPUT_CASE = CompileCorpusCase(
-    name="cpu_float32_guard_two_input_metadata_change",
-    category="recompilation_guards",
-    program=cpu_float32_guard_two_input_metadata_change,
-    make_inputs=cpu_float32_guard_two_input_base_inputs,
-    benchmark_variant_names=("case_default",),
-)
-CPU_FLOAT32_HELDOUT_GUARD_UNARY_CASE = CompileCorpusCase(
-    name="cpu_float32_heldout_guard_unary_metadata_mix",
-    category="recompilation_guards",
-    program=cpu_float32_heldout_guard_unary_chain,
-    make_inputs=cpu_float32_heldout_guard_scalar_inputs,
-    benchmark_variant_names=("case_default",),
-)
-CPU_FLOAT32_HELDOUT_GUARD_BROADCAST_CASE = CompileCorpusCase(
-    name="cpu_float32_heldout_guard_broadcast_metadata_mix",
-    category="recompilation_guards",
-    program=cpu_float32_heldout_guard_broadcast_chain,
-    make_inputs=cpu_float32_heldout_guard_broadcast_base_inputs,
-    benchmark_variant_names=("case_default",),
-)
+    @property
+    def case(self):
+        return compile_corpus_case(self.case_name)
 
 
 COMPILE_CORPUS = (
@@ -509,10 +444,27 @@ COMPILE_CORPUS = (
         program=cpu_float32_scalar_tensor_add,
         make_inputs=cpu_float32_scalar_tensor_inputs,
     ),
-    CPU_FLOAT32_GUARD_SHAPE_CASE,
-    CPU_FLOAT32_GUARD_STRIDE_CASE,
-    CPU_FLOAT32_GUARD_REQUIRES_GRAD_CASE,
-    CPU_FLOAT32_GUARD_TWO_INPUT_CASE,
+    CompileCorpusCase(
+        name="cpu_float32_recompile_guard_unary_metadata",
+        category="recompilation_guards",
+        program=cpu_float32_recompile_guard_unary_metadata,
+        make_inputs=cpu_float32_recompile_guard_unary_inputs,
+        recompile_limit=4,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_recompile_guard_binary_metadata",
+        category="recompilation_guards",
+        program=cpu_float32_recompile_guard_binary_metadata,
+        make_inputs=cpu_float32_recompile_guard_binary_inputs,
+        recompile_limit=4,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_recompile_limit_reset",
+        category="recompilation_guards",
+        program=cpu_float32_recompile_limit_reset,
+        make_inputs=cpu_float32_recompile_guard_unary_inputs,
+        recompile_limit=2,
+    ),
 )
 
 
@@ -529,135 +481,189 @@ COMPILE_HELD_OUT_CORPUS = (
         program=cpu_float32_heldout_scalar_left_broadcast,
         make_inputs=cpu_float32_scalar_tensor_inputs,
     ),
-    CPU_FLOAT32_HELDOUT_GUARD_UNARY_CASE,
-    CPU_FLOAT32_HELDOUT_GUARD_BROADCAST_CASE,
+    CompileCorpusCase(
+        name="cpu_float32_heldout_guard_unary_metadata",
+        category="recompilation_guards",
+        program=cpu_float32_heldout_guard_unary_metadata,
+        make_inputs=cpu_float32_heldout_guard_unary_inputs,
+        recompile_limit=4,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_heldout_guard_binary_metadata",
+        category="recompilation_guards",
+        program=cpu_float32_heldout_guard_binary_metadata,
+        make_inputs=cpu_float32_heldout_guard_binary_inputs,
+        recompile_limit=4,
+    ),
 )
+
+
+def compile_corpus_case(name):
+    for case in (*COMPILE_CORPUS, *COMPILE_HELD_OUT_CORPUS):
+        if case.name == name:
+            return case
+    raise KeyError(name)
 
 
 COMPILE_RECOMPILATION_GUARD_SCENARIOS = (
     CompileRecompilationGuardScenario(
-        case=CPU_FLOAT32_GUARD_SHAPE_CASE,
+        name="unary_shape_stride_requires_grad_guards",
+        case_name="cpu_float32_recompile_guard_unary_metadata",
         steps=(
             CompileGuardStep(
-                "dense_2x3_initial",
-                cpu_float32_guard_dense_2x3_inputs,
+                "base",
+                cpu_float32_recompile_guard_unary_inputs,
+                "initial",
                 1,
             ),
             CompileGuardStep(
-                "dense_2x3_same_metadata",
-                cpu_float32_guard_dense_2x3_same_metadata_inputs,
-                1,
-            ),
-            CompileGuardStep("vector_5_shape_change", cpu_float32_guard_vector_5_inputs, 2),
-        ),
-    ),
-    CompileRecompilationGuardScenario(
-        case=CPU_FLOAT32_GUARD_STRIDE_CASE,
-        steps=(
-            CompileGuardStep(
-                "contiguous_2x3_initial",
-                cpu_float32_guard_stride_contiguous_inputs,
+                "same_metadata",
+                cpu_float32_recompile_guard_unary_same_metadata_inputs,
+                "same_metadata",
                 1,
             ),
             CompileGuardStep(
-                "contiguous_2x3_same_metadata",
-                cpu_float32_guard_stride_same_metadata_inputs,
-                1,
-            ),
-            CompileGuardStep(
-                "transposed_2x3_stride_change",
-                cpu_float32_guard_stride_transposed_inputs,
+                "shape_change",
+                cpu_float32_recompile_guard_unary_shape_inputs,
+                "shape",
                 2,
             ),
-        ),
-    ),
-    CompileRecompilationGuardScenario(
-        case=CPU_FLOAT32_GUARD_REQUIRES_GRAD_CASE,
-        steps=(
             CompileGuardStep(
-                "requires_grad_false_initial",
-                cpu_float32_guard_no_grad_inputs,
-                1,
+                "stride_change",
+                cpu_float32_recompile_guard_unary_stride_inputs,
+                "stride",
+                3,
             ),
             CompileGuardStep(
-                "requires_grad_false_same_metadata",
-                cpu_float32_guard_no_grad_same_metadata_inputs,
-                1,
-            ),
-            CompileGuardStep(
-                "requires_grad_true_change",
-                cpu_float32_guard_requires_grad_inputs,
-                2,
+                "requires_grad_change",
+                cpu_float32_recompile_guard_unary_requires_grad_inputs,
+                "requires_grad",
+                4,
             ),
         ),
     ),
     CompileRecompilationGuardScenario(
-        case=CPU_FLOAT32_GUARD_TWO_INPUT_CASE,
+        name="binary_argument_metadata_guards",
+        case_name="cpu_float32_recompile_guard_binary_metadata",
         steps=(
             CompileGuardStep(
-                "matrix_vector_initial",
-                cpu_float32_guard_two_input_base_inputs,
+                "base",
+                cpu_float32_recompile_guard_binary_inputs,
+                "initial",
                 1,
             ),
             CompileGuardStep(
-                "matrix_vector_same_metadata",
-                cpu_float32_guard_two_input_same_metadata_inputs,
+                "same_metadata",
+                cpu_float32_recompile_guard_binary_same_metadata_inputs,
+                "same_metadata",
                 1,
             ),
             CompileGuardStep(
-                "right_rank2_shape_change",
-                cpu_float32_guard_two_input_right_shape_inputs,
+                "left_stride_change",
+                cpu_float32_recompile_guard_binary_left_stride_inputs,
+                "stride",
                 2,
             ),
             CompileGuardStep(
-                "left_transposed_stride_change",
-                cpu_float32_guard_two_input_left_stride_inputs,
+                "right_shape_change",
+                cpu_float32_recompile_guard_binary_right_shape_inputs,
+                "shape",
                 3,
             ),
             CompileGuardStep(
                 "right_requires_grad_change",
-                cpu_float32_guard_two_input_requires_grad_inputs,
+                cpu_float32_recompile_guard_binary_requires_grad_inputs,
+                "requires_grad",
                 4,
             ),
         ),
     ),
     CompileRecompilationGuardScenario(
-        case=CPU_FLOAT32_HELDOUT_GUARD_UNARY_CASE,
+        name="bounded_limit_then_reset",
+        case_name="cpu_float32_recompile_limit_reset",
         steps=(
             CompileGuardStep(
-                "scalar_initial",
-                cpu_float32_heldout_guard_scalar_inputs,
-                1,
-            ),
-            CompileGuardStep("empty_shape_change", cpu_float32_heldout_guard_empty_inputs, 2),
-            CompileGuardStep(
-                "empty_requires_grad_change",
-                cpu_float32_heldout_guard_empty_requires_grad_inputs,
-                3,
-            ),
-            CompileGuardStep(
-                "offset_stride_change",
-                cpu_float32_heldout_guard_offset_stride_inputs,
-                4,
-            ),
-        ),
-    ),
-    CompileRecompilationGuardScenario(
-        case=CPU_FLOAT32_HELDOUT_GUARD_BROADCAST_CASE,
-        steps=(
-            CompileGuardStep(
-                "rank3_broadcast_initial",
-                cpu_float32_heldout_guard_broadcast_base_inputs,
+                "base",
+                cpu_float32_recompile_guard_unary_inputs,
+                "initial",
                 1,
             ),
             CompileGuardStep(
-                "rank3_left_stride_change",
-                cpu_float32_heldout_guard_broadcast_stride_inputs,
+                "shape_change",
+                cpu_float32_recompile_guard_unary_shape_inputs,
+                "shape",
                 2,
             ),
             CompileGuardStep(
-                "rank3_left_requires_grad_change",
-                cpu_float32_heldout_guard_broadcast_requires_grad_inputs,
+                "limit_rejects_stride_change",
+                cpu_float32_recompile_guard_unary_stride_inputs,
+                "recompile_limit",
+                2,
+                expect_limit_error=True,
+            ),
+            CompileGuardStep(
+                "cached_base_after_limit",
+                cpu_float32_recompile_guard_unary_same_metadata_inputs,
+                "same_metadata",
+                2,
+            ),
+            CompileGuardStep(
+                "reset_allows_stride_change",
+                cpu_float32_recompile_guard_unary_stride_inputs,
+                "reset",
+                3,
+                reset_before=True,
+            ),
+        ),
+    ),
+)
+
+
+COMPILE_HELD_OUT_RECOMPILATION_GUARD_SCENARIOS = (
+    CompileRecompilationGuardScenario(
+        name="heldout_unary_rank3_metadata_mix",
+        case_name="cpu_float32_heldout_guard_unary_metadata",
+        steps=(
+            CompileGuardStep(
+                "base",
+                cpu_float32_heldout_guard_unary_inputs,
+                "initial",
+                1,
+            ),
+            CompileGuardStep(
+                "shape_change",
+                cpu_float32_heldout_guard_unary_shape_inputs,
+                "shape",
+                2,
+            ),
+            CompileGuardStep(
+                "stride_and_requires_grad_change",
+                cpu_float32_heldout_guard_unary_stride_requires_grad_inputs,
+                "stride_requires_grad",
+                3,
+            ),
+        ),
+    ),
+    CompileRecompilationGuardScenario(
+        name="heldout_binary_broadcast_metadata_mix",
+        case_name="cpu_float32_heldout_guard_binary_metadata",
+        steps=(
+            CompileGuardStep(
+                "base",
+                cpu_float32_heldout_guard_binary_inputs,
+                "initial",
+                1,
+            ),
+            CompileGuardStep(
+                "shape_change",
+                cpu_float32_heldout_guard_binary_shape_inputs,
+                "shape",
+                2,
+            ),
+            CompileGuardStep(
+                "requires_grad_change",
+                cpu_float32_heldout_guard_binary_requires_grad_inputs,
+                "requires_grad",
                 3,
             ),
         ),
@@ -669,6 +675,15 @@ def compile_corpus_cases(include_held_out=False):
     if include_held_out:
         return (*COMPILE_CORPUS, *COMPILE_HELD_OUT_CORPUS)
     return COMPILE_CORPUS
+
+
+def compile_recompilation_guard_scenarios(include_held_out=False):
+    if include_held_out:
+        return (
+            *COMPILE_RECOMPILATION_GUARD_SCENARIOS,
+            *COMPILE_HELD_OUT_RECOMPILATION_GUARD_SCENARIOS,
+        )
+    return COMPILE_RECOMPILATION_GUARD_SCENARIOS
 
 
 def make_recording_backend(calls):
@@ -687,11 +702,57 @@ def reset_reference_compile_state():
             reset()
 
 
+def assert_tensor_observables_match(testcase, actual, expected, *, case):
+    testcase.assertEqual(
+        tuple(actual.shape),
+        tuple(expected.shape),
+        msg=f"{case} shape mismatch",
+    )
+    testcase.assertEqual(
+        actual.stride(),
+        expected.stride(),
+        msg=f"{case} stride mismatch",
+    )
+    testcase.assertEqual(
+        actual.storage_offset(),
+        expected.storage_offset(),
+        msg=f"{case} storage offset mismatch",
+    )
+    testcase.assertEqual(
+        actual.is_contiguous(),
+        expected.is_contiguous(),
+        msg=f"{case} contiguity mismatch",
+    )
+    testcase.assertEqual(
+        str(actual.dtype),
+        str(expected.dtype),
+        msg=f"{case} dtype mismatch",
+    )
+    testcase.assertEqual(
+        str(actual.device),
+        str(expected.device),
+        msg=f"{case} device mismatch",
+    )
+    testcase.assertEqual(
+        actual.requires_grad,
+        expected.requires_grad,
+        msg=f"{case} requires_grad mismatch",
+    )
+    testcase.assertEqual(
+        actual.tolist(),
+        expected.tolist(),
+        msg=(
+            f"{case} value mismatch: expected {expected.tolist()!r}, "
+            f"got {actual.tolist()!r}"
+        ),
+    )
+
+
 class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
         self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v4")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(len(COMPILE_CORPUS), 13)
+        self.assertEqual(len(COMPILE_CORPUS), 12)
         self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 4)
 
         case_names = [case.name for case in COMPILE_CORPUS]
@@ -707,10 +768,9 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_matrix_vector_add_method",
                 "cpu_float32_tensor_scalar_add",
                 "cpu_float32_scalar_tensor_add",
-                "cpu_float32_guard_shape_change",
-                "cpu_float32_guard_stride_change",
-                "cpu_float32_guard_requires_grad_change",
-                "cpu_float32_guard_two_input_metadata_change",
+                "cpu_float32_recompile_guard_unary_metadata",
+                "cpu_float32_recompile_guard_binary_metadata",
+                "cpu_float32_recompile_limit_reset",
             ],
         )
         held_out_case_names = [case.name for case in COMPILE_HELD_OUT_CORPUS]
@@ -719,8 +779,8 @@ class CompileCorpusMetadataTests(unittest.TestCase):
             [
                 "cpu_float32_heldout_broadcast_chain",
                 "cpu_float32_heldout_scalar_left_broadcast",
-                "cpu_float32_heldout_guard_unary_metadata_mix",
-                "cpu_float32_heldout_guard_broadcast_metadata_mix",
+                "cpu_float32_heldout_guard_unary_metadata",
+                "cpu_float32_heldout_guard_binary_metadata",
             ],
         )
 
@@ -737,15 +797,12 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 self.assertIsNone(case.mode)
                 self.assertIsNone(case.options)
                 if case.category == "recompilation_guards":
-                    self.assertEqual(case.benchmark_variant_names, ("case_default",))
+                    self.assertIn(case.recompile_limit, (2, 4))
                 else:
-                    self.assertIsNone(case.benchmark_variant_names)
+                    self.assertIsNone(case.recompile_limit)
         for case in COMPILE_HELD_OUT_CORPUS:
             with self.subTest(held_out_case=case.name):
-                self.assertIn(
-                    case.category,
-                    {"broadcasting", "recompilation_guards"},
-                )
+                self.assertIn(case.category, {"broadcasting", "recompilation_guards"})
                 self.assertIn(case.category, CATEGORY_WEIGHTS)
                 self.assertTrue(case.fullgraph)
                 self.assertIsNone(case.dynamic)
@@ -760,6 +817,96 @@ class CompileCorpusMetadataTests(unittest.TestCase):
         self.assertFalse(hasattr(_compile_trace, "_dis"))
         self.assertFalse(hasattr(_compile_trace, "lower_one_input_compile_graph"))
         self.assertFalse(hasattr(_compile_trace, "lower_compile_graph"))
+
+    def test_recompilation_guard_scenarios_cover_required_metadata(self):
+        self.assertEqual(
+            [scenario.name for scenario in COMPILE_RECOMPILATION_GUARD_SCENARIOS],
+            [
+                "unary_shape_stride_requires_grad_guards",
+                "binary_argument_metadata_guards",
+                "bounded_limit_then_reset",
+            ],
+        )
+        self.assertEqual(
+            [
+                scenario.name
+                for scenario in COMPILE_HELD_OUT_RECOMPILATION_GUARD_SCENARIOS
+            ],
+            [
+                "heldout_unary_rank3_metadata_mix",
+                "heldout_binary_broadcast_metadata_mix",
+            ],
+        )
+
+        public_guard_cases = {
+            case.name
+            for case in COMPILE_CORPUS
+            if case.category == "recompilation_guards"
+        }
+        self.assertEqual(
+            public_guard_cases,
+            {
+                "cpu_float32_recompile_guard_unary_metadata",
+                "cpu_float32_recompile_guard_binary_metadata",
+                "cpu_float32_recompile_limit_reset",
+            },
+        )
+        scenario_case_names = {
+            scenario.case_name
+            for scenario in COMPILE_RECOMPILATION_GUARD_SCENARIOS
+        }
+        self.assertEqual(public_guard_cases, scenario_case_names)
+
+        covered_changes = {
+            step.guard_change
+            for scenario in COMPILE_RECOMPILATION_GUARD_SCENARIOS
+            for step in scenario.steps
+        }
+        self.assertLessEqual(
+            {
+                "initial",
+                "same_metadata",
+                "shape",
+                "stride",
+                "requires_grad",
+                "recompile_limit",
+                "reset",
+            },
+            covered_changes,
+        )
+
+        held_out_changes = {
+            step.guard_change
+            for scenario in COMPILE_HELD_OUT_RECOMPILATION_GUARD_SCENARIOS
+            for step in scenario.steps
+        }
+        self.assertLessEqual(
+            {"shape", "stride_requires_grad", "requires_grad"},
+            held_out_changes,
+        )
+
+    def test_corpus_inputs_are_exact_native_cpu_float32_tensors(self):
+        for case in compile_corpus_cases(include_held_out=True):
+            with self.subTest(case=case.name):
+                inputs = case.make_inputs(torch)
+                self.assertEqual(len(inputs), case.program.__code__.co_argcount)
+                for input in inputs:
+                    self.assertIs(type(input), torch.Tensor)
+                    self.assertIs(input.dtype, torch.float32)
+                    self.assertEqual(input.device, torch.device("cpu"))
+
+        for scenario in compile_recompilation_guard_scenarios(include_held_out=True):
+            for step in scenario.steps:
+                with self.subTest(scenario=scenario.name, step=step.name):
+                    inputs = step.make_inputs(torch)
+                    self.assertEqual(
+                        len(inputs),
+                        scenario.case.program.__code__.co_argcount,
+                    )
+                    for input in inputs:
+                        self.assertIs(type(input), torch.Tensor)
+                        self.assertIs(input.dtype, torch.float32)
+                        self.assertEqual(input.device, torch.device("cpu"))
 
 
 class CompileCorpusTraceTests(unittest.TestCase):
@@ -840,58 +987,6 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 ),
             )
 
-    def _assert_native_compile_guard_scenario(self, scenario, *, recompile_limit=16):
-        original_one_input_lower = _compile_bytecode.lower_one_input_compile_graph
-        original_lower = _compile_bytecode.lower_compile_graph
-        lower_calls = []
-
-        def counting_one_input_lower(requested_program, input_metadata, *, name=None):
-            lower_calls.append((requested_program, (input_metadata,), name))
-            return original_lower(
-                requested_program,
-                (input_metadata,),
-                name=name,
-            )
-
-        def counting_lower(requested_program, input_metadatas, *, name=None):
-            lower_calls.append((requested_program, input_metadatas, name))
-            return original_lower(requested_program, input_metadatas, name=name)
-
-        torch.compiler.reset()
-        self.addCleanup(torch.compiler.reset)
-        try:
-            _compile_bytecode.lower_one_input_compile_graph = (
-                counting_one_input_lower
-            )
-            _compile_bytecode.lower_compile_graph = counting_lower
-            compiled = torch.compile(
-                scenario.case.program,
-                backend="eager",
-                fullgraph=True,
-                recompile_limit=recompile_limit,
-            )
-            for step in scenario.steps:
-                with self.subTest(case=scenario.case.name, step=step.name):
-                    inputs = step.make_inputs(torch)
-                    expected = scenario.case.program(*inputs)
-                    actual = compiled(*inputs)
-                    self.assert_native_tensor_matches(
-                        actual,
-                        expected,
-                        case=f"{scenario.case.name}/{step.name}",
-                    )
-                    self.assertEqual(
-                        len(lower_calls),
-                        step.expected_graph_count,
-                        msg=(
-                            f"{scenario.case.name}/{step.name} compiled an "
-                            "unexpected number of metadata variants"
-                        ),
-                    )
-        finally:
-            _compile_bytecode.lower_one_input_compile_graph = original_one_input_lower
-            _compile_bytecode.lower_compile_graph = original_lower
-
     def test_bytecode_lowerer_records_general_tensor_arithmetic_graphs(self):
         cases = (
             (
@@ -940,34 +1035,19 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 ["neg", "add"],
             ),
             (
-                cpu_float32_guard_shape_change,
-                cpu_float32_guard_dense_2x3_inputs,
+                cpu_float32_recompile_guard_unary_metadata,
+                cpu_float32_recompile_guard_unary_inputs,
                 ["neg", "abs", "add"],
             ),
             (
-                cpu_float32_guard_stride_change,
-                cpu_float32_guard_stride_contiguous_inputs,
+                cpu_float32_recompile_guard_binary_metadata,
+                cpu_float32_recompile_guard_binary_inputs,
+                ["abs", "add", "neg"],
+            ),
+            (
+                cpu_float32_recompile_limit_reset,
+                cpu_float32_recompile_guard_unary_inputs,
                 ["abs", "neg", "add"],
-            ),
-            (
-                cpu_float32_guard_requires_grad_change,
-                cpu_float32_guard_no_grad_inputs,
-                ["abs", "add"],
-            ),
-            (
-                cpu_float32_guard_two_input_metadata_change,
-                cpu_float32_guard_two_input_base_inputs,
-                ["abs", "add"],
-            ),
-            (
-                cpu_float32_heldout_guard_unary_chain,
-                cpu_float32_heldout_guard_scalar_inputs,
-                ["neg", "abs", "neg", "add"],
-            ),
-            (
-                cpu_float32_heldout_guard_broadcast_chain,
-                cpu_float32_heldout_guard_broadcast_base_inputs,
-                ["neg", "abs", "add", "abs"],
             ),
         )
         for program, make_inputs, expected_targets in cases:
@@ -1831,77 +1911,6 @@ class CompileCorpusTraceTests(unittest.TestCase):
         ):
             graph.forward(left, mismatched)
 
-    def test_torch_rs_compile_guard_cases_recompile_on_metadata_changes(self):
-        for scenario in COMPILE_RECOMPILATION_GUARD_SCENARIOS:
-            with self.subTest(case=scenario.case.name):
-                self._assert_native_compile_guard_scenario(scenario)
-
-    def test_torch_rs_compile_recompile_limit_and_reset_are_corpus_covered(self):
-        scenario = COMPILE_RECOMPILATION_GUARD_SCENARIOS[0]
-        first_step, same_metadata_step, changed_metadata_step = scenario.steps
-        original_one_input_lower = _compile_bytecode.lower_one_input_compile_graph
-        lower_calls = []
-
-        def counting_one_input_lower(requested_program, input_metadata, *, name=None):
-            lower_calls.append((requested_program, input_metadata, name))
-            return original_one_input_lower(
-                requested_program,
-                input_metadata,
-                name=name,
-            )
-
-        torch.compiler.reset()
-        self.addCleanup(torch.compiler.reset)
-        try:
-            _compile_bytecode.lower_one_input_compile_graph = counting_one_input_lower
-
-            zero_limit_compiled = torch.compile(
-                scenario.case.program,
-                backend="eager",
-                fullgraph=True,
-                recompile_limit=0,
-            )
-            with self.assertRaisesRegex(NotImplementedError, "recompile_limit=0"):
-                zero_limit_compiled(*first_step.make_inputs(torch))
-            self.assertEqual(lower_calls, [])
-
-            one_limit_compiled = torch.compile(
-                scenario.case.program,
-                backend="eager",
-                fullgraph=True,
-                recompile_limit=1,
-            )
-            first_inputs = first_step.make_inputs(torch)
-            self.assert_native_tensor_matches(
-                one_limit_compiled(*first_inputs),
-                scenario.case.program(*first_inputs),
-                case=f"{scenario.case.name}/{first_step.name}",
-            )
-            self.assertEqual(len(lower_calls), 1)
-
-            same_metadata_inputs = same_metadata_step.make_inputs(torch)
-            self.assert_native_tensor_matches(
-                one_limit_compiled(*same_metadata_inputs),
-                scenario.case.program(*same_metadata_inputs),
-                case=f"{scenario.case.name}/{same_metadata_step.name}",
-            )
-            self.assertEqual(len(lower_calls), 1)
-
-            with self.assertRaisesRegex(NotImplementedError, "recompile_limit=1"):
-                one_limit_compiled(*changed_metadata_step.make_inputs(torch))
-            self.assertEqual(len(lower_calls), 1)
-
-            self.assertIs(torch.compiler.reset(), None)
-            changed_metadata_inputs = changed_metadata_step.make_inputs(torch)
-            self.assert_native_tensor_matches(
-                one_limit_compiled(*changed_metadata_inputs),
-                scenario.case.program(*changed_metadata_inputs),
-                case=f"{scenario.case.name}/{changed_metadata_step.name}/reset",
-            )
-            self.assertEqual(len(lower_calls), 2)
-        finally:
-            _compile_bytecode.lower_one_input_compile_graph = original_one_input_lower
-
     def test_proxy_unsupported_operations_fail_clearly(self):
         recorder = _compile_trace.CompileTraceRecorder()
         x = recorder.input(shape=(2, 3))
@@ -2030,7 +2039,6 @@ class RejectPytorchImport:
 
 sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
-from torch_rs import _compile_bytecode
 from torch_rs import _compile_trace
 
 def program(x):
@@ -2041,6 +2049,10 @@ def self_add(x):
 
 def broadcast_add(x, y):
     return x.neg().abs() + y.negative()
+
+def guard_program(x):
+    y = x.neg()
+    return y.abs().add(x)
 
 def make_inputs(module):
     return (
@@ -2058,6 +2070,34 @@ def make_two_inputs(module):
         ),
         module.tensor([1.0, -2.0, 0.25], dtype=module.float32),
     )
+
+def make_guard_base(module):
+    return (
+        module.tensor(
+            [[-2.0, 3.0, -4.0], [5.5, -6.5, 7.25]],
+            dtype=module.float32,
+        ),
+    )
+
+def make_guard_same_metadata(module):
+    return (
+        module.tensor(
+            [[1.0, -1.5, 2.5], [-3.5, 4.5, -5.5]],
+            dtype=module.float32,
+        ),
+    )
+
+def make_guard_shape(module):
+    return (
+        module.tensor([-1.25, 2.5, -3.75, 4.0, -5.5], dtype=module.float32),
+    )
+
+def make_guard_stride(module):
+    base = module.tensor(
+        [[-2.0, 5.5], [3.0, -6.5], [-4.0, 7.25]],
+        dtype=module.float32,
+    )
+    return (base.t(),)
 
 backend_calls = []
 
@@ -2159,99 +2199,59 @@ assert compiled_actual.requires_grad is self_add_expected.requires_grad
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
-def guard_program(x):
-    return x.neg().abs() + x
+from torch_rs import _compile_bytecode
+guard_lower_calls = []
+original_lower = _compile_bytecode.lower_one_input_compile_graph
 
-def assert_tensor_matches(actual, expected):
-    assert actual.tolist() == expected.tolist()
-    assert actual.shape == expected.shape
-    assert actual.stride() == expected.stride()
-    assert actual.dtype is expected.dtype
-    assert actual.device == expected.device
-    assert actual.requires_grad is expected.requires_grad
+def counting_lower(requested_program, input_metadata, *, name=None):
+    guard_lower_calls.append(input_metadata)
+    return original_lower(requested_program, input_metadata, name=name)
 
-guard_inputs = (
-    (
-        1,
-        torch.tensor(
-            [[-2.0, 3.0, -4.0], [5.0, -6.0, 7.0]],
-            dtype=torch.float32,
-        ),
-    ),
-    (
-        1,
-        torch.tensor(
-            [[1.5, -2.5, 3.5], [-4.5, 5.5, -6.5]],
-            dtype=torch.float32,
-        ),
-    ),
-    (
-        2,
-        torch.tensor([-3.5, 0.0, 4.5, -5.5, 6.5], dtype=torch.float32),
-    ),
-    (
-        3,
-        torch.tensor(
-            [[-1.0, 4.0], [2.0, -5.0], [-3.0, 6.0]],
-            dtype=torch.float32,
-        ).transpose(0, 1),
-    ),
-    (
-        4,
-        torch.tensor(
-            [[-2.5, 3.5], [4.5, -5.5]],
-            dtype=torch.float32,
-            requires_grad=True,
-        ),
-    ),
-)
-original_one_input_lower = _compile_bytecode.lower_one_input_compile_graph
-lower_calls = []
-
-def counting_one_input_lower(requested_program, input_metadata, *, name=None):
-    lower_calls.append((requested_program, input_metadata, name))
-    return original_one_input_lower(requested_program, input_metadata, name=name)
-
+_compile_bytecode.lower_one_input_compile_graph = counting_lower
 try:
-    _compile_bytecode.lower_one_input_compile_graph = counting_one_input_lower
     compiled_guard = torch.compile(
         guard_program,
         backend="eager",
         fullgraph=True,
-        recompile_limit=4,
+        recompile_limit=2,
     )
-    for expected_compile_count, guard_input in guard_inputs:
-        assert_tensor_matches(compiled_guard(guard_input), guard_program(guard_input))
-        assert len(lower_calls) == expected_compile_count
+    for factory, expected_count in (
+        (make_guard_base, 1),
+        (make_guard_same_metadata, 1),
+        (make_guard_shape, 2),
+    ):
+        inputs = factory(torch)
+        expected = guard_program(*inputs)
+        actual = compiled_guard(*inputs)
+        assert actual.tolist() == expected.tolist()
+        assert actual.shape == expected.shape
+        assert actual.stride() == expected.stride()
+        assert actual.dtype is expected.dtype
+        assert actual.device == expected.device
+        assert actual.requires_grad is expected.requires_grad
+        assert len(guard_lower_calls) == expected_count
 
-    lower_calls.clear()
-    torch.compiler.reset()
-    limited_guard = torch.compile(
-        guard_program,
-        backend="eager",
-        fullgraph=True,
-        recompile_limit=1,
-    )
-    assert_tensor_matches(
-        limited_guard(guard_inputs[0][1]),
-        guard_program(guard_inputs[0][1]),
-    )
-    assert len(lower_calls) == 1
     try:
-        limited_guard(guard_inputs[2][1])
+        compiled_guard(*make_guard_stride(torch))
     except NotImplementedError as error:
-        assert "recompile_limit=1" in str(error)
+        assert "recompile_limit=2" in str(error)
     else:
-        raise AssertionError("shape guard miss unexpectedly bypassed recompile_limit")
-    assert len(lower_calls) == 1
-    torch.compiler.reset()
-    assert_tensor_matches(
-        limited_guard(guard_inputs[2][1]),
-        guard_program(guard_inputs[2][1]),
-    )
-    assert len(lower_calls) == 2
+        raise AssertionError("recompile_limit=2 did not reject the third metadata miss")
+    assert len(guard_lower_calls) == 2
+
+    assert torch.compiler.reset() is None
+    stride_inputs = make_guard_stride(torch)
+    stride_expected = guard_program(*stride_inputs)
+    stride_actual = compiled_guard(*stride_inputs)
+    assert stride_actual.tolist() == stride_expected.tolist()
+    assert stride_actual.shape == stride_expected.shape
+    assert stride_actual.stride() == stride_expected.stride()
+    assert stride_actual.dtype is stride_expected.dtype
+    assert stride_actual.device == stride_expected.device
+    assert stride_actual.requires_grad is stride_expected.requires_grad
+    assert len(guard_lower_calls) == 3
 finally:
-    _compile_bytecode.lower_one_input_compile_graph = original_one_input_lower
+    _compile_bytecode.lower_one_input_compile_graph = original_lower
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
@@ -2282,6 +2282,88 @@ assert not any(name == "torch" or name.startswith("torch.") for name in sys.modu
             0,
             msg=completed.stdout + completed.stderr,
         )
+
+
+class CompileRecompilationGuardCorpusTests(unittest.TestCase):
+    def setUp(self):
+        torch.compiler.reset()
+
+    def tearDown(self):
+        torch.compiler.reset()
+
+    def assert_native_tensor_matches(self, actual, expected, *, case):
+        self.assertIs(type(actual), torch.Tensor)
+        assert_tensor_observables_match(self, actual, expected, case=case)
+
+    def test_torch_rs_guard_scenarios_recompile_on_metadata_changes(self):
+        original_lower_one = _compile_bytecode.lower_one_input_compile_graph
+        original_lower_two = _compile_bytecode.lower_compile_graph
+        calls = []
+
+        def counting_lower_one(requested_program, input_metadata, *, name=None):
+            calls.append((requested_program, (input_metadata,), name))
+            return original_lower_one(requested_program, input_metadata, name=name)
+
+        def counting_lower_two(requested_program, input_metadatas, *, name=None):
+            if requested_program.__code__.co_argcount == 2:
+                calls.append((requested_program, tuple(input_metadatas), name))
+            return original_lower_two(requested_program, input_metadatas, name=name)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower_one
+            _compile_bytecode.lower_compile_graph = counting_lower_two
+
+            for scenario in compile_recompilation_guard_scenarios(
+                include_held_out=True
+            ):
+                with self.subTest(scenario=scenario.name):
+                    torch.compiler.reset()
+                    calls.clear()
+                    case = scenario.case
+                    compiled = torch.compile(
+                        case.program,
+                        **case.compile_kwargs("eager"),
+                    )
+
+                    for step in scenario.steps:
+                        if step.reset_before:
+                            self.assertIs(torch.compiler.reset(), None)
+                        inputs = step.make_inputs(torch)
+
+                        if step.expect_limit_error:
+                            with self.assertRaisesRegex(
+                                NotImplementedError,
+                                f"recompile_limit={case.recompile_limit}",
+                            ):
+                                compiled(*inputs)
+                            self.assertEqual(
+                                len(calls),
+                                step.expected_compile_count,
+                                msg=f"{scenario.name}/{step.name}",
+                            )
+                            continue
+
+                        expected = case.program(*step.make_inputs(torch))
+                        actual = compiled(*inputs)
+                        self.assert_native_tensor_matches(
+                            actual,
+                            expected,
+                            case=f"{scenario.name}/{step.name}",
+                        )
+                        self.assertEqual(
+                            len(calls),
+                            step.expected_compile_count,
+                            msg=f"{scenario.name}/{step.name}",
+                        )
+                        for call_program, input_metadatas, _name in calls:
+                            self.assertIs(call_program, case.program)
+                            self.assertEqual(
+                                len(input_metadatas),
+                                case.program.__code__.co_argcount,
+                            )
+        finally:
+            _compile_bytecode.lower_one_input_compile_graph = original_lower_one
+            _compile_bytecode.lower_compile_graph = original_lower_two
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -2320,73 +2402,45 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
         self.assertEqual(actual.requires_grad, expected.requires_grad)
         self.assertGreaterEqual(len(backend_calls), 1)
 
-    def assert_reference_guard_scenario(self, scenario):
-        reset_reference_compile_state()
-        self.addCleanup(reset_reference_compile_state)
-        backend_calls = []
-        backend = make_recording_backend(backend_calls)
-        compiled = reference_torch.compile(
-            scenario.case.program,
-            **scenario.case.compile_kwargs(backend),
-        )
-        for step in scenario.steps:
-            with self.subTest(
-                implementation="pytorch",
-                case=scenario.case.name,
-                step=step.name,
-            ):
-                inputs = step.make_inputs(reference_torch)
-                expected = scenario.case.program(*inputs)
-                actual = compiled(*inputs)
-                reference_torch.testing.assert_close(actual, expected)
-                self.assertEqual(tuple(actual.shape), tuple(expected.shape))
-                self.assertEqual(actual.stride(), expected.stride())
-                self.assertIs(actual.dtype, expected.dtype)
-                self.assertEqual(actual.device, expected.device)
-                self.assertEqual(actual.requires_grad, expected.requires_grad)
-        self.assertGreaterEqual(len(backend_calls), 1)
-
-    def assert_torch_rs_guard_scenario_matches_reference(self, scenario):
-        torch.compiler.reset()
-        self.addCleanup(torch.compiler.reset)
-        compiled = torch.compile(
-            scenario.case.program,
-            backend="eager",
-            fullgraph=True,
-            recompile_limit=16,
-        )
-        for step in scenario.steps:
-            with self.subTest(
-                implementation="torch_rs",
-                case=scenario.case.name,
-                step=step.name,
-            ):
-                inputs = step.make_inputs(torch)
-                expected = scenario.case.program(*inputs)
-                reference_expected = scenario.case.program(
-                    *step.make_inputs(reference_torch)
-                )
-                actual = compiled(*inputs)
-                self.assertEqual(actual.tolist(), expected.tolist())
-                self.assertEqual(actual.tolist(), reference_expected.tolist())
-                self.assertEqual(tuple(actual.shape), tuple(expected.shape))
-                self.assertEqual(tuple(actual.shape), tuple(reference_expected.shape))
-                self.assertEqual(actual.stride(), expected.stride())
-                self.assertEqual(actual.stride(), reference_expected.stride())
-                self.assertIs(actual.dtype, expected.dtype)
-                self.assertEqual(str(actual.dtype), str(reference_expected.dtype))
-                self.assertEqual(actual.device, expected.device)
-                self.assertEqual(str(actual.device), str(reference_expected.device))
-                self.assertEqual(actual.requires_grad, expected.requires_grad)
-                self.assertEqual(
-                    actual.requires_grad,
-                    reference_expected.requires_grad,
-                )
-
     def test_reference_pytorch_2_13_accepts_all_eligible_cases(self):
         for case in compile_corpus_cases(include_held_out=True):
             with self.subTest(case=case.name):
                 self.assert_reference_eligible(case)
+
+    def test_reference_pytorch_2_13_accepts_recompilation_guard_sequences(self):
+        for scenario in compile_recompilation_guard_scenarios(include_held_out=True):
+            with self.subTest(scenario=scenario.name):
+                reset_reference_compile_state()
+                self.addCleanup(reset_reference_compile_state)
+                backend_calls = []
+                backend = make_recording_backend(backend_calls)
+                case = scenario.case
+                compiled = reference_torch.compile(
+                    case.program,
+                    **case.compile_kwargs(backend),
+                )
+
+                for step in scenario.steps:
+                    if step.reset_before:
+                        reset_reference_compile_state()
+                    inputs = step.make_inputs(reference_torch)
+
+                    if step.expect_limit_error:
+                        with self.assertRaises(Exception):
+                            compiled(*inputs)
+                        continue
+
+                    expected = case.program(*step.make_inputs(reference_torch))
+                    actual = compiled(*inputs)
+                    reference_torch.testing.assert_close(actual, expected)
+                    assert_tensor_observables_match(
+                        self,
+                        actual,
+                        expected,
+                        case=f"{scenario.name}/{step.name}",
+                    )
+
+                self.assertGreaterEqual(len(backend_calls), 1)
 
     def test_torch_rs_compile_runs_eligible_eager_cases_natively(self):
         for case in compile_corpus_cases(include_held_out=True):
@@ -2417,18 +2471,6 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                     actual.requires_grad,
                     reference_expected.requires_grad,
                 )
-
-    def test_recompilation_guard_sequences_match_reference_in_both_orders(self):
-        implementations = {
-            "pytorch": self.assert_reference_guard_scenario,
-            "torch_rs": self.assert_torch_rs_guard_scenario_matches_reference,
-        }
-        for order in (("torch_rs", "pytorch"), ("pytorch", "torch_rs")):
-            with self.subTest(order=order):
-                for scenario in COMPILE_RECOMPILATION_GUARD_SCENARIOS:
-                    with self.subTest(case=scenario.case.name):
-                        for implementation in order:
-                            implementations[implementation](scenario)
 
 
 if __name__ == "__main__":
