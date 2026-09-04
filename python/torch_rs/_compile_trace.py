@@ -162,8 +162,9 @@ _SUPPORTED_UNARY_METHODS = (
     "Tensor.negative",
     "Tensor.abs",
     "Tensor.absolute",
+    "Tensor.relu",
 )
-_SUPPORTED_UNARY_TARGETS = frozenset(("neg", "abs"))
+_SUPPORTED_UNARY_TARGETS = frozenset(("neg", "abs", "relu"))
 _SUPPORTED_BINARY_METHODS = (
     "Tensor.__add__",
     "Tensor.add",
@@ -764,6 +765,9 @@ class CompileTraceTensorProxy:
     def absolute(self):
         return self._recorder.record_unary("abs", self)
 
+    def relu(self):
+        return self._recorder.record_unary("relu", self)
+
     def __neg__(self):
         return self.neg()
 
@@ -841,9 +845,6 @@ class CompileTraceTensorProxy:
 
     def __bool__(self):
         _unsupported_operation("Tensor.__bool__")
-
-    def relu(self):
-        _unsupported_operation("Tensor.relu")
 
     def positive(self):
         _unsupported_operation("Tensor.positive")

@@ -7361,6 +7361,7 @@ fn compile_trace_unary(input: &Bound<'_, PyAny>, target: &str) -> PyResult<PyTen
     let output = match target {
         "neg" => tensor.inner.negate(),
         "abs" => tensor.inner.abs(),
+        "relu" => tensor.inner.relu(),
         _ => {
             return Err(PyNotImplementedError::new_err(format!(
                 "_compile_trace_unary(): unsupported target {target:?}"

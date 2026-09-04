@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from contextlib import nullcontext
 import gc
 import hashlib
 import importlib.metadata as importlib_metadata
@@ -396,6 +397,21 @@ def _cell_input_factory(case, variant):
     return case.make_inputs if variant.make_inputs is None else variant.make_inputs
 
 
+def _case_execution_context(module, case):
+    if getattr(case, "run_under_no_grad", False):
+        return module.no_grad()
+    return nullcontext()
+
+
+def _run_case_callable(module, case, callable_object, inputs):
+    with _case_execution_context(module, case):
+        return callable_object(*inputs)
+
+
+def _run_case_program(module, case, inputs):
+    return _run_case_callable(module, case, case.program, inputs)
+
+
 def _synchronize(module):
     cuda = getattr(module, "cuda", None)
     if cuda is None:
@@ -476,20 +492,20 @@ def _summarize_samples(samples_ns, repeats):
     }
 
 
-def _time_once(compiled, inputs, module):
+def _time_once(compiled, inputs, module, case):
     started_ns = time.perf_counter_ns()
-    output = compiled(*inputs)
+    output = _run_case_callable(module, case, compiled, inputs)
     _synchronize(module)
     checksum = _checksum_tensor(output)
     elapsed_ns = time.perf_counter_ns() - started_ns
     return elapsed_ns, checksum, output
 
 
-def _time_repeated(compiled, inputs, module, repeats):
+def _time_repeated(compiled, inputs, module, case, repeats):
     started_ns = time.perf_counter_ns()
     output = None
     for _ in range(repeats):
-        output = compiled(*inputs)
+        output = _run_case_callable(module, case, compiled, inputs)
     _synchronize(module)
     checksum = _checksum_tensor(output)
     return time.perf_counter_ns() - started_ns, checksum
@@ -522,10 +538,10 @@ def _run_cell(
     compile_started_ns = time.perf_counter_ns()
     compiled = module.compile(case.program, **case.compile_kwargs("eager"))
     factory_ns = time.perf_counter_ns() - compile_started_ns
-    cold_ns, cold_checksum, cold_output = _time_once(compiled, inputs, module)
+    cold_ns, cold_checksum, cold_output = _time_once(compiled, inputs, module, case)
 
     for _ in range(warmups):
-        _time_repeated(compiled, inputs, module, variant.repeats)
+        _time_repeated(compiled, inputs, module, case, variant.repeats)
 
     sample_ns = []
     sample_checksums = []
@@ -534,6 +550,7 @@ def _run_cell(
             compiled,
             inputs,
             module,
+            case,
             variant.repeats,
         )
         sample_ns.append(elapsed_ns)
@@ -571,7 +588,7 @@ def _run_guard_sequence_pass(
         inputs = step.make_inputs(module)
         started_ns = time.perf_counter_ns()
         try:
-            output = compiled(*inputs)
+            output = _run_case_callable(module, case, compiled, inputs)
             _synchronize(module)
             elapsed_us = (time.perf_counter_ns() - started_ns) / 1000.0
         except Exception as error:
@@ -598,7 +615,7 @@ def _run_guard_sequence_pass(
             )
 
         expected_inputs = step.make_inputs(module)
-        expected = case.program(*expected_inputs)
+        expected = _run_case_program(module, case, expected_inputs)
         cell_name = f"{scenario.name}/{step.name}/{implementation}"
         _assert_outputs_match(output, expected, cell_name=cell_name)
         checksum = _checksum_tensor(output)
@@ -613,7 +630,11 @@ def _run_guard_sequence_pass(
 
         if implementation == "torch_rs":
             reference_inputs = step.make_inputs(reference_torch)
-            reference_expected = case.program(*reference_inputs)
+            reference_expected = _run_case_program(
+                reference_torch,
+                case,
+                reference_inputs,
+            )
             _assert_outputs_match(
                 output,
                 reference_expected,
@@ -901,7 +922,7 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                         [],
                     ).append(measured)
                     expected_inputs = _cell_input_factory(case, variant)(module)
-                    expected = case.program(*expected_inputs)
+                    expected = _run_case_program(module, case, expected_inputs)
                     _assert_outputs_match(
                         measured["cold_output"],
                         expected,
@@ -917,7 +938,11 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                             case,
                             variant,
                         )(reference_torch)
-                        reference_expected = case.program(*reference_inputs)
+                        reference_expected = _run_case_program(
+                            reference_torch,
+                            case,
+                            reference_inputs,
+                        )
                         _assert_outputs_match(
                             measured["cold_output"],
                             reference_expected,
