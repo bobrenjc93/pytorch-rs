@@ -10241,6 +10241,44 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 95
       }
+    },
+    {
+      "key": "base:f89b884e8bc67d0ebedb3f4c42d8a8574338e786",
+      "commit": "f89b884e8bc67d0ebedb3f4c42d8a8574338e786",
+      "recordedAt": "2026-09-04T10:53:29.361Z",
+      "label": "base f89b884",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 95,
+        "eval_39340456": 99.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 82,
+        "eval_a61c0e71": 24,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 95
+      }
+    },
+    {
+      "key": "pr:1831",
+      "recordedAt": "2026-09-04T10:53:29.361Z",
+      "label": "PR #1831",
+      "kind": "leaf",
+      "prNumber": 1831,
+      "title": "Add runnable first-success example",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 95,
+        "eval_39340456": 99.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 82,
+        "eval_a61c0e71": 24,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 96
+      }
     }
   ]
 }
