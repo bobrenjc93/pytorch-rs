@@ -29,13 +29,74 @@ float32 = CompileTraceDType("torch.float32")
 float = float32
 
 
+@dataclass(frozen=True, slots=True, eq=False)
+class CompileTraceDevice:
+    type: str
+    index: int | None = None
+
+    def __post_init__(self):
+        device_type = _builtins.str(self.type)
+        if device_type not in ("cpu", "cuda"):
+            raise ValueError(
+                "compile trace device type must be 'cpu' or 'cuda', "
+                f"got {device_type!r}"
+            )
+        object.__setattr__(self, "type", device_type)
+
+        index = self.index
+        if index is not None:
+            if _builtins.type(index) is _builtins.bool:
+                raise TypeError("compile trace device index must be int or None")
+            index = _operator.index(index)
+            if index < 0:
+                raise ValueError("compile trace device index must be non-negative")
+            if device_type == "cpu":
+                raise ValueError("compile trace CPU device metadata is unindexed")
+        object.__setattr__(self, "index", index)
+
+    def __repr__(self):
+        return _builtins.repr(_builtins.str(self))
+
+    def __str__(self):
+        if self.index is None:
+            return self.type
+        return f"{self.type}:{self.index}"
+
+    def __eq__(self, other):
+        if _builtins.isinstance(other, CompileTraceDevice):
+            return self.type == other.type and self.index == other.index
+        if _builtins.isinstance(other, _builtins.str):
+            return _builtins.str(self) == other
+        return NotImplemented
+
+    def __hash__(self):
+        return _builtins.hash(_builtins.str(self))
+
+
+_cpu_device = CompileTraceDevice("cpu")
+_cuda_device = CompileTraceDevice("cuda")
+
+
+def cpu_device():
+    return _cpu_device
+
+
+def cuda_device(index=None):
+    if index is None:
+        return _cuda_device
+    return CompileTraceDevice("cuda", index)
+
+
 @dataclass(frozen=True, slots=True)
 class CompileTraceTensorMetadata:
     shape: tuple[int, ...]
     stride: tuple[int, ...]
     dtype: CompileTraceDType
-    device: str
+    device: CompileTraceDevice
     requires_grad: bool
+
+    def __post_init__(self):
+        object.__setattr__(self, "device", _normalize_device(self.device))
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,11 +166,34 @@ def _normalize_dtype(dtype):
 
 def _normalize_device(device):
     if device is None:
-        return "cpu"
-    if device == "cpu" or _builtins.str(device) == "cpu":
-        return "cpu"
+        return cpu_device()
+    if _builtins.isinstance(device, CompileTraceDevice):
+        return device
+    specification = _builtins.str(device)
+    if specification == "cpu":
+        return cpu_device()
+    if specification == "cuda":
+        return cuda_device()
+    if specification.startswith("cuda:"):
+        index = specification.removeprefix("cuda:")
+        if (
+            not index
+            or not index.isdecimal()
+            or (len(index) > 1 and index.startswith("0"))
+        ):
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace tensor() received invalid CUDA device "
+                f"metadata {specification!r}"
+            )
+        try:
+            return cuda_device(_builtins.int(index))
+        except ValueError:
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace tensor() received invalid CUDA device "
+                f"metadata {specification!r}"
+            ) from None
     raise CompileTraceUnsupportedError(
-        "torch.compile trace tensor() only supports CPU inputs"
+        "torch.compile trace tensor() only supports CPU or CUDA input metadata"
     )
 
 
@@ -990,6 +1074,7 @@ def trace_one_input_compile_graph(program, make_inputs, *, name=None):
 
 __all__ = [
     "CompileTraceDType",
+    "CompileTraceDevice",
     "CompileTraceGraph",
     "CompileTraceInput",
     "CompileTraceOperation",
@@ -998,6 +1083,8 @@ __all__ = [
     "CompileTraceTensorProxy",
     "CompileTraceTorchModule",
     "CompileTraceUnsupportedError",
+    "cpu_device",
+    "cuda_device",
     "execute_compile_trace_graph",
     "float",
     "float32",
