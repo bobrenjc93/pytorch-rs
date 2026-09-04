@@ -7,7 +7,7 @@ import argparse
 import hashlib
 import inspect
 from collections import defaultdict
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 import importlib.metadata as importlib_metadata
 import importlib.util
@@ -198,6 +198,22 @@ EXPECTED_V4_CASE_MANIFEST = (
         "recompile_limit": None,
     },
     {
+        "name": "cpu_float32_relu_no_grad_inference",
+        "held_out": False,
+        "category": "inference",
+        "program": "cpu_float32_relu_no_grad_inference",
+        "program_sha256": "f3e750ef242b91aa0b321f7bbd79ec9c2821616e532b5a54413ecbee142ab3ae",
+        "make_inputs": "cpu_float32_relu_no_grad_inference_inputs",
+        "make_inputs_sha256": "31c0ce24f8ed8862d9b0ae9204d2716711574ef539fbdf35300a97210c38dc7a",
+        "inputs_sha256": "306d237dddad565ff9c8c6d8320a37f2dfa8db5a3081ca14622d6d224bfde895",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+    },
+    {
         "name": "cpu_float32_recompile_guard_unary_metadata",
         "held_out": False,
         "category": "recompilation_guards",
@@ -271,6 +287,22 @@ EXPECTED_V4_CASE_MANIFEST = (
         "make_inputs_sha256": "c97640885d694619d8c2340c608f248037c130b005f1bb45870372ed780f0710",
         "inputs_sha256": "b5e285646fc9ea682ce87d90ab4723e40fe3243462c8e90919686fe09ad9b162",
         "arity": 2,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+    },
+    {
+        "name": "cpu_float32_heldout_relu_chain_no_grad_inference",
+        "held_out": True,
+        "category": "inference",
+        "program": "cpu_float32_heldout_relu_chain_no_grad_inference",
+        "program_sha256": "1d3a9b0397b3ace09d845c41d25fe9a789499553c756417707d06863585553d6",
+        "make_inputs": "cpu_float32_heldout_relu_no_grad_inference_inputs",
+        "make_inputs_sha256": "826d9c373a77a1d30e780a017118837c8393b8d0a3a4774a0fdb1f513fa8d564",
+        "inputs_sha256": "82fa9cd2e251dac2ca203608abb5a53e87a2acf7025437caae9a9a6f836217f7",
+        "arity": 1,
         "fullgraph": True,
         "dynamic": None,
         "mode": None,
@@ -963,10 +995,10 @@ def _validate_corpus_metadata(corpus_module):
 
     public_cases = tuple(getattr(corpus_module, "COMPILE_CORPUS", ()))
     held_out_cases = tuple(getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ()))
-    if len(public_cases) != 12:
-        errors.append(f"expected 12 public v4 cases, found {len(public_cases)}")
-    if len(held_out_cases) != 4:
-        errors.append(f"expected 4 held-out v4 cases, found {len(held_out_cases)}")
+    if len(public_cases) != 13:
+        errors.append(f"expected 13 public v4 cases, found {len(public_cases)}")
+    if len(held_out_cases) != 5:
+        errors.append(f"expected 5 held-out v4 cases, found {len(held_out_cases)}")
 
     seen_names = set()
     for case in (*public_cases, *held_out_cases):
@@ -1091,6 +1123,28 @@ def _inputs_payload(inputs):
     return [_tensor_payload(input) for input in inputs]
 
 
+def _case_execution_context(tensor_module, case):
+    if getattr(case, "category", None) == "inference":
+        return tensor_module.no_grad()
+    return nullcontext()
+
+
+def _run_case_program(tensor_module, case, inputs):
+    with _case_execution_context(tensor_module, case):
+        return case.program(*inputs)
+
+
+def _tensor_grad_payload(tensor):
+    grad = getattr(tensor, "grad", None)
+    if grad is None:
+        return None
+    return _tensor_payload(grad)
+
+
+def _input_grad_payload(inputs):
+    return [_tensor_grad_payload(input) for input in inputs]
+
+
 def _assert_payload_match(actual, expected, *, label):
     if actual != expected:
         raise AssertionError(
@@ -1135,13 +1189,24 @@ def _reference_case_result(reference_torch, case):
     backend = _make_recording_backend(backend_calls)
     inputs = case.make_inputs(reference_torch)
     before_inputs = _inputs_payload(inputs)
-    expected = case.program(*case.make_inputs(reference_torch))
+    before_input_grads = _input_grad_payload(inputs)
+    if case.category == "inference" and not all(
+        getattr(input, "requires_grad", False) for input in inputs
+    ):
+        raise AssertionError(f"{case.name} inference inputs must require grad")
+    expected = _run_case_program(
+        reference_torch,
+        case,
+        case.make_inputs(reference_torch),
+    )
     compiled = reference_torch.compile(
         case.program,
         **_compile_kwargs_from_case(case, backend),
     )
-    actual = compiled(*inputs)
+    with _case_execution_context(reference_torch, case):
+        actual = compiled(*inputs)
     after_inputs = _inputs_payload(inputs)
+    after_input_grads = _input_grad_payload(inputs)
 
     _assert_payload_match(
         _tensor_payload(actual),
@@ -1149,6 +1214,13 @@ def _reference_case_result(reference_torch, case):
         label=f"{case.name}/reference",
     )
     _assert_payload_match(after_inputs, before_inputs, label=f"{case.name}/inputs")
+    _assert_payload_match(
+        after_input_grads,
+        before_input_grads,
+        label=f"{case.name}/input_grads",
+    )
+    if case.category == "inference" and actual.requires_grad:
+        raise AssertionError(f"{case.name} produced a grad-requiring inference output")
     if len(backend_calls) < 1:
         raise AssertionError(f"{case.name} did not invoke the reference backend")
     return {
@@ -1358,9 +1430,12 @@ def _program_call_counter(program):
 def _candidate_case_result(corpus_module, case):
     torch_rs = corpus_module.torch
     torch_rs.compiler.reset()
-    expected = case.program(*case.make_inputs(torch_rs))
+    expected = _run_case_program(torch_rs, case, case.make_inputs(torch_rs))
     inputs = case.make_inputs(torch_rs)
     before_inputs = _inputs_payload(inputs)
+    before_input_grads = _input_grad_payload(inputs)
+    if case.category == "inference" and not all(input.requires_grad for input in inputs):
+        raise AssertionError(f"{case.name} inference inputs must require grad")
     with _candidate_compile_counters() as counters:
         compiled = torch_rs.compile(
             case.program,
@@ -1369,7 +1444,8 @@ def _candidate_case_result(corpus_module, case):
         if getattr(compiled, "_torch_rs_compile_backend", None) != "eager":
             raise AssertionError(f"{case.name} did not resolve backend='eager'")
         with _program_call_counter(case.program) as program_calls:
-            actual = compiled(*inputs)
+            with _case_execution_context(torch_rs, case):
+                actual = compiled(*inputs)
         if program_calls["count"] != 0:
             raise AssertionError(
                 f"{case.name} executed the original Python program during compiled call"
@@ -1386,7 +1462,8 @@ def _candidate_case_result(corpus_module, case):
             )
 
         with _program_call_counter(case.program) as second_program_calls:
-            second_actual = compiled(*case.make_inputs(torch_rs))
+            with _case_execution_context(torch_rs, case):
+                second_actual = compiled(*case.make_inputs(torch_rs))
         if second_program_calls["count"] != 0:
             raise AssertionError(
                 f"{case.name} executed the original Python program on cache hit"
@@ -1399,6 +1476,7 @@ def _candidate_case_result(corpus_module, case):
             )
 
     after_inputs = _inputs_payload(inputs)
+    after_input_grads = _input_grad_payload(inputs)
     output = _tensor_payload(actual)
     _assert_payload_match(
         output,
@@ -1411,6 +1489,13 @@ def _candidate_case_result(corpus_module, case):
         label=f"{case.name}/torch_rs/cache_hit",
     )
     _assert_payload_match(after_inputs, before_inputs, label=f"{case.name}/inputs")
+    _assert_payload_match(
+        after_input_grads,
+        before_input_grads,
+        label=f"{case.name}/input_grads",
+    )
+    if case.category == "inference" and actual.requires_grad:
+        raise AssertionError(f"{case.name} produced a grad-requiring inference output")
     _assert_no_pytorch_modules(case.name)
     return {
         "name": case.name,

@@ -2,7 +2,8 @@
 
 The deterministic compile-coverage evaluator runs the versioned v4
 reference-eligible corpus against stock PyTorch 2.13 and the current
-`torch_rs` wheel. It fails closed on malformed corpus metadata,
+`torch_rs` wheel, including the no-grad ReLU inference cases. It fails closed
+on malformed corpus metadata,
 reference-import or compile failures, candidate import, compile, runtime, output
 or observable-semantic mismatches, eager fallback, installed-PyTorch forwarding,
 unsupported candidate cases, skipped eligible cases, and invalid guard coverage.
@@ -30,8 +31,8 @@ bash scripts/evaluate_torch_compile_coverage.sh --subset public
 The public subset uses the same corpus metadata, reference eligibility checks,
 candidate execution checks, category weights, and scoring formula as the full
 gate, but omits held-out cases. The full gate includes the held-out
-recompilation-guard cases and validates that the current v4 guard scenarios are
-present before scoring.
+broadcasting, inference, and recompilation-guard cases and validates that the
+current v4 guard scenarios are present before scoring.
 
 After the wheel and dependencies are already installed, the Python entry point
 can be run directly:
