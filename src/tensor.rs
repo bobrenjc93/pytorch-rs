@@ -3243,7 +3243,7 @@ impl Tensor {
         if let Some(output) = self.sub_same_shape_matching_dense_no_grad(other)? {
             return Ok(output);
         }
-        let output = self.zip_map(other, |left, right| left - right)?;
+        let output = self.zip_map(other, subtract_value_matching_pytorch)?;
         self.finish_add_subtract_vjp(other, output, AutogradNode::Subtract, -1.0)
     }
 
@@ -5718,8 +5718,9 @@ fn apply_binary_operation_scalar(
 
 #[inline]
 fn subtract_value_matching_pytorch(left: f32, right: f32) -> f32 {
-    if left.is_nan() && right.is_nan() {
-        f32::from_bits(right.to_bits() | F32_QUIET_NAN_MASK)
+    let right_bits = right.to_bits();
+    if right_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        f32::from_bits(right_bits | F32_QUIET_NAN_MASK)
     } else {
         left - right
     }
@@ -6921,18 +6922,14 @@ fn absolute_value(value: f32) -> f32 {
 #[inline]
 #[cfg(any(feature = "python-bindings", test))]
 fn l1_loss_difference_value(left: f32, right: f32) -> f32 {
-    const QUIET_NAN_MASK: u32 = 0x0040_0000;
-
-    let right_bits = right.to_bits();
-    if right_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
-        return f32::from_bits(right_bits | QUIET_NAN_MASK);
-    }
-    left - right
+    subtract_value_matching_pytorch(left, right)
 }
 
 #[inline]
 #[cfg(any(feature = "python-bindings", test))]
 fn squared_difference_value(left: f32, right: f32) -> f32 {
+    // PyTorch's fused MSE kernels preserve the input-side NaN payload when
+    // both operands are NaN, unlike the standalone subtract kernel.
     let difference = left - right;
     difference * difference
 }
@@ -7497,8 +7494,8 @@ mod tests {
         MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor,
         TensorError, contiguous_values_equal, full_reduction_mean_divisor,
         l1_loss_difference_value, log_value, logical_offset_for_linear_index,
-        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
-        validate_view_bounds,
+        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value,
+        squared_difference_value, try_result_vector, validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -12508,14 +12505,15 @@ mod tests {
     }
 
     #[test]
-    fn squared_difference_same_shape_matches_the_established_composition() {
+    fn squared_difference_same_shape_matches_fused_kernel_value_bits() {
         let assert_matches = |left: &Tensor, right: &Tensor| {
-            let difference = left.sub(right).unwrap();
-            let expected = difference.square().unwrap();
+            let expected = left
+                .zip_map_same_shape(right, squared_difference_value)
+                .unwrap();
             let actual = left.squared_difference(right).unwrap();
 
             assert_eq!(actual.shape(), expected.shape());
-            assert_eq!(actual.stride(), difference.stride());
+            assert_eq!(actual.stride(), expected.stride());
             assert_eq!(actual.storage_offset(), expected.storage_offset());
             assert_eq!(actual.dtype(), expected.dtype());
             assert_eq!(actual.device(), expected.device());

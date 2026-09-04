@@ -35,6 +35,7 @@ class FunctionalMseLossTests(unittest.TestCase):
         *,
         case,
         expected_stride=None,
+        expected_bits=None,
     ):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, expected.shape)
@@ -51,8 +52,15 @@ class FunctionalMseLossTests(unittest.TestCase):
         with self.subTest(case=case, values=True):
             np.testing.assert_array_equal(
                 self.tensor_bits(actual),
-                self.tensor_bits(expected),
+                self.tensor_bits(expected) if expected_bits is None else expected_bits,
             )
+
+    @staticmethod
+    def mse_kernel_bits(input, target):
+        left, right = np.broadcast_arrays(np.asarray(input), np.asarray(target))
+        with np.errstate(invalid="ignore", over="ignore"):
+            values = (left - right) * (left - right)
+        return values.reshape(-1).view(np.uint32)
 
     def assert_mean_scalar_matches_composition(self, actual, expected, *, case):
         with self.subTest(case=case, metadata=True):
@@ -615,7 +623,7 @@ class FunctionalMseLossTests(unittest.TestCase):
                         self.tensor_state(target)[-1], target_state[-1]
                     )
 
-    def test_same_stride_noncontiguous_cases_match_composition(self):
+    def test_same_stride_noncontiguous_cases_match_fused_kernel_bits(self):
         for case, input, target in self.same_stride_noncontiguous_cases():
             self.assertEqual(input.shape, target.shape)
             self.assertEqual(input.stride(), target.stride())
@@ -624,6 +632,7 @@ class FunctionalMseLossTests(unittest.TestCase):
                 self.assertFalse(target.is_contiguous())
             difference = input - target
             expected = difference.square()
+            expected_bits = self.mse_kernel_bits(input, target)
             input_state = self.tensor_state(input)
             target_state = self.tensor_state(target)
 
@@ -633,6 +642,7 @@ class FunctionalMseLossTests(unittest.TestCase):
                 expected,
                 case=case,
                 expected_stride=difference.stride(),
+                expected_bits=expected_bits,
             )
             with self.subTest(case=case, storage=True):
                 repeated = functional.mse_loss(input, target, reduction="none")
@@ -1175,7 +1185,7 @@ class FunctionalMseLossTests(unittest.TestCase):
                     self.assertNotEqual(first.data_ptr(), input.data_ptr())
                     self.assertNotEqual(first.data_ptr(), target.data_ptr())
 
-    def test_float32_edge_values_match_kernel_composition_bits(self):
+    def test_float32_edge_values_match_fused_kernel_bits(self):
         input_bits = np.asarray(
             [
                 0x0000_0000,
@@ -1235,15 +1245,15 @@ class FunctionalMseLossTests(unittest.TestCase):
                 actual_target,
                 reduction="none",
             )
-            expected = difference.square()
+            expected_bits = self.mse_kernel_bits(actual_input, actual_target)
             with self.subTest(case=case):
                 self.assertEqual(actual.stride(), difference.stride())
                 np.testing.assert_array_equal(
                     self.tensor_bits(actual),
-                    self.tensor_bits(expected),
+                    expected_bits,
                 )
 
-    def test_scalar_broadcast_float32_edges_match_kernel_composition_bits(self):
+    def test_scalar_broadcast_float32_edges_match_fused_kernel_bits(self):
         tensor_bits = np.asarray(
             [
                 0x0000_0000,
@@ -1286,6 +1296,7 @@ class FunctionalMseLossTests(unittest.TestCase):
                     )
                     difference = input - target
                     expected = difference.square()
+                    expected_bits = self.mse_kernel_bits(input, target)
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
                         actual = functional.mse_loss(input, target, reduction="none")
@@ -1297,7 +1308,7 @@ class FunctionalMseLossTests(unittest.TestCase):
                         self.assertEqual(actual.stride(), expected.stride())
                         np.testing.assert_array_equal(
                             self.tensor_bits(actual),
-                            self.tensor_bits(expected),
+                            expected_bits,
                         )
 
     def test_requires_grad_operands_need_no_grad(self):
