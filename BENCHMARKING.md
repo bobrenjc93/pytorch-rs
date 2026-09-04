@@ -62,6 +62,22 @@ do not replace the benchmark policy or Burner-managed evaluation progress.
 
 - [`torch.compile` eager CPU release timings](docs/torch-compile-cpu-release-timings.md)
 
+The CUDA compile measurement boundary is a narrow, fail-closed skeleton. Run it
+on the H100 host with a single visible device:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py
+```
+
+The script requires PyTorch 2.13, records GPU, driver, CUDA runtime, `nvcc`,
+compile configuration, cold first-call timing, synchronized steady-state
+timings, and checksum/correctness evidence for one versioned PyTorch CUDA
+reference workload. The current `torch_rs` CUDA compile cell is emitted as
+explicit `zero_credit_unsupported`: CPU tensors, `backend="eager"`, eager
+fallback, skipped execution, or forwarding to installed PyTorch are rejected as
+eligible CUDA compile evidence. The public CPU-build `torch.cuda` probe behavior
+remains unchanged.
+
 ### Layout/view ops
 
 - [`Tensor.view`, reshape, flatten, ravel, unbind, and edge-unsqueeze release timings](docs/tensor-view-release-timings.md)
