@@ -9,6 +9,24 @@ For API-level behavior and explicit limitations, see the
 [supported-surface contract](docs/supported-surface.md). Performance claims are
 governed by [BENCHMARKING.md](BENCHMARKING.md).
 
+## Quick-scan map
+
+This table is a navigation aid; the detailed coverage contract below remains
+the source of truth.
+
+| Weighted area | Weight | Primary supported examples | Main unsupported boundary |
+| --- | ---: | --- | --- |
+| tensor storage, shapes, strides, views, indexing | 15% | CPU `f32` tensor metadata, query helpers, shared-storage views, reshape/transpose, contiguous materialization | Range slicing, advanced indexing, dtype/device expansion, storage-object APIs |
+| dtypes, promotion, devices, dispatch | 10% | CPU/default-device metadata, CPU-build CUDA probes, float32 dtype helpers, selected dispatch probes | Actual CUDA tensors/runtime, mutable device routing, mixed precision, broader promotion |
+| creation, elementwise, reductions | 15% | `as_tensor`/`asarray`, scalar/list factories, arithmetic and unary ops, full-tensor `sum`/`mean` | Non-float32 or accelerator creation, concrete `out`, dimension reductions, in-place ops |
+| linear algebra and signal operations | 10% | Rank-2 `matmul`/`mm`, float32 matmul precision preference state | `bmm`, `addmm`, rank-1 or batched `matmul` under `mm`, spectral ops |
+| autograd and higher-order differentiation | 15% | `Tensor.backward`, sequence `torch.autograd.backward`, grad-mode helpers, VJPs for supported views/unaries/reductions | Concrete or higher-order gradients, `autograd.grad`, inference/anomaly contexts |
+| neural-network functional API and modules | 15% | Functional activations, `l1_loss`/`mse_loss`, `linear`, dropout paths, module future flags | Modules/parameters, active-autograd L1/softsign, loss weights and legacy reductions |
+| optimizers, initialization, data utilities | 5% | `torch.nn.init.calculate_gain`, dataset and sampler helpers, `DataChunk` | Optimizers, `DataLoader`, worker multiprocessing, random samplers, mutating initializers |
+| serialization, state dictionaries, model interchange | 5% | Serialization option state, mmap flags, state-dict prefix removal | `torch.save`, `torch.load`, module state-dict production/loading, model interchange |
+| compilation, parallelism, distributed execution | 5% | Eager JIT helpers, compiler registry/defaults/disable, narrow eager `torch.compile`, backend/distributed probes | CUDA execution/runtime, TorchScript and `torch.export` graph capture, process groups/collectives |
+| ergonomics, diagnostics, documentation, ecosystem integration | 5% | Rank-0 `Tensor.__format__`, deterministic default-policy state, native warning policy | Deterministic enforcement, warning-only enforcement, nondefault deterministic modes |
+
 Full-tensor `Tensor.mean(dim=None, keepdim=False, dtype=None)` and
 `torch.mean(input, dim=None, keepdim=False, *, dtype=None, out=None)` are
 supported for exact native CPU float32 tensors by reusing the existing full
