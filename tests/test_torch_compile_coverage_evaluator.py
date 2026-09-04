@@ -31,7 +31,7 @@ def _make_inputs(module):
     return (module.tensor([1.0], dtype=module.float32),)
 
 
-def _case(name, category, *, recompile_limit=None):
+def _case(name, category, *, recompile_limit=None, backward_through_sum=False):
     return SimpleNamespace(
         name=name,
         category=category,
@@ -42,6 +42,7 @@ def _case(name, category, *, recompile_limit=None):
         mode=None,
         options=None,
         recompile_limit=recompile_limit,
+        backward_through_sum=backward_through_sum,
     )
 
 
@@ -141,11 +142,21 @@ def _valid_fake_corpus():
             _case(f"guard_{index}", "recompilation_guards", recompile_limit=4)
             for index in range(2)
         ),
+        _case(
+            "training_0",
+            "training_autograd",
+            backward_through_sum=True,
+        ),
         _case("guard_limit", "recompilation_guards", recompile_limit=2),
     )
     held_out_cases = (
         _case("heldout_broadcast_0", "broadcasting"),
         _case("heldout_broadcast_1", "broadcasting"),
+        _case(
+            "heldout_training_0",
+            "training_autograd",
+            backward_through_sum=True,
+        ),
         _case("heldout_guard_0", "recompilation_guards", recompile_limit=4),
         _case("heldout_guard_1", "recompilation_guards", recompile_limit=4),
     )
@@ -238,7 +249,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
 
         self.assertIn("duplicate case name 'tensor_0'", str(raised.exception))
 
-    def test_current_v4_corpus_matches_pinned_manifest(self):
+    def test_current_v5_corpus_matches_pinned_manifest(self):
         evaluator._validate_corpus_metadata(_real_corpus_namespace())
 
     def test_pinned_manifest_rejects_case_program_replacement(self):
@@ -253,7 +264,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v4 case cpu_float32_unary_abs_neg program changed",
+            "public v5 case cpu_float32_unary_abs_neg program changed",
             str(raised.exception),
         )
 
@@ -269,7 +280,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v4 case cpu_float32_unary_abs_neg make_inputs changed",
+            "public v5 case cpu_float32_unary_abs_neg make_inputs changed",
             str(raised.exception),
         )
 
@@ -301,7 +312,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v4 guard scenario "
+            "public v5 guard scenario "
             "unary_shape_stride_requires_grad_guards/same_metadata "
             "guard_change changed",
             str(raised.exception),
@@ -571,6 +582,51 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
                     "category": case.category,
                     "status": "passed",
                     "output": {"metadata": {"shape": [1]}, "values": [2.0]},
+                }
+            ],
+            "guard_scenarios": [],
+        }
+
+        verdicts, _ = evaluator._compare_worker_to_reference(
+            corpus,
+            (case,),
+            reference_case_results,
+            {},
+            worker_payload,
+        )
+
+        self.assertEqual(len(verdicts), 1)
+        self.assertFalse(verdicts[0].passed)
+        self.assertEqual(verdicts[0].failure_kind, "reference_mismatch")
+
+    def test_candidate_gradient_mismatch_zeroes_training_case(self):
+        corpus = _valid_fake_corpus()
+        case = _case(
+            "training_probe",
+            "training_autograd",
+            backward_through_sum=True,
+        )
+        reference_case_results = {
+            case.name: {
+                "name": case.name,
+                "category": case.category,
+                "output": {"metadata": {"shape": [1]}, "values": [1.0]},
+                "leaf_gradients": [
+                    {"metadata": {"shape": [1]}, "values": [1.0]},
+                ],
+            }
+        }
+        worker_payload = {
+            "ok": True,
+            "cases": [
+                {
+                    "name": case.name,
+                    "category": case.category,
+                    "status": "passed",
+                    "output": {"metadata": {"shape": [1]}, "values": [1.0]},
+                    "leaf_gradients": [
+                        {"metadata": {"shape": [1]}, "values": [2.0]},
+                    ],
                 }
             ],
             "guard_scenarios": [],

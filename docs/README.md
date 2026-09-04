@@ -9,7 +9,7 @@ merge time and are not source documentation.
 - [Supported surface](supported-surface.md): Exhaustive Python API coverage and unsupported boundary contract.
 - [Feature coverage contract](../FEATURES.md): Weighted feature areas and what counts toward coverage.
 - [Benchmark policy](../BENCHMARKING.md): Correctness gates, measurement rules, provenance, and anti-gaming policy.
-- [Compile coverage evaluator](torch-compile-coverage-evaluator.md): Command-backed Burner evaluator for the v4 reference-eligible `torch.compile` corpus.
+- [Compile coverage evaluator](torch-compile-coverage-evaluator.md): Command-backed Burner evaluator for the v5 reference-eligible `torch.compile` corpus.
 
 ## Contributor Guides
 
