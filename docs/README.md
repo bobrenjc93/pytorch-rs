@@ -34,6 +34,7 @@ gates.
 ### Elementwise ops
 
 - [Addition timings](tensor-add-release-timings.md): `+` and `Tensor.add` release evidence.
+- [Subtraction timings](top-level-subtract-release-timings.md): `torch.sub` and `torch.subtract` release evidence.
 - [Multiplication timings](tensor-mul-release-timings.md): `*`, `Tensor.mul`/`Tensor.multiply`, and top-level multiplication release evidence.
 - [Division timings](top-level-division-release-timings.md): `torch.div` and `torch.divide` release evidence.
 - [Absolute value timings](tensor-abs-release-timings.md): `Tensor.abs` and `torch.abs` release evidence.
