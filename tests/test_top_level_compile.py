@@ -15,7 +15,7 @@ from torch_rs import _compiler_state as _state
 
 UNSUPPORTED_MESSAGE = (
     "torch.compile(): only backend='eager', fullgraph=True straight-line "
-    "Tensor neg/abs/relu/square/add functions with one or two positional exact "
+    "Tensor neg/abs/relu/square/detach/add functions with one or two positional exact "
     "native CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
     "forwarding, callable backend invocation, CUDA compilation, and broader "
     "graph capture remain unsupported"
@@ -86,6 +86,7 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertIn("Tensor ``neg``", inspect.cleandoc(function.__doc__))
         self.assertIn("``relu``", inspect.cleandoc(function.__doc__))
         self.assertIn("``square``", inspect.cleandoc(function.__doc__))
+        self.assertIn("``detach``", inspect.cleandoc(function.__doc__))
         self.assertIn("broader graph capture", inspect.cleandoc(function.__doc__))
 
         self.assertEqual(torch.__all__.count("compile"), 1)
@@ -278,7 +279,7 @@ class TorchCompileEntrypointTests(unittest.TestCase):
     def test_eager_fullgraph_executes_supported_tensor_programs_natively(self):
         def program(x):
             y = x.neg()
-            return (y.abs().relu() + x.relu()).add(x.square())
+            return (y.abs().relu() + x.relu()).add(x.neg())
 
         compiled = torch.compile(program, backend="eager", fullgraph=True)
         input = torch.tensor([[-2.0, 0.5, 3.0], [4.25, -5.5, 6.0]])
@@ -744,6 +745,9 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         def call_square(value):
             return value.square()
 
+        def call_detach(value):
+            return value.detach()
+
         def call_add(value):
             return value.add(value)
 
@@ -772,6 +776,7 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             ("absolute", lambda self: self + self, call_absolute, [4.0]),
             ("relu", lambda self: self + self, call_relu, [4.0]),
             ("square", lambda self: self + self, call_square, [4.0]),
+            ("detach", lambda self: self + self, call_detach, [4.0]),
             ("add", lambda self, other: self.neg(), call_add, [-2.0]),
             ("__add__", lambda self, other: self.neg(), call_dunder_add, [-2.0]),
             (
