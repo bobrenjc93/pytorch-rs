@@ -41,6 +41,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-add-release-timings.md",
     ),
     (
+        "`torch.sub` and `torch.subtract` release timings",
+        "docs/top-level-subtract-release-timings.md",
+    ),
+    (
         "`*`, `Tensor.mul`/`Tensor.multiply`, and "
         "`torch.mul`/`torch.multiply` release timings",
         "docs/tensor-mul-release-timings.md",
@@ -106,6 +110,7 @@ HISTORICAL_TIMING_GROUPS = (
         "Elementwise ops",
         (
             "docs/tensor-add-release-timings.md",
+            "docs/top-level-subtract-release-timings.md",
             "docs/tensor-mul-release-timings.md",
             "docs/top-level-division-release-timings.md",
             "docs/tensor-abs-release-timings.md",
