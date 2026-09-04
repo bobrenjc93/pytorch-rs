@@ -262,8 +262,8 @@ def set_default_device(device: "Device") -> None:
 
 _COMPILE_UNSUPPORTED_MESSAGE = (
     "torch.compile(): only backend='eager', fullgraph=True straight-line "
-    "Tensor neg/abs/add functions with one or two positional exact native CPU "
-    "float32 Tensor are supported; eager fallback, installed-PyTorch "
+    "Tensor neg/abs/relu/add functions with one or two positional exact "
+    "native CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
     "forwarding, callable backend invocation, CUDA compilation, and broader "
     "graph capture remain unsupported"
 )
@@ -279,6 +279,7 @@ _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
     "add",
     "neg",
     "negative",
+    "relu",
 )
 _COMPILE_TENSOR_METHOD_GUARD_MISSING = globals().get(
     "_COMPILE_TENSOR_METHOD_GUARD_MISSING",
@@ -604,10 +605,11 @@ def compile(
     This entrypoint implements Python argument binding, ``disable=True``
     pass-through, and backend resolution through ``torch.compiler``. It also
     lowers exact Python functions with one or two positional exact native CPU
-    ``float32`` Tensor inputs made only from Tensor ``neg``, ``abs``, and
-    binary ``add`` operations for ``backend="eager"`` with ``fullgraph=True``.
-    Eager fallback, installed-PyTorch forwarding, callable backend invocation,
-    CUDA compilation, and broader graph capture remain unsupported.
+    ``float32`` Tensor inputs made only from Tensor ``neg``, ``abs``, ``relu``,
+    and binary ``add`` operations for ``backend="eager"`` with
+    ``fullgraph=True``. Eager fallback, installed-PyTorch forwarding, callable
+    backend invocation, CUDA compilation, and broader graph capture remain
+    unsupported.
     """
     if model is None:
         captured_backend = (

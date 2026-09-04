@@ -4,7 +4,7 @@ import json
 import subprocess
 import sys
 import unittest
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -111,6 +111,9 @@ class _FakeTorchModule:
         del dtype, requires_grad
         return _FakeTensor(values)
 
+    def no_grad(self):
+        return nullcontext()
+
     def compile(self, program, **kwargs):
         del program
         self.compile_calls.append(kwargs)
@@ -137,7 +140,9 @@ class _FakeTorchModule:
 def _valid_fake_corpus():
     public_cases = (
         *(_case(f"tensor_{index}", "tensor_arithmetic") for index in range(5)),
+        _case("training_0", "training_autograd", backward_through_sum=True),
         *(_case(f"broadcast_{index}", "broadcasting") for index in range(4)),
+        _case("inference_0", "inference"),
         *(
             _case(f"guard_{index}", "recompilation_guards", recompile_limit=4)
             for index in range(2)
@@ -147,6 +152,12 @@ def _valid_fake_corpus():
     held_out_cases = (
         _case("heldout_broadcast_0", "broadcasting"),
         _case("heldout_broadcast_1", "broadcasting"),
+        _case(
+            "heldout_training_0",
+            "training_autograd",
+            backward_through_sum=True,
+        ),
+        _case("heldout_inference_0", "inference"),
         _case("heldout_guard_0", "recompilation_guards", recompile_limit=4),
         _case("heldout_guard_1", "recompilation_guards", recompile_limit=4),
     )

@@ -7,7 +7,7 @@ import argparse
 import hashlib
 import inspect
 from collections import defaultdict
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 import importlib.metadata as importlib_metadata
 import importlib.util
@@ -215,6 +215,22 @@ EXPECTED_V5_CASE_MANIFEST = (
         "recompile_limit": None,
     },
     {
+        "name": "cpu_float32_relu_no_grad_inference",
+        "held_out": False,
+        "category": "inference",
+        "program": "cpu_float32_relu_no_grad_inference",
+        "program_sha256": "f3e750ef242b91aa0b321f7bbd79ec9c2821616e532b5a54413ecbee142ab3ae",
+        "make_inputs": "cpu_float32_relu_no_grad_inference_inputs",
+        "make_inputs_sha256": "31c0ce24f8ed8862d9b0ae9204d2716711574ef539fbdf35300a97210c38dc7a",
+        "inputs_sha256": "306d237dddad565ff9c8c6d8320a37f2dfa8db5a3081ca14622d6d224bfde895",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+    },
+    {
         "name": "cpu_float32_recompile_guard_unary_metadata",
         "held_out": False,
         "category": "recompilation_guards",
@@ -310,6 +326,23 @@ EXPECTED_V5_CASE_MANIFEST = (
         "options": None,
         "recompile_limit": None,
         "backward_through_sum": True,
+    },
+    {
+        "name": "cpu_float32_heldout_relu_chain_no_grad_inference",
+        "held_out": True,
+        "category": "inference",
+        "program": "cpu_float32_heldout_relu_chain_no_grad_inference",
+        "program_sha256": "1d3a9b0397b3ace09d845c41d25fe9a789499553c756417707d06863585553d6",
+        "make_inputs": "cpu_float32_heldout_relu_no_grad_inference_inputs",
+        "make_inputs_sha256": "826d9c373a77a1d30e780a017118837c8393b8d0a3a4774a0fdb1f513fa8d564",
+        "inputs_sha256": "82fa9cd2e251dac2ca203608abb5a53e87a2acf7025437caae9a9a6f836217f7",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
     },
     {
         "name": "cpu_float32_heldout_guard_unary_metadata",
@@ -998,10 +1031,10 @@ def _validate_corpus_metadata(corpus_module):
 
     public_cases = tuple(getattr(corpus_module, "COMPILE_CORPUS", ()))
     held_out_cases = tuple(getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ()))
-    if len(public_cases) != 13:
-        errors.append(f"expected 13 public v5 cases, found {len(public_cases)}")
-    if len(held_out_cases) != 5:
-        errors.append(f"expected 5 held-out v5 cases, found {len(held_out_cases)}")
+    if len(public_cases) != 14:
+        errors.append(f"expected 14 public v5 cases, found {len(public_cases)}")
+    if len(held_out_cases) != 6:
+        errors.append(f"expected 6 held-out v5 cases, found {len(held_out_cases)}")
 
     seen_names = set()
     for case in (*public_cases, *held_out_cases):
@@ -1133,15 +1166,26 @@ def _inputs_payload(inputs):
     return [_tensor_payload(input) for input in inputs]
 
 
-def _leaf_gradients_payload(inputs):
-    gradients = []
-    for input in inputs:
-        gradient = getattr(input, "grad", None)
-        if gradient is None:
-            gradients.append(None)
-        else:
-            gradients.append(_tensor_payload(gradient))
-    return gradients
+def _case_execution_context(tensor_module, case):
+    if getattr(case, "category", None) == "inference":
+        return tensor_module.no_grad()
+    return nullcontext()
+
+
+def _run_case_program(tensor_module, case, inputs):
+    with _case_execution_context(tensor_module, case):
+        return case.program(*inputs)
+
+
+def _tensor_grad_payload(tensor):
+    grad = getattr(tensor, "grad", None)
+    if grad is None:
+        return None
+    return _tensor_payload(grad)
+
+
+def _input_grad_payload(inputs):
+    return [_tensor_grad_payload(input) for input in inputs]
 
 
 def _assert_payload_match(actual, expected, *, label):
@@ -1189,18 +1233,25 @@ def _reference_case_result(reference_torch, case):
     backward_through_sum = getattr(case, "backward_through_sum", False)
     inputs = case.make_inputs(reference_torch)
     before_inputs = _inputs_payload(inputs)
+    before_input_grads = _input_grad_payload(inputs)
+    if case.category == "inference" and not all(
+        getattr(input, "requires_grad", False) for input in inputs
+    ):
+        raise AssertionError(f"{case.name} inference inputs must require grad")
     expected_inputs = case.make_inputs(reference_torch)
-    expected = case.program(*expected_inputs)
+    expected = _run_case_program(reference_torch, case, expected_inputs)
     expected_gradients = None
     if backward_through_sum:
         expected.sum().backward()
-        expected_gradients = _leaf_gradients_payload(expected_inputs)
+        expected_gradients = _input_grad_payload(expected_inputs)
     compiled = reference_torch.compile(
         case.program,
         **_compile_kwargs_from_case(case, backend),
     )
-    actual = compiled(*inputs)
+    with _case_execution_context(reference_torch, case):
+        actual = compiled(*inputs)
     after_forward_inputs = _inputs_payload(inputs)
+    after_input_grads = _input_grad_payload(inputs)
 
     _assert_payload_match(
         _tensor_payload(actual),
@@ -1212,10 +1263,17 @@ def _reference_case_result(reference_torch, case):
         before_inputs,
         label=f"{case.name}/inputs",
     )
+    _assert_payload_match(
+        after_input_grads,
+        before_input_grads,
+        label=f"{case.name}/input_grads",
+    )
+    if case.category == "inference" and actual.requires_grad:
+        raise AssertionError(f"{case.name} produced a grad-requiring inference output")
     actual_gradients = None
     if backward_through_sum:
         actual.sum().backward()
-        actual_gradients = _leaf_gradients_payload(inputs)
+        actual_gradients = _input_grad_payload(inputs)
         _assert_payload_match(
             actual_gradients,
             expected_gradients,
@@ -1440,13 +1498,16 @@ def _candidate_case_result(corpus_module, case):
     torch_rs.compiler.reset()
     backward_through_sum = getattr(case, "backward_through_sum", False)
     expected_inputs = case.make_inputs(torch_rs)
-    expected = case.program(*expected_inputs)
+    expected = _run_case_program(torch_rs, case, expected_inputs)
     expected_gradients = None
     if backward_through_sum:
         expected.sum().backward()
-        expected_gradients = _leaf_gradients_payload(expected_inputs)
+        expected_gradients = _input_grad_payload(expected_inputs)
     inputs = case.make_inputs(torch_rs)
     before_inputs = _inputs_payload(inputs)
+    before_input_grads = _input_grad_payload(inputs)
+    if case.category == "inference" and not all(input.requires_grad for input in inputs):
+        raise AssertionError(f"{case.name} inference inputs must require grad")
     with _candidate_compile_counters() as counters:
         compiled = torch_rs.compile(
             case.program,
@@ -1455,7 +1516,8 @@ def _candidate_case_result(corpus_module, case):
         if getattr(compiled, "_torch_rs_compile_backend", None) != "eager":
             raise AssertionError(f"{case.name} did not resolve backend='eager'")
         with _program_call_counter(case.program) as program_calls:
-            actual = compiled(*inputs)
+            with _case_execution_context(torch_rs, case):
+                actual = compiled(*inputs)
         if program_calls["count"] != 0:
             raise AssertionError(
                 f"{case.name} executed the original Python program during compiled call"
@@ -1471,11 +1533,14 @@ def _candidate_case_result(corpus_module, case):
                 "native trace graphs, expected exactly 1"
             )
         after_forward_inputs = _inputs_payload(inputs)
+        after_input_grads = _input_grad_payload(inputs)
 
         second_inputs = case.make_inputs(torch_rs)
         before_second_inputs = _inputs_payload(second_inputs)
+        before_second_input_grads = _input_grad_payload(second_inputs)
         with _program_call_counter(case.program) as second_program_calls:
-            second_actual = compiled(*second_inputs)
+            with _case_execution_context(torch_rs, case):
+                second_actual = compiled(*second_inputs)
         if second_program_calls["count"] != 0:
             raise AssertionError(
                 f"{case.name} executed the original Python program on cache hit"
@@ -1504,14 +1569,33 @@ def _candidate_case_result(corpus_module, case):
         label=f"{case.name}/inputs",
     )
     _assert_payload_match(
+        after_input_grads,
+        before_input_grads,
+        label=f"{case.name}/input_grads",
+    )
+    _assert_payload_match(
         _inputs_payload(second_inputs),
         before_second_inputs,
         label=f"{case.name}/cache_hit_inputs",
     )
+    _assert_payload_match(
+        _input_grad_payload(second_inputs),
+        before_second_input_grads,
+        label=f"{case.name}/cache_hit_input_grads",
+    )
+    if case.category == "inference":
+        if actual.requires_grad:
+            raise AssertionError(
+                f"{case.name} produced a grad-requiring inference output"
+            )
+        if second_actual.requires_grad:
+            raise AssertionError(
+                f"{case.name} cache hit produced a grad-requiring inference output"
+            )
     actual_gradients = None
     if backward_through_sum:
         actual.sum().backward()
-        actual_gradients = _leaf_gradients_payload(inputs)
+        actual_gradients = _input_grad_payload(inputs)
         _assert_payload_match(
             actual_gradients,
             expected_gradients,
@@ -1525,7 +1609,7 @@ def _candidate_case_result(corpus_module, case):
 
         second_actual.sum().backward()
         _assert_payload_match(
-            _leaf_gradients_payload(second_inputs),
+            _input_grad_payload(second_inputs),
             expected_gradients,
             label=f"{case.name}/torch_rs_cache_hit_backward_sum",
         )

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from contextlib import nullcontext
 import gc
 import hashlib
 import importlib.metadata as importlib_metadata
@@ -40,6 +41,27 @@ IMPLEMENTATION_ORDERS = (
     ("torch_rs", "pytorch"),
     ("pytorch", "torch_rs"),
 )
+CATEGORY_LABELS = {
+    "tensor_arithmetic": "tensor-arithmetic",
+    "broadcasting": "broadcasting",
+    "inference": "inference",
+    "training_autograd": "training-autograd",
+    "recompilation_guards": "recompilation-guard",
+}
+CATEGORY_PHRASES = {
+    "tensor_arithmetic": "tensor arithmetic",
+    "broadcasting": "broadcasting",
+    "inference": "inference",
+    "training_autograd": "training autograd",
+    "recompilation_guards": "recompilation guards",
+}
+CATEGORY_PROGRAM_LABELS = {
+    "tensor_arithmetic": "tensor-arithmetic",
+    "broadcasting": "broadcasting",
+    "inference": "inference",
+    "training_autograd": "training-autograd",
+    "recompilation_guards": "recompilation-guard",
+}
 
 
 @dataclass(frozen=True)
@@ -396,6 +418,12 @@ def _cell_input_factory(case, variant):
     return case.make_inputs if variant.make_inputs is None else variant.make_inputs
 
 
+def _case_execution_context(module, case):
+    if getattr(case, "category", None) == "inference":
+        return module.no_grad()
+    return nullcontext()
+
+
 def _synchronize(module):
     cuda = getattr(module, "cuda", None)
     if cuda is None:
@@ -476,20 +504,22 @@ def _summarize_samples(samples_ns, repeats):
     }
 
 
-def _time_once(compiled, inputs, module):
-    started_ns = time.perf_counter_ns()
-    output = compiled(*inputs)
+def _time_once(compiled, inputs, module, case):
+    with _case_execution_context(module, case):
+        started_ns = time.perf_counter_ns()
+        output = compiled(*inputs)
     _synchronize(module)
     checksum = _checksum_tensor(output)
     elapsed_ns = time.perf_counter_ns() - started_ns
     return elapsed_ns, checksum, output
 
 
-def _time_repeated(compiled, inputs, module, repeats):
-    started_ns = time.perf_counter_ns()
-    output = None
-    for _ in range(repeats):
-        output = compiled(*inputs)
+def _time_repeated(compiled, inputs, module, repeats, case):
+    with _case_execution_context(module, case):
+        started_ns = time.perf_counter_ns()
+        output = None
+        for _ in range(repeats):
+            output = compiled(*inputs)
     _synchronize(module)
     checksum = _checksum_tensor(output)
     return time.perf_counter_ns() - started_ns, checksum
@@ -522,10 +552,10 @@ def _run_cell(
     compile_started_ns = time.perf_counter_ns()
     compiled = module.compile(case.program, **case.compile_kwargs("eager"))
     factory_ns = time.perf_counter_ns() - compile_started_ns
-    cold_ns, cold_checksum, cold_output = _time_once(compiled, inputs, module)
+    cold_ns, cold_checksum, cold_output = _time_once(compiled, inputs, module, case)
 
     for _ in range(warmups):
-        _time_repeated(compiled, inputs, module, variant.repeats)
+        _time_repeated(compiled, inputs, module, variant.repeats, case)
 
     sample_ns = []
     sample_checksums = []
@@ -535,6 +565,7 @@ def _run_cell(
             inputs,
             module,
             variant.repeats,
+            case,
         )
         sample_ns.append(elapsed_ns)
         sample_checksums.append(checksum)
@@ -571,9 +602,10 @@ def _run_guard_sequence_pass(
         inputs = step.make_inputs(module)
         started_ns = time.perf_counter_ns()
         try:
-            output = compiled(*inputs)
-            _synchronize(module)
-            elapsed_us = (time.perf_counter_ns() - started_ns) / 1000.0
+            with _case_execution_context(module, case):
+                output = compiled(*inputs)
+                _synchronize(module)
+                elapsed_us = (time.perf_counter_ns() - started_ns) / 1000.0
         except Exception as error:
             elapsed_us = (time.perf_counter_ns() - started_ns) / 1000.0
             if not step.expect_limit_error:
@@ -598,7 +630,8 @@ def _run_guard_sequence_pass(
             )
 
         expected_inputs = step.make_inputs(module)
-        expected = case.program(*expected_inputs)
+        with _case_execution_context(module, case):
+            expected = case.program(*expected_inputs)
         cell_name = f"{scenario.name}/{step.name}/{implementation}"
         _assert_outputs_match(output, expected, cell_name=cell_name)
         checksum = _checksum_tensor(output)
@@ -613,7 +646,8 @@ def _run_guard_sequence_pass(
 
         if implementation == "torch_rs":
             reference_inputs = step.make_inputs(reference_torch)
-            reference_expected = case.program(*reference_inputs)
+            with _case_execution_context(reference_torch, case):
+                reference_expected = case.program(*reference_inputs)
             _assert_outputs_match(
                 output,
                 reference_expected,
@@ -901,7 +935,8 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                         [],
                     ).append(measured)
                     expected_inputs = _cell_input_factory(case, variant)(module)
-                    expected = case.program(*expected_inputs)
+                    with _case_execution_context(module, case):
+                        expected = case.program(*expected_inputs)
                     _assert_outputs_match(
                         measured["cold_output"],
                         expected,
@@ -917,7 +952,8 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                             case,
                             variant,
                         )(reference_torch)
-                        reference_expected = case.program(*reference_inputs)
+                        with _case_execution_context(reference_torch, case):
+                            reference_expected = case.program(*reference_inputs)
                         _assert_outputs_match(
                             measured["cold_output"],
                             reference_expected,
@@ -1078,15 +1114,76 @@ def _format_guard_sequence(row):
 
 def _timed_category_counts(cases):
     counts = Counter(row["category"] for row in cases)
-    order = (
-        ("tensor_arithmetic", "tensor-arithmetic"),
-        ("broadcasting", "broadcasting"),
-        ("recompilation_guards", "recompilation-guard"),
+    ordered_categories = [
+        category
+        for category in CATEGORY_LABELS
+        if category in counts
+    ]
+    ordered_categories.extend(
+        sorted(category for category in counts if category not in CATEGORY_LABELS)
     )
     return ", ".join(
-        f"{counts[category]} {label}"
-        for category, label in order
-        if category in counts
+        f"{counts[category]} {CATEGORY_LABELS.get(category, category)}"
+        for category in ordered_categories
+    )
+
+
+def _human_join(items):
+    if len(items) <= 1:
+        return "".join(items)
+    if len(items) == 2:
+        return " and ".join(items)
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
+def _supported_category_summary(coverage_denominator):
+    categories = [
+        CATEGORY_PHRASES.get(category["category"], category["category"])
+        for category in coverage_denominator["supported_categories"]
+    ]
+    return _human_join(categories)
+
+
+def _held_out_summary(report):
+    corpus = report.get("corpus", {})
+    category_weights = report.get("coverage_denominator", {}).get(
+        "category_weights",
+        {},
+    )
+    held_out_cases = corpus.get("held_out_cases", ())
+    held_out_counts = Counter(case.get("category") for case in held_out_cases)
+    ordered_categories = [
+        category
+        for category in category_weights
+        if category in held_out_counts
+    ]
+    ordered_categories.extend(
+        sorted(
+            category
+            for category in held_out_counts
+            if category not in category_weights
+        )
+    )
+
+    parts = []
+    for category in ordered_categories:
+        count = held_out_counts[category]
+        program_word = "program" if count == 1 else "programs"
+        phrase = CATEGORY_PROGRAM_LABELS.get(category, category)
+        parts.append(f"{count} held-out {phrase} {program_word}")
+
+    guard_count = len(corpus.get("held_out_recompilation_guard_scenarios", ()))
+    if guard_count:
+        scenario_word = "scenario" if guard_count == 1 else "scenarios"
+        parts.append(f"{guard_count} held-out recompilation-guard {scenario_word}")
+
+    if not parts:
+        return "No held-out compile corpus cases are recorded in this artifact."
+    return (
+        f"The {corpus.get('version', 'compile')} corpus also keeps "
+        f"{_human_join(parts)} in tests to guard "
+        "against case-specific specialization; they are not included in the "
+        "public timing table."
     )
 
 
@@ -1186,7 +1283,7 @@ def render_markdown_summary(report):
             (
                 "The compile corpus keeps the full 100-point category denominator. "
                 "The native `torch_rs` path currently has executable public cases "
-                "for tensor arithmetic, broadcasting, and recompilation guards. "
+                f"for {_supported_category_summary(coverage_denominator)}. "
                 "Every remaining category below stays in the denominator as zero "
                 "credit instead of being dropped from the report."
             ),
@@ -1212,12 +1309,7 @@ def render_markdown_summary(report):
         [
             "",
             _supported_denominator_line(coverage_denominator),
-            (
-                "The v4 corpus also keeps 2 held-out broadcasting programs and 2 "
-                "held-out recompilation-guard scenarios in tests to guard against "
-                "case-specific specialization; they are not included in the public "
-                "timing table."
-            ),
+            _held_out_summary(report),
             "",
         ]
     )
@@ -1240,29 +1332,41 @@ def _markdown_summary(markdown_path):
 
 def _validate_expected_artifact_shape(report):
     errors = []
+    corpus_module = _load_compile_corpus_module()
+    expected_corpus = _corpus_metadata(corpus_module)
+    expected_public_cases = tuple(corpus_module.COMPILE_CORPUS)
+    expected_coverage = _coverage_denominator(corpus_module, expected_public_cases)
+    expected_category_counts = Counter()
+    for case in expected_public_cases:
+        for variant in INPUT_VARIANTS:
+            if _variant_applies_to_case(variant, case):
+                expected_category_counts[case.category] += 1
+    expected_timed_cell_count = sum(expected_category_counts.values())
+
     environment = report.get("environment", {})
     if environment.get("benchmark_version") != BENCHMARK_VERSION:
         errors.append(
             "benchmark version mismatch: "
             f"{environment.get('benchmark_version')!r} != {BENCHMARK_VERSION!r}"
         )
-    if environment.get("corpus_version") != "torch_compile_corpus_v4":
+    expected_corpus_version = getattr(corpus_module, "COMPILE_CORPUS_VERSION", None)
+    if environment.get("corpus_version") != expected_corpus_version:
         errors.append(
             "corpus version mismatch: "
-            f"{environment.get('corpus_version')!r} != 'torch_compile_corpus_v4'"
+            f"{environment.get('corpus_version')!r} != {expected_corpus_version!r}"
         )
 
     cases = report.get("cases", [])
     category_counts = Counter(row.get("category") for row in cases)
-    expected_counts = {
-        "tensor_arithmetic": 35,
-        "broadcasting": 28,
-        "recompilation_guards": 21,
-    }
-    if len(cases) != 84 or category_counts != expected_counts:
+    if (
+        len(cases) != expected_timed_cell_count
+        or category_counts != expected_category_counts
+    ):
         errors.append(
             "timed cell count mismatch: "
-            f"count={len(cases)} categories={dict(category_counts)!r}"
+            f"count={len(cases)} categories={dict(category_counts)!r}, "
+            f"expected count={expected_timed_cell_count} "
+            f"categories={dict(expected_category_counts)!r}"
         )
     if report.get("aggregates", {}).get("timed_supported_cell_count") != len(cases):
         errors.append("aggregate timed cell count does not match cases")
@@ -1281,25 +1385,20 @@ def _validate_expected_artifact_shape(report):
         errors.append("aggregate guard step count does not match rows")
 
     coverage = report.get("coverage_denominator", {})
-    if (
-        coverage.get("supported_weight") != 24
-        or coverage.get("total_weight") != 100
-        or coverage.get("zero_credit_weight") != 76
-        or coverage.get("weighted_supported_percent") != 24.0
-    ):
-        errors.append(f"coverage denominator mismatch: {coverage!r}")
+    if coverage != expected_coverage:
+        errors.append(
+            "coverage denominator mismatch: "
+            f"actual={coverage!r} expected={expected_coverage!r}"
+        )
 
     corpus = report.get("corpus", {})
-    if corpus.get("version") != environment.get("corpus_version"):
+    if corpus != expected_corpus:
+        errors.append(
+            "corpus metadata mismatch: "
+            f"actual={corpus!r} expected={expected_corpus!r}"
+        )
+    elif corpus.get("version") != environment.get("corpus_version"):
         errors.append("corpus metadata version does not match environment")
-    if len(corpus.get("public_cases", ())) != 12:
-        errors.append("corpus metadata public case count is not 12")
-    if len(corpus.get("held_out_cases", ())) != 4:
-        errors.append("corpus metadata held-out case count is not 4")
-    if len(corpus.get("public_recompilation_guard_scenarios", ())) != 3:
-        errors.append("corpus metadata public guard scenario count is not 3")
-    if len(corpus.get("held_out_recompilation_guard_scenarios", ())) != 2:
-        errors.append("corpus metadata held-out guard scenario count is not 2")
 
     for row in cases:
         try:
