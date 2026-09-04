@@ -17,7 +17,7 @@ except ImportError:
 
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-COMPILE_CORPUS_VERSION = "torch_compile_corpus_v7"
+COMPILE_CORPUS_VERSION = "torch_compile_corpus_v8"
 
 CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -126,6 +126,17 @@ def cpu_float32_tensor_scalar_add(x, y):
 
 def cpu_float32_scalar_tensor_add(x, y):
     return x.add(y.neg())
+
+
+def cpu_float32_tuple_list_output_pytree(x, y):
+    x_neg = x.neg()
+    y_abs = y.abs()
+    return (x_neg.add(y_abs), [y_abs, x_neg.relu()])
+
+
+def cpu_float32_heldout_list_tuple_output_pytree(x, y):
+    z = x.add(y)
+    return [y.abs(), (z.neg(), z.relu().add(y))]
 
 
 def cpu_float32_heldout_training_broadcast_neg_abs_add(x, y):
@@ -568,6 +579,12 @@ COMPILE_CORPUS = (
         make_inputs=cpu_float32_scalar_tensor_inputs,
     ),
     CompileCorpusCase(
+        name="cpu_float32_tuple_list_output_pytree",
+        category="containers_pytrees",
+        program=cpu_float32_tuple_list_output_pytree,
+        make_inputs=cpu_float32_matrix_vector_requires_grad_inputs,
+    ),
+    CompileCorpusCase(
         name="cpu_float32_recompile_guard_unary_metadata",
         category="recompilation_guards",
         program=cpu_float32_recompile_guard_unary_metadata,
@@ -623,6 +640,12 @@ COMPILE_HELD_OUT_CORPUS = (
         category="mutation_aliasing_views",
         program=cpu_float32_heldout_detach_alias_view,
         make_inputs=cpu_float32_heldout_detach_alias_view_inputs,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_heldout_list_tuple_output_pytree",
+        category="containers_pytrees",
+        program=cpu_float32_heldout_list_tuple_output_pytree,
+        make_inputs=cpu_float32_scalar_tensor_inputs,
     ),
     CompileCorpusCase(
         name="cpu_float32_heldout_guard_unary_metadata",
@@ -902,6 +925,58 @@ def assert_tensor_observables_match(testcase, actual, expected, *, case):
     )
 
 
+def _is_output_container(value):
+    return type(value) in (tuple, list)
+
+
+def output_tensor_leaves(output):
+    if _is_output_container(output):
+        for element in output:
+            yield from output_tensor_leaves(element)
+        return
+    yield output
+
+
+def output_requires_grad(output):
+    return any(tensor.requires_grad for tensor in output_tensor_leaves(output))
+
+
+def output_sum(output):
+    leaves = tuple(output_tensor_leaves(output))
+    if not leaves:
+        raise AssertionError("compile corpus output must contain a Tensor leaf")
+    total = leaves[0].sum()
+    for leaf in leaves[1:]:
+        total = total + leaf.sum()
+    return total
+
+
+def assert_output_observables_match(testcase, actual, expected, *, case):
+    if _is_output_container(expected):
+        testcase.assertIs(
+            type(actual),
+            type(expected),
+            msg=f"{case} container type mismatch",
+        )
+        testcase.assertEqual(len(actual), len(expected), msg=f"{case} arity mismatch")
+        for index, (actual_element, expected_element) in enumerate(
+            zip(actual, expected)
+        ):
+            assert_output_observables_match(
+                testcase,
+                actual_element,
+                expected_element,
+                case=f"{case}[{index}]",
+            )
+        return
+
+    testcase.assertFalse(
+        _is_output_container(actual),
+        msg=f"{case} unexpectedly returned a container",
+    )
+    assert_tensor_observables_match(testcase, actual, expected, case=case)
+
+
 def tensor_gradient(tensor):
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -947,10 +1022,10 @@ def assert_leaf_gradients_unchanged(testcase, inputs, before_gradients, *, case)
 
 class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
-        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v7")
+        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v8")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(len(COMPILE_CORPUS), 15)
-        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 7)
+        self.assertEqual(len(COMPILE_CORPUS), 16)
+        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 8)
 
         case_names = [case.name for case in COMPILE_CORPUS]
         self.assertEqual(
@@ -968,6 +1043,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_matrix_vector_add_method",
                 "cpu_float32_tensor_scalar_add",
                 "cpu_float32_scalar_tensor_add",
+                "cpu_float32_tuple_list_output_pytree",
                 "cpu_float32_recompile_guard_unary_metadata",
                 "cpu_float32_recompile_guard_binary_metadata",
                 "cpu_float32_recompile_limit_reset",
@@ -982,6 +1058,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_heldout_training_broadcast_neg_abs_add",
                 "cpu_float32_heldout_inference_relu_broadcast_no_grad",
                 "cpu_float32_heldout_detach_alias_view",
+                "cpu_float32_heldout_list_tuple_output_pytree",
                 "cpu_float32_heldout_guard_unary_metadata",
                 "cpu_float32_heldout_guard_binary_metadata",
             ],
@@ -996,6 +1073,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "inference",
                 "mutation_aliasing_views",
                 "training_autograd",
+                "containers_pytrees",
                 "recompilation_guards",
             },
         )
@@ -1027,6 +1105,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                         "inference",
                         "mutation_aliasing_views",
                         "training_autograd",
+                        "containers_pytrees",
                         "recompilation_guards",
                     },
                 )
@@ -1718,6 +1797,116 @@ class CompileCorpusTraceTests(unittest.TestCase):
             expected,
             case="two-input graph",
         )
+
+    def test_tuple_list_outputs_record_private_graph_structure(self):
+        graph = _compile_bytecode.lower_compile_graph(
+            cpu_float32_tuple_list_output_pytree,
+            tuple(
+                _compile_trace._metadata_from_native_tensor(input)
+                for input in cpu_float32_matrix_vector_requires_grad_inputs(torch)
+            ),
+            name="cpu_float32_tuple_list_output_pytree",
+        )
+        inputs = cpu_float32_matrix_vector_requires_grad_inputs(torch)
+        expected = cpu_float32_tuple_list_output_pytree(*inputs)
+
+        self.assertEqual(graph.name, "cpu_float32_tuple_list_output_pytree")
+        self.assertEqual(
+            [operation.target for operation in graph.operations],
+            ["neg", "abs", "add", "relu"],
+        )
+        self.assertIsInstance(
+            graph.output,
+            _compile_trace.CompileTraceOutputContainer,
+        )
+        self.assertEqual(graph.output.kind, "tuple")
+        self.assertEqual(graph.output.elements[0], "add_2")
+        self.assertIsInstance(
+            graph.output.elements[1],
+            _compile_trace.CompileTraceOutputContainer,
+        )
+        self.assertEqual(graph.output.elements[1].kind, "list")
+        self.assertEqual(graph.output.elements[1].elements, ("abs_1", "relu_3"))
+        self.assertIsInstance(
+            graph.output_metadata,
+            _compile_trace.CompileTraceOutputContainer,
+        )
+        self.assertEqual(graph.output_metadata.kind, "tuple")
+        self.assertEqual(
+            graph.output_metadata.elements[0],
+            graph.operations[2].metadata,
+        )
+        self.assertIsInstance(
+            graph.output_metadata.elements[1],
+            _compile_trace.CompileTraceOutputContainer,
+        )
+        self.assertEqual(
+            graph.output_metadata.elements[1].elements,
+            (graph.operations[1].metadata, graph.operations[3].metadata),
+        )
+
+        actual = graph.forward(*inputs)
+        self.assertIs(type(actual), tuple)
+        self.assertIs(type(actual[1]), list)
+        assert_output_observables_match(
+            self,
+            actual,
+            expected,
+            case="container output graph",
+        )
+
+    def test_tuple_list_outputs_preserve_container_aliasing(self):
+        def program(x):
+            y = [x.neg()]
+            return (y, y)
+
+        input = torch.tensor([1.0, -2.0], dtype=torch.float32)
+        graph = _compile_bytecode.lower_compile_graph(
+            program,
+            (_compile_trace._metadata_from_native_tensor(input),),
+            name="container_aliasing",
+        )
+
+        self.assertIs(graph.output.elements[0], graph.output.elements[1])
+        actual = graph.forward(input)
+        expected = program(input)
+
+        self.assertIs(actual[0], actual[1])
+        self.assertIs(expected[0], expected[1])
+        assert_output_observables_match(
+            self,
+            actual,
+            expected,
+            case="container aliasing",
+        )
+
+    def test_tuple_list_outputs_reject_non_tensor_leaves_and_dicts(self):
+        def scalar_leaf(x):
+            return (x, 1)
+
+        def dict_output(x):
+            return {"x": x}
+
+        input = torch.tensor([1.0], dtype=torch.float32)
+        metadata = (_compile_trace._metadata_from_native_tensor(input),)
+        with self.assertRaisesRegex(
+            _compile_trace.CompileTraceUnsupportedError,
+            r"non-Tensor tuple return value\[1\]",
+        ):
+            _compile_bytecode.lower_compile_graph(
+                scalar_leaf,
+                metadata,
+                name="scalar_leaf",
+            )
+        with self.assertRaisesRegex(
+            _compile_trace.CompileTraceUnsupportedError,
+            "unsupported bytecode",
+        ):
+            _compile_bytecode.lower_compile_graph(
+                dict_output,
+                metadata,
+                name="dict_output",
+            )
 
     def test_unary_abs_neg_executes_private_native_graph(self):
         case = COMPILE_CORPUS[0]
@@ -2959,10 +3148,10 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
         expected = run_compile_corpus_case(reference_torch, case, expected_inputs)
         if case.backward_through_sum:
             self.assertTrue(any(input.requires_grad for input in expected_inputs))
-            expected.sum().backward()
+            output_sum(expected).backward()
         if case.run_under_no_grad:
             self.assertTrue(all(input.requires_grad for input in expected_inputs))
-            self.assertFalse(expected.requires_grad)
+            self.assertFalse(output_requires_grad(expected))
             assert_leaf_gradients_unchanged(
                 self,
                 expected_inputs,
@@ -2990,13 +3179,14 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
         )
         actual = run_compile_corpus_callable(reference_torch, case, compiled, inputs)
         reference_torch.testing.assert_close(actual, expected)
-        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
-        self.assertEqual(actual.stride(), expected.stride())
-        self.assertIs(actual.dtype, expected.dtype)
-        self.assertEqual(actual.device, expected.device)
-        self.assertEqual(actual.requires_grad, expected.requires_grad)
+        assert_output_observables_match(
+            self,
+            actual,
+            expected,
+            case=case.name,
+        )
         if case.run_under_no_grad:
-            self.assertFalse(actual.requires_grad)
+            self.assertFalse(output_requires_grad(actual))
             assert_leaf_gradients_unchanged(
                 self,
                 inputs,
@@ -3013,7 +3203,7 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                 case=f"{case.name}/reference_detach",
             )
         if case.backward_through_sum:
-            actual.sum().backward()
+            output_sum(actual).backward()
             assert_leaf_gradients_match(
                 self,
                 inputs,
@@ -3067,7 +3257,7 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                         inputs,
                     )
                     reference_torch.testing.assert_close(actual, expected)
-                    assert_tensor_observables_match(
+                    assert_output_observables_match(
                         self,
                         actual,
                         expected,
@@ -3096,30 +3286,27 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                     reference_inputs,
                 )
                 if case.backward_through_sum:
-                    reference_expected.sum().backward()
+                    output_sum(reference_expected).backward()
                 compiled = torch.compile(
                     case.program,
                     **case.compile_kwargs("eager"),
                 )
                 actual = run_compile_corpus_callable(torch, case, compiled, inputs)
                 self.assertIs(compiled._torch_rs_compile_backend, "eager")
-                self.assertEqual(actual.tolist(), expected.tolist())
-                self.assertEqual(actual.tolist(), reference_expected.tolist())
-                self.assertEqual(tuple(actual.shape), tuple(expected.shape))
-                self.assertEqual(tuple(actual.shape), tuple(reference_expected.shape))
-                self.assertEqual(actual.stride(), expected.stride())
-                self.assertEqual(actual.stride(), reference_expected.stride())
-                self.assertIs(actual.dtype, expected.dtype)
-                self.assertEqual(str(actual.dtype), str(reference_expected.dtype))
-                self.assertEqual(actual.device, expected.device)
-                self.assertEqual(str(actual.device), str(reference_expected.device))
-                self.assertEqual(actual.requires_grad, expected.requires_grad)
-                self.assertEqual(
-                    actual.requires_grad,
-                    reference_expected.requires_grad,
+                assert_output_observables_match(
+                    self,
+                    actual,
+                    expected,
+                    case=f"{case.name}/torch_rs",
+                )
+                assert_output_observables_match(
+                    self,
+                    actual,
+                    reference_expected,
+                    case=f"{case.name}/reference",
                 )
                 if case.run_under_no_grad:
-                    self.assertFalse(actual.requires_grad)
+                    self.assertFalse(output_requires_grad(actual))
                     assert_leaf_gradients_unchanged(
                         self,
                         inputs,
@@ -3150,7 +3337,7 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                         case=f"{case.name}/reference_detach",
                     )
                 if case.backward_through_sum:
-                    actual.sum().backward()
+                    output_sum(actual).backward()
                     assert_leaf_gradients_match(
                         self,
                         inputs,

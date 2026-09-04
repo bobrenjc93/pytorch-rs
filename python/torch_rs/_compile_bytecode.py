@@ -181,6 +181,8 @@ _OPCODE_FORMS = (
     _OpcodeForm("call", frozenset(("CALL", "CALL_FUNCTION", "CALL_METHOD"))),
     _OpcodeForm("precall", frozenset(("PRECALL",))),
     _OpcodeForm("load_const", frozenset(("LOAD_CONST",))),
+    _OpcodeForm("build_tuple", frozenset(("BUILD_TUPLE",))),
+    _OpcodeForm("build_list", frozenset(("BUILD_LIST",))),
     _OpcodeForm("binary", frozenset(("BINARY_ADD", "BINARY_OP", "INPLACE_ADD"))),
     _OpcodeForm("unary_neg", frozenset(("UNARY_NEGATIVE",))),
     _OpcodeForm("return", frozenset(("RETURN_VALUE", "RETURN_CONST"))),
@@ -283,8 +285,23 @@ def _require_tensor(value, program, instruction, role):
     return value
 
 
+def _require_output_value(value, program, instruction, role):
+    if _builtins.isinstance(value, _trace.CompileTraceTensorProxy):
+        return value
+    if _builtins.type(value) in (_builtins.tuple, _builtins.list):
+        for index, element in enumerate(value):
+            _require_output_value(
+                element,
+                program,
+                instruction,
+                f"{role}[{index}]",
+            )
+        return value
+    _unsupported_bytecode(program, instruction, f"non-Tensor {role}")
+
+
 def _store_local(locals, stack, program, instruction, name):
-    locals[name] = _require_tensor(
+    locals[name] = _require_output_value(
         _pop(stack, program, instruction),
         program,
         instruction,
@@ -413,7 +430,7 @@ def _handle_unary_neg(recorder, locals, stack, program, instruction):
 def _handle_return(recorder, locals, stack, program, instruction):
     if instruction.opname == "RETURN_CONST":
         _unsupported_bytecode(program, instruction, "non-Tensor return value")
-    output = _require_tensor(
+    output = _require_output_value(
         _pop(stack, program, instruction),
         program,
         instruction,
@@ -456,6 +473,24 @@ def _handle_load_const(recorder, locals, stack, program, instruction):
     stack.append(_BytecodeConstant(instruction.argval))
 
 
+def _handle_build_tuple(recorder, locals, stack, program, instruction):
+    argument_count = instruction.arg or 0
+    values = [_pop(stack, program, instruction) for _ in range(argument_count)]
+    values.reverse()
+    output = tuple(values)
+    _require_output_value(output, program, instruction, "tuple return value")
+    stack.append(output)
+
+
+def _handle_build_list(recorder, locals, stack, program, instruction):
+    argument_count = instruction.arg or 0
+    values = [_pop(stack, program, instruction) for _ in range(argument_count)]
+    values.reverse()
+    output = list(values)
+    _require_output_value(output, program, instruction, "list return value")
+    stack.append(output)
+
+
 def _handle_noop(recorder, locals, stack, program, instruction):
     return None
 
@@ -471,6 +506,8 @@ _OPCODE_HANDLERS = {
     "call": _handle_call,
     "precall": _handle_noop,
     "load_const": _handle_load_const,
+    "build_tuple": _handle_build_tuple,
+    "build_list": _handle_build_list,
     "binary": _handle_binary,
     "unary_neg": _handle_unary_neg,
     "return": _handle_return,

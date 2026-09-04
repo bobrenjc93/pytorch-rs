@@ -146,12 +146,26 @@ class CompileTraceOperation:
 
 
 @dataclass(frozen=True, slots=True)
+class CompileTraceOutputContainer:
+    kind: str
+    elements: tuple[object, ...]
+
+    def __post_init__(self):
+        if self.kind not in ("tuple", "list"):
+            raise ValueError(
+                "torch.compile trace output container kind must be 'tuple' "
+                f"or 'list', got {self.kind!r}"
+            )
+        object.__setattr__(self, "elements", tuple(self.elements))
+
+
+@dataclass(frozen=True, slots=True)
 class CompileTraceGraph:
     name: str
     inputs: tuple[CompileTraceInput, ...]
     operations: tuple[CompileTraceOperation, ...]
-    output: str
-    output_metadata: CompileTraceTensorMetadata
+    output: object
+    output_metadata: object
 
     def forward(self, *inputs):
         return execute_compile_trace_graph(self, *inputs)
@@ -582,6 +596,152 @@ def _require_matching_metadata(
     )
 
 
+def _output_container_kind(value):
+    if _builtins.type(value) is tuple:
+        return "tuple"
+    if _builtins.type(value) is list:
+        return "list"
+    return None
+
+
+def _output_spec_and_metadata(
+    value,
+    recorder,
+    *,
+    role,
+    memo=None,
+    in_progress=None,
+):
+    if _builtins.isinstance(value, CompileTraceTensorProxy):
+        recorder._require_owned_proxy(value)
+        return value.name, value.metadata
+
+    kind = _output_container_kind(value)
+    if kind is None:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace only supports Tensor proxy return values "
+            "or tuple/list containers of Tensor proxy return values, "
+            f"got {_type_name(value)} for {role}"
+        )
+
+    if memo is None:
+        memo = {}
+    if in_progress is None:
+        in_progress = set()
+    value_id = _builtins.id(value)
+    if value_id in memo:
+        return memo[value_id]
+    if value_id in in_progress:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace does not support cyclic tuple/list output "
+            "containers"
+        )
+
+    in_progress.add(value_id)
+    output_elements = []
+    metadata_elements = []
+    try:
+        for index, element in enumerate(value):
+            output_element, metadata_element = _output_spec_and_metadata(
+                element,
+                recorder,
+                role=f"{role}[{index}]",
+                memo=memo,
+                in_progress=in_progress,
+            )
+            output_elements.append(output_element)
+            metadata_elements.append(metadata_element)
+        result = (
+            CompileTraceOutputContainer(kind, tuple(output_elements)),
+            CompileTraceOutputContainer(kind, tuple(metadata_elements)),
+        )
+        memo[value_id] = result
+        return result
+    finally:
+        in_progress.remove(value_id)
+
+
+def _materialize_graph_output(
+    output_spec,
+    metadata_spec,
+    values,
+    *,
+    value_name,
+    memo=None,
+):
+    if _builtins.isinstance(output_spec, _builtins.str):
+        try:
+            output = values[output_spec]
+        except KeyError:
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace execution graph output references unknown "
+                f"value {output_spec!r}"
+            ) from None
+        if not _builtins.isinstance(metadata_spec, CompileTraceTensorMetadata):
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace execution graph output metadata is "
+                "malformed"
+            )
+        _require_matching_metadata(
+            _metadata_from_native_tensor(output),
+            metadata_spec,
+            value_name=output_spec,
+            check_requires_grad=False,
+        )
+        return output
+
+    if memo is None:
+        memo = {}
+    if not _builtins.isinstance(output_spec, CompileTraceOutputContainer):
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace execution graph output is malformed"
+        )
+    if (
+        not _builtins.isinstance(metadata_spec, CompileTraceOutputContainer)
+        or metadata_spec.kind != output_spec.kind
+        or len(metadata_spec.elements) != len(output_spec.elements)
+    ):
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace execution graph output metadata is malformed"
+        )
+
+    output_spec_id = _builtins.id(output_spec)
+    if output_spec_id in memo:
+        return memo[output_spec_id]
+
+    if output_spec.kind == "list":
+        materialized = []
+        memo[output_spec_id] = materialized
+        materialized.extend(
+            _materialize_graph_output(
+                child_output,
+                child_metadata,
+                values,
+                value_name=f"{value_name}[{index}]",
+                memo=memo,
+            )
+            for index, (child_output, child_metadata) in enumerate(
+                zip(output_spec.elements, metadata_spec.elements)
+            )
+        )
+        return materialized
+
+    materialized = tuple(
+        _materialize_graph_output(
+            child_output,
+            child_metadata,
+            values,
+            value_name=f"{value_name}[{index}]",
+            memo=memo,
+        )
+        for index, (child_output, child_metadata) in enumerate(
+            zip(output_spec.elements, metadata_spec.elements)
+        )
+    )
+    memo[output_spec_id] = materialized
+    return materialized
+
+
 def _execute_operation(operation, values):
     if operation.op != "call_method":
         raise CompileTraceUnsupportedError(
@@ -725,20 +885,12 @@ def execute_compile_trace_graph(graph, *inputs):
         values[operation.name] = output
         metadata_values[operation.name] = output_metadata
 
-    try:
-        output = values[graph.output]
-    except KeyError:
-        raise CompileTraceUnsupportedError(
-            "torch.compile trace execution graph output references unknown "
-            f"value {graph.output!r}"
-        ) from None
-    _require_matching_metadata(
-        _metadata_from_native_tensor(output),
+    return _materialize_graph_output(
+        graph.output,
         graph.output_metadata,
-        value_name=graph.output,
-        check_requires_grad=False,
+        values,
+        value_name="output",
     )
-    return output
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -969,7 +1121,11 @@ class CompileTraceRecorder:
 
     def finish(self, output):
         self._ensure_open()
-        self._require_owned_proxy(output)
+        output_spec, output_metadata = _output_spec_and_metadata(
+            output,
+            self,
+            role="return value",
+        )
         if len(self._inputs) not in (1, 2):
             raise CompileTraceUnsupportedError(
                 "torch.compile trace currently supports one or two inputs"
@@ -979,8 +1135,8 @@ class CompileTraceRecorder:
             name=self._name,
             inputs=tuple(self._inputs),
             operations=tuple(self._operations),
-            output=output.name,
-            output_metadata=output.metadata,
+            output=output_spec,
+            output_metadata=output_metadata,
         )
 
     def _ensure_open(self):
@@ -1099,6 +1255,7 @@ __all__ = [
     "CompileTraceGraph",
     "CompileTraceInput",
     "CompileTraceOperation",
+    "CompileTraceOutputContainer",
     "CompileTraceRecorder",
     "CompileTraceTensorMetadata",
     "CompileTraceTensorProxy",
