@@ -54,6 +54,7 @@ _METHOD_TARGETS = {
     "abs": _MethodTarget("unary", "abs", 0, "Tensor.abs"),
     "absolute": _MethodTarget("unary", "abs", 0, "Tensor.absolute"),
     "__abs__": _MethodTarget("unary", "abs", 0, "Tensor.__abs__"),
+    "t": _MethodTarget("unary", "t", 0, "Tensor.t"),
     "add": _MethodTarget("binary", "add", 1, "Tensor.add"),
     "__add__": _MethodTarget("binary", "add", 1, "Tensor.__add__"),
     "__radd__": _MethodTarget(
@@ -514,6 +515,7 @@ def lower_compile_graph(program, input_metadatas, *, name=None):
             name=input_name,
             shape=input_metadata.shape,
             stride=input_metadata.stride,
+            storage_offset=input_metadata.storage_offset,
             dtype=input_metadata.dtype,
             device=input_metadata.device,
             requires_grad=input_metadata.requires_grad,

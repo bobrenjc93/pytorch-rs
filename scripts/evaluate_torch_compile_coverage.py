@@ -23,8 +23,8 @@ import traceback
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CORPUS_PATH = REPOSITORY_ROOT / "tests" / "test_compile_corpus.py"
 EVALUATION_ID = "eval_a61c0e71"
-EVALUATOR_VERSION = "torch_compile_program_coverage_evaluator_v1"
-EXPECTED_CORPUS_VERSION = "torch_compile_corpus_v4"
+EVALUATOR_VERSION = "torch_compile_program_coverage_evaluator_v2"
+EXPECTED_CORPUS_VERSION = "torch_compile_corpus_v5"
 REFERENCE_PYTORCH_VERSION = "2.13.0"
 EXPECTED_CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -198,6 +198,22 @@ EXPECTED_V4_CASE_MANIFEST = (
         "recompile_limit": None,
     },
     {
+        "name": "cpu_float32_t_view",
+        "held_out": False,
+        "category": "mutation_aliasing_views",
+        "program": "cpu_float32_t_view",
+        "program_sha256": "fd26652f611a852dadca6d64ca518ce01f99718a628439146373afd944b028c3",
+        "make_inputs": "cpu_float32_t_view_inputs",
+        "make_inputs_sha256": "d069bbefa49cc9278f83e7a1830c21cab69ce6216ac05d9d671895b32fb17a36",
+        "inputs_sha256": "bc6d523faebb24889c78b8e5d5a8460442cd8e44ea8a6c32e40b995117f3f1b0",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+    },
+    {
         "name": "cpu_float32_recompile_guard_unary_metadata",
         "held_out": False,
         "category": "recompilation_guards",
@@ -271,6 +287,22 @@ EXPECTED_V4_CASE_MANIFEST = (
         "make_inputs_sha256": "c97640885d694619d8c2340c608f248037c130b005f1bb45870372ed780f0710",
         "inputs_sha256": "b5e285646fc9ea682ce87d90ab4723e40fe3243462c8e90919686fe09ad9b162",
         "arity": 2,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+    },
+    {
+        "name": "cpu_float32_heldout_t_view_identity",
+        "held_out": True,
+        "category": "mutation_aliasing_views",
+        "program": "cpu_float32_heldout_t_view_identity",
+        "program_sha256": "f8915db1030a6c2203328553556d294bd3db3ab04daa48d54bc4dac317b1e3a0",
+        "make_inputs": "cpu_float32_heldout_t_view_identity_inputs",
+        "make_inputs_sha256": "628d4d6056cf31d3bb4bd70ef68776a8c4d3195a9f815c502dd8442a18e8d3c7",
+        "inputs_sha256": "b2605218772285704af03ab46a18750907d57804ceb7a40ebb8d132a4a888b18",
+        "arity": 1,
         "fullgraph": True,
         "dynamic": None,
         "mode": None,
@@ -854,7 +886,7 @@ def _expected_guard_scenario_manifest(held_out):
     )
 
 
-def _validate_v4_case_manifest(
+def _validate_v5_case_manifest(
     corpus_module,
     cases,
     *,
@@ -868,7 +900,7 @@ def _validate_v4_case_manifest(
     actual_names = [getattr(case, "name", None) for case in cases]
     if actual_names != expected_names:
         errors.append(
-            f"{label} v4 case names/order changed: {actual_names!r} != {expected_names!r}"
+            f"{label} v5 case names/order changed: {actual_names!r} != {expected_names!r}"
         )
 
     expected_by_name = {entry["name"]: entry for entry in expected_entries}
@@ -886,12 +918,12 @@ def _validate_v4_case_manifest(
         _compare_manifest_entry(
             actual_entry,
             expected_entry,
-            context=f"{label} v4 case {case.name}",
+            context=f"{label} v5 case {case.name}",
             errors=errors,
         )
 
 
-def _validate_v4_guard_scenario_manifest(
+def _validate_v5_guard_scenario_manifest(
     corpus_module,
     scenarios,
     *,
@@ -905,7 +937,7 @@ def _validate_v4_guard_scenario_manifest(
     actual_names = [getattr(scenario, "name", None) for scenario in scenarios]
     if actual_names != expected_names:
         errors.append(
-            f"{label} v4 guard scenarios changed: {actual_names!r} != {expected_names!r}"
+            f"{label} v5 guard scenarios changed: {actual_names!r} != {expected_names!r}"
         )
 
     expected_by_name = {entry["name"]: entry for entry in expected_entries}
@@ -923,7 +955,7 @@ def _validate_v4_guard_scenario_manifest(
         _compare_manifest_entry(
             actual_entry,
             expected_entry,
-            context=f"{label} v4 guard scenario {scenario.name}",
+            context=f"{label} v5 guard scenario {scenario.name}",
             errors=errors,
         )
 
@@ -963,10 +995,10 @@ def _validate_corpus_metadata(corpus_module):
 
     public_cases = tuple(getattr(corpus_module, "COMPILE_CORPUS", ()))
     held_out_cases = tuple(getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ()))
-    if len(public_cases) != 12:
-        errors.append(f"expected 12 public v4 cases, found {len(public_cases)}")
-    if len(held_out_cases) != 4:
-        errors.append(f"expected 4 held-out v4 cases, found {len(held_out_cases)}")
+    if len(public_cases) != 13:
+        errors.append(f"expected 13 public v5 cases, found {len(public_cases)}")
+    if len(held_out_cases) != 5:
+        errors.append(f"expected 5 held-out v5 cases, found {len(held_out_cases)}")
 
     seen_names = set()
     for case in (*public_cases, *held_out_cases):
@@ -1008,11 +1040,11 @@ def _validate_corpus_metadata(corpus_module):
         getattr(corpus_module, "COMPILE_HELD_OUT_RECOMPILATION_GUARD_SCENARIOS", ())
     )
     if _guard_scenario_names(public_scenarios) != list(EXPECTED_PUBLIC_GUARD_SCENARIOS):
-        errors.append("public recompilation guard scenarios do not match v4")
+        errors.append("public recompilation guard scenarios do not match v5")
     if _guard_scenario_names(held_out_scenarios) != list(
         EXPECTED_HELD_OUT_GUARD_SCENARIOS
     ):
-        errors.append("held-out recompilation guard scenarios do not match v4")
+        errors.append("held-out recompilation guard scenarios do not match v5")
     for scenario in (*public_scenarios, *held_out_scenarios):
         scenario_name = getattr(scenario, "name", None)
         case_name = getattr(scenario, "case_name", None)
@@ -1037,28 +1069,28 @@ def _validate_corpus_metadata(corpus_module):
             last_compile_count = expected_count if type(expected_count) is int else 0
 
     tensor_module = _manifest_tensor_module(corpus_module, errors)
-    _validate_v4_case_manifest(
+    _validate_v5_case_manifest(
         corpus_module,
         public_cases,
         held_out=False,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v4_case_manifest(
+    _validate_v5_case_manifest(
         corpus_module,
         held_out_cases,
         held_out=True,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v4_guard_scenario_manifest(
+    _validate_v5_guard_scenario_manifest(
         corpus_module,
         public_scenarios,
         held_out=False,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v4_guard_scenario_manifest(
+    _validate_v5_guard_scenario_manifest(
         corpus_module,
         held_out_scenarios,
         held_out=True,

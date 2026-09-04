@@ -15,8 +15,8 @@ from torch_rs import _compiler_state as _state
 
 UNSUPPORTED_MESSAGE = (
     "torch.compile(): only backend='eager', fullgraph=True straight-line "
-    "Tensor neg/abs/add functions with one or two positional exact native CPU "
-    "float32 Tensor are supported; eager fallback, installed-PyTorch "
+    "Tensor neg/abs/t and binary add functions with one or two positional "
+    "exact native CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
     "forwarding, callable backend invocation, CUDA compilation, and broader "
     "graph capture remain unsupported"
 )
@@ -28,6 +28,10 @@ EAGER_COMPILE_MODEL_CALLS = []
 def eager_compile_global_side_effect(value):
     EAGER_COMPILE_MODEL_CALLS.append("ran")
     return value + value
+
+
+def eager_compile_t(value):
+    return value.t()
 
 
 class TorchCompileEntrypointTests(unittest.TestCase):
@@ -84,6 +88,7 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertIn("argument binding", inspect.cleandoc(function.__doc__))
         self.assertIn("backend resolution", inspect.cleandoc(function.__doc__))
         self.assertIn("Tensor ``neg``", inspect.cleandoc(function.__doc__))
+        self.assertIn("``t``", inspect.cleandoc(function.__doc__))
         self.assertIn("broader graph capture", inspect.cleandoc(function.__doc__))
 
         self.assertEqual(torch.__all__.count("compile"), 1)
@@ -336,6 +341,85 @@ class TorchCompileEntrypointTests(unittest.TestCase):
                 for input in inputs:
                     if input.numel():
                         self.assertNotEqual(actual.data_ptr(), input.data_ptr())
+
+    def test_eager_fullgraph_executes_tensor_t_views_natively(self):
+        def program(x):
+            return x.t()
+
+        values = [
+            [
+                [0.0, 1.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0, 7.0],
+                [8.0, 9.0, 10.0, 11.0],
+            ],
+            [
+                [12.0, 13.0, 14.0, 15.0],
+                [16.0, 17.0, 18.0, 19.0],
+                [20.0, 21.0, 22.0, 23.0],
+            ],
+        ]
+        offset_base = torch.tensor(values, dtype=torch.float32, requires_grad=True)
+        cases = (
+            ("scalar", torch.tensor(2.5, dtype=torch.float32, requires_grad=True)),
+            (
+                "vector",
+                torch.tensor([1.0, -2.0, 3.5], dtype=torch.float32, requires_grad=True),
+            ),
+            (
+                "matrix",
+                torch.tensor(
+                    [[1.0, -2.0, 3.5], [4.25, -5.5, 6.0]],
+                    dtype=torch.float32,
+                    requires_grad=True,
+                ),
+            ),
+            ("offset", offset_base.transpose(0, 2)[1]),
+            ("empty", torch.tensor([[], []], dtype=torch.float32, requires_grad=True)),
+        )
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        for case, input in cases:
+            with self.subTest(case=case):
+                expected = program(input)
+                actual = compiled(input)
+
+                self.assertEqual(actual.tolist(), expected.tolist())
+                self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+                self.assertEqual(actual.stride(), expected.stride())
+                self.assertEqual(actual.storage_offset(), expected.storage_offset())
+                self.assertEqual(actual.requires_grad, expected.requires_grad)
+                self.assertTrue(actual.is_set_to(expected))
+                if input.numel():
+                    self.assertEqual(actual.data_ptr(), input.data_ptr())
+
+                with torch.no_grad():
+                    expected_no_grad = program(input)
+                    actual_no_grad = compiled(input)
+                self.assertTrue(expected_no_grad.requires_grad)
+                self.assertEqual(actual_no_grad.tolist(), expected_no_grad.tolist())
+                self.assertEqual(actual_no_grad.stride(), expected_no_grad.stride())
+                self.assertEqual(
+                    actual_no_grad.storage_offset(),
+                    expected_no_grad.storage_offset(),
+                )
+                self.assertEqual(
+                    actual_no_grad.requires_grad,
+                    expected_no_grad.requires_grad,
+                )
+                self.assertTrue(actual_no_grad.is_set_to(expected_no_grad))
+
+    def test_eager_fullgraph_rejects_tensor_t_rank_gt_two(self):
+        compiled = torch.compile(
+            eager_compile_t,
+            backend="eager",
+            fullgraph=True,
+        )
+        input = torch.tensor([[[1.0], [2.0]], [[3.0], [4.0]]], dtype=torch.float32)
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^t\(\) expects a tensor with <= 2 dimensions, but self is 3D$",
+        ):
+            compiled(input)
 
     def test_eager_fullgraph_caches_graphs_by_code_and_input_metadata(self):
         def program(x):
@@ -751,6 +835,9 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         def call_dunder_abs(value):
             return value.__abs__()
 
+        def call_t(value):
+            return value.t()
+
         def patched_getattribute(self, name):
             if name == "neg":
                 return lambda: self + self
@@ -772,6 +859,7 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             ),
             ("__neg__", lambda self: self + self, call_dunder_neg, [4.0]),
             ("__abs__", lambda self: self + self, call_dunder_abs, [4.0]),
+            ("t", lambda self: self + self, call_t, [4.0]),
             (
                 "__getattribute__",
                 patched_getattribute,

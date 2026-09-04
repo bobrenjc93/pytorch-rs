@@ -33,6 +33,7 @@ float = float32
 class CompileTraceTensorMetadata:
     shape: tuple[int, ...]
     stride: tuple[int, ...]
+    storage_offset: int
     dtype: CompileTraceDType
     device: str
     requires_grad: bool
@@ -73,14 +74,18 @@ _SUPPORTED_UNARY_METHODS = (
     "Tensor.absolute",
 )
 _SUPPORTED_UNARY_TARGETS = frozenset(("neg", "abs"))
+_SUPPORTED_VIEW_METHODS = ("Tensor.t",)
+_SUPPORTED_VIEW_TARGETS = frozenset(("t",))
 _SUPPORTED_BINARY_METHODS = (
     "Tensor.__add__",
     "Tensor.add",
 )
 _SUPPORTED_BINARY_TARGETS = frozenset(("add",))
-_SUPPORTED_OPERATION_TARGETS = _SUPPORTED_UNARY_TARGETS | _SUPPORTED_BINARY_TARGETS
+_SUPPORTED_OPERATION_TARGETS = (
+    _SUPPORTED_UNARY_TARGETS | _SUPPORTED_VIEW_TARGETS | _SUPPORTED_BINARY_TARGETS
+)
 _SUPPORTED_OPERATION_DESCRIPTION = ", ".join(
-    (*_SUPPORTED_UNARY_METHODS, *_SUPPORTED_BINARY_METHODS)
+    (*_SUPPORTED_UNARY_METHODS, *_SUPPORTED_VIEW_METHODS, *_SUPPORTED_BINARY_METHODS)
 )
 
 
@@ -131,6 +136,15 @@ def _normalize_dimension(dimension):
     if value < 0:
         raise ValueError(
             "torch.compile trace tensor(): dimensions must be non-negative"
+        )
+    return value
+
+
+def _normalize_storage_offset(storage_offset):
+    value = _operator.index(storage_offset)
+    if value < 0:
+        raise ValueError(
+            "torch.compile trace tensor(): storage offset must be non-negative"
         )
     return value
 
@@ -382,9 +396,32 @@ def _unary_output_metadata(input_metadata, *, grad_enabled=None):
     return CompileTraceTensorMetadata(
         shape=input_metadata.shape,
         stride=_unary_output_stride(input_metadata.shape, input_metadata.stride),
+        storage_offset=0,
         dtype=input_metadata.dtype,
         device=input_metadata.device,
         requires_grad=input_metadata.requires_grad and grad_enabled,
+    )
+
+
+def _t_output_metadata(input_metadata):
+    rank = len(input_metadata.shape)
+    if rank > 2:
+        raise RuntimeError(
+            f"t() expects a tensor with <= 2 dimensions, but self is {rank}D"
+        )
+    if rank == 2:
+        shape = tuple(reversed(input_metadata.shape))
+        stride = tuple(reversed(input_metadata.stride))
+    else:
+        shape = input_metadata.shape
+        stride = input_metadata.stride
+    return CompileTraceTensorMetadata(
+        shape=shape,
+        stride=stride,
+        storage_offset=input_metadata.storage_offset,
+        dtype=input_metadata.dtype,
+        device=input_metadata.device,
+        requires_grad=input_metadata.requires_grad,
     )
 
 
@@ -403,6 +440,7 @@ def _binary_output_metadata(left_metadata, right_metadata, *, grad_enabled=None)
     return CompileTraceTensorMetadata(
         shape=shape,
         stride=_binary_output_stride(left_metadata, right_metadata, shape),
+        storage_offset=0,
         dtype=left_metadata.dtype,
         device=left_metadata.device,
         requires_grad=(
@@ -417,6 +455,7 @@ def _metadata_from_data(data, *, dtype, device, requires_grad):
     return CompileTraceTensorMetadata(
         shape=shape,
         stride=_contiguous_stride(shape),
+        storage_offset=0,
         dtype=_normalize_dtype(dtype),
         device=_normalize_device(device),
         requires_grad=_normalize_requires_grad(requires_grad),
@@ -441,10 +480,16 @@ def _require_native_tensor(value, value_name):
 
 
 def _metadata_from_native_tensor(tensor):
-    shape, stride, requires_grad = _native._compile_trace_tensor_metadata(tensor)
+    (
+        shape,
+        stride,
+        storage_offset,
+        requires_grad,
+    ) = _native._compile_trace_tensor_metadata(tensor)
     return CompileTraceTensorMetadata(
         shape=_normalize_shape(shape),
         stride=_normalize_shape(stride),
+        storage_offset=_normalize_storage_offset(storage_offset),
         dtype=float32,
         device="cpu",
         requires_grad=_normalize_requires_grad(requires_grad),
@@ -462,7 +507,7 @@ def _require_matching_metadata(
         return
 
     mismatches = []
-    fields = ["shape", "stride", "dtype", "device"]
+    fields = ["shape", "stride", "storage_offset", "dtype", "device"]
     if check_requires_grad:
         fields.append("requires_grad")
     for field in fields:
@@ -490,7 +535,7 @@ def _execute_operation(operation, values):
     if operation.target not in _SUPPORTED_OPERATION_TARGETS:
         _unsupported_operation(f"Tensor.{operation.target}")
 
-    if operation.target in _SUPPORTED_UNARY_TARGETS:
+    if operation.target in _SUPPORTED_UNARY_TARGETS | _SUPPORTED_VIEW_TARGETS:
         if len(operation.inputs) != 1:
             raise CompileTraceUnsupportedError(
                 "torch.compile trace execution only supports unary operations "
@@ -542,6 +587,16 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
             metadata_values[input_name],
             grad_enabled=grad_enabled,
         )
+
+    if operation.target in _SUPPORTED_VIEW_TARGETS:
+        if len(operation.inputs) != 1:
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace execution only supports unary operations "
+                f"with one input, got {len(operation.inputs)} inputs for "
+                f"{operation.name!r}"
+            )
+        (input_name,) = operation.inputs
+        return _t_output_metadata(metadata_values[input_name])
 
     if operation.target not in _SUPPORTED_BINARY_TARGETS:
         _unsupported_operation(f"Tensor.{operation.target}")
@@ -679,6 +734,9 @@ class CompileTraceTensorProxy:
     def absolute(self):
         return self._recorder.record_unary("abs", self)
 
+    def t(self):
+        return self._recorder.record_unary("t", self)
+
     def __neg__(self):
         return self.neg()
 
@@ -785,6 +843,7 @@ class CompileTraceRecorder:
         name=None,
         shape,
         stride=None,
+        storage_offset=0,
         dtype=float32,
         device="cpu",
         requires_grad=False,
@@ -807,6 +866,7 @@ class CompileTraceRecorder:
         metadata = CompileTraceTensorMetadata(
             shape=shape,
             stride=stride,
+            storage_offset=_normalize_storage_offset(storage_offset),
             dtype=_normalize_dtype(dtype),
             device=_normalize_device(device),
             requires_grad=_normalize_requires_grad(requires_grad),
@@ -821,11 +881,14 @@ class CompileTraceRecorder:
 
     def record_unary(self, target, input):
         self._ensure_open()
-        if target not in _SUPPORTED_UNARY_TARGETS:
+        if target not in _SUPPORTED_UNARY_TARGETS | _SUPPORTED_VIEW_TARGETS:
             _unsupported_operation(f"Tensor.{target}")
         self._require_owned_proxy(input)
         name = self._next_operation_name(target)
-        metadata = _unary_output_metadata(input.metadata)
+        if target in _SUPPORTED_VIEW_TARGETS:
+            metadata = _t_output_metadata(input.metadata)
+        else:
+            metadata = _unary_output_metadata(input.metadata)
         operation = CompileTraceOperation(
             name=name,
             op="call_method",

@@ -7332,7 +7332,13 @@ fn compile_trace_tensor_metadata(py: Python<'_>, input: &Bound<'_, PyAny>) -> Py
     let tensor = input.cast::<PyTensor>()?.try_borrow()?;
     let shape = PyTuple::new(py, tensor.inner.shape().iter().copied())?;
     let stride = PyTuple::new(py, tensor.inner.stride().iter().copied())?;
-    (shape, stride, tensor.inner.requires_grad()).into_py_any(py)
+    (
+        shape,
+        stride,
+        tensor.inner.storage_offset(),
+        tensor.inner.requires_grad(),
+    )
+        .into_py_any(py)
 }
 
 #[pyfunction(
@@ -7361,6 +7367,15 @@ fn compile_trace_unary(input: &Bound<'_, PyAny>, target: &str) -> PyResult<PyTen
     let output = match target {
         "neg" => tensor.inner.negate(),
         "abs" => tensor.inner.abs(),
+        "t" => {
+            let rank = tensor.inner.shape().len();
+            if rank > 2 {
+                return Err(PyRuntimeError::new_err(format!(
+                    "t() expects a tensor with <= 2 dimensions, but self is {rank}D"
+                )));
+            }
+            tensor.inner.t()
+        }
         _ => {
             return Err(PyNotImplementedError::new_err(format!(
                 "_compile_trace_unary(): unsupported target {target:?}"

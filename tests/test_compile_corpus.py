@@ -15,7 +15,7 @@ except ImportError:
 
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-COMPILE_CORPUS_VERSION = "torch_compile_corpus_v4"
+COMPILE_CORPUS_VERSION = "torch_compile_corpus_v5"
 
 CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -102,6 +102,10 @@ def cpu_float32_scalar_tensor_add(x, y):
     return x.add(y.neg())
 
 
+def cpu_float32_t_view(x):
+    return x.t()
+
+
 def cpu_float32_heldout_broadcast_chain(x, y):
     z = y.abs()
     return (x + z).neg().add(y)
@@ -109,6 +113,10 @@ def cpu_float32_heldout_broadcast_chain(x, y):
 
 def cpu_float32_heldout_scalar_left_broadcast(x, y):
     return (x.neg() + y).absolute()
+
+
+def cpu_float32_heldout_t_view_identity(x):
+    return x.t()
 
 
 def cpu_float32_recompile_guard_unary_metadata(x):
@@ -173,6 +181,26 @@ def cpu_float32_scalar_tensor_inputs(module):
         module.tensor(2.0, dtype=module.float32),
         module.tensor(
             [[-0.5, 1.5, -2.5], [3.5, -4.5, 5.5]],
+            dtype=module.float32,
+            requires_grad=True,
+        ),
+    )
+
+
+def cpu_float32_t_view_inputs(module):
+    return (
+        module.tensor(
+            [[1.0, -2.0, 3.5], [4.25, -5.5, 6.0]],
+            dtype=module.float32,
+            requires_grad=True,
+        ),
+    )
+
+
+def cpu_float32_heldout_t_view_identity_inputs(module):
+    return (
+        module.tensor(
+            [1.0, -2.0, 3.5, -4.25],
             dtype=module.float32,
             requires_grad=True,
         ),
@@ -445,6 +473,12 @@ COMPILE_CORPUS = (
         make_inputs=cpu_float32_scalar_tensor_inputs,
     ),
     CompileCorpusCase(
+        name="cpu_float32_t_view",
+        category="mutation_aliasing_views",
+        program=cpu_float32_t_view,
+        make_inputs=cpu_float32_t_view_inputs,
+    ),
+    CompileCorpusCase(
         name="cpu_float32_recompile_guard_unary_metadata",
         category="recompilation_guards",
         program=cpu_float32_recompile_guard_unary_metadata,
@@ -480,6 +514,12 @@ COMPILE_HELD_OUT_CORPUS = (
         category="broadcasting",
         program=cpu_float32_heldout_scalar_left_broadcast,
         make_inputs=cpu_float32_scalar_tensor_inputs,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_heldout_t_view_identity",
+        category="mutation_aliasing_views",
+        program=cpu_float32_heldout_t_view_identity,
+        make_inputs=cpu_float32_heldout_t_view_identity_inputs,
     ),
     CompileCorpusCase(
         name="cpu_float32_heldout_guard_unary_metadata",
@@ -750,10 +790,10 @@ def assert_tensor_observables_match(testcase, actual, expected, *, case):
 
 class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
-        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v4")
+        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v5")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(len(COMPILE_CORPUS), 12)
-        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 4)
+        self.assertEqual(len(COMPILE_CORPUS), 13)
+        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 5)
 
         case_names = [case.name for case in COMPILE_CORPUS]
         self.assertEqual(
@@ -768,6 +808,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_matrix_vector_add_method",
                 "cpu_float32_tensor_scalar_add",
                 "cpu_float32_scalar_tensor_add",
+                "cpu_float32_t_view",
                 "cpu_float32_recompile_guard_unary_metadata",
                 "cpu_float32_recompile_guard_binary_metadata",
                 "cpu_float32_recompile_limit_reset",
@@ -779,6 +820,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
             [
                 "cpu_float32_heldout_broadcast_chain",
                 "cpu_float32_heldout_scalar_left_broadcast",
+                "cpu_float32_heldout_t_view_identity",
                 "cpu_float32_heldout_guard_unary_metadata",
                 "cpu_float32_heldout_guard_binary_metadata",
             ],
@@ -787,7 +829,12 @@ class CompileCorpusMetadataTests(unittest.TestCase):
         categories = {case.category for case in COMPILE_CORPUS}
         self.assertEqual(
             categories,
-            {"tensor_arithmetic", "broadcasting", "recompilation_guards"},
+            {
+                "tensor_arithmetic",
+                "broadcasting",
+                "mutation_aliasing_views",
+                "recompilation_guards",
+            },
         )
         for case in COMPILE_CORPUS:
             with self.subTest(case=case.name):
@@ -802,7 +849,14 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                     self.assertIsNone(case.recompile_limit)
         for case in COMPILE_HELD_OUT_CORPUS:
             with self.subTest(held_out_case=case.name):
-                self.assertIn(case.category, {"broadcasting", "recompilation_guards"})
+                self.assertIn(
+                    case.category,
+                    {
+                        "broadcasting",
+                        "mutation_aliasing_views",
+                        "recompilation_guards",
+                    },
+                )
                 self.assertIn(case.category, CATEGORY_WEIGHTS)
                 self.assertTrue(case.fullgraph)
                 self.assertIsNone(case.dynamic)
@@ -987,6 +1041,24 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 ),
             )
 
+    def assert_t_view_alias_matches(self, actual, source, expected, *, case):
+        self.assert_native_tensor_matches(actual, expected, case=case)
+        self.assertTrue(
+            actual.is_set_to(expected),
+            msg=f"{case} should match the eager t() view alias",
+        )
+        self.assertEqual(
+            actual.storage_offset(),
+            source.storage_offset(),
+            msg=f"{case} should preserve the input storage offset",
+        )
+        if source.numel():
+            self.assertEqual(
+                actual.data_ptr(),
+                source.data_ptr(),
+                msg=f"{case} should point at the same first logical element",
+            )
+
     def test_bytecode_lowerer_records_general_tensor_arithmetic_graphs(self):
         cases = (
             (
@@ -1033,6 +1105,11 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 cpu_float32_scalar_tensor_add,
                 cpu_float32_scalar_tensor_inputs,
                 ["neg", "add"],
+            ),
+            (
+                cpu_float32_t_view,
+                cpu_float32_t_view_inputs,
+                ["t"],
             ),
             (
                 cpu_float32_recompile_guard_unary_metadata,
@@ -1451,6 +1528,143 @@ class CompileCorpusTraceTests(unittest.TestCase):
             case="two-input graph",
         )
 
+    def test_t_view_records_private_immutable_graph(self):
+        graph = _compile_trace.trace_one_input_compile_graph(
+            cpu_float32_t_view,
+            cpu_float32_t_view_inputs,
+            name="cpu_float32_t_view",
+        )
+        (input,) = cpu_float32_t_view_inputs(torch)
+        expected = input.t()
+
+        self.assertEqual(graph.name, "cpu_float32_t_view")
+        self.assertEqual(graph.output, "t_0")
+        self.assertEqual(len(graph.inputs), 1)
+        self.assertEqual(len(graph.operations), 1)
+
+        input_metadata = graph.inputs[0].metadata
+        self.assertEqual(input_metadata.shape, (2, 3))
+        self.assertEqual(input_metadata.stride, (3, 1))
+        self.assertEqual(input_metadata.storage_offset, 0)
+        self.assertIs(input_metadata.dtype, _compile_trace.float32)
+        self.assertEqual(input_metadata.device, "cpu")
+        self.assertTrue(input_metadata.requires_grad)
+
+        (t_op,) = graph.operations
+        self.assertEqual(t_op.name, "t_0")
+        self.assertEqual(t_op.op, "call_method")
+        self.assertEqual(t_op.target, "t")
+        self.assertEqual(t_op.inputs, ("arg0",))
+        self.assertEqual(t_op.metadata.shape, tuple(expected.shape))
+        self.assertEqual(t_op.metadata.stride, expected.stride())
+        self.assertEqual(t_op.metadata.storage_offset, expected.storage_offset())
+        self.assertEqual(t_op.metadata.requires_grad, expected.requires_grad)
+        self.assertEqual(graph.output_metadata, t_op.metadata)
+        self.assert_t_view_alias_matches(
+            graph.forward(input),
+            input,
+            expected,
+            case="cpu_float32_t_view",
+        )
+
+    def test_t_view_executor_matches_identity_offset_empty_and_no_grad_views(self):
+        values = [
+            [
+                [0.0, 1.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0, 7.0],
+                [8.0, 9.0, 10.0, 11.0],
+            ],
+            [
+                [12.0, 13.0, 14.0, 15.0],
+                [16.0, 17.0, 18.0, 19.0],
+                [20.0, 21.0, 22.0, 23.0],
+            ],
+        ]
+        offset_base = torch.tensor(values, dtype=torch.float32, requires_grad=True)
+        cases = (
+            ("scalar identity", torch.tensor(2.5, dtype=torch.float32, requires_grad=True)),
+            (
+                "vector identity",
+                torch.tensor([1.0, -2.0, 3.5], dtype=torch.float32, requires_grad=True),
+            ),
+            (
+                "rank-2 transpose",
+                torch.tensor(
+                    [[1.0, -2.0, 3.5], [4.25, -5.5, 6.0]],
+                    dtype=torch.float32,
+                    requires_grad=True,
+                ),
+            ),
+            ("offset matrix", offset_base.transpose(0, 2)[1]),
+            ("empty matrix", torch.tensor([[], []], dtype=torch.float32, requires_grad=True)),
+        )
+        for case, input in cases:
+            with self.subTest(case=case):
+                graph = _compile_bytecode.lower_one_input_compile_graph(
+                    cpu_float32_t_view,
+                    _compile_trace._metadata_from_native_tensor(input),
+                    name=case,
+                )
+                expected = input.t()
+
+                self.assertEqual(graph.operations[0].target, "t")
+                self.assertEqual(
+                    graph.inputs[0].metadata.storage_offset,
+                    input.storage_offset(),
+                )
+                self.assertEqual(
+                    graph.output_metadata.storage_offset,
+                    expected.storage_offset(),
+                )
+                self.assert_t_view_alias_matches(
+                    graph.forward(input),
+                    input,
+                    expected,
+                    case=case,
+                )
+
+                with torch.no_grad():
+                    expected_no_grad = input.t()
+                    actual_no_grad = graph.forward(input)
+                self.assertTrue(expected_no_grad.requires_grad)
+                self.assert_t_view_alias_matches(
+                    actual_no_grad,
+                    input,
+                    expected_no_grad,
+                    case=f"{case} no_grad",
+                )
+
+    def test_t_view_rejects_rank_gt_two_and_nonzero_arguments(self):
+        rank_three = torch.tensor(
+            [[[1.0], [2.0]], [[3.0], [4.0]]],
+            dtype=torch.float32,
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^t\(\) expects a tensor with <= 2 dimensions, but self is 3D$",
+        ):
+            _compile_bytecode.lower_one_input_compile_graph(
+                cpu_float32_t_view,
+                _compile_trace._metadata_from_native_tensor(rank_three),
+                name="rank_three_t",
+            )
+
+        def t_with_argument(x):
+            return x.t(0)
+
+        with self.assertRaisesRegex(
+            _compile_trace.CompileTraceUnsupportedError,
+            r"Tensor\.t argument count 1",
+        ):
+            _compile_bytecode.lower_one_input_compile_graph(
+                t_with_argument,
+                _compile_trace._metadata_from_native_tensor(
+                    torch.tensor([1.0], dtype=torch.float32)
+                ),
+                name="t_with_argument",
+            )
+
     def test_unary_abs_neg_executes_private_native_graph(self):
         case = COMPILE_CORPUS[0]
         graph = _compile_trace.trace_one_input_compile_graph(
@@ -1545,6 +1759,7 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 left_proxy = recorder.input(
                     shape=tuple(left.shape),
                     stride=left.stride(),
+                    storage_offset=left.storage_offset(),
                     dtype=_compile_trace.float32,
                     device="cpu",
                     requires_grad=left.requires_grad,
@@ -1552,6 +1767,7 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 right_proxy = recorder.input(
                     shape=tuple(right.shape),
                     stride=right.stride(),
+                    storage_offset=right.storage_offset(),
                     dtype=_compile_trace.float32,
                     device="cpu",
                     requires_grad=right.requires_grad,
@@ -1606,6 +1822,7 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 proxy = recorder.input(
                     shape=tuple(input.shape),
                     stride=input.stride(),
+                    storage_offset=input.storage_offset(),
                     dtype=_compile_trace.float32,
                     device="cpu",
                     requires_grad=input.requires_grad,
@@ -1783,6 +2000,7 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 proxy = recorder.input(
                     shape=tuple(input.shape),
                     stride=input.stride(),
+                    storage_offset=input.storage_offset(),
                     dtype=_compile_trace.float32,
                     device="cpu",
                     requires_grad=input.requires_grad,
@@ -1936,6 +2154,7 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 self.assertIn(operation, message)
                 self.assertIn("Tensor.neg", message)
                 self.assertIn("Tensor.abs", message)
+                self.assertIn("Tensor.t", message)
                 self.assertIn("Tensor.add", message)
 
     def test_augmented_self_add_aliasing_rejects_instead_of_recording_add(self):
@@ -2047,6 +2266,9 @@ def program(x):
 def self_add(x):
     return x + x
 
+def t_view(x):
+    return x.t()
+
 def broadcast_add(x, y):
     return x.neg().abs() + y.negative()
 
@@ -2121,6 +2343,7 @@ for actual in (
     assert actual.tolist() == expected.tolist()
     assert actual.shape == expected.shape
     assert actual.stride() == expected.stride()
+    assert actual.storage_offset() == expected.storage_offset()
     assert actual.dtype is expected.dtype
     assert actual.device == expected.device
     assert actual.requires_grad is expected.requires_grad
@@ -2143,9 +2366,33 @@ for actual in (
     assert actual.tolist() == self_add_expected.tolist()
     assert actual.shape == self_add_expected.shape
     assert actual.stride() == self_add_expected.stride()
+    assert actual.storage_offset() == self_add_expected.storage_offset()
     assert actual.dtype is self_add_expected.dtype
     assert actual.device == self_add_expected.device
     assert actual.requires_grad is self_add_expected.requires_grad
+assert backend_calls == []
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
+t_view_graph = _compile_trace.trace_one_input_compile_graph(
+    t_view,
+    make_inputs,
+    name="cpu_float32_t_view",
+)
+assert t_view_graph.output == "t_0"
+assert [operation.target for operation in t_view_graph.operations] == ["t"]
+t_view_expected = t_view(native_input)
+for actual in (
+    t_view_graph.forward(native_input),
+    _compile_trace.execute_compile_trace_graph(t_view_graph, native_input),
+):
+    assert actual.tolist() == t_view_expected.tolist()
+    assert actual.shape == t_view_expected.shape
+    assert actual.stride() == t_view_expected.stride()
+    assert actual.storage_offset() == t_view_expected.storage_offset()
+    assert actual.dtype is t_view_expected.dtype
+    assert actual.device == t_view_expected.device
+    assert actual.requires_grad is t_view_expected.requires_grad
+    assert actual.data_ptr() == native_input.data_ptr()
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
@@ -2171,6 +2418,7 @@ for actual in (
     assert actual.tolist() == two_expected.tolist()
     assert actual.shape == two_expected.shape
     assert actual.stride() == two_expected.stride()
+    assert actual.storage_offset() == two_expected.storage_offset()
     assert actual.dtype is two_expected.dtype
     assert actual.device == two_expected.device
     assert actual.requires_grad is two_expected.requires_grad
@@ -2182,6 +2430,7 @@ compiled_broadcast_actual = compiled_broadcast(*two_inputs)
 assert compiled_broadcast_actual.tolist() == two_expected.tolist()
 assert compiled_broadcast_actual.shape == two_expected.shape
 assert compiled_broadcast_actual.stride() == two_expected.stride()
+assert compiled_broadcast_actual.storage_offset() == two_expected.storage_offset()
 assert compiled_broadcast_actual.dtype is two_expected.dtype
 assert compiled_broadcast_actual.device == two_expected.device
 assert compiled_broadcast_actual.requires_grad is two_expected.requires_grad
@@ -2193,6 +2442,7 @@ compiled_actual = compiled(native_input)
 assert compiled_actual.tolist() == self_add_expected.tolist()
 assert compiled_actual.shape == self_add_expected.shape
 assert compiled_actual.stride() == self_add_expected.stride()
+assert compiled_actual.storage_offset() == self_add_expected.storage_offset()
 assert compiled_actual.dtype is self_add_expected.dtype
 assert compiled_actual.device == self_add_expected.device
 assert compiled_actual.requires_grad is self_add_expected.requires_grad
@@ -2226,6 +2476,7 @@ try:
         assert actual.tolist() == expected.tolist()
         assert actual.shape == expected.shape
         assert actual.stride() == expected.stride()
+        assert actual.storage_offset() == expected.storage_offset()
         assert actual.dtype is expected.dtype
         assert actual.device == expected.device
         assert actual.requires_grad is expected.requires_grad
@@ -2246,6 +2497,7 @@ try:
     assert stride_actual.tolist() == stride_expected.tolist()
     assert stride_actual.shape == stride_expected.shape
     assert stride_actual.stride() == stride_expected.stride()
+    assert stride_actual.storage_offset() == stride_expected.storage_offset()
     assert stride_actual.dtype is stride_expected.dtype
     assert stride_actual.device == stride_expected.device
     assert stride_actual.requires_grad is stride_expected.requires_grad
@@ -2261,8 +2513,8 @@ try:
 except NotImplementedError as error:
     assert str(error) == (
         "torch.compile(): only backend='eager', fullgraph=True straight-line "
-        "Tensor neg/abs/add functions with one or two positional exact native CPU "
-        "float32 Tensor are supported; eager fallback, installed-PyTorch "
+        "Tensor neg/abs/t and binary add functions with one or two positional "
+        "exact native CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
         "forwarding, callable backend invocation, CUDA compilation, and broader "
         "graph capture remain unsupported"
     )

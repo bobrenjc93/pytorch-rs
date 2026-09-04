@@ -137,6 +137,7 @@ def _valid_fake_corpus():
     public_cases = (
         *(_case(f"tensor_{index}", "tensor_arithmetic") for index in range(5)),
         *(_case(f"broadcast_{index}", "broadcasting") for index in range(4)),
+        _case("view_0", "mutation_aliasing_views"),
         *(
             _case(f"guard_{index}", "recompilation_guards", recompile_limit=4)
             for index in range(2)
@@ -146,6 +147,7 @@ def _valid_fake_corpus():
     held_out_cases = (
         _case("heldout_broadcast_0", "broadcasting"),
         _case("heldout_broadcast_1", "broadcasting"),
+        _case("heldout_view_0", "mutation_aliasing_views"),
         _case("heldout_guard_0", "recompilation_guards", recompile_limit=4),
         _case("heldout_guard_1", "recompilation_guards", recompile_limit=4),
     )
@@ -238,7 +240,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
 
         self.assertIn("duplicate case name 'tensor_0'", str(raised.exception))
 
-    def test_current_v4_corpus_matches_pinned_manifest(self):
+    def test_current_v5_corpus_matches_pinned_manifest(self):
         evaluator._validate_corpus_metadata(_real_corpus_namespace())
 
     def test_pinned_manifest_rejects_case_program_replacement(self):
@@ -253,7 +255,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v4 case cpu_float32_unary_abs_neg program changed",
+            "public v5 case cpu_float32_unary_abs_neg program changed",
             str(raised.exception),
         )
 
@@ -269,7 +271,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v4 case cpu_float32_unary_abs_neg make_inputs changed",
+            "public v5 case cpu_float32_unary_abs_neg make_inputs changed",
             str(raised.exception),
         )
 
@@ -301,7 +303,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v4 guard scenario "
+            "public v5 guard scenario "
             "unary_shape_stride_requires_grad_guards/same_metadata "
             "guard_change changed",
             str(raised.exception),

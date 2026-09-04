@@ -23,7 +23,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ARTIFACT_PATH = (
-    REPOSITORY_ROOT / "docs" / "benchmark-data" / "torch-compile-cpu-v4.json"
+    REPOSITORY_ROOT / "docs" / "benchmark-data" / "torch-compile-cpu-v5.json"
 )
 DEFAULT_MARKDOWN_REPORT_PATH = (
     REPOSITORY_ROOT / "docs" / "torch-compile-cpu-release-timings.md"
@@ -1081,6 +1081,7 @@ def _timed_category_counts(cases):
     order = (
         ("tensor_arithmetic", "tensor-arithmetic"),
         ("broadcasting", "broadcasting"),
+        ("mutation_aliasing_views", "mutation/aliasing/view"),
         ("recompilation_guards", "recompilation-guard"),
     )
     return ", ".join(
@@ -1186,7 +1187,8 @@ def render_markdown_summary(report):
             (
                 "The compile corpus keeps the full 100-point category denominator. "
                 "The native `torch_rs` path currently has executable public cases "
-                "for tensor arithmetic, broadcasting, and recompilation guards. "
+                "for tensor arithmetic, broadcasting, mutation/aliasing/views, "
+                "and recompilation guards. "
                 "Every remaining category below stays in the denominator as zero "
                 "credit instead of being dropped from the report."
             ),
@@ -1213,10 +1215,11 @@ def render_markdown_summary(report):
             "",
             _supported_denominator_line(coverage_denominator),
             (
-                "The v4 corpus also keeps 2 held-out broadcasting programs and 2 "
-                "held-out recompilation-guard scenarios in tests to guard against "
-                "case-specific specialization; they are not included in the public "
-                "timing table."
+                "The v5 corpus also keeps 2 held-out broadcasting programs, 1 "
+                "held-out mutation/aliasing/view program, and 2 held-out "
+                "recompilation-guard scenarios in tests to guard against "
+                "case-specific specialization; they are not included in the "
+                "public timing table."
             ),
             "",
         ]
@@ -1246,10 +1249,10 @@ def _validate_expected_artifact_shape(report):
             "benchmark version mismatch: "
             f"{environment.get('benchmark_version')!r} != {BENCHMARK_VERSION!r}"
         )
-    if environment.get("corpus_version") != "torch_compile_corpus_v4":
+    if environment.get("corpus_version") != "torch_compile_corpus_v5":
         errors.append(
             "corpus version mismatch: "
-            f"{environment.get('corpus_version')!r} != 'torch_compile_corpus_v4'"
+            f"{environment.get('corpus_version')!r} != 'torch_compile_corpus_v5'"
         )
 
     cases = report.get("cases", [])
@@ -1257,9 +1260,10 @@ def _validate_expected_artifact_shape(report):
     expected_counts = {
         "tensor_arithmetic": 35,
         "broadcasting": 28,
+        "mutation_aliasing_views": 7,
         "recompilation_guards": 21,
     }
-    if len(cases) != 84 or category_counts != expected_counts:
+    if len(cases) != 91 or category_counts != expected_counts:
         errors.append(
             "timed cell count mismatch: "
             f"count={len(cases)} categories={dict(category_counts)!r}"
@@ -1282,20 +1286,20 @@ def _validate_expected_artifact_shape(report):
 
     coverage = report.get("coverage_denominator", {})
     if (
-        coverage.get("supported_weight") != 24
+        coverage.get("supported_weight") != 32
         or coverage.get("total_weight") != 100
-        or coverage.get("zero_credit_weight") != 76
-        or coverage.get("weighted_supported_percent") != 24.0
+        or coverage.get("zero_credit_weight") != 68
+        or coverage.get("weighted_supported_percent") != 32.0
     ):
         errors.append(f"coverage denominator mismatch: {coverage!r}")
 
     corpus = report.get("corpus", {})
     if corpus.get("version") != environment.get("corpus_version"):
         errors.append("corpus metadata version does not match environment")
-    if len(corpus.get("public_cases", ())) != 12:
-        errors.append("corpus metadata public case count is not 12")
-    if len(corpus.get("held_out_cases", ())) != 4:
-        errors.append("corpus metadata held-out case count is not 4")
+    if len(corpus.get("public_cases", ())) != 13:
+        errors.append("corpus metadata public case count is not 13")
+    if len(corpus.get("held_out_cases", ())) != 5:
+        errors.append("corpus metadata held-out case count is not 5")
     if len(corpus.get("public_recompilation_guard_scenarios", ())) != 3:
         errors.append("corpus metadata public guard scenario count is not 3")
     if len(corpus.get("held_out_recompilation_guard_scenarios", ())) != 2:
