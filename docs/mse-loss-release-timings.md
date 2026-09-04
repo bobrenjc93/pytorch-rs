@@ -2,7 +2,7 @@
 
 Date: 2026-08-30
 
-Review update: 2026-09-01
+Review update: 2026-09-03
 
 Candidate provenance: source snapshot based on
 `2231dec5e208f3545c05484d497b32b3981f640d`
@@ -10,36 +10,56 @@ Candidate provenance: source snapshot based on
 ## Review Update: `reduction="sum"` Same-Shape Contiguous
 
 The 2026-09-03 focused rerun used the current worktree based on
-`c5cca3ac3c3254d802067c8b2c50b1b056f9cc15` with the direct no-grad
-same-shape contiguous `mse_loss(reduction="sum")` fast path. The release
-extension was built and installed into the worktree `.venv` with
-`maturin develop --release --locked`, and the ignored one-off timing driver
-`target/mse_sum_contiguous_release_timing.py` ran from the repository root.
+`a8b28c9235d03a14be1498c787d00f65712faaeb` plus this branch's direct no-grad
+same-shape contiguous `mse_loss(reduction="sum")` fast path guard restoration,
+active-autograd fallback tests, and reusable benchmark driver. The release
+extension was built and wheel-installed into the worktree `.venv`, and the
+checked-in timing driver `scripts/benchmark_mse_sum.py` emitted JSON under
+`target/mse-sum-release-timings.json`.
 
 The measured cell used CPU `float32` row-major contiguous `(1024, 1024)` inputs
-created outside the timed region from NumPy seed `20260903`,
-`CUDA_VISIBLE_DEVICES=`, one PyTorch thread, one reported `torch_rs` thread,
-`taskset -c 24`, 15 warmup blocks, 81 measured blocks, and 16 eager calls per
-block in each of two process passes. The first pass measured `torch_rs` before
-PyTorch; the second pass reversed that order. Scalar outputs were consumed with
-`.item()` inside every timed call, and values below are medians of the two
-per-process medians.
+created outside the timed region from NumPy seed `20260903`. The generated
+operands use exact `float32` quarter-step values so the scalar output can be
+checked by exact BLAKE2b metadata/value checksum as well as tolerance. The
+driver set `CUDA_VISIBLE_DEVICES=`, pinned the process to CPU 24 with
+`os.sched_setaffinity`, set `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`,
+`OPENBLAS_NUM_THREADS=1`, and `NUMEXPR_NUM_THREADS=1` before importing either
+backend, set PyTorch intra-op and inter-op thread counts to 1, and checked that
+both backends reported one thread. It used 15 warmup blocks, 81 measured
+blocks, and 16 eager calls per block in each of two implementation-order
+passes. The first pass measured `torch_rs` before PyTorch; the second pass
+reversed that order. Scalar outputs were consumed with `.item()` inside every
+timed call, and values below are medians of the two per-order-pass medians.
 
-Correctness was checked against PyTorch 2.13 before timing for output shape,
-stride, storage offset, contiguity, dtype, device, `requires_grad`, leaf
-status, scalar value with `rtol=1e-4`, `atol=1e-4`, and operand nonmutation.
+Correctness was checked against PyTorch 2.13 before timing for input and output
+shape, stride, storage offset, contiguity, dtype, device, `requires_grad`, leaf
+status, scalar value with `rtol=1e-4`, `atol=1e-4`, exact output checksum, and
+operand nonmutation. The materialized output checksum was stable and identical
+for both implementations: `ea91fd1cbcd5054b`.
 
 Focused checks for this update:
 
 ```bash
-PATH="/home/bobren/.cargo/bin:$PATH" cargo fmt --check
-PATH="/home/bobren/.cargo/bin:$PATH" cargo clippy --all-targets -- -D warnings
-PATH="/home/bobren/.cargo/bin:$PATH" \
-  VIRTUAL_ENV="$PWD/.venv" \
+UV_CACHE_DIR="$PWD/target/uv-cache" uv venv --clear --python 3.12
+UV_CACHE_DIR="$PWD/target/uv-cache" \
+  uv sync --locked --no-install-project --group dev --group reference
+cargo fmt --check
+.venv/bin/python -m py_compile scripts/benchmark_mse_sum.py
+cargo clippy --all-targets -- -D warnings
+VIRTUAL_ENV="$PWD/.venv" \
   PYO3_PYTHON="$PWD/.venv/bin/python" \
   cargo clippy --all-targets --features python-bindings -- -D warnings
-PATH="/home/bobren/.cargo/bin:$PATH" \
-  cargo test tensor::tests::squared_difference_sum --all-targets
+env -u CONDA_PREFIX TMPDIR="$PWD/target" \
+  VIRTUAL_ENV="$PWD/.venv" \
+  PYO3_PYTHON="$PWD/.venv/bin/python" \
+  .venv/bin/maturin build --release --locked --out target/mse-wheel
+uv pip install --python "$PWD/.venv/bin/python" --force-reinstall --no-deps \
+  target/mse-wheel/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl
+.venv/bin/python .github/scripts/verify_native_extension.py
+cargo test tensor::tests::squared_difference_sum --all-targets
+VIRTUAL_ENV="$PWD/.venv" \
+  PYO3_PYTHON="$PWD/.venv/bin/python" \
+  cargo test tensor::tests::squared_difference_sum --all-targets --features python-bindings
 env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
   NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
   .venv/bin/python -m unittest \
@@ -47,48 +67,55 @@ env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
   tests.test_nn_functional_mse_loss_reference
 ```
 
-Results: the focused native Rust tests passed 2 tests, and the focused MSE
-Python implementation and PyTorch 2.13 differential tests passed 51 tests.
+Results: the focused native Rust tests passed 5 tests in both the default and
+`python-bindings` feature builds, and the focused MSE Python implementation and
+PyTorch 2.13 differential tests passed 57 tests.
 
 Timing command:
 
 ```bash
-env PATH="/home/bobren/.cargo/bin:$PATH" \
-  OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
-  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
-  taskset -c 24 .venv/bin/python target/mse_sum_contiguous_release_timing.py \
-  > target/mse-sum-contiguous-release-timing.json
+.venv/bin/python scripts/benchmark_mse_sum.py \
+  --cpu 24 \
+  --warmups 15 \
+  --samples 81 \
+  --output target/mse-sum-release-timings.json
 ```
 
 Environment:
 
 - CPU: AMD EPYC 9654 96-Core Processor
+- CPU affinity: the driver selected and pinned CPU 24 from the initial
+  available set
 - OS: Linux 6.13.2-0_fbk12_0_g0b66b3635210 x86_64, glibc 2.34
-- Python: 3.12.12
-- NumPy: 2.5.1
+- Python: 3.12.12 from the worktree `.venv`
+- NumPy: 2.5.1 from the worktree `.venv`
 - Rust: `rustc 1.92.0 (ded5c06cf 2025-12-08)`,
   `cargo 1.92.0 (344c4567c 2025-10-21)`
-- PyTorch: 2.13.0+cu130
+- PyTorch: 2.13.0+cu130 from the worktree `.venv`, CUDA runtime 13.0
 - Profile: release, Cargo `[profile.release]` with thin LTO and one codegen unit
-- Device/dtype: CPU float32; `CUDA_VISIBLE_DEVICES=` for the timing run
+- Device/dtype: CPU float32; the driver set `CUDA_VISIBLE_DEVICES=` before
+  importing PyTorch, and PyTorch reported `cuda_available=False`
 - Threads: `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`,
   `OPENBLAS_NUM_THREADS=1`, `NUMEXPR_NUM_THREADS=1`,
   `torch.set_num_threads(1)`, `torch.set_num_interop_threads(1)`;
   `torch_rs.get_num_threads()` and `torch_rs.get_num_interop_threads()` both
   reported 1
 - Dependency installation: locked
-  `uv sync --locked --no-install-project --group dev --group reference`
-  resolved in 27 ms and completed in 1.00s
-- Build time: the release extension rebuild for this source completed in 29.78s
+  `UV_CACHE_DIR="$PWD/target/uv-cache" uv sync --locked --no-install-project --group dev --group reference`
+  resolved in 32 ms, prepared 31 packages in 16.36s, and installed them in
+  1.68s into the worktree `.venv`
+- Build time: the final release wheel build for this source completed in 30.13s
+  before wheel installation
 
 Times are median microseconds per call. MAD is median absolute deviation in
 microseconds, and variance is sample variance of per-call sample timings in
 microseconds squared. `torch_rs / PyTorch` is a slowdown ratio, so lower is
-better and 1.00x is parity.
+better and 1.00x is parity. The per-implementation sample count is 162 because
+the driver records 81 measured blocks in each implementation order.
 
-| Workload | Category | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `mse_sum_same_contiguous_1024x1024` | same-shape contiguous no-grad sum | `()`, stride `()`, offset 0, requires_grad=False | 16 | 625.908 us +/- 3.436, var 55.737 | 210.248 us +/- 1.623, var 28.104 | 2.98x |
+| Workload | Category | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Materialized checksum |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| `mse_sum_same_contiguous_1024x1024` | same-shape contiguous no-grad sum | `()`, stride `()`, offset 0, requires_grad=False | 16 | 624.991 us +/- 2.624, var 281.221 | 302.794 us +/- 11.011, var 397.739 | 2.06x | `ea91fd1cbcd5054b` |
 
 ## Review Update: `reduction="mean"` Same-Shape Contiguous
 
