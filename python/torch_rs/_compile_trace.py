@@ -163,9 +163,10 @@ _SUPPORTED_UNARY_METHODS = (
     "Tensor.abs",
     "Tensor.absolute",
     "Tensor.relu",
+    "Tensor.square",
     "Tensor.detach",
 )
-_SUPPORTED_VALUE_UNARY_TARGETS = frozenset(("neg", "abs", "relu"))
+_SUPPORTED_VALUE_UNARY_TARGETS = frozenset(("neg", "abs", "relu", "square"))
 _SUPPORTED_ALIAS_UNARY_TARGETS = frozenset(("detach",))
 _SUPPORTED_UNARY_TARGETS = (
     _SUPPORTED_VALUE_UNARY_TARGETS | _SUPPORTED_ALIAS_UNARY_TARGETS
@@ -783,6 +784,9 @@ class CompileTraceTensorProxy:
 
     def relu(self):
         return self._recorder.record_unary("relu", self)
+
+    def square(self):
+        return self._recorder.record_unary("square", self)
 
     def detach(self):
         return self._recorder.record_unary("detach", self)
