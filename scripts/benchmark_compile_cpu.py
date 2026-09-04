@@ -46,6 +46,7 @@ CATEGORY_LABELS = {
     "broadcasting": "broadcasting",
     "inference": "inference",
     "training_autograd": "training-autograd",
+    "decompositions": "decomposition",
     "recompilation_guards": "recompilation-guard",
 }
 CATEGORY_PHRASES = {
@@ -53,6 +54,7 @@ CATEGORY_PHRASES = {
     "broadcasting": "broadcasting",
     "inference": "inference",
     "training_autograd": "training autograd",
+    "decompositions": "decompositions",
     "recompilation_guards": "recompilation guards",
 }
 CATEGORY_PROGRAM_LABELS = {
@@ -60,6 +62,7 @@ CATEGORY_PROGRAM_LABELS = {
     "broadcasting": "broadcasting",
     "inference": "inference",
     "training_autograd": "training-autograd",
+    "decompositions": "decomposition",
     "recompilation_guards": "recompilation-guard",
 }
 

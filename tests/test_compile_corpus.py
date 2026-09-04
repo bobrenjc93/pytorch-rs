@@ -16,7 +16,7 @@ except ImportError:
 
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-COMPILE_CORPUS_VERSION = "torch_compile_corpus_v6"
+COMPILE_CORPUS_VERSION = "torch_compile_corpus_v7"
 
 CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -78,6 +78,11 @@ def cpu_float32_training_unary_neg_abs_add(x):
     y = x.neg()
     z = y.abs()
     return z.add(x.negative())
+
+
+def cpu_float32_decomposition_square_scalar(x):
+    squared = x.square()
+    return squared.add(x.abs())
 
 
 def cpu_float32_self_add_inputs(module):
@@ -165,6 +170,11 @@ def cpu_float32_heldout_guard_unary_metadata(x):
 def cpu_float32_heldout_guard_binary_metadata(x, y):
     y_abs = y.abs()
     return (x.neg().add(y_abs)).absolute()
+
+
+def cpu_float32_heldout_decomposition_square_noncontiguous(x):
+    squared = x.square()
+    return squared.add(x.neg().abs())
 
 
 def cpu_float32_matrix_vector_inputs(module):
@@ -507,6 +517,12 @@ COMPILE_CORPUS = (
         backward_through_sum=True,
     ),
     CompileCorpusCase(
+        name="cpu_float32_decomposition_square_scalar",
+        category="decompositions",
+        program=cpu_float32_decomposition_square_scalar,
+        make_inputs=cpu_float32_scalar_inputs,
+    ),
+    CompileCorpusCase(
         name="cpu_float32_matrix_vector_add",
         category="broadcasting",
         program=cpu_float32_matrix_vector_add,
@@ -580,6 +596,12 @@ COMPILE_HELD_OUT_CORPUS = (
         program=cpu_float32_heldout_inference_relu_broadcast_no_grad,
         make_inputs=cpu_float32_heldout_inference_relu_broadcast_inputs,
         run_under_no_grad=True,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_heldout_decomposition_square_noncontiguous",
+        category="decompositions",
+        program=cpu_float32_heldout_decomposition_square_noncontiguous,
+        make_inputs=cpu_float32_recompile_guard_unary_stride_inputs,
     ),
     CompileCorpusCase(
         name="cpu_float32_heldout_guard_unary_metadata",
@@ -888,10 +910,10 @@ def assert_leaf_gradients_unchanged(testcase, inputs, before_gradients, *, case)
 
 class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
-        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v6")
+        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v7")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(len(COMPILE_CORPUS), 14)
-        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 6)
+        self.assertEqual(len(COMPILE_CORPUS), 15)
+        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 7)
 
         case_names = [case.name for case in COMPILE_CORPUS]
         self.assertEqual(
@@ -904,6 +926,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_add_unary_composition",
                 "cpu_float32_inference_relu_no_grad",
                 "cpu_float32_training_unary_neg_abs_add",
+                "cpu_float32_decomposition_square_scalar",
                 "cpu_float32_matrix_vector_add",
                 "cpu_float32_matrix_vector_add_method",
                 "cpu_float32_tensor_scalar_add",
@@ -921,6 +944,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_heldout_scalar_left_broadcast",
                 "cpu_float32_heldout_training_broadcast_neg_abs_add",
                 "cpu_float32_heldout_inference_relu_broadcast_no_grad",
+                "cpu_float32_heldout_decomposition_square_noncontiguous",
                 "cpu_float32_heldout_guard_unary_metadata",
                 "cpu_float32_heldout_guard_binary_metadata",
             ],
@@ -934,6 +958,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "broadcasting",
                 "inference",
                 "training_autograd",
+                "decompositions",
                 "recompilation_guards",
             },
         )
@@ -962,6 +987,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                     case.category,
                     {
                         "broadcasting",
+                        "decompositions",
                         "inference",
                         "training_autograd",
                         "recompilation_guards",
@@ -1204,6 +1230,11 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 ["neg", "abs", "neg", "add"],
             ),
             (
+                cpu_float32_decomposition_square_scalar,
+                cpu_float32_scalar_inputs,
+                ["square", "abs", "add"],
+            ),
+            (
                 cpu_float32_matrix_vector_add,
                 cpu_float32_matrix_vector_inputs,
                 ["neg", "abs", "neg", "add"],
@@ -1265,6 +1296,69 @@ class CompileCorpusTraceTests(unittest.TestCase):
                     graph.forward(*inputs),
                     expected,
                     case=program.__name__,
+                )
+
+    def test_square_decomposition_cases_cover_scalar_empty_and_noncontiguous_inputs(
+        self,
+    ):
+        public_case = compile_corpus_case("cpu_float32_decomposition_square_scalar")
+        held_out_case = compile_corpus_case(
+            "cpu_float32_heldout_decomposition_square_noncontiguous"
+        )
+        cases = (
+            (
+                "public scalar",
+                public_case,
+                cpu_float32_scalar_inputs,
+                ["square", "abs", "add"],
+            ),
+            (
+                "public empty",
+                public_case,
+                cpu_float32_empty_matrix_inputs,
+                ["square", "abs", "add"],
+            ),
+            (
+                "held-out noncontiguous",
+                held_out_case,
+                cpu_float32_recompile_guard_unary_stride_inputs,
+                ["square", "neg", "abs", "add"],
+            ),
+        )
+        for case_name, case, make_inputs, expected_targets in cases:
+            with self.subTest(case=case_name):
+                inputs = make_inputs(torch)
+                graph = _compile_bytecode.lower_compile_graph(
+                    case.program,
+                    tuple(
+                        _compile_trace._metadata_from_native_tensor(input)
+                        for input in inputs
+                    ),
+                    name=case.name,
+                )
+                expected = case.program(*inputs)
+
+                self.assertEqual(
+                    [operation.target for operation in graph.operations],
+                    expected_targets,
+                )
+                self.assertEqual(graph.output_metadata.shape, tuple(expected.shape))
+                self.assertEqual(graph.output_metadata.stride, expected.stride())
+                self.assertEqual(
+                    graph.output_metadata.requires_grad,
+                    expected.requires_grad,
+                )
+                self.assert_native_tensor_matches(
+                    graph.forward(*inputs),
+                    expected,
+                    case=f"{case_name}/trace",
+                )
+
+                compiled = torch.compile(case.program, **case.compile_kwargs("eager"))
+                self.assert_native_tensor_matches(
+                    run_compile_corpus_callable(torch, case, compiled, inputs),
+                    expected,
+                    case=f"{case_name}/compile",
                 )
 
     def test_bytecode_lowerer_accepts_cpython_314_borrowed_local_loads(self):
@@ -2276,6 +2370,7 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 self.assertIn("Tensor.neg", message)
                 self.assertIn("Tensor.abs", message)
                 self.assertIn("Tensor.relu", message)
+                self.assertIn("Tensor.square", message)
                 self.assertIn("Tensor.add", message)
 
     def test_augmented_self_add_aliasing_rejects_instead_of_recording_add(self):
@@ -2387,6 +2482,10 @@ def program(x):
 def self_add(x):
     return x + x
 
+def square_decomposition(x):
+    squared = x.square()
+    return squared.add(x.abs())
+
 def broadcast_add(x, y):
     return x.neg().abs() + y.negative()
 
@@ -2467,6 +2566,31 @@ for actual in (
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
+square_graph = _compile_trace.trace_one_input_compile_graph(
+    square_decomposition,
+    make_inputs,
+    name="cpu_float32_decomposition_square",
+)
+assert square_graph.output == "add_2"
+assert [operation.target for operation in square_graph.operations] == [
+    "square",
+    "abs",
+    "add",
+]
+square_expected = square_decomposition(native_input)
+for actual in (
+    square_graph.forward(native_input),
+    _compile_trace.execute_compile_trace_graph(square_graph, native_input),
+):
+    assert actual.tolist() == square_expected.tolist()
+    assert actual.shape == square_expected.shape
+    assert actual.stride() == square_expected.stride()
+    assert actual.dtype is square_expected.dtype
+    assert actual.device == square_expected.device
+    assert actual.requires_grad is square_expected.requires_grad
+assert backend_calls == []
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
 self_add_graph = _compile_trace.trace_one_input_compile_graph(
     self_add,
     make_inputs,
@@ -2539,6 +2663,17 @@ assert compiled_actual.requires_grad is self_add_expected.requires_grad
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
+compiled_square = torch.compile(square_decomposition, backend="eager", fullgraph=True)
+compiled_square_actual = compiled_square(native_input)
+assert compiled_square_actual.tolist() == square_expected.tolist()
+assert compiled_square_actual.shape == square_expected.shape
+assert compiled_square_actual.stride() == square_expected.stride()
+assert compiled_square_actual.dtype is square_expected.dtype
+assert compiled_square_actual.device == square_expected.device
+assert compiled_square_actual.requires_grad is square_expected.requires_grad
+assert backend_calls == []
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
 from torch_rs import _compile_bytecode
 guard_lower_calls = []
 original_lower = _compile_bytecode.lower_one_input_compile_graph
@@ -2601,8 +2736,8 @@ try:
 except NotImplementedError as error:
     assert str(error) == (
         "torch.compile(): only backend='eager', fullgraph=True straight-line "
-        "Tensor neg/abs/relu/add functions with one or two positional exact native "
-        "CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
+        "Tensor neg/abs/relu/square/add functions with one or two positional exact "
+        "native CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
         "forwarding, callable backend invocation, CUDA compilation, and broader "
         "graph capture remain unsupported"
     )

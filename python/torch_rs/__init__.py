@@ -262,8 +262,8 @@ def set_default_device(device: "Device") -> None:
 
 _COMPILE_UNSUPPORTED_MESSAGE = (
     "torch.compile(): only backend='eager', fullgraph=True straight-line "
-    "Tensor neg/abs/relu/add functions with one or two positional exact native "
-    "CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
+    "Tensor neg/abs/relu/square/add functions with one or two positional exact "
+    "native CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
     "forwarding, callable backend invocation, CUDA compilation, and broader "
     "graph capture remain unsupported"
 )
@@ -280,6 +280,7 @@ _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
     "neg",
     "negative",
     "relu",
+    "square",
 )
 _COMPILE_TENSOR_METHOD_GUARD_MISSING = globals().get(
     "_COMPILE_TENSOR_METHOD_GUARD_MISSING",
@@ -606,8 +607,8 @@ def compile(
     pass-through, and backend resolution through ``torch.compiler``. It also
     lowers exact Python functions with one or two positional exact native CPU
     ``float32`` Tensor inputs made only from Tensor ``neg``, ``abs``,
-    ``relu``, and binary ``add`` operations for ``backend="eager"`` with
-    ``fullgraph=True``.
+    ``relu``, ``square``, and binary ``add`` operations for
+    ``backend="eager"`` with ``fullgraph=True``.
     Eager fallback, installed-PyTorch forwarding, callable backend invocation,
     CUDA compilation, and broader graph capture remain unsupported.
     """
