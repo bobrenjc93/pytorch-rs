@@ -10317,6 +10317,44 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 96
       }
+    },
+    {
+      "key": "base:6c4f90fa968718d1830d517f0550b3aec99504ef",
+      "commit": "6c4f90fa968718d1830d517f0550b3aec99504ef",
+      "recordedAt": "2026-09-04T15:25:53.113Z",
+      "label": "base 6c4f90f",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 95,
+        "eval_39340456": 35,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 82,
+        "eval_a61c0e71": 38,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 96
+      }
+    },
+    {
+      "key": "pr:1841",
+      "recordedAt": "2026-09-04T15:25:53.113Z",
+      "label": "PR #1841",
+      "kind": "leaf",
+      "prNumber": 1841,
+      "title": "Validate compile training gradients in CPU benchmarks",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 95,
+        "eval_39340456": 35,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 82,
+        "eval_a61c0e71": 38,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 96
+      }
     }
   ]
 }

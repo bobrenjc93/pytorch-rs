@@ -41,6 +41,27 @@ IMPLEMENTATION_ORDERS = (
     ("torch_rs", "pytorch"),
     ("pytorch", "torch_rs"),
 )
+CATEGORY_LABELS = {
+    "tensor_arithmetic": "tensor-arithmetic",
+    "broadcasting": "broadcasting",
+    "inference": "inference",
+    "training_autograd": "training-autograd",
+    "recompilation_guards": "recompilation-guard",
+}
+CATEGORY_PHRASES = {
+    "tensor_arithmetic": "tensor arithmetic",
+    "broadcasting": "broadcasting",
+    "inference": "inference",
+    "training_autograd": "training autograd",
+    "recompilation_guards": "recompilation guards",
+}
+CATEGORY_PROGRAM_LABELS = {
+    "tensor_arithmetic": "tensor-arithmetic",
+    "broadcasting": "broadcasting",
+    "inference": "inference",
+    "training_autograd": "training-autograd",
+    "recompilation_guards": "recompilation-guard",
+}
 
 
 @dataclass(frozen=True)
@@ -321,6 +342,7 @@ def _corpus_metadata(corpus_module):
             "mode": case.mode,
             "options": case.options,
             "recompile_limit": case.recompile_limit,
+            "backward_through_sum": getattr(case, "backward_through_sum", False),
         }
 
     def step_summary(step):
@@ -441,6 +463,35 @@ def _materialized_payload(tensor):
     }
 
 
+def _input_payloads(inputs):
+    return [_materialized_payload(input) for input in inputs]
+
+
+def _tensor_grad_payload(tensor):
+    grad = getattr(tensor, "grad", None)
+    if grad is None:
+        return None
+    return _materialized_payload(grad)
+
+
+def _input_grad_payloads(inputs):
+    return [_tensor_grad_payload(input) for input in inputs]
+
+
+def _retain_grad_for_backward(inputs):
+    for input in inputs:
+        if getattr(input, "requires_grad", False):
+            input.retain_grad()
+
+
+def _assert_payload_match(actual, expected, *, cell_name, label):
+    if actual != expected:
+        raise AssertionError(
+            f"{cell_name} {label} mismatch:\n"
+            f"actual={actual!r}\nexpected={expected!r}"
+        )
+
+
 def _checksum_tensor(tensor):
     payload = json.dumps(
         _materialized_payload(tensor),
@@ -452,13 +503,66 @@ def _checksum_tensor(tensor):
 
 
 def _assert_outputs_match(actual, expected, *, cell_name):
-    actual_payload = _materialized_payload(actual)
-    expected_payload = _materialized_payload(expected)
-    if actual_payload != expected_payload:
-        raise AssertionError(
-            f"{cell_name} output mismatch:\n"
-            f"actual={actual_payload!r}\nexpected={expected_payload!r}"
-        )
+    _assert_payload_match(
+        _materialized_payload(actual),
+        _materialized_payload(expected),
+        cell_name=cell_name,
+        label="output",
+    )
+
+
+def _assert_backward_through_sum_matches(
+    actual_output,
+    actual_inputs,
+    expected_output,
+    expected_inputs,
+    *,
+    cell_name,
+):
+    if not getattr(actual_output, "requires_grad", False):
+        raise AssertionError(f"{cell_name} output does not require grad")
+    if not getattr(expected_output, "requires_grad", False):
+        raise AssertionError(f"{cell_name} reference output does not require grad")
+
+    _retain_grad_for_backward(actual_inputs)
+    _retain_grad_for_backward(expected_inputs)
+    actual_inputs_before = _input_payloads(actual_inputs)
+    expected_inputs_before = _input_payloads(expected_inputs)
+    _assert_payload_match(
+        _input_grad_payloads(actual_inputs),
+        _input_grad_payloads(expected_inputs),
+        cell_name=cell_name,
+        label="input gradients before backward",
+    )
+
+    expected_output.sum().backward()
+    actual_output.sum().backward()
+
+    _assert_payload_match(
+        _input_grad_payloads(actual_inputs),
+        _input_grad_payloads(expected_inputs),
+        cell_name=cell_name,
+        label="leaf gradients after backward-through-sum",
+    )
+    _assert_payload_match(
+        _input_payloads(actual_inputs),
+        actual_inputs_before,
+        cell_name=cell_name,
+        label="inputs after backward-through-sum",
+    )
+    _assert_payload_match(
+        _input_payloads(expected_inputs),
+        expected_inputs_before,
+        cell_name=cell_name,
+        label="reference inputs after backward-through-sum",
+    )
+
+
+def _should_validate_backward_through_sum(case, measured):
+    return (
+        getattr(case, "backward_through_sum", False)
+        and measured["output_metadata"]["requires_grad"]
+    )
 
 
 def _assert_timing_checksums_match(measured, expected, *, cell_name):
@@ -563,6 +667,7 @@ def _run_cell(
         "steady": _summarize_samples(sample_ns, variant.repeats),
         "steady_checksums": sorted(set(sample_checksums)),
         "cold_output": cold_output,
+        "inputs": inputs,
         "input_metadata": [_tensor_metadata(input) for input in inputs],
         "output_metadata": _tensor_metadata(cold_output),
     }
@@ -895,6 +1000,7 @@ def _measure_one_pass(
         "input_metadata": result["input_metadata"],
         "output_metadata": result["output_metadata"],
         "cold_output": result["cold_output"],
+        "inputs": result["inputs"],
     }
 
 
@@ -933,6 +1039,8 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                         expected,
                         cell_name=f"{cell_key}/{implementation}",
                     )
+                    backward_expected = expected
+                    backward_expected_inputs = expected_inputs
                     if implementation == "torch_rs":
                         reference_inputs = _cell_input_factory(
                             case,
@@ -948,10 +1056,20 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                             reference_expected,
                             cell_name=cell_key,
                         )
+                        backward_expected = reference_expected
+                        backward_expected_inputs = reference_inputs
                         _assert_timing_checksums_match(
                             measured,
                             reference_expected,
                             cell_name=cell_key,
+                        )
+                    if _should_validate_backward_through_sum(case, measured):
+                        _assert_backward_through_sum_matches(
+                            measured["cold_output"],
+                            measured["inputs"],
+                            backward_expected,
+                            backward_expected_inputs,
+                            cell_name=f"{cell_key}/{implementation}",
                         )
 
     rows = []
@@ -1103,15 +1221,76 @@ def _format_guard_sequence(row):
 
 def _timed_category_counts(cases):
     counts = Counter(row["category"] for row in cases)
-    order = (
-        ("tensor_arithmetic", "tensor-arithmetic"),
-        ("broadcasting", "broadcasting"),
-        ("recompilation_guards", "recompilation-guard"),
+    ordered_categories = [
+        category
+        for category in CATEGORY_LABELS
+        if category in counts
+    ]
+    ordered_categories.extend(
+        sorted(category for category in counts if category not in CATEGORY_LABELS)
     )
     return ", ".join(
-        f"{counts[category]} {label}"
-        for category, label in order
-        if category in counts
+        f"{counts[category]} {CATEGORY_LABELS.get(category, category)}"
+        for category in ordered_categories
+    )
+
+
+def _human_join(items):
+    if len(items) <= 1:
+        return "".join(items)
+    if len(items) == 2:
+        return " and ".join(items)
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
+def _supported_category_summary(coverage_denominator):
+    categories = [
+        CATEGORY_PHRASES.get(category["category"], category["category"])
+        for category in coverage_denominator["supported_categories"]
+    ]
+    return _human_join(categories)
+
+
+def _held_out_summary(report):
+    corpus = report.get("corpus", {})
+    category_weights = report.get("coverage_denominator", {}).get(
+        "category_weights",
+        {},
+    )
+    held_out_cases = corpus.get("held_out_cases", ())
+    held_out_counts = Counter(case.get("category") for case in held_out_cases)
+    ordered_categories = [
+        category
+        for category in category_weights
+        if category in held_out_counts
+    ]
+    ordered_categories.extend(
+        sorted(
+            category
+            for category in held_out_counts
+            if category not in category_weights
+        )
+    )
+
+    parts = []
+    for category in ordered_categories:
+        count = held_out_counts[category]
+        program_word = "program" if count == 1 else "programs"
+        phrase = CATEGORY_PROGRAM_LABELS.get(category, category)
+        parts.append(f"{count} held-out {phrase} {program_word}")
+
+    guard_count = len(corpus.get("held_out_recompilation_guard_scenarios", ()))
+    if guard_count:
+        scenario_word = "scenario" if guard_count == 1 else "scenarios"
+        parts.append(f"{guard_count} held-out recompilation-guard {scenario_word}")
+
+    if not parts:
+        return "No held-out compile corpus cases are recorded in this artifact."
+    return (
+        f"The {corpus.get('version', 'compile')} corpus also keeps "
+        f"{_human_join(parts)} in tests to guard "
+        "against case-specific specialization; they are not included in the "
+        "public timing table."
     )
 
 
@@ -1211,7 +1390,7 @@ def render_markdown_summary(report):
             (
                 "The compile corpus keeps the full 100-point category denominator. "
                 "The native `torch_rs` path currently has executable public cases "
-                "for tensor arithmetic, broadcasting, and recompilation guards. "
+                f"for {_supported_category_summary(coverage_denominator)}. "
                 "Every remaining category below stays in the denominator as zero "
                 "credit instead of being dropped from the report."
             ),
@@ -1237,12 +1416,7 @@ def render_markdown_summary(report):
         [
             "",
             _supported_denominator_line(coverage_denominator),
-            (
-                "The v4 corpus also keeps 2 held-out broadcasting programs and 2 "
-                "held-out recompilation-guard scenarios in tests to guard against "
-                "case-specific specialization; they are not included in the public "
-                "timing table."
-            ),
+            _held_out_summary(report),
             "",
         ]
     )
@@ -1265,32 +1439,63 @@ def _markdown_summary(markdown_path):
 
 def _validate_expected_artifact_shape(report):
     errors = []
+    corpus_module = _load_compile_corpus_module()
+    expected_corpus = _corpus_metadata(corpus_module)
+    expected_public_cases = tuple(corpus_module.COMPILE_CORPUS)
+    expected_coverage = _coverage_denominator(corpus_module, expected_public_cases)
+    expected_category_counts = Counter()
+    for case in expected_public_cases:
+        for variant in INPUT_VARIANTS:
+            if _variant_applies_to_case(variant, case):
+                expected_category_counts[case.category] += 1
+    expected_timed_cell_count = sum(expected_category_counts.values())
+
     environment = report.get("environment", {})
     if environment.get("benchmark_version") != BENCHMARK_VERSION:
         errors.append(
             "benchmark version mismatch: "
             f"{environment.get('benchmark_version')!r} != {BENCHMARK_VERSION!r}"
         )
-    if environment.get("corpus_version") != "torch_compile_corpus_v4":
+    expected_corpus_version = getattr(corpus_module, "COMPILE_CORPUS_VERSION", None)
+    if environment.get("corpus_version") != expected_corpus_version:
         errors.append(
             "corpus version mismatch: "
-            f"{environment.get('corpus_version')!r} != 'torch_compile_corpus_v4'"
+            f"{environment.get('corpus_version')!r} != {expected_corpus_version!r}"
         )
 
     cases = report.get("cases", [])
     category_counts = Counter(row.get("category") for row in cases)
-    expected_counts = {
-        "tensor_arithmetic": 35,
-        "broadcasting": 28,
-        "recompilation_guards": 21,
-    }
-    if len(cases) != 84 or category_counts != expected_counts:
+    if (
+        len(cases) != expected_timed_cell_count
+        or category_counts != expected_category_counts
+    ):
         errors.append(
             "timed cell count mismatch: "
-            f"count={len(cases)} categories={dict(category_counts)!r}"
+            f"count={len(cases)} categories={dict(category_counts)!r}, "
+            f"expected count={expected_timed_cell_count} "
+            f"categories={dict(expected_category_counts)!r}"
         )
     if report.get("aggregates", {}).get("timed_supported_cell_count") != len(cases):
         errors.append("aggregate timed cell count does not match cases")
+    expected_training_backward_cases = {
+        case.name
+        for case in expected_public_cases
+        if getattr(case, "backward_through_sum", False)
+    }
+    grad_enabled_training_cases = {
+        row.get("case")
+        for row in cases
+        if row.get("case") in expected_training_backward_cases
+        and row.get("output_metadata", {}).get("requires_grad") is True
+    }
+    missing_training_backward_cases = (
+        expected_training_backward_cases - grad_enabled_training_cases
+    )
+    if missing_training_backward_cases:
+        errors.append(
+            "missing grad-enabled training-autograd timed cells: "
+            f"{sorted(missing_training_backward_cases)!r}"
+        )
 
     guard_sequences = report.get("recompilation_guard_sequences", [])
     guard_step_count = sum(len(row.get("steps", ())) for row in guard_sequences)
@@ -1306,25 +1511,20 @@ def _validate_expected_artifact_shape(report):
         errors.append("aggregate guard step count does not match rows")
 
     coverage = report.get("coverage_denominator", {})
-    if (
-        coverage.get("supported_weight") != 24
-        or coverage.get("total_weight") != 100
-        or coverage.get("zero_credit_weight") != 76
-        or coverage.get("weighted_supported_percent") != 24.0
-    ):
-        errors.append(f"coverage denominator mismatch: {coverage!r}")
+    if coverage != expected_coverage:
+        errors.append(
+            "coverage denominator mismatch: "
+            f"actual={coverage!r} expected={expected_coverage!r}"
+        )
 
     corpus = report.get("corpus", {})
-    if corpus.get("version") != environment.get("corpus_version"):
+    if corpus != expected_corpus:
+        errors.append(
+            "corpus metadata mismatch: "
+            f"actual={corpus!r} expected={expected_corpus!r}"
+        )
+    elif corpus.get("version") != environment.get("corpus_version"):
         errors.append("corpus metadata version does not match environment")
-    if len(corpus.get("public_cases", ())) != 12:
-        errors.append("corpus metadata public case count is not 12")
-    if len(corpus.get("held_out_cases", ())) != 4:
-        errors.append("corpus metadata held-out case count is not 4")
-    if len(corpus.get("public_recompilation_guard_scenarios", ())) != 3:
-        errors.append("corpus metadata public guard scenario count is not 3")
-    if len(corpus.get("held_out_recompilation_guard_scenarios", ())) != 2:
-        errors.append("corpus metadata held-out guard scenario count is not 2")
 
     for row in cases:
         try:
