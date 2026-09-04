@@ -9224,19 +9224,23 @@ fn parse_two_bound_arange_arguments(
     let end = end.expect("two-bound arange was selected after checking end is present");
 
     let start_kind = classify_arange_endpoint(&start.value)?;
-    if !matches!(
-        start_kind,
-        Some(ArangeEndpointKind::ExactPythonInteger | ArangeEndpointKind::NumpyInteger)
-    ) {
-        return Err(arange_two_bound_endpoint_type_error("start", &start)?);
+    let float_range = arange_endpoint_is_float(start_kind);
+    let integer_range = arange_endpoint_is_integer(start_kind);
+    if !float_range && !integer_range {
+        return Err(arange_two_bound_numeric_endpoint_type_error(
+            "start", &start,
+        )?);
     }
 
     let end_kind = classify_arange_endpoint(&end.value)?;
-    if !matches!(
-        end_kind,
-        Some(ArangeEndpointKind::ExactPythonInteger | ArangeEndpointKind::NumpyInteger)
-    ) {
-        return Err(arange_two_bound_endpoint_type_error("end", &end)?);
+    if float_range {
+        if !arange_endpoint_is_float(end_kind) {
+            return Err(arange_two_bound_float_endpoint_type_error("end", &end)?);
+        }
+    } else if integer_range {
+        if !arange_endpoint_is_integer(end_kind) {
+            return Err(arange_two_bound_integer_endpoint_type_error("end", &end)?);
+        }
     }
 
     let explicit_float32_dtype = arange_has_explicit_float32_dtype(dtype.as_ref())?;
@@ -9250,7 +9254,7 @@ fn parse_two_bound_arange_arguments(
     }
     let device = parse_device("arange", device.as_ref())?;
 
-    if !explicit_float32_dtype {
+    if integer_range && !explicit_float32_dtype {
         return Err(arange_two_bound_dtype_unsupported());
     }
     if out.is_some() {
@@ -9281,6 +9285,20 @@ enum ArangeEndpointKind {
     ExactPythonInteger,
     NumpyFloating,
     NumpyInteger,
+}
+
+fn arange_endpoint_is_float(kind: Option<ArangeEndpointKind>) -> bool {
+    matches!(
+        kind,
+        Some(ArangeEndpointKind::ExactPythonFloat | ArangeEndpointKind::NumpyFloating)
+    )
+}
+
+fn arange_endpoint_is_integer(kind: Option<ArangeEndpointKind>) -> bool {
+    matches!(
+        kind,
+        Some(ArangeEndpointKind::ExactPythonInteger | ArangeEndpointKind::NumpyInteger)
+    )
 }
 
 fn classify_arange_endpoint(value: &Bound<'_, PyAny>) -> PyResult<Option<ArangeEndpointKind>> {
@@ -9347,7 +9365,7 @@ fn arange_one_bound_endpoint_type_error(end: &ParsedCallArgument<'_>) -> PyResul
     )))
 }
 
-fn arange_two_bound_endpoint_type_error(
+fn arange_two_bound_integer_endpoint_type_error(
     name: &str,
     argument: &ParsedCallArgument<'_>,
 ) -> PyResult<PyErr> {
@@ -9360,36 +9378,55 @@ fn arange_two_bound_endpoint_type_error(
     )))
 }
 
+fn arange_two_bound_float_endpoint_type_error(
+    name: &str,
+    argument: &ParsedCallArgument<'_>,
+) -> PyResult<PyErr> {
+    let position = argument
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(&argument.value)?;
+    Ok(PyTypeError::new_err(format!(
+        "arange(): argument '{name}'{position} must be an exact Python float or NumPy floating scalar, not {actual}"
+    )))
+}
+
+fn arange_two_bound_numeric_endpoint_type_error(
+    name: &str,
+    argument: &ParsedCallArgument<'_>,
+) -> PyResult<PyErr> {
+    let position = argument
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(&argument.value)?;
+    Ok(PyTypeError::new_err(format!(
+        "arange(): argument '{name}'{position} must be exact Python or NumPy floating scalars, or exact Python or NumPy integers, not {actual}"
+    )))
+}
+
 fn arange_two_bound_dtype_unsupported() -> PyErr {
     PyTypeError::new_err("arange(): two-bound integer ranges require explicit dtype=torch.float32")
 }
 
 fn arange_two_bound_element_count(start: f64, end: f64) -> PyResult<usize> {
+    if !start.is_finite() || !end.is_finite() {
+        return Err(arange_unsupported_range_error(start, end));
+    }
     let span = end - start;
     if span < 0.0 {
         return Err(PyRuntimeError::new_err(
             "upper bound and lower bound inconsistent with step sign",
         ));
     }
+    if !span.is_finite() {
+        return Err(PyRuntimeError::new_err("invalid size, possible overflow?"));
+    }
     arange_element_count(span)
 }
 
 fn arange_element_count(end: f64) -> PyResult<usize> {
     if !end.is_finite() {
-        let value = if end.is_nan() {
-            if end.is_sign_negative() {
-                "-nan"
-            } else {
-                "nan"
-            }
-        } else if end.is_sign_negative() {
-            "-inf"
-        } else {
-            "inf"
-        };
-        return Err(PyRuntimeError::new_err(format!(
-            "unsupported range: 0 -> {value}"
-        )));
+        return Err(arange_unsupported_range_error(0.0, end));
     }
     if end < 0.0 {
         return Err(PyRuntimeError::new_err(
@@ -9416,9 +9453,35 @@ fn arange_element_count(end: f64) -> PyResult<usize> {
     Ok(elements as usize)
 }
 
+fn arange_unsupported_range_error(start: f64, end: f64) -> PyErr {
+    PyRuntimeError::new_err(format!(
+        "unsupported range: {} -> {}",
+        format_arange_range_bound(start),
+        format_arange_range_bound(end),
+    ))
+}
+
+fn format_arange_range_bound(value: f64) -> String {
+    if value.is_nan() {
+        if value.is_sign_negative() {
+            "-nan".to_owned()
+        } else {
+            "nan".to_owned()
+        }
+    } else if value.is_infinite() {
+        if value.is_sign_negative() {
+            "-inf".to_owned()
+        } else {
+            "inf".to_owned()
+        }
+    } else {
+        value.to_string()
+    }
+}
+
 fn arange_overload_unsupported() -> PyErr {
     PyTypeError::new_err(
-        "arange(): only one-bound float endpoints, one-bound integer endpoints with explicit dtype=torch.float32, and two-bound integer endpoints with explicit dtype=torch.float32 are supported",
+        "arange(): only one-bound float endpoints, one-bound integer endpoints with explicit dtype=torch.float32, two-bound float endpoints, and two-bound integer endpoints with explicit dtype=torch.float32 are supported",
     )
 }
 

@@ -144,15 +144,11 @@ class ArangeTests(unittest.TestCase):
                 for form, call in (
                     (
                         "positional",
-                        lambda end=end, dtype=dtype: torch.arange(
-                            end, dtype=dtype
-                        ),
+                        lambda end=end, dtype=dtype: torch.arange(end, dtype=dtype),
                     ),
                     (
                         "keyword",
-                        lambda end=end, dtype=dtype: torch.arange(
-                            end=end, dtype=dtype
-                        ),
+                        lambda end=end, dtype=dtype: torch.arange(end=end, dtype=dtype),
                     ),
                 ):
                     with self.subTest(end=end, dtype=dtype, form=form):
@@ -169,9 +165,7 @@ class ArangeTests(unittest.TestCase):
                     for form, call in (
                         (
                             "positional",
-                            lambda end=end, dtype=dtype: torch.arange(
-                                end, dtype=dtype
-                            ),
+                            lambda end=end, dtype=dtype: torch.arange(end, dtype=dtype),
                         ),
                         (
                             "keyword",
@@ -187,6 +181,99 @@ class ArangeTests(unittest.TestCase):
                             form=form,
                         ):
                             self.assert_default_tensor(call(), expected)
+
+    def test_two_bound_exact_float_endpoints_support_implicit_step(self):
+        cases = (
+            (0.0, 0.0, []),
+            (0.0, -0.0, []),
+            (-0.0, 0.0, []),
+            (0.0, 3.0, [0.0, 1.0, 2.0]),
+            (0.25, 2.25, [0.25, 1.25]),
+            (0.25, 2.26, [0.25, 1.25, 2.25]),
+            (-2.5, 2.5, [-2.5, -1.5, -0.5, 0.5, 1.5]),
+            (-2.5, -0.5, [-2.5, -1.5]),
+            (math.nextafter(1.0, 0.0), 2.0, [1.0]),
+            (math.nextafter(1.0, 2.0), 2.0, [1.0]),
+        )
+        dtype_cases = (
+            ("omitted", {}),
+            ("none", {"dtype": None}),
+            ("float32", {"dtype": torch.float32}),
+            ("float", {"dtype": torch.float}),
+        )
+        for start, end, expected in cases:
+            for dtype_name, options in dtype_cases:
+                for form, call in (
+                    (
+                        "positional",
+                        lambda start=start, end=end, options=options: torch.arange(
+                            start, end, **options
+                        ),
+                    ),
+                    (
+                        "positional_start_keyword_end",
+                        lambda start=start, end=end, options=options: torch.arange(
+                            start, end=end, **options
+                        ),
+                    ),
+                    (
+                        "keywords",
+                        lambda start=start, end=end, options=options: torch.arange(
+                            start=start, end=end, **options
+                        ),
+                    ),
+                ):
+                    with self.subTest(
+                        start=start,
+                        end=end,
+                        dtype=dtype_name,
+                        form=form,
+                    ):
+                        self.assert_default_tensor(call(), expected)
+
+    def test_two_bound_numpy_floating_endpoints_support_implicit_step(self):
+        cases = tuple(
+            (scalar_type(0.25), scalar_type(2.25), [0.25, 1.25])
+            for scalar_type in (*NUMPY_FLOAT_TYPES, NumpyFloatSubclass)
+        ) + (
+            (np.float32(-1.5), 1.5, [-1.5, -0.5, 0.5]),
+            (-1.5, np.float64(1.5), [-1.5, -0.5, 0.5]),
+        )
+        dtype_cases = (
+            ("omitted", {}),
+            ("none", {"dtype": None}),
+            ("float32", {"dtype": torch.float32}),
+            ("float", {"dtype": torch.float}),
+        )
+        for start, end, expected in cases:
+            for dtype_name, options in dtype_cases:
+                for form, call in (
+                    (
+                        "positional",
+                        lambda start=start, end=end, options=options: torch.arange(
+                            start, end, **options
+                        ),
+                    ),
+                    (
+                        "positional_start_keyword_end",
+                        lambda start=start, end=end, options=options: torch.arange(
+                            start, end=end, **options
+                        ),
+                    ),
+                    (
+                        "keywords",
+                        lambda start=start, end=end, options=options: torch.arange(
+                            start=start, end=end, **options
+                        ),
+                    ),
+                ):
+                    with self.subTest(
+                        start_type=type(start).__name__,
+                        end_type=type(end).__name__,
+                        dtype=dtype_name,
+                        form=form,
+                    ):
+                        self.assert_default_tensor(call(), expected)
 
     def test_two_bound_exact_integer_endpoints_support_implicit_step(self):
         cases = (
@@ -222,9 +309,7 @@ class ArangeTests(unittest.TestCase):
                         ),
                     ),
                 ):
-                    with self.subTest(
-                        start=start, end=end, dtype=dtype, form=form
-                    ):
+                    with self.subTest(start=start, end=end, dtype=dtype, form=form):
                         self.assert_default_tensor(call(), expected)
 
     def test_two_bound_numpy_integer_endpoints_support_implicit_step(self):
@@ -300,6 +385,10 @@ class ArangeTests(unittest.TestCase):
                 self.assert_default_tensor(
                     torch.arange(end=2.5, **options),
                     [0.0, 1.0, 2.0],
+                )
+                self.assert_default_tensor(
+                    torch.arange(0.25, 2.25, **options),
+                    [0.25, 1.25],
                 )
 
     def test_two_bound_integer_default_equivalent_metadata_is_accepted(self):
@@ -407,9 +496,7 @@ class ArangeTests(unittest.TestCase):
                 )
 
             for context, leaf in (("ordinary", ordinary), ("no_grad", no_grad)):
-                with self.subTest(
-                    scalar_type=scalar_type.__name__, context=context
-                ):
+                with self.subTest(scalar_type=scalar_type.__name__, context=context):
                     self.assert_default_tensor(
                         leaf,
                         [0.0, 1.0, 2.0, 3.0],
@@ -424,12 +511,39 @@ class ArangeTests(unittest.TestCase):
 
             self.assert_default_tensor(empty, [], requires_grad=True)
 
+    def test_two_bound_float_requires_grad_creates_leaves_under_no_grad(self):
+        ordinary = torch.arange(-1.5, 2.5, requires_grad=True)
+        with torch.no_grad():
+            no_grad = torch.arange(
+                start=-1.5, end=2.5, dtype=torch.float, requires_grad=True
+            )
+            empty = torch.arange(
+                np.float32(2.5),
+                np.float32(2.5),
+                requires_grad=True,
+            )
+
+        weights = torch.tensor([1.0, 2.0, 3.0, 4.0])
+        for context, leaf in (("ordinary", ordinary), ("no_grad", no_grad)):
+            with self.subTest(context=context):
+                self.assert_default_tensor(
+                    leaf,
+                    [-1.5, -0.5, 0.5, 1.5],
+                    requires_grad=True,
+                )
+                for expected in (
+                    [1.0, 2.0, 3.0, 4.0],
+                    [2.0, 4.0, 6.0, 8.0],
+                ):
+                    (leaf * weights).sum().backward()
+                    self.assertEqual(leaf.grad.tolist(), expected)
+
+        self.assert_default_tensor(empty, [], requires_grad=True)
+
     def test_explicit_float32_integer_requires_grad_creates_leaves_under_no_grad(self):
         ordinary = torch.arange(4, dtype=torch.float32, requires_grad=True)
         with torch.no_grad():
-            no_grad = torch.arange(
-                end=4, dtype=torch.float, requires_grad=True
-            )
+            no_grad = torch.arange(end=4, dtype=torch.float, requires_grad=True)
             empty = torch.arange(0, dtype=torch.float32, requires_grad=True)
 
         weights = torch.tensor([1.0, 2.0, 3.0, 4.0])
@@ -468,9 +582,7 @@ class ArangeTests(unittest.TestCase):
                 )
 
             for context, leaf in (("ordinary", ordinary), ("no_grad", no_grad)):
-                with self.subTest(
-                    scalar_type=scalar_type.__name__, context=context
-                ):
+                with self.subTest(scalar_type=scalar_type.__name__, context=context):
                     self.assert_default_tensor(
                         leaf,
                         [0.0, 1.0, 2.0, 3.0],
@@ -538,9 +650,7 @@ class ArangeTests(unittest.TestCase):
                     scalar_type=scalar_type.__name__,
                     requires_grad=requires_grad,
                 ):
-                    first = torch.arange(
-                        scalar_type(8.5), requires_grad=requires_grad
-                    )
+                    first = torch.arange(scalar_type(8.5), requires_grad=requires_grad)
                     second = torch.arange(
                         end=scalar_type(8.5),
                         dtype=torch.float32,
@@ -562,6 +672,32 @@ class ArangeTests(unittest.TestCase):
                     self.assertEqual(empty_first.data_ptr(), 0)
                     self.assertEqual(empty_second.data_ptr(), 0)
                     self.assertFalse(empty_first.is_set_to(empty_second))
+
+    def test_two_bound_float_results_own_fresh_storage(self):
+        for requires_grad in (False, True):
+            with self.subTest(requires_grad=requires_grad):
+                first = torch.arange(1.5, 9.5, requires_grad=requires_grad)
+                second = torch.arange(
+                    start=1.5,
+                    end=9.5,
+                    dtype=torch.float,
+                    requires_grad=requires_grad,
+                )
+                self.assertNotEqual(first.data_ptr(), 0)
+                self.assertNotEqual(second.data_ptr(), 0)
+                self.assertNotEqual(first.data_ptr(), second.data_ptr())
+                self.assertFalse(first.is_set_to(second))
+
+                empty_first = torch.arange(4.5, 4.5, requires_grad=requires_grad)
+                empty_second = torch.arange(
+                    start=np.float32(4.5),
+                    end=np.float32(4.5),
+                    dtype=torch.float,
+                    requires_grad=requires_grad,
+                )
+                self.assertEqual(empty_first.data_ptr(), 0)
+                self.assertEqual(empty_second.data_ptr(), 0)
+                self.assertFalse(empty_first.is_set_to(empty_second))
 
     def test_explicit_float32_integer_results_own_fresh_storage(self):
         for requires_grad in (False, True):
@@ -730,14 +866,10 @@ class ArangeTests(unittest.TestCase):
                 ("positional", lambda end=end: torch.arange(end)),
                 (
                     "keyword",
-                    lambda end=end: torch.arange(
-                        end=end, dtype=torch.float32
-                    ),
+                    lambda end=end: torch.arange(end=end, dtype=torch.float32),
                 ),
             ):
-                with self.subTest(
-                    scalar_type=scalar_type.__name__, end=end, form=form
-                ):
+                with self.subTest(scalar_type=scalar_type.__name__, end=end, form=form):
                     self.assert_error(
                         call,
                         RuntimeError,
@@ -752,20 +884,14 @@ class ArangeTests(unittest.TestCase):
             ):
                 converted = float(end)
                 if math.isnan(converted):
-                    rendered = (
-                        "-nan"
-                        if math.copysign(1.0, converted) < 0.0
-                        else "nan"
-                    )
+                    rendered = "-nan" if math.copysign(1.0, converted) < 0.0 else "nan"
                 else:
                     rendered = "-inf" if converted < 0.0 else "inf"
                 for form, call in (
                     ("positional", lambda end=end: torch.arange(end)),
                     (
                         "keyword",
-                        lambda end=end: torch.arange(
-                            end=end, dtype=torch.float
-                        ),
+                        lambda end=end: torch.arange(end=end, dtype=torch.float),
                     ),
                 ):
                     with self.subTest(
@@ -779,6 +905,73 @@ class ArangeTests(unittest.TestCase):
                             f"unsupported range: 0 -> {rendered}",
                         )
 
+    def test_two_bound_float_empty_and_boundary_cases(self):
+        zero_length_cases = (
+            (3.0, 3.0),
+            (0.0, -0.0),
+            (-0.0, 0.0),
+            (np.float32(2.5), np.float32(2.5)),
+            (float(2**63), float(2**63)),
+        )
+        for start, end in zero_length_cases:
+            with self.subTest(start=start, end=end):
+                self.assert_default_tensor(torch.arange(start, end), [])
+
+        for start, end in (
+            (2.5, 2.0),
+            (-0.5, -2.5),
+            (np.float32(1.5), np.float32(1.0)),
+        ):
+            with self.subTest(start=start, end=end):
+                self.assert_error(
+                    lambda start=start, end=end: torch.arange(start, end),
+                    RuntimeError,
+                    "upper bound and lower bound inconsistent with step sign",
+                )
+
+        for start, end, rendered in (
+            (float("nan"), 3.0, "nan -> 3"),
+            (float("-nan"), 3.0, "-nan -> 3"),
+            (0.0, float("nan"), "0 -> nan"),
+            (0.0, float("-nan"), "0 -> -nan"),
+            (float("inf"), 3.0, "inf -> 3"),
+            (0.0, float("inf"), "0 -> inf"),
+            (float("-inf"), 3.0, "-inf -> 3"),
+            (0.0, float("-inf"), "0 -> -inf"),
+        ):
+            with self.subTest(range=rendered):
+                self.assert_error(
+                    lambda start=start, end=end: torch.arange(start, end),
+                    RuntimeError,
+                    f"unsupported range: {rendered}",
+                )
+
+        for start, end in (
+            (0.0, 1.0e100),
+            (-1.0e100, 0.0),
+            (-1.0e308, 1.0e308),
+        ):
+            with self.subTest(start=start, end=end):
+                self.assert_error(
+                    lambda start=start, end=end: torch.arange(start, end),
+                    RuntimeError,
+                    "invalid size, possible overflow?",
+                )
+
+        for start, end, elements in (
+            (math.nextafter(float(2**63), 0.0), float(2**63), 1024),
+            (
+                float(2**63),
+                math.nextafter(float(2**63), math.inf),
+                2048,
+            ),
+        ):
+            with self.subTest(start=start, end=end):
+                expected = [
+                    float(np.float32(start + index)) for index in range(elements)
+                ]
+                self.assert_default_tensor(torch.arange(start, end), expected)
+
     def test_oversized_endpoints_fail_before_allocation(self):
         cases = (
             (
@@ -789,7 +982,10 @@ class ArangeTests(unittest.TestCase):
                 float(2**63),
                 "IntArrayRef contains an int that cannot be represented as a SymInt: -9223372036854775808",
             ),
-            (math.nextafter(float(2**63), math.inf), "invalid size, possible overflow?"),
+            (
+                math.nextafter(float(2**63), math.inf),
+                "invalid size, possible overflow?",
+            ),
             (1.0e100, "invalid size, possible overflow?"),
         )
         for end, message in cases:
@@ -831,9 +1027,7 @@ class ArangeTests(unittest.TestCase):
                 ("positional", lambda end=end: torch.arange(end)),
                 (
                     "keyword",
-                    lambda end=end: torch.arange(
-                        end=end, dtype=torch.float32
-                    ),
+                    lambda end=end: torch.arange(end=end, dtype=torch.float32),
                 ),
             ):
                 with self.subTest(end=end, form=form):
@@ -912,9 +1106,7 @@ class ArangeTests(unittest.TestCase):
                     lambda end=end: torch.arange(end=end, dtype=torch.float),
                 ),
             ):
-                with self.subTest(
-                    end_type=type(end).__name__, end=end, form=form
-                ):
+                with self.subTest(end_type=type(end).__name__, end=end, form=form):
                     self.assert_error(call, error_type, message)
 
     def test_two_bound_integer_empty_and_boundary_errors(self):
@@ -1003,6 +1195,12 @@ class ArangeTests(unittest.TestCase):
             lambda: torch.arange(FloatSubclass(3.0), dtype=torch.float32),
             lambda: torch.arange(FloatSubclass(1.0), 4, dtype=torch.float32),
             lambda: torch.arange(1, FloatSubclass(4.0), dtype=torch.float32),
+            lambda: torch.arange(0, 3.0, dtype=torch.float32),
+            lambda: torch.arange(0.0, 3, dtype=torch.float32),
+            lambda: torch.arange(np.int64(0), np.float32(3.0), dtype=torch.float32),
+            lambda: torch.arange(np.float32(0.0), np.int64(3), dtype=torch.float32),
+            lambda: torch.arange(True, 3.0),
+            lambda: torch.arange(0.0, False),
         )
         for call in calls:
             with self.subTest(call=call):
@@ -1015,9 +1213,7 @@ class ArangeTests(unittest.TestCase):
                 for form, call in (
                     (
                         "positional",
-                        lambda end=end, options=options: torch.arange(
-                            end, **options
-                        ),
+                        lambda end=end, options=options: torch.arange(end, **options),
                     ),
                     (
                         "keyword",
@@ -1039,9 +1235,7 @@ class ArangeTests(unittest.TestCase):
                 for form, call in (
                     (
                         "positional",
-                        lambda end=end, options=options: torch.arange(
-                            end, **options
-                        ),
+                        lambda end=end, options=options: torch.arange(end, **options),
                     ),
                     (
                         "keyword",
@@ -1064,7 +1258,9 @@ class ArangeTests(unittest.TestCase):
             (np.complex64(1.0), np.int64(4)),
             (np.int64(1), np.complex128(4.0)),
         ):
-            with self.subTest(start_type=type(start).__name__, end_type=type(end).__name__):
+            with self.subTest(
+                start_type=type(start).__name__, end_type=type(end).__name__
+            ):
                 with self.assertRaises(TypeError):
                     torch.arange(start, end, dtype=torch.float32)
 
@@ -1076,10 +1272,12 @@ class ArangeTests(unittest.TestCase):
                 self.assertTrue(isinstance(endpoint, np.generic))
                 self.assertTrue(isinstance(endpoint, np.floating))
                 position = " (position 1)" if form == "positional" else ""
-                if form == "positional":
-                    call = lambda: torch.arange(endpoint, **options)
-                else:
-                    call = lambda: torch.arange(end=endpoint, **options)
+
+                def call():
+                    if form == "positional":
+                        return torch.arange(endpoint, **options)
+                    return torch.arange(end=endpoint, **options)
+
                 with self.subTest(dtype=dtype, form=form):
                     self.assert_error(
                         call,
@@ -1090,10 +1288,7 @@ class ArangeTests(unittest.TestCase):
 
     def test_overloads_outputs_and_nondefault_options_remain_unsupported(self):
         overloads = (
-            lambda: torch.arange(0.0, 3.0),
             lambda: torch.arange(0.0, 3.0, 1.0),
-            lambda: torch.arange(2.5, end=3.0),
-            lambda: torch.arange(start=0.0, end=3.0),
             lambda: torch.arange(3.0, step=1.0),
             lambda: torch.arange(0, 3),
             lambda: torch.arange(0, 3, dtype=None),
@@ -1101,25 +1296,17 @@ class ArangeTests(unittest.TestCase):
             lambda: torch.arange(np.int64(3), step=1, dtype=torch.float32),
             lambda: torch.arange(0, 3, 1, dtype=torch.float32),
             lambda: torch.arange(start=0, end=3, step=1, dtype=torch.float32),
-            lambda: torch.arange(np.float32(0.0), np.float32(3.0)),
-            lambda: torch.arange(
-                np.float32(0.0), np.float32(3.0), np.float32(1.0)
-            ),
-            lambda: torch.arange(
-                np.float32(2.5), end=np.float32(3.0)
-            ),
-            lambda: torch.arange(
-                start=np.float32(0.0), end=np.float32(3.0)
-            ),
+            lambda: torch.arange(np.float32(0.0), np.float32(3.0), np.float32(1.0)),
             lambda: torch.arange(np.float32(3.0), step=np.float32(1.0)),
         )
         for call in overloads:
             with self.subTest(call=call):
                 with self.assertRaisesRegex(
                     TypeError,
-                    r"^arange\(\): (only one-bound float endpoints and "
+                    r"^arange\(\): (only one-bound float endpoints, "
                     r"one-bound integer endpoints with explicit "
-                    r"dtype=torch\.float32, and two-bound integer endpoints with explicit "
+                    r"dtype=torch\.float32, two-bound float endpoints, and "
+                    r"two-bound integer endpoints with explicit "
                     r"dtype=torch\.float32 are supported|explicit step is "
                     r"not supported|two-bound integer ranges require "
                     r"explicit dtype=torch\.float32|argument 'start'.*must "
@@ -1130,10 +1317,12 @@ class ArangeTests(unittest.TestCase):
         destination = torch.full((3,), 9.0)
         for call in (
             lambda: torch.arange(2.5, out=destination),
+            lambda: torch.arange(0.0, 3.0, out=destination),
             lambda: torch.arange(3, dtype=torch.float32, out=destination),
             lambda: torch.arange(np.int64(3), dtype=torch.float32, out=destination),
             lambda: torch.arange(0, 3, dtype=torch.float32, out=destination),
             lambda: torch.arange(np.float32(2.5), out=destination),
+            lambda: torch.arange(np.float32(0.0), np.float32(3.0), out=destination),
             lambda: torch.arange(
                 end=np.longdouble(3.0),
                 dtype=torch.float32,
@@ -1153,6 +1342,10 @@ class ArangeTests(unittest.TestCase):
             lambda: torch.arange(2.5, layout=object()),
             lambda: torch.arange(2.5, device="cuda"),
             lambda: torch.arange(2.5, pin_memory=True),
+            lambda: torch.arange(0.0, 3.0, dtype=object()),
+            lambda: torch.arange(0.0, 3.0, layout=object()),
+            lambda: torch.arange(0.0, 3.0, device="cuda"),
+            lambda: torch.arange(0.0, 3.0, pin_memory=True),
             lambda: torch.arange(3, dtype=torch.float32, layout=object()),
             lambda: torch.arange(3, dtype=torch.float32, device="cuda"),
             lambda: torch.arange(3, dtype=torch.float32, pin_memory=True),
@@ -1204,9 +1397,9 @@ class ArangeTests(unittest.TestCase):
                 "arange(): argument 'end' (position 1) must be an exact Python float, not numpy.int64",
             ),
             (
-                lambda: torch.arange(0.0, 3.0, requires_grad=True),
+                lambda: torch.arange(0.0, 3, requires_grad=True),
                 TypeError,
-                "arange(): argument 'start' (position 1) must be an exact Python or NumPy integer, not float",
+                "arange(): argument 'end' (position 2) must be an exact Python float or NumPy floating scalar, not int",
             ),
             (
                 lambda: torch.arange(0, 3, requires_grad=True),
@@ -1227,6 +1420,16 @@ class ArangeTests(unittest.TestCase):
             ),
             (
                 lambda: torch.arange(
+                    0.0,
+                    3.0,
+                    out=destination,
+                    requires_grad=True,
+                ),
+                RuntimeError,
+                "arange(): the 'out' argument is not supported",
+            ),
+            (
+                lambda: torch.arange(
                     0,
                     3,
                     dtype=torch.float32,
@@ -1238,6 +1441,16 @@ class ArangeTests(unittest.TestCase):
             ),
             (
                 lambda: torch.arange(2.5, device="cuda", requires_grad=True),
+                RuntimeError,
+                "arange(): device 'cuda' is not supported; only 'cpu' is implemented",
+            ),
+            (
+                lambda: torch.arange(
+                    0.0,
+                    3.0,
+                    device="cuda",
+                    requires_grad=True,
+                ),
                 RuntimeError,
                 "arange(): device 'cuda' is not supported; only 'cpu' is implemented",
             ),
@@ -1264,6 +1477,11 @@ class ArangeTests(unittest.TestCase):
             ),
             (
                 lambda: torch.arange(2.5, pin_memory=True, requires_grad=True),
+                RuntimeError,
+                "arange(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
+            ),
+            (
+                lambda: torch.arange(0.0, 3.0, pin_memory=True, requires_grad=True),
                 RuntimeError,
                 "arange(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
             ),
@@ -1301,9 +1519,7 @@ class ArangeTests(unittest.TestCase):
                 "upper bound and lower bound inconsistent with step sign",
             ),
             (
-                lambda: torch.arange(
-                    3, 0, dtype=torch.float32, requires_grad=True
-                ),
+                lambda: torch.arange(3, 0, dtype=torch.float32, requires_grad=True),
                 RuntimeError,
                 "upper bound and lower bound inconsistent with step sign",
             ),
@@ -1391,7 +1607,9 @@ class ArangeTests(unittest.TestCase):
                 self.assertEqual(
                     torch.overrides._get_current_function_mode_stack(), [lower, upper]
                 )
-            self.assertEqual(torch.overrides._get_current_function_mode_stack(), [lower])
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [lower]
+            )
         self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
         self.assert_default_tensor(result, [0.0, 1.0, 2.0])
         self.assertEqual(
@@ -1420,7 +1638,9 @@ class ArangeTests(unittest.TestCase):
                 self.assertEqual(
                     torch.overrides._get_current_function_mode_stack(), [lower, raising]
                 )
-            self.assertEqual(torch.overrides._get_current_function_mode_stack(), [lower])
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [lower]
+            )
         self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
 
         forwarding = ForwardingMode("native-error")
