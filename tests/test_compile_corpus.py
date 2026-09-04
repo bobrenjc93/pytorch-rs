@@ -2,6 +2,7 @@ import dataclasses
 import subprocess
 import sys
 import unittest
+import warnings
 from dataclasses import FrozenInstanceError, dataclass
 from types import SimpleNamespace
 
@@ -16,7 +17,7 @@ except ImportError:
 
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-COMPILE_CORPUS_VERSION = "torch_compile_corpus_v6"
+COMPILE_CORPUS_VERSION = "torch_compile_corpus_v7"
 
 CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -72,6 +73,10 @@ def cpu_float32_add_unary_composition(x):
 
 def cpu_float32_inference_relu_no_grad(x):
     return x.relu()
+
+
+def cpu_float32_detach_alias_view(x):
+    return x.detach()
 
 
 def cpu_float32_training_unary_neg_abs_add(x):
@@ -139,6 +144,10 @@ def cpu_float32_heldout_scalar_left_broadcast(x, y):
 
 def cpu_float32_heldout_inference_relu_broadcast_no_grad(x, y):
     return x.relu().add(y.neg().relu())
+
+
+def cpu_float32_heldout_detach_alias_view(x):
+    return x.detach()
 
 
 def cpu_float32_recompile_guard_unary_metadata(x):
@@ -211,6 +220,28 @@ def cpu_float32_training_broadcast_requires_grad_inputs(module):
             requires_grad=True,
         ),
     )
+
+
+def cpu_float32_detach_alias_view_inputs(module):
+    base = module.tensor(
+        [[1.0, -2.0, 3.5], [4.5, -5.25, 6.75]],
+        dtype=module.float32,
+        requires_grad=True,
+    )
+    return (base.transpose(0, 1)[1],)
+
+
+def cpu_float32_heldout_detach_alias_view_inputs(module):
+    base = module.tensor(
+        [
+            [[0.0, 1.0, 2.0, 3.0], [4.0, 5.0, 6.0, 7.0]],
+            [[8.0, 9.0, 10.0, 11.0], [12.0, 13.0, 14.0, 15.0]],
+            [[16.0, 17.0, 18.0, 19.0], [20.0, 21.0, 22.0, 23.0]],
+        ],
+        dtype=module.float32,
+        requires_grad=True,
+    )
+    return (base.transpose(0, 2)[1],)
 
 
 def cpu_float32_tensor_scalar_inputs(module):
@@ -500,6 +531,12 @@ COMPILE_CORPUS = (
         run_under_no_grad=True,
     ),
     CompileCorpusCase(
+        name="cpu_float32_detach_alias_view",
+        category="mutation_aliasing_views",
+        program=cpu_float32_detach_alias_view,
+        make_inputs=cpu_float32_detach_alias_view_inputs,
+    ),
+    CompileCorpusCase(
         name="cpu_float32_training_unary_neg_abs_add",
         category="training_autograd",
         program=cpu_float32_training_unary_neg_abs_add,
@@ -580,6 +617,12 @@ COMPILE_HELD_OUT_CORPUS = (
         program=cpu_float32_heldout_inference_relu_broadcast_no_grad,
         make_inputs=cpu_float32_heldout_inference_relu_broadcast_inputs,
         run_under_no_grad=True,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_heldout_detach_alias_view",
+        category="mutation_aliasing_views",
+        program=cpu_float32_heldout_detach_alias_view,
+        make_inputs=cpu_float32_heldout_detach_alias_view_inputs,
     ),
     CompileCorpusCase(
         name="cpu_float32_heldout_guard_unary_metadata",
@@ -859,13 +902,27 @@ def assert_tensor_observables_match(testcase, actual, expected, *, case):
     )
 
 
+def tensor_gradient(tensor):
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="The \\.grad attribute of a Tensor that is not a leaf Tensor",
+            category=UserWarning,
+        )
+        return tensor.grad
+
+
+def input_gradients(inputs):
+    return tuple(tensor_gradient(input) for input in inputs)
+
+
 def assert_leaf_gradients_match(testcase, actual_inputs, expected_inputs, *, case):
     testcase.assertEqual(len(actual_inputs), len(expected_inputs), msg=case)
     for index, (actual_input, expected_input) in enumerate(
         zip(actual_inputs, expected_inputs)
     ):
-        actual_grad = actual_input.grad
-        expected_grad = expected_input.grad
+        actual_grad = tensor_gradient(actual_input)
+        expected_grad = tensor_gradient(expected_input)
         with testcase.subTest(case=case, input=index, gradient=True):
             if expected_grad is None:
                 testcase.assertIsNone(actual_grad)
@@ -881,17 +938,19 @@ def assert_leaf_gradients_match(testcase, actual_inputs, expected_inputs, *, cas
 
 def assert_leaf_gradients_unchanged(testcase, inputs, before_gradients, *, case):
     testcase.assertEqual(len(inputs), len(before_gradients), msg=case)
-    for index, (input, before_gradient) in enumerate(zip(inputs, before_gradients)):
+    for index, (actual_gradient, before_gradient) in enumerate(
+        zip(input_gradients(inputs), before_gradients)
+    ):
         with testcase.subTest(case=case, input=index, gradient_unchanged=True):
-            testcase.assertIs(input.grad, before_gradient)
+            testcase.assertIs(actual_gradient, before_gradient)
 
 
 class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
-        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v6")
+        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v7")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(len(COMPILE_CORPUS), 14)
-        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 6)
+        self.assertEqual(len(COMPILE_CORPUS), 15)
+        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 7)
 
         case_names = [case.name for case in COMPILE_CORPUS]
         self.assertEqual(
@@ -903,6 +962,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_repeated_unary_chain",
                 "cpu_float32_add_unary_composition",
                 "cpu_float32_inference_relu_no_grad",
+                "cpu_float32_detach_alias_view",
                 "cpu_float32_training_unary_neg_abs_add",
                 "cpu_float32_matrix_vector_add",
                 "cpu_float32_matrix_vector_add_method",
@@ -921,6 +981,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_heldout_scalar_left_broadcast",
                 "cpu_float32_heldout_training_broadcast_neg_abs_add",
                 "cpu_float32_heldout_inference_relu_broadcast_no_grad",
+                "cpu_float32_heldout_detach_alias_view",
                 "cpu_float32_heldout_guard_unary_metadata",
                 "cpu_float32_heldout_guard_binary_metadata",
             ],
@@ -933,6 +994,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "tensor_arithmetic",
                 "broadcasting",
                 "inference",
+                "mutation_aliasing_views",
                 "training_autograd",
                 "recompilation_guards",
             },
@@ -963,6 +1025,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                     {
                         "broadcasting",
                         "inference",
+                        "mutation_aliasing_views",
                         "training_autograd",
                         "recompilation_guards",
                     },
@@ -1197,6 +1260,11 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 cpu_float32_inference_relu_no_grad,
                 cpu_float32_inference_relu_requires_grad_inputs,
                 ["relu"],
+            ),
+            (
+                cpu_float32_detach_alias_view,
+                cpu_float32_detach_alias_view_inputs,
+                ["detach"],
             ),
             (
                 cpu_float32_training_unary_neg_abs_add,
@@ -2000,7 +2068,7 @@ class CompileCorpusTraceTests(unittest.TestCase):
 
                 expected_inputs = case.make_inputs(torch)
                 expected = run_compile_corpus_case(torch, case, expected_inputs)
-                before_gradients = tuple(input.grad for input in inputs)
+                before_gradients = input_gradients(inputs)
                 actual = run_compile_corpus_callable(torch, case, graph.forward, inputs)
 
                 self.assertFalse(expected.requires_grad)
@@ -2080,6 +2148,100 @@ class CompileCorpusTraceTests(unittest.TestCase):
             expected_no_grad,
             case="two-input requires_grad no_grad",
         )
+
+    def test_detach_alias_cases_execute_without_mutating_inputs_or_gradients(self):
+        cases = (
+            compile_corpus_case("cpu_float32_detach_alias_view"),
+            compile_corpus_case("cpu_float32_heldout_detach_alias_view"),
+        )
+        for case in cases:
+            with self.subTest(case=case.name):
+                inputs = case.make_inputs(torch)
+                (input,) = inputs
+                input_snapshot = (
+                    input.tolist(),
+                    tuple(input.shape),
+                    input.stride(),
+                    input.storage_offset(),
+                    input.is_contiguous(),
+                    input.requires_grad,
+                )
+                before_gradients = input_gradients(inputs)
+                graph = _compile_bytecode.lower_compile_graph(
+                    case.program,
+                    tuple(
+                        _compile_trace._metadata_from_native_tensor(input)
+                        for input in inputs
+                    ),
+                    name=case.name,
+                )
+
+                self.assertEqual(
+                    [operation.target for operation in graph.operations],
+                    ["detach"],
+                )
+                self.assertEqual(graph.output, "detach_0")
+                self.assertEqual(graph.operations[0].inputs, ("x",))
+                self.assertEqual(
+                    graph.operations[0].metadata.shape,
+                    tuple(input.shape),
+                )
+                self.assertEqual(graph.operations[0].metadata.stride, input.stride())
+                self.assertFalse(graph.operations[0].metadata.requires_grad)
+                self.assertFalse(graph.output_metadata.requires_grad)
+
+                expected = case.program(*inputs)
+                actual = graph.forward(*inputs)
+                compiled = torch.compile(case.program, **case.compile_kwargs("eager"))
+                original_profile = sys.getprofile()
+                program_calls = {"count": 0}
+
+                def count_program_calls(frame, event, arg):
+                    if event == "call" and frame.f_code is case.program.__code__:
+                        program_calls["count"] += 1
+                    if original_profile is not None:
+                        original_profile(frame, event, arg)
+                    return count_program_calls
+
+                try:
+                    sys.setprofile(count_program_calls)
+                    compiled_actual = compiled(*inputs)
+                finally:
+                    sys.setprofile(original_profile)
+                self.assertEqual(program_calls["count"], 0)
+
+                for label, output in (
+                    ("private graph", actual),
+                    ("public compiled", compiled_actual),
+                ):
+                    with self.subTest(case=case.name, executor=label):
+                        self.assert_native_tensor_matches(
+                            output,
+                            expected,
+                            case=f"{case.name}/{label}",
+                        )
+                        self.assertIsNot(output, input)
+                        self.assertTrue(input.is_set_to(output))
+                        self.assertFalse(output.requires_grad)
+                        self.assertFalse((output + output).requires_grad)
+
+                self.assertEqual(
+                    (
+                        input.tolist(),
+                        tuple(input.shape),
+                        input.stride(),
+                        input.storage_offset(),
+                        input.is_contiguous(),
+                        input.requires_grad,
+                    ),
+                    input_snapshot,
+                )
+                assert_leaf_gradients_unchanged(
+                    self,
+                    inputs,
+                    before_gradients,
+                    case=case.name,
+                )
 
     def test_unary_output_metadata_matches_native_stride_planning(self):
         cases = (
@@ -2276,6 +2438,7 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 self.assertIn("Tensor.neg", message)
                 self.assertIn("Tensor.abs", message)
                 self.assertIn("Tensor.relu", message)
+                self.assertIn("Tensor.detach", message)
                 self.assertIn("Tensor.add", message)
 
     def test_augmented_self_add_aliasing_rejects_instead_of_recording_add(self):
@@ -2387,6 +2550,9 @@ def program(x):
 def self_add(x):
     return x + x
 
+def detach_alias(x):
+    return x.detach()
+
 def broadcast_add(x, y):
     return x.neg().abs() + y.negative()
 
@@ -2399,6 +2565,15 @@ def make_inputs(module):
         module.tensor(
             [[-3.25, -0.0, 1.5], [2.0, -4.5, 0.25]],
             dtype=module.float32,
+        ),
+    )
+
+def make_detach_inputs(module):
+    return (
+        module.tensor(
+            [[-3.25, -0.0, 1.5], [2.0, -4.5, 0.25]],
+            dtype=module.float32,
+            requires_grad=True,
         ),
     )
 
@@ -2489,6 +2664,34 @@ for actual in (
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
+detach_graph = _compile_trace.trace_one_input_compile_graph(
+    detach_alias,
+    make_detach_inputs,
+    name="cpu_float32_detach_alias",
+)
+assert detach_graph.output == "detach_0"
+assert [operation.target for operation in detach_graph.operations] == ["detach"]
+assert detach_graph.inputs[0].metadata.requires_grad is True
+assert detach_graph.output_metadata.requires_grad is False
+native_detach_input = make_detach_inputs(torch)[0]
+detach_expected = detach_alias(native_detach_input)
+before_detach_grad = native_detach_input.grad
+for actual in (
+    detach_graph.forward(native_detach_input),
+    _compile_trace.execute_compile_trace_graph(detach_graph, native_detach_input),
+):
+    assert actual.tolist() == detach_expected.tolist()
+    assert actual.shape == detach_expected.shape
+    assert actual.stride() == detach_expected.stride()
+    assert actual.storage_offset() == detach_expected.storage_offset()
+    assert actual.dtype is detach_expected.dtype
+    assert actual.device == detach_expected.device
+    assert actual.requires_grad is False
+    assert native_detach_input.is_set_to(actual)
+    assert native_detach_input.grad is before_detach_grad
+assert backend_calls == []
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
 two_input_graph = _compile_trace.trace_compile_graph(
     broadcast_add,
     make_two_inputs,
@@ -2525,6 +2728,20 @@ assert compiled_broadcast_actual.stride() == two_expected.stride()
 assert compiled_broadcast_actual.dtype is two_expected.dtype
 assert compiled_broadcast_actual.device == two_expected.device
 assert compiled_broadcast_actual.requires_grad is two_expected.requires_grad
+assert backend_calls == []
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
+compiled_detach = torch.compile(detach_alias, backend="eager", fullgraph=True)
+compiled_detach_actual = compiled_detach(native_detach_input)
+assert compiled_detach_actual.tolist() == detach_expected.tolist()
+assert compiled_detach_actual.shape == detach_expected.shape
+assert compiled_detach_actual.stride() == detach_expected.stride()
+assert compiled_detach_actual.storage_offset() == detach_expected.storage_offset()
+assert compiled_detach_actual.dtype is detach_expected.dtype
+assert compiled_detach_actual.device == detach_expected.device
+assert compiled_detach_actual.requires_grad is False
+assert native_detach_input.is_set_to(compiled_detach_actual)
+assert native_detach_input.grad is before_detach_grad
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
@@ -2601,8 +2818,8 @@ try:
 except NotImplementedError as error:
     assert str(error) == (
         "torch.compile(): only backend='eager', fullgraph=True straight-line "
-        "Tensor neg/abs/relu/add functions with one or two positional exact native "
-        "CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
+        "Tensor neg/abs/relu/detach/add functions with one or two positional exact "
+        "native CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
         "forwarding, callable backend invocation, CUDA compilation, and broader "
         "graph capture remain unsupported"
     )
@@ -2736,9 +2953,9 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
         backend_calls = []
         backend = make_recording_backend(backend_calls)
         inputs = case.make_inputs(reference_torch)
-        before_gradients = tuple(input.grad for input in inputs)
+        before_gradients = input_gradients(inputs)
         expected_inputs = case.make_inputs(reference_torch)
-        expected_before_gradients = tuple(input.grad for input in expected_inputs)
+        expected_before_gradients = input_gradients(expected_inputs)
         expected = run_compile_corpus_case(reference_torch, case, expected_inputs)
         if case.backward_through_sum:
             self.assertTrue(any(input.requires_grad for input in expected_inputs))
@@ -2751,6 +2968,15 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                 expected_inputs,
                 expected_before_gradients,
                 case=f"{case.name}/expected_no_grad",
+            )
+        if case.category == "mutation_aliasing_views":
+            self.assertFalse(expected.requires_grad)
+            self.assertTrue(expected.is_set_to(expected_inputs[0]))
+            assert_leaf_gradients_unchanged(
+                self,
+                expected_inputs,
+                expected_before_gradients,
+                case=f"{case.name}/expected_detach",
             )
 
         for index, tensor in enumerate(inputs):
@@ -2776,6 +3002,15 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                 inputs,
                 before_gradients,
                 case=f"{case.name}/reference_no_grad",
+            )
+        if case.category == "mutation_aliasing_views":
+            self.assertFalse(actual.requires_grad)
+            self.assertTrue(actual.is_set_to(inputs[0]))
+            assert_leaf_gradients_unchanged(
+                self,
+                inputs,
+                before_gradients,
+                case=f"{case.name}/reference_detach",
             )
         if case.backward_through_sum:
             actual.sum().backward()
@@ -2847,16 +3082,14 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                 self.assert_reference_eligible(case)
 
                 inputs = case.make_inputs(torch)
-                before_gradients = tuple(input.grad for input in inputs)
+                before_gradients = input_gradients(inputs)
                 expected = run_compile_corpus_case(
                     torch,
                     case,
                     case.make_inputs(torch),
                 )
                 reference_inputs = case.make_inputs(reference_torch)
-                reference_before_gradients = tuple(
-                    input.grad for input in reference_inputs
-                )
+                reference_before_gradients = input_gradients(reference_inputs)
                 reference_expected = run_compile_corpus_case(
                     reference_torch,
                     case,
@@ -2898,6 +3131,23 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                         reference_inputs,
                         reference_before_gradients,
                         case=f"{case.name}/reference_no_grad",
+                    )
+                if case.category == "mutation_aliasing_views":
+                    self.assertFalse(actual.requires_grad)
+                    self.assertFalse(reference_expected.requires_grad)
+                    self.assertTrue(actual.is_set_to(inputs[0]))
+                    self.assertTrue(reference_expected.is_set_to(reference_inputs[0]))
+                    assert_leaf_gradients_unchanged(
+                        self,
+                        inputs,
+                        before_gradients,
+                        case=f"{case.name}/torch_rs_detach",
+                    )
+                    assert_leaf_gradients_unchanged(
+                        self,
+                        reference_inputs,
+                        reference_before_gradients,
+                        case=f"{case.name}/reference_detach",
                     )
                 if case.backward_through_sum:
                     actual.sum().backward()
