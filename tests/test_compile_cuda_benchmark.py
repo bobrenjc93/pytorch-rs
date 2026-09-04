@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 import torch_rs as torch
+from torch_rs import _cuda_driver_probe
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -71,6 +72,29 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
         self.assertEqual(probes["accelerator_device_count"], 0)
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
+
+    def test_private_cuda_driver_probe_is_not_public_cuda_support(self):
+        self.assertNotIn("_cuda_driver_probe", torch.__all__)
+        self.assertFalse(hasattr(torch.cuda, "_cuda_driver_probe"))
+        self.assertFalse(hasattr(torch.cuda, "driver_probe"))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
+        self.assertIs(torch.cuda.is_initialized(), False)
+
+        probe = _cuda_driver_probe.probe_cuda_driver_device0()
+        self.assertEqual(
+            probe["schema_version"],
+            _cuda_driver_probe.PROBE_SCHEMA_VERSION,
+        )
+        self.assertEqual(probe["probe"], "torch_rs_private_cuda_driver_device0")
+        self.assertIs(probe["public_torch_cuda_api"], False)
+        self.assertIn(probe["status"], {"ok", "unavailable", "error"})
+        self.assertIn("driver", probe)
+        self.assertIn("runtime", probe)
+        self.assertIn("cuda_visible_devices", probe)
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
+        self.assertIs(torch.cuda.is_initialized(), False)
 
     def test_cpu_eager_compile_execution_is_not_eligible_cuda_evidence(self):
         def cpu_program(value):
@@ -177,6 +201,21 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
             report["reference_workload"]["output_metadata"]["device_type"],
             "cuda",
         )
+        driver_probe = report["torch_rs_cuda_driver_probe"]
+        self.assertEqual(
+            driver_probe["schema_version"],
+            _cuda_driver_probe.PROBE_SCHEMA_VERSION,
+        )
+        self.assertEqual(driver_probe["status"], "ok")
+        self.assertIs(driver_probe["driver_initialized"], True)
+        self.assertEqual(driver_probe["cuda_visible_devices"], "0")
+        self.assertIn("H100", driver_probe["device_0"]["name"])
+        self.assertEqual(driver_probe["device_0"]["compute_capability"], [9, 0])
+        self.assertIsInstance(
+            driver_probe["driver"]["version"]["version_text"],
+            str,
+        )
+        self.assertIsInstance(driver_probe["runtime"]["runtime_version_text"], str)
         self.assertGreater(report["reference_workload"]["cold_first_call_us"], 0.0)
         self.assertGreater(
             report["reference_workload"]["steady"]["median_us"],
