@@ -52,6 +52,10 @@ EXPECTED_HELD_OUT_GUARD_SCENARIOS = (
     "heldout_unary_rank3_metadata_mix",
     "heldout_binary_broadcast_metadata_mix",
 )
+VIEW_ALIAS_OUTPUT_INPUT_INDEX = {
+    "cpu_float32_t_view": 0,
+    "cpu_float32_heldout_t_view_identity": 0,
+}
 EXPECTED_V4_CASE_MANIFEST = (
     {
         "name": "cpu_float32_unary_abs_neg",
@@ -1130,6 +1134,58 @@ def _assert_payload_match(actual, expected, *, label):
         )
 
 
+def _view_alias_payload(case, actual, expected, inputs, *, label):
+    input_index = VIEW_ALIAS_OUTPUT_INPUT_INDEX.get(case.name)
+    if input_index is None:
+        return None
+    if input_index >= len(inputs):
+        raise AssertionError(
+            f"{label} view alias oracle expected input {input_index}, "
+            f"got {len(inputs)} inputs"
+        )
+
+    is_set_to = getattr(actual, "is_set_to", None)
+    if is_set_to is None or not is_set_to(expected):
+        raise AssertionError(
+            f"{label} view alias mismatch: output is not set to the eager output view"
+        )
+
+    source = inputs[input_index]
+    storage_offset_equals_input = (
+        int(actual.storage_offset()) == int(source.storage_offset())
+    )
+    if not storage_offset_equals_input:
+        raise AssertionError(
+            f"{label} view alias mismatch: output storage offset "
+            f"{actual.storage_offset()} != input storage offset "
+            f"{source.storage_offset()}"
+        )
+
+    data_ptr_equals_input = None
+    if int(actual.numel()) != 0:
+        data_ptr_equals_input = int(actual.data_ptr()) == int(source.data_ptr())
+        if not data_ptr_equals_input:
+            raise AssertionError(
+                f"{label} view alias mismatch: output data pointer does not "
+                "match the input data pointer"
+            )
+
+    return {
+        "kind": "output_is_set_to_eager_view",
+        "input_index": input_index,
+        "is_set_to_eager_output": True,
+        "storage_offset_equals_input": storage_offset_equals_input,
+        "data_ptr_equals_input": data_ptr_equals_input,
+    }
+
+
+def _expected_output(tensor_module, case, inputs, make_inputs=None):
+    if case.name in VIEW_ALIAS_OUTPUT_INPUT_INDEX:
+        return case.program(*inputs)
+    input_factory = case.make_inputs if make_inputs is None else make_inputs
+    return case.program(*input_factory(tensor_module))
+
+
 def _compile_kwargs_from_case(case, backend):
     kwargs = {
         "backend": backend,
@@ -1167,7 +1223,7 @@ def _reference_case_result(reference_torch, case):
     backend = _make_recording_backend(backend_calls)
     inputs = case.make_inputs(reference_torch)
     before_inputs = _inputs_payload(inputs)
-    expected = case.program(*case.make_inputs(reference_torch))
+    expected = _expected_output(reference_torch, case, inputs)
     compiled = reference_torch.compile(
         case.program,
         **_compile_kwargs_from_case(case, backend),
@@ -1180,6 +1236,13 @@ def _reference_case_result(reference_torch, case):
         _tensor_payload(expected),
         label=f"{case.name}/reference",
     )
+    aliasing = _view_alias_payload(
+        case,
+        actual,
+        expected,
+        inputs,
+        label=f"{case.name}/reference",
+    )
     _assert_payload_match(after_inputs, before_inputs, label=f"{case.name}/inputs")
     if len(backend_calls) < 1:
         raise AssertionError(f"{case.name} did not invoke the reference backend")
@@ -1187,6 +1250,7 @@ def _reference_case_result(reference_torch, case):
         "name": case.name,
         "category": case.category,
         "output": _tensor_payload(actual),
+        "aliasing": aliasing,
         "input_count": len(inputs),
         "backend_call_count": len(backend_calls),
     }
@@ -1226,12 +1290,24 @@ def _reference_guard_scenario_result(corpus_module, reference_torch, scenario):
                 f"{scenario.name}/{step.name} did not raise the expected limit error"
             )
 
-        expected = case.program(*step.make_inputs(reference_torch))
+        expected = _expected_output(
+            reference_torch,
+            case,
+            inputs,
+            make_inputs=step.make_inputs,
+        )
         actual = compiled(*inputs)
         after_inputs = _inputs_payload(inputs)
         _assert_payload_match(
             _tensor_payload(actual),
             _tensor_payload(expected),
+            label=f"{scenario.name}/{step.name}/reference",
+        )
+        aliasing = _view_alias_payload(
+            case,
+            actual,
+            expected,
+            inputs,
             label=f"{scenario.name}/{step.name}/reference",
         )
         _assert_payload_match(
@@ -1245,6 +1321,7 @@ def _reference_guard_scenario_result(corpus_module, reference_torch, scenario):
                 "status": "ok",
                 "guard_change": step.guard_change,
                 "output": _tensor_payload(actual),
+                "aliasing": aliasing,
             }
         )
 
@@ -1390,9 +1467,9 @@ def _program_call_counter(program):
 def _candidate_case_result(corpus_module, case):
     torch_rs = corpus_module.torch
     torch_rs.compiler.reset()
-    expected = case.program(*case.make_inputs(torch_rs))
     inputs = case.make_inputs(torch_rs)
     before_inputs = _inputs_payload(inputs)
+    expected = _expected_output(torch_rs, case, inputs)
     with _candidate_compile_counters() as counters:
         compiled = torch_rs.compile(
             case.program,
@@ -1417,8 +1494,10 @@ def _candidate_case_result(corpus_module, case):
                 "native trace graphs, expected exactly 1"
             )
 
+        second_inputs = case.make_inputs(torch_rs)
+        second_expected = _expected_output(torch_rs, case, second_inputs)
         with _program_call_counter(case.program) as second_program_calls:
-            second_actual = compiled(*case.make_inputs(torch_rs))
+            second_actual = compiled(*second_inputs)
         if second_program_calls["count"] != 0:
             raise AssertionError(
                 f"{case.name} executed the original Python program on cache hit"
@@ -1437,9 +1516,23 @@ def _candidate_case_result(corpus_module, case):
         _tensor_payload(expected),
         label=f"{case.name}/torch_rs",
     )
+    aliasing = _view_alias_payload(
+        case,
+        actual,
+        expected,
+        inputs,
+        label=f"{case.name}/torch_rs",
+    )
     _assert_payload_match(
         _tensor_payload(second_actual),
-        _tensor_payload(expected),
+        _tensor_payload(second_expected),
+        label=f"{case.name}/torch_rs/cache_hit",
+    )
+    cache_hit_aliasing = _view_alias_payload(
+        case,
+        second_actual,
+        second_expected,
+        second_inputs,
         label=f"{case.name}/torch_rs/cache_hit",
     )
     _assert_payload_match(after_inputs, before_inputs, label=f"{case.name}/inputs")
@@ -1449,6 +1542,8 @@ def _candidate_case_result(corpus_module, case):
         "category": case.category,
         "status": "passed",
         "output": output,
+        "aliasing": aliasing,
+        "cache_hit_aliasing": cache_hit_aliasing,
         "lower_compile_graph_count": counters["lower_compile_graph"],
         "execute_compile_trace_graph_count": counters["execute_compile_trace_graph"],
     }
@@ -1516,7 +1611,12 @@ def _candidate_guard_scenario_result(corpus_module, scenario):
                 )
                 continue
 
-            expected = case.program(*step.make_inputs(torch_rs))
+            expected = _expected_output(
+                torch_rs,
+                case,
+                inputs,
+                make_inputs=step.make_inputs,
+            )
             with _program_call_counter(case.program) as program_calls:
                 actual = compiled(*inputs)
             if program_calls["count"] != 0:
@@ -1528,6 +1628,13 @@ def _candidate_guard_scenario_result(corpus_module, scenario):
             _assert_payload_match(
                 _tensor_payload(actual),
                 _tensor_payload(expected),
+                label=f"{scenario.name}/{step.name}/torch_rs",
+            )
+            aliasing = _view_alias_payload(
+                case,
+                actual,
+                expected,
+                inputs,
                 label=f"{scenario.name}/{step.name}/torch_rs",
             )
             _assert_payload_match(
@@ -1553,6 +1660,7 @@ def _candidate_guard_scenario_result(corpus_module, scenario):
                     "status": "ok",
                     "guard_change": step.guard_change,
                     "output": _tensor_payload(actual),
+                    "aliasing": aliasing,
                     "lower_compile_graph_count": counters["lower_compile_graph"],
                     "execute_compile_trace_graph_count": counters[
                         "execute_compile_trace_graph"
@@ -1782,6 +1890,11 @@ def _compare_worker_to_reference(
                         reference_step.get("output"),
                         label=f"{scenario_name}/{reference_step['name']}",
                     )
+                    _assert_payload_match(
+                        candidate_step.get("aliasing"),
+                        reference_step.get("aliasing"),
+                        label=f"{scenario_name}/{reference_step['name']}/aliasing",
+                    )
                 except AssertionError as error:
                     guard_failure_by_case[reference_scenario["case"]].append(str(error))
 
@@ -1819,6 +1932,11 @@ def _compare_worker_to_reference(
                 candidate_case.get("output"),
                 reference_case.get("output"),
                 label=case.name,
+            )
+            _assert_payload_match(
+                candidate_case.get("aliasing"),
+                reference_case.get("aliasing"),
+                label=f"{case.name}/aliasing",
             )
         except AssertionError as error:
             verdicts.append(

@@ -40,6 +40,9 @@ IMPLEMENTATION_ORDERS = (
     ("torch_rs", "pytorch"),
     ("pytorch", "torch_rs"),
 )
+VIEW_ALIAS_OUTPUT_INPUT_INDEX = {
+    "cpu_float32_t_view": 0,
+}
 
 
 @dataclass(frozen=True)
@@ -445,6 +448,58 @@ def _assert_outputs_match(actual, expected, *, cell_name):
         )
 
 
+def _view_alias_payload(case, actual, expected, inputs, *, cell_name):
+    input_index = VIEW_ALIAS_OUTPUT_INPUT_INDEX.get(case.name)
+    if input_index is None:
+        return None
+    if input_index >= len(inputs):
+        raise AssertionError(
+            f"{cell_name} view alias oracle expected input {input_index}, "
+            f"got {len(inputs)} inputs"
+        )
+
+    is_set_to = getattr(actual, "is_set_to", None)
+    if is_set_to is None or not is_set_to(expected):
+        raise AssertionError(
+            f"{cell_name} view alias mismatch: output is not set to the "
+            "eager output view"
+        )
+
+    source = inputs[input_index]
+    storage_offset_equals_input = (
+        int(actual.storage_offset()) == int(source.storage_offset())
+    )
+    if not storage_offset_equals_input:
+        raise AssertionError(
+            f"{cell_name} view alias mismatch: output storage offset "
+            f"{actual.storage_offset()} != input storage offset "
+            f"{source.storage_offset()}"
+        )
+
+    data_ptr_equals_input = None
+    if int(actual.numel()) != 0:
+        data_ptr_equals_input = int(actual.data_ptr()) == int(source.data_ptr())
+        if not data_ptr_equals_input:
+            raise AssertionError(
+                f"{cell_name} view alias mismatch: output data pointer does "
+                "not match the input data pointer"
+            )
+
+    return {
+        "kind": "output_is_set_to_eager_view",
+        "input_index": input_index,
+        "is_set_to_eager_output": True,
+        "storage_offset_equals_input": storage_offset_equals_input,
+        "data_ptr_equals_input": data_ptr_equals_input,
+    }
+
+
+def _expected_output(module, case, make_inputs, inputs):
+    if case.name in VIEW_ALIAS_OUTPUT_INPUT_INDEX:
+        return case.program(*inputs)
+    return case.program(*make_inputs(module))
+
+
 def _assert_timing_checksums_match(measured, expected, *, cell_name):
     expected_checksum = _checksum_tensor(expected)
     if measured["cold_checksum"] != expected_checksum:
@@ -492,7 +547,7 @@ def _time_repeated(compiled, inputs, module, repeats):
         output = compiled(*inputs)
     _synchronize(module)
     checksum = _checksum_tensor(output)
-    return time.perf_counter_ns() - started_ns, checksum
+    return time.perf_counter_ns() - started_ns, checksum, output
 
 
 def _run_cell(
@@ -518,24 +573,63 @@ def _run_cell(
             f"{case.name} has unsupported benchmark arity {expected_input_count}"
         )
 
+    expected = _expected_output(module, case, make_inputs, inputs)
+    cell_name = f"{case.name}/{variant.name}/{implementation}"
     _reset_compile_state(module, implementation, corpus_module)
     compile_started_ns = time.perf_counter_ns()
     compiled = module.compile(case.program, **case.compile_kwargs("eager"))
     factory_ns = time.perf_counter_ns() - compile_started_ns
     cold_ns, cold_checksum, cold_output = _time_once(compiled, inputs, module)
+    _assert_outputs_match(cold_output, expected, cell_name=cell_name)
+    aliasing = _view_alias_payload(
+        case,
+        cold_output,
+        expected,
+        inputs,
+        cell_name=cell_name,
+    )
 
     for _ in range(warmups):
-        _time_repeated(compiled, inputs, module, variant.repeats)
-
-    sample_ns = []
-    sample_checksums = []
-    for _ in range(samples):
-        elapsed_ns, checksum = _time_repeated(
+        _elapsed_ns, _checksum, warmup_output = _time_repeated(
             compiled,
             inputs,
             module,
             variant.repeats,
         )
+        _assert_outputs_match(warmup_output, expected, cell_name=cell_name)
+        if (
+            _view_alias_payload(
+                case,
+                warmup_output,
+                expected,
+                inputs,
+                cell_name=cell_name,
+            )
+            != aliasing
+        ):
+            raise AssertionError(f"{cell_name} warmup view aliasing changed")
+
+    sample_ns = []
+    sample_checksums = []
+    for _ in range(samples):
+        elapsed_ns, checksum, sample_output = _time_repeated(
+            compiled,
+            inputs,
+            module,
+            variant.repeats,
+        )
+        _assert_outputs_match(sample_output, expected, cell_name=cell_name)
+        if (
+            _view_alias_payload(
+                case,
+                sample_output,
+                expected,
+                inputs,
+                cell_name=cell_name,
+            )
+            != aliasing
+        ):
+            raise AssertionError(f"{cell_name} sampled view aliasing changed")
         sample_ns.append(elapsed_ns)
         sample_checksums.append(checksum)
 
@@ -548,6 +642,7 @@ def _run_cell(
         "cold_output": cold_output,
         "input_metadata": [_tensor_metadata(input) for input in inputs],
         "output_metadata": _tensor_metadata(cold_output),
+        "aliasing": aliasing,
     }
 
 
@@ -873,6 +968,7 @@ def _measure_one_pass(
         "cold_checksum": result["cold_checksum"],
         "input_metadata": result["input_metadata"],
         "output_metadata": result["output_metadata"],
+        "aliasing": result["aliasing"],
         "cold_output": result["cold_output"],
     }
 
@@ -942,6 +1038,20 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                 checksums = set()
                 factory_us = []
                 cold_us = []
+                aliasing_payloads = {
+                    json.dumps(
+                        measured["aliasing"],
+                        allow_nan=True,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    )
+                    for measured in passes
+                }
+                if len(aliasing_payloads) != 1:
+                    raise AssertionError(
+                        f"{cell_key}/{implementation} view aliasing was unstable: "
+                        f"{aliasing_payloads!r}"
+                    )
                 for measured in passes:
                     factory_us.append(measured["factory_us"])
                     cold_us.append(measured["cold_first_call_us"])
@@ -970,7 +1080,16 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                         for steady_summary in steady_summaries
                     ),
                     "checksums": sorted(checksums),
+                    "aliasing": passes[0]["aliasing"],
                 }
+            if implementations["torch_rs"]["aliasing"] != implementations["pytorch"][
+                "aliasing"
+            ]:
+                raise AssertionError(
+                    f"{cell_key} view aliasing mismatch: "
+                    f"torch_rs={implementations['torch_rs']['aliasing']!r} "
+                    f"pytorch={implementations['pytorch']['aliasing']!r}"
+                )
             torch_rs_steady = implementations["torch_rs"]["steady_median_us"]
             pytorch_steady = implementations["pytorch"]["steady_median_us"]
             torch_rs_cold = implementations["torch_rs"][
@@ -988,6 +1107,7 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                     "repeats": variant.repeats,
                     "input_metadata": cell["torch_rs"][0]["input_metadata"],
                     "output_metadata": cell["torch_rs"][0]["output_metadata"],
+                    "aliasing": implementations["torch_rs"]["aliasing"],
                     "implementations": implementations,
                     "ratios": {
                         "steady_torch_rs_over_pytorch": (
@@ -1310,6 +1430,46 @@ def _validate_expected_artifact_shape(report):
             _single_checksum(row)
         except AssertionError as error:
             errors.append(str(error))
+        expected_aliasing = (
+            {
+                "kind": "output_is_set_to_eager_view",
+                "input_index": VIEW_ALIAS_OUTPUT_INPUT_INDEX[row.get("case")],
+                "is_set_to_eager_output": True,
+                "storage_offset_equals_input": True,
+            }
+            if row.get("case") in VIEW_ALIAS_OUTPUT_INPUT_INDEX
+            else None
+        )
+        if expected_aliasing is None:
+            if row.get("aliasing") is not None:
+                errors.append(f"{row.get('case')}/{row.get('variant')} has aliasing")
+            for implementation, metrics in row.get("implementations", {}).items():
+                if metrics.get("aliasing") is not None:
+                    errors.append(
+                        f"{row.get('case')}/{row.get('variant')}/{implementation} "
+                        "has aliasing"
+                    )
+            continue
+        aliasing = row.get("aliasing")
+        if not isinstance(aliasing, dict):
+            errors.append(f"{row.get('case')}/{row.get('variant')} missing aliasing")
+            continue
+        for key, value in expected_aliasing.items():
+            if aliasing.get(key) != value:
+                errors.append(
+                    f"{row.get('case')}/{row.get('variant')} aliasing {key} "
+                    f"{aliasing.get(key)!r} != {value!r}"
+                )
+        if aliasing.get("data_ptr_equals_input") not in (True, None):
+            errors.append(
+                f"{row.get('case')}/{row.get('variant')} data_ptr aliasing is false"
+            )
+        for implementation, metrics in row.get("implementations", {}).items():
+            if metrics.get("aliasing") != aliasing:
+                errors.append(
+                    f"{row.get('case')}/{row.get('variant')}/{implementation} "
+                    "aliasing does not match row aliasing"
+                )
     for sequence in guard_sequences:
         for step in sequence.get("steps", ()):
             if step.get("status") == "ok" and not step.get("checksum"):

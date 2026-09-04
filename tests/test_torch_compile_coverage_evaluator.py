@@ -590,6 +590,63 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
         self.assertFalse(verdicts[0].passed)
         self.assertEqual(verdicts[0].failure_kind, "reference_mismatch")
 
+    def test_candidate_view_alias_mismatch_zeroes_case(self):
+        case = _case("cpu_float32_t_view", "mutation_aliasing_views")
+        corpus = SimpleNamespace(COMPILE_HELD_OUT_CORPUS=())
+        output = {
+            "metadata": {
+                "shape": [3, 2],
+                "stride": [1, 3],
+                "storage_offset": 0,
+                "dtype": "torch.float32",
+                "device": "cpu",
+                "requires_grad": True,
+                "is_contiguous": False,
+            },
+            "values": [[1.0, 4.25], [-2.0, -5.5], [3.5, 6.0]],
+        }
+        reference_aliasing = {
+            "kind": "output_is_set_to_eager_view",
+            "input_index": 0,
+            "is_set_to_eager_output": True,
+            "storage_offset_equals_input": True,
+            "data_ptr_equals_input": True,
+        }
+        reference_case_results = {
+            case.name: {
+                "name": case.name,
+                "category": case.category,
+                "output": output,
+                "aliasing": reference_aliasing,
+            }
+        }
+        worker_payload = {
+            "ok": True,
+            "cases": [
+                {
+                    "name": case.name,
+                    "category": case.category,
+                    "status": "passed",
+                    "output": output,
+                    "aliasing": None,
+                }
+            ],
+            "guard_scenarios": [],
+        }
+
+        verdicts, _ = evaluator._compare_worker_to_reference(
+            corpus,
+            (case,),
+            reference_case_results,
+            {},
+            worker_payload,
+        )
+
+        self.assertEqual(len(verdicts), 1)
+        self.assertFalse(verdicts[0].passed)
+        self.assertEqual(verdicts[0].failure_kind, "reference_mismatch")
+        self.assertIn("cpu_float32_t_view/aliasing", verdicts[0].message)
+
     def test_candidate_skipped_case_gets_zero_credit(self):
         corpus = _valid_fake_corpus()
         case = corpus.COMPILE_CORPUS[0]
