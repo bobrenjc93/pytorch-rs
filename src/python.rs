@@ -6320,9 +6320,33 @@ enum CreationSizeArgument<'py> {
 }
 
 enum PendingCreationSize<'py> {
-    Dimensions(Bound<'py, PyAny>),
+    Dimensions(CreationSequenceSize<'py>),
     PositionalScalar(Bound<'py, PyAny>),
     Variadic(Bound<'py, PyTuple>),
+}
+
+enum CreationSequenceSize<'py> {
+    Tuple(Bound<'py, PyTuple>),
+    List(Bound<'py, PyList>),
+    Sequence(Bound<'py, PyAny>),
+}
+
+impl<'py> CreationSequenceSize<'py> {
+    fn len(&self) -> PyResult<usize> {
+        match self {
+            Self::Tuple(dimensions) => Ok(dimensions.len()),
+            Self::List(dimensions) => Ok(dimensions.len()),
+            Self::Sequence(dimensions) => dimensions.len(),
+        }
+    }
+
+    fn get_item(&self, index: usize) -> PyResult<Bound<'py, PyAny>> {
+        match self {
+            Self::Tuple(dimensions) => dimensions.get_item(index),
+            Self::List(dimensions) => dimensions.get_item(index),
+            Self::Sequence(dimensions) => dimensions.get_item(index),
+        }
+    }
 }
 
 struct ParsedCreationSize {
@@ -10560,11 +10584,12 @@ fn parse_creation_size<'py>(
         }
     };
 
-    let sequence_error = if validate_creation_sequence_size(function, origin, value)? {
-        return Ok(PendingCreationSize::Dimensions(value.clone()));
-    } else {
-        creation_sequence_type_error(function, origin, value)?
-    };
+    let sequence_error =
+        if let Some(dimensions) = bind_creation_sequence_size(function, origin, value)? {
+            return Ok(PendingCreationSize::Dimensions(dimensions));
+        } else {
+            creation_sequence_type_error(function, origin, value)?
+        };
     if !matches!(function, "empty" | "zeros" | "ones") || origin != CreationSizeOrigin::Positional {
         return Err(sequence_error);
     }
@@ -10572,35 +10597,62 @@ fn parse_creation_size<'py>(
     bind_creation_positional_dimension(function, value, sequence_error)
 }
 
-fn validate_creation_sequence_size(
+fn bind_creation_sequence_size<'py>(
     function: &str,
     origin: CreationSizeOrigin,
-    value: &Bound<'_, PyAny>,
-) -> PyResult<bool> {
-    if !is_creation_sequence_size(function, value)? {
-        return Ok(false);
+    value: &Bound<'py, PyAny>,
+) -> PyResult<Option<CreationSequenceSize<'py>>> {
+    let Some(dimensions) = creation_sequence_size(function, value)? else {
+        return Ok(None);
+    };
+    if !validate_creation_sequence_leading_dimension(function, origin, &dimensions)? {
+        return Ok(None);
     }
-    let length = value.len()?;
-    for index in 0..length {
-        let dimension = value.get_item(index)?;
-        if dimension.is_instance_of::<PyBool>() && index == 0 {
-            if origin == CreationSizeOrigin::Positional {
-                return Err(creation_sequence_dimension_type_error_at(
-                    function, index, &dimension,
-                )?);
-            }
-            return Ok(false);
-        }
-        validate_creation_sequence_dimension_type(function, index, &dimension)?;
-    }
-    Ok(true)
+    Ok(Some(dimensions))
 }
 
-fn is_creation_sequence_size(function: &str, value: &Bound<'_, PyAny>) -> PyResult<bool> {
-    if function == "empty" {
-        return Ok(value.is_instance_of::<PyTuple>() || value.is_instance_of::<PyList>());
+fn creation_sequence_size<'py>(
+    function: &str,
+    value: &Bound<'py, PyAny>,
+) -> PyResult<Option<CreationSequenceSize<'py>>> {
+    if let Ok(dimensions) = value.cast::<PyTuple>() {
+        return Ok(Some(CreationSequenceSize::Tuple(dimensions.clone())));
     }
-    is_sequence_input(value)
+    if let Ok(dimensions) = value.cast::<PyList>() {
+        return Ok(Some(CreationSequenceSize::List(dimensions.clone())));
+    }
+    if function == "empty" {
+        return Ok(None);
+    }
+    if is_sequence_input(value)? {
+        return Ok(Some(CreationSequenceSize::Sequence(value.clone())));
+    }
+    Ok(None)
+}
+
+fn validate_creation_sequence_leading_dimension(
+    function: &str,
+    origin: CreationSizeOrigin,
+    dimensions: &CreationSequenceSize<'_>,
+) -> PyResult<bool> {
+    if dimensions.len()? == 0 {
+        return Ok(true);
+    }
+    let dimension = dimensions.get_item(0)?;
+    let valid = if dimension.is_instance_of::<PyBool>() {
+        false
+    } else {
+        validate_creation_sequence_dimension_type(function, 0, &dimension).is_ok()
+    };
+    if valid {
+        return Ok(true);
+    }
+    if origin == CreationSizeOrigin::Positional {
+        return Err(creation_sequence_dimension_type_error_at(
+            function, 0, &dimension,
+        )?);
+    }
+    Ok(false)
 }
 
 fn validate_creation_sequence_dimension_type(
@@ -10690,7 +10742,7 @@ fn finish_creation_size(
 
 fn parse_creation_dimensions(
     function: &str,
-    dimensions: &Bound<'_, PyAny>,
+    dimensions: &CreationSequenceSize<'_>,
 ) -> PyResult<Vec<usize>> {
     let length = dimensions.len()?;
     let mut parsed = try_size_vector(length)?;

@@ -337,11 +337,27 @@ class ZerosTests(unittest.TestCase):
                 self.calls += 1
                 return 2
 
+        class WeirdTuple(tuple):
+            def __len__(self):
+                raise RuntimeError("tuple __len__ override should not be called")
+
+            def __getitem__(self, index):
+                raise RuntimeError("tuple __getitem__ override should not be called")
+
+        class WeirdList(list):
+            def __len__(self):
+                raise RuntimeError("list __len__ override should not be called")
+
+            def __getitem__(self, index):
+                raise RuntimeError("list __getitem__ override should not be called")
+
         for size, expected_shape in (
             ((2,), (2,)),
             ([2], (2,)),
             ((2, False), (2, 0)),
             ([2, True], (2, 1)),
+            (WeirdTuple((2, 3)), (2, 3)),
+            (WeirdList([2, 3]), (2, 3)),
             (np.array([2]), (2,)),
             (range(2, 4), (2, 3)),
             (UserList([2]), (2,)),

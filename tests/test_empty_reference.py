@@ -24,6 +24,22 @@ class ListSubclass(list):
     pass
 
 
+class WeirdTuple(tuple):
+    def __len__(self):
+        raise RuntimeError("tuple __len__ override should not be called")
+
+    def __getitem__(self, index):
+        raise RuntimeError("tuple __getitem__ override should not be called")
+
+
+class WeirdList(list):
+    def __len__(self):
+        raise RuntimeError("list __len__ override should not be called")
+
+    def __getitem__(self, index):
+        raise RuntimeError("list __getitem__ override should not be called")
+
+
 class IndexDimension:
     def __init__(self, value):
         self.value = value
@@ -43,6 +59,11 @@ class StatefulIndexDimension:
         value = self.values[min(self.calls, len(self.values) - 1)]
         self.calls += 1
         return value
+
+
+class FailingIndexDimension:
+    def __index__(self):
+        raise RuntimeError("later dimension should not be converted before keywords")
 
 
 class CustomSequence(Sequence):
@@ -152,6 +173,8 @@ class EmptyReferenceTests(unittest.TestCase):
             ("size keyword list bool", lambda module: module.empty(size=[2, True])),
             ("tuple subclass", lambda module: module.empty(TupleSubclass((2, 3)))),
             ("list subclass", lambda module: module.empty(ListSubclass([2, 3]))),
+            ("tuple subclass storage", lambda module: module.empty(WeirdTuple((2, 3)))),
+            ("list subclass storage", lambda module: module.empty(WeirdList([2, 3]))),
             ("size object", lambda module: module.empty(module.Size([2, 3]))),
             (
                 "integer protocol list",
@@ -307,6 +330,23 @@ class EmptyReferenceTests(unittest.TestCase):
                 self.assertIs(actual_type, expected_type)
                 self.assertEqual(actual_message, expected_message)
 
+        sequence_type_cases = (
+            (object(), 2),
+            [object(), 2],
+            (2, object()),
+            [2, object()],
+        )
+        for dimensions in sequence_type_cases:
+            with self.subTest(type_dimensions=dimensions):
+                actual_type, actual_message = self.capture_error(
+                    lambda dimensions=dimensions: torch.empty(dimensions)
+                )
+                expected_type, expected_message = self.capture_error(
+                    lambda dimensions=dimensions: reference_torch.empty(dimensions)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(actual_message, expected_message)
+
         keyword_sequence_exact_cases = (
             (False,),
             [False],
@@ -384,6 +424,55 @@ class EmptyReferenceTests(unittest.TestCase):
                 self.assertIn(marker, expected_message)
                 self.assertIn("Overflow when unpacking long long", actual_message)
                 self.assertIn("Overflow when unpacking long long", expected_message)
+
+    def test_later_sequence_dimensions_wait_for_keyword_precedence_match_pytorch_2_13(
+        self,
+    ):
+        forms = (
+            ("tuple", lambda first, later: (first, later)),
+            ("list", lambda first, later: [first, later]),
+        )
+        calls = (
+            ("dtype", lambda module, dimensions: module.empty(dimensions, dtype=object())),
+            ("layout", lambda module, dimensions: module.empty(dimensions, layout=object())),
+            ("device", lambda module, dimensions: module.empty(dimensions, device=object())),
+            (
+                "requires_grad",
+                lambda module, dimensions: module.empty(
+                    dimensions, requires_grad=object()
+                ),
+            ),
+            (
+                "unexpected",
+                lambda module, dimensions: module.empty(dimensions, unexpected=True),
+            ),
+        )
+        for form, dimensions_factory in forms:
+            for case, call in calls:
+                actual_first = IndexDimension(2)
+                expected_first = IndexDimension(2)
+                actual_dimensions = dimensions_factory(
+                    actual_first, FailingIndexDimension()
+                )
+                expected_dimensions = dimensions_factory(
+                    expected_first, FailingIndexDimension()
+                )
+                with self.subTest(form=form, case=case):
+                    actual_type, actual_message = self.capture_error(
+                        lambda: call(torch, actual_dimensions)
+                    )
+                    expected_type, expected_message = self.capture_error(
+                        lambda: call(reference_torch, expected_dimensions)
+                    )
+                    self.assertIs(actual_type, expected_type)
+                    if case == "device":
+                        self.assertIn("argument 'device'", actual_message)
+                        self.assertIn("argument 'device'", expected_message)
+                        self.assertIn("not object", actual_message)
+                        self.assertIn("not object", expected_message)
+                    else:
+                        self.assertEqual(actual_message, expected_message)
+                    self.assertEqual(actual_first.calls, expected_first.calls)
 
     def test_unsupported_sequence_size_objects_match_pytorch_2_13(self):
         cases = (
