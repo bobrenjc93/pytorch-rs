@@ -10,20 +10,20 @@ Candidate provenance: source snapshot based on
 ## Review Update: `reduction="sum"` Same-Shape Contiguous
 
 The 2026-09-03 focused rerun used the current worktree based on
-`c5cca3ac3c3254d802067c8b2c50b1b056f9cc15` with the direct no-grad
-same-shape contiguous `mse_loss(reduction="sum")` fast path. The release
-extension was built and installed into the worktree `.venv` with
-`maturin develop --release --locked`, and the ignored one-off timing driver
-`target/mse_sum_contiguous_release_timing.py` ran from the repository root.
+`d6a6f67baca678926b9619112223de692df1a935` with the direct no-grad
+same-shape contiguous `mse_loss(reduction="sum")` fast path and active-autograd
+fallback accumulation coverage. The release extension was built and installed
+into the worktree `.venv` with `maturin develop --release --locked`, and the
+one-off inline timing driver ran from the repository root.
 
 The measured cell used CPU `float32` row-major contiguous `(1024, 1024)` inputs
 created outside the timed region from NumPy seed `20260903`,
 `CUDA_VISIBLE_DEVICES=`, one PyTorch thread, one reported `torch_rs` thread,
 `taskset -c 24`, 15 warmup blocks, 81 measured blocks, and 16 eager calls per
-block in each of two process passes. The first pass measured `torch_rs` before
-PyTorch; the second pass reversed that order. Scalar outputs were consumed with
-`.item()` inside every timed call, and values below are medians of the two
-per-process medians.
+block in each of two implementation-order passes. The first pass measured
+`torch_rs` before PyTorch; the second pass reversed that order. Scalar outputs
+were consumed with `.item()` inside every timed call, and values below are
+medians of the two per-pass medians.
 
 Correctness was checked against PyTorch 2.13 before timing for output shape,
 stride, storage offset, contiguity, dtype, device, `requires_grad`, leaf
@@ -32,14 +32,11 @@ status, scalar value with `rtol=1e-4`, `atol=1e-4`, and operand nonmutation.
 Focused checks for this update:
 
 ```bash
-PATH="/home/bobren/.cargo/bin:$PATH" cargo fmt --check
-PATH="/home/bobren/.cargo/bin:$PATH" cargo clippy --all-targets -- -D warnings
-PATH="/home/bobren/.cargo/bin:$PATH" \
-  VIRTUAL_ENV="$PWD/.venv" \
-  PYO3_PYTHON="$PWD/.venv/bin/python" \
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+PYO3_PYTHON="$PWD/.venv/bin/python" \
   cargo clippy --all-targets --features python-bindings -- -D warnings
-PATH="/home/bobren/.cargo/bin:$PATH" \
-  cargo test tensor::tests::squared_difference_sum --all-targets
+cargo test tensor::tests::squared_difference_sum --all-targets
 env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
   NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
   .venv/bin/python -m unittest \
@@ -47,24 +44,34 @@ env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
   tests.test_nn_functional_mse_loss_reference
 ```
 
-Results: the focused native Rust tests passed 2 tests, and the focused MSE
-Python implementation and PyTorch 2.13 differential tests passed 51 tests.
+Results: the focused native Rust tests passed 5 tests, and the focused MSE
+Python implementation and PyTorch 2.13 differential tests passed 57 tests.
 
 Timing command:
 
 ```bash
-env PATH="/home/bobren/.cargo/bin:$PATH" \
-  OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
   NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= \
-  taskset -c 24 .venv/bin/python target/mse_sum_contiguous_release_timing.py \
-  > target/mse-sum-contiguous-release-timing.json
+  taskset -c 24 .venv/bin/python - <<'PY'
+  # one-off inline timing driver for mse_sum_same_contiguous_1024x1024
+PY
+```
+
+Build command:
+
+```bash
+env -u CONDA_PREFIX PATH="$PWD/.venv/bin:$PATH" \
+  VIRTUAL_ENV="$PWD/.venv" \
+  PYO3_PYTHON="$PWD/.venv/bin/python" \
+  .venv/bin/maturin develop --release --locked
 ```
 
 Environment:
 
-- CPU: AMD EPYC 9654 96-Core Processor
+- CPU: AMD EPYC 9654 96-Core Processor, 2 sockets, 96 cores/socket,
+  2 threads/core
 - OS: Linux 6.13.2-0_fbk12_0_g0b66b3635210 x86_64, glibc 2.34
-- Python: 3.12.12
+- Python: 3.14.5
 - NumPy: 2.5.1
 - Rust: `rustc 1.92.0 (ded5c06cf 2025-12-08)`,
   `cargo 1.92.0 (344c4567c 2025-10-21)`
@@ -77,9 +84,10 @@ Environment:
   `torch_rs.get_num_threads()` and `torch_rs.get_num_interop_threads()` both
   reported 1
 - Dependency installation: locked
-  `uv sync --locked --no-install-project --group dev --group reference`
-  resolved in 27 ms and completed in 1.00s
-- Build time: the release extension rebuild for this source completed in 29.78s
+  `UV_CACHE_DIR="$PWD/.uv-cache" uv sync --locked --no-install-project --group dev --group reference`
+  resolved in 33 ms and completed in 20.38s into the worktree `.venv`
+- Build time: the final release extension rebuild for this source completed in
+  36.63s
 
 Times are median microseconds per call. MAD is median absolute deviation in
 microseconds, and variance is sample variance of per-call sample timings in
@@ -88,7 +96,7 @@ better and 1.00x is parity.
 
 | Workload | Category | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| `mse_sum_same_contiguous_1024x1024` | same-shape contiguous no-grad sum | `()`, stride `()`, offset 0, requires_grad=False | 16 | 625.908 us +/- 3.436, var 55.737 | 210.248 us +/- 1.623, var 28.104 | 2.98x |
+| `mse_sum_same_contiguous_1024x1024` | same-shape contiguous no-grad sum | `()`, stride `()`, offset 0, requires_grad=False | 16 | 728.073 us +/- 26.724, var 3738.068 | 263.998 us +/- 11.390, var 1187.615 | 2.76x |
 
 ## Review Update: `reduction="mean"` Same-Shape Contiguous
 
