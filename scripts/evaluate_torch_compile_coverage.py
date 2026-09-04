@@ -1432,11 +1432,14 @@ def _candidate_guard_scenario_result(corpus_module, scenario):
             case.program,
             **_compile_kwargs_from_case(case, "eager"),
         )
+        if getattr(compiled, "_torch_rs_compile_backend", None) != "eager":
+            raise AssertionError(f"{scenario.name} did not resolve backend='eager'")
         for step in scenario.steps:
             if step.reset_before:
                 torch_rs.compiler.reset()
             inputs = step.make_inputs(torch_rs)
             before_inputs = _inputs_payload(inputs)
+            previous_execute_count = counters["execute_compile_trace_graph"]
 
             if step.expect_limit_error:
                 with _program_call_counter(case.program) as program_calls:
@@ -1463,6 +1466,11 @@ def _candidate_guard_scenario_result(corpus_module, scenario):
                         f"{scenario.name}/{step.name} lower count "
                         f"{counters['lower_compile_graph']} != "
                         f"{step.expected_compile_count}"
+                    )
+                if counters["execute_compile_trace_graph"] != previous_execute_count:
+                    raise AssertionError(
+                        f"{scenario.name}/{step.name} executed the native trace graph "
+                        "while rejecting a metadata miss"
                     )
                 steps.append(
                     {
@@ -1499,6 +1507,13 @@ def _candidate_guard_scenario_result(corpus_module, scenario):
                 raise AssertionError(
                     f"{scenario.name}/{step.name} lower count "
                     f"{counters['lower_compile_graph']} != {step.expected_compile_count}"
+                )
+            expected_execute_count = previous_execute_count + 1
+            if counters["execute_compile_trace_graph"] != expected_execute_count:
+                raise AssertionError(
+                    f"{scenario.name}/{step.name} execute count "
+                    f"{counters['execute_compile_trace_graph']} != "
+                    f"{expected_execute_count}"
                 )
             steps.append(
                 {

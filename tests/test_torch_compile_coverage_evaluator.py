@@ -99,10 +99,12 @@ class _FakeCompiler:
 class _FakeTorchModule:
     float32 = "fake.float32"
 
-    def __init__(self):
+    def __init__(self, *, execute_trace_graph=True, resolved_backend=None):
         self.compiler = _FakeCompiler()
         self.compile_calls = []
         self.active_compile_counters = None
+        self.execute_trace_graph = execute_trace_graph
+        self.resolved_backend = resolved_backend
 
     def tensor(self, values, *, dtype=None, requires_grad=False):
         del dtype, requires_grad
@@ -116,14 +118,18 @@ class _FakeTorchModule:
             if self.active_compile_counters is not None:
                 if self.active_compile_counters["lower_compile_graph"] == 0:
                     self.active_compile_counters["lower_compile_graph"] = 1
-                self.active_compile_counters["execute_compile_trace_graph"] += 1
+                if self.execute_trace_graph:
+                    self.active_compile_counters["execute_compile_trace_graph"] += 1
             backend = kwargs["backend"]
             if callable(backend):
                 forward = backend(_FakeGraphModule(), inputs)
                 return forward(*inputs)
             return inputs[0]
 
-        compiled._torch_rs_compile_backend = kwargs["backend"]
+        if self.resolved_backend is None:
+            compiled._torch_rs_compile_backend = kwargs["backend"]
+        else:
+            compiled._torch_rs_compile_backend = self.resolved_backend
         return compiled
 
 
@@ -395,6 +401,59 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
         self.assertEqual(candidate_torch.compile_calls[0]["backend"], "eager")
         self.assertIs(candidate_torch.compile_calls[0]["fullgraph"], True)
         self.assertEqual(candidate_torch.compile_calls[0]["recompile_limit"], 2)
+
+    def test_guard_scenario_requires_eager_backend_and_native_executor(self):
+        case = _case(
+            "guard_executor_probe",
+            "recompilation_guards",
+            recompile_limit=4,
+        )
+        scenario = SimpleNamespace(
+            name="guard_executor_probe_scenario",
+            case_name=case.name,
+            steps=(_step("base", "initial", 1),),
+        )
+
+        def run_with_fake_torch(fake_torch):
+            @contextmanager
+            def fake_compile_counters():
+                counters = {
+                    "lower_compile_graph": 0,
+                    "execute_compile_trace_graph": 0,
+                }
+                fake_torch.active_compile_counters = counters
+                try:
+                    yield counters
+                finally:
+                    fake_torch.active_compile_counters = None
+
+            original_counters = evaluator._candidate_compile_counters
+            original_assert_no_pytorch = evaluator._assert_no_pytorch_modules
+            try:
+                evaluator._candidate_compile_counters = fake_compile_counters
+                evaluator._assert_no_pytorch_modules = lambda context: None
+                return evaluator._candidate_guard_scenario_result(
+                    SimpleNamespace(
+                        torch=fake_torch,
+                        COMPILE_CORPUS=(case,),
+                        COMPILE_HELD_OUT_CORPUS=(),
+                    ),
+                    scenario,
+                )
+            finally:
+                evaluator._candidate_compile_counters = original_counters
+                evaluator._assert_no_pytorch_modules = original_assert_no_pytorch
+
+        with self.assertRaises(AssertionError) as backend_error:
+            run_with_fake_torch(_FakeTorchModule(resolved_backend="python_fallback"))
+        self.assertIn("did not resolve backend='eager'", str(backend_error.exception))
+
+        with self.assertRaises(AssertionError) as executor_error:
+            run_with_fake_torch(_FakeTorchModule(execute_trace_graph=False))
+        self.assertIn(
+            "guard_executor_probe_scenario/base execute count 0 != 1",
+            str(executor_error.exception),
+        )
 
     def test_candidate_worker_blocks_pytorch_imports_during_metadata_validation(self):
         class FakeTorchImporter:
