@@ -44,7 +44,7 @@ gates.
 
 ### Compilation
 
-- [Compile CPU timings](torch-compile-cpu-release-timings.md): `torch.compile(..., backend="eager", fullgraph=True)` CPU release evidence.
+- [Compile CPU timings](torch-compile-cpu-release-timings.md): `torch.compile(..., backend="eager", fullgraph=True)` CPU release evidence with retained raw JSON in [benchmark-data/torch-compile-cpu-v4.json](benchmark-data/torch-compile-cpu-v4.json).
 
 ### Layout/view ops
 

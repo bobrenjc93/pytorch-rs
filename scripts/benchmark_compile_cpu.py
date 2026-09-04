@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import gc
 import hashlib
 import importlib.metadata as importlib_metadata
@@ -21,6 +22,16 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_ARTIFACT_PATH = (
+    REPOSITORY_ROOT / "docs" / "benchmark-data" / "torch-compile-cpu-v4.json"
+)
+DEFAULT_MARKDOWN_REPORT_PATH = (
+    REPOSITORY_ROOT / "docs" / "torch-compile-cpu-release-timings.md"
+)
+PROTECTED_OUTPUT_PATHS = {
+    REPOSITORY_ROOT / "docs" / "burner-evaluation-history.json",
+    REPOSITORY_ROOT / "docs" / "burner-evaluation-progress.svg",
+}
 REFERENCE_PYTORCH_VERSION = "2.13.0"
 BENCHMARK_VERSION = "torch_compile_cpu_eager_benchmark_v3"
 DEFAULT_WARMUPS = 7
@@ -251,6 +262,15 @@ def _package_version(distribution_name, module):
         return getattr(module, "__version__", None)
 
 
+def _exception_name(error):
+    error_type = type(error)
+    module = error_type.__module__
+    name = error_type.__qualname__
+    if module == "builtins":
+        return name
+    return f"{module}.{name}"
+
+
 def _environment(torch_rs, reference_torch, corpus_version, args):
     return {
         "benchmark_version": BENCHMARK_VERSION,
@@ -289,6 +309,59 @@ def _environment(torch_rs, reference_torch, corpus_version, args):
     }
 
 
+def _corpus_metadata(corpus_module):
+    def case_summary(case):
+        return {
+            "name": case.name,
+            "category": case.category,
+            "input_count": _program_input_count(case),
+            "fullgraph": case.fullgraph,
+            "dynamic": case.dynamic,
+            "mode": case.mode,
+            "options": case.options,
+            "recompile_limit": case.recompile_limit,
+        }
+
+    def step_summary(step):
+        return {
+            "name": step.name,
+            "guard_change": step.guard_change,
+            "expected_compile_count": step.expected_compile_count,
+            "reset_before": step.reset_before,
+            "expect_limit_error": step.expect_limit_error,
+        }
+
+    def scenario_summary(scenario):
+        return {
+            "name": scenario.name,
+            "case": scenario.case.name,
+            "steps": [step_summary(step) for step in scenario.steps],
+        }
+
+    return {
+        "version": corpus_module.COMPILE_CORPUS_VERSION,
+        "public_cases": [
+            case_summary(case) for case in corpus_module.compile_corpus_cases()
+        ],
+        "held_out_cases": [
+            case_summary(case)
+            for case in corpus_module.compile_corpus_cases(include_held_out=True)
+            if case not in corpus_module.compile_corpus_cases()
+        ],
+        "public_recompilation_guard_scenarios": [
+            scenario_summary(scenario)
+            for scenario in corpus_module.compile_recompilation_guard_scenarios()
+        ],
+        "held_out_recompilation_guard_scenarios": [
+            scenario_summary(scenario)
+            for scenario in corpus_module.compile_recompilation_guard_scenarios(
+                include_held_out=True
+            )
+            if scenario not in corpus_module.compile_recompilation_guard_scenarios()
+        ],
+    }
+
+
 def _configure_reference_threads(reference_torch, threads):
     reference_torch.set_num_threads(threads)
     reference_torch.set_num_interop_threads(threads)
@@ -313,10 +386,10 @@ def _program_input_count(case):
 
 
 def _variant_applies_to_case(variant, case):
-    allowed_variant_names = getattr(case, "benchmark_variant_names", None)
-    if allowed_variant_names is not None and variant.name not in allowed_variant_names:
-        return False
-    return variant.input_count is None or variant.input_count == _program_input_count(case)
+    return (
+        variant.input_count is None
+        or variant.input_count == _program_input_count(case)
+    )
 
 
 def _cell_input_factory(case, variant):
@@ -478,6 +551,126 @@ def _run_cell(
     }
 
 
+def _run_guard_sequence_pass(
+    *,
+    module,
+    implementation,
+    scenario,
+    corpus_module,
+    reference_torch,
+):
+    case = scenario.case
+    _reset_compile_state(module, implementation, corpus_module)
+    compiled = module.compile(case.program, **case.compile_kwargs("eager"))
+    steps = []
+
+    for step in scenario.steps:
+        if step.reset_before:
+            _reset_compile_state(module, implementation, corpus_module)
+
+        inputs = step.make_inputs(module)
+        started_ns = time.perf_counter_ns()
+        try:
+            output = compiled(*inputs)
+            _synchronize(module)
+            elapsed_us = (time.perf_counter_ns() - started_ns) / 1000.0
+        except Exception as error:
+            elapsed_us = (time.perf_counter_ns() - started_ns) / 1000.0
+            if not step.expect_limit_error:
+                raise
+            steps.append(
+                {
+                    "step": step.name,
+                    "guard_change": step.guard_change,
+                    "status": "expected_error",
+                    "elapsed_us": elapsed_us,
+                    "input_metadata": [_tensor_metadata(input) for input in inputs],
+                    "error_type": _exception_name(error),
+                    "error_message": str(error).splitlines()[0],
+                }
+            )
+            continue
+
+        if step.expect_limit_error:
+            raise AssertionError(
+                f"{scenario.name}/{implementation}/{step.name} expected "
+                "a recompile-limit error"
+            )
+
+        expected_inputs = step.make_inputs(module)
+        expected = case.program(*expected_inputs)
+        cell_name = f"{scenario.name}/{step.name}/{implementation}"
+        _assert_outputs_match(output, expected, cell_name=cell_name)
+        checksum = _checksum_tensor(output)
+        _assert_timing_checksums_match(
+            {
+                "cold_checksum": checksum,
+                "steady_checksums": [checksum],
+            },
+            expected,
+            cell_name=cell_name,
+        )
+
+        if implementation == "torch_rs":
+            reference_inputs = step.make_inputs(reference_torch)
+            reference_expected = case.program(*reference_inputs)
+            _assert_outputs_match(
+                output,
+                reference_expected,
+                cell_name=f"{scenario.name}/{step.name}",
+            )
+            _assert_timing_checksums_match(
+                {
+                    "cold_checksum": checksum,
+                    "steady_checksums": [checksum],
+                },
+                reference_expected,
+                cell_name=f"{scenario.name}/{step.name}",
+            )
+
+        steps.append(
+            {
+                "step": step.name,
+                "guard_change": step.guard_change,
+                "status": "ok",
+                "elapsed_us": elapsed_us,
+                "input_metadata": [_tensor_metadata(input) for input in inputs],
+                "output_metadata": _tensor_metadata(output),
+                "checksum": checksum,
+            }
+        )
+
+    return {
+        "scenario": scenario.name,
+        "case": case.name,
+        "implementation": implementation,
+        "recompile_limit": case.recompile_limit,
+        "steps": steps,
+    }
+
+
+def _run_guard_sequences(corpus_module, torch_rs, reference_torch):
+    rows = []
+    scenarios = tuple(
+        getattr(corpus_module, "COMPILE_RECOMPILATION_GUARD_SCENARIOS", ())
+    )
+    for order_index, order in enumerate(IMPLEMENTATION_ORDERS):
+        for implementation in order:
+            module = torch_rs if implementation == "torch_rs" else reference_torch
+            for scenario in scenarios:
+                row = _run_guard_sequence_pass(
+                    module=module,
+                    implementation=implementation,
+                    scenario=scenario,
+                    corpus_module=corpus_module,
+                    reference_torch=reference_torch,
+                )
+                row["order_index"] = order_index
+                row["order"] = list(order)
+                rows.append(row)
+    return rows
+
+
 def _geomean(values):
     if not values:
         return None
@@ -557,7 +750,26 @@ def _output_path(path):
     try:
         resolved.relative_to(REPOSITORY_ROOT)
     except ValueError:
-        raise SystemExit(f"output path must stay inside the worktree: {resolved}") from None
+        raise SystemExit(
+            f"output path must stay inside the worktree: {resolved}"
+        ) from None
+    if (
+        resolved == REPOSITORY_ROOT / ".burner"
+        or (REPOSITORY_ROOT / ".burner") in resolved.parents
+        or resolved in PROTECTED_OUTPUT_PATHS
+    ):
+        raise SystemExit(f"refusing to write Burner-managed output path: {resolved}")
+    return resolved
+
+
+def _input_path(path):
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(REPOSITORY_ROOT)
+    except ValueError:
+        raise SystemExit(
+            f"input path must stay inside the worktree: {resolved}"
+        ) from None
     return resolved
 
 
@@ -594,6 +806,7 @@ def run_benchmark(args):
             variants,
             args,
         )
+        guard_sequences = _run_guard_sequences(corpus_module, torch_rs, reference_torch)
     finally:
         if gc_was_enabled:
             gc.enable()
@@ -611,9 +824,15 @@ def run_benchmark(args):
             corpus_module.COMPILE_CORPUS_VERSION,
             args,
         ),
+        "corpus": _corpus_metadata(corpus_module),
         "cases": rows,
+        "recompilation_guard_sequences": guard_sequences,
         "aggregates": {
             "timed_supported_cell_count": len(rows),
+            "recompilation_guard_sequence_count": len(guard_sequences),
+            "recompilation_guard_step_count": sum(
+                len(row["steps"]) for row in guard_sequences
+            ),
             "steady_geomean_torch_rs_over_pytorch": _geomean(steady_ratios),
             "steady_geomean_capped_0_10_10_0": _geomean(
                 [min(10.0, max(0.10, ratio)) for ratio in steady_ratios]
@@ -783,6 +1002,337 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
     return rows
 
 
+def _format_tuple(values):
+    return str(tuple(values))
+
+
+def _format_metadata(metadata):
+    return (
+        f"shape {_format_tuple(metadata['shape'])}, "
+        f"stride {_format_tuple(metadata['stride'])}, "
+        f"offset {metadata['storage_offset']}, "
+        f"{metadata['dtype']}, {metadata['device']}, "
+        f"requires_grad={metadata['requires_grad']}"
+    )
+
+
+def _single_checksum(row):
+    torch_rs_checksums = row["implementations"]["torch_rs"]["checksums"]
+    pytorch_checksums = row["implementations"]["pytorch"]["checksums"]
+    if torch_rs_checksums != pytorch_checksums:
+        raise AssertionError(
+            f"{row['case']}/{row['variant']} checksum mismatch: "
+            f"torch_rs={torch_rs_checksums!r} pytorch={pytorch_checksums!r}"
+        )
+    if len(torch_rs_checksums) != 1:
+        raise AssertionError(
+            f"{row['case']}/{row['variant']} has unstable checksums: "
+            f"{torch_rs_checksums!r}"
+        )
+    return torch_rs_checksums[0]
+
+
+def _format_timed_cell(row):
+    torch_rs = row["implementations"]["torch_rs"]
+    pytorch = row["implementations"]["pytorch"]
+    return (
+        f"| `{row['case']}` | `{row['variant']}` | {row['input_count']} | "
+        f"{row['repeats']} | {_format_metadata(row['output_metadata'])} | "
+        f"{torch_rs['cold_first_call_median_us']:.3f} | "
+        f"{pytorch['cold_first_call_median_us']:.3f} | "
+        f"{row['ratios']['cold_torch_rs_over_pytorch']:.3f}x | "
+        f"{torch_rs['steady_median_us']:.3f} +/- "
+        f"{torch_rs['steady_mad_us']:.3f} | "
+        f"{pytorch['steady_median_us']:.3f} +/- "
+        f"{pytorch['steady_mad_us']:.3f} | "
+        f"{row['ratios']['steady_torch_rs_over_pytorch']:.3f}x | "
+        f"`{_single_checksum(row)}` |"
+    )
+
+
+def _guard_error_name(step):
+    return step.get("error_type", "").rsplit(".", 1)[-1]
+
+
+def _format_guard_steps(steps):
+    rendered = []
+    for step in steps:
+        if step["status"] == "expected_error":
+            rendered.append(
+                f"{step['step']} expected_error("
+                f"{step['guard_change']}: {_guard_error_name(step)})"
+            )
+        else:
+            rendered.append(f"{step['step']} ok({step['guard_change']})")
+    return "; ".join(rendered)
+
+
+def _format_guard_sequence(row):
+    total_us = sum(step["elapsed_us"] for step in row["steps"])
+    return (
+        f"| `{row['scenario']}` | `{','.join(row['order'])}` | "
+        f"`{row['implementation']}` | {row['recompile_limit']} | "
+        f"{_format_guard_steps(row['steps'])} | {total_us:.3f} |"
+    )
+
+
+def _timed_category_counts(cases):
+    counts = Counter(row["category"] for row in cases)
+    order = (
+        ("tensor_arithmetic", "tensor-arithmetic"),
+        ("broadcasting", "broadcasting"),
+        ("recompilation_guards", "recompilation-guard"),
+    )
+    return ", ".join(
+        f"{counts[category]} {label}"
+        for category, label in order
+        if category in counts
+    )
+
+
+def _supported_denominator_line(coverage_denominator):
+    return (
+        f"Supported category weight: {coverage_denominator['supported_weight']} / "
+        f"{coverage_denominator['total_weight']}. Zero-credit unsupported category "
+        f"weight: {coverage_denominator['zero_credit_weight']} / "
+        f"{coverage_denominator['total_weight']}."
+    )
+
+
+def render_markdown_summary(report):
+    cases = report["cases"]
+    guard_sequences = report["recompilation_guard_sequences"]
+    aggregates = report["aggregates"]
+    coverage_denominator = report["coverage_denominator"]
+    environment = report["environment"]
+    statuses = sorted(
+        {
+            step["status"]
+            for sequence in guard_sequences
+            for step in sequence["steps"]
+        }
+    )
+
+    lines = [
+        "## Aggregate",
+        "",
+        f"- Raw JSON artifact: `{DEFAULT_ARTIFACT_PATH.relative_to(REPOSITORY_ROOT)}`",
+        (
+            f"- Benchmark/corpus: `{environment['benchmark_version']}` / "
+            f"`{environment['corpus_version']}`"
+        ),
+        (
+            "- Cold first compiled call: "
+            f"{aggregates['cold_geomean_torch_rs_over_pytorch']:.3f}x uncapped, "
+            f"{aggregates['cold_geomean_capped_0_10_10_0']:.3f}x capped"
+        ),
+        (
+            "- Steady-state materialized compiled call: "
+            f"{aggregates['steady_geomean_torch_rs_over_pytorch']:.3f}x uncapped, "
+            f"{aggregates['steady_geomean_capped_0_10_10_0']:.3f}x capped"
+        ),
+        (
+            f"- Timed supported cells: {aggregates['timed_supported_cell_count']} "
+            f"({_timed_category_counts(cases)})"
+        ),
+        (
+            "- Recompilation guard sequences: "
+            f"{aggregates['recompilation_guard_sequence_count']} rows, "
+            f"{aggregates['recompilation_guard_step_count']} checked steps, "
+            f"statuses {', '.join(statuses)}"
+        ),
+        (
+            "- Versioned denominator coverage: "
+            f"{coverage_denominator['weighted_supported_percent']:.1f}% supported "
+            "by native compile cases, "
+            f"{coverage_denominator['zero_credit_weight']}% zero-credit unsupported "
+            "category weight"
+        ),
+        "",
+        "## Supported Timed Cells",
+        "",
+        (
+            "| Program | Input variant | Inputs | Repeats | Output metadata | "
+            "`torch_rs` cold us | PyTorch cold us | Cold ratio | "
+            "`torch_rs` steady us +/- MAD | PyTorch steady us +/- MAD | "
+            "Steady ratio | Checksum |"
+        ),
+        "| --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+    ]
+    lines.extend(_format_timed_cell(row) for row in cases)
+    lines.extend(
+        [
+            "",
+            "## Recompilation Guard Sequences",
+            "",
+            (
+                "These rows are behavioral evidence, not throughput cells. Each "
+                "scenario runs once per implementation and once per implementation "
+                "order. Steps marked `expected_error` are required fullgraph "
+                "`recompile_limit` failures; the following cached call and reset "
+                "call verify bounded-cache and reset semantics."
+            ),
+            "",
+            "| Scenario | Order | Implementation | Limit | Steps | Total us |",
+            "| --- | --- | --- | ---: | --- | ---: |",
+        ]
+    )
+    lines.extend(_format_guard_sequence(row) for row in guard_sequences)
+    lines.extend(
+        [
+            "",
+            "## Zero-Credit Unsupported Denominator",
+            "",
+            (
+                "The compile corpus keeps the full 100-point category denominator. "
+                "The native `torch_rs` path currently has executable public cases "
+                "for tensor arithmetic, broadcasting, and recompilation guards. "
+                "Every remaining category below stays in the denominator as zero "
+                "credit instead of being dropped from the report."
+            ),
+            "",
+            "| Category | Weight | Accounting |",
+            "| --- | ---: | --- |",
+        ]
+    )
+    for category in coverage_denominator["supported_categories"]:
+        timed_public_cases = ", ".join(
+            f"`{name}`" for name in category["timed_public_cases"]
+        )
+        lines.append(
+            f"| `{category['category']}` | {category['weight']} | "
+            f"Supported and timed public cases: {timed_public_cases} |"
+        )
+    for category in coverage_denominator["zero_credit_categories"]:
+        lines.append(
+            f"| `{category['category']}` | {category['weight']} | "
+            f"Zero credit: {category['reason']} |"
+        )
+    lines.extend(
+        [
+            "",
+            _supported_denominator_line(coverage_denominator),
+            (
+                "The v4 corpus also keeps 2 held-out broadcasting programs and 2 "
+                "held-out recompilation-guard scenarios in tests to guard against "
+                "case-specific specialization; they are not included in the public "
+                "timing table."
+            ),
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _load_artifact(path):
+    with _input_path(path).open(encoding="utf-8") as artifact_file:
+        return json.load(artifact_file)
+
+
+def _markdown_summary(markdown_path):
+    markdown = _input_path(markdown_path).read_text(encoding="utf-8")
+    marker = "## Aggregate"
+    try:
+        return markdown[markdown.index(marker) :]
+    except ValueError:
+        raise AssertionError(f"{markdown_path} is missing {marker!r}") from None
+
+
+def _validate_expected_artifact_shape(report):
+    errors = []
+    environment = report.get("environment", {})
+    if environment.get("benchmark_version") != BENCHMARK_VERSION:
+        errors.append(
+            "benchmark version mismatch: "
+            f"{environment.get('benchmark_version')!r} != {BENCHMARK_VERSION!r}"
+        )
+    if environment.get("corpus_version") != "torch_compile_corpus_v4":
+        errors.append(
+            "corpus version mismatch: "
+            f"{environment.get('corpus_version')!r} != 'torch_compile_corpus_v4'"
+        )
+
+    cases = report.get("cases", [])
+    category_counts = Counter(row.get("category") for row in cases)
+    expected_counts = {
+        "tensor_arithmetic": 35,
+        "broadcasting": 28,
+        "recompilation_guards": 21,
+    }
+    if len(cases) != 84 or category_counts != expected_counts:
+        errors.append(
+            "timed cell count mismatch: "
+            f"count={len(cases)} categories={dict(category_counts)!r}"
+        )
+    if report.get("aggregates", {}).get("timed_supported_cell_count") != len(cases):
+        errors.append("aggregate timed cell count does not match cases")
+
+    guard_sequences = report.get("recompilation_guard_sequences", [])
+    guard_step_count = sum(len(row.get("steps", ())) for row in guard_sequences)
+    if len(guard_sequences) != 12 or guard_step_count != 60:
+        errors.append(
+            "guard sequence coverage mismatch: "
+            f"rows={len(guard_sequences)} steps={guard_step_count}"
+        )
+    aggregates = report.get("aggregates", {})
+    if aggregates.get("recompilation_guard_sequence_count") != len(guard_sequences):
+        errors.append("aggregate guard sequence count does not match rows")
+    if aggregates.get("recompilation_guard_step_count") != guard_step_count:
+        errors.append("aggregate guard step count does not match rows")
+
+    coverage = report.get("coverage_denominator", {})
+    if (
+        coverage.get("supported_weight") != 24
+        or coverage.get("total_weight") != 100
+        or coverage.get("zero_credit_weight") != 76
+        or coverage.get("weighted_supported_percent") != 24.0
+    ):
+        errors.append(f"coverage denominator mismatch: {coverage!r}")
+
+    corpus = report.get("corpus", {})
+    if corpus.get("version") != environment.get("corpus_version"):
+        errors.append("corpus metadata version does not match environment")
+    if len(corpus.get("public_cases", ())) != 12:
+        errors.append("corpus metadata public case count is not 12")
+    if len(corpus.get("held_out_cases", ())) != 4:
+        errors.append("corpus metadata held-out case count is not 4")
+    if len(corpus.get("public_recompilation_guard_scenarios", ())) != 3:
+        errors.append("corpus metadata public guard scenario count is not 3")
+    if len(corpus.get("held_out_recompilation_guard_scenarios", ())) != 2:
+        errors.append("corpus metadata held-out guard scenario count is not 2")
+
+    for row in cases:
+        try:
+            _single_checksum(row)
+        except AssertionError as error:
+            errors.append(str(error))
+    for sequence in guard_sequences:
+        for step in sequence.get("steps", ()):
+            if step.get("status") == "ok" and not step.get("checksum"):
+                errors.append(
+                    f"{sequence.get('scenario')}/{step.get('step')} missing checksum"
+                )
+            if step.get("status") == "expected_error" and not step.get("error_type"):
+                errors.append(
+                    f"{sequence.get('scenario')}/{step.get('step')} missing error type"
+                )
+
+    if errors:
+        raise AssertionError("\n".join(errors))
+
+
+def validate_artifact(artifact_path, markdown_path):
+    report = _load_artifact(artifact_path)
+    _validate_expected_artifact_shape(report)
+    expected_summary = render_markdown_summary(report)
+    actual_summary = _markdown_summary(markdown_path)
+    if actual_summary != expected_summary:
+        raise AssertionError(
+            "markdown summary does not match raw benchmark artifact; "
+            "regenerate the report summary from the checked-in JSON"
+        )
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--warmups", type=int, default=DEFAULT_WARMUPS)
@@ -792,11 +1342,48 @@ def parse_args():
     parser.add_argument("--cases", nargs="*", default=())
     parser.add_argument("--variants", nargs="*", default=())
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--render-markdown-summary",
+        type=Path,
+        metavar="RAW_JSON",
+        help="render the markdown summary section for a benchmark JSON artifact",
+    )
+    parser.add_argument(
+        "--validate-artifact",
+        nargs="?",
+        const=DEFAULT_ARTIFACT_PATH,
+        type=Path,
+        metavar="RAW_JSON",
+        help="validate benchmark JSON and its rendered markdown summary",
+    )
+    parser.add_argument(
+        "--markdown-report",
+        type=Path,
+        default=DEFAULT_MARKDOWN_REPORT_PATH,
+        help="markdown report to validate with --validate-artifact",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    if (
+        args.render_markdown_summary is not None
+        and args.validate_artifact is not None
+    ):
+        raise SystemExit(
+            "--render-markdown-summary cannot be combined with --validate-artifact"
+        )
+    if args.render_markdown_summary is not None:
+        print(
+            render_markdown_summary(_load_artifact(args.render_markdown_summary)),
+            end="",
+        )
+        return
+    if args.validate_artifact is not None:
+        validate_artifact(args.validate_artifact, args.markdown_report)
+        return
+
     report = run_benchmark(args)
     encoded = json.dumps(report, indent=2, sort_keys=True)
     if args.output is None:
