@@ -72,13 +72,14 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py
 The script requires PyTorch 2.13, records GPU, driver, CUDA runtime, `nvcc`,
 compile configuration, cold first-call timing, synchronized steady-state
 timings, and checksum/correctness evidence for one versioned PyTorch CUDA
-reference workload. It also records a private benchmark-only `torch_rs` CUDA
-driver probe, separate from the public `torch.cuda` compatibility API, with
-device 0 driver/runtime metadata. The current `torch_rs` CUDA compile cell is
-emitted as explicit `zero_credit_unsupported`: CPU tensors, `backend="eager"`,
-eager fallback, skipped execution, or forwarding to installed PyTorch are
-rejected as eligible CUDA compile evidence. The public CPU-build `torch.cuda`
-probe behavior remains unchanged.
+reference workload. It also records private benchmark-only `torch_rs` CUDA
+driver/runtime evidence, separate from the public `torch.cuda` compatibility
+API: device 0 metadata plus a float32 runtime allocation, host-to-device copy,
+device-to-host copy, synchronization, and checksum roundtrip. The current
+`torch_rs` CUDA compile cell is emitted as explicit `zero_credit_unsupported`:
+CPU tensors, `backend="eager"`, eager fallback, skipped execution, or
+forwarding to installed PyTorch are rejected as eligible CUDA compile evidence.
+The public CPU-build `torch.cuda` probe behavior remains unchanged.
 
 ### Layout/view ops
 
