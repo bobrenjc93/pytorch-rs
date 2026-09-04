@@ -22,7 +22,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "torch_compile_cpu_eager_benchmark_v2"
+BENCHMARK_VERSION = "torch_compile_cpu_eager_benchmark_v3"
 DEFAULT_WARMUPS = 7
 DEFAULT_SAMPLES = 31
 IMPLEMENTATION_ORDERS = (
@@ -313,6 +313,9 @@ def _program_input_count(case):
 
 
 def _variant_applies_to_case(variant, case):
+    allowed_variant_names = getattr(case, "benchmark_variant_names", None)
+    if allowed_variant_names is not None and variant.name not in allowed_variant_names:
+        return False
     return variant.input_count is None or variant.input_count == _program_input_count(case)
 
 
