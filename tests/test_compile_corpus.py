@@ -1,3 +1,4 @@
+import dataclasses
 import subprocess
 import sys
 import unittest
@@ -1538,6 +1539,12 @@ class CompileCorpusTraceTests(unittest.TestCase):
         self.assertEqual(input_metadata.shape, (2, 3))
         self.assertEqual(input_metadata.stride, (3, 1))
         self.assertIs(input_metadata.dtype, _compile_trace.float32)
+        self.assertIsInstance(
+            input_metadata.device,
+            _compile_trace.CompileTraceDevice,
+        )
+        self.assertEqual(str(input_metadata.device), "cpu")
+        self.assertEqual(repr(input_metadata.device), "'cpu'")
         self.assertEqual(input_metadata.device, "cpu")
         self.assertFalse(input_metadata.requires_grad)
 
@@ -1583,6 +1590,11 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 self.assertEqual(input_metadata.shape, (2, 3))
                 self.assertEqual(input_metadata.stride, (3, 1))
                 self.assertIs(input_metadata.dtype, _compile_trace.float32)
+                self.assertIsInstance(
+                    input_metadata.device,
+                    _compile_trace.CompileTraceDevice,
+                )
+                self.assertEqual(str(input_metadata.device), "cpu")
                 self.assertEqual(input_metadata.device, "cpu")
                 self.assertFalse(input_metadata.requires_grad)
 
@@ -1761,6 +1773,97 @@ class CompileCorpusTraceTests(unittest.TestCase):
                     expected,
                     case=case,
                 )
+
+    def test_private_device_metadata_parses_cpu_and_cuda_targets(self):
+        cpu_metadata = _compile_trace._parse_device_metadata("cpu")
+        cuda_metadata = _compile_trace._parse_device_metadata("cuda:0")
+        unindexed_cuda_metadata = _compile_trace._parse_device_metadata("cuda")
+
+        self.assertIsInstance(cpu_metadata, _compile_trace.CompileTraceDevice)
+        self.assertEqual(cpu_metadata.type, "cpu")
+        self.assertIsNone(cpu_metadata.index)
+        self.assertEqual(str(cpu_metadata), "cpu")
+        self.assertEqual(repr(cpu_metadata), "'cpu'")
+        self.assertEqual(cpu_metadata, "cpu")
+
+        self.assertEqual(cuda_metadata.type, "cuda")
+        self.assertEqual(cuda_metadata.index, 0)
+        self.assertEqual(str(cuda_metadata), "cuda:0")
+        self.assertEqual(repr(cuda_metadata), "'cuda:0'")
+
+        self.assertEqual(unindexed_cuda_metadata.type, "cuda")
+        self.assertIsNone(unindexed_cuda_metadata.index)
+        self.assertEqual(str(unindexed_cuda_metadata), "cuda")
+
+        self.assertEqual(str(_compile_trace._cuda_device_metadata(7)), "cuda:7")
+        with self.assertRaises(FrozenInstanceError):
+            cuda_metadata.index = 1
+        with self.assertRaisesRegex(TypeError, "not bool"):
+            _compile_trace._cuda_device_metadata(True)
+        with self.assertRaisesRegex(
+            _compile_trace.CompileTraceUnsupportedError,
+            "CPU or private CUDA",
+        ):
+            _compile_trace._parse_device_metadata("meta")
+        with self.assertRaisesRegex(
+            _compile_trace.CompileTraceUnsupportedError,
+            "CPU or private CUDA",
+        ):
+            _compile_trace._parse_device_metadata("cuda:01")
+
+    def test_private_cpu_and_cuda_metadata_use_distinct_cache_keys(self):
+        def program(x):
+            return x.neg()
+
+        input = torch.tensor([1.0, -2.0], dtype=torch.float32)
+        cpu_metadata = _compile_trace._metadata_from_native_tensor(input)
+        cuda_metadata = dataclasses.replace(
+            cpu_metadata,
+            device=_compile_trace._cuda_device_metadata(0),
+        )
+
+        self.assertNotEqual(cpu_metadata, cuda_metadata)
+        self.assertNotEqual(cpu_metadata.device, cuda_metadata.device)
+
+        cpu_key = (program.__code__, (cpu_metadata,))
+        cuda_key = (program.__code__, (cuda_metadata,))
+        cache = {cpu_key: "cpu", cuda_key: "cuda"}
+
+        self.assertNotEqual(cpu_key, cuda_key)
+        self.assertEqual(len(cache), 2)
+        self.assertEqual(cache[cpu_key], "cpu")
+        self.assertEqual(cache[cuda_key], "cuda")
+
+    def test_private_cuda_trace_rejects_cpu_tensor_before_execution(self):
+        recorder = _compile_trace.CompileTraceRecorder(name="cuda_guard")
+        proxy = recorder.input(
+            shape=(2,),
+            dtype=_compile_trace.float32,
+            device=_compile_trace._cuda_device_metadata(0),
+        )
+        graph = recorder.finish(proxy.neg())
+        input = torch.tensor([1.0, -2.0], dtype=torch.float32)
+        operation_calls = []
+        original_execute_operation = _compile_trace._execute_operation
+
+        def blocking_execute_operation(operation, values):
+            operation_calls.append(operation)
+            raise AssertionError("CPU tensor reached CUDA trace operation execution")
+
+        try:
+            _compile_trace._execute_operation = blocking_execute_operation
+            with self.assertRaisesRegex(
+                ValueError,
+                (
+                    "metadata mismatch for 'arg0': "
+                    "device expected 'cuda:0', got 'cpu'"
+                ),
+            ):
+                _compile_trace.execute_compile_trace_graph(graph, input)
+        finally:
+            _compile_trace._execute_operation = original_execute_operation
+
+        self.assertEqual(operation_calls, [])
 
     def test_binary_self_add_executes_private_native_graph_for_key_layouts(self):
         cases = (
