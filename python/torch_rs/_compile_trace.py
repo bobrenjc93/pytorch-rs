@@ -163,8 +163,13 @@ _SUPPORTED_UNARY_METHODS = (
     "Tensor.abs",
     "Tensor.absolute",
     "Tensor.relu",
+    "Tensor.detach",
 )
-_SUPPORTED_UNARY_TARGETS = frozenset(("neg", "abs", "relu"))
+_SUPPORTED_VALUE_UNARY_TARGETS = frozenset(("neg", "abs", "relu"))
+_SUPPORTED_ALIAS_UNARY_TARGETS = frozenset(("detach",))
+_SUPPORTED_UNARY_TARGETS = (
+    _SUPPORTED_VALUE_UNARY_TARGETS | _SUPPORTED_ALIAS_UNARY_TARGETS
+)
 _SUPPORTED_BINARY_METHODS = (
     "Tensor.__add__",
     "Tensor.add",
@@ -462,7 +467,17 @@ def _grad_enabled():
     return _native._compile_trace_grad_enabled()
 
 
-def _unary_output_metadata(input_metadata, *, grad_enabled=None):
+def _unary_output_metadata(input_metadata, target, *, grad_enabled=None):
+    if target in _SUPPORTED_ALIAS_UNARY_TARGETS:
+        return CompileTraceTensorMetadata(
+            shape=input_metadata.shape,
+            stride=input_metadata.stride,
+            dtype=input_metadata.dtype,
+            device=input_metadata.device,
+            requires_grad=False,
+        )
+    if target not in _SUPPORTED_VALUE_UNARY_TARGETS:
+        _unsupported_operation(f"Tensor.{target}")
     if grad_enabled is None:
         grad_enabled = _grad_enabled()
     return CompileTraceTensorMetadata(
@@ -626,6 +641,7 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
         (input_name,) = operation.inputs
         return _unary_output_metadata(
             metadata_values[input_name],
+            operation.target,
             grad_enabled=grad_enabled,
         )
 
@@ -767,6 +783,9 @@ class CompileTraceTensorProxy:
 
     def relu(self):
         return self._recorder.record_unary("relu", self)
+
+    def detach(self):
+        return self._recorder.record_unary("detach", self)
 
     def __neg__(self):
         return self.neg()
@@ -911,7 +930,7 @@ class CompileTraceRecorder:
             _unsupported_operation(f"Tensor.{target}")
         self._require_owned_proxy(input)
         name = self._next_operation_name(target)
-        metadata = _unary_output_metadata(input.metadata)
+        metadata = _unary_output_metadata(input.metadata, target)
         operation = CompileTraceOperation(
             name=name,
             op="call_method",
