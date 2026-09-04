@@ -10374,6 +10374,44 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 96
       }
+    },
+    {
+      "key": "base:af8eeb93cf642528a0ccdb57420c2f6561dedff3",
+      "commit": "af8eeb93cf642528a0ccdb57420c2f6561dedff3",
+      "recordedAt": "2026-09-04T18:13:12.468Z",
+      "label": "base af8eeb9",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 95,
+        "eval_39340456": 35,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 82,
+        "eval_a61c0e71": 38,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 96
+      }
+    },
+    {
+      "key": "pr:1844",
+      "recordedAt": "2026-09-04T18:13:12.468Z",
+      "label": "PR #1844",
+      "kind": "leaf",
+      "prNumber": 1844,
+      "title": "Compile detach alias graphlet",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 95,
+        "eval_39340456": 35,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 83,
+        "eval_a61c0e71": 46,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 96
+      }
     }
   ]
 }

@@ -239,7 +239,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
 
         self.assertIn("duplicate case name 'tensor_0'", str(raised.exception))
 
-    def test_current_v6_corpus_matches_pinned_manifest(self):
+    def test_current_v7_corpus_matches_pinned_manifest(self):
         evaluator._validate_corpus_metadata(_real_corpus_namespace())
 
     def test_pinned_manifest_rejects_case_program_replacement(self):
@@ -254,7 +254,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v6 case cpu_float32_unary_abs_neg program changed",
+            "public v7 case cpu_float32_unary_abs_neg program changed",
             str(raised.exception),
         )
 
@@ -270,7 +270,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v6 case cpu_float32_unary_abs_neg make_inputs changed",
+            "public v7 case cpu_float32_unary_abs_neg make_inputs changed",
             str(raised.exception),
         )
 
@@ -302,7 +302,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v6 guard scenario "
+            "public v7 guard scenario "
             "unary_shape_stride_requires_grad_guards/same_metadata "
             "guard_change changed",
             str(raised.exception),
