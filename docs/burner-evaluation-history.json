@@ -10355,6 +10355,25 @@
         "eval_6f98c42d": 0,
         "eval_d4c0b71e": 96
       }
+    },
+    {
+      "key": "pr:1842",
+      "recordedAt": "2026-09-04T15:59:41.823Z",
+      "label": "PR #1842",
+      "kind": "leaf",
+      "prNumber": 1842,
+      "title": "Fast dense transposed subtract",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 95,
+        "eval_39340456": 35,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 82,
+        "eval_a61c0e71": 38,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 96
+      }
     }
   ]
 }
