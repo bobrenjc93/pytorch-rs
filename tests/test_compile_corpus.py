@@ -2171,13 +2171,14 @@ class CompileCorpusTraceTests(unittest.TestCase):
                         name=program.__name__,
                     )
 
-    def test_bytecode_lowerer_accepts_cpython_314_borrowed_local_loads(self):
+    def test_bytecode_lowerer_accepts_cpython_314_markers_and_borrowed_loads(self):
         def program(x):
             raise AssertionError("synthetic bytecode test must not run")
 
         input = torch.tensor([[-3.0, 0.0, 4.5]], dtype=torch.float32)
         instructions = (
             self.bytecode_instruction("RESUME"),
+            self.bytecode_instruction("NOT_TAKEN"),
             self.bytecode_instruction("LOAD_FAST_BORROW", "x", "x"),
             self.bytecode_instruction("LOAD_ATTR", "neg", "NULL|self + neg", 1),
             self.bytecode_instruction("CALL", arg=0),
