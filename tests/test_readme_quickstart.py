@@ -451,7 +451,12 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "backend default/name resolution through the `torch.compiler` registry",
     "native `backend=\"eager\", fullgraph=True` execution",
     "straight-line one- or two-input CPU `float32` Tensor functions",
-    "Tensor `neg`, `abs`, `relu`, `square`, `detach`, and binary `add`",
+    "Tensor `neg`, `abs`, `relu`, `square`, `detach`, "
+    "zero-argument `float`, and binary `add`",
+    "module-global exact native CPU `float32` Tensor constants",
+    "captured-global identity/metadata recompilation",
+    "`Tensor.float()` identity graphlets that preserve values, shape, stride, "
+    "storage offset, device, dtype, and `requires_grad`",
     "storage-aliasing detach graphlets with `requires_grad=False` outputs",
     "square decomposition graphlets",
     "Tensor broadcasting",

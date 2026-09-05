@@ -1,17 +1,23 @@
 import importlib
+import importlib.machinery
 import importlib.util
 import json
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
+import textwrap
 import unittest
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 EVALUATOR_SCRIPT = REPOSITORY_ROOT / "scripts" / "evaluate_torch_compile_coverage.py"
+VERIFIER_SCRIPT = REPOSITORY_ROOT / ".github" / "scripts" / "verify_native_extension.py"
 
 spec = importlib.util.spec_from_file_location(
     "_torch_compile_coverage_evaluator_for_tests",
@@ -63,6 +69,16 @@ def _scenario(name, case_name):
         case_name=case_name,
         steps=(_step("base", "initial", 1),),
     )
+
+
+def _write_executable(path, contents):
+    if contents.startswith("#!"):
+        shebang, _, body = contents.partition("\n")
+        contents = shebang + "\n" + textwrap.dedent(body)
+    else:
+        contents = textwrap.dedent(contents).lstrip()
+    path.write_text(contents, encoding="utf-8")
+    path.chmod(0o755)
 
 
 class _FakeTensor:
@@ -143,12 +159,14 @@ def _valid_fake_corpus():
             for index in range(2)
         ),
         _case("guard_limit", "recompilation_guards", recompile_limit=2),
+        _case("custom_public", "custom_functions"),
     )
     held_out_cases = (
         _case("heldout_broadcast_0", "broadcasting"),
         _case("heldout_broadcast_1", "broadcasting"),
         _case("heldout_guard_0", "recompilation_guards", recompile_limit=4),
         _case("heldout_guard_1", "recompilation_guards", recompile_limit=4),
+        _case("heldout_custom", "custom_functions"),
     )
     return SimpleNamespace(
         COMPILE_CORPUS_VERSION=evaluator.EXPECTED_CORPUS_VERSION,
@@ -239,7 +257,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
 
         self.assertIn("duplicate case name 'tensor_0'", str(raised.exception))
 
-    def test_current_v8_corpus_matches_pinned_manifest(self):
+    def test_current_v11_corpus_matches_pinned_manifest(self):
         evaluator._validate_corpus_metadata(_real_corpus_namespace())
 
     def test_pinned_manifest_rejects_case_program_replacement(self):
@@ -254,7 +272,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v8 case cpu_float32_unary_abs_neg program changed",
+            "public v11 case cpu_float32_unary_abs_neg program changed",
             str(raised.exception),
         )
 
@@ -270,7 +288,27 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v8 case cpu_float32_unary_abs_neg make_inputs changed",
+            "public v11 case cpu_float32_unary_abs_neg make_inputs changed",
+            str(raised.exception),
+        )
+
+    def test_pinned_manifest_rejects_custom_helper_replacement(self):
+        corpus = _real_corpus_namespace()
+        original_helper = corpus.cpu_float32_custom_helper_unary
+
+        def replacement_helper(x):
+            return x
+
+        program_globals = corpus.cpu_float32_custom_function_unary.__globals__
+        program_globals["cpu_float32_custom_helper_unary"] = replacement_helper
+        try:
+            with self.assertRaises(evaluator.EvaluationFatalError) as raised:
+                evaluator._validate_corpus_metadata(corpus)
+        finally:
+            program_globals["cpu_float32_custom_helper_unary"] = original_helper
+
+        self.assertIn(
+            "public v11 case cpu_float32_custom_function_unary helper_sha256s changed",
             str(raised.exception),
         )
 
@@ -302,7 +340,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v8 guard scenario "
+            "public v11 guard scenario "
             "unary_shape_stride_requires_grad_guards/same_metadata "
             "guard_change changed",
             str(raised.exception),
@@ -338,10 +376,13 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
     def test_guard_case_resolution_uses_pinned_constants_not_helper(self):
         corpus = _valid_fake_corpus()
         corpus.compile_corpus_case = lambda name: corpus.COMPILE_CORPUS[0]
+        guard_limit = next(
+            case for case in corpus.COMPILE_CORPUS if case.name == "guard_limit"
+        )
 
         self.assertIs(
             evaluator._case_by_name(corpus, "guard_limit"),
-            corpus.COMPILE_CORPUS[-1],
+            guard_limit,
         )
 
     def test_compile_execution_uses_pinned_fields_not_case_helper(self):
@@ -700,6 +741,454 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             "scripts/evaluate_torch_compile_coverage.py",
             wrapper.read_text(encoding="utf-8"),
         )
+
+    def test_native_extension_verifier_honors_virtualenv_override(self):
+        spec = importlib.util.spec_from_file_location(
+            "_torch_rs_native_extension_verifier_for_tests",
+            VERIFIER_SCRIPT,
+        )
+        verifier = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(verifier)
+
+        expected = REPOSITORY_ROOT / "target" / "custom-verify-venv"
+        previous = os.environ.get("TORCH_RS_VERIFY_VIRTUALENV")
+        try:
+            os.environ["TORCH_RS_VERIFY_VIRTUALENV"] = str(expected)
+            self.assertEqual(verifier.expected_virtualenv(), expected.resolve())
+        finally:
+            if previous is None:
+                os.environ.pop("TORCH_RS_VERIFY_VIRTUALENV", None)
+            else:
+                os.environ["TORCH_RS_VERIFY_VIRTUALENV"] = previous
+
+    def test_native_extension_verifier_uses_immutable_virtualenv_boundary(self):
+        spec = importlib.util.spec_from_file_location(
+            "_torch_rs_native_extension_verifier_boundary_for_tests",
+            VERIFIER_SCRIPT,
+        )
+        verifier = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(verifier)
+
+        fixture_parent = REPOSITORY_ROOT / "target"
+        fixture_parent.mkdir(exist_ok=True)
+        fixture_root = Path(
+            tempfile.mkdtemp(
+                prefix="torch-rs-verifier-boundary-",
+                dir=fixture_parent,
+            )
+        )
+        self.addCleanup(shutil.rmtree, fixture_root, ignore_errors=True)
+        expected_venv = fixture_root / "expected"
+        rogue_venv = fixture_root / "rogue"
+        package_directory = (
+            rogue_venv / "lib" / "python3.12" / "site-packages" / "torch_rs"
+        )
+        package_directory.mkdir(parents=True)
+        package_file = package_directory / "__init__.py"
+        package_file.write_text("__version__ = '0.1.0'\n", encoding="utf-8")
+        abi_suffixes = tuple(
+            suffix
+            for suffix in importlib.machinery.EXTENSION_SUFFIXES
+            if "abi3" in suffix
+        )
+        native_suffix = (
+            abi_suffixes or tuple(importlib.machinery.EXTENSION_SUFFIXES)
+        )[0]
+        native_file = package_directory / f"torch_rs{native_suffix}"
+        native_file.write_bytes(b"")
+
+        package = ModuleType("torch_rs")
+        package.__version__ = "0.1.0"
+        package.__spec__ = importlib.util.spec_from_file_location(
+            "torch_rs",
+            package_file,
+            submodule_search_locations=[str(package_directory)],
+        )
+        native = ModuleType("torch_rs.torch_rs")
+        native.__version__ = "0.1.0"
+        native_loader = importlib.machinery.ExtensionFileLoader(
+            "torch_rs.torch_rs",
+            str(native_file),
+        )
+        native.__spec__ = importlib.machinery.ModuleSpec(
+            "torch_rs.torch_rs",
+            native_loader,
+            origin=str(native_file),
+        )
+
+        original_prefix = sys.prefix
+        original_import_module = verifier.importlib.import_module
+        original_metadata_version = verifier.importlib.metadata.version
+        previous_override = os.environ.get("TORCH_RS_VERIFY_VIRTUALENV")
+
+        def fake_import_module(name):
+            if name == "torch_rs":
+                os.environ["TORCH_RS_VERIFY_VIRTUALENV"] = str(rogue_venv)
+                return package
+            if name == "torch_rs.torch_rs":
+                return native
+            return original_import_module(name)
+
+        try:
+            sys.prefix = str(expected_venv)
+            os.environ["TORCH_RS_VERIFY_VIRTUALENV"] = str(expected_venv)
+            verifier.importlib.import_module = fake_import_module
+            verifier.importlib.metadata.version = lambda name: "0.1.0"
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "torch_rs resolved outside the workspace virtualenv",
+            ):
+                verifier.verify()
+            self.assertEqual(os.environ["TORCH_RS_VERIFY_VIRTUALENV"], str(rogue_venv))
+        finally:
+            sys.prefix = original_prefix
+            verifier.importlib.import_module = original_import_module
+            verifier.importlib.metadata.version = original_metadata_version
+            if previous_override is None:
+                os.environ.pop("TORCH_RS_VERIFY_VIRTUALENV", None)
+            else:
+                os.environ["TORCH_RS_VERIFY_VIRTUALENV"] = previous_override
+
+    def _make_wrapper_fixture(self):
+        fixture_parent = REPOSITORY_ROOT / "target"
+        fixture_parent.mkdir(exist_ok=True)
+        fixture_root = Path(
+            tempfile.mkdtemp(
+                prefix="torch-compile-coverage-wrapper-",
+                dir=fixture_parent,
+            )
+        )
+        self.addCleanup(shutil.rmtree, fixture_root, ignore_errors=True)
+
+        repo = fixture_root / "repo"
+        scripts_dir = repo / "scripts"
+        verifier_dir = repo / ".github" / "scripts"
+        fake_bin = fixture_root / "bin"
+        scripts_dir.mkdir(parents=True)
+        verifier_dir.mkdir(parents=True)
+        fake_bin.mkdir()
+
+        shutil.copy2(
+            REPOSITORY_ROOT / "scripts" / "evaluate_torch_compile_coverage.sh",
+            scripts_dir / "evaluate_torch_compile_coverage.sh",
+        )
+        (scripts_dir / "evaluate_torch_compile_coverage.py").write_text(
+            textwrap.dedent(
+                """
+                import json
+                import os
+                import sys
+
+                with open(os.environ["FAKE_EVAL_LOG"], "a", encoding="utf-8") as log:
+                    log.write(
+                        "evaluate|"
+                        f"uv_project={os.environ.get('UV_PROJECT_ENVIRONMENT', '')}|"
+                        f"args={' '.join(sys.argv[1:])}\\n"
+                    )
+                print(json.dumps({"score": 0, "summary": "stub evaluator"}))
+                """
+            ).lstrip(),
+            encoding="utf-8",
+        )
+        (verifier_dir / "verify_native_extension.py").write_text(
+            textwrap.dedent(
+                """
+                import os
+                import sys
+
+                expected = os.environ.get("TORCH_RS_VERIFY_VIRTUALENV", "")
+                with open(os.environ["FAKE_EVAL_LOG"], "a", encoding="utf-8") as log:
+                    log.write(f"verify|expected={expected}\\n")
+                if not expected:
+                    print("missing TORCH_RS_VERIFY_VIRTUALENV", file=sys.stderr)
+                    raise SystemExit(1)
+                """
+            ).lstrip(),
+            encoding="utf-8",
+        )
+
+        _write_executable(
+            fake_bin / "flock",
+            f"""#!{sys.executable}
+            import fcntl
+            import sys
+
+            if len(sys.argv) != 2:
+                raise SystemExit(f"unexpected flock args: {{sys.argv[1:]!r}}")
+            fcntl.flock(int(sys.argv[1]), fcntl.LOCK_EX)
+            """,
+        )
+        _write_executable(
+            fake_bin / "uv",
+            f"""#!{sys.executable}
+            import os
+            import pathlib
+            import sys
+            import time
+
+            log_path = pathlib.Path(os.environ["FAKE_EVAL_LOG"])
+            active_path = pathlib.Path(os.environ["FAKE_EVAL_ACTIVE"])
+            repo = pathlib.Path(os.environ["FAKE_EVAL_REPO_ROOT"])
+            workspace_venv = repo / ".venv"
+            real_python = os.environ["FAKE_REAL_PYTHON"]
+            delay = float(os.environ.get("FAKE_EVAL_DELAY", "0"))
+            args = sys.argv[1:]
+
+
+            def log(message):
+                with log_path.open("a", encoding="utf-8") as log_file:
+                    log_file.write(
+                        f"{{message}}|pid={{os.getpid()}}|"
+                        f"uv_project={{os.environ.get('UV_PROJECT_ENVIRONMENT', '')}}|"
+                        f"argv={{' '.join(args)}}\\n"
+                    )
+
+
+            def reject_workspace_venv_path():
+                forbidden = str(workspace_venv)
+                values = [*args, os.environ.get("UV_PROJECT_ENVIRONMENT", "")]
+                if any(forbidden in value for value in values):
+                    log("workspace-venv")
+                    print(f"wrapper used repository .venv: {{forbidden}}", file=sys.stderr)
+                    raise SystemExit(88)
+
+
+            def guarded(name, callback):
+                reject_workspace_venv_path()
+                try:
+                    fd = os.open(active_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                except FileExistsError:
+                    log(f"overlap:{{name}}")
+                    print(f"concurrent setup detected in {{name}}", file=sys.stderr)
+                    raise SystemExit(86)
+                try:
+                    os.write(fd, str(os.getpid()).encode("ascii"))
+                    log(f"enter:{{name}}")
+                    if delay:
+                        time.sleep(delay)
+                    callback()
+                    log(f"exit:{{name}}")
+                finally:
+                    os.close(fd)
+                    try:
+                        active_path.unlink()
+                    except FileNotFoundError:
+                        pass
+
+
+            def write_python_shim(path):
+                path.write_text(
+                    "#!/usr/bin/env bash\\n"
+                    "{{\\n"
+                    "  printf 'python|pid=%s|uv_project=%s|args=' "
+                    "\\"$$\\" \\"${{UV_PROJECT_ENVIRONMENT-}}\\"\\n"
+                    "  printf '%q ' \\"$@\\"\\n"
+                    "  printf '\\\\n'\\n"
+                    "}} >> \\"$FAKE_EVAL_LOG\\"\\n"
+                    "exec \\"$FAKE_REAL_PYTHON\\" \\"$@\\"\\n",
+                    encoding="utf-8",
+                )
+                path.chmod(0o755)
+
+
+            def write_maturin_shim(path):
+                path.write_text(
+                    f"#!{{real_python}}\\n"
+                    "import os\\n"
+                    "import pathlib\\n"
+                    "import sys\\n"
+                    "import time\\n"
+                    "\\n"
+                    "log_path = pathlib.Path(os.environ['FAKE_EVAL_LOG'])\\n"
+                    "active_path = pathlib.Path(os.environ['FAKE_EVAL_ACTIVE'])\\n"
+                    "delay = float(os.environ.get('FAKE_EVAL_DELAY', '0'))\\n"
+                    "args = sys.argv[1:]\\n"
+                    "\\n"
+                    "def log(message):\\n"
+                    "    with log_path.open('a', encoding='utf-8') as log_file:\\n"
+                    "        log_file.write(\\n"
+                    "            f'{{message}}|pid={{os.getpid()}}|args={{\\\" \\\".join(args)}}\\\\n'\\n"
+                    "        )\\n"
+                    "\\n"
+                    "try:\\n"
+                    "    fd = os.open(active_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)\\n"
+                    "except FileExistsError:\\n"
+                    "    log('overlap:maturin-build')\\n"
+                    "    print('concurrent setup detected in maturin-build', file=sys.stderr)\\n"
+                    "    raise SystemExit(86)\\n"
+                    "try:\\n"
+                    "    os.write(fd, str(os.getpid()).encode('ascii'))\\n"
+                    "    log('enter:maturin-build')\\n"
+                    "    if delay:\\n"
+                    "        time.sleep(delay)\\n"
+                    "    out_dir = pathlib.Path(args[args.index('--out') + 1])\\n"
+                    "    out_dir.mkdir(parents=True, exist_ok=True)\\n"
+                    "    (out_dir / 'torch_rs-0.1.0-cp310-abi3-linux_x86_64.whl').write_text(\\n"
+                    "        'fake wheel', encoding='utf-8'\\n"
+                    "    )\\n"
+                    "    log('exit:maturin-build')\\n"
+                    "finally:\\n"
+                    "    os.close(fd)\\n"
+                    "    try:\\n"
+                    "        active_path.unlink()\\n"
+                    "    except FileNotFoundError:\\n"
+                    "        pass\\n",
+                    encoding="utf-8",
+                )
+                path.chmod(0o755)
+
+
+            command = next((arg for arg in args if arg in {{"venv", "sync", "pip"}}), None)
+            if command == "venv":
+                def create_venv():
+                    venv = pathlib.Path(args[-1])
+                    bin_dir = venv / "bin"
+                    bin_dir.mkdir(parents=True, exist_ok=True)
+                    write_python_shim(bin_dir / "python")
+                    write_maturin_shim(bin_dir / "maturin")
+
+                guarded("uv-venv", create_venv)
+            elif command == "sync":
+                guarded("uv-sync", lambda: None)
+            elif command == "pip":
+                def install_wheel():
+                    wheel = pathlib.Path(args[-1])
+                    if not wheel.exists():
+                        print(f"missing wheel {{wheel}}", file=sys.stderr)
+                        raise SystemExit(1)
+
+                guarded("uv-pip-install", install_wheel)
+            else:
+                print(f"unexpected uv args: {{args}}", file=sys.stderr)
+                raise SystemExit(2)
+            """,
+        )
+
+        log_path = fixture_root / "wrapper.log"
+        active_path = fixture_root / "setup.active"
+        env = os.environ.copy()
+        env.update(
+            {
+                "FAKE_EVAL_ACTIVE": str(active_path),
+                "FAKE_EVAL_DELAY": "0.15",
+                "FAKE_EVAL_LOG": str(log_path),
+                "FAKE_EVAL_REPO_ROOT": str(repo),
+                "FAKE_REAL_PYTHON": sys.executable,
+                "PATH": f"{fake_bin}{os.pathsep}{env.get('PATH', '')}",
+            }
+        )
+        return repo, env, log_path
+
+    def test_wrapper_uses_target_venv_when_workspace_venv_already_exists(self):
+        repo, env, log_path = self._make_wrapper_fixture()
+        workspace_venv = repo / ".venv"
+        workspace_venv.mkdir()
+        (workspace_venv / "reviewer-created").write_text(
+            "must not be touched",
+            encoding="utf-8",
+        )
+
+        completed = subprocess.run(
+            [
+                "bash",
+                str(repo / "scripts" / "evaluate_torch_compile_coverage.sh"),
+                "--subset",
+                "public",
+            ],
+            cwd=repo,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertEqual(json.loads(completed.stdout)["summary"], "stub evaluator")
+        self.assertTrue((workspace_venv / "reviewer-created").exists())
+        self.assertFalse((workspace_venv / "bin").exists())
+
+        dedicated_venv = repo / "target" / "torch-compile-coverage" / "venv"
+        self.assertTrue((dedicated_venv / "bin" / "python").exists())
+        log = log_path.read_text(encoding="utf-8")
+        self.assertNotIn(str(workspace_venv), log)
+        self.assertIn(f"uv_project={dedicated_venv}", log)
+        self.assertIn(f"verify|expected={dedicated_venv}", log)
+
+    def test_wrapper_ignores_abandoned_legacy_setup_lock_directory(self):
+        repo, env, log_path = self._make_wrapper_fixture()
+        legacy_lock = repo / "target" / "torch-compile-coverage" / "setup.lock"
+        legacy_lock.mkdir(parents=True)
+        (legacy_lock / "pid").write_text("999999", encoding="utf-8")
+
+        command = [
+            "bash",
+            str(repo / "scripts" / "evaluate_torch_compile_coverage.sh"),
+            "--subset",
+            "public",
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=repo,
+                env=env,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except subprocess.TimeoutExpired as error:
+            self.fail(f"wrapper hung on abandoned setup.lock directory: {error}")
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertEqual(json.loads(completed.stdout)["summary"], "stub evaluator")
+        self.assertTrue(legacy_lock.is_dir())
+        self.assertEqual(log_path.read_text(encoding="utf-8").count("evaluate|"), 1)
+
+    def test_wrapper_serializes_concurrent_setup_and_installation(self):
+        repo, env, log_path = self._make_wrapper_fixture()
+        command = [
+            "bash",
+            str(repo / "scripts" / "evaluate_torch_compile_coverage.sh"),
+            "--subset",
+            "public",
+        ]
+        processes = [
+            subprocess.Popen(
+                command,
+                cwd=repo,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            for _ in range(2)
+        ]
+
+        results = [process.communicate(timeout=60) for process in processes]
+        for index, process in enumerate(processes):
+            stdout, stderr = results[index]
+            self.assertEqual(
+                process.returncode,
+                0,
+                f"process {index} stdout:\n{stdout}\nstderr:\n{stderr}",
+            )
+            self.assertEqual(json.loads(stdout)["summary"], "stub evaluator")
+
+        log = log_path.read_text(encoding="utf-8")
+        self.assertNotIn("overlap:", log)
+        self.assertEqual(log.count("evaluate|"), 2)
 
     def test_burner_evaluation_config_is_command_backed(self):
         with (REPOSITORY_ROOT / ".burner" / "evaluations.json").open(

@@ -35,8 +35,11 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
 
         self.assertIn("7 inference", summary)
         self.assertIn("7 training-autograd", summary)
+        self.assertIn("7 python-control-flow", summary)
+        self.assertIn("7 modules-parameters-buffers", summary)
         self.assertIn("7 decomposition", summary)
         self.assertIn("7 mutation_aliasing_views", summary)
+        self.assertIn("7 dtype-device-transitions", summary)
         self.assertIn(
             "| `inference` | 6 | Supported and timed public cases: "
             "`cpu_float32_inference_relu_no_grad` |",
@@ -45,6 +48,16 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
         self.assertIn(
             "| `training_autograd` | 8 | Supported and timed public cases: "
             "`cpu_float32_training_unary_neg_abs_add` |",
+            summary,
+        )
+        self.assertIn(
+            "| `python_control_flow` | 8 | Supported and timed public cases: "
+            "`cpu_float32_requires_grad_branch_unary` |",
+            summary,
+        )
+        self.assertIn(
+            "| `modules_parameters_buffers` | 8 | Supported and timed public cases: "
+            "`cpu_float32_global_buffer_add` |",
             summary,
         )
         self.assertIn(
@@ -57,9 +70,17 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
             "`cpu_float32_decomposition_square_scalar` |",
             summary,
         )
+        self.assertIn(
+            "| `dtype_device_transitions` | 4 | Supported and timed public cases: "
+            "`cpu_float32_float_identity_view` |",
+            summary,
+        )
         self.assertNotIn("`training_autograd` | 8 | Zero credit", summary)
+        self.assertNotIn("`python_control_flow` | 8 | Zero credit", summary)
+        self.assertNotIn("`modules_parameters_buffers` | 8 | Zero credit", summary)
         self.assertNotIn("`mutation_aliasing_views` | 8 | Zero credit", summary)
         self.assertNotIn("`decompositions` | 6 | Zero credit", summary)
+        self.assertNotIn("`dtype_device_transitions` | 4 | Zero credit", summary)
 
     def test_raw_artifact_records_backward_validation_cases(self):
         report = benchmark_compile_cpu._load_artifact(
@@ -163,6 +184,84 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
                 (expected_input,),
                 cell_name="mutation_probe",
             )
+
+    def test_output_pytree_payloads_include_tensor_observables(self):
+        actual = (
+            torch.tensor([1.0, -2.0], dtype=torch.float32),
+            [torch.tensor([[3.0]], dtype=torch.float32, requires_grad=True)],
+        )
+        expected = (
+            torch.tensor([1.0, -2.0], dtype=torch.float32),
+            [torch.tensor([[3.0]], dtype=torch.float32, requires_grad=True)],
+        )
+
+        benchmark_compile_cpu._assert_outputs_match(
+            actual,
+            expected,
+            cell_name="pytree_output",
+        )
+        payload = benchmark_compile_cpu._materialized_output_payload(actual)
+        metadata = benchmark_compile_cpu._output_metadata(actual)
+
+        self.assertEqual(payload["container"], "tuple")
+        self.assertEqual(payload["elements"][1]["container"], "list")
+        self.assertEqual(metadata["container"], "tuple")
+        self.assertTrue(benchmark_compile_cpu._metadata_requires_grad(metadata))
+        self.assertIn(
+            "tuple[",
+            benchmark_compile_cpu._format_output_metadata(metadata),
+        )
+        self.assertEqual(
+            benchmark_compile_cpu._checksum_tensor(actual),
+            benchmark_compile_cpu._checksum_tensor(expected),
+        )
+
+    def test_variant_inputs_refresh_case_global_tensor_state(self):
+        corpus = benchmark_compile_cpu._load_compile_corpus_module()
+        if corpus.reference_torch is None:
+            self.skipTest("reference PyTorch is not installed")
+        case = corpus.compile_corpus_case("cpu_float32_global_buffer_add")
+        variant = next(
+            variant
+            for variant in benchmark_compile_cpu.INPUT_VARIANTS
+            if variant.name == "vector_17"
+        )
+
+        case.make_inputs(corpus.reference_torch)
+        self.assertIs(
+            type(corpus.CPU_FLOAT32_GLOBAL_BUFFER),
+            corpus.reference_torch.Tensor,
+        )
+
+        inputs = benchmark_compile_cpu._make_cell_inputs(corpus.torch, case, variant)
+        self.assertIs(type(corpus.CPU_FLOAT32_GLOBAL_BUFFER), corpus.torch.Tensor)
+        request = corpus._compile_bytecode.prepare_compile_cache_request(
+            case.program,
+            tuple(
+                corpus._compile_trace._metadata_from_native_tensor(input)
+                for input in inputs
+            ),
+        )
+        self.assertEqual(
+            [
+                dependency.global_name
+                for dependency in request.global_tensor_dependencies
+            ],
+            ["CPU_FLOAT32_GLOBAL_BUFFER"],
+        )
+
+    def test_validator_rejects_previous_corpus_version_artifact(self):
+        report = benchmark_compile_cpu._load_artifact(
+            benchmark_compile_cpu.DEFAULT_ARTIFACT_PATH,
+        )
+        stale = copy.deepcopy(report)
+        stale["environment"]["corpus_version"] = "torch_compile_corpus_v7"
+
+        with self.assertRaisesRegex(
+            AssertionError,
+            "environment corpus version mismatch",
+        ):
+            benchmark_compile_cpu._validate_expected_artifact_shape(stale)
 
     def test_validator_rejects_stale_pre_inference_artifact_shape(self):
         report = benchmark_compile_cpu._load_artifact(

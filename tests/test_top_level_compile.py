@@ -10,19 +10,76 @@ import unittest
 
 import torch_rs as torch
 from torch_rs import _compile_bytecode
+from torch_rs import _compile_trace
 from torch_rs import _compiler_state as _state
 
 
 UNSUPPORTED_MESSAGE = (
     "torch.compile(): only backend='eager', fullgraph=True straight-line "
-    "Tensor neg/abs/relu/square/detach/add functions with one or two positional exact "
-    "native CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
+    "Tensor neg/abs/relu/square/detach/float/add functions, plus one top-level "
+    "if over an input Tensor.requires_grad selecting from that same subset, "
+    "optionally inlining one exact same-module helper call and reading "
+    "module-global exact native CPU float32 Tensor constants, with one or two "
+    "positional exact native CPU float32 Tensor inputs and Tensor or tuple/list "
+    "Tensor-pytree outputs are supported; eager fallback, installed-PyTorch "
     "forwarding, callable backend invocation, CUDA compilation, and broader "
     "graph capture remain unsupported"
 )
 
 
 EAGER_COMPILE_MODEL_CALLS = []
+EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor(
+    [0.5, -1.5, 2.25],
+    dtype=torch.float32,
+)
+
+
+def eager_compile_inline_helper(value):
+    return value.neg().relu()
+
+
+def eager_compile_inline_abs_helper(value):
+    return value.abs()
+
+
+def eager_compile_inline_add_helper(value, other):
+    return value.abs().add(other.detach())
+
+
+def eager_compile_mutable_helper(value):
+    return value.neg()
+
+
+def eager_compile_mutable_helper_abs(value):
+    return value.abs()
+
+
+def eager_compile_helper_with_default(value, other=None):
+    del other
+    return value.neg()
+
+
+def eager_compile_helper_with_kwargs(value, **kwargs):
+    del kwargs
+    return value.neg()
+
+
+def eager_compile_closure_helper_factory():
+    enabled = True
+
+    def helper(value):
+        if enabled:
+            return value.neg()
+        return value
+
+    return helper
+
+
+eager_compile_closure_helper = eager_compile_closure_helper_factory()
+
+
+def eager_compile_recursive_helper(value):
+    return eager_compile_recursive_helper(value)
 
 
 def eager_compile_global_side_effect(value):
@@ -87,6 +144,7 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertIn("``relu``", inspect.cleandoc(function.__doc__))
         self.assertIn("``square``", inspect.cleandoc(function.__doc__))
         self.assertIn("``detach``", inspect.cleandoc(function.__doc__))
+        self.assertIn("``float``", inspect.cleandoc(function.__doc__))
         self.assertIn("broader graph capture", inspect.cleandoc(function.__doc__))
 
         self.assertEqual(torch.__all__.count("compile"), 1)
@@ -294,6 +352,55 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertIs(actual.dtype, expected.dtype)
         self.assertEqual(actual.device, expected.device)
 
+    def test_eager_fullgraph_inlines_same_module_helper_without_running_user_code(self):
+        def program(x):
+            return eager_compile_inline_helper(x).add(x.abs())
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([[-2.0, 0.5, 3.0], [4.25, -5.5, 6.0]])
+        expected = program(input)
+        original_profile = sys.getprofile()
+        calls = {"program": 0, "helper": 0}
+
+        def count_user_calls(frame, event, arg):
+            if event == "call":
+                if frame.f_code is program.__code__:
+                    calls["program"] += 1
+                if frame.f_code is eager_compile_inline_helper.__code__:
+                    calls["helper"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_user_calls
+
+        try:
+            sys.setprofile(count_user_calls)
+            actual = compiled(input)
+        finally:
+            sys.setprofile(original_profile)
+
+        self.assertEqual(calls, {"program": 0, "helper": 0})
+        self.assertEqual(actual.tolist(), expected.tolist())
+        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+        self.assertEqual(actual.stride(), expected.stride())
+        self.assertIs(actual.dtype, expected.dtype)
+        self.assertEqual(actual.device, expected.device)
+
+    def test_eager_fullgraph_inlines_two_argument_helper_natively(self):
+        def program(x, y):
+            return eager_compile_inline_add_helper(x, y).relu()
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        left = torch.tensor([[-2.0, 0.5, 3.0], [4.25, -5.5, 6.0]])
+        right = torch.tensor([[1.0, -2.0, 0.25], [3.0, -4.0, 5.0]])
+        expected = program(left, right)
+        actual = compiled(left, right)
+
+        self.assertEqual(actual.tolist(), expected.tolist())
+        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+        self.assertEqual(actual.stride(), expected.stride())
+        self.assertIs(actual.dtype, expected.dtype)
+        self.assertEqual(actual.device, expected.device)
+
     def test_eager_fullgraph_executes_two_input_broadcasting_programs_natively(self):
         def matrix_vector(x, y):
             return x.neg().abs() + y.negative()
@@ -340,6 +447,338 @@ class TorchCompileEntrypointTests(unittest.TestCase):
                     if input.numel():
                         self.assertNotEqual(actual.data_ptr(), input.data_ptr())
 
+    def test_eager_fullgraph_executes_global_tensor_constants_natively(self):
+        global EAGER_COMPILE_GLOBAL_BUFFER
+
+        original_global = EAGER_COMPILE_GLOBAL_BUFFER
+        EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor(
+            [0.5, -1.5, 2.25],
+            dtype=torch.float32,
+        )
+        captured_global = EAGER_COMPILE_GLOBAL_BUFFER
+
+        def program(x):
+            return x.add(EAGER_COMPILE_GLOBAL_BUFFER.abs()).neg()
+
+        input = torch.tensor([1.0, -2.0, 3.5], dtype=torch.float32)
+        expected = program(input)
+        metadata = (_compile_trace._metadata_from_native_tensor(input),)
+        graph = _compile_bytecode.lower_compile_graph(
+            program,
+            metadata,
+            name="global_buffer",
+        )
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        calls = {"program": 0}
+        original_profile = sys.getprofile()
+
+        def count_program_calls(frame, event, arg):
+            if event == "call" and frame.f_code is program.__code__:
+                calls["program"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_program_calls
+
+        try:
+            sys.setprofile(count_program_calls)
+            actual = compiled(input)
+        finally:
+            sys.setprofile(original_profile)
+            EAGER_COMPILE_GLOBAL_BUFFER = original_global
+
+        self.assertEqual(calls, {"program": 0})
+        self.assertEqual([capture.name for capture in graph.captures], [
+            "global:EAGER_COMPILE_GLOBAL_BUFFER",
+        ])
+        self.assertIs(graph.captures[0].value, captured_global)
+        self.assertEqual(
+            [operation.target for operation in graph.operations],
+            ["abs", "add", "neg"],
+        )
+        self.assertEqual(
+            graph.operations[0].inputs,
+            ("global:EAGER_COMPILE_GLOBAL_BUFFER",),
+        )
+        self.assertEqual(graph.operations[1].inputs, ("x", "abs_0"))
+        self.assertEqual(actual.tolist(), expected.tolist())
+        self.assertEqual(captured_global.tolist(), [0.5, -1.5, 2.25])
+
+    def test_eager_fullgraph_cache_key_tracks_global_tensor_rebinding(self):
+        global EAGER_COMPILE_GLOBAL_BUFFER
+
+        def program(x):
+            return x + EAGER_COMPILE_GLOBAL_BUFFER
+
+        original_global = EAGER_COMPILE_GLOBAL_BUFFER
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            calls.append(compile_request.key)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([2.0, -3.0, 4.0], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor(
+                [1.0, 2.0, 3.0],
+                dtype=torch.float32,
+            )
+            metadata = (_compile_trace._metadata_from_native_tensor(input),)
+            request = _compile_bytecode.prepare_compile_cache_request(
+                program,
+                metadata,
+            )
+            (dependency,) = request.global_tensor_dependencies
+            self.assertEqual(dependency.global_name, "EAGER_COMPILE_GLOBAL_BUFFER")
+            self.assertEqual(dependency.tensor_identity, id(EAGER_COMPILE_GLOBAL_BUFFER))
+            self.assertEqual(dependency.metadata.shape, (3,))
+            self.assertEqual(dependency.metadata.stride, (1,))
+
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(len(calls), 1)
+
+            EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor(
+                [10.0, 20.0, 30.0],
+                dtype=torch.float32,
+            )
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(len(calls), 2)
+            self.assertNotEqual(calls[0], calls[1])
+
+            EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor(
+                [[1.0, 2.0, 3.0]],
+                dtype=torch.float32,
+            )
+            changed_request = _compile_bytecode.prepare_compile_cache_request(
+                program,
+                metadata,
+            )
+            (changed_dependency,) = changed_request.global_tensor_dependencies
+            self.assertEqual(changed_dependency.metadata.shape, (1, 3))
+            self.assertNotEqual(request.key, changed_request.key)
+        finally:
+            EAGER_COMPILE_GLOBAL_BUFFER = original_global
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_lowering_uses_global_tensor_cache_snapshot(self):
+        global EAGER_COMPILE_GLOBAL_BUFFER
+
+        def program(x):
+            return x + EAGER_COMPILE_GLOBAL_BUFFER
+
+        original_global = EAGER_COMPILE_GLOBAL_BUFFER
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor([1.0], dtype=torch.float32)
+
+        def rebinding_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            global EAGER_COMPILE_GLOBAL_BUFFER
+
+            EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor(
+                [10.0],
+                dtype=torch.float32,
+            )
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([2.0], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = rebinding_lower
+            self.assertEqual(compiled(input).tolist(), [3.0])
+        finally:
+            EAGER_COMPILE_GLOBAL_BUFFER = original_global
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_rejects_non_tensor_global_operands_safely(self):
+        global EAGER_COMPILE_GLOBAL_BUFFER
+
+        def program(x):
+            return x + EAGER_COMPILE_GLOBAL_BUFFER
+
+        original_global = EAGER_COMPILE_GLOBAL_BUFFER
+        EAGER_COMPILE_GLOBAL_BUFFER = 1.0
+        input = torch.tensor([2.0], dtype=torch.float32)
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        calls = {"program": 0}
+        original_profile = sys.getprofile()
+
+        def count_program_calls(frame, event, arg):
+            if event == "call" and frame.f_code is program.__code__:
+                calls["program"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_program_calls
+
+        try:
+            sys.setprofile(count_program_calls)
+            with self.assertRaisesRegex(NotImplementedError, "global or import access"):
+                compiled(input)
+        finally:
+            sys.setprofile(original_profile)
+            EAGER_COMPILE_GLOBAL_BUFFER = original_global
+
+        self.assertEqual(calls, {"program": 0})
+
+    def test_eager_fullgraph_executes_tuple_list_outputs_natively(self):
+        def program(x, y):
+            y_abs = y.abs()
+            z = x.neg().add(y_abs)
+            return (z, [y_abs, z.relu()])
+
+        matrix = torch.tensor(
+            [[-3.0, 0.5, 4.0], [2.25, -5.5, 6.75]],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        vector = torch.tensor([1.0, -2.0, 0.25], dtype=torch.float32)
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        expected = program(matrix, vector)
+        original_profile = sys.getprofile()
+        program_calls = {"count": 0}
+
+        def count_program_calls(frame, event, arg):
+            if event == "call" and frame.f_code is program.__code__:
+                program_calls["count"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_program_calls
+
+        try:
+            sys.setprofile(count_program_calls)
+            actual = compiled(matrix, vector)
+        finally:
+            sys.setprofile(original_profile)
+
+        self.assertEqual(program_calls["count"], 0)
+        self.assertIs(type(actual), tuple)
+        self.assertIs(type(actual[1]), list)
+        for actual_tensor, expected_tensor in (
+            (actual[0], expected[0]),
+            (actual[1][0], expected[1][0]),
+            (actual[1][1], expected[1][1]),
+        ):
+            self.assertEqual(actual_tensor.tolist(), expected_tensor.tolist())
+            self.assertEqual(tuple(actual_tensor.shape), tuple(expected_tensor.shape))
+            self.assertEqual(actual_tensor.stride(), expected_tensor.stride())
+            self.assertIs(actual_tensor.dtype, expected_tensor.dtype)
+            self.assertEqual(actual_tensor.device, expected_tensor.device)
+            self.assertEqual(
+                actual_tensor.requires_grad,
+                expected_tensor.requires_grad,
+            )
+
+    def test_eager_fullgraph_inlines_helper_for_tuple_list_outputs(self):
+        def program(x, y):
+            combined = eager_compile_inline_add_helper(x, y)
+            return (combined.relu(), [combined, y.neg()])
+
+        matrix = torch.tensor(
+            [[-3.0, 0.5, 4.0], [2.25, -5.5, 6.75]],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        vector = torch.tensor([1.0, -2.0, 0.25], dtype=torch.float32)
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        expected = program(matrix, vector)
+        original_profile = sys.getprofile()
+        calls = {"program": 0, "helper": 0}
+
+        def count_user_calls(frame, event, arg):
+            if event == "call":
+                if frame.f_code is program.__code__:
+                    calls["program"] += 1
+                if frame.f_code is eager_compile_inline_add_helper.__code__:
+                    calls["helper"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_user_calls
+
+        try:
+            sys.setprofile(count_user_calls)
+            actual = compiled(matrix, vector)
+        finally:
+            sys.setprofile(original_profile)
+
+        self.assertEqual(calls, {"program": 0, "helper": 0})
+        self.assertIs(type(actual), tuple)
+        self.assertIs(type(actual[1]), list)
+        for actual_tensor, expected_tensor in (
+            (actual[0], expected[0]),
+            (actual[1][0], expected[1][0]),
+            (actual[1][1], expected[1][1]),
+        ):
+            self.assertEqual(actual_tensor.tolist(), expected_tensor.tolist())
+            self.assertEqual(tuple(actual_tensor.shape), tuple(expected_tensor.shape))
+            self.assertEqual(actual_tensor.stride(), expected_tensor.stride())
+            self.assertIs(actual_tensor.dtype, expected_tensor.dtype)
+            self.assertEqual(actual_tensor.device, expected_tensor.device)
+            self.assertEqual(
+                actual_tensor.requires_grad,
+                expected_tensor.requires_grad,
+            )
+
+    def test_eager_fullgraph_preserves_output_container_aliasing(self):
+        def program(x):
+            y = [x.neg()]
+            return (y, y)
+
+        input = torch.tensor([1.0, -2.0], dtype=torch.float32)
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        expected = program(input)
+        original_profile = sys.getprofile()
+        program_calls = {"count": 0}
+
+        def count_program_calls(frame, event, arg):
+            if event == "call" and frame.f_code is program.__code__:
+                program_calls["count"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_program_calls
+
+        try:
+            sys.setprofile(count_program_calls)
+            actual = compiled(input)
+        finally:
+            sys.setprofile(original_profile)
+
+        self.assertEqual(program_calls["count"], 0)
+        self.assertIs(actual[0], actual[1])
+        self.assertIs(expected[0], expected[1])
+        self.assertEqual(actual[0][0].tolist(), expected[0][0].tolist())
+        self.assertEqual(tuple(actual[0][0].shape), tuple(expected[0][0].shape))
+        self.assertEqual(actual[0][0].stride(), expected[0][0].stride())
+        self.assertIs(actual[0][0].dtype, expected[0][0].dtype)
+        self.assertEqual(actual[0][0].device, expected[0][0].device)
+        self.assertEqual(actual[0][0].requires_grad, expected[0][0].requires_grad)
+
     def test_eager_fullgraph_caches_graphs_by_code_and_input_metadata(self):
         def program(x):
             return x.neg().abs() + x
@@ -347,9 +786,20 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         original_lower = _compile_bytecode.lower_one_input_compile_graph
         calls = []
 
-        def counting_lower(requested_program, input_metadata, *, name=None):
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             calls.append((requested_program, input_metadata, name))
-            return original_lower(requested_program, input_metadata, name=name)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(program, backend="eager", fullgraph=True)
         first = torch.tensor([[-2.0, 3.0], [4.0, -5.0]], dtype=torch.float32)
@@ -370,6 +820,197 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         finally:
             _compile_bytecode.lower_one_input_compile_graph = original_lower
 
+    def test_eager_fullgraph_cache_key_tracks_helper_global_rebinding(self):
+        global eager_compile_inline_helper
+
+        def program(x):
+            return eager_compile_inline_helper(x)
+
+        original_helper = eager_compile_inline_helper
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            calls.append((requested_program, input_metadata, name))
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([2.0], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(compiled(input).tolist(), [0.0])
+            self.assertEqual(len(calls), 1)
+
+            eager_compile_inline_helper = eager_compile_inline_abs_helper
+            self.assertEqual(program(input).tolist(), [2.0])
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(compiled(input).tolist(), [2.0])
+            self.assertEqual(len(calls), 2)
+        finally:
+            eager_compile_inline_helper = original_helper
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_cache_key_tracks_helper_code_mutation(self):
+        def program(x):
+            return eager_compile_mutable_helper(x)
+
+        original_code = eager_compile_mutable_helper.__code__
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            calls.append((requested_program, input_metadata, name))
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([2.0], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(compiled(input).tolist(), [-2.0])
+            self.assertEqual(len(calls), 1)
+
+            eager_compile_mutable_helper.__code__ = (
+                eager_compile_mutable_helper_abs.__code__
+            )
+            self.assertEqual(program(input).tolist(), [2.0])
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(compiled(input).tolist(), [2.0])
+            self.assertEqual(len(calls), 2)
+        finally:
+            eager_compile_mutable_helper.__code__ = original_code
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_lowering_uses_helper_binding_cache_snapshot(self):
+        global eager_compile_inline_helper
+
+        def program(x):
+            return eager_compile_inline_helper(x)
+
+        original_helper = eager_compile_inline_helper
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def rebinding_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            global eager_compile_inline_helper
+
+            calls.append((requested_program, input_metadata, name))
+            eager_compile_inline_helper = eager_compile_inline_abs_helper
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([2.0], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = rebinding_lower
+            self.assertEqual(compiled(input).tolist(), [0.0])
+            eager_compile_inline_helper = original_helper
+            self.assertEqual(compiled(input).tolist(), [0.0])
+            self.assertEqual(len(calls), 1)
+        finally:
+            eager_compile_inline_helper = original_helper
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_lowering_uses_helper_code_cache_snapshot(self):
+        def program(x):
+            return eager_compile_mutable_helper(x)
+
+        original_code = eager_compile_mutable_helper.__code__
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def mutating_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            calls.append((requested_program, input_metadata, name))
+            eager_compile_mutable_helper.__code__ = (
+                eager_compile_mutable_helper_abs.__code__
+            )
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([2.0], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = mutating_lower
+            self.assertEqual(compiled(input).tolist(), [-2.0])
+            eager_compile_mutable_helper.__code__ = original_code
+            self.assertEqual(compiled(input).tolist(), [-2.0])
+            self.assertEqual(len(calls), 1)
+        finally:
+            eager_compile_mutable_helper.__code__ = original_code
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_cached_no_helper_calls_do_not_rescan_bytecode(self):
+        def program(x):
+            return x.neg().abs() + x
+
+        original_get_instructions = _compile_bytecode._dis.get_instructions
+        scans = []
+
+        def counting_get_instructions(target, *args, **kwargs):
+            scans.append(target)
+            return original_get_instructions(target, *args, **kwargs)
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        first = torch.tensor([[-2.0, 3.0], [4.0, -5.0]], dtype=torch.float32)
+        second = torch.tensor([[1.0, -1.5], [2.5, -3.0]], dtype=torch.float32)
+
+        try:
+            _compile_bytecode._dis.get_instructions = counting_get_instructions
+            self.assertEqual(compiled(first).tolist(), program(first).tolist())
+            scan_count = len(scans)
+            self.assertGreater(scan_count, 0)
+            self.assertEqual(compiled(second).tolist(), program(second).tolist())
+            self.assertEqual(len(scans), scan_count)
+        finally:
+            _compile_bytecode._dis.get_instructions = original_get_instructions
+
     def test_eager_fullgraph_caches_two_input_graphs_by_all_input_metadata(self):
         def program(x, y):
             return x + y.abs()
@@ -377,9 +1018,20 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         original_lower = _compile_bytecode.lower_compile_graph
         calls = []
 
-        def counting_lower(requested_program, input_metadatas, *, name=None):
+        def counting_lower(
+            requested_program,
+            input_metadatas,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             calls.append((requested_program, input_metadatas, name))
-            return original_lower(requested_program, input_metadatas, name=name)
+            return original_lower(
+                requested_program,
+                input_metadatas,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(program, backend="eager", fullgraph=True)
         matrix = torch.tensor(
@@ -441,6 +1093,218 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         finally:
             _compile_bytecode.lower_compile_graph = original_lower
 
+    def test_eager_fullgraph_requires_grad_branch_uses_metadata_cache(self):
+        def program(x):
+            if x.requires_grad:
+                return x.neg().abs()
+            else:
+                return x.relu().add(x)
+
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        lowered = []
+
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            graph = original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+            lowered.append(
+                (
+                    requested_program,
+                    input_metadata.requires_grad,
+                    [operation.target for operation in graph.operations],
+                )
+            )
+            return graph
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        no_grad_input = torch.tensor([-2.0, 0.0, 3.0], dtype=torch.float32)
+        same_metadata_input = torch.tensor([1.5, -4.0, 2.25], dtype=torch.float32)
+        requires_grad_input = torch.tensor(
+            [-2.0, 0.0, 3.0],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        same_requires_grad_input = torch.tensor(
+            [1.5, -4.0, 2.25],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        inputs = (
+            no_grad_input,
+            same_metadata_input,
+            requires_grad_input,
+            same_requires_grad_input,
+        )
+        expected_outputs = tuple(program(input) for input in inputs)
+        calls = {"program": 0}
+        original_profile = sys.getprofile()
+
+        def count_program_calls(frame, event, arg):
+            if event == "call" and frame.f_code is program.__code__:
+                calls["program"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_program_calls
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            sys.setprofile(count_program_calls)
+            for input, expected in zip(inputs, expected_outputs):
+                with self.subTest(requires_grad=input.requires_grad):
+                    actual = compiled(input)
+                    self.assertEqual(actual.tolist(), expected.tolist())
+                    self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+                    self.assertEqual(actual.stride(), expected.stride())
+                    self.assertIs(actual.dtype, expected.dtype)
+                    self.assertEqual(actual.device, expected.device)
+                    self.assertEqual(actual.requires_grad, expected.requires_grad)
+        finally:
+            sys.setprofile(original_profile)
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+        self.assertEqual(calls, {"program": 0})
+        self.assertEqual(
+            [(requires_grad, targets) for _, requires_grad, targets in lowered],
+            [
+                (False, ["relu", "add"]),
+                (True, ["neg", "abs"]),
+            ],
+        )
+        self.assertTrue(all(call_program is program for call_program, _, _ in lowered))
+
+    def test_eager_fullgraph_inactive_branch_helper_rebinding_does_not_recompile(self):
+        global eager_compile_mutable_helper
+
+        def program(x):
+            if x.requires_grad:
+                return eager_compile_mutable_helper(x)
+            else:
+                return x.abs()
+
+        original_helper = eager_compile_mutable_helper
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            calls.append(compile_request.key)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+
+        compiled = torch.compile(
+            program,
+            backend="eager",
+            fullgraph=True,
+            recompile_limit=1,
+        )
+        input = torch.tensor([-2.0, 3.0], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(len(calls), 1)
+
+            eager_compile_mutable_helper = eager_compile_mutable_helper_abs
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(len(calls), 1)
+        finally:
+            eager_compile_mutable_helper = original_helper
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_inactive_branch_global_tensor_rebinding_does_not_recompile(self):
+        global EAGER_COMPILE_GLOBAL_BUFFER
+
+        def program(x):
+            if x.requires_grad:
+                return x + EAGER_COMPILE_GLOBAL_BUFFER
+            else:
+                return x.abs()
+
+        original_global = EAGER_COMPILE_GLOBAL_BUFFER
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            calls.append(compile_request.key)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+
+        compiled = torch.compile(
+            program,
+            backend="eager",
+            fullgraph=True,
+            recompile_limit=1,
+        )
+        input = torch.tensor([-2.0, 3.0], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor(
+                [1.0, 2.0],
+                dtype=torch.float32,
+            )
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(len(calls), 1)
+
+            EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor(
+                [10.0, 20.0],
+                dtype=torch.float32,
+            )
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(len(calls), 1)
+        finally:
+            EAGER_COMPILE_GLOBAL_BUFFER = original_global
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_requires_grad_branch_rejects_patched_descriptor(self):
+        def program(x):
+            if x.requires_grad:
+                return x.neg()
+            else:
+                return x.abs()
+
+        input = torch.tensor([2.0, -3.0], dtype=torch.float32, requires_grad=True)
+        original = torch.Tensor.__dict__["requires_grad"]
+        torch.Tensor.requires_grad = property(lambda self: False)
+        try:
+            self.assertEqual(program(input).tolist(), [2.0, 3.0])
+            compiled = torch.compile(program, backend="eager", fullgraph=True)
+            with self.assertRaisesRegex(
+                NotImplementedError,
+                "patched Tensor operation bindings: .*Tensor\\.requires_grad",
+            ):
+                compiled(input)
+        finally:
+            torch.Tensor.requires_grad = original
+
     def test_eager_fullgraph_recompile_limit_zero_rejects_first_graph(self):
         def program(x):
             return x.neg().abs()
@@ -448,9 +1312,20 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         original_lower = _compile_bytecode.lower_one_input_compile_graph
         calls = []
 
-        def counting_lower(requested_program, input_metadata, *, name=None):
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             calls.append((requested_program, input_metadata, name))
-            return original_lower(requested_program, input_metadata, name=name)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(
             program,
@@ -473,9 +1348,20 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         original_lower = _compile_bytecode.lower_one_input_compile_graph
         calls = []
 
-        def counting_lower(requested_program, input_metadata, *, name=None):
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             calls.append((requested_program, input_metadata, name))
-            return original_lower(requested_program, input_metadata, name=name)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(
             program,
@@ -517,7 +1403,13 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         second_lower_started = threading.Event()
         release_lowerers = threading.Event()
 
-        def blocking_lower(requested_program, input_metadata, *, name=None):
+        def blocking_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             with calls_lock:
                 calls.append((requested_program, input_metadata, name))
                 is_first_call = len(calls) == 1
@@ -526,7 +1418,12 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             else:
                 second_lower_started.set()
             release_lowerers.wait(5.0)
-            return original_lower(requested_program, input_metadata, name=name)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(
             program,
@@ -592,9 +1489,20 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         original_lower = _compile_bytecode.lower_one_input_compile_graph
         calls = []
 
-        def counting_lower(requested_program, input_metadata, *, name=None):
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             calls.append((requested_program, input_metadata, name))
-            return original_lower(requested_program, input_metadata, name=name)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(
             program,
@@ -628,9 +1536,20 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         original_lower = _compile_bytecode.lower_compile_graph
         calls = []
 
-        def counting_lower(requested_program, input_metadatas, *, name=None):
+        def counting_lower(
+            requested_program,
+            input_metadatas,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             calls.append((requested_program, input_metadatas, name))
-            return original_lower(requested_program, input_metadatas, name=name)
+            return original_lower(
+                requested_program,
+                input_metadatas,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(
             program,
@@ -748,6 +1667,9 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         def call_detach(value):
             return value.detach()
 
+        def call_float(value):
+            return value.float()
+
         def call_add(value):
             return value.add(value)
 
@@ -777,6 +1699,7 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             ("relu", lambda self: self + self, call_relu, [4.0]),
             ("square", lambda self: self + self, call_square, [4.0]),
             ("detach", lambda self: self + self, call_detach, [4.0]),
+            ("float", lambda self: self + self, call_float, [4.0]),
             ("add", lambda self, other: self.neg(), call_add, [-2.0]),
             ("__add__", lambda self, other: self.neg(), call_dunder_add, [-2.0]),
             (
@@ -851,10 +1774,59 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         def global_call(value):
             return torch.abs(value)
 
+        def helper_global_side_effect(value):
+            return eager_compile_global_side_effect(value)
+
+        def helper_default(value):
+            return eager_compile_helper_with_default(value)
+
+        def helper_var_kwargs(value):
+            return eager_compile_helper_with_kwargs(value)
+
+        def helper_closure(value):
+            return eager_compile_closure_helper(value)
+
+        def helper_non_tensor_argument(value):
+            return eager_compile_inline_add_helper(value, 1.0)
+
+        def recursive_helper_call(value):
+            return eager_compile_recursive_helper(value)
+
+        def nested_helper_call(value):
+            return eager_compile_inline_helper(eager_compile_inline_helper(value))
+
         def control_flow(value):
             if value:
                 return value
             return value.neg()
+
+        def nested_requires_grad_branch(value):
+            if value.requires_grad:
+                if value.requires_grad:
+                    return value.neg()
+                else:
+                    return value.abs()
+            else:
+                return value.relu()
+
+        def requires_grad_comparison(value):
+            if value.requires_grad == True:
+                return value.neg()
+            else:
+                return value.abs()
+
+        def loop_in_requires_grad_branch(value):
+            if value.requires_grad:
+                for element in (value,):
+                    return element.neg()
+            else:
+                return value.abs()
+
+        def global_branch_condition(value):
+            if EAGER_COMPILE_MODEL_CALLS:
+                return value.neg()
+            else:
+                return value.abs()
 
         def exception_handling(value):
             try:
@@ -874,11 +1846,42 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             ("closure", closure_factory(), "closures"),
             ("global", global_call, "global or import access"),
             (
+                "helper global side effect",
+                helper_global_side_effect,
+                "global or import access",
+            ),
+            ("helper default", helper_default, "helper function defaults"),
+            (
+                "helper var kwargs",
+                helper_var_kwargs,
+                "one or two positional Tensor arguments",
+            ),
+            ("helper closure", helper_closure, "closures"),
+            (
+                "helper non tensor argument",
+                helper_non_tensor_argument,
+                "non-Tensor helper argument 1",
+            ),
+            (
+                "recursive helper",
+                recursive_helper_call,
+                "recursive helper function calls",
+            ),
+            (
+                "nested helper",
+                nested_helper_call,
+                "helper function calls",
+            ),
+            (
                 "global side effect",
                 eager_compile_global_side_effect,
                 "global or import access",
             ),
             ("control flow", control_flow, "control flow"),
+            ("nested requires_grad branch", nested_requires_grad_branch, "control flow"),
+            ("requires_grad comparison", requires_grad_comparison, "control flow"),
+            ("requires_grad loop", loop_in_requires_grad_branch, "control flow"),
+            ("global branch condition", global_branch_condition, "control flow"),
             ("exception handling", exception_handling, "exception handling"),
             ("mutation", mutation, "mutation"),
             ("unsupported method", unsupported_method, "Tensor.sqrt"),

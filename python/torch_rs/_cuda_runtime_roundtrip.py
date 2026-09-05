@@ -10,9 +10,9 @@ from __future__ import annotations
 import ctypes
 import hashlib
 import os
-import struct
 from typing import Any
 
+from . import _cuda_buffer
 from . import _cuda_driver_probe
 
 
@@ -21,30 +21,11 @@ DETERMINISTIC_VECTOR_VERSION = "float32_modulated_arange_v1"
 DEFAULT_ELEMENT_COUNT = 1024
 DEFAULT_ROUNDTRIP_CHECKSUM = "89c5ee9507c6f91487b4bad190da4a7f"
 
-_CUDA_MEMCPY_HOST_TO_DEVICE = 1
-_CUDA_MEMCPY_DEVICE_TO_HOST = 2
-_CUDA_UNAVAILABLE_ERRORS = {
-    "cudaErrorInsufficientDriver",
-    "cudaErrorNoDevice",
-}
-_CUDA_RUNTIME_SYMBOLS = (
-    "cudaGetDeviceCount",
-    "cudaSetDevice",
-    "cudaGetDevice",
-    "cudaMalloc",
-    "cudaMemcpy",
-    "cudaDeviceSynchronize",
-    "cudaFree",
-)
+_CUDA_UNAVAILABLE_ERRORS = _cuda_buffer.CUDA_UNAVAILABLE_ERRORS
 
 
 def _deterministic_float32_bytes(element_count: int) -> bytes:
-    values = [
-        ((index % 251) - 125) * 0.03125
-        + ((index * 17) % 19) * 0.0009765625
-        for index in range(element_count)
-    ]
-    return struct.pack(f"<{element_count}f", *values)
+    return _cuda_buffer.deterministic_float32_bytes(element_count)
 
 
 def _checksum_float32_bytes(payload: bytes, element_count: int) -> str:
@@ -60,14 +41,7 @@ def _runtime_call(
     function_name: str,
     *arguments: Any,
 ) -> dict[str, Any]:
-    function = getattr(runtime, function_name)
-    code = int(function(*arguments))
-    return {
-        "result": code,
-        "error_name": (
-            _cuda_driver_probe._runtime_error_name(runtime, code) if code else None
-        ),
-    }
+    return _cuda_buffer.runtime_call(runtime, function_name, *arguments)
 
 
 def _runtime_versions(
@@ -75,98 +49,11 @@ def _runtime_versions(
     library: str | None,
     load_error: str | None,
 ) -> dict[str, Any]:
-    result: dict[str, Any] = {
-        "library": library,
-        "loaded": runtime is not None,
-        "load_error": load_error,
-        "runtime_version": None,
-        "runtime_version_text": None,
-        "driver_version": None,
-        "driver_version_text": None,
-        "calls": {},
-    }
-    if runtime is None:
-        return result
-
-    try:
-        runtime.cudaRuntimeGetVersion.argtypes = [ctypes.POINTER(ctypes.c_int)]
-        runtime.cudaRuntimeGetVersion.restype = ctypes.c_int
-    except AttributeError:
-        result["calls"]["cudaRuntimeGetVersion"] = {
-            "result": None,
-            "error_name": "missing symbol",
-        }
-    else:
-        runtime_version = ctypes.c_int()
-        runtime_call = _runtime_call(
-            runtime,
-            "cudaRuntimeGetVersion",
-            ctypes.byref(runtime_version),
-        )
-        result["calls"]["cudaRuntimeGetVersion"] = runtime_call
-        if runtime_call["result"] == 0:
-            result["runtime_version"] = int(runtime_version.value)
-            result["runtime_version_text"] = _cuda_driver_probe._cuda_version_text(
-                int(runtime_version.value)
-            )
-
-    try:
-        runtime.cudaDriverGetVersion.argtypes = [ctypes.POINTER(ctypes.c_int)]
-        runtime.cudaDriverGetVersion.restype = ctypes.c_int
-    except AttributeError:
-        result["calls"]["cudaDriverGetVersion"] = {
-            "result": None,
-            "error_name": "missing symbol",
-        }
-    else:
-        driver_version = ctypes.c_int()
-        driver_call = _runtime_call(
-            runtime,
-            "cudaDriverGetVersion",
-            ctypes.byref(driver_version),
-        )
-        result["calls"]["cudaDriverGetVersion"] = driver_call
-        if driver_call["result"] == 0:
-            result["driver_version"] = int(driver_version.value)
-            result["driver_version_text"] = _cuda_driver_probe._cuda_version_text(
-                int(driver_version.value)
-            )
-
-    return result
+    return _cuda_buffer.runtime_versions(runtime, library, load_error)
 
 
 def _configure_runtime_symbols(runtime: ctypes.CDLL) -> list[str]:
-    missing: list[str] = []
-    for name in _CUDA_RUNTIME_SYMBOLS:
-        if not hasattr(runtime, name):
-            missing.append(name)
-
-    if missing:
-        return missing
-
-    runtime.cudaGetDeviceCount.argtypes = [ctypes.POINTER(ctypes.c_int)]
-    runtime.cudaGetDeviceCount.restype = ctypes.c_int
-    runtime.cudaSetDevice.argtypes = [ctypes.c_int]
-    runtime.cudaSetDevice.restype = ctypes.c_int
-    runtime.cudaGetDevice.argtypes = [ctypes.POINTER(ctypes.c_int)]
-    runtime.cudaGetDevice.restype = ctypes.c_int
-    runtime.cudaMalloc.argtypes = [
-        ctypes.POINTER(ctypes.c_void_p),
-        ctypes.c_size_t,
-    ]
-    runtime.cudaMalloc.restype = ctypes.c_int
-    runtime.cudaMemcpy.argtypes = [
-        ctypes.c_void_p,
-        ctypes.c_void_p,
-        ctypes.c_size_t,
-        ctypes.c_int,
-    ]
-    runtime.cudaMemcpy.restype = ctypes.c_int
-    runtime.cudaDeviceSynchronize.argtypes = []
-    runtime.cudaDeviceSynchronize.restype = ctypes.c_int
-    runtime.cudaFree.argtypes = [ctypes.c_void_p]
-    runtime.cudaFree.restype = ctypes.c_int
-    return []
+    return _cuda_buffer.configure_runtime_symbols(runtime)
 
 
 def _base_result(
@@ -175,6 +62,7 @@ def _base_result(
     byte_count: int,
     input_checksum: str,
     expected_checksum: str,
+    required_cuda_visible_devices: str | None,
     runtime: ctypes.CDLL | None,
     runtime_library: str | None,
     runtime_load_error: str | None,
@@ -185,14 +73,19 @@ def _base_result(
         "primitive": "torch_rs_private_cuda_runtime_float32_roundtrip_device0",
         "public_torch_cuda_api": False,
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
-        "required_cuda_visible_devices": "0",
-        "cuda_visible_devices_match": os.environ.get("CUDA_VISIBLE_DEVICES") == "0",
+        "required_cuda_visible_devices": required_cuda_visible_devices,
+        "cuda_visible_devices_match": (
+            required_cuda_visible_devices is None
+            or os.environ.get("CUDA_VISIBLE_DEVICES") == required_cuda_visible_devices
+        ),
         "status": "unavailable",
         "reason": None,
         "cpu_fallback": False,
         "device_type": None,
         "device_index": None,
         "dtype": "float32",
+        "buffer_schema_version": _cuda_buffer.BUFFER_SCHEMA_VERSION,
+        "buffer_metadata": None,
         "element_count": element_count,
         "byte_count": byte_count,
         "deterministic_vector_version": DETERMINISTIC_VECTOR_VERSION,
@@ -210,6 +103,8 @@ def _base_result(
 
 def roundtrip_float32_device0(
     element_count: int = DEFAULT_ELEMENT_COUNT,
+    *,
+    required_cuda_visible_devices: str | None = "0",
 ) -> dict[str, Any]:
     """Allocate device-0 CUDA memory, copy deterministic float32 bytes, and sync.
 
@@ -221,6 +116,11 @@ def roundtrip_float32_device0(
         raise TypeError("element_count must be int")
     if element_count <= 0:
         raise ValueError("element_count must be positive")
+    if (
+        required_cuda_visible_devices is not None
+        and type(required_cuda_visible_devices) is not str
+    ):
+        raise TypeError("required_cuda_visible_devices must be str or None")
 
     host_input_bytes = _deterministic_float32_bytes(element_count)
     byte_count = len(host_input_bytes)
@@ -237,12 +137,22 @@ def roundtrip_float32_device0(
         expected_checksum=DEFAULT_ROUNDTRIP_CHECKSUM
         if element_count == DEFAULT_ELEMENT_COUNT
         else input_checksum,
+        required_cuda_visible_devices=required_cuda_visible_devices,
         runtime=runtime,
         runtime_library=runtime_library,
         runtime_load_error=runtime_load_error,
         driver_probe=driver_probe,
     )
 
+    if (
+        required_cuda_visible_devices is not None
+        and os.environ.get("CUDA_VISIBLE_DEVICES") != required_cuda_visible_devices
+    ):
+        result["reason"] = (
+            "CUDA_VISIBLE_DEVICES="
+            f"{required_cuda_visible_devices} is required"
+        )
+        return result
     if runtime is None:
         result["reason"] = "CUDA runtime shared library was not loaded"
         return result
@@ -300,42 +210,29 @@ def roundtrip_float32_device0(
     result["device_type"] = "cuda"
     result["device_index"] = int(current_device.value)
 
-    device_pointer = ctypes.c_void_p()
-    malloc_call = _runtime_call(
+    device_buffer = _cuda_buffer.PrivateCudaFloat32Buffer(
         runtime,
-        "cudaMalloc",
-        ctypes.byref(device_pointer),
-        byte_count,
+        (element_count,),
+        name="roundtrip",
+        device_index=result["device_index"],
     )
-    malloc_call["byte_count"] = byte_count
-    result["calls"]["cudaMalloc"] = malloc_call
-    result["device_pointer_nonzero"] = bool(device_pointer.value)
-    if malloc_call["result"] != 0 or not device_pointer.value:
+    result["calls"]["cudaMalloc"] = device_buffer.malloc_call
+    result["device_pointer_nonzero"] = device_buffer.pointer_nonzero
+    result["buffer_metadata"] = device_buffer.metadata()
+    if not device_buffer.allocation_ok:
         result["status"] = "error"
         result["reason"] = "cudaMalloc failed"
         return result
 
-    host_input = ctypes.create_string_buffer(host_input_bytes, byte_count)
-    host_output = ctypes.create_string_buffer(byte_count)
-
     try:
-        h2d_call = _runtime_call(
-            runtime,
-            "cudaMemcpy",
-            device_pointer,
-            ctypes.c_void_p(ctypes.addressof(host_input)),
-            byte_count,
-            _CUDA_MEMCPY_HOST_TO_DEVICE,
-        )
-        h2d_call["kind"] = "cudaMemcpyHostToDevice"
-        h2d_call["byte_count"] = byte_count
+        h2d_call = device_buffer.copy_from_host(host_input_bytes)
         result["calls"]["cudaMemcpyHostToDevice"] = h2d_call
         if h2d_call["result"] != 0:
             result["status"] = "error"
             result["reason"] = "cudaMemcpy host-to-device failed"
             return result
 
-        sync_after_h2d = _runtime_call(runtime, "cudaDeviceSynchronize")
+        sync_after_h2d = device_buffer.synchronize()
         result["calls"]["cudaDeviceSynchronize_after_host_to_device"] = (
             sync_after_h2d
         )
@@ -344,36 +241,27 @@ def roundtrip_float32_device0(
             result["reason"] = "cudaDeviceSynchronize failed after host-to-device"
             return result
 
-        d2h_call = _runtime_call(
-            runtime,
-            "cudaMemcpy",
-            ctypes.c_void_p(ctypes.addressof(host_output)),
-            device_pointer,
-            byte_count,
-            _CUDA_MEMCPY_DEVICE_TO_HOST,
+        readback = device_buffer.checksum_readback(
+            lambda payload: _checksum_float32_bytes(payload, element_count),
         )
-        d2h_call["kind"] = "cudaMemcpyDeviceToHost"
-        d2h_call["byte_count"] = byte_count
+        d2h_call = readback.copy_call
         result["calls"]["cudaMemcpyDeviceToHost"] = d2h_call
         if d2h_call["result"] != 0:
             result["status"] = "error"
             result["reason"] = "cudaMemcpy device-to-host failed"
             return result
 
-        sync_after_d2h = _runtime_call(runtime, "cudaDeviceSynchronize")
+        sync_after_d2h = readback.sync_call
         result["calls"]["cudaDeviceSynchronize_after_device_to_host"] = (
             sync_after_d2h
         )
-        if sync_after_d2h["result"] != 0:
+        if sync_after_d2h is None or sync_after_d2h["result"] != 0:
             result["status"] = "error"
             result["reason"] = "cudaDeviceSynchronize failed after device-to-host"
             return result
 
-        host_output_bytes = ctypes.string_at(
-            ctypes.addressof(host_output),
-            byte_count,
-        )
-        output_checksum = _checksum_float32_bytes(host_output_bytes, element_count)
+        host_output_bytes = readback.payload
+        output_checksum = readback.checksum
         result["device_roundtrip_checksum"] = output_checksum
         result["checksum_match"] = (
             host_output_bytes == host_input_bytes
@@ -388,9 +276,14 @@ def roundtrip_float32_device0(
         result["reason"] = "roundtrip checksum verified"
         return result
     finally:
-        free_call = _runtime_call(runtime, "cudaFree", device_pointer)
-        result["calls"]["cudaFree"] = free_call
-        if result["status"] == "ok" and free_call["result"] != 0:
+        free_call = device_buffer.close()
+        if free_call is not None:
+            result["calls"]["cudaFree"] = free_call
+        if (
+            result["status"] == "ok"
+            and free_call is not None
+            and free_call["result"] != 0
+        ):
             result["status"] = "error"
             result["reason"] = "cudaFree failed after roundtrip"
 

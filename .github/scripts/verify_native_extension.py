@@ -4,6 +4,7 @@ import importlib
 import importlib.machinery
 import importlib.metadata
 import importlib.util
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -16,8 +17,14 @@ except ModuleNotFoundError:  # Python 3.10 support.
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE_VENV = (REPOSITORY_ROOT / ".venv").resolve()
 MODULE_NAMES = ("torch_rs", "torch_rs.torch_rs")
+
+
+def expected_virtualenv() -> Path:
+    override = os.environ.get("TORCH_RS_VERIFY_VIRTUALENV")
+    if override:
+        return Path(override).resolve()
+    return (REPOSITORY_ROOT / ".venv").resolve()
 
 
 def module_path(module: ModuleType) -> Path:
@@ -27,9 +34,13 @@ def module_path(module: ModuleType) -> Path:
     return Path(spec.origin).resolve(strict=True)
 
 
-def require_inside_virtualenv(name: str, path: Path) -> None:
+def require_inside_virtualenv(
+    name: str,
+    path: Path,
+    expected: Path,
+) -> None:
     try:
-        path.relative_to(WORKSPACE_VENV)
+        path.relative_to(expected)
     except ValueError as error:
         raise RuntimeError(
             f"{name} resolved outside the workspace virtualenv: {path}"
@@ -56,9 +67,10 @@ def print_resolved_paths(*, file: TextIO = sys.stdout) -> None:
 
 
 def verify() -> str:
-    if Path(sys.prefix).resolve() != WORKSPACE_VENV:
+    expected = expected_virtualenv()
+    if Path(sys.prefix).resolve() != expected:
         raise RuntimeError(
-            f"expected interpreter prefix {WORKSPACE_VENV}, "
+            f"expected interpreter prefix {expected}, "
             f"got {Path(sys.prefix).resolve()}"
         )
 
@@ -66,8 +78,8 @@ def verify() -> str:
     native = importlib.import_module("torch_rs.torch_rs")
     package_path = module_path(package)
     native_path = module_path(native)
-    require_inside_virtualenv("torch_rs", package_path)
-    require_inside_virtualenv("torch_rs.torch_rs", native_path)
+    require_inside_virtualenv("torch_rs", package_path, expected)
+    require_inside_virtualenv("torch_rs.torch_rs", native_path, expected)
 
     package_spec = package.__spec__
     if package_spec is None or package_spec.submodule_search_locations is None:

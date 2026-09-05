@@ -262,8 +262,12 @@ def set_default_device(device: "Device") -> None:
 
 _COMPILE_UNSUPPORTED_MESSAGE = (
     "torch.compile(): only backend='eager', fullgraph=True straight-line "
-    "Tensor neg/abs/relu/square/detach/add functions with one or two positional exact "
-    "native CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
+    "Tensor neg/abs/relu/square/detach/float/add functions, plus one top-level "
+    "if over an input Tensor.requires_grad selecting from that same subset, "
+    "optionally inlining one exact same-module helper call and reading "
+    "module-global exact native CPU float32 Tensor constants, with one or two "
+    "positional exact native CPU float32 Tensor inputs and Tensor or tuple/list "
+    "Tensor-pytree outputs are supported; eager fallback, installed-PyTorch "
     "forwarding, callable backend invocation, CUDA compilation, and broader "
     "graph capture remain unsupported"
 )
@@ -278,8 +282,10 @@ _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
     "absolute",
     "add",
     "detach",
+    "float",
     "neg",
     "negative",
+    "requires_grad",
     "relu",
     "square",
 )
@@ -453,8 +459,11 @@ def _native_eager_compile_implementation(model, name, recompile_limit):
     from . import _compiler_state as _compile_state
 
     cache = _compile_state.new_native_eager_compile_cache()
+    program_descriptor = None
 
     def compiled_model(*args, **kwargs):
+        nonlocal program_descriptor
+
         from . import _compile_bytecode as _compile_bytecode
         from . import _compile_trace as _compile_trace
         from . import overrides as _compile_overrides
@@ -488,9 +497,14 @@ def _native_eager_compile_implementation(model, name, recompile_limit):
         input_metadatas = tuple(
             _compile_trace._metadata_from_native_tensor(input) for input in args
         )
-        cache_key = (model.__code__, input_metadatas)
         with cache.lock:
-            graph = cache.graphs.get(cache_key)
+            compile_request = _compile_bytecode.prepare_compile_cache_request(
+                model,
+                input_metadatas,
+                program_descriptor,
+            )
+            program_descriptor = compile_request.descriptor
+            graph = cache.graphs.get(compile_request.key)
             if graph is None:
                 if len(cache.graphs) >= recompile_limit:
                     raise _compile_trace.CompileTraceUnsupportedError(
@@ -505,14 +519,16 @@ def _native_eager_compile_implementation(model, name, recompile_limit):
                         model,
                         input_metadatas[0],
                         name=graph_name,
+                        compile_request=compile_request,
                     )
                 else:
                     graph = _compile_bytecode.lower_compile_graph(
                         model,
                         input_metadatas,
                         name=graph_name,
+                        compile_request=compile_request,
                     )
-                cache.graphs[cache_key] = graph
+                cache.graphs[compile_request.key] = graph
         return _execute_native_eager_compile_graph(graph, args, _compile_trace)
 
     return compiled_model
@@ -608,8 +624,13 @@ def compile(
     pass-through, and backend resolution through ``torch.compiler``. It also
     lowers exact Python functions with one or two positional exact native CPU
     ``float32`` Tensor inputs made only from Tensor ``neg``, ``abs``,
-    ``relu``, ``square``, ``detach``, and binary ``add`` operations for
-    ``backend="eager"`` with ``fullgraph=True``.
+    ``relu``, ``square``, ``detach``, ``float``, binary ``add``, and one exact
+    same-module helper call over Tensor arguments for ``backend="eager"``
+    with ``fullgraph=True``. Those functions may read module-global exact
+    native CPU ``float32`` Tensor constants. They may also contain one
+    top-level ``if`` over an input Tensor's ``requires_grad`` metadata; the
+    native path lowers the selected branch and returns either a Tensor or a
+    tuple/list pytree with Tensor leaves.
     Eager fallback, installed-PyTorch forwarding, callable backend invocation,
     CUDA compilation, and broader graph capture remain unsupported.
     """
