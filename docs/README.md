@@ -36,6 +36,10 @@ gates.
 - [Rank-12 sum timings](rank12-sum-release-timings.md): Rank-12 `Tensor.sum` release evidence.
 - [Mean timings](tensor-mean-release-timings.md): Full-reduction `Tensor.mean` and `torch.mean` release evidence.
 
+### Creation
+
+- [Creation factory timings](creation-factory-release-timings.md): `torch.empty`, `torch.zeros`, and `torch.ones` eager CPU factory benchmark coverage.
+
 ### Elementwise ops
 
 - [Addition timings](tensor-add-release-timings.md): `+` and `Tensor.add` release evidence.

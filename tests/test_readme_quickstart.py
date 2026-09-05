@@ -39,6 +39,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-mean-release-timings.md",
     ),
     (
+        "`torch.empty`, `torch.zeros`, and `torch.ones` eager CPU factory timings",
+        "docs/creation-factory-release-timings.md",
+    ),
+    (
         "`+` and `Tensor.add` release timings",
         "docs/tensor-add-release-timings.md",
     ),
@@ -107,6 +111,10 @@ HISTORICAL_TIMING_GROUPS = (
             "docs/rank12-sum-release-timings.md",
             "docs/tensor-mean-release-timings.md",
         ),
+    ),
+    (
+        "Creation",
+        ("docs/creation-factory-release-timings.md",),
     ),
     (
         "Elementwise ops",

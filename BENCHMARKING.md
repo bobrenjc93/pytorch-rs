@@ -47,6 +47,26 @@ do not replace the benchmark policy or Burner-managed evaluation progress.
 - [Rank-12 `Tensor.sum` release timings](docs/rank12-sum-release-timings.md)
 - [`Tensor.mean` and `torch.mean` full-reduction release timings](docs/tensor-mean-release-timings.md)
 
+### Creation
+
+- [`torch.empty`, `torch.zeros`, and `torch.ones` eager CPU factory timings](docs/creation-factory-release-timings.md)
+
+Run the creation-factory driver from a release-built wheel install:
+
+```bash
+CUDA_VISIBLE_DEVICES= .venv/bin/python scripts/benchmark_creation_factories.py
+```
+
+The script requires PyTorch 2.13 and compares public eager CPU factory calls
+for `torch.empty`, `torch.zeros`, and `torch.ones` across scalar, zero-element,
+small, and large shapes. It uses identical warmup/sample counts, two reversed
+implementation-order passes, one CPU thread by default, and metadata
+materialization inside the timed loop. `torch.empty` element values remain
+unspecified by contract; the current safe `torch_rs` storage implementation
+zero-initializes its CPU float32 backing allocation, and the benchmark records
+that cost explicitly. Private CUDA driver/runtime probes are not part of this
+parity benchmark.
+
 ### Elementwise ops
 
 - [`+` and `Tensor.add` release timings](docs/tensor-add-release-timings.md)
