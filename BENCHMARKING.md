@@ -115,11 +115,15 @@ driver/runtime evidence, separate from the public `torch.cuda` compatibility
 API: device 0 metadata plus a float32 runtime allocation, host-to-device copy,
 device-to-host copy, synchronization, checksum roundtrip, and one compiled
 torch_rs-owned float32 pointwise kernel launch with synchronized output
-checksum verification. The current
-`torch_rs` CUDA compile cell is emitted as explicit `zero_credit_unsupported`:
-CPU tensors, `backend="eager"`, eager fallback, skipped execution, or
-forwarding to installed PyTorch are rejected as eligible CUDA compile evidence.
-The public CPU-build `torch.cuda` probe behavior remains unchanged.
+checksum verification. It also runs a private fused float32
+pointwise-plus-row-reduction kernel for the benchmark's `(1024, 1024)` H100
+workload shape using torch_rs-owned device buffers, then compares synchronized
+output metadata and checksums against the PyTorch CUDA compiled reference. The
+current `torch_rs` CUDA compile cell is emitted as explicit
+`zero_credit_unsupported`: CPU tensors, `backend="eager"`, eager fallback,
+skipped execution, or forwarding to installed PyTorch are rejected as eligible
+CUDA compile evidence. The public CPU-build `torch.cuda` probe behavior remains
+unchanged.
 
 ### Layout/view ops
 
