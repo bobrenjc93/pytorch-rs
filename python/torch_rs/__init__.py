@@ -633,9 +633,9 @@ def compile(
     ``float32`` Tensor constants. They may also contain one top-level ``if``
     over an input Tensor's ``requires_grad`` metadata; the native path lowers
     the selected branch and returns either a Tensor or a tuple/list pytree with
-    Tensor leaves. ``dynamic=True`` reuses a graph across same-rank shape and
-    stride changes while keeping dtype, device, and ``requires_grad``
-    specialized.
+    Tensor leaves. ``dynamic=True`` reuses a graph across same-rank shape
+    changes while keeping stride, dtype, device, and ``requires_grad``
+    specialized, matching the covered PyTorch eager-backend guards.
     Eager fallback, installed-PyTorch forwarding, callable backend invocation,
     CUDA compilation, and broader graph capture remain unsupported.
     """

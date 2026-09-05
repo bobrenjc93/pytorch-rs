@@ -2933,7 +2933,7 @@ class CompileCorpusTraceTests(unittest.TestCase):
         self.assertEqual(cache[cpu_key], "cpu")
         self.assertEqual(cache[cuda_key], "cuda")
 
-    def test_dynamic_compile_cache_key_ignores_shape_and_stride_values(self):
+    def test_dynamic_compile_cache_key_ignores_shapes_but_guards_strides(self):
         def program(x):
             return x.neg()
 
@@ -2982,7 +2982,7 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 dynamic=True,
             ),
         )
-        self.assertEqual(
+        self.assertNotEqual(
             dynamic_base_key,
             _compile_bytecode.compile_cache_key(
                 program,
@@ -3691,7 +3691,7 @@ class CompileCorpusTraceTests(unittest.TestCase):
         ):
             graph.forward(left, mismatched)
 
-    def test_dynamic_private_executor_accepts_shape_and_stride_variants(self):
+    def test_dynamic_private_executor_accepts_shapes_but_guards_strides(self):
         graph = _compile_trace.trace_one_input_compile_graph(
             cpu_float32_dynamic_true_shape_stride_unary,
             cpu_float32_dynamic_unary_inputs,
@@ -3703,7 +3703,6 @@ class CompileCorpusTraceTests(unittest.TestCase):
         for make_inputs in (
             cpu_float32_dynamic_unary_inputs,
             cpu_float32_dynamic_unary_shape_inputs,
-            cpu_float32_dynamic_unary_stride_inputs,
         ):
             with self.subTest(factory=make_inputs.__name__):
                 inputs = make_inputs(torch)
@@ -3715,6 +3714,13 @@ class CompileCorpusTraceTests(unittest.TestCase):
                     expected,
                     case=make_inputs.__name__,
                 )
+
+        stride_changed = cpu_float32_dynamic_unary_stride_inputs(torch)[0]
+        with self.assertRaisesRegex(
+            ValueError,
+            "metadata mismatch for 'arg0': stride expected",
+        ):
+            graph.forward(stride_changed)
 
         rank_changed = torch.tensor(
             [-1.25, 2.5, -3.75, 4.0, -5.5],
@@ -4504,6 +4510,7 @@ class CompileRecompilationGuardCorpusTests(unittest.TestCase):
                     )
                     self.assertIs(compiled._torch_rs_compile_dynamic, case.dynamic)
                     user_calls = {"count": 0}
+                    expected_cache_keys = set()
 
                     def count_program_calls(frame, event, arg):
                         if event == "call" and frame.f_code is case.program.__code__:
@@ -4515,6 +4522,16 @@ class CompileRecompilationGuardCorpusTests(unittest.TestCase):
                         start=1,
                     ):
                         inputs = make_inputs(torch)
+                        expected_cache_keys.add(
+                            _compile_bytecode.compile_cache_key(
+                                case.program,
+                                tuple(
+                                    _compile_trace._metadata_from_native_tensor(input)
+                                    for input in inputs
+                                ),
+                                dynamic=case.dynamic is True,
+                            )
+                        )
                         expected = run_compile_corpus_case(
                             torch,
                             case,
@@ -4539,7 +4556,7 @@ class CompileRecompilationGuardCorpusTests(unittest.TestCase):
                         )
                         self.assertEqual(
                             len(lower_calls),
-                            1 if case.dynamic is True else expected_count,
+                            len(expected_cache_keys),
                             msg=f"{case.name}/{expected_count}",
                         )
 

@@ -594,26 +594,21 @@ def _require_matching_metadata(
     *,
     value_name,
     check_requires_grad=True,
-    dynamic_shape_stride=False,
+    dynamic_shape=False,
 ):
     if actual == expected and check_requires_grad:
         return
 
     mismatches = []
-    fields = ["dtype", "device"]
-    if dynamic_shape_stride:
+    fields = ["stride", "dtype", "device"]
+    if dynamic_shape:
         if len(actual.shape) != len(expected.shape):
             mismatches.append(
                 f"shape rank expected {len(expected.shape)}, "
                 f"got {len(actual.shape)}"
             )
-        if len(actual.stride) != len(expected.stride):
-            mismatches.append(
-                f"stride rank expected {len(expected.stride)}, "
-                f"got {len(actual.stride)}"
-            )
     else:
-        fields = ["shape", "stride", *fields]
+        fields = ["shape", *fields]
     if check_requires_grad:
         fields.append("requires_grad")
     for field in fields:
@@ -919,7 +914,7 @@ def execute_compile_trace_graph(graph, *inputs):
             input_metadata,
             graph_input.metadata,
             value_name=graph_input.name,
-            dynamic_shape_stride=graph.dynamic,
+            dynamic_shape=graph.dynamic,
         )
         values[graph_input.name] = input
         metadata_values[graph_input.name] = input_metadata

@@ -820,7 +820,7 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         finally:
             _compile_bytecode.lower_one_input_compile_graph = original_lower
 
-    def test_eager_fullgraph_dynamic_true_reuses_shape_and_stride_variants(self):
+    def test_eager_fullgraph_dynamic_true_reuses_shapes_and_recompiles_strides(self):
         def program(x):
             y = x.neg().abs()
             return y.add(x.relu())
@@ -878,33 +878,36 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             dtype=torch.float32,
         )
         cases = (
-            first,
-            same_metadata,
-            same_rank_shape_changed,
-            stride_changed,
+            (first, 1),
+            (same_metadata, 1),
+            (same_rank_shape_changed, 1),
+            (stride_changed, 2),
         )
-        expected_outputs = tuple(program(input) for input in cases)
+        expected_outputs = tuple(program(input) for input, _ in cases)
         compiled = torch.compile(
             program,
             backend="eager",
             fullgraph=True,
             dynamic=True,
-            recompile_limit=1,
+            recompile_limit=2,
         )
 
         try:
             _compile_bytecode.lower_one_input_compile_graph = counting_lower
             sys.setprofile(count_program_calls)
-            for input, expected in zip(cases, expected_outputs):
+            for (input, expected_lower_count), expected in zip(
+                cases,
+                expected_outputs,
+            ):
                 actual = compiled(input)
                 self.assertEqual(actual.tolist(), expected.tolist())
                 self.assertEqual(tuple(actual.shape), tuple(expected.shape))
                 self.assertEqual(actual.stride(), expected.stride())
                 self.assertIs(actual.dtype, expected.dtype)
                 self.assertEqual(actual.device, expected.device)
-                self.assertEqual(len(lower_calls), 1)
+                self.assertEqual(len(lower_calls), expected_lower_count)
 
-            with self.assertRaisesRegex(NotImplementedError, "recompile_limit=1"):
+            with self.assertRaisesRegex(NotImplementedError, "recompile_limit=2"):
                 compiled(rank_changed)
         finally:
             sys.setprofile(original_profile)

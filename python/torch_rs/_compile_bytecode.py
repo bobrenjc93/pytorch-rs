@@ -545,6 +545,7 @@ def _dynamic_metadata_key(input_metadatas):
         (
             "dynamic_rank",
             len(input_metadata.shape),
+            input_metadata.stride,
             input_metadata.dtype,
             input_metadata.device,
             input_metadata.requires_grad,

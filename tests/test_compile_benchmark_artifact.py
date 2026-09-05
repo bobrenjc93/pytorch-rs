@@ -36,7 +36,6 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
         self.assertIn("7 inference", summary)
         self.assertIn("7 training-autograd", summary)
         self.assertIn("7 python-control-flow", summary)
-        self.assertIn("7 dynamic-shape", summary)
         self.assertIn("7 modules-parameters-buffers", summary)
         self.assertIn("7 decomposition", summary)
         self.assertIn("7 mutation_aliasing_views", summary)
@@ -54,11 +53,6 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
         self.assertIn(
             "| `python_control_flow` | 8 | Supported and timed public cases: "
             "`cpu_float32_requires_grad_branch_unary` |",
-            summary,
-        )
-        self.assertIn(
-            "| `dynamic_shapes_symbolics` | 8 | Supported and timed public cases: "
-            "`cpu_float32_dynamic_true_shape_stride_unary` |",
             summary,
         )
         self.assertIn(
@@ -83,7 +77,7 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
         )
         self.assertNotIn("`training_autograd` | 8 | Zero credit", summary)
         self.assertNotIn("`python_control_flow` | 8 | Zero credit", summary)
-        self.assertNotIn("`dynamic_shapes_symbolics` | 8 | Zero credit", summary)
+        self.assertIn("`dynamic_shapes_symbolics` | 8 | Zero credit", summary)
         self.assertNotIn("`modules_parameters_buffers` | 8 | Zero credit", summary)
         self.assertNotIn("`mutation_aliasing_views` | 8 | Zero credit", summary)
         self.assertNotIn("`decompositions` | 6 | Zero credit", summary)
