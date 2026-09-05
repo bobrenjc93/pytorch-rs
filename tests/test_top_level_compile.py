@@ -16,10 +16,10 @@ from torch_rs import _compiler_state as _state
 UNSUPPORTED_MESSAGE = (
     "torch.compile(): only backend='eager', fullgraph=True straight-line "
     "Tensor neg/abs/relu/square/detach/add functions, optionally inlining one "
-    "exact same-module helper call, with one or two positional exact "
-    "native CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
-    "forwarding, callable backend invocation, CUDA compilation, and broader "
-    "graph capture remain unsupported"
+    "exact same-module helper call, with one or two positional exact native CPU "
+    "float32 Tensor inputs and Tensor or tuple/list Tensor-pytree outputs are "
+    "supported; eager fallback, installed-PyTorch forwarding, callable backend "
+    "invocation, CUDA compilation, and broader graph capture remain unsupported"
 )
 
 
@@ -470,6 +470,57 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             sys.setprofile(original_profile)
 
         self.assertEqual(program_calls["count"], 0)
+        self.assertIs(type(actual), tuple)
+        self.assertIs(type(actual[1]), list)
+        for actual_tensor, expected_tensor in (
+            (actual[0], expected[0]),
+            (actual[1][0], expected[1][0]),
+            (actual[1][1], expected[1][1]),
+        ):
+            self.assertEqual(actual_tensor.tolist(), expected_tensor.tolist())
+            self.assertEqual(tuple(actual_tensor.shape), tuple(expected_tensor.shape))
+            self.assertEqual(actual_tensor.stride(), expected_tensor.stride())
+            self.assertIs(actual_tensor.dtype, expected_tensor.dtype)
+            self.assertEqual(actual_tensor.device, expected_tensor.device)
+            self.assertEqual(
+                actual_tensor.requires_grad,
+                expected_tensor.requires_grad,
+            )
+
+    def test_eager_fullgraph_inlines_helper_for_tuple_list_outputs(self):
+        def program(x, y):
+            combined = eager_compile_inline_add_helper(x, y)
+            return (combined.relu(), [combined, y.neg()])
+
+        matrix = torch.tensor(
+            [[-3.0, 0.5, 4.0], [2.25, -5.5, 6.75]],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        vector = torch.tensor([1.0, -2.0, 0.25], dtype=torch.float32)
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        expected = program(matrix, vector)
+        original_profile = sys.getprofile()
+        calls = {"program": 0, "helper": 0}
+
+        def count_user_calls(frame, event, arg):
+            if event == "call":
+                if frame.f_code is program.__code__:
+                    calls["program"] += 1
+                if frame.f_code is eager_compile_inline_add_helper.__code__:
+                    calls["helper"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_user_calls
+
+        try:
+            sys.setprofile(count_user_calls)
+            actual = compiled(matrix, vector)
+        finally:
+            sys.setprofile(original_profile)
+
+        self.assertEqual(calls, {"program": 0, "helper": 0})
         self.assertIs(type(actual), tuple)
         self.assertIs(type(actual[1]), list)
         for actual_tensor, expected_tensor in (

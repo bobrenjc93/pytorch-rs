@@ -3325,10 +3325,10 @@ except NotImplementedError as error:
     assert str(error) == (
         "torch.compile(): only backend='eager', fullgraph=True straight-line "
         "Tensor neg/abs/relu/square/detach/add functions, optionally inlining one "
-        "exact same-module helper call, with one or two positional exact "
-        "native CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
-        "forwarding, callable backend invocation, CUDA compilation, and broader "
-        "graph capture remain unsupported"
+        "exact same-module helper call, with one or two positional exact native CPU "
+        "float32 Tensor inputs and Tensor or tuple/list Tensor-pytree outputs are "
+        "supported; eager fallback, installed-PyTorch forwarding, callable backend "
+        "invocation, CUDA compilation, and broader graph capture remain unsupported"
     )
 else:
     raise AssertionError("callable backend compile should remain non-executing")
