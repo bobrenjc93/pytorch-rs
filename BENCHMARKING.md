@@ -103,6 +103,9 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py
 To reserve a different physical GPU, mask exactly one device and pass the same
 literal value to `--required-cuda-visible-devices`; benchmark-private CUDA work
 still uses logical CUDA device 0 after masking.
+Passing an empty `--required-cuda-visible-devices` preserves the local
+experimentation escape hatch by skipping the literal environment check; CUDA
+work still runs on logical device 0 and records the visible-device count.
 
 The script requires PyTorch 2.13, records GPU, driver, CUDA runtime, `nvcc`,
 compile configuration, cold first-call timing, synchronized steady-state

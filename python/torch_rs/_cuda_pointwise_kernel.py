@@ -603,9 +603,6 @@ def launch_float32_pointwise_device0(
         result["reason"] = "no CUDA runtime devices are visible"
         return result
     result["single_visible_cuda_device"] = int(device_count.value) == 1
-    if required_cuda_visible_devices is None and device_count.value != 1:
-        result["reason"] = "exactly one CUDA runtime device must be visible"
-        return result
     if not nvcc["available"]:
         result["status"] = "error"
         result["reason"] = "nvcc was not found"

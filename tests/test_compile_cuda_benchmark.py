@@ -406,12 +406,21 @@ print(json.dumps({
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertIs(torch.cuda.is_initialized(), False)
 
-    def test_private_cuda_pointwise_kernel_accepts_benchmark_visibility_override(self):
-        probe = _reference_cuda_probe(cuda_visible_devices="1")
+    def test_private_cuda_pointwise_kernel_honors_caller_visibility_mask(self):
+        cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+        if not cuda_visible_devices:
+            self.skipTest("requires caller-provided CUDA_VISIBLE_DEVICES")
+        if "," in cuda_visible_devices:
+            self.skipTest("requires a single caller-visible CUDA device")
+
+        probe = _reference_cuda_probe(cuda_visible_devices=cuda_visible_devices)
         if not probe.get("imported"):
             self.skipTest("requires reference PyTorch")
         if not probe.get("available"):
-            self.skipTest("requires CUDA_VISIBLE_DEVICES=1 to expose a GPU")
+            self.skipTest(
+                f"requires CUDA_VISIBLE_DEVICES={cuda_visible_devices!r} "
+                "to expose a GPU"
+            )
         if "H100" not in probe.get("device_name", ""):
             self.skipTest(
                 f"requires an H100 CUDA device, got {probe['device_name']!r}"
@@ -433,7 +442,9 @@ assert spec.loader is not None
 sys.modules[spec.name] = benchmark
 spec.loader.exec_module(benchmark)
 
-pointwise = benchmark._torch_rs_private_cuda_pointwise_kernel("1")
+pointwise = benchmark._torch_rs_private_cuda_pointwise_kernel(
+    {cuda_visible_devices!r}
+)
 print(json.dumps({{
     "status": pointwise["status"],
     "reason": pointwise["reason"],
@@ -456,7 +467,7 @@ print(json.dumps({{
             [sys.executable, "-c", script],
             check=False,
             capture_output=True,
-            env={**os.environ, "CUDA_VISIBLE_DEVICES": "1"},
+            env={**os.environ, "CUDA_VISIBLE_DEVICES": cuda_visible_devices},
             text=True,
             timeout=120,
         )
@@ -473,8 +484,11 @@ print(json.dumps({{
             msg=json.dumps(pointwise, indent=2, sort_keys=True),
         )
         self.assertEqual(pointwise["reason"], "pointwise kernel checksum verified")
-        self.assertEqual(pointwise["cuda_visible_devices"], "1")
-        self.assertEqual(pointwise["required_cuda_visible_devices"], "1")
+        self.assertEqual(pointwise["cuda_visible_devices"], cuda_visible_devices)
+        self.assertEqual(
+            pointwise["required_cuda_visible_devices"],
+            cuda_visible_devices,
+        )
         self.assertIs(pointwise["cuda_visible_devices_match"], True)
         self.assertIs(pointwise["single_visible_cuda_device"], True)
         self.assertEqual(pointwise["device_type"], "cuda")
@@ -489,6 +503,46 @@ print(json.dumps({{
         self.assertIs(pointwise["public_cuda_is_available"], False)
         self.assertEqual(pointwise["public_cuda_device_count"], 0)
         self.assertIs(pointwise["public_cuda_is_initialized"], False)
+
+    def test_private_cuda_pointwise_kernel_empty_override_skips_env_string_check(self):
+        cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+        if not cuda_visible_devices:
+            self.skipTest("requires caller-provided CUDA_VISIBLE_DEVICES")
+
+        probe = _reference_cuda_probe(cuda_visible_devices=cuda_visible_devices)
+        if not probe.get("imported"):
+            self.skipTest("requires reference PyTorch")
+        if not probe.get("available"):
+            self.skipTest(
+                f"requires CUDA_VISIBLE_DEVICES={cuda_visible_devices!r} "
+                "to expose a GPU"
+            )
+        if "H100" not in probe.get("device_name", ""):
+            self.skipTest(
+                f"requires an H100 CUDA device, got {probe['device_name']!r}"
+            )
+
+        pointwise = _cuda_pointwise_kernel.launch_float32_pointwise_device0(
+            required_cuda_visible_devices=None,
+        )
+        self.assertEqual(
+            pointwise["status"],
+            "ok",
+            msg=json.dumps(pointwise, indent=2, sort_keys=True),
+        )
+        self.assertEqual(pointwise["cuda_visible_devices"], cuda_visible_devices)
+        self.assertIsNone(pointwise["required_cuda_visible_devices"])
+        self.assertIs(pointwise["cuda_visible_devices_match"], True)
+        self.assertEqual(pointwise["device_type"], "cuda")
+        self.assertEqual(pointwise["device_index"], 0)
+        self.assertEqual(
+            pointwise["device_output_checksum"],
+            _cuda_pointwise_kernel.DEFAULT_POINTWISE_CHECKSUM,
+        )
+        self.assertIs(pointwise["checksum_match"], True)
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
+        self.assertIs(torch.cuda.is_initialized(), False)
 
     def test_cpu_eager_compile_execution_is_not_eligible_cuda_evidence(self):
         def cpu_program(value):
