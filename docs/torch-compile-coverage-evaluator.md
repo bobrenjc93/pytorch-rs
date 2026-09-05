@@ -1,15 +1,15 @@
 # torch.compile Coverage Evaluator
 
-The deterministic compile-coverage evaluator runs the versioned v10
+The deterministic compile-coverage evaluator runs the versioned v11
 reference-eligible corpus against stock PyTorch 2.13 and the current
 `torch_rs` wheel. It fails closed on malformed corpus metadata,
 reference-import or compile failures, candidate import, compile, runtime, output
 or observable-semantic mismatches, opted-in backward-through-sum leaf-gradient
 mismatches, eager fallback, installed-PyTorch forwarding, unsupported candidate
 cases, skipped eligible cases, and invalid guard coverage. The evaluator pins
-the v10 category weights, case order, case callables, helper source hashes,
-input factories, input payload hashes, no-grad inference flags, and guard-step
-definitions before scoring.
+the v11 category weights, case order, case callables, helper source hashes,
+input factories, dynamic variant input factories, input payload hashes, no-grad
+inference flags, and guard-step definitions before scoring.
 
 Run the full Burner evaluator from the repository root:
 
@@ -35,10 +35,13 @@ bash scripts/evaluate_torch_compile_coverage.sh --subset public
 
 The public subset uses the same corpus metadata, reference eligibility checks,
 candidate execution checks, category weights, and scoring formula as the full
-gate, but omits held-out cases. The full gate includes held-out cases for every
-currently supported category, including dtype/device-transition `Tensor.float()`
-identity graphlets and `requires_grad` Python control-flow graphlets, and
-validates that the current v10 guard scenarios are present before scoring.
+gate, but omits held-out cases. Dynamic-shape cases run one compiled wrapper
+across distinct shape and stride inputs while the candidate worker checks native
+lowerer/executor counts and blocks installed PyTorch imports. The full gate
+includes held-out cases for every currently supported category, including
+dynamic-shape graphlets, dtype/device-transition `Tensor.float()` identity
+graphlets, and `requires_grad` Python control-flow graphlets, and validates
+that the current v11 guard scenarios are present before scoring.
 
 After the wheel and dependencies are already installed, the Python entry point
 can be run directly:

@@ -382,7 +382,7 @@ def _supports_native_eager_compile(
         _builtins.type(resolved_backend) is _builtins.str
         and resolved_backend == "eager"
         and fullgraph is True
-        and dynamic is None
+        and (dynamic is None or _builtins.type(dynamic) is _builtins.bool)
         and mode is None
         and options is None
         and isolate_recompiles is False
@@ -625,7 +625,8 @@ def compile(
     ``float32`` Tensor inputs made only from Tensor ``neg``, ``abs``,
     ``relu``, ``square``, ``detach``, ``float``, binary ``add``, and one exact
     same-module helper call over Tensor arguments for ``backend="eager"``
-    with ``fullgraph=True``. Those functions may contain one top-level
+    with ``fullgraph=True`` and ``dynamic`` set to ``None``, ``True``, or
+    ``False``. Those functions may contain one top-level
     ``if`` over an input Tensor's ``requires_grad`` metadata; the native path
     lowers the selected branch and returns either a Tensor or a tuple/list
     pytree with Tensor leaves.

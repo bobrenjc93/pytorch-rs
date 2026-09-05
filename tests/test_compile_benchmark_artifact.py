@@ -27,7 +27,7 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
             benchmark_compile_cpu.DEFAULT_MARKDOWN_REPORT_PATH,
         )
 
-    def test_rendered_summary_counts_inference_and_training_as_supported(self):
+    def test_rendered_summary_counts_supported_categories(self):
         report = benchmark_compile_cpu._load_artifact(
             benchmark_compile_cpu.DEFAULT_ARTIFACT_PATH,
         )
@@ -36,6 +36,7 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
         self.assertIn("7 inference", summary)
         self.assertIn("7 training-autograd", summary)
         self.assertIn("7 python-control-flow", summary)
+        self.assertIn("7 dynamic-shape", summary)
         self.assertIn("7 decomposition", summary)
         self.assertIn("7 mutation_aliasing_views", summary)
         self.assertIn("7 dtype-device-transitions", summary)
@@ -55,6 +56,11 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
             summary,
         )
         self.assertIn(
+            "| `dynamic_shapes_symbolics` | 8 | Supported and timed public cases: "
+            "`cpu_float32_dynamic_true_shape_stride_unary` |",
+            summary,
+        )
+        self.assertIn(
             "| `mutation_aliasing_views` | 8 | Supported and timed public cases: "
             "`cpu_float32_detach_alias_view` |",
             summary,
@@ -71,6 +77,7 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
         )
         self.assertNotIn("`training_autograd` | 8 | Zero credit", summary)
         self.assertNotIn("`python_control_flow` | 8 | Zero credit", summary)
+        self.assertNotIn("`dynamic_shapes_symbolics` | 8 | Zero credit", summary)
         self.assertNotIn("`mutation_aliasing_views` | 8 | Zero credit", summary)
         self.assertNotIn("`decompositions` | 6 | Zero credit", summary)
         self.assertNotIn("`dtype_device_transitions` | 4 | Zero credit", summary)
