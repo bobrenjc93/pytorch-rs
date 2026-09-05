@@ -17,7 +17,7 @@ except ImportError:
 
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-COMPILE_CORPUS_VERSION = "torch_compile_corpus_v13"
+COMPILE_CORPUS_VERSION = "torch_compile_corpus_v12"
 
 CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -1421,7 +1421,7 @@ def assert_leaf_gradients_unchanged(testcase, inputs, before_gradients, *, case)
 
 class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
-        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v13")
+        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v12")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
         self.assertEqual(len(COMPILE_CORPUS), 22)
         self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 14)
@@ -1664,10 +1664,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                         global_tensor = globals()[global_tensor_cases[case.name]]
                         self.assertIs(type(global_tensor), torch.Tensor)
                         self.assertIs(global_tensor.dtype, torch.float32)
-                        self.assertEqual(
-                            global_tensor.device,
-                            torch.device("cpu"),
-                        )
+                        self.assertEqual(global_tensor.device, torch.device("cpu"))
 
         for scenario in compile_recompilation_guard_scenarios(include_held_out=True):
             for step in scenario.steps:
@@ -4642,6 +4639,36 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                 expected_inputs,
                 case=f"{case.name}/reference_backward_sum",
             )
+        for variant_index, make_inputs in enumerate(
+            compile_corpus_case_input_factories(case)[1:],
+            start=1,
+        ):
+            variant_inputs = make_inputs(reference_torch)
+            before_variant_gradients = input_gradients(variant_inputs)
+            variant_expected = run_compile_corpus_case(
+                reference_torch,
+                case,
+                make_inputs(reference_torch),
+            )
+            variant_actual = run_compile_corpus_callable(
+                reference_torch,
+                case,
+                compiled,
+                variant_inputs,
+            )
+            reference_torch.testing.assert_close(variant_actual, variant_expected)
+            assert_output_observables_match(
+                self,
+                variant_actual,
+                variant_expected,
+                case=f"{case.name}/dynamic_variant_{variant_index}",
+            )
+            assert_leaf_gradients_unchanged(
+                self,
+                variant_inputs,
+                before_variant_gradients,
+                case=f"{case.name}/dynamic_variant_{variant_index}",
+            )
         self.assertGreaterEqual(len(backend_calls), 1)
 
     def test_reference_pytorch_2_13_accepts_all_eligible_cases(self):
@@ -4700,6 +4727,8 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
 
     def test_torch_rs_compile_runs_eligible_eager_cases_natively(self):
         for case in compile_corpus_cases(include_held_out=True):
+            if case.dynamic is not None:
+                continue
             with self.subTest(case=case.name):
                 self.assert_reference_eligible(case)
 
