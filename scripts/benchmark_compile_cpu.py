@@ -46,30 +46,36 @@ CATEGORY_LABELS = {
     "broadcasting": "broadcasting",
     "inference": "inference",
     "training_autograd": "training-autograd",
+    "python_control_flow": "python-control-flow",
     "containers_pytrees": "containers-pytrees",
     "decompositions": "decomposition",
     "custom_functions": "custom-functions",
     "recompilation_guards": "recompilation-guard",
+    "dtype_device_transitions": "dtype-device-transitions",
 }
 CATEGORY_PHRASES = {
     "tensor_arithmetic": "tensor arithmetic",
     "broadcasting": "broadcasting",
     "inference": "inference",
     "training_autograd": "training autograd",
+    "python_control_flow": "Python control flow",
     "containers_pytrees": "containers and pytrees",
     "decompositions": "decompositions",
     "custom_functions": "custom functions",
     "recompilation_guards": "recompilation guards",
+    "dtype_device_transitions": "dtype/device transitions",
 }
 CATEGORY_PROGRAM_LABELS = {
     "tensor_arithmetic": "tensor-arithmetic",
     "broadcasting": "broadcasting",
     "inference": "inference",
     "training_autograd": "training-autograd",
+    "python_control_flow": "Python-control-flow",
     "containers_pytrees": "containers-pytrees",
     "decompositions": "decomposition",
     "custom_functions": "custom-function",
     "recompilation_guards": "recompilation-guard",
+    "dtype_device_transitions": "dtype/device-transition",
 }
 
 
@@ -1648,7 +1654,7 @@ def _validate_expected_artifact_shape(report):
 
     guard_sequences = report.get("recompilation_guard_sequences", [])
     guard_step_count = sum(len(row.get("steps", ())) for row in guard_sequences)
-    if len(guard_sequences) != 12 or guard_step_count != 60:
+    if len(guard_sequences) != 16 or guard_step_count != 72:
         errors.append(
             "guard sequence coverage mismatch: "
             f"rows={len(guard_sequences)} steps={guard_step_count}"

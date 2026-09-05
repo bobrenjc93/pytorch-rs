@@ -15,7 +15,7 @@ from torch_rs import _compiler_state as _state
 
 UNSUPPORTED_MESSAGE = (
     "torch.compile(): only backend='eager', fullgraph=True straight-line "
-    "Tensor neg/abs/relu/square/detach/add functions, plus one top-level "
+    "Tensor neg/abs/relu/square/detach/float/add functions, plus one top-level "
     "if over an input Tensor.requires_grad selecting from that same subset, "
     "optionally inlining one exact same-module helper call, with one or two "
     "positional exact native CPU float32 Tensor inputs and Tensor or tuple/list "
@@ -138,6 +138,7 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertIn("``relu``", inspect.cleandoc(function.__doc__))
         self.assertIn("``square``", inspect.cleandoc(function.__doc__))
         self.assertIn("``detach``", inspect.cleandoc(function.__doc__))
+        self.assertIn("``float``", inspect.cleandoc(function.__doc__))
         self.assertIn("broader graph capture", inspect.cleandoc(function.__doc__))
 
         self.assertEqual(torch.__all__.count("compile"), 1)
@@ -1338,6 +1339,9 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         def call_detach(value):
             return value.detach()
 
+        def call_float(value):
+            return value.float()
+
         def call_add(value):
             return value.add(value)
 
@@ -1367,6 +1371,7 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             ("relu", lambda self: self + self, call_relu, [4.0]),
             ("square", lambda self: self + self, call_square, [4.0]),
             ("detach", lambda self: self + self, call_detach, [4.0]),
+            ("float", lambda self: self + self, call_float, [4.0]),
             ("add", lambda self, other: self.neg(), call_add, [-2.0]),
             ("__add__", lambda self, other: self.neg(), call_dunder_add, [-2.0]),
             (

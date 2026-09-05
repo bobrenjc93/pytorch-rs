@@ -7373,7 +7373,7 @@ fn compile_trace_grad_enabled() -> bool {
     signature = (input, target, /),
     text_signature = None
 )]
-fn compile_trace_unary(input: &Bound<'_, PyAny>, target: &str) -> PyResult<PyTensor> {
+fn compile_trace_unary(input: &Bound<'_, PyAny>, target: &str) -> PyResult<Py<PyTensor>> {
     if !input.is_exact_instance_of::<PyTensor>() {
         let type_name = python_type_name(input)?;
         return Err(PyTypeError::new_err(format!(
@@ -7381,22 +7381,28 @@ fn compile_trace_unary(input: &Bound<'_, PyAny>, target: &str) -> PyResult<PyTen
         )));
     }
 
-    let tensor = input.cast::<PyTensor>()?.try_borrow()?;
-    let output = match target {
-        "neg" => tensor.inner.negate(),
-        "abs" => tensor.inner.abs(),
-        "relu" => tensor.inner.relu(),
-        "square" => tensor.inner.square(),
-        "detach" => tensor.inner.detach(),
-        _ => {
-            return Err(PyNotImplementedError::new_err(format!(
-                "_compile_trace_unary(): unsupported target {target:?}"
-            )));
+    let tensor = input.cast::<PyTensor>()?;
+    if target == "float" {
+        return Ok(tensor.clone().unbind());
+    }
+
+    let output = {
+        let tensor = tensor.try_borrow()?;
+        match target {
+            "neg" => tensor.inner.negate(),
+            "abs" => tensor.inner.abs(),
+            "relu" => tensor.inner.relu(),
+            "square" => tensor.inner.square(),
+            "detach" => tensor.inner.detach(),
+            _ => {
+                return Err(PyNotImplementedError::new_err(format!(
+                    "_compile_trace_unary(): unsupported target {target:?}"
+                )));
+            }
         }
     };
-    output
-        .map(PyTensor::new)
-        .map_err(|error| tensor_error(&error))
+    let output = output.map_err(|error| tensor_error(&error))?;
+    Py::new(input.py(), PyTensor::new(output))
 }
 
 #[pyfunction(

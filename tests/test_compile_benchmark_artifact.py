@@ -35,8 +35,10 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
 
         self.assertIn("7 inference", summary)
         self.assertIn("7 training-autograd", summary)
+        self.assertIn("7 python-control-flow", summary)
         self.assertIn("7 decomposition", summary)
         self.assertIn("7 mutation_aliasing_views", summary)
+        self.assertIn("7 dtype-device-transitions", summary)
         self.assertIn(
             "| `inference` | 6 | Supported and timed public cases: "
             "`cpu_float32_inference_relu_no_grad` |",
@@ -45,6 +47,11 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
         self.assertIn(
             "| `training_autograd` | 8 | Supported and timed public cases: "
             "`cpu_float32_training_unary_neg_abs_add` |",
+            summary,
+        )
+        self.assertIn(
+            "| `python_control_flow` | 8 | Supported and timed public cases: "
+            "`cpu_float32_requires_grad_branch_unary` |",
             summary,
         )
         self.assertIn(
@@ -57,9 +64,16 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
             "`cpu_float32_decomposition_square_scalar` |",
             summary,
         )
+        self.assertIn(
+            "| `dtype_device_transitions` | 4 | Supported and timed public cases: "
+            "`cpu_float32_float_identity_view` |",
+            summary,
+        )
         self.assertNotIn("`training_autograd` | 8 | Zero credit", summary)
+        self.assertNotIn("`python_control_flow` | 8 | Zero credit", summary)
         self.assertNotIn("`mutation_aliasing_views` | 8 | Zero credit", summary)
         self.assertNotIn("`decompositions` | 6 | Zero credit", summary)
+        self.assertNotIn("`dtype_device_transitions` | 4 | Zero credit", summary)
 
     def test_raw_artifact_records_backward_validation_cases(self):
         report = benchmark_compile_cpu._load_artifact(
