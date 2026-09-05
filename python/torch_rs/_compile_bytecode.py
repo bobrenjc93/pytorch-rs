@@ -5,7 +5,7 @@ from __future__ import annotations
 import builtins as _builtins
 import dis as _dis
 import types as _types
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import _compile_trace as _trace
 
@@ -40,6 +40,14 @@ class _HelperCacheDependency:
 
 
 @dataclass(frozen=True, slots=True)
+class _GlobalTensorCacheDependency:
+    global_name: str
+    tensor_identity: int
+    metadata: _trace.CompileTraceTensorMetadata
+    tensor: object = field(compare=False, hash=False, repr=False)
+
+
+@dataclass(frozen=True, slots=True)
 class _GlobalLoadDependency:
     name: str
     instruction: object
@@ -57,6 +65,7 @@ class _CompileCacheRequest:
     descriptor: _CompileProgramDescriptor
     input_metadatas: tuple
     helper_dependencies: tuple[_HelperCacheDependency, ...]
+    global_tensor_dependencies: tuple[_GlobalTensorCacheDependency, ...]
     dynamic: bool = False
 
 
@@ -64,6 +73,9 @@ class _CompileCacheRequest:
 class _LoweringState:
     root_program: object
     helper_dependencies: tuple[_HelperCacheDependency, ...] = ()
+    global_tensor_proxies: dict[str, _trace.CompileTraceTensorProxy] = field(
+        default_factory=dict
+    )
     helper_call_count: int = 0
 
 
@@ -352,11 +364,26 @@ def _global_name(program, instruction):
     _unsupported_bytecode(program, instruction, "global operand decoding")
 
 
-def _resolve_live_global_helper(root_program, program, instruction, name):
+def _is_exact_native_tensor(value):
+    return _builtins.type(value) is _trace._native.Tensor
+
+
+def _resolve_live_global_dependency(root_program, program, instruction, name):
     try:
-        helper = program.__globals__[name]
+        value = program.__globals__[name]
     except KeyError:
         _unsupported_bytecode(program, instruction, "global or import access")
+
+    if _is_exact_native_tensor(value):
+        metadata = _trace._metadata_from_native_tensor(value)
+        return _GlobalTensorCacheDependency(
+            global_name=name,
+            tensor_identity=_builtins.id(value),
+            metadata=metadata,
+            tensor=value,
+        )
+
+    helper = value
     helper_code = (
         helper.__code__ if _builtins.type(helper) is _types.FunctionType else None
     )
@@ -372,36 +399,122 @@ def _resolve_live_global_helper(root_program, program, instruction, name):
 
 def analyze_compile_program(program):
     code = _validate_program(program)
+    instructions = tuple(_dis.get_instructions(code))
+    layout = _requires_grad_branch_layout(program, code, instructions)
+    if layout is None:
+        analyzable_instructions = instructions
+    else:
+        analyzable_instructions = (
+            *instructions[: layout.predicate_start],
+            *layout.true_body,
+            *layout.false_body,
+            *layout.tail,
+        )
+    global_loads = _global_load_dependencies_from_instructions(
+        program,
+        analyzable_instructions,
+        resolve=layout is None,
+    )
+    return _CompileProgramDescriptor(code, global_loads)
+
+
+def _global_load_dependencies_from_instructions(program, instructions, *, resolve=False):
     global_loads = []
-    for instruction in _analyzable_bytecode_instructions(program, code):
+    for instruction in instructions:
         kind = _instruction_form(program, instruction)
         if kind != "load_global":
             continue
         name = _global_name(program, instruction)
-        _resolve_live_global_helper(program, program, instruction, name)
+        if resolve:
+            _resolve_live_global_dependency(program, program, instruction, name)
         global_loads.append(_GlobalLoadDependency(name, instruction))
-    return _CompileProgramDescriptor(code, tuple(global_loads))
+    return tuple(global_loads)
 
 
-def _helper_cache_dependencies(program, descriptor):
-    return tuple(
-        _resolve_live_global_helper(
-            program,
+def _global_cache_dependencies_for_loads(
+    root_program,
+    program,
+    global_loads,
+    active_programs,
+):
+    helper_dependencies = []
+    global_tensor_dependencies = []
+    for global_load in global_loads:
+        dependency = _resolve_live_global_dependency(
+            root_program,
             program,
             global_load.instruction,
             global_load.name,
         )
-        for global_load in descriptor.global_loads
+        if _builtins.isinstance(dependency, _GlobalTensorCacheDependency):
+            global_tensor_dependencies.append(dependency)
+            continue
+
+        helper_dependencies.append(dependency)
+        helper = dependency.function
+        if helper in active_programs:
+            _unsupported_bytecode(
+                program,
+                global_load.instruction,
+                "recursive helper function calls",
+            )
+        if program is not root_program:
+            _unsupported_bytecode(
+                program,
+                global_load.instruction,
+                "helper function calls",
+            )
+        helper_loads = tuple(
+            _GlobalLoadDependency(_global_name(helper, instruction), instruction)
+            for instruction in _analyzable_bytecode_instructions(
+                helper,
+                dependency.code,
+            )
+            if instruction.opname == "LOAD_GLOBAL"
+        )
+        nested_helpers, nested_tensors = _global_cache_dependencies_for_loads(
+            root_program,
+            helper,
+            helper_loads,
+            (*active_programs, helper),
+        )
+        helper_dependencies.extend(nested_helpers)
+        global_tensor_dependencies.extend(nested_tensors)
+    return tuple(helper_dependencies), tuple(global_tensor_dependencies)
+
+
+def _global_cache_dependencies(program, descriptor, input_metadatas):
+    if not descriptor.global_loads:
+        return (), ()
+    global_loads = _global_load_dependencies_from_instructions(
+        program,
+        _lowerable_bytecode_instructions(
+            program,
+            descriptor.code,
+            input_metadatas,
+        ),
+    )
+    return _global_cache_dependencies_for_loads(
+        program,
+        program,
+        global_loads,
+        (program,),
     )
 
 
-def _resolve_global_helper(state, program, instruction, name):
-    if program is state.root_program:
+def _resolve_global_dependency(state, program, instruction, name):
+    if (
+        program is state.root_program
+        or getattr(program, "__globals__", None)
+        is getattr(state.root_program, "__globals__", None)
+    ):
         for dependency in state.helper_dependencies:
             if dependency.global_name == name:
                 return dependency
-        _unsupported_bytecode(program, instruction, "helper dependency snapshot")
-    return _resolve_live_global_helper(state.root_program, program, instruction, name)
+        if name in state.global_tensor_proxies:
+            return state.global_tensor_proxies[name]
+        _unsupported_bytecode(program, instruction, "global dependency snapshot")
+    return _resolve_live_global_dependency(state.root_program, program, instruction, name)
 
 
 def _validate_input_metadatas(code, input_metadatas):
@@ -447,7 +560,7 @@ def prepare_compile_cache_request(
     *,
     dynamic=False,
 ):
-    """Return cache metadata and the exact helper snapshot used for lowering."""
+    """Return cache metadata and exact dependency snapshots used for lowering."""
     if _builtins.type(dynamic) is not _builtins.bool:
         raise TypeError("torch.compile trace cache dynamic flag must be bool")
     code = getattr(program, "__code__", None)
@@ -456,21 +569,31 @@ def prepare_compile_cache_request(
     else:
         _validate_function_code(program, descriptor.code)
     _validate_input_metadatas(descriptor.code, input_metadatas)
-    helper_dependencies = _helper_cache_dependencies(program, descriptor)
+    helper_dependencies, global_tensor_dependencies = _global_cache_dependencies(
+        program,
+        descriptor,
+        input_metadatas,
+    )
     metadata_key = (
         _dynamic_metadata_key(input_metadatas) if dynamic else input_metadatas
     )
     return _CompileCacheRequest(
-        key=(descriptor.code, metadata_key, helper_dependencies),
+        key=(
+            descriptor.code,
+            metadata_key,
+            helper_dependencies,
+            global_tensor_dependencies,
+        ),
         descriptor=descriptor,
         input_metadatas=input_metadatas,
         helper_dependencies=helper_dependencies,
+        global_tensor_dependencies=global_tensor_dependencies,
         dynamic=dynamic,
     )
 
 
 def compile_cache_key(program, input_metadatas, *, dynamic=False):
-    """Return a cache key that includes validated helper function dependencies."""
+    """Return a cache key with validated helper and global tensor dependencies."""
     return prepare_compile_cache_request(
         program,
         input_metadatas,
@@ -772,12 +895,15 @@ def _handle_load_global(
 ):
     del recorder, locals, active
     name = _global_name(program, instruction)
-    helper_dependency = _resolve_global_helper(state, program, instruction, name)
+    dependency = _resolve_global_dependency(state, program, instruction, name)
+    if _builtins.isinstance(dependency, _trace.CompileTraceTensorProxy):
+        stack.append(dependency)
+        return
     stack.append(
         _BytecodeFunction(
-            helper_dependency.function,
+            dependency.function,
             name,
-            helper_dependency.code,
+            dependency.code,
         )
     )
 
@@ -1149,10 +1275,20 @@ def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=
             device=input_metadata.device,
             requires_grad=input_metadata.requires_grad,
         )
+    global_tensor_proxies = {}
+    for dependency in compile_request.global_tensor_dependencies:
+        if dependency.global_name in global_tensor_proxies:
+            continue
+        global_tensor_proxies[dependency.global_name] = recorder.capture(
+            name=f"global:{dependency.global_name}",
+            value=dependency.tensor,
+            metadata=dependency.metadata,
+        )
     stack = []
     state = _LoweringState(
         root_program=program,
         helper_dependencies=compile_request.helper_dependencies,
+        global_tensor_proxies=global_tensor_proxies,
     )
     output = _lower_function_body(
         recorder,

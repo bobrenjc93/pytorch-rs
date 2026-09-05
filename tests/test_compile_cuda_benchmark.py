@@ -207,6 +207,61 @@ print(json.dumps({
         self.assertEqual(probe["public_cuda_device_count"], 0)
         self.assertIs(probe["public_cuda_is_initialized"], False)
 
+    def test_private_cuda_runtime_roundtrip_rejects_wrong_visible_mask_early(self):
+        script = r"""
+import json
+import torch_rs as torch
+from torch_rs import _cuda_runtime_roundtrip
+
+roundtrip = _cuda_runtime_roundtrip.roundtrip_float32_device0()
+print(json.dumps({
+    "status": roundtrip["status"],
+    "reason": roundtrip["reason"],
+    "cuda_visible_devices": roundtrip["cuda_visible_devices"],
+    "required_cuda_visible_devices": roundtrip["required_cuda_visible_devices"],
+    "cuda_visible_devices_match": roundtrip["cuda_visible_devices_match"],
+    "cpu_fallback": roundtrip["cpu_fallback"],
+    "device_type": roundtrip["device_type"],
+    "device_index": roundtrip["device_index"],
+    "buffer_metadata": roundtrip["buffer_metadata"],
+    "device_pointer_nonzero": roundtrip["device_pointer_nonzero"],
+    "checksum_match": roundtrip["checksum_match"],
+    "calls": roundtrip["calls"],
+    "public_cuda_is_available": torch.cuda.is_available(),
+    "public_cuda_device_count": torch.cuda.device_count(),
+    "public_cuda_is_initialized": torch.cuda.is_initialized(),
+}))
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            env={**os.environ, "CUDA_VISIBLE_DEVICES": "1"},
+            text=True,
+            timeout=60,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+        probe = json.loads(completed.stdout)
+        self.assertEqual(probe["cuda_visible_devices"], "1")
+        self.assertEqual(probe["required_cuda_visible_devices"], "0")
+        self.assertIs(probe["cuda_visible_devices_match"], False)
+        self.assertEqual(probe["status"], "unavailable")
+        self.assertEqual(probe["reason"], "CUDA_VISIBLE_DEVICES=0 is required")
+        self.assertIs(probe["cpu_fallback"], False)
+        self.assertIsNone(probe["device_type"])
+        self.assertIsNone(probe["device_index"])
+        self.assertIsNone(probe["buffer_metadata"])
+        self.assertIs(probe["device_pointer_nonzero"], False)
+        self.assertIs(probe["checksum_match"], False)
+        self.assertEqual(probe["calls"], {})
+        self.assertIs(probe["public_cuda_is_available"], False)
+        self.assertEqual(probe["public_cuda_device_count"], 0)
+        self.assertIs(probe["public_cuda_is_initialized"], False)
+
     def test_private_cuda_pointwise_kernel_reports_no_visible_cuda_cleanly(self):
         script = r"""
 import json

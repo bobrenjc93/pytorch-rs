@@ -144,6 +144,15 @@ def roundtrip_float32_device0(
         driver_probe=driver_probe,
     )
 
+    if (
+        required_cuda_visible_devices is not None
+        and os.environ.get("CUDA_VISIBLE_DEVICES") != required_cuda_visible_devices
+    ):
+        result["reason"] = (
+            "CUDA_VISIBLE_DEVICES="
+            f"{required_cuda_visible_devices} is required"
+        )
+        return result
     if runtime is None:
         result["reason"] = "CUDA runtime shared library was not loaded"
         return result

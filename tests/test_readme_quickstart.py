@@ -453,6 +453,8 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "straight-line one- or two-input CPU `float32` Tensor functions",
     "Tensor `neg`, `abs`, `relu`, `square`, `detach`, "
     "zero-argument `float`, and binary `add`",
+    "module-global exact native CPU `float32` Tensor constants",
+    "captured-global identity/metadata recompilation",
     "`Tensor.float()` identity graphlets that preserve values, shape, stride, "
     "storage offset, device, dtype, and `requires_grad`",
     "storage-aliasing detach graphlets with `requires_grad=False` outputs",

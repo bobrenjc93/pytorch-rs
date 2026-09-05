@@ -137,6 +137,13 @@ class CompileTraceInput:
 
 
 @dataclass(frozen=True, slots=True)
+class CompileTraceCapture:
+    name: str
+    value: object
+    metadata: CompileTraceTensorMetadata
+
+
+@dataclass(frozen=True, slots=True)
 class CompileTraceOperation:
     name: str
     op: str
@@ -166,6 +173,7 @@ class CompileTraceGraph:
     operations: tuple[CompileTraceOperation, ...]
     output: object
     output_metadata: object
+    captures: tuple[CompileTraceCapture, ...] = ()
     dynamic: bool = False
 
     def forward(self, *inputs):
@@ -883,7 +891,28 @@ def execute_compile_trace_graph(graph, *inputs):
 
     values = {}
     metadata_values = {}
+    for capture in graph.captures:
+        if capture.name in values:
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace execution encountered duplicate value "
+                f"name {capture.name!r}"
+            )
+        _require_native_tensor(capture.value, capture.name)
+        capture_metadata = _metadata_from_native_tensor(capture.value)
+        _require_matching_metadata(
+            capture_metadata,
+            capture.metadata,
+            value_name=capture.name,
+        )
+        values[capture.name] = capture.value
+        metadata_values[capture.name] = capture_metadata
+
     for graph_input, input in zip(graph.inputs, inputs):
+        if graph_input.name in values:
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace execution encountered duplicate value "
+                f"name {graph_input.name!r}"
+            )
         _require_native_tensor(input, graph_input.name)
         input_metadata = _metadata_from_native_tensor(input)
         _require_matching_metadata(
@@ -1098,6 +1127,7 @@ class CompileTraceRecorder:
         self._name = _builtins.str(name)
         self._dynamic = dynamic
         self._inputs = []
+        self._captures = []
         self._operations = []
         self._closed = False
 
@@ -1140,6 +1170,31 @@ class CompileTraceRecorder:
         )
         self._inputs.append(compile_input)
         return CompileTraceTensorProxy(self, input_name, metadata)
+
+    def capture(self, *, name, value, metadata):
+        self._ensure_open()
+        capture_name = _builtins.str(name)
+        if self._has_value(capture_name):
+            raise ValueError(f"duplicate compile trace value name: {capture_name!r}")
+        _require_native_tensor(value, capture_name)
+        if not _builtins.isinstance(metadata, CompileTraceTensorMetadata):
+            raise TypeError(
+                "torch.compile trace capture metadata must be "
+                "CompileTraceTensorMetadata"
+            )
+        actual_metadata = _metadata_from_native_tensor(value)
+        _require_matching_metadata(
+            actual_metadata,
+            metadata,
+            value_name=capture_name,
+        )
+        capture = CompileTraceCapture(
+            name=capture_name,
+            value=value,
+            metadata=metadata,
+        )
+        self._captures.append(capture)
+        return CompileTraceTensorProxy(self, capture_name, metadata)
 
     def record_unary(self, target, input):
         self._ensure_open()
@@ -1202,6 +1257,7 @@ class CompileTraceRecorder:
             operations=tuple(self._operations),
             output=output_spec,
             output_metadata=output_metadata,
+            captures=tuple(self._captures),
             dynamic=self._dynamic,
         )
 
@@ -1210,8 +1266,10 @@ class CompileTraceRecorder:
             raise RuntimeError("compile trace recorder is already finished")
 
     def _has_value(self, name):
-        return any(input.name == name for input in self._inputs) or any(
-            operation.name == name for operation in self._operations
+        return (
+            any(input.name == name for input in self._inputs)
+            or any(capture.name == name for capture in self._captures)
+            or any(operation.name == name for operation in self._operations)
         )
 
     def _next_operation_name(self, target):
@@ -1338,6 +1396,7 @@ def trace_one_input_compile_graph(program, make_inputs, *, name=None, dynamic=Fa
 __all__ = [
     "CompileTraceDType",
     "CompileTraceDevice",
+    "CompileTraceCapture",
     "CompileTraceGraph",
     "CompileTraceInput",
     "CompileTraceOperation",
