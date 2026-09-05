@@ -104,6 +104,19 @@ class _FakeTensor:
         return list(self._values)
 
 
+class _FakeMetadataTensor:
+    dtype = "fake.float32"
+    device = "cpu"
+    requires_grad = False
+
+    def __init__(self, *, shape, stride):
+        self.shape = tuple(shape)
+        self._stride = tuple(stride)
+
+    def stride(self):
+        return self._stride
+
+
 class _FakeGraphModule:
     def forward(self, *inputs):
         return inputs[0]
@@ -212,6 +225,24 @@ def _real_corpus_namespace():
 
 
 class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
+    def test_dynamic_true_cache_signature_ignores_sizes_not_strides(self):
+        base = (_FakeMetadataTensor(shape=(2, 3), stride=(3, 1)),)
+        shape_variant = (_FakeMetadataTensor(shape=(4, 3), stride=(3, 1)),)
+        stride_variant = (_FakeMetadataTensor(shape=(2, 3), stride=(1, 2)),)
+
+        self.assertEqual(
+            evaluator._compile_cache_signature(base, dynamic=True),
+            evaluator._compile_cache_signature(shape_variant, dynamic=True),
+        )
+        self.assertNotEqual(
+            evaluator._compile_cache_signature(base, dynamic=True),
+            evaluator._compile_cache_signature(stride_variant, dynamic=True),
+        )
+        self.assertNotEqual(
+            evaluator._compile_cache_signature(base, dynamic=False),
+            evaluator._compile_cache_signature(shape_variant, dynamic=False),
+        )
+
     def test_weighted_score_counts_missing_categories_as_zero(self):
         weights = {
             category: weight

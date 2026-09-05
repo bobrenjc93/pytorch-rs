@@ -1872,6 +1872,23 @@ def _case_input_factories(case):
     return (case.make_inputs, *tuple(getattr(case, "dynamic_input_factories", ())))
 
 
+def _compile_cache_signature(inputs, *, dynamic):
+    signature = []
+    for input in inputs:
+        shape = tuple(input.shape)
+        shape_guard = len(shape) if dynamic is True else shape
+        signature.append(
+            (
+                shape_guard,
+                tuple(input.stride()),
+                str(input.dtype),
+                str(input.device),
+                bool(input.requires_grad),
+            )
+        )
+    return tuple(signature)
+
+
 def _make_recording_backend(calls):
     def backend(graph_module, example_inputs):
         calls.append((graph_module, example_inputs))
@@ -2249,6 +2266,9 @@ def _candidate_case_result(corpus_module, case):
     before_gradients = _leaf_gradients_payload(inputs)
     user_callables = (case.program, *_same_module_helper_functions(case.program))
     variant_outputs = []
+    compile_cache_signatures = {
+        _compile_cache_signature(inputs, dynamic=case.dynamic)
+    }
     with _candidate_compile_counters() as counters:
         compiled = torch_rs.compile(
             case.program,
@@ -2318,7 +2338,10 @@ def _candidate_case_result(corpus_module, case):
                     f"{case.name} dynamic variant {variant_index} executed "
                     "original Python user code"
                 )
-            expected_lower_count = 1 if case.dynamic is True else variant_index + 1
+            compile_cache_signatures.add(
+                _compile_cache_signature(variant_inputs, dynamic=case.dynamic)
+            )
+            expected_lower_count = len(compile_cache_signatures)
             if counters["lower_compile_graph"] != expected_lower_count:
                 raise AssertionError(
                     f"{case.name} dynamic variant {variant_index} lowered "
