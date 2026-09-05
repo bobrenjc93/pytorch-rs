@@ -122,6 +122,23 @@ _METHOD_TARGETS = {
 }
 _BYTECODE_METHOD_NAMES = frozenset(_METHOD_TARGETS)
 _IGNORED_OPCODE_NAMES = frozenset(("CACHE", "EXTENDED_ARG", "NOP", "RESUME"))
+_EXCEPTION_HANDLING_OPCODE_NAMES = frozenset(
+    (
+        "BEFORE_ASYNC_WITH",
+        "BEFORE_WITH",
+        "CHECK_EG_MATCH",
+        "CHECK_EXC_MATCH",
+        "END_ASYNC_FOR",
+        "POP_EXCEPT",
+        "PUSH_EXC_INFO",
+        "RERAISE",
+        "SETUP_ASYNC_WITH",
+        "SETUP_EXCEPT",
+        "SETUP_FINALLY",
+        "SETUP_WITH",
+        "WITH_EXCEPT_START",
+    )
+)
 _REQUIRES_GRAD_BRANCH_JUMPS = frozenset(
     ("POP_JUMP_FORWARD_IF_FALSE", "POP_JUMP_IF_FALSE")
 )
@@ -159,23 +176,7 @@ _OPCODE_FORMS = (
     ),
     _OpcodeForm(
         "unsupported",
-        frozenset(
-            (
-                "BEFORE_ASYNC_WITH",
-                "BEFORE_WITH",
-                "CHECK_EG_MATCH",
-                "CHECK_EXC_MATCH",
-                "END_ASYNC_FOR",
-                "POP_EXCEPT",
-                "PUSH_EXC_INFO",
-                "RERAISE",
-                "SETUP_ASYNC_WITH",
-                "SETUP_EXCEPT",
-                "SETUP_FINALLY",
-                "SETUP_WITH",
-                "WITH_EXCEPT_START",
-            )
-        ),
+        _EXCEPTION_HANDLING_OPCODE_NAMES,
         reason="exception handling",
     ),
     _OpcodeForm(
@@ -566,6 +567,10 @@ def _branch_condition_input_name(program, code, instructions, jump_index):
 
 
 def _requires_grad_branch_layout(program, code, instructions):
+    for instruction in instructions:
+        if instruction.opname in _EXCEPTION_HANDLING_OPCODE_NAMES:
+            _unsupported_bytecode(program, instruction, "exception handling")
+
     control_flow = _control_flow_indices(instructions)
     if not control_flow:
         return None

@@ -1923,6 +1923,32 @@ class CompileCorpusTraceTests(unittest.TestCase):
         ):
             self.lower_with_bytecode_instructions(program, instructions, input)
 
+    def test_bytecode_lowerer_rejects_cpython_310_exception_jump_as_exception(self):
+        def program(x):
+            raise AssertionError("synthetic bytecode test must not run")
+
+        input = torch.tensor([-2.0, 0.5, 3.0], dtype=torch.float32)
+        instructions = (
+            self.bytecode_instruction("SETUP_FINALLY", argval=12),
+            self.bytecode_instruction("LOAD_FAST", "x", "x"),
+            self.bytecode_instruction("LOAD_FAST", "x", "x"),
+            self.bytecode_instruction("BINARY_ADD"),
+            self.bytecode_instruction("POP_BLOCK"),
+            self.bytecode_instruction("RETURN_VALUE"),
+            self.bytecode_instruction("DUP_TOP"),
+            self.bytecode_instruction("LOAD_GLOBAL", "Exception", "Exception"),
+            self.bytecode_instruction("JUMP_IF_NOT_EXC_MATCH", argval=32),
+            self.bytecode_instruction("POP_EXCEPT"),
+            self.bytecode_instruction("RETURN_VALUE"),
+            self.bytecode_instruction("RERAISE"),
+        )
+
+        with self.assertRaisesRegex(
+            _compile_trace.CompileTraceUnsupportedError,
+            "exception handling",
+        ):
+            self.lower_with_bytecode_instructions(program, instructions, input)
+
     def test_bytecode_lowerer_rejects_float_conversion_forms(self):
         def positional_memory_format(x):
             return x.float(None)
