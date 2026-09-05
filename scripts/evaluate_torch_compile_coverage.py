@@ -26,7 +26,7 @@ import warnings
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CORPUS_PATH = REPOSITORY_ROOT / "tests" / "test_compile_corpus.py"
 EVALUATION_ID = "eval_a61c0e71"
-EVALUATOR_VERSION = "torch_compile_program_coverage_evaluator_v4"
+EVALUATOR_VERSION = "torch_compile_program_coverage_evaluator_v5"
 EXPECTED_CORPUS_VERSION = "torch_compile_corpus_v9"
 REFERENCE_PYTORCH_VERSION = "2.13.0"
 EXPECTED_CATEGORY_WEIGHTS = {
@@ -292,6 +292,24 @@ EXPECTED_V9_CASE_MANIFEST = (
         "recompile_limit": None,
     },
     {
+        "name": "cpu_float32_tuple_list_output_pytree",
+        "held_out": False,
+        "category": "containers_pytrees",
+        "program": "cpu_float32_tuple_list_output_pytree",
+        "program_sha256": "6c3834c354197af76f9c39cfbe67fc249b06293498a2210507357f7c4bcbbb3c",
+        "make_inputs": "cpu_float32_matrix_vector_requires_grad_inputs",
+        "make_inputs_sha256": "b26daf5a5a8139b4088b90b730acfe49a8b6ad17586f3b62a0ac08a5a67d15bd",
+        "inputs_sha256": "f00763fcf40a4156959ed9feeb4c8c167308c72ef946d8c9243fa3571ea17cad",
+        "arity": 2,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
         "name": "cpu_float32_recompile_guard_unary_metadata",
         "held_out": False,
         "category": "recompilation_guards",
@@ -416,6 +434,24 @@ EXPECTED_V9_CASE_MANIFEST = (
         "make_inputs_sha256": "41a7df473962e8fae63eda143399044b23dcf353c19a9c1e6e8a56bf30369f51",
         "inputs_sha256": "b51bde0b06081b6eb85e8378169bedd5c419f83e8ca95eeaa9e6dc024c901d54",
         "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
+        "name": "cpu_float32_heldout_list_tuple_output_pytree",
+        "held_out": True,
+        "category": "containers_pytrees",
+        "program": "cpu_float32_heldout_list_tuple_output_pytree",
+        "program_sha256": "9ab6081406c70b563bc73d7618ce8520c79076fb7180c5ea2d4145a5921cbd42",
+        "make_inputs": "cpu_float32_scalar_tensor_inputs",
+        "make_inputs_sha256": "c97640885d694619d8c2340c608f248037c130b005f1bb45870372ed780f0710",
+        "inputs_sha256": "b5e285646fc9ea682ce87d90ab4723e40fe3243462c8e90919686fe09ad9b162",
+        "arity": 2,
         "fullgraph": True,
         "dynamic": None,
         "mode": None,
@@ -1206,10 +1242,10 @@ def _validate_corpus_metadata(corpus_module):
 
     public_cases = tuple(getattr(corpus_module, "COMPILE_CORPUS", ()))
     held_out_cases = tuple(getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ()))
-    if len(public_cases) != 17:
-        errors.append(f"expected 17 public v9 cases, found {len(public_cases)}")
-    if len(held_out_cases) != 9:
-        errors.append(f"expected 9 held-out v9 cases, found {len(held_out_cases)}")
+    if len(public_cases) != 18:
+        errors.append(f"expected 18 public v9 cases, found {len(public_cases)}")
+    if len(held_out_cases) != 10:
+        errors.append(f"expected 10 held-out v9 cases, found {len(held_out_cases)}")
 
     seen_names = set()
     for case in (*public_cases, *held_out_cases):
@@ -1346,6 +1382,41 @@ def _tensor_payload(tensor):
     }
 
 
+def _is_output_container(value):
+    return type(value) in (tuple, list)
+
+
+def _output_payload(output):
+    if _is_output_container(output):
+        return {
+            "container": type(output).__name__,
+            "elements": [_output_payload(element) for element in output],
+        }
+    return _tensor_payload(output)
+
+
+def _output_tensor_leaves(output):
+    if _is_output_container(output):
+        for element in output:
+            yield from _output_tensor_leaves(element)
+        return
+    yield output
+
+
+def _output_requires_grad(output):
+    return any(tensor.requires_grad for tensor in _output_tensor_leaves(output))
+
+
+def _output_sum(output):
+    leaves = tuple(_output_tensor_leaves(output))
+    if not leaves:
+        raise AssertionError("compile corpus output must contain a Tensor leaf")
+    total = leaves[0].sum()
+    for leaf in leaves[1:]:
+        total = total + leaf.sum()
+    return total
+
+
 def _inputs_payload(inputs):
     return [_tensor_payload(input) for input in inputs]
 
@@ -1444,7 +1515,7 @@ def _reference_case_result(reference_torch, case):
     expected = _run_case_program(reference_torch, case, expected_inputs)
     expected_gradients = None
     if backward_through_sum:
-        expected.sum().backward()
+        _output_sum(expected).backward()
         expected_gradients = _leaf_gradients_payload(expected_inputs)
     if check_input_gradients:
         _assert_payload_match(
@@ -1460,8 +1531,8 @@ def _reference_case_result(reference_torch, case):
     after_forward_inputs = _inputs_payload(inputs)
 
     _assert_payload_match(
-        _tensor_payload(actual),
-        _tensor_payload(expected),
+        _output_payload(actual),
+        _output_payload(expected),
         label=f"{case.name}/reference",
     )
     _assert_payload_match(
@@ -1486,11 +1557,11 @@ def _reference_case_result(reference_torch, case):
         if actual.requires_grad:
             raise AssertionError(f"{case.name} detach reference output requires grad")
     if run_under_no_grad:
-        if actual.requires_grad:
+        if _output_requires_grad(actual):
             raise AssertionError(f"{case.name} no-grad reference output requires grad")
     actual_gradients = None
     if backward_through_sum:
-        actual.sum().backward()
+        _output_sum(actual).backward()
         actual_gradients = _leaf_gradients_payload(inputs)
         _assert_payload_match(
             actual_gradients,
@@ -1507,7 +1578,7 @@ def _reference_case_result(reference_torch, case):
     result = {
         "name": case.name,
         "category": case.category,
-        "output": _tensor_payload(actual),
+        "output": _output_payload(actual),
         "input_count": len(inputs),
         "backend_call_count": len(backend_calls),
     }
@@ -1562,8 +1633,8 @@ def _reference_guard_scenario_result(corpus_module, reference_torch, scenario):
         actual = _run_case_callable(reference_torch, case, compiled, inputs)
         after_inputs = _inputs_payload(inputs)
         _assert_payload_match(
-            _tensor_payload(actual),
-            _tensor_payload(expected),
+            _output_payload(actual),
+            _output_payload(expected),
             label=f"{scenario.name}/{step.name}/reference",
         )
         _assert_payload_match(
@@ -1576,7 +1647,7 @@ def _reference_guard_scenario_result(corpus_module, reference_torch, scenario):
                 "name": step.name,
                 "status": "ok",
                 "guard_change": step.guard_change,
-                "output": _tensor_payload(actual),
+                "output": _output_payload(actual),
             }
         )
 
@@ -1746,7 +1817,7 @@ def _candidate_case_result(corpus_module, case):
     expected = _run_case_program(torch_rs, case, expected_inputs)
     expected_gradients = None
     if backward_through_sum:
-        expected.sum().backward()
+        _output_sum(expected).backward()
         expected_gradients = _leaf_gradients_payload(expected_inputs)
     if check_input_gradients:
         _assert_payload_match(
@@ -1804,15 +1875,15 @@ def _candidate_case_result(corpus_module, case):
                 f"{case.name} cache hit did not execute the native trace graph"
             )
 
-    output = _tensor_payload(actual)
+    output = _output_payload(actual)
     _assert_payload_match(
         output,
-        _tensor_payload(expected),
+        _output_payload(expected),
         label=f"{case.name}/torch_rs",
     )
     _assert_payload_match(
-        _tensor_payload(second_actual),
-        _tensor_payload(expected),
+        _output_payload(second_actual),
+        _output_payload(expected),
         label=f"{case.name}/torch_rs/cache_hit",
     )
     _assert_payload_match(
@@ -1826,7 +1897,9 @@ def _candidate_case_result(corpus_module, case):
         label=f"{case.name}/cache_hit_inputs",
     )
     input_gradients = None
-    if run_under_no_grad and (actual.requires_grad or second_actual.requires_grad):
+    if run_under_no_grad and (
+        _output_requires_grad(actual) or _output_requires_grad(second_actual)
+    ):
         raise AssertionError(f"{case.name} no-grad candidate output requires grad")
     if check_input_gradients:
         input_gradients = _leaf_gradients_payload(inputs)
@@ -1853,7 +1926,7 @@ def _candidate_case_result(corpus_module, case):
         )
     actual_gradients = None
     if backward_through_sum:
-        actual.sum().backward()
+        _output_sum(actual).backward()
         actual_gradients = _leaf_gradients_payload(inputs)
         _assert_payload_match(
             actual_gradients,
@@ -1866,7 +1939,7 @@ def _candidate_case_result(corpus_module, case):
             label=f"{case.name}/inputs_after_backward",
         )
 
-        second_actual.sum().backward()
+        _output_sum(second_actual).backward()
         _assert_payload_match(
             _leaf_gradients_payload(second_inputs),
             expected_gradients,
@@ -1968,8 +2041,8 @@ def _candidate_guard_scenario_result(corpus_module, scenario):
                 )
             after_inputs = _inputs_payload(inputs)
             _assert_payload_match(
-                _tensor_payload(actual),
-                _tensor_payload(expected),
+                _output_payload(actual),
+                _output_payload(expected),
                 label=f"{scenario.name}/{step.name}/torch_rs",
             )
             _assert_payload_match(
@@ -1994,7 +2067,7 @@ def _candidate_guard_scenario_result(corpus_module, scenario):
                     "name": step.name,
                     "status": "ok",
                     "guard_change": step.guard_change,
-                    "output": _tensor_payload(actual),
+                    "output": _output_payload(actual),
                     "lower_compile_graph_count": counters["lower_compile_graph"],
                     "execute_compile_trace_graph_count": counters[
                         "execute_compile_trace_graph"

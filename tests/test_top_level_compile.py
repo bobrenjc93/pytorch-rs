@@ -438,6 +438,89 @@ class TorchCompileEntrypointTests(unittest.TestCase):
                     if input.numel():
                         self.assertNotEqual(actual.data_ptr(), input.data_ptr())
 
+    def test_eager_fullgraph_executes_tuple_list_outputs_natively(self):
+        def program(x, y):
+            y_abs = y.abs()
+            z = x.neg().add(y_abs)
+            return (z, [y_abs, z.relu()])
+
+        matrix = torch.tensor(
+            [[-3.0, 0.5, 4.0], [2.25, -5.5, 6.75]],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        vector = torch.tensor([1.0, -2.0, 0.25], dtype=torch.float32)
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        expected = program(matrix, vector)
+        original_profile = sys.getprofile()
+        program_calls = {"count": 0}
+
+        def count_program_calls(frame, event, arg):
+            if event == "call" and frame.f_code is program.__code__:
+                program_calls["count"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_program_calls
+
+        try:
+            sys.setprofile(count_program_calls)
+            actual = compiled(matrix, vector)
+        finally:
+            sys.setprofile(original_profile)
+
+        self.assertEqual(program_calls["count"], 0)
+        self.assertIs(type(actual), tuple)
+        self.assertIs(type(actual[1]), list)
+        for actual_tensor, expected_tensor in (
+            (actual[0], expected[0]),
+            (actual[1][0], expected[1][0]),
+            (actual[1][1], expected[1][1]),
+        ):
+            self.assertEqual(actual_tensor.tolist(), expected_tensor.tolist())
+            self.assertEqual(tuple(actual_tensor.shape), tuple(expected_tensor.shape))
+            self.assertEqual(actual_tensor.stride(), expected_tensor.stride())
+            self.assertIs(actual_tensor.dtype, expected_tensor.dtype)
+            self.assertEqual(actual_tensor.device, expected_tensor.device)
+            self.assertEqual(
+                actual_tensor.requires_grad,
+                expected_tensor.requires_grad,
+            )
+
+    def test_eager_fullgraph_preserves_output_container_aliasing(self):
+        def program(x):
+            y = [x.neg()]
+            return (y, y)
+
+        input = torch.tensor([1.0, -2.0], dtype=torch.float32)
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        expected = program(input)
+        original_profile = sys.getprofile()
+        program_calls = {"count": 0}
+
+        def count_program_calls(frame, event, arg):
+            if event == "call" and frame.f_code is program.__code__:
+                program_calls["count"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_program_calls
+
+        try:
+            sys.setprofile(count_program_calls)
+            actual = compiled(input)
+        finally:
+            sys.setprofile(original_profile)
+
+        self.assertEqual(program_calls["count"], 0)
+        self.assertIs(actual[0], actual[1])
+        self.assertIs(expected[0], expected[1])
+        self.assertEqual(actual[0][0].tolist(), expected[0][0].tolist())
+        self.assertEqual(tuple(actual[0][0].shape), tuple(expected[0][0].shape))
+        self.assertEqual(actual[0][0].stride(), expected[0][0].stride())
+        self.assertIs(actual[0][0].dtype, expected[0][0].dtype)
+        self.assertEqual(actual[0][0].device, expected[0][0].device)
+        self.assertEqual(actual[0][0].requires_grad, expected[0][0].requires_grad)
+
     def test_eager_fullgraph_caches_graphs_by_code_and_input_metadata(self):
         def program(x):
             return x.neg().abs() + x
