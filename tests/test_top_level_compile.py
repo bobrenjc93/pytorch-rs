@@ -30,8 +30,20 @@ def eager_compile_inline_helper(value):
     return value.neg().relu()
 
 
+def eager_compile_inline_abs_helper(value):
+    return value.abs()
+
+
 def eager_compile_inline_add_helper(value, other):
     return value.abs().add(other.detach())
+
+
+def eager_compile_mutable_helper(value):
+    return value.neg()
+
+
+def eager_compile_mutable_helper_abs(value):
+    return value.abs()
 
 
 def eager_compile_helper_with_default(value, other=None):
@@ -454,6 +466,70 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             )
             self.assertEqual(len(calls), 2)
         finally:
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_cache_key_tracks_helper_global_rebinding(self):
+        global eager_compile_inline_helper
+
+        def program(x):
+            return eager_compile_inline_helper(x)
+
+        original_helper = eager_compile_inline_helper
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def counting_lower(requested_program, input_metadata, *, name=None):
+            calls.append((requested_program, input_metadata, name))
+            return original_lower(requested_program, input_metadata, name=name)
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([2.0], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(compiled(input).tolist(), [0.0])
+            self.assertEqual(len(calls), 1)
+
+            eager_compile_inline_helper = eager_compile_inline_abs_helper
+            self.assertEqual(program(input).tolist(), [2.0])
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(compiled(input).tolist(), [2.0])
+            self.assertEqual(len(calls), 2)
+        finally:
+            eager_compile_inline_helper = original_helper
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_cache_key_tracks_helper_code_mutation(self):
+        def program(x):
+            return eager_compile_mutable_helper(x)
+
+        original_code = eager_compile_mutable_helper.__code__
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def counting_lower(requested_program, input_metadata, *, name=None):
+            calls.append((requested_program, input_metadata, name))
+            return original_lower(requested_program, input_metadata, name=name)
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([2.0], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(compiled(input).tolist(), [-2.0])
+            self.assertEqual(len(calls), 1)
+
+            eager_compile_mutable_helper.__code__ = (
+                eager_compile_mutable_helper_abs.__code__
+            )
+            self.assertEqual(program(input).tolist(), [2.0])
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(compiled(input).tolist(), [2.0])
+            self.assertEqual(len(calls), 2)
+        finally:
+            eager_compile_mutable_helper.__code__ = original_code
             _compile_bytecode.lower_one_input_compile_graph = original_lower
 
     def test_eager_fullgraph_caches_two_input_graphs_by_all_input_metadata(self):

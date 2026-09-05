@@ -489,7 +489,7 @@ def _native_eager_compile_implementation(model, name, recompile_limit):
         input_metadatas = tuple(
             _compile_trace._metadata_from_native_tensor(input) for input in args
         )
-        cache_key = (model.__code__, input_metadatas)
+        cache_key = _compile_bytecode.compile_cache_key(model, input_metadatas)
         with cache.lock:
             graph = cache.graphs.get(cache_key)
             if graph is None:

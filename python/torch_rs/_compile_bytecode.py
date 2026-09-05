@@ -31,6 +31,13 @@ class _BytecodeFunction:
     name: str
 
 
+@dataclass(frozen=True, slots=True)
+class _HelperCacheDependency:
+    global_name: str
+    function: object
+    code: object
+
+
 @dataclass(slots=True)
 class _LoweringState:
     root_program: object
@@ -296,6 +303,54 @@ def _resolve_global_helper(state, program, instruction, name):
         _unsupported_bytecode(program, instruction, "global or import access")
     _validate_helper_function(state.root_program, helper, program, instruction)
     return helper
+
+
+def _helper_cache_dependencies(program):
+    state = _LoweringState(root_program=program)
+    dependencies = []
+    for instruction in _dis.get_instructions(program):
+        if _instruction_form(program, instruction) != "load_global":
+            continue
+        name = _global_name(program, instruction)
+        helper = _resolve_global_helper(state, program, instruction, name)
+        dependencies.append(
+            _HelperCacheDependency(
+                global_name=name,
+                function=helper,
+                code=helper.__code__,
+            )
+        )
+    return tuple(dependencies)
+
+
+def _validate_input_metadatas(code, input_metadatas):
+    if not _builtins.isinstance(input_metadatas, tuple):
+        raise TypeError(
+            "torch.compile trace bytecode lowering expected a tuple of "
+            "CompileTraceTensorMetadata inputs"
+        )
+    if len(input_metadatas) != code.co_argcount:
+        raise _trace.CompileTraceUnsupportedError(
+            "torch.compile trace bytecode lowering expected metadata for "
+            f"{code.co_argcount} positional Tensor arguments, got "
+            f"{len(input_metadatas)}"
+        )
+    for input_metadata in input_metadatas:
+        if not _builtins.isinstance(
+            input_metadata,
+            _trace.CompileTraceTensorMetadata,
+        ):
+            raise TypeError(
+                "torch.compile trace bytecode lowering expected "
+                "CompileTraceTensorMetadata"
+            )
+
+
+def compile_cache_key(program, input_metadatas):
+    """Return a cache key that includes validated helper function dependencies."""
+    code = _validate_program(program)
+    _validate_input_metadatas(code, input_metadatas)
+    return (code, input_metadatas, _helper_cache_dependencies(program))
 
 
 def _pop(stack, program, instruction):
@@ -692,26 +747,7 @@ def _lower_instruction(recorder, locals, stack, program, instruction, state, act
 def lower_compile_graph(program, input_metadatas, *, name=None):
     """Lower a narrow straight-line Python function into a native trace graph."""
     code = _validate_program(program)
-    if not _builtins.isinstance(input_metadatas, tuple):
-        raise TypeError(
-            "torch.compile trace bytecode lowering expected a tuple of "
-            "CompileTraceTensorMetadata inputs"
-        )
-    if len(input_metadatas) != code.co_argcount:
-        raise _trace.CompileTraceUnsupportedError(
-            "torch.compile trace bytecode lowering expected metadata for "
-            f"{code.co_argcount} positional Tensor arguments, got "
-            f"{len(input_metadatas)}"
-        )
-    for input_metadata in input_metadatas:
-        if not _builtins.isinstance(
-            input_metadata,
-            _trace.CompileTraceTensorMetadata,
-        ):
-            raise TypeError(
-                "torch.compile trace bytecode lowering expected "
-                "CompileTraceTensorMetadata"
-            )
+    _validate_input_metadatas(code, input_metadatas)
 
     recorder = _trace.CompileTraceRecorder(
         name or getattr(program, "__name__", "compile_trace")
@@ -738,6 +774,7 @@ def lower_one_input_compile_graph(program, input_metadata, *, name=None):
 
 
 __all__ = [
+    "compile_cache_key",
     "lower_compile_graph",
     "lower_one_input_compile_graph",
 ]

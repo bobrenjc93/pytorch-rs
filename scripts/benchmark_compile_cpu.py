@@ -47,6 +47,7 @@ CATEGORY_LABELS = {
     "inference": "inference",
     "training_autograd": "training-autograd",
     "decompositions": "decomposition",
+    "custom_functions": "custom-functions",
     "recompilation_guards": "recompilation-guard",
 }
 CATEGORY_PHRASES = {
@@ -55,6 +56,7 @@ CATEGORY_PHRASES = {
     "inference": "inference",
     "training_autograd": "training autograd",
     "decompositions": "decompositions",
+    "custom_functions": "custom functions",
     "recompilation_guards": "recompilation guards",
 }
 CATEGORY_PROGRAM_LABELS = {
@@ -63,6 +65,7 @@ CATEGORY_PROGRAM_LABELS = {
     "inference": "inference",
     "training_autograd": "training-autograd",
     "decompositions": "decomposition",
+    "custom_functions": "custom-function",
     "recompilation_guards": "recompilation-guard",
 }
 
