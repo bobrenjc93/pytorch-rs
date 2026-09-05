@@ -89,17 +89,21 @@ fullgraph=True)` subset for exact one-argument Python functions whose
 straight-line bytecode is limited to native CPU `float32` Tensor `neg`, `abs`,
 `relu`, `square`, `detach`, zero-argument `float`, and binary `add` compositions, plus two-argument
 broadcasting programs, one exact same-module helper call over the same
-operation set, and tuple/list output pytrees with Tensor leaves. The compile
-corpus includes no-grad ReLU inference graphlets, square decomposition
-graphlets, custom-function helper graphlets, tuple/list output-pytree
-graphlets, storage-aliasing detach graphlets, and zero-argument `Tensor.float()`
-identity graphlets over grad-requiring CPU `float32` inputs and verifies that
-detach outputs do not require gradients and share storage with the input view,
-`Tensor.float()` outputs preserve values, shape, stride, storage offset, dtype,
-device, and `requires_grad`, and input gradients remain unchanged.
-Its per-wrapper input-metadata graph cache is guarded on shape, stride, dtype,
-device, and `requires_grad`, is bounded by exact non-negative integer
-`recompile_limit` values, and uses an internal default cap when
+operation set, module-global exact native CPU `float32` Tensor constants, and
+tuple/list output pytrees with Tensor leaves. The compile corpus includes
+no-grad ReLU inference graphlets, square decomposition graphlets,
+custom-function helper graphlets, module-global Tensor buffer graphlets,
+tuple/list output-pytree graphlets, storage-aliasing detach graphlets, and
+zero-argument `Tensor.float()` identity graphlets over grad-requiring CPU
+`float32` inputs and verifies that captured globals preserve values and
+metadata, detach outputs do not require gradients and share storage with the
+input view, `Tensor.float()` outputs preserve values, shape, stride, storage
+offset, dtype, device, and `requires_grad`, and input gradients remain
+unchanged.
+Its per-wrapper graph cache is guarded on input shape, stride, dtype, device,
+and `requires_grad` plus captured-global identity and metadata, is bounded by
+exact non-negative integer `recompile_limit` values, and uses an internal
+default cap when
 `recompile_limit=None`.
 `torch.compiler.reset()` clears those per-wrapper native graph caches without
 changing the configured default backend. Unsupported compiler programs and
