@@ -17,6 +17,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from . import _cuda_buffer
 from . import _cuda_driver_probe
 
 
@@ -27,21 +28,7 @@ DEFAULT_ELEMENT_COUNT = 4096
 DEFAULT_INPUT_CHECKSUM = "8922573efa224da11cd33b7dd0401a60"
 DEFAULT_POINTWISE_CHECKSUM = "859e8e6c64e796d56eee827f79e23386"
 
-_CUDA_MEMCPY_HOST_TO_DEVICE = 1
-_CUDA_MEMCPY_DEVICE_TO_HOST = 2
-_CUDA_UNAVAILABLE_ERRORS = {
-    "cudaErrorInsufficientDriver",
-    "cudaErrorNoDevice",
-}
-_CUDA_RUNTIME_SYMBOLS = (
-    "cudaGetDeviceCount",
-    "cudaSetDevice",
-    "cudaGetDevice",
-    "cudaMalloc",
-    "cudaMemcpy",
-    "cudaDeviceSynchronize",
-    "cudaFree",
-)
+_CUDA_UNAVAILABLE_ERRORS = _cuda_buffer.CUDA_UNAVAILABLE_ERRORS
 _CUDA_SOURCE = r"""
 #include <cuda_runtime.h>
 
@@ -111,15 +98,11 @@ extern "C" int torch_rs_private_pointwise_float32_v1(
 
 
 def _deterministic_input_values(element_count: int) -> list[float]:
-    return [
-        ((index % 251) - 125) * 0.03125
-        + ((index * 17) % 19) * 0.0009765625
-        for index in range(element_count)
-    ]
+    return _cuda_buffer.deterministic_float32_values(element_count)
 
 
 def _deterministic_input_bytes(element_count: int) -> bytes:
-    return struct.pack(f"<{element_count}f", *_deterministic_input_values(element_count))
+    return _cuda_buffer.deterministic_float32_bytes(element_count)
 
 
 def _expected_output_bytes(element_count: int) -> bytes:
@@ -159,14 +142,7 @@ def _runtime_call(
     function_name: str,
     *arguments: Any,
 ) -> dict[str, Any]:
-    function = getattr(runtime, function_name)
-    code = int(function(*arguments))
-    return {
-        "result": code,
-        "error_name": (
-            _cuda_driver_probe._runtime_error_name(runtime, code) if code else None
-        ),
-    }
+    return _cuda_buffer.runtime_call(runtime, function_name, *arguments)
 
 
 def _runtime_versions(
@@ -174,98 +150,11 @@ def _runtime_versions(
     library: str | None,
     load_error: str | None,
 ) -> dict[str, Any]:
-    result: dict[str, Any] = {
-        "library": library,
-        "loaded": runtime is not None,
-        "load_error": load_error,
-        "runtime_version": None,
-        "runtime_version_text": None,
-        "driver_version": None,
-        "driver_version_text": None,
-        "calls": {},
-    }
-    if runtime is None:
-        return result
-
-    try:
-        runtime.cudaRuntimeGetVersion.argtypes = [ctypes.POINTER(ctypes.c_int)]
-        runtime.cudaRuntimeGetVersion.restype = ctypes.c_int
-    except AttributeError:
-        result["calls"]["cudaRuntimeGetVersion"] = {
-            "result": None,
-            "error_name": "missing symbol",
-        }
-    else:
-        runtime_version = ctypes.c_int()
-        runtime_call = _runtime_call(
-            runtime,
-            "cudaRuntimeGetVersion",
-            ctypes.byref(runtime_version),
-        )
-        result["calls"]["cudaRuntimeGetVersion"] = runtime_call
-        if runtime_call["result"] == 0:
-            result["runtime_version"] = int(runtime_version.value)
-            result["runtime_version_text"] = _cuda_driver_probe._cuda_version_text(
-                int(runtime_version.value)
-            )
-
-    try:
-        runtime.cudaDriverGetVersion.argtypes = [ctypes.POINTER(ctypes.c_int)]
-        runtime.cudaDriverGetVersion.restype = ctypes.c_int
-    except AttributeError:
-        result["calls"]["cudaDriverGetVersion"] = {
-            "result": None,
-            "error_name": "missing symbol",
-        }
-    else:
-        driver_version = ctypes.c_int()
-        driver_call = _runtime_call(
-            runtime,
-            "cudaDriverGetVersion",
-            ctypes.byref(driver_version),
-        )
-        result["calls"]["cudaDriverGetVersion"] = driver_call
-        if driver_call["result"] == 0:
-            result["driver_version"] = int(driver_version.value)
-            result["driver_version_text"] = _cuda_driver_probe._cuda_version_text(
-                int(driver_version.value)
-            )
-
-    return result
+    return _cuda_buffer.runtime_versions(runtime, library, load_error)
 
 
 def _configure_runtime_symbols(runtime: ctypes.CDLL) -> list[str]:
-    missing: list[str] = []
-    for name in _CUDA_RUNTIME_SYMBOLS:
-        if not hasattr(runtime, name):
-            missing.append(name)
-
-    if missing:
-        return missing
-
-    runtime.cudaGetDeviceCount.argtypes = [ctypes.POINTER(ctypes.c_int)]
-    runtime.cudaGetDeviceCount.restype = ctypes.c_int
-    runtime.cudaSetDevice.argtypes = [ctypes.c_int]
-    runtime.cudaSetDevice.restype = ctypes.c_int
-    runtime.cudaGetDevice.argtypes = [ctypes.POINTER(ctypes.c_int)]
-    runtime.cudaGetDevice.restype = ctypes.c_int
-    runtime.cudaMalloc.argtypes = [
-        ctypes.POINTER(ctypes.c_void_p),
-        ctypes.c_size_t,
-    ]
-    runtime.cudaMalloc.restype = ctypes.c_int
-    runtime.cudaMemcpy.argtypes = [
-        ctypes.c_void_p,
-        ctypes.c_void_p,
-        ctypes.c_size_t,
-        ctypes.c_int,
-    ]
-    runtime.cudaMemcpy.restype = ctypes.c_int
-    runtime.cudaDeviceSynchronize.argtypes = []
-    runtime.cudaDeviceSynchronize.restype = ctypes.c_int
-    runtime.cudaFree.argtypes = [ctypes.c_void_p]
-    runtime.cudaFree.restype = ctypes.c_int
-    return []
+    return _cuda_buffer.configure_runtime_symbols(runtime)
 
 
 def _run_text(command: list[str], cwd: Path | None = None) -> dict[str, Any]:
@@ -511,6 +400,9 @@ def _base_result(
         "device_type": None,
         "device_index": None,
         "dtype": "float32",
+        "buffer_schema_version": _cuda_buffer.BUFFER_SCHEMA_VERSION,
+        "input_metadata": None,
+        "output_metadata": None,
         "element_count": element_count,
         "byte_count": byte_count,
         "deterministic_input_version": DETERMINISTIC_INPUT_VERSION,
@@ -682,57 +574,44 @@ def launch_float32_pointwise_device0(
     result["device_type"] = "cuda"
     result["device_index"] = int(current_device.value)
 
-    device_input = ctypes.c_void_p()
-    device_output = ctypes.c_void_p()
-    input_malloc = _runtime_call(
+    device_input = _cuda_buffer.PrivateCudaFloat32Buffer(
         runtime,
-        "cudaMalloc",
-        ctypes.byref(device_input),
-        byte_count,
+        (element_count,),
+        name="input",
+        device_index=result["device_index"],
     )
-    input_malloc["byte_count"] = byte_count
-    result["calls"]["cudaMalloc_input"] = input_malloc
-    result["device_input_pointer_nonzero"] = bool(device_input.value)
-    if input_malloc["result"] != 0 or not device_input.value:
+    result["calls"]["cudaMalloc_input"] = device_input.malloc_call
+    result["device_input_pointer_nonzero"] = device_input.pointer_nonzero
+    result["input_metadata"] = device_input.metadata()
+    if not device_input.allocation_ok:
         result["status"] = "error"
         result["reason"] = "cudaMalloc failed for input"
         return result
 
+    device_output = None
     try:
-        output_malloc = _runtime_call(
+        device_output = _cuda_buffer.PrivateCudaFloat32Buffer(
             runtime,
-            "cudaMalloc",
-            ctypes.byref(device_output),
-            byte_count,
+            (element_count,),
+            name="output",
+            device_index=result["device_index"],
         )
-        output_malloc["byte_count"] = byte_count
-        result["calls"]["cudaMalloc_output"] = output_malloc
-        result["device_output_pointer_nonzero"] = bool(device_output.value)
-        if output_malloc["result"] != 0 or not device_output.value:
+        result["calls"]["cudaMalloc_output"] = device_output.malloc_call
+        result["device_output_pointer_nonzero"] = device_output.pointer_nonzero
+        result["output_metadata"] = device_output.metadata()
+        if not device_output.allocation_ok:
             result["status"] = "error"
             result["reason"] = "cudaMalloc failed for output"
             return result
 
-        host_input = ctypes.create_string_buffer(host_input_bytes, byte_count)
-        host_output = ctypes.create_string_buffer(byte_count)
-
-        h2d_call = _runtime_call(
-            runtime,
-            "cudaMemcpy",
-            device_input,
-            ctypes.c_void_p(ctypes.addressof(host_input)),
-            byte_count,
-            _CUDA_MEMCPY_HOST_TO_DEVICE,
-        )
-        h2d_call["kind"] = "cudaMemcpyHostToDevice"
-        h2d_call["byte_count"] = byte_count
+        h2d_call = device_input.copy_from_host(host_input_bytes)
         result["calls"]["cudaMemcpyHostToDevice"] = h2d_call
         if h2d_call["result"] != 0:
             result["status"] = "error"
             result["reason"] = "cudaMemcpy host-to-device failed"
             return result
 
-        sync_after_h2d = _runtime_call(runtime, "cudaDeviceSynchronize")
+        sync_after_h2d = device_input.synchronize()
         result["calls"]["cudaDeviceSynchronize_after_host_to_device"] = (
             sync_after_h2d
         )
@@ -751,8 +630,8 @@ def launch_float32_pointwise_device0(
         )
         kernel_result = int(
             kernel_function(
-                device_input,
-                device_output,
+                device_input.pointer,
+                device_output.pointer,
                 element_count,
                 ctypes.byref(blocks),
                 ctypes.byref(threads),
@@ -790,36 +669,27 @@ def launch_float32_pointwise_device0(
             result["reason"] = "private CUDA pointwise kernel launch failed"
             return result
 
-        d2h_call = _runtime_call(
-            runtime,
-            "cudaMemcpy",
-            ctypes.c_void_p(ctypes.addressof(host_output)),
-            device_output,
-            byte_count,
-            _CUDA_MEMCPY_DEVICE_TO_HOST,
+        readback = device_output.checksum_readback(
+            lambda payload: _checksum_output_bytes(payload, element_count),
         )
-        d2h_call["kind"] = "cudaMemcpyDeviceToHost"
-        d2h_call["byte_count"] = byte_count
+        d2h_call = readback.copy_call
         result["calls"]["cudaMemcpyDeviceToHost"] = d2h_call
         if d2h_call["result"] != 0:
             result["status"] = "error"
             result["reason"] = "cudaMemcpy device-to-host failed"
             return result
 
-        sync_after_d2h = _runtime_call(runtime, "cudaDeviceSynchronize")
+        sync_after_d2h = readback.sync_call
         result["calls"]["cudaDeviceSynchronize_after_device_to_host"] = (
             sync_after_d2h
         )
-        if sync_after_d2h["result"] != 0:
+        if sync_after_d2h is None or sync_after_d2h["result"] != 0:
             result["status"] = "error"
             result["reason"] = "cudaDeviceSynchronize failed after device-to-host"
             return result
 
-        host_output_bytes = ctypes.string_at(
-            ctypes.addressof(host_output),
-            byte_count,
-        )
-        output_checksum = _checksum_output_bytes(host_output_bytes, element_count)
+        host_output_bytes = readback.payload
+        output_checksum = readback.checksum
         result["device_output_checksum"] = output_checksum
         result["checksum_match"] = (
             host_output_bytes == expected_output
@@ -834,14 +704,17 @@ def launch_float32_pointwise_device0(
         result["reason"] = "pointwise kernel checksum verified"
         return result
     finally:
-        if device_output.value:
-            free_output = _runtime_call(runtime, "cudaFree", device_output)
+        if device_output is not None:
+            free_output = device_output.close()
+        else:
+            free_output = None
+        if free_output is not None:
             result["calls"]["cudaFree_output"] = free_output
             if result["status"] == "ok" and free_output["result"] != 0:
                 result["status"] = "error"
                 result["reason"] = "cudaFree failed for output"
-        if device_input.value:
-            free_input = _runtime_call(runtime, "cudaFree", device_input)
+        free_input = device_input.close()
+        if free_input is not None:
             result["calls"]["cudaFree_input"] = free_input
             if result["status"] == "ok" and free_input["result"] != 0:
                 result["status"] = "error"
