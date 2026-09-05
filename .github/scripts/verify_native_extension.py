@@ -34,8 +34,11 @@ def module_path(module: ModuleType) -> Path:
     return Path(spec.origin).resolve(strict=True)
 
 
-def require_inside_virtualenv(name: str, path: Path) -> None:
-    expected = expected_virtualenv()
+def require_inside_virtualenv(
+    name: str,
+    path: Path,
+    expected: Path,
+) -> None:
     try:
         path.relative_to(expected)
     except ValueError as error:
@@ -75,8 +78,8 @@ def verify() -> str:
     native = importlib.import_module("torch_rs.torch_rs")
     package_path = module_path(package)
     native_path = module_path(native)
-    require_inside_virtualenv("torch_rs", package_path)
-    require_inside_virtualenv("torch_rs.torch_rs", native_path)
+    require_inside_virtualenv("torch_rs", package_path, expected)
+    require_inside_virtualenv("torch_rs.torch_rs", native_path, expected)
 
     package_spec = package.__spec__
     if package_spec is None or package_spec.submodule_search_locations is None:

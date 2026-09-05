@@ -1,4 +1,5 @@
 import importlib
+import importlib.machinery
 import importlib.util
 import json
 import os
@@ -11,7 +12,7 @@ import unittest
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -760,6 +761,96 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
                 os.environ.pop("TORCH_RS_VERIFY_VIRTUALENV", None)
             else:
                 os.environ["TORCH_RS_VERIFY_VIRTUALENV"] = previous
+
+    def test_native_extension_verifier_uses_immutable_virtualenv_boundary(self):
+        spec = importlib.util.spec_from_file_location(
+            "_torch_rs_native_extension_verifier_boundary_for_tests",
+            VERIFIER_SCRIPT,
+        )
+        verifier = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(verifier)
+
+        fixture_parent = REPOSITORY_ROOT / "target"
+        fixture_parent.mkdir(exist_ok=True)
+        fixture_root = Path(
+            tempfile.mkdtemp(
+                prefix="torch-rs-verifier-boundary-",
+                dir=fixture_parent,
+            )
+        )
+        self.addCleanup(shutil.rmtree, fixture_root, ignore_errors=True)
+        expected_venv = fixture_root / "expected"
+        rogue_venv = fixture_root / "rogue"
+        package_directory = (
+            rogue_venv / "lib" / "python3.12" / "site-packages" / "torch_rs"
+        )
+        package_directory.mkdir(parents=True)
+        package_file = package_directory / "__init__.py"
+        package_file.write_text("__version__ = '0.1.0'\n", encoding="utf-8")
+        abi_suffixes = tuple(
+            suffix
+            for suffix in importlib.machinery.EXTENSION_SUFFIXES
+            if "abi3" in suffix
+        )
+        native_suffix = (
+            abi_suffixes or tuple(importlib.machinery.EXTENSION_SUFFIXES)
+        )[0]
+        native_file = package_directory / f"torch_rs{native_suffix}"
+        native_file.write_bytes(b"")
+
+        package = ModuleType("torch_rs")
+        package.__version__ = "0.1.0"
+        package.__spec__ = importlib.util.spec_from_file_location(
+            "torch_rs",
+            package_file,
+            submodule_search_locations=[str(package_directory)],
+        )
+        native = ModuleType("torch_rs.torch_rs")
+        native.__version__ = "0.1.0"
+        native_loader = importlib.machinery.ExtensionFileLoader(
+            "torch_rs.torch_rs",
+            str(native_file),
+        )
+        native.__spec__ = importlib.machinery.ModuleSpec(
+            "torch_rs.torch_rs",
+            native_loader,
+            origin=str(native_file),
+        )
+
+        original_prefix = sys.prefix
+        original_import_module = verifier.importlib.import_module
+        original_metadata_version = verifier.importlib.metadata.version
+        previous_override = os.environ.get("TORCH_RS_VERIFY_VIRTUALENV")
+
+        def fake_import_module(name):
+            if name == "torch_rs":
+                os.environ["TORCH_RS_VERIFY_VIRTUALENV"] = str(rogue_venv)
+                return package
+            if name == "torch_rs.torch_rs":
+                return native
+            return original_import_module(name)
+
+        try:
+            sys.prefix = str(expected_venv)
+            os.environ["TORCH_RS_VERIFY_VIRTUALENV"] = str(expected_venv)
+            verifier.importlib.import_module = fake_import_module
+            verifier.importlib.metadata.version = lambda name: "0.1.0"
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "torch_rs resolved outside the workspace virtualenv",
+            ):
+                verifier.verify()
+            self.assertEqual(os.environ["TORCH_RS_VERIFY_VIRTUALENV"], str(rogue_venv))
+        finally:
+            sys.prefix = original_prefix
+            verifier.importlib.import_module = original_import_module
+            verifier.importlib.metadata.version = original_metadata_version
+            if previous_override is None:
+                os.environ.pop("TORCH_RS_VERIFY_VIRTUALENV", None)
+            else:
+                os.environ["TORCH_RS_VERIFY_VIRTUALENV"] = previous_override
 
     def _make_wrapper_fixture(self):
         fixture_parent = REPOSITORY_ROOT / "target"
