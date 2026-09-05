@@ -4,6 +4,7 @@ import importlib
 import importlib.machinery
 import importlib.metadata
 import importlib.util
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -16,8 +17,14 @@ except ModuleNotFoundError:  # Python 3.10 support.
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE_VENV = (REPOSITORY_ROOT / ".venv").resolve()
 MODULE_NAMES = ("torch_rs", "torch_rs.torch_rs")
+
+
+def expected_virtualenv() -> Path:
+    override = os.environ.get("TORCH_RS_VERIFY_VIRTUALENV")
+    if override:
+        return Path(override).resolve()
+    return (REPOSITORY_ROOT / ".venv").resolve()
 
 
 def module_path(module: ModuleType) -> Path:
@@ -28,8 +35,9 @@ def module_path(module: ModuleType) -> Path:
 
 
 def require_inside_virtualenv(name: str, path: Path) -> None:
+    expected = expected_virtualenv()
     try:
-        path.relative_to(WORKSPACE_VENV)
+        path.relative_to(expected)
     except ValueError as error:
         raise RuntimeError(
             f"{name} resolved outside the workspace virtualenv: {path}"
@@ -56,9 +64,10 @@ def print_resolved_paths(*, file: TextIO = sys.stdout) -> None:
 
 
 def verify() -> str:
-    if Path(sys.prefix).resolve() != WORKSPACE_VENV:
+    expected = expected_virtualenv()
+    if Path(sys.prefix).resolve() != expected:
         raise RuntimeError(
-            f"expected interpreter prefix {WORKSPACE_VENV}, "
+            f"expected interpreter prefix {expected}, "
             f"got {Path(sys.prefix).resolve()}"
         )
 
