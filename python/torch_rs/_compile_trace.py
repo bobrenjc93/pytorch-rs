@@ -179,11 +179,15 @@ _SUPPORTED_UNARY_METHODS = (
     "Tensor.relu",
     "Tensor.square",
     "Tensor.detach",
+    "Tensor.float",
 )
 _SUPPORTED_VALUE_UNARY_TARGETS = frozenset(("neg", "abs", "relu", "square"))
 _SUPPORTED_ALIAS_UNARY_TARGETS = frozenset(("detach",))
+_SUPPORTED_IDENTITY_UNARY_TARGETS = frozenset(("float",))
 _SUPPORTED_UNARY_TARGETS = (
-    _SUPPORTED_VALUE_UNARY_TARGETS | _SUPPORTED_ALIAS_UNARY_TARGETS
+    _SUPPORTED_VALUE_UNARY_TARGETS
+    | _SUPPORTED_ALIAS_UNARY_TARGETS
+    | _SUPPORTED_IDENTITY_UNARY_TARGETS
 )
 _SUPPORTED_BINARY_METHODS = (
     "Tensor.__add__",
@@ -490,6 +494,14 @@ def _unary_output_metadata(input_metadata, target, *, grad_enabled=None):
             dtype=input_metadata.dtype,
             device=input_metadata.device,
             requires_grad=False,
+        )
+    if target in _SUPPORTED_IDENTITY_UNARY_TARGETS:
+        return CompileTraceTensorMetadata(
+            shape=input_metadata.shape,
+            stride=input_metadata.stride,
+            dtype=input_metadata.dtype,
+            device=input_metadata.device,
+            requires_grad=input_metadata.requires_grad,
         )
     if target not in _SUPPORTED_VALUE_UNARY_TARGETS:
         _unsupported_operation(f"Tensor.{target}")
@@ -942,6 +954,19 @@ class CompileTraceTensorProxy:
 
     def detach(self):
         return self._recorder.record_unary("detach", self)
+
+    def float(self, *args, **kwargs):
+        if args:
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace Tensor.float only supports zero arguments"
+            )
+        if kwargs:
+            names = ", ".join(sorted(kwargs))
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace Tensor.float does not support keyword "
+                f"arguments: {names}"
+            )
+        return self._recorder.record_unary("float", self)
 
     def __neg__(self):
         return self.neg()
