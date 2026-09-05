@@ -47,6 +47,37 @@ do not replace the benchmark policy or Burner-managed evaluation progress.
 - [Rank-12 `Tensor.sum` release timings](docs/rank12-sum-release-timings.md)
 - [`Tensor.mean` and `torch.mean` full-reduction release timings](docs/tensor-mean-release-timings.md)
 
+### Creation
+
+- [`torch.empty`, `torch.zeros`, and `torch.ones` eager CPU factory timings](docs/creation-factory-release-timings.md)
+
+Run the creation-factory driver from a release-built wheel install:
+
+```bash
+CUDA_VISIBLE_DEVICES= .venv/bin/python scripts/benchmark_creation_factories.py
+```
+
+The script requires PyTorch 2.13 and compares public eager CPU factory calls
+for `torch.empty`, `torch.zeros`, and `torch.ones` across scalar, zero-element,
+small, and large shapes. It uses identical warmup/sample counts, two reversed
+implementation-order passes, one CPU thread by default, and metadata
+materialization inside the timed loop. `zeros` and `ones` also include one
+final-output sum checksum inside each timed block. `torch.empty` element values
+remain unspecified by contract; the current safe `torch_rs` storage
+implementation zero-initializes its CPU float32 backing allocation, and the
+benchmark records that cost explicitly. Private CUDA driver/runtime probes are
+not part of this parity benchmark. Treat the fixed public matrix as
+repeatability evidence only until it is paired with a generated-shape validator
+run using a held-out seed:
+
+```bash
+CUDA_VISIBLE_DEVICES= .venv/bin/python \
+  scripts/validate_creation_factory_benchmark.py --seed <held-out-seed>
+```
+
+The generated validator excludes the public fixed shapes and records the seed
+and generated workload matrix in its JSON output.
+
 ### Elementwise ops
 
 - [`+` and `Tensor.add` release timings](docs/tensor-add-release-timings.md)
@@ -72,13 +103,14 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py
 The script requires PyTorch 2.13, records GPU, driver, CUDA runtime, `nvcc`,
 compile configuration, cold first-call timing, synchronized steady-state
 timings, and checksum/correctness evidence for one versioned PyTorch CUDA
-reference workload. It also records a private benchmark-only `torch_rs` CUDA
-driver probe, separate from the public `torch.cuda` compatibility API, with
-device 0 driver/runtime metadata. The current `torch_rs` CUDA compile cell is
-emitted as explicit `zero_credit_unsupported`: CPU tensors, `backend="eager"`,
-eager fallback, skipped execution, or forwarding to installed PyTorch are
-rejected as eligible CUDA compile evidence. The public CPU-build `torch.cuda`
-probe behavior remains unchanged.
+reference workload. It also records private benchmark-only `torch_rs` CUDA
+driver/runtime evidence, separate from the public `torch.cuda` compatibility
+API: device 0 metadata plus a float32 runtime allocation, host-to-device copy,
+device-to-host copy, synchronization, and checksum roundtrip. The current
+`torch_rs` CUDA compile cell is emitted as explicit `zero_credit_unsupported`:
+CPU tensors, `backend="eager"`, eager fallback, skipped execution, or
+forwarding to installed PyTorch are rejected as eligible CUDA compile evidence.
+The public CPU-build `torch.cuda` probe behavior remains unchanged.
 
 ### Layout/view ops
 

@@ -39,6 +39,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-mean-release-timings.md",
     ),
     (
+        "`torch.empty`, `torch.zeros`, and `torch.ones` eager CPU factory timings",
+        "docs/creation-factory-release-timings.md",
+    ),
+    (
         "`+` and `Tensor.add` release timings",
         "docs/tensor-add-release-timings.md",
     ),
@@ -107,6 +111,10 @@ HISTORICAL_TIMING_GROUPS = (
             "docs/rank12-sum-release-timings.md",
             "docs/tensor-mean-release-timings.md",
         ),
+    ),
+    (
+        "Creation",
+        ("docs/creation-factory-release-timings.md",),
     ),
     (
         "Elementwise ops",
@@ -443,8 +451,9 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "backend default/name resolution through the `torch.compiler` registry",
     "native `backend=\"eager\", fullgraph=True` execution",
     "straight-line one- or two-input CPU `float32` Tensor functions",
-    "Tensor `neg`, `abs`, `relu`, `detach`, and binary `add`",
+    "Tensor `neg`, `abs`, `relu`, `square`, `detach`, and binary `add`",
     "storage-aliasing detach graphlets with `requires_grad=False` outputs",
+    "square decomposition graphlets",
     "Tensor broadcasting",
     "broader graph capture/execution",
     "active `__torch_function__` modes",

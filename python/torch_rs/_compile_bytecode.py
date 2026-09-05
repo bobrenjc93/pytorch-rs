@@ -55,6 +55,7 @@ _METHOD_TARGETS = {
     "absolute": _MethodTarget("unary", "abs", 0, "Tensor.absolute"),
     "__abs__": _MethodTarget("unary", "abs", 0, "Tensor.__abs__"),
     "relu": _MethodTarget("unary", "relu", 0, "Tensor.relu"),
+    "square": _MethodTarget("unary", "square", 0, "Tensor.square"),
     "detach": _MethodTarget("unary", "detach", 0, "Tensor.detach"),
     "add": _MethodTarget("binary", "add", 1, "Tensor.add"),
     "__add__": _MethodTarget("binary", "add", 1, "Tensor.__add__"),
