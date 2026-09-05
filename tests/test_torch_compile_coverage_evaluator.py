@@ -43,6 +43,7 @@ def _case(name, category, *, recompile_limit=None, backward_through_sum=False):
         category=category,
         program=_program,
         make_inputs=_make_inputs,
+        dynamic_input_factories=(),
         fullgraph=True,
         dynamic=None,
         mode=None,
@@ -257,7 +258,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
 
         self.assertIn("duplicate case name 'tensor_0'", str(raised.exception))
 
-    def test_current_v11_corpus_matches_pinned_manifest(self):
+    def test_current_v12_corpus_matches_pinned_manifest(self):
         evaluator._validate_corpus_metadata(_real_corpus_namespace())
 
     def test_pinned_manifest_rejects_case_program_replacement(self):
@@ -272,7 +273,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v11 case cpu_float32_unary_abs_neg program changed",
+            "public v12 case cpu_float32_unary_abs_neg program changed",
             str(raised.exception),
         )
 
@@ -288,7 +289,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v11 case cpu_float32_unary_abs_neg make_inputs changed",
+            "public v12 case cpu_float32_unary_abs_neg make_inputs changed",
             str(raised.exception),
         )
 
@@ -308,7 +309,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             program_globals["cpu_float32_custom_helper_unary"] = original_helper
 
         self.assertIn(
-            "public v11 case cpu_float32_custom_function_unary helper_sha256s changed",
+            "public v12 case cpu_float32_custom_function_unary helper_sha256s changed",
             str(raised.exception),
         )
 
@@ -340,7 +341,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v11 guard scenario "
+            "public v12 guard scenario "
             "unary_shape_stride_requires_grad_guards/same_metadata "
             "guard_change changed",
             str(raised.exception),
@@ -629,6 +630,49 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
         self.assertEqual(len(verdicts), 1)
         self.assertFalse(verdicts[0].passed)
         self.assertEqual(verdicts[0].failure_kind, "reference_mismatch")
+
+    def test_candidate_dynamic_variant_mismatch_zeroes_case(self):
+        case = _case("dynamic_probe", "dynamic_shapes_symbolics")
+        corpus = SimpleNamespace(COMPILE_HELD_OUT_CORPUS=())
+        output = {"metadata": {"shape": [1]}, "values": [1.0]}
+        reference_case_results = {
+            case.name: {
+                "name": case.name,
+                "category": case.category,
+                "output": output,
+                "variant_outputs": [
+                    {"metadata": {"shape": [2]}, "values": [1.0, 2.0]},
+                ],
+            }
+        }
+        worker_payload = {
+            "ok": True,
+            "cases": [
+                {
+                    "name": case.name,
+                    "category": case.category,
+                    "status": "passed",
+                    "output": output,
+                    "variant_outputs": [
+                        {"metadata": {"shape": [2]}, "values": [1.0, 3.0]},
+                    ],
+                }
+            ],
+            "guard_scenarios": [],
+        }
+
+        verdicts, _ = evaluator._compare_worker_to_reference(
+            corpus,
+            (case,),
+            reference_case_results,
+            {},
+            worker_payload,
+        )
+
+        self.assertEqual(len(verdicts), 1)
+        self.assertFalse(verdicts[0].passed)
+        self.assertEqual(verdicts[0].failure_kind, "reference_mismatch")
+        self.assertIn("variant_outputs", verdicts[0].message)
 
     def test_candidate_backward_gradient_mismatch_zeroes_case(self):
         case = _case(
