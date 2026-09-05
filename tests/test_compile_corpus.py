@@ -17,7 +17,7 @@ except ImportError:
 
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-COMPILE_CORPUS_VERSION = "torch_compile_corpus_v11"
+COMPILE_CORPUS_VERSION = "torch_compile_corpus_v12"
 
 CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -532,7 +532,12 @@ def cpu_float32_dynamic_unary_inputs(module):
 def cpu_float32_dynamic_unary_shape_inputs(module):
     return (
         module.tensor(
-            [-1.25, 2.5, -3.75, 4.0, -5.5],
+            [
+                [-1.25, 2.5, -3.75],
+                [4.0, -5.5, 6.25],
+                [-7.5, 8.0, -9.25],
+                [10.5, -11.0, 12.25],
+            ],
             dtype=module.float32,
         ),
     )
@@ -1331,7 +1336,7 @@ def assert_leaf_gradients_unchanged(testcase, inputs, before_gradients, *, case)
 
 class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
-        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v11")
+        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v12")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
         self.assertEqual(len(COMPILE_CORPUS), 21)
         self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 13)
@@ -2754,6 +2759,80 @@ class CompileCorpusTraceTests(unittest.TestCase):
         self.assertEqual(cache[cpu_key], "cpu")
         self.assertEqual(cache[cuda_key], "cuda")
 
+    def test_dynamic_compile_cache_key_ignores_shape_and_stride_values(self):
+        def program(x):
+            return x.neg()
+
+        base = _compile_trace._metadata_from_native_tensor(
+            torch.tensor([[1.0, 2.0, 3.0]], dtype=torch.float32)
+        )
+        same_rank_shape = _compile_trace._metadata_from_native_tensor(
+            torch.tensor(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                dtype=torch.float32,
+            )
+        )
+        same_rank_stride = _compile_trace._metadata_from_native_tensor(
+            torch.tensor(
+                [[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]],
+                dtype=torch.float32,
+            ).t()
+        )
+        rank_changed = _compile_trace._metadata_from_native_tensor(
+            torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32)
+        )
+        requires_grad_changed = _compile_trace._metadata_from_native_tensor(
+            torch.tensor([[1.0, 2.0, 3.0]], dtype=torch.float32, requires_grad=True)
+        )
+
+        static_base_key = _compile_bytecode.compile_cache_key(program, (base,))
+        self.assertNotEqual(
+            static_base_key,
+            _compile_bytecode.compile_cache_key(program, (same_rank_shape,)),
+        )
+        self.assertNotEqual(
+            static_base_key,
+            _compile_bytecode.compile_cache_key(program, (same_rank_stride,)),
+        )
+
+        dynamic_base_key = _compile_bytecode.compile_cache_key(
+            program,
+            (base,),
+            dynamic=True,
+        )
+        self.assertEqual(
+            dynamic_base_key,
+            _compile_bytecode.compile_cache_key(
+                program,
+                (same_rank_shape,),
+                dynamic=True,
+            ),
+        )
+        self.assertEqual(
+            dynamic_base_key,
+            _compile_bytecode.compile_cache_key(
+                program,
+                (same_rank_stride,),
+                dynamic=True,
+            ),
+        )
+        self.assertNotEqual(
+            dynamic_base_key,
+            _compile_bytecode.compile_cache_key(
+                program,
+                (rank_changed,),
+                dynamic=True,
+            ),
+        )
+        self.assertNotEqual(
+            dynamic_base_key,
+            _compile_bytecode.compile_cache_key(
+                program,
+                (requires_grad_changed,),
+                dynamic=True,
+            ),
+        )
+
     def test_private_cuda_trace_rejects_cpu_tensor_before_execution(self):
         recorder = _compile_trace.CompileTraceRecorder(name="cuda_guard")
         proxy = recorder.input(
@@ -3437,6 +3516,41 @@ class CompileCorpusTraceTests(unittest.TestCase):
             ),
         ):
             graph.forward(left, mismatched)
+
+    def test_dynamic_private_executor_accepts_shape_and_stride_variants(self):
+        graph = _compile_trace.trace_one_input_compile_graph(
+            cpu_float32_dynamic_true_shape_stride_unary,
+            cpu_float32_dynamic_unary_inputs,
+            name="cpu_float32_dynamic_true_shape_stride_unary",
+            dynamic=True,
+        )
+
+        self.assertTrue(graph.dynamic)
+        for make_inputs in (
+            cpu_float32_dynamic_unary_inputs,
+            cpu_float32_dynamic_unary_shape_inputs,
+            cpu_float32_dynamic_unary_stride_inputs,
+        ):
+            with self.subTest(factory=make_inputs.__name__):
+                inputs = make_inputs(torch)
+                expected = cpu_float32_dynamic_true_shape_stride_unary(*inputs)
+                actual = graph.forward(*inputs)
+                assert_output_observables_match(
+                    self,
+                    actual,
+                    expected,
+                    case=make_inputs.__name__,
+                )
+
+        rank_changed = torch.tensor(
+            [-1.25, 2.5, -3.75, 4.0, -5.5],
+            dtype=torch.float32,
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "metadata mismatch for 'arg0': shape rank expected 2, got 1",
+        ):
+            graph.forward(rank_changed)
 
     def test_proxy_unsupported_operations_fail_clearly(self):
         recorder = _compile_trace.CompileTraceRecorder()
@@ -4160,7 +4274,7 @@ class CompileRecompilationGuardCorpusTests(unittest.TestCase):
             _compile_bytecode.lower_one_input_compile_graph = original_lower_one
             _compile_bytecode.lower_compile_graph = original_lower_two
 
-    def test_dynamic_shape_symbolics_cases_recompile_without_user_code(self):
+    def test_dynamic_shape_symbolics_cases_run_variants_without_user_code(self):
         original_lower_one = _compile_bytecode.lower_one_input_compile_graph
         original_lower_two = _compile_bytecode.lower_compile_graph
         lower_calls = []
@@ -4250,7 +4364,7 @@ class CompileRecompilationGuardCorpusTests(unittest.TestCase):
                         )
                         self.assertEqual(
                             len(lower_calls),
-                            expected_count,
+                            1 if case.dynamic is True else expected_count,
                             msg=f"{case.name}/{expected_count}",
                         )
 

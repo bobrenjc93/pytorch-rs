@@ -26,8 +26,8 @@ import warnings
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CORPUS_PATH = REPOSITORY_ROOT / "tests" / "test_compile_corpus.py"
 EVALUATION_ID = "eval_a61c0e71"
-EVALUATOR_VERSION = "torch_compile_program_coverage_evaluator_v7"
-EXPECTED_CORPUS_VERSION = "torch_compile_corpus_v11"
+EVALUATOR_VERSION = "torch_compile_program_coverage_evaluator_v8"
+EXPECTED_CORPUS_VERSION = "torch_compile_corpus_v12"
 REFERENCE_PYTORCH_VERSION = "2.13.0"
 EXPECTED_CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -57,7 +57,7 @@ EXPECTED_HELD_OUT_GUARD_SCENARIOS = (
     "heldout_unary_rank3_metadata_mix",
     "heldout_binary_broadcast_metadata_mix",
 )
-EXPECTED_V11_CASE_MANIFEST = (
+EXPECTED_V12_CASE_MANIFEST = (
     {
         "name": "cpu_float32_unary_abs_neg",
         "held_out": False,
@@ -278,8 +278,8 @@ EXPECTED_V11_CASE_MANIFEST = (
         "dynamic_input_factories": (
             {
                 "name": "cpu_float32_dynamic_unary_shape_inputs",
-                "make_inputs_sha256": "ca4db88ca10f82531793eec93101ae7bc47bfea409f8af2bbdc58273c43165b1",
-                "inputs_sha256": "01f1e1749b866372d2743834e99b57ed185c9ef4ed482f87bb23cb549d52ef99",
+                "make_inputs_sha256": "8dcc412441dc404c9d9bf5c976eb7d102d1cdaa6b452c9f23aa5e2c0cdaabf85",
+                "inputs_sha256": "0e326386f2acce704e19157257900f5690617ff17c5c71667f3b23daa1536ad6",
             },
             {
                 "name": "cpu_float32_dynamic_unary_stride_inputs",
@@ -667,7 +667,7 @@ EXPECTED_V11_CASE_MANIFEST = (
         "recompile_limit": 4,
     },
 )
-EXPECTED_V11_GUARD_SCENARIO_MANIFEST = (
+EXPECTED_V12_GUARD_SCENARIO_MANIFEST = (
     {
         "name": "unary_shape_stride_requires_grad_guards",
         "held_out": False,
@@ -1211,6 +1211,75 @@ def _inputs_sha256(make_inputs, tensor_module, *, errors, context):
         return None
 
 
+def _input_metadata_signature(make_inputs, tensor_module, *, errors, context):
+    if tensor_module is None or not callable(make_inputs):
+        return None
+    try:
+        payloads = _inputs_payload(make_inputs(tensor_module))
+    except Exception as error:
+        errors.append(f"{context} input metadata failed: {_exception_line(error)}")
+        return None
+    return tuple(
+        (
+            tuple(payload["metadata"]["shape"]),
+            tuple(payload["metadata"]["stride"]),
+            payload["metadata"]["dtype"],
+            payload["metadata"]["device"],
+            payload["metadata"]["requires_grad"],
+        )
+        for payload in payloads
+    )
+
+
+def _validate_dynamic_input_metadata(
+    name,
+    make_inputs,
+    dynamic_input_factories,
+    *,
+    tensor_module,
+    dynamic,
+    errors,
+):
+    metadatas = []
+    for index, input_factory in enumerate((make_inputs, *dynamic_input_factories)):
+        metadata = _input_metadata_signature(
+            input_factory,
+            tensor_module,
+            errors=errors,
+            context=f"{name} dynamic input factory {index}",
+        )
+        if metadata is not None:
+            metadatas.append(metadata)
+
+    if len(metadatas) != 1 + len(dynamic_input_factories):
+        return
+    if len(set(metadatas)) != len(metadatas):
+        errors.append(f"{name} dynamic input factories must use unique metadata")
+
+    shape_signatures = {
+        tuple(tensor_metadata[0] for tensor_metadata in metadata)
+        for metadata in metadatas
+    }
+    stride_signatures = {
+        tuple(tensor_metadata[1] for tensor_metadata in metadata)
+        for metadata in metadatas
+    }
+    if len(shape_signatures) < 2:
+        errors.append(f"{name} dynamic input factories must vary shape metadata")
+    if len(stride_signatures) < 2:
+        errors.append(f"{name} dynamic input factories must vary stride metadata")
+
+    if dynamic is True:
+        rank_signatures = {
+            tuple(len(tensor_metadata[0]) for tensor_metadata in metadata)
+            for metadata in metadatas
+        }
+        if len(rank_signatures) != 1:
+            errors.append(
+                f"{name} dynamic=True input factories must keep input ranks stable"
+            )
+
+
 def _case_manifest_entry(corpus_module, case, *, held_out, tensor_module, errors):
     program = getattr(case, "program", None)
     make_inputs = getattr(case, "make_inputs", None)
@@ -1372,19 +1441,19 @@ def _compare_manifest_entry(actual, expected, *, context, errors):
 
 def _expected_case_manifest(held_out):
     return tuple(
-        entry for entry in EXPECTED_V11_CASE_MANIFEST if entry["held_out"] is held_out
+        entry for entry in EXPECTED_V12_CASE_MANIFEST if entry["held_out"] is held_out
     )
 
 
 def _expected_guard_scenario_manifest(held_out):
     return tuple(
         entry
-        for entry in EXPECTED_V11_GUARD_SCENARIO_MANIFEST
+        for entry in EXPECTED_V12_GUARD_SCENARIO_MANIFEST
         if entry["held_out"] is held_out
     )
 
 
-def _validate_v11_case_manifest(
+def _validate_v12_case_manifest(
     corpus_module,
     cases,
     *,
@@ -1398,7 +1467,7 @@ def _validate_v11_case_manifest(
     actual_names = [getattr(case, "name", None) for case in cases]
     if actual_names != expected_names:
         errors.append(
-            f"{label} v11 case names/order changed: {actual_names!r} != {expected_names!r}"
+            f"{label} v12 case names/order changed: {actual_names!r} != {expected_names!r}"
         )
 
     expected_by_name = {entry["name"]: entry for entry in expected_entries}
@@ -1416,12 +1485,12 @@ def _validate_v11_case_manifest(
         _compare_manifest_entry(
             actual_entry,
             expected_entry,
-            context=f"{label} v11 case {case.name}",
+            context=f"{label} v12 case {case.name}",
             errors=errors,
         )
 
 
-def _validate_v11_guard_scenario_manifest(
+def _validate_v12_guard_scenario_manifest(
     corpus_module,
     scenarios,
     *,
@@ -1435,7 +1504,7 @@ def _validate_v11_guard_scenario_manifest(
     actual_names = [getattr(scenario, "name", None) for scenario in scenarios]
     if actual_names != expected_names:
         errors.append(
-            f"{label} v11 guard scenarios changed: {actual_names!r} != {expected_names!r}"
+            f"{label} v12 guard scenarios changed: {actual_names!r} != {expected_names!r}"
         )
 
     expected_by_name = {entry["name"]: entry for entry in expected_entries}
@@ -1453,7 +1522,7 @@ def _validate_v11_guard_scenario_manifest(
         _compare_manifest_entry(
             actual_entry,
             expected_entry,
-            context=f"{label} v11 guard scenario {scenario.name}",
+            context=f"{label} v12 guard scenario {scenario.name}",
             errors=errors,
         )
 
@@ -1493,10 +1562,11 @@ def _validate_corpus_metadata(corpus_module):
 
     public_cases = tuple(getattr(corpus_module, "COMPILE_CORPUS", ()))
     held_out_cases = tuple(getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ()))
+    tensor_module = _manifest_tensor_module(corpus_module, errors)
     if len(public_cases) != 21:
-        errors.append(f"expected 21 public v11 cases, found {len(public_cases)}")
+        errors.append(f"expected 21 public v12 cases, found {len(public_cases)}")
     if len(held_out_cases) != 13:
-        errors.append(f"expected 13 held-out v11 cases, found {len(held_out_cases)}")
+        errors.append(f"expected 13 held-out v12 cases, found {len(held_out_cases)}")
 
     seen_names = set()
     for case in (*public_cases, *held_out_cases):
@@ -1540,6 +1610,15 @@ def _validate_corpus_metadata(corpus_module):
         for input_factory in dynamic_input_factories:
             if not callable(input_factory):
                 errors.append(f"{name} has non-callable dynamic input factory")
+        if category == "dynamic_shapes_symbolics":
+            _validate_dynamic_input_metadata(
+                name,
+                make_inputs,
+                dynamic_input_factories,
+                tensor_module=tensor_module,
+                dynamic=dynamic,
+                errors=errors,
+            )
         for option_name in ("mode", "options"):
             if getattr(case, option_name, None) is not None:
                 errors.append(f"{name} has unsupported {option_name!s} metadata")
@@ -1573,11 +1652,11 @@ def _validate_corpus_metadata(corpus_module):
         getattr(corpus_module, "COMPILE_HELD_OUT_RECOMPILATION_GUARD_SCENARIOS", ())
     )
     if _guard_scenario_names(public_scenarios) != list(EXPECTED_PUBLIC_GUARD_SCENARIOS):
-        errors.append("public recompilation guard scenarios do not match v11")
+        errors.append("public recompilation guard scenarios do not match v12")
     if _guard_scenario_names(held_out_scenarios) != list(
         EXPECTED_HELD_OUT_GUARD_SCENARIOS
     ):
-        errors.append("held-out recompilation guard scenarios do not match v11")
+        errors.append("held-out recompilation guard scenarios do not match v12")
     for scenario in (*public_scenarios, *held_out_scenarios):
         scenario_name = getattr(scenario, "name", None)
         case_name = getattr(scenario, "case_name", None)
@@ -1601,29 +1680,28 @@ def _validate_corpus_metadata(corpus_module):
                 )
             last_compile_count = expected_count if type(expected_count) is int else 0
 
-    tensor_module = _manifest_tensor_module(corpus_module, errors)
-    _validate_v11_case_manifest(
+    _validate_v12_case_manifest(
         corpus_module,
         public_cases,
         held_out=False,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v11_case_manifest(
+    _validate_v12_case_manifest(
         corpus_module,
         held_out_cases,
         held_out=True,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v11_guard_scenario_manifest(
+    _validate_v12_guard_scenario_manifest(
         corpus_module,
         public_scenarios,
         held_out=False,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v11_guard_scenario_manifest(
+    _validate_v12_guard_scenario_manifest(
         corpus_module,
         held_out_scenarios,
         held_out=True,
@@ -2204,7 +2282,7 @@ def _candidate_case_result(corpus_module, case):
                     f"{case.name} dynamic variant {variant_index} executed "
                     "original Python user code"
                 )
-            expected_lower_count = variant_index + 1
+            expected_lower_count = 1 if case.dynamic is True else variant_index + 1
             if counters["lower_compile_graph"] != expected_lower_count:
                 raise AssertionError(
                     f"{case.name} dynamic variant {variant_index} lowered "

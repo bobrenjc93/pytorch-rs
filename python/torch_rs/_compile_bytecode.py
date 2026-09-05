@@ -57,6 +57,7 @@ class _CompileCacheRequest:
     descriptor: _CompileProgramDescriptor
     input_metadatas: tuple
     helper_dependencies: tuple[_HelperCacheDependency, ...]
+    dynamic: bool = False
 
 
 @dataclass(slots=True)
@@ -426,8 +427,29 @@ def _validate_input_metadatas(code, input_metadatas):
             )
 
 
-def prepare_compile_cache_request(program, input_metadatas, descriptor=None):
+def _dynamic_metadata_key(input_metadatas):
+    return tuple(
+        (
+            "dynamic_rank",
+            len(input_metadata.shape),
+            input_metadata.dtype,
+            input_metadata.device,
+            input_metadata.requires_grad,
+        )
+        for input_metadata in input_metadatas
+    )
+
+
+def prepare_compile_cache_request(
+    program,
+    input_metadatas,
+    descriptor=None,
+    *,
+    dynamic=False,
+):
     """Return cache metadata and the exact helper snapshot used for lowering."""
+    if _builtins.type(dynamic) is not _builtins.bool:
+        raise TypeError("torch.compile trace cache dynamic flag must be bool")
     code = getattr(program, "__code__", None)
     if descriptor is None or descriptor.code is not code:
         descriptor = analyze_compile_program(program)
@@ -435,17 +457,25 @@ def prepare_compile_cache_request(program, input_metadatas, descriptor=None):
         _validate_function_code(program, descriptor.code)
     _validate_input_metadatas(descriptor.code, input_metadatas)
     helper_dependencies = _helper_cache_dependencies(program, descriptor)
+    metadata_key = (
+        _dynamic_metadata_key(input_metadatas) if dynamic else input_metadatas
+    )
     return _CompileCacheRequest(
-        key=(descriptor.code, input_metadatas, helper_dependencies),
+        key=(descriptor.code, metadata_key, helper_dependencies),
         descriptor=descriptor,
         input_metadatas=input_metadatas,
         helper_dependencies=helper_dependencies,
+        dynamic=dynamic,
     )
 
 
-def compile_cache_key(program, input_metadatas):
+def compile_cache_key(program, input_metadatas, *, dynamic=False):
     """Return a cache key that includes validated helper function dependencies."""
-    return prepare_compile_cache_request(program, input_metadatas).key
+    return prepare_compile_cache_request(
+        program,
+        input_metadatas,
+        dynamic=dynamic,
+    ).key
 
 
 def _pop(stack, program, instruction):
@@ -1105,7 +1135,8 @@ def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=
     code = compile_request.descriptor.code
 
     recorder = _trace.CompileTraceRecorder(
-        name or getattr(program, "__name__", "compile_trace")
+        name or getattr(program, "__name__", "compile_trace"),
+        dynamic=compile_request.dynamic,
     )
     locals = {}
     for index, input_metadata in enumerate(input_metadatas):

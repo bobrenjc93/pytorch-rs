@@ -454,7 +454,7 @@ def _execute_native_eager_compile_graph(graph, inputs, compile_trace):
     return compile_trace.execute_compile_trace_graph(graph, *inputs)
 
 
-def _native_eager_compile_implementation(model, name, recompile_limit):
+def _native_eager_compile_implementation(model, name, recompile_limit, *, dynamic):
     from . import _compiler_state as _compile_state
 
     cache = _compile_state.new_native_eager_compile_cache()
@@ -501,6 +501,7 @@ def _native_eager_compile_implementation(model, name, recompile_limit):
                 model,
                 input_metadatas,
                 program_descriptor,
+                dynamic=dynamic,
             )
             program_descriptor = compile_request.descriptor
             graph = cache.graphs.get(compile_request.key)
@@ -586,6 +587,7 @@ def _compile_bound_model(
             model,
             name,
             _validated_compile_recompile_limit(recompile_limit),
+            dynamic=dynamic is True,
         )
 
     return _make_compile_wrapper(
@@ -629,7 +631,9 @@ def compile(
     ``False``. Those functions may contain one top-level
     ``if`` over an input Tensor's ``requires_grad`` metadata; the native path
     lowers the selected branch and returns either a Tensor or a tuple/list
-    pytree with Tensor leaves.
+    pytree with Tensor leaves. ``dynamic=True`` reuses a graph across
+    same-rank shape and stride changes while keeping dtype, device, and
+    ``requires_grad`` specialized.
     Eager fallback, installed-PyTorch forwarding, callable backend invocation,
     CUDA compilation, and broader graph capture remain unsupported.
     """

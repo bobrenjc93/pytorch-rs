@@ -166,6 +166,7 @@ class CompileTraceGraph:
     operations: tuple[CompileTraceOperation, ...]
     output: object
     output_metadata: object
+    dynamic: bool = False
 
     def forward(self, *inputs):
         return execute_compile_trace_graph(self, *inputs)
@@ -585,12 +586,26 @@ def _require_matching_metadata(
     *,
     value_name,
     check_requires_grad=True,
+    dynamic_shape_stride=False,
 ):
     if actual == expected and check_requires_grad:
         return
 
     mismatches = []
-    fields = ["shape", "stride", "dtype", "device"]
+    fields = ["dtype", "device"]
+    if dynamic_shape_stride:
+        if len(actual.shape) != len(expected.shape):
+            mismatches.append(
+                f"shape rank expected {len(expected.shape)}, "
+                f"got {len(actual.shape)}"
+            )
+        if len(actual.stride) != len(expected.stride):
+            mismatches.append(
+                f"stride rank expected {len(expected.stride)}, "
+                f"got {len(actual.stride)}"
+            )
+    else:
+        fields = ["shape", "stride", *fields]
     if check_requires_grad:
         fields.append("requires_grad")
     for field in fields:
@@ -680,6 +695,8 @@ def _materialize_graph_output(
     values,
     *,
     value_name,
+    dynamic=False,
+    metadata_values=None,
     memo=None,
 ):
     if _builtins.isinstance(output_spec, _builtins.str):
@@ -695,9 +712,17 @@ def _materialize_graph_output(
                 "torch.compile trace execution graph output metadata is "
                 "malformed"
             )
+        expected_metadata = metadata_spec
+        if dynamic:
+            if metadata_values is None or output_spec not in metadata_values:
+                raise CompileTraceUnsupportedError(
+                    "torch.compile trace execution graph output references "
+                    f"unknown metadata value {output_spec!r}"
+                )
+            expected_metadata = metadata_values[output_spec]
         _require_matching_metadata(
             _metadata_from_native_tensor(output),
-            metadata_spec,
+            expected_metadata,
             value_name=output_spec,
             check_requires_grad=False,
         )
@@ -731,6 +756,8 @@ def _materialize_graph_output(
                 child_metadata,
                 values,
                 value_name=f"{value_name}[{index}]",
+                dynamic=dynamic,
+                metadata_values=metadata_values,
                 memo=memo,
             )
             for index, (child_output, child_metadata) in enumerate(
@@ -745,6 +772,8 @@ def _materialize_graph_output(
             child_metadata,
             values,
             value_name=f"{value_name}[{index}]",
+            dynamic=dynamic,
+            metadata_values=metadata_values,
             memo=memo,
         )
         for index, (child_output, child_metadata) in enumerate(
@@ -861,6 +890,7 @@ def execute_compile_trace_graph(graph, *inputs):
             input_metadata,
             graph_input.metadata,
             value_name=graph_input.name,
+            dynamic_shape_stride=graph.dynamic,
         )
         values[graph_input.name] = input
         metadata_values[graph_input.name] = input_metadata
@@ -889,12 +919,13 @@ def execute_compile_trace_graph(graph, *inputs):
             expected_metadata,
             value_name=operation.name,
         )
-        _require_matching_metadata(
-            output_metadata,
-            operation.metadata,
-            value_name=operation.name,
-            check_requires_grad=False,
-        )
+        if not graph.dynamic:
+            _require_matching_metadata(
+                output_metadata,
+                operation.metadata,
+                value_name=operation.name,
+                check_requires_grad=False,
+            )
         values[operation.name] = output
         metadata_values[operation.name] = output_metadata
 
@@ -903,6 +934,8 @@ def execute_compile_trace_graph(graph, *inputs):
         graph.output_metadata,
         values,
         value_name="output",
+        dynamic=graph.dynamic,
+        metadata_values=metadata_values,
     )
 
 
@@ -1059,8 +1092,11 @@ class CompileTraceTensorProxy:
 
 
 class CompileTraceRecorder:
-    def __init__(self, name="compile_trace"):
+    def __init__(self, name="compile_trace", *, dynamic=False):
+        if _builtins.type(dynamic) is not _builtins.bool:
+            raise TypeError("compile trace recorder dynamic flag must be bool")
         self._name = _builtins.str(name)
+        self._dynamic = dynamic
         self._inputs = []
         self._operations = []
         self._closed = False
@@ -1166,6 +1202,7 @@ class CompileTraceRecorder:
             operations=tuple(self._operations),
             output=output_spec,
             output_metadata=output_metadata,
+            dynamic=self._dynamic,
         )
 
     def _ensure_open(self):
@@ -1245,14 +1282,22 @@ class CompileTraceTorchModule:
         )
 
 
-def _trace_compile_graph(program, make_inputs, *, name=None, input_count):
+def _trace_compile_graph(
+    program,
+    make_inputs,
+    *,
+    name=None,
+    input_count,
+    dynamic=False,
+):
     if not _builtins.callable(program):
         raise TypeError("torch.compile trace program must be callable")
     if not _builtins.callable(make_inputs):
         raise TypeError("torch.compile trace input factory must be callable")
 
     recorder = CompileTraceRecorder(
-        name or getattr(program, "__name__", "compile_trace")
+        name or getattr(program, "__name__", "compile_trace"),
+        dynamic=dynamic,
     )
     trace_module = CompileTraceTorchModule(recorder)
     inputs = make_inputs(trace_module)
@@ -1270,12 +1315,24 @@ def _trace_compile_graph(program, make_inputs, *, name=None, input_count):
     return recorder.finish(output)
 
 
-def trace_compile_graph(program, make_inputs, *, name=None):
-    return _trace_compile_graph(program, make_inputs, name=name, input_count=2)
+def trace_compile_graph(program, make_inputs, *, name=None, dynamic=False):
+    return _trace_compile_graph(
+        program,
+        make_inputs,
+        name=name,
+        input_count=2,
+        dynamic=dynamic,
+    )
 
 
-def trace_one_input_compile_graph(program, make_inputs, *, name=None):
-    return _trace_compile_graph(program, make_inputs, name=name, input_count=1)
+def trace_one_input_compile_graph(program, make_inputs, *, name=None, dynamic=False):
+    return _trace_compile_graph(
+        program,
+        make_inputs,
+        name=name,
+        input_count=1,
+        dynamic=dynamic,
+    )
 
 
 __all__ = [

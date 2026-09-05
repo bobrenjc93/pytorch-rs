@@ -616,94 +616,186 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         finally:
             _compile_bytecode.lower_one_input_compile_graph = original_lower
 
-    def test_eager_fullgraph_dynamic_flags_use_metadata_specialized_cache(self):
+    def test_eager_fullgraph_dynamic_true_reuses_shape_and_stride_variants(self):
         def program(x):
             y = x.neg().abs()
             return y.add(x.relu())
 
-        for dynamic in (True, False):
-            with self.subTest(dynamic=dynamic):
-                original_lower = _compile_bytecode.lower_one_input_compile_graph
-                lower_calls = []
-                user_calls = {"count": 0}
-                original_profile = sys.getprofile()
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        lower_calls = []
+        user_calls = {"count": 0}
+        original_profile = sys.getprofile()
 
-                def counting_lower(
-                    requested_program,
-                    input_metadata,
-                    *,
-                    name=None,
-                    compile_request=None,
-                ):
-                    lower_calls.append((requested_program, input_metadata, name))
-                    return original_lower(
-                        requested_program,
-                        input_metadata,
-                        name=name,
-                        compile_request=compile_request,
-                    )
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            lower_calls.append((requested_program, input_metadata, name))
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
 
-                def count_program_calls(frame, event, arg):
-                    if event == "call" and frame.f_code is program.__code__:
-                        user_calls["count"] += 1
-                    if original_profile is not None:
-                        original_profile(frame, event, arg)
-                    return count_program_calls
+        def count_program_calls(frame, event, arg):
+            if event == "call" and frame.f_code is program.__code__:
+                user_calls["count"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_program_calls
 
-                first = torch.tensor(
-                    [[-2.0, 0.5, 3.0], [4.25, -5.5, 6.0]],
-                    dtype=torch.float32,
-                )
-                same_metadata = torch.tensor(
-                    [[1.0, -1.5, 2.5], [-3.5, 4.5, -5.5]],
-                    dtype=torch.float32,
-                )
-                shape_changed = torch.tensor(
-                    [-1.25, 2.5, -3.75, 4.0, -5.5],
-                    dtype=torch.float32,
-                )
-                stride_changed = torch.tensor(
-                    [[-2.0, 4.25], [0.5, -5.5], [3.0, 6.0]],
-                    dtype=torch.float32,
-                ).t()
-                cases = (
-                    (first, 1),
-                    (same_metadata, 1),
-                    (shape_changed, 2),
-                    (stride_changed, 3),
-                )
-                expected_outputs = tuple(program(input) for input, _ in cases)
-                compiled = torch.compile(
-                    program,
-                    backend="eager",
-                    fullgraph=True,
-                    dynamic=dynamic,
-                )
+        first = torch.tensor(
+            [[-2.0, 0.5, 3.0], [4.25, -5.5, 6.0]],
+            dtype=torch.float32,
+        )
+        same_metadata = torch.tensor(
+            [[1.0, -1.5, 2.5], [-3.5, 4.5, -5.5]],
+            dtype=torch.float32,
+        )
+        same_rank_shape_changed = torch.tensor(
+            [
+                [-1.25, 2.5, -3.75],
+                [4.0, -5.5, 6.25],
+                [-7.5, 8.0, -9.25],
+                [10.5, -11.0, 12.25],
+            ],
+            dtype=torch.float32,
+        )
+        stride_changed = torch.tensor(
+            [[-2.0, 4.25], [0.5, -5.5], [3.0, 6.0]],
+            dtype=torch.float32,
+        ).t()
+        rank_changed = torch.tensor(
+            [-1.25, 2.5, -3.75, 4.0, -5.5],
+            dtype=torch.float32,
+        )
+        cases = (
+            first,
+            same_metadata,
+            same_rank_shape_changed,
+            stride_changed,
+        )
+        expected_outputs = tuple(program(input) for input in cases)
+        compiled = torch.compile(
+            program,
+            backend="eager",
+            fullgraph=True,
+            dynamic=True,
+            recompile_limit=1,
+        )
 
-                try:
-                    _compile_bytecode.lower_one_input_compile_graph = counting_lower
-                    sys.setprofile(count_program_calls)
-                    for (input, expected_lower_count), expected in zip(
-                        cases,
-                        expected_outputs,
-                    ):
-                        actual = compiled(input)
-                        self.assertEqual(actual.tolist(), expected.tolist())
-                        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
-                        self.assertEqual(actual.stride(), expected.stride())
-                        self.assertIs(actual.dtype, expected.dtype)
-                        self.assertEqual(actual.device, expected.device)
-                        self.assertEqual(
-                            len(lower_calls),
-                            expected_lower_count,
-                            msg=f"dynamic={dynamic}",
-                        )
-                finally:
-                    sys.setprofile(original_profile)
-                    _compile_bytecode.lower_one_input_compile_graph = original_lower
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            sys.setprofile(count_program_calls)
+            for input, expected in zip(cases, expected_outputs):
+                actual = compiled(input)
+                self.assertEqual(actual.tolist(), expected.tolist())
+                self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+                self.assertEqual(actual.stride(), expected.stride())
+                self.assertIs(actual.dtype, expected.dtype)
+                self.assertEqual(actual.device, expected.device)
+                self.assertEqual(len(lower_calls), 1)
 
-                self.assertIs(compiled._torch_rs_compile_dynamic, dynamic)
-                self.assertEqual(user_calls, {"count": 0})
+            with self.assertRaisesRegex(NotImplementedError, "recompile_limit=1"):
+                compiled(rank_changed)
+        finally:
+            sys.setprofile(original_profile)
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+        self.assertIs(compiled._torch_rs_compile_dynamic, True)
+        self.assertEqual(user_calls, {"count": 0})
+
+    def test_eager_fullgraph_dynamic_false_uses_metadata_specialized_cache(self):
+        def program(x):
+            y = x.neg().abs()
+            return y.add(x.relu())
+
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        lower_calls = []
+        user_calls = {"count": 0}
+        original_profile = sys.getprofile()
+
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            lower_calls.append((requested_program, input_metadata, name))
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+
+        def count_program_calls(frame, event, arg):
+            if event == "call" and frame.f_code is program.__code__:
+                user_calls["count"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_program_calls
+
+        first = torch.tensor(
+            [[-2.0, 0.5, 3.0], [4.25, -5.5, 6.0]],
+            dtype=torch.float32,
+        )
+        same_metadata = torch.tensor(
+            [[1.0, -1.5, 2.5], [-3.5, 4.5, -5.5]],
+            dtype=torch.float32,
+        )
+        same_rank_shape_changed = torch.tensor(
+            [
+                [-1.25, 2.5, -3.75],
+                [4.0, -5.5, 6.25],
+                [-7.5, 8.0, -9.25],
+                [10.5, -11.0, 12.25],
+            ],
+            dtype=torch.float32,
+        )
+        stride_changed = torch.tensor(
+            [[-2.0, 4.25], [0.5, -5.5], [3.0, 6.0]],
+            dtype=torch.float32,
+        ).t()
+        cases = (
+            (first, 1),
+            (same_metadata, 1),
+            (same_rank_shape_changed, 2),
+            (stride_changed, 3),
+        )
+        expected_outputs = tuple(program(input) for input, _ in cases)
+        compiled = torch.compile(
+            program,
+            backend="eager",
+            fullgraph=True,
+            dynamic=False,
+        )
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            sys.setprofile(count_program_calls)
+            for (input, expected_lower_count), expected in zip(
+                cases,
+                expected_outputs,
+            ):
+                actual = compiled(input)
+                self.assertEqual(actual.tolist(), expected.tolist())
+                self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+                self.assertEqual(actual.stride(), expected.stride())
+                self.assertIs(actual.dtype, expected.dtype)
+                self.assertEqual(actual.device, expected.device)
+                self.assertEqual(len(lower_calls), expected_lower_count)
+        finally:
+            sys.setprofile(original_profile)
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+        self.assertIs(compiled._torch_rs_compile_dynamic, False)
+        self.assertEqual(user_calls, {"count": 0})
 
     def test_eager_fullgraph_cache_key_tracks_helper_global_rebinding(self):
         global eager_compile_inline_helper
