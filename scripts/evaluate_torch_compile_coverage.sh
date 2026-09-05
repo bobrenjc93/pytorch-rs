@@ -5,16 +5,10 @@ set -euo pipefail
 repository_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 target_path="$repository_root/target"
 wheel_directory=
-setup_lock_directory=
-setup_lock_acquired=0
 
 cleanup() {
     if [[ -n "${wheel_directory:-}" ]]; then
         rm -rf -- "$wheel_directory"
-    fi
-    if (( setup_lock_acquired )); then
-        rm -f -- "$setup_lock_directory/pid"
-        rmdir -- "$setup_lock_directory" 2>/dev/null || true
     fi
 }
 trap cleanup EXIT
@@ -47,7 +41,6 @@ fi
 virtualenv="$evaluator_directory/venv"
 python="$virtualenv/bin/python"
 maturin="$virtualenv/bin/maturin"
-setup_lock_directory="$evaluator_directory/setup.lock"
 
 if [[ -L "$virtualenv" ]]; then
     echo "refusing symlinked virtual environment: $virtualenv" >&2
@@ -57,24 +50,13 @@ if [[ -e "$virtualenv" && ! -d "$virtualenv" ]]; then
     echo "virtual environment path is not a directory: $virtualenv" >&2
     exit 1
 fi
-if [[ -L "$setup_lock_directory" ]]; then
-    echo "refusing symlinked setup lock: $setup_lock_directory" >&2
+if ! command -v flock >/dev/null 2>&1; then
+    echo "missing flock command required to serialize evaluator setup" >&2
     exit 1
 fi
 
-while ! mkdir "$setup_lock_directory" 2>/dev/null; do
-    if [[ -L "$setup_lock_directory" ]]; then
-        echo "refusing symlinked setup lock: $setup_lock_directory" >&2
-        exit 1
-    fi
-    if [[ ! -d "$setup_lock_directory" ]]; then
-        echo "setup lock path is not a directory: $setup_lock_directory" >&2
-        exit 1
-    fi
-    sleep 0.2
-done
-setup_lock_acquired=1
-printf '%s\n' "$$" > "$setup_lock_directory/pid"
+exec {setup_lock_fd}<"$evaluator_directory"
+flock "$setup_lock_fd"
 
 export CARGO_HOME="$target_directory/cargo-home"
 export CARGO_TARGET_DIR="$target_directory"

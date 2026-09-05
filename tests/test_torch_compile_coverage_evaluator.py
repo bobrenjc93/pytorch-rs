@@ -820,6 +820,17 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
         )
 
         _write_executable(
+            fake_bin / "flock",
+            f"""#!{sys.executable}
+            import fcntl
+            import sys
+
+            if len(sys.argv) != 2:
+                raise SystemExit(f"unexpected flock args: {{sys.argv[1:]!r}}")
+            fcntl.flock(int(sys.argv[1]), fcntl.LOCK_EX)
+            """,
+        )
+        _write_executable(
             fake_bin / "uv",
             f"""#!{sys.executable}
             import os
@@ -1019,6 +1030,40 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
         self.assertNotIn(str(workspace_venv), log)
         self.assertIn(f"uv_project={dedicated_venv}", log)
         self.assertIn(f"verify|expected={dedicated_venv}", log)
+
+    def test_wrapper_ignores_abandoned_legacy_setup_lock_directory(self):
+        repo, env, log_path = self._make_wrapper_fixture()
+        legacy_lock = repo / "target" / "torch-compile-coverage" / "setup.lock"
+        legacy_lock.mkdir(parents=True)
+        (legacy_lock / "pid").write_text("999999", encoding="utf-8")
+
+        command = [
+            "bash",
+            str(repo / "scripts" / "evaluate_torch_compile_coverage.sh"),
+            "--subset",
+            "public",
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=repo,
+                env=env,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except subprocess.TimeoutExpired as error:
+            self.fail(f"wrapper hung on abandoned setup.lock directory: {error}")
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertEqual(json.loads(completed.stdout)["summary"], "stub evaluator")
+        self.assertTrue(legacy_lock.is_dir())
+        self.assertEqual(log_path.read_text(encoding="utf-8").count("evaluate|"), 1)
 
     def test_wrapper_serializes_concurrent_setup_and_installation(self):
         repo, env, log_path = self._make_wrapper_fixture()
