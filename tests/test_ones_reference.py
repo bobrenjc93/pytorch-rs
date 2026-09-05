@@ -54,6 +54,27 @@ class ListIndex(list):
         return 2
 
 
+class WeirdTuple(tuple):
+    def __len__(self):
+        raise RuntimeError("tuple __len__ override should not be called")
+
+    def __getitem__(self, index):
+        raise RuntimeError("tuple __getitem__ override should not be called")
+
+
+class WeirdList(list):
+    def __len__(self):
+        raise RuntimeError("list __len__ override should not be called")
+
+    def __getitem__(self, index):
+        raise RuntimeError("list __getitem__ override should not be called")
+
+
+class FailingIndexDimension:
+    def __index__(self):
+        raise RuntimeError("later dimension should not be converted before keywords")
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class OnesReferenceTests(unittest.TestCase):
     @classmethod
@@ -242,6 +263,38 @@ class OnesReferenceTests(unittest.TestCase):
             ("tuple", lambda module, options: module.ones((2, 3), **options)),
             ("list", lambda module, options: module.ones([2, 3], **options)),
             (
+                "tuple bool false",
+                lambda module, options: module.ones((2, False), **options),
+            ),
+            (
+                "tuple bool true",
+                lambda module, options: module.ones((2, True), **options),
+            ),
+            (
+                "list bool false",
+                lambda module, options: module.ones([2, False], **options),
+            ),
+            (
+                "list bool true",
+                lambda module, options: module.ones([2, True], **options),
+            ),
+            (
+                "size keyword tuple bool",
+                lambda module, options: module.ones(size=(2, False), **options),
+            ),
+            (
+                "size keyword list bool",
+                lambda module, options: module.ones(size=[2, True], **options),
+            ),
+            (
+                "tuple subclass storage",
+                lambda module, options: module.ones(WeirdTuple((2, 3)), **options),
+            ),
+            (
+                "list subclass storage",
+                lambda module, options: module.ones(WeirdList([2, 3]), **options),
+            ),
+            (
                 "integer protocol dimensions",
                 lambda module, options: module.ones(
                     [IndexDimension(2), np.int64(3), IntSubclass(1)],
@@ -356,6 +409,66 @@ class OnesReferenceTests(unittest.TestCase):
                 self.assertIn(marker, expected_message)
                 self.assertIn("Overflow when unpacking long long", actual_message)
                 self.assertIn("Overflow when unpacking long long", expected_message)
+
+        sequence_type_cases = (
+            (object(), 2),
+            [object(), 2],
+            (2, object()),
+            [2, object()],
+        )
+        for dimensions in sequence_type_cases:
+            with self.subTest(type_dimensions=dimensions):
+                actual_type, actual_message = self.capture_error(
+                    lambda dimensions=dimensions: torch.ones(dimensions)
+                )
+                expected_type, expected_message = self.capture_error(
+                    lambda dimensions=dimensions: reference_torch.ones(dimensions)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(actual_message, expected_message)
+
+    def test_later_sequence_dimensions_wait_for_keyword_precedence_match_pytorch_2_13(
+        self,
+    ):
+        forms = (
+            ("tuple", lambda later: (2, later)),
+            ("list", lambda later: [2, later]),
+        )
+        calls = (
+            ("dtype", lambda module, dimensions: module.ones(dimensions, dtype=object())),
+            ("layout", lambda module, dimensions: module.ones(dimensions, layout=object())),
+            ("device", lambda module, dimensions: module.ones(dimensions, device=object())),
+            (
+                "requires_grad",
+                lambda module, dimensions: module.ones(
+                    dimensions, requires_grad=object()
+                ),
+            ),
+            (
+                "unexpected",
+                lambda module, dimensions: module.ones(dimensions, unexpected=True),
+            ),
+        )
+        for form, dimensions_factory in forms:
+            for case, call in calls:
+                with self.subTest(form=form, case=case):
+                    actual_type, actual_message = self.capture_error(
+                        lambda: call(torch, dimensions_factory(FailingIndexDimension()))
+                    )
+                    expected_type, expected_message = self.capture_error(
+                        lambda: call(
+                            reference_torch,
+                            dimensions_factory(FailingIndexDimension()),
+                        )
+                    )
+                    self.assertIs(actual_type, expected_type)
+                    if case == "device":
+                        self.assertIn("argument 'device'", actual_message)
+                        self.assertIn("argument 'device'", expected_message)
+                        self.assertIn("not object", actual_message)
+                        self.assertIn("not object", expected_message)
+                    else:
+                        self.assertEqual(actual_message, expected_message)
 
     def test_mixed_invalid_scalar_validation_order_matches_pytorch_2_13(self):
         cases = (

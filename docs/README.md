@@ -10,6 +10,7 @@ artifacts are generated at merge time and are not source documentation.
 - [Feature coverage contract](../FEATURES.md): Weighted feature areas and what counts toward coverage.
 - [Benchmark policy](../BENCHMARKING.md): Correctness gates, measurement rules, provenance, and anti-gaming policy.
 - [Compile coverage evaluator](torch-compile-coverage-evaluator.md): Command-backed Burner evaluator for the v4 reference-eligible `torch.compile` corpus.
+- [Generated creation validator](../scripts/validate_creation_factory_benchmark.py): Held-out seeded shape path for creation-factory benchmark review.
 
 ## Examples
 
@@ -35,6 +36,10 @@ gates.
 - [Rank-11 sum timings](rank11-sum-release-timings.md): Rank-11 `Tensor.sum` release evidence.
 - [Rank-12 sum timings](rank12-sum-release-timings.md): Rank-12 `Tensor.sum` release evidence.
 - [Mean timings](tensor-mean-release-timings.md): Full-reduction `Tensor.mean` and `torch.mean` release evidence.
+
+### Creation
+
+- [Creation factory timings](creation-factory-release-timings.md): `torch.empty`, `torch.zeros`, and `torch.ones` eager CPU factory benchmark coverage.
 
 ### Elementwise ops
 

@@ -703,6 +703,9 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
+        // Public `torch.empty` values are unspecified. The current safe storage
+        // model exposes initialized `f32` slices everywhere, so this backing
+        // allocation is zero-initialized as an implementation detail.
         let data = filled_storage(elements, 0.0)?;
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }

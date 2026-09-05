@@ -6320,9 +6320,33 @@ enum CreationSizeArgument<'py> {
 }
 
 enum PendingCreationSize<'py> {
-    Dimensions(Vec<usize>),
+    Dimensions(CreationSequenceSize<'py>),
     PositionalScalar(Bound<'py, PyAny>),
     Variadic(Bound<'py, PyTuple>),
+}
+
+enum CreationSequenceSize<'py> {
+    Tuple(Bound<'py, PyTuple>),
+    List(Bound<'py, PyList>),
+    Sequence(Bound<'py, PyAny>),
+}
+
+impl<'py> CreationSequenceSize<'py> {
+    fn len(&self) -> PyResult<usize> {
+        match self {
+            Self::Tuple(dimensions) => Ok(dimensions.len()),
+            Self::List(dimensions) => Ok(dimensions.len()),
+            Self::Sequence(dimensions) => dimensions.len(),
+        }
+    }
+
+    fn get_item(&self, index: usize) -> PyResult<Bound<'py, PyAny>> {
+        match self {
+            Self::Tuple(dimensions) => dimensions.get_item(index),
+            Self::List(dimensions) => dimensions.get_item(index),
+            Self::Sequence(dimensions) => dimensions.get_item(index),
+        }
+    }
 }
 
 struct ParsedCreationSize {
@@ -7798,6 +7822,23 @@ fn flatten(
     }
     drop(tensor);
     Py::new(args.py(), PyTensor::new(inner))
+}
+
+#[pyfunction(
+    signature = (*args, **kwargs),
+    text_signature = "(*size, shape=None, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)"
+)]
+fn empty(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let arguments = bind_creation_arguments("empty", args, kwargs)?;
+    let (size, dtype, device, requires_grad) = parse_creation_arguments("empty", arguments)?;
+    let ParsedCreationSize {
+        dimensions,
+        scalar_dimension,
+    } = size;
+    let shape = dimensions.clone();
+    CoreTensor::empty_with_metadata(dimensions, dtype, device)
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
+        .map_err(|error| creation_factory_error(&error, &shape, scalar_dimension))
 }
 
 #[pyfunction(
@@ -10544,15 +10585,95 @@ fn parse_creation_size<'py>(
         }
     };
 
-    let sequence_error = match value.extract::<Vec<usize>>() {
-        Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
-        Err(error) => error,
-    };
-    if !matches!(function, "zeros" | "ones") || origin != CreationSizeOrigin::Positional {
+    let sequence_error =
+        if let Some(dimensions) = bind_creation_sequence_size(function, origin, value)? {
+            return Ok(PendingCreationSize::Dimensions(dimensions));
+        } else {
+            creation_sequence_type_error(function, origin, value)?
+        };
+    if !matches!(function, "empty" | "zeros" | "ones") || origin != CreationSizeOrigin::Positional {
         return Err(sequence_error);
     }
 
     bind_creation_positional_dimension(function, value, sequence_error)
+}
+
+fn bind_creation_sequence_size<'py>(
+    function: &str,
+    origin: CreationSizeOrigin,
+    value: &Bound<'py, PyAny>,
+) -> PyResult<Option<CreationSequenceSize<'py>>> {
+    let Some(dimensions) = creation_sequence_size(function, value)? else {
+        return Ok(None);
+    };
+    if !validate_creation_sequence_leading_dimension(function, origin, &dimensions)? {
+        return Ok(None);
+    }
+    Ok(Some(dimensions))
+}
+
+fn creation_sequence_size<'py>(
+    function: &str,
+    value: &Bound<'py, PyAny>,
+) -> PyResult<Option<CreationSequenceSize<'py>>> {
+    if let Ok(dimensions) = value.cast::<PyTuple>() {
+        return Ok(Some(CreationSequenceSize::Tuple(dimensions.clone())));
+    }
+    if let Ok(dimensions) = value.cast::<PyList>() {
+        return Ok(Some(CreationSequenceSize::List(dimensions.clone())));
+    }
+    if function == "empty" {
+        return Ok(None);
+    }
+    if is_sequence_input(value)? {
+        return Ok(Some(CreationSequenceSize::Sequence(value.clone())));
+    }
+    Ok(None)
+}
+
+fn validate_creation_sequence_leading_dimension(
+    function: &str,
+    origin: CreationSizeOrigin,
+    dimensions: &CreationSequenceSize<'_>,
+) -> PyResult<bool> {
+    if dimensions.len()? == 0 {
+        return Ok(true);
+    }
+    let dimension = dimensions.get_item(0)?;
+    let valid = if dimension.is_instance_of::<PyBool>() {
+        false
+    } else {
+        validate_creation_sequence_dimension_type(function, 0, &dimension).is_ok()
+    };
+    if valid {
+        return Ok(true);
+    }
+    if origin == CreationSizeOrigin::Positional {
+        return Err(creation_sequence_dimension_type_error_at(
+            function, 0, &dimension,
+        )?);
+    }
+    Ok(false)
+}
+
+fn validate_creation_sequence_dimension_type(
+    function: &str,
+    index: usize,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    if dimension.is_instance_of::<PyInt>() {
+        return Ok(());
+    }
+
+    let indexed = PyModule::import(dimension.py(), "operator")
+        .and_then(|operator| operator.getattr("index"))
+        .and_then(|index| index.call1((dimension,)));
+    let Ok(_) = indexed else {
+        return Err(creation_sequence_dimension_type_error_at(
+            function, index, dimension,
+        )?);
+    };
+    Ok(())
 }
 
 fn bind_creation_positional_dimension<'py>(
@@ -10587,6 +10708,7 @@ fn finish_creation_size(
 ) -> PyResult<ParsedCreationSize> {
     let dimension = match size {
         PendingCreationSize::Dimensions(dimensions) => {
+            let dimensions = parse_creation_dimensions(function, &dimensions)?;
             return Ok(ParsedCreationSize {
                 dimensions,
                 scalar_dimension: None,
@@ -10619,22 +10741,71 @@ fn finish_creation_size(
     })
 }
 
+fn parse_creation_dimensions(
+    function: &str,
+    dimensions: &CreationSequenceSize<'_>,
+) -> PyResult<Vec<usize>> {
+    let length = dimensions.len()?;
+    let mut parsed = try_size_vector(length)?;
+    let mut signed_error_shape = None;
+    let mut negative_dimension = None;
+    for index in 0..length {
+        let dimension = dimensions.get_item(index)?;
+        if dimension.is_instance_of::<PyBool>() && index == 0 {
+            return Err(creation_sequence_dimension_type_error_at(
+                function, index, &dimension,
+            )?);
+        }
+        let dimension = extract_variadic_creation_dimension(function, index + 1, &dimension)?;
+        if let Some(signed) = signed_error_shape.as_mut() {
+            try_push_size(signed, dimension)?;
+        } else if dimension < 0 {
+            let mut signed = try_size_vector(length)?;
+            for parsed_dimension in &parsed {
+                try_push_size(
+                    &mut signed,
+                    i64::try_from(*parsed_dimension)
+                        .map_err(|_| creation_dimension_overflow(function))?,
+                )?;
+            }
+            try_push_size(&mut signed, dimension)?;
+            signed_error_shape = Some(signed);
+            negative_dimension = Some(dimension);
+        } else {
+            try_push_size(
+                &mut parsed,
+                usize::try_from(dimension).map_err(|_| creation_dimension_overflow(function))?,
+            )?;
+        }
+    }
+    if let (Some(dimension), Some(shape)) = (negative_dimension, signed_error_shape) {
+        return Err(creation_negative_dimension_error(
+            function, dimension, &shape,
+        ));
+    }
+    Ok(parsed)
+}
+
 fn parse_variadic_creation_dimensions(
     function: &str,
     dimensions: &Bound<'_, PyTuple>,
 ) -> PyResult<Vec<usize>> {
-    let mut parsed = try_size_vector(dimensions.len())?;
     let mut signed = try_size_vector(dimensions.len())?;
     for (index, dimension) in dimensions.iter().enumerate() {
         let position = index + 1;
         let dimension = extract_variadic_creation_dimension(function, position, &dimension)?;
         try_push_size(&mut signed, dimension)?;
     }
+    validate_creation_dimensions(function, signed)
+}
+
+fn validate_creation_dimensions(function: &str, signed: Vec<i64>) -> PyResult<Vec<usize>> {
     if let Some(dimension) = signed.iter().find(|dimension| **dimension < 0) {
         return Err(creation_negative_dimension_error(
             function, *dimension, &signed,
         ));
     }
+    let mut parsed = try_size_vector(signed.len())?;
     for dimension in signed {
         try_push_size(
             &mut parsed,
@@ -10684,9 +10855,33 @@ fn creation_sequence_dimension_type_error(
     function: &str,
     dimension: &Bound<'_, PyAny>,
 ) -> PyResult<PyErr> {
+    creation_sequence_dimension_type_error_at(function, 0, dimension)
+}
+
+fn creation_sequence_dimension_type_error_at(
+    function: &str,
+    index: usize,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
     let type_name = python_type_name(dimension)?;
     Ok(PyTypeError::new_err(format!(
-        "{function}(): argument 'size' (position 1) must be tuple of ints, but found element of type {type_name} at pos 0"
+        "{function}(): argument 'size' (position 1) must be tuple of ints, but found element of type {type_name} at pos {index}"
+    )))
+}
+
+fn creation_sequence_type_error(
+    function: &str,
+    origin: CreationSizeOrigin,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    let type_name = python_type_name(value)?;
+    let position = if origin == CreationSizeOrigin::Positional {
+        " (position 1)"
+    } else {
+        ""
+    };
+    Ok(PyTypeError::new_err(format!(
+        "{function}(): argument 'size'{position} must be tuple of ints, not {type_name}"
     )))
 }
 
@@ -10715,7 +10910,7 @@ fn creation_negative_dimension_error(function: &str, dimension: i64, shape: &[i6
     if function == "zeros" {
         PyRuntimeError::new_err("zeros: Dimension size must be non-negative.")
     } else {
-        debug_assert_eq!(function, "ones");
+        debug_assert!(matches!(function, "empty" | "ones"));
         PyRuntimeError::new_err(format!(
             "Trying to create tensor with negative dimension {dimension}: {shape:?}"
         ))
@@ -19498,6 +19693,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
     add_tensor_queries(module)?;
+    module.add_function(wrap_pyfunction!(empty, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
