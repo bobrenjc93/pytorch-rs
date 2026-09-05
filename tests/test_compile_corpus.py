@@ -17,7 +17,7 @@ except ImportError:
 
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-COMPILE_CORPUS_VERSION = "torch_compile_corpus_v10"
+COMPILE_CORPUS_VERSION = "torch_compile_corpus_v11"
 
 CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -35,6 +35,42 @@ CATEGORY_WEIGHTS = {
     "recompilation_guards": 4,
     "dtype_device_transitions": 4,
 }
+
+
+CPU_FLOAT32_GLOBAL_BUFFER = torch.tensor(
+    [0.5],
+    dtype=torch.float32,
+)
+CPU_FLOAT32_HELDOUT_GLOBAL_WEIGHT = torch.tensor(
+    [[-1.0, 0.5, 2.0], [3.25, -4.5, 5.75]],
+    dtype=torch.float32,
+    requires_grad=True,
+)
+
+
+def _global_tensor_matches(value, module, data, requires_grad):
+    tensor_type = getattr(module, "Tensor", None)
+    return (
+        tensor_type is not None
+        and type(value) is tensor_type
+        and value.tolist() == data
+        and str(value.dtype) == str(module.float32)
+        and str(value.device) == "cpu"
+        and value.requires_grad is requires_grad
+    )
+
+
+def _ensure_global_tensor(name, module, data, *, requires_grad=False):
+    current = globals().get(name)
+    if not _global_tensor_matches(current, module, data, requires_grad):
+        current = module.tensor(
+            data,
+            dtype=module.float32,
+            requires_grad=requires_grad,
+        )
+        globals()[name] = current
+    return current
+
 
 def cpu_float32_unary_abs_neg(x):
     return x.neg().abs()
@@ -171,6 +207,14 @@ def cpu_float32_tensor_scalar_add(x, y):
 
 def cpu_float32_scalar_tensor_add(x, y):
     return x.add(y.neg())
+
+
+def cpu_float32_global_buffer_add(x):
+    return x.add(CPU_FLOAT32_GLOBAL_BUFFER.abs())
+
+
+def cpu_float32_heldout_global_weight_unary_add(x):
+    return CPU_FLOAT32_HELDOUT_GLOBAL_WEIGHT.neg().add(x.abs()).relu()
 
 
 def cpu_float32_tuple_list_output_pytree(x, y):
@@ -391,6 +435,35 @@ def cpu_float32_scalar_tensor_inputs(module):
             [[-0.5, 1.5, -2.5], [3.5, -4.5, 5.5]],
             dtype=module.float32,
             requires_grad=True,
+        ),
+    )
+
+
+def cpu_float32_global_buffer_add_inputs(module):
+    _ensure_global_tensor(
+        "CPU_FLOAT32_GLOBAL_BUFFER",
+        module,
+        [0.5],
+    )
+    return (
+        module.tensor(
+            [[1.0, -2.0, 3.5], [4.25, -5.75, 6.0]],
+            dtype=module.float32,
+        ),
+    )
+
+
+def cpu_float32_heldout_global_weight_unary_add_inputs(module):
+    _ensure_global_tensor(
+        "CPU_FLOAT32_HELDOUT_GLOBAL_WEIGHT",
+        module,
+        [[-1.0, 0.5, 2.0], [3.25, -4.5, 5.75]],
+        requires_grad=True,
+    )
+    return (
+        module.tensor(
+            [[0.25, -1.25, 3.0], [-2.0, 4.5, -6.25]],
+            dtype=module.float32,
         ),
     )
 
@@ -722,6 +795,12 @@ COMPILE_CORPUS = (
         make_inputs=cpu_float32_scalar_tensor_inputs,
     ),
     CompileCorpusCase(
+        name="cpu_float32_global_buffer_add",
+        category="modules_parameters_buffers",
+        program=cpu_float32_global_buffer_add,
+        make_inputs=cpu_float32_global_buffer_add_inputs,
+    ),
+    CompileCorpusCase(
         name="cpu_float32_tuple_list_output_pytree",
         category="containers_pytrees",
         program=cpu_float32_tuple_list_output_pytree,
@@ -763,6 +842,12 @@ COMPILE_HELD_OUT_CORPUS = (
         category="broadcasting",
         program=cpu_float32_heldout_scalar_left_broadcast,
         make_inputs=cpu_float32_scalar_tensor_inputs,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_heldout_global_weight_unary_add",
+        category="modules_parameters_buffers",
+        program=cpu_float32_heldout_global_weight_unary_add,
+        make_inputs=cpu_float32_heldout_global_weight_unary_add_inputs,
     ),
     CompileCorpusCase(
         name="cpu_float32_heldout_training_broadcast_neg_abs_add",
@@ -1237,10 +1322,10 @@ def assert_leaf_gradients_unchanged(testcase, inputs, before_gradients, *, case)
 
 class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
-        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v10")
+        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v11")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(len(COMPILE_CORPUS), 20)
-        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 12)
+        self.assertEqual(len(COMPILE_CORPUS), 21)
+        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 13)
 
         case_names = [case.name for case in COMPILE_CORPUS]
         self.assertEqual(
@@ -1262,6 +1347,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_matrix_vector_add_method",
                 "cpu_float32_tensor_scalar_add",
                 "cpu_float32_scalar_tensor_add",
+                "cpu_float32_global_buffer_add",
                 "cpu_float32_tuple_list_output_pytree",
                 "cpu_float32_recompile_guard_unary_metadata",
                 "cpu_float32_recompile_guard_binary_metadata",
@@ -1274,6 +1360,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
             [
                 "cpu_float32_heldout_broadcast_chain",
                 "cpu_float32_heldout_scalar_left_broadcast",
+                "cpu_float32_heldout_global_weight_unary_add",
                 "cpu_float32_heldout_training_broadcast_neg_abs_add",
                 "cpu_float32_heldout_inference_relu_broadcast_no_grad",
                 "cpu_float32_heldout_detach_alias_view",
@@ -1296,6 +1383,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "inference",
                 "mutation_aliasing_views",
                 "training_autograd",
+                "modules_parameters_buffers",
                 "containers_pytrees",
                 "decompositions",
                 "custom_functions",
@@ -1331,6 +1419,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                         "broadcasting",
                         "inference",
                         "mutation_aliasing_views",
+                        "modules_parameters_buffers",
                         "training_autograd",
                         "containers_pytrees",
                         "decompositions",
@@ -1434,6 +1523,12 @@ class CompileCorpusMetadataTests(unittest.TestCase):
         )
 
     def test_corpus_inputs_are_exact_native_cpu_float32_tensors(self):
+        global_tensor_cases = {
+            "cpu_float32_global_buffer_add": "CPU_FLOAT32_GLOBAL_BUFFER",
+            "cpu_float32_heldout_global_weight_unary_add": (
+                "CPU_FLOAT32_HELDOUT_GLOBAL_WEIGHT"
+            ),
+        }
         for case in compile_corpus_cases(include_held_out=True):
             with self.subTest(case=case.name):
                 inputs = case.make_inputs(torch)
@@ -1449,6 +1544,11 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                     self.assertTrue(case.run_under_no_grad)
                     self.assertFalse(case.backward_through_sum)
                     self.assertTrue(all(input.requires_grad for input in inputs))
+                if case.category == "modules_parameters_buffers":
+                    global_tensor = globals()[global_tensor_cases[case.name]]
+                    self.assertIs(type(global_tensor), torch.Tensor)
+                    self.assertIs(global_tensor.dtype, torch.float32)
+                    self.assertEqual(global_tensor.device, torch.device("cpu"))
 
         for scenario in compile_recompilation_guard_scenarios(include_held_out=True):
             for step in scenario.steps:
@@ -1620,6 +1720,16 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 ["neg", "add"],
             ),
             (
+                cpu_float32_global_buffer_add,
+                cpu_float32_global_buffer_add_inputs,
+                ["abs", "add"],
+            ),
+            (
+                cpu_float32_heldout_global_weight_unary_add,
+                cpu_float32_heldout_global_weight_unary_add_inputs,
+                ["neg", "abs", "add", "relu"],
+            ),
+            (
                 cpu_float32_recompile_guard_unary_metadata,
                 cpu_float32_recompile_guard_unary_inputs,
                 ["neg", "abs", "add"],
@@ -1671,6 +1781,70 @@ class CompileCorpusTraceTests(unittest.TestCase):
                     graph.forward(*inputs),
                     expected,
                     case=program.__name__,
+                )
+
+    def test_bytecode_lowerer_captures_module_global_tensor_constants(self):
+        cases = (
+            (
+                compile_corpus_case("cpu_float32_global_buffer_add"),
+                "CPU_FLOAT32_GLOBAL_BUFFER",
+                ["abs", "add"],
+            ),
+            (
+                compile_corpus_case("cpu_float32_heldout_global_weight_unary_add"),
+                "CPU_FLOAT32_HELDOUT_GLOBAL_WEIGHT",
+                ["neg", "abs", "add", "relu"],
+            ),
+        )
+        for case, global_name, expected_targets in cases:
+            with self.subTest(case=case.name):
+                inputs = case.make_inputs(torch)
+                captured_tensor = globals()[global_name]
+                captured_snapshot = (
+                    captured_tensor.tolist(),
+                    tuple(captured_tensor.shape),
+                    captured_tensor.stride(),
+                    captured_tensor.storage_offset(),
+                    captured_tensor.requires_grad,
+                )
+                graph = _compile_bytecode.lower_compile_graph(
+                    case.program,
+                    tuple(
+                        _compile_trace._metadata_from_native_tensor(input)
+                        for input in inputs
+                    ),
+                    name=case.name,
+                )
+                expected = case.program(*inputs)
+
+                self.assertEqual(
+                    [capture.name for capture in graph.captures],
+                    [f"global:{global_name}"],
+                )
+                self.assertIs(graph.captures[0].value, captured_tensor)
+                self.assertEqual(
+                    graph.captures[0].metadata,
+                    _compile_trace._metadata_from_native_tensor(captured_tensor),
+                )
+                self.assertEqual(len(graph.inputs), len(inputs))
+                self.assertEqual(
+                    [operation.target for operation in graph.operations],
+                    expected_targets,
+                )
+                self.assert_native_tensor_matches(
+                    graph.forward(*inputs),
+                    expected,
+                    case=case.name,
+                )
+                self.assertEqual(
+                    (
+                        captured_tensor.tolist(),
+                        tuple(captured_tensor.shape),
+                        captured_tensor.stride(),
+                        captured_tensor.storage_offset(),
+                        captured_tensor.requires_grad,
+                    ),
+                    captured_snapshot,
                 )
 
     def test_bytecode_lowerer_inlines_custom_function_helpers_without_calls(self):
@@ -3864,7 +4038,8 @@ except NotImplementedError as error:
         "torch.compile(): only backend='eager', fullgraph=True straight-line "
         "Tensor neg/abs/relu/square/detach/float/add functions, plus one top-level "
         "if over an input Tensor.requires_grad selecting from that same subset, "
-        "optionally inlining one exact same-module helper call, with one or two "
+        "optionally inlining one exact same-module helper call and reading "
+        "module-global exact native CPU float32 Tensor constants, with one or two "
         "positional exact native CPU float32 Tensor inputs and Tensor or tuple/list "
         "Tensor-pytree outputs are supported; eager fallback, installed-PyTorch "
         "forwarding, callable backend invocation, CUDA compilation, and broader "
@@ -4151,13 +4326,6 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
             with self.subTest(case=case.name):
                 self.assert_reference_eligible(case)
 
-                inputs = case.make_inputs(torch)
-                before_gradients = input_gradients(inputs)
-                expected = run_compile_corpus_case(
-                    torch,
-                    case,
-                    case.make_inputs(torch),
-                )
                 reference_inputs = case.make_inputs(reference_torch)
                 reference_before_gradients = input_gradients(reference_inputs)
                 reference_expected = run_compile_corpus_case(
@@ -4167,6 +4335,13 @@ class TorchCompileCorpusReferenceTests(unittest.TestCase):
                 )
                 if case.backward_through_sum:
                     output_sum(reference_expected).backward()
+                inputs = case.make_inputs(torch)
+                before_gradients = input_gradients(inputs)
+                expected = run_compile_corpus_case(
+                    torch,
+                    case,
+                    case.make_inputs(torch),
+                )
                 compiled = torch.compile(
                     case.program,
                     **case.compile_kwargs("eager"),

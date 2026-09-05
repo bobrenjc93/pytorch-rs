@@ -36,6 +36,7 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
         self.assertIn("7 inference", summary)
         self.assertIn("7 training-autograd", summary)
         self.assertIn("7 python-control-flow", summary)
+        self.assertIn("7 modules-parameters-buffers", summary)
         self.assertIn("7 decomposition", summary)
         self.assertIn("7 mutation_aliasing_views", summary)
         self.assertIn("7 dtype-device-transitions", summary)
@@ -55,6 +56,11 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
             summary,
         )
         self.assertIn(
+            "| `modules_parameters_buffers` | 8 | Supported and timed public cases: "
+            "`cpu_float32_global_buffer_add` |",
+            summary,
+        )
+        self.assertIn(
             "| `mutation_aliasing_views` | 8 | Supported and timed public cases: "
             "`cpu_float32_detach_alias_view` |",
             summary,
@@ -71,6 +77,7 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
         )
         self.assertNotIn("`training_autograd` | 8 | Zero credit", summary)
         self.assertNotIn("`python_control_flow` | 8 | Zero credit", summary)
+        self.assertNotIn("`modules_parameters_buffers` | 8 | Zero credit", summary)
         self.assertNotIn("`mutation_aliasing_views` | 8 | Zero credit", summary)
         self.assertNotIn("`decompositions` | 6 | Zero credit", summary)
         self.assertNotIn("`dtype_device_transitions` | 4 | Zero credit", summary)
@@ -207,6 +214,40 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
         self.assertEqual(
             benchmark_compile_cpu._checksum_tensor(actual),
             benchmark_compile_cpu._checksum_tensor(expected),
+        )
+
+    def test_variant_inputs_refresh_case_global_tensor_state(self):
+        corpus = benchmark_compile_cpu._load_compile_corpus_module()
+        if corpus.reference_torch is None:
+            self.skipTest("reference PyTorch is not installed")
+        case = corpus.compile_corpus_case("cpu_float32_global_buffer_add")
+        variant = next(
+            variant
+            for variant in benchmark_compile_cpu.INPUT_VARIANTS
+            if variant.name == "vector_17"
+        )
+
+        case.make_inputs(corpus.reference_torch)
+        self.assertIs(
+            type(corpus.CPU_FLOAT32_GLOBAL_BUFFER),
+            corpus.reference_torch.Tensor,
+        )
+
+        inputs = benchmark_compile_cpu._make_cell_inputs(corpus.torch, case, variant)
+        self.assertIs(type(corpus.CPU_FLOAT32_GLOBAL_BUFFER), corpus.torch.Tensor)
+        request = corpus._compile_bytecode.prepare_compile_cache_request(
+            case.program,
+            tuple(
+                corpus._compile_trace._metadata_from_native_tensor(input)
+                for input in inputs
+            ),
+        )
+        self.assertEqual(
+            [
+                dependency.global_name
+                for dependency in request.global_tensor_dependencies
+            ],
+            ["CPU_FLOAT32_GLOBAL_BUFFER"],
         )
 
     def test_validator_rejects_previous_corpus_version_artifact(self):

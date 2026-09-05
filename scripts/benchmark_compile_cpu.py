@@ -44,6 +44,7 @@ IMPLEMENTATION_ORDERS = (
 CATEGORY_LABELS = {
     "tensor_arithmetic": "tensor-arithmetic",
     "broadcasting": "broadcasting",
+    "modules_parameters_buffers": "modules-parameters-buffers",
     "inference": "inference",
     "training_autograd": "training-autograd",
     "python_control_flow": "python-control-flow",
@@ -56,6 +57,7 @@ CATEGORY_LABELS = {
 CATEGORY_PHRASES = {
     "tensor_arithmetic": "tensor arithmetic",
     "broadcasting": "broadcasting",
+    "modules_parameters_buffers": "modules, parameters, and buffers",
     "inference": "inference",
     "training_autograd": "training autograd",
     "python_control_flow": "Python control flow",
@@ -68,6 +70,7 @@ CATEGORY_PHRASES = {
 CATEGORY_PROGRAM_LABELS = {
     "tensor_arithmetic": "tensor-arithmetic",
     "broadcasting": "broadcasting",
+    "modules_parameters_buffers": "modules/parameters/buffers",
     "inference": "inference",
     "training_autograd": "training-autograd",
     "python_control_flow": "Python-control-flow",
@@ -434,6 +437,12 @@ def _cell_input_factory(case, variant):
     return case.make_inputs if variant.make_inputs is None else variant.make_inputs
 
 
+def _make_cell_inputs(module, case, variant):
+    if variant.make_inputs is not None:
+        case.make_inputs(module)
+    return _cell_input_factory(case, variant)(module)
+
+
 def _case_execution_context(module, case):
     if getattr(case, "run_under_no_grad", False):
         return module.no_grad()
@@ -697,8 +706,7 @@ def _run_cell(
     warmups,
     samples,
 ):
-    make_inputs = _cell_input_factory(case, variant)
-    inputs = make_inputs(module)
+    inputs = _make_cell_inputs(module, case, variant)
     expected_input_count = _program_input_count(case)
     if len(inputs) != expected_input_count:
         raise AssertionError(
@@ -1158,7 +1166,7 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                         implementation,
                         [],
                     ).append(measured)
-                    expected_inputs = _cell_input_factory(case, variant)(module)
+                    expected_inputs = _make_cell_inputs(module, case, variant)
                     expected = _run_case_program(module, case, expected_inputs)
                     _assert_outputs_match(
                         measured["cold_output"],
@@ -1173,10 +1181,11 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                     backward_expected = expected
                     backward_expected_inputs = expected_inputs
                     if implementation == "torch_rs":
-                        reference_inputs = _cell_input_factory(
+                        reference_inputs = _make_cell_inputs(
+                            reference_torch,
                             case,
                             variant,
-                        )(reference_torch)
+                        )
                         reference_expected = _run_case_program(
                             reference_torch,
                             case,
