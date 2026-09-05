@@ -90,6 +90,32 @@ class TensorAddMethodReferenceTests(unittest.TestCase):
         for case, actual_call, expected_call in calls:
             self.assert_matches(actual_call(), expected_call(), case=case)
 
+        nondefault_calls = (
+            (
+                "keyword nondefault tensor alpha",
+                lambda: actual_left.add(actual_right, alpha=np.float32(-2.5)),
+                lambda: expected_left.add(expected_right, alpha=np.float32(-2.5)),
+            ),
+            (
+                "keyword nondefault scalar alpha",
+                lambda: actual_left.add(2.0, alpha=-3),
+                lambda: expected_left.add(2.0, alpha=-3),
+            ),
+        )
+        for case, actual_call, expected_call in nondefault_calls:
+            self.assert_matches(actual_call(), expected_call(), case=case)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            expected_legacy_nondefault = expected_left.add(np.float32(-2.5), expected_right)
+        self.assert_matches(
+            actual_left.add(np.float32(-2.5), actual_right),
+            expected_legacy_nondefault,
+            case="legacy positional nondefault alpha tensor other",
+        )
+        self.assert_matches(actual_left, expected_left, case="left unmutated")
+        self.assert_matches(actual_right, expected_right, case="right unmutated")
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
             expected_legacy = expected_left.add(1, expected_right)
@@ -162,6 +188,13 @@ class TensorAddMethodReferenceTests(unittest.TestCase):
             reference_torch.tensor(values).add(reference_torch.zeros((5,))),
             case="signed zero and non-finites",
         )
+        self.assert_matches(
+            torch.tensor(values).add(torch.zeros((5,)), alpha=np.float32(-0.0)),
+            reference_torch.tensor(values).add(
+                reference_torch.zeros((5,)), alpha=np.float32(-0.0)
+            ),
+            case="signed zero and non-finites with signed-zero alpha",
+        )
 
     def test_autograd_and_no_grad_match_pytorch_2_13(self):
         actual_left = torch.tensor([[2.0, 3.0]], requires_grad=True)
@@ -196,6 +229,29 @@ class TensorAddMethodReferenceTests(unittest.TestCase):
         actual_scalar.add(4.0).sum().backward()
         expected_scalar.add(4.0).sum().backward()
         self.assert_matches(actual_scalar.grad, expected_scalar.grad, case="scalar gradient")
+
+        actual_alpha_left = torch.tensor([[2.0, 3.0]], requires_grad=True)
+        expected_alpha_left = reference_torch.tensor([[2.0, 3.0]], requires_grad=True)
+        actual_alpha_right = torch.tensor([[5.0], [7.0]], requires_grad=True)
+        expected_alpha_right = reference_torch.tensor(
+            [[5.0], [7.0]], requires_grad=True
+        )
+        actual_alpha_left.add(
+            actual_alpha_right, alpha=np.float32(-2.5)
+        ).sum().backward()
+        expected_alpha_left.add(
+            expected_alpha_right, alpha=np.float32(-2.5)
+        ).sum().backward()
+        self.assert_matches(
+            actual_alpha_left.grad,
+            expected_alpha_left.grad,
+            case="left nondefault alpha gradient",
+        )
+        self.assert_matches(
+            actual_alpha_right.grad,
+            expected_alpha_right.grad,
+            case="right nondefault alpha gradient",
+        )
 
         actual_empty = torch.zeros((2, 0, 3), requires_grad=True)
         expected_empty = reference_torch.zeros((2, 0, 3), requires_grad=True)

@@ -3171,6 +3171,7 @@ enum BoundSubAlpha<'py> {
     Default,
     PythonBool,
     NonDefault,
+    Number(f32),
     Override(ProbedTorchFunctionOverride<'py>),
 }
 
@@ -5171,7 +5172,10 @@ fn ordered_addition_overrides<'py>(
         BoundAddOperand::Override(probed) => Some(probed),
     };
     let alpha = match &call.alpha {
-        BoundSubAlpha::Default | BoundSubAlpha::PythonBool | BoundSubAlpha::NonDefault => None,
+        BoundSubAlpha::Default
+        | BoundSubAlpha::PythonBool
+        | BoundSubAlpha::NonDefault
+        | BoundSubAlpha::Number(_) => None,
         BoundSubAlpha::Override(probed) => Some(probed),
     };
     let out = match &call.out {
@@ -5207,8 +5211,8 @@ fn dispatch_top_level_addition(
     )?;
 
     // Generated variable functions validate their schema before dispatch, but
-    // delay native-only unsupported cases such as concrete out tensors and
-    // nondefault alpha until active handlers can override.
+    // delay native-only unsupported cases such as concrete out tensors until
+    // active handlers can override.
     let active_mode = torch_function_mode_stack::pop();
     if let Some(mode) = active_mode.get() {
         validate_torch_function_mode_handler(mode.bind(py))?;
@@ -5248,13 +5252,14 @@ fn apply_top_level_addition(
             "add(): the 'out' argument is not supported",
         ));
     }
-    match &call.alpha {
-        BoundSubAlpha::Default => {}
+    let alpha = match &call.alpha {
+        BoundSubAlpha::Default => 1.0,
         BoundSubAlpha::PythonBool => {
             return Err(PyRuntimeError::new_err(
                 "Boolean alpha only supported for Boolean results.",
             ));
         }
+        BoundSubAlpha::Number(alpha) => *alpha,
         BoundSubAlpha::NonDefault => {
             return Err(PyNotImplementedError::new_err(
                 "add(): alpha values other than 1 are not supported",
@@ -5263,7 +5268,7 @@ fn apply_top_level_addition(
         BoundSubAlpha::Override(_) => {
             unreachable!("addition alpha overrides were dispatched before the native path")
         }
-    }
+    };
 
     let result = match (&call.input, &call.other) {
         (BoundAddOperand::Tensor(input), BoundAddOperand::Tensor(other)) => {
@@ -5271,19 +5276,31 @@ fn apply_top_level_addition(
             let other = other.try_borrow()?;
             validate_top_level_add_tensor(&input)?;
             validate_top_level_add_tensor(&other)?;
-            BinaryOperation::Add.apply_tensors(&input.inner, &other.inner)
+            if matches!(&call.alpha, BoundSubAlpha::Default) {
+                input.inner.add(&other.inner)
+            } else {
+                input.inner.add_scaled(&other.inner, alpha)
+            }
         }
         (BoundAddOperand::Tensor(input), BoundAddOperand::Scalar(scalar)) => {
             let input = input.try_borrow()?;
             validate_top_level_add_tensor(&input)?;
             let scalar = parse_supported_arithmetic_scalar(scalar)?;
-            BinaryOperation::Add.apply_scalar(&input.inner, scalar.into_f32(), false)
+            if matches!(&call.alpha, BoundSubAlpha::Default) {
+                input.inner.add_scalar(scalar.into_f32())
+            } else {
+                input.inner.add_scaled_scalar(scalar.into_f32(), alpha)
+            }
         }
         (BoundAddOperand::Scalar(scalar), BoundAddOperand::Tensor(other)) => {
             let other = other.try_borrow()?;
             validate_top_level_add_tensor(&other)?;
             let scalar = parse_supported_arithmetic_scalar(scalar)?;
-            BinaryOperation::Add.apply_scalar(&other.inner, scalar.into_f32(), false)
+            if matches!(&call.alpha, BoundSubAlpha::Default) {
+                other.inner.add_scalar(scalar.into_f32())
+            } else {
+                other.inner.scalar_add_scaled(scalar.into_f32(), alpha)
+            }
         }
         (BoundAddOperand::Scalar(_), BoundAddOperand::Scalar(_)) => {
             return Err(addition_unsupported_native_input());
@@ -5754,7 +5771,10 @@ fn ordered_subtraction_overrides<'py>(
         BoundSubOperand::Override(probed) => Some(probed),
     };
     let alpha = match &call.alpha {
-        BoundSubAlpha::Default | BoundSubAlpha::PythonBool | BoundSubAlpha::NonDefault => None,
+        BoundSubAlpha::Default
+        | BoundSubAlpha::PythonBool
+        | BoundSubAlpha::NonDefault
+        | BoundSubAlpha::Number(_) => None,
         BoundSubAlpha::Override(probed) => Some(probed),
     };
     let out = match &call.out {
@@ -5853,7 +5873,7 @@ fn apply_top_level_subtraction(
                 "Boolean alpha only supported for Boolean results.",
             ));
         }
-        BoundSubAlpha::NonDefault => {
+        BoundSubAlpha::NonDefault | BoundSubAlpha::Number(_) => {
             return Err(PyNotImplementedError::new_err(
                 operation.alpha_unsupported_error(),
             ));
@@ -6010,7 +6030,12 @@ fn parse_tensor_add_sub_method_alpha<'py>(
     if let Some(probed) = probe_torch_function_override(&alpha.value) {
         return Ok(BoundSubAlpha::Override(probed));
     }
-    let Some(scalar) = parse_arithmetic_scalar(&alpha.value)? else {
+    let parsed_scalar = if matches!(operation, AddSubMethodOperation::Add) {
+        parse_add_alpha_arithmetic_scalar(&alpha.value)?
+    } else {
+        parse_arithmetic_scalar(&alpha.value)?
+    };
+    let Some(scalar) = parsed_scalar else {
         if matches!(operation, AddSubMethodOperation::Subtract) {
             return Err(tensor_subtract_binding_error(
                 SubtractionOperation::Subtract,
@@ -6030,6 +6055,10 @@ fn parse_tensor_add_sub_method_alpha<'py>(
     }
     if scalar.is_one() {
         Ok(BoundSubAlpha::Default)
+    } else if matches!(operation, AddSubMethodOperation::Add)
+        && !is_boolean_arithmetic_scalar(&alpha.value)?
+    {
+        parse_nondefault_add_alpha(scalar)
     } else {
         Ok(BoundSubAlpha::NonDefault)
     }
@@ -6049,7 +6078,10 @@ fn ordered_tensor_add_sub_method_overrides<'py>(
     };
     let alpha = match &call.alpha {
         BoundSubAlpha::Override(probed) => Some(probed),
-        BoundSubAlpha::Default | BoundSubAlpha::PythonBool | BoundSubAlpha::NonDefault => None,
+        BoundSubAlpha::Default
+        | BoundSubAlpha::PythonBool
+        | BoundSubAlpha::NonDefault
+        | BoundSubAlpha::Number(_) => None,
     };
 
     let mut overrides = Vec::new();
@@ -6152,6 +6184,12 @@ fn apply_tensor_add_sub_method(
                 operation.alpha_unsupported_error(),
             ));
         }
+        BoundSubAlpha::Number(_) if !matches!(operation, AddSubMethodOperation::Add) => {
+            return Err(PyNotImplementedError::new_err(
+                operation.alpha_unsupported_error(),
+            ));
+        }
+        BoundSubAlpha::Number(_) => {}
         BoundSubAlpha::Override(_) => {
             unreachable!("add/sub alpha overrides were dispatched before the native path")
         }
@@ -6160,9 +6198,16 @@ fn apply_tensor_add_sub_method(
     let result = match (&call.input, &call.other) {
         (BoundSubOperand::Tensor(input), BoundSubOperand::Tensor(other)) => {
             let other = other.try_borrow()?;
-            operation
-                .binary_operation()
-                .apply_tensors(&input.try_borrow()?.inner, &other.inner)
+            let input = input.try_borrow()?;
+            if let (AddSubMethodOperation::Add, BoundSubAlpha::Number(alpha)) =
+                (operation, &call.alpha)
+            {
+                input.inner.add_scaled(&other.inner, *alpha)
+            } else {
+                operation
+                    .binary_operation()
+                    .apply_tensors(&input.inner, &other.inner)
+            }
         }
         (BoundSubOperand::Tensor(tensor), BoundSubOperand::Scalar(scalar)) => {
             let scalar = parse_supported_arithmetic_scalar(scalar)?;
@@ -6173,11 +6218,16 @@ fn apply_tensor_add_sub_method(
             {
                 return Err(bool_subtraction_error());
             }
-            operation.binary_operation().apply_scalar(
-                &tensor.try_borrow()?.inner,
-                scalar.into_f32(),
-                false,
-            )
+            let tensor = tensor.try_borrow()?;
+            if let (AddSubMethodOperation::Add, BoundSubAlpha::Number(alpha)) =
+                (operation, &call.alpha)
+            {
+                tensor.inner.add_scaled_scalar(scalar.into_f32(), *alpha)
+            } else {
+                operation
+                    .binary_operation()
+                    .apply_scalar(&tensor.inner, scalar.into_f32(), false)
+            }
         }
         (BoundSubOperand::Override(_), _) | (_, BoundSubOperand::Override(_)) => {
             unreachable!("add/sub operand overrides were dispatched before the native path")
@@ -6201,15 +6251,19 @@ fn parse_supported_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<Parse
         Ok(Some(scalar)) => Ok(scalar),
         Ok(None) => unreachable!("top-level sub scalar types were checked while binding"),
         Err(_) if value.is_instance_of::<PyInt>() => {
-            let message = if python_integer_is_negative(value)? {
-                "can't convert negative int to unsigned"
-            } else {
-                "int too big to convert"
-            };
-            Err(PyOverflowError::new_err(message))
+            Err(python_integer_scalar_overflow_error(value)?)
         }
         Err(error) => Err(error),
     }
+}
+
+fn python_integer_scalar_overflow_error(value: &Bound<'_, PyAny>) -> PyResult<PyErr> {
+    let message = if python_integer_is_negative(value)? {
+        "can't convert negative int to unsigned"
+    } else {
+        "int too big to convert"
+    };
+    Ok(PyOverflowError::new_err(message))
 }
 
 fn parse_top_level_mul_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
@@ -15961,7 +16015,7 @@ fn parse_top_level_add_alpha<'py>(
     if is_boolean_arithmetic_scalar(&alpha.value)? {
         return Ok(BoundSubAlpha::PythonBool);
     }
-    let Some(scalar) = parse_arithmetic_scalar(&alpha.value)? else {
+    let Some(scalar) = parse_add_alpha_arithmetic_scalar(&alpha.value)? else {
         let actual = python_type_name(&alpha.value)?;
         return Err(PyTypeError::new_err(format!(
             "add(): argument 'alpha' must be Number, not {actual}",
@@ -15970,7 +16024,29 @@ fn parse_top_level_add_alpha<'py>(
     if scalar.is_one() {
         Ok(BoundSubAlpha::Default)
     } else {
-        Ok(BoundSubAlpha::NonDefault)
+        parse_nondefault_add_alpha(scalar)
+    }
+}
+
+fn parse_nondefault_add_alpha<'py>(scalar: ParsedArithmeticScalar) -> PyResult<BoundSubAlpha<'py>> {
+    match scalar {
+        ParsedArithmeticScalar::Number(value) => Ok(BoundSubAlpha::Number(value.into_f32()?)),
+        ParsedArithmeticScalar::WideNumpyUnsigned => {
+            Err(PyTypeError::new_err("an integer is required"))
+        }
+        ParsedArithmeticScalar::PythonBool(_) => Ok(BoundSubAlpha::PythonBool),
+    }
+}
+
+fn parse_add_alpha_arithmetic_scalar(
+    value: &Bound<'_, PyAny>,
+) -> PyResult<Option<ParsedArithmeticScalar>> {
+    match parse_arithmetic_scalar(value) {
+        Ok(scalar) => Ok(scalar),
+        Err(_) if value.is_instance_of::<PyInt>() => {
+            Err(python_integer_scalar_overflow_error(value)?)
+        }
+        Err(error) => Err(error),
     }
 }
 

@@ -1013,11 +1013,10 @@ Adds :attr:`other`, scaled by :attr:`alpha`, to :attr:`input`.
 This compatibility layer supports exact native CPU ``float32`` Tensor/Tensor
 operands, Tensor input plus real-number ``other`` operands, and real-number
 ``input`` plus exact native CPU ``float32`` Tensor ``other`` operands,
-broadcasting, default-equivalent ``alpha`` values, and omitted or ``None``
-``out`` only. Scalar-only calls, concrete ``out`` tensors, nondefault or
-boolean ``alpha``, Tensor method behavior beyond the existing receiver-left
-forms, unsupported dtype/device/subclass paths, and in-place variants remain
-unsupported.
+broadcasting, numeric non-bool ``alpha`` values, and omitted or ``None`` ``out``
+only. Scalar-only calls, concrete ``out`` tensors, boolean ``alpha``, Tensor
+method behavior beyond the existing receiver-left forms, unsupported
+dtype/device/subclass paths, and in-place variants remain unsupported.
 
 Args:
     input (Tensor or Number): the input tensor or number.

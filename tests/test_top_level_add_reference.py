@@ -300,6 +300,56 @@ class TopLevelAddReferenceTests(unittest.TestCase):
                 case=("scalar-left signed zero nan infinity", case),
             )
 
+    def test_nondefault_alpha_values_nonmutation_and_ieee_match_pytorch_2_13(self):
+        actual_left = torch.tensor([[1.0], [-0.0], [float("nan")]])
+        expected_left = reference_torch.tensor([[1.0], [-0.0], [float("nan")]])
+        special_bits = np.asarray(
+            (0x4000_0000, 0x8000_0000, 0x7F80_0000, 0x7FC1_2345),
+            dtype=np.uint32,
+        )
+        actual_right = torch.tensor(memoryview(special_bits.view(np.float32))).view(
+            1, 4
+        )
+        expected_right = reference_torch.tensor(
+            memoryview(special_bits.view(np.float32))
+        ).view(1, 4)
+
+        self.assert_matches(
+            torch.add(actual_left, actual_right, alpha=np.float32(-2.5)),
+            reference_torch.add(
+                expected_left, expected_right, alpha=np.float32(-2.5)
+            ),
+            case="keyword alpha broadcasting signed-zero non-finites",
+        )
+        self.assert_matches(actual_left, expected_left, case="left unmutated")
+        self.assert_matches(actual_right, expected_right, case="right unmutated")
+
+        self.assert_matches(
+            torch.add(actual_left, np.float32(-0.0), alpha=np.float32(2.0)),
+            reference_torch.add(
+                expected_left, np.float32(-0.0), alpha=np.float32(2.0)
+            ),
+            case="tensor scalar alpha",
+        )
+        self.assert_matches(
+            torch.add(-3.0, actual_right, alpha=np.int64(2)),
+            reference_torch.add(-3.0, expected_right, alpha=np.int64(2)),
+            case="scalar tensor alpha",
+        )
+        self.assert_matches(
+            torch.add(
+                torch.tensor([0.0, -0.0]),
+                torch.tensor([1.0, 1.0]),
+                alpha=np.float32(-0.0),
+            ),
+            reference_torch.add(
+                reference_torch.tensor([0.0, -0.0]),
+                reference_torch.tensor([1.0, 1.0]),
+                alpha=np.float32(-0.0),
+            ),
+            case="signed zero alpha",
+        )
+
     def test_autograd_empties_shared_operands_and_no_grad_match_pytorch_2_13(self):
         actual_left = torch.tensor([[2.0, 3.0]], requires_grad=True)
         expected_left = reference_torch.tensor([[2.0, 3.0]], requires_grad=True)
@@ -408,6 +458,36 @@ class TopLevelAddReferenceTests(unittest.TestCase):
                 expected_no_grad, reference_torch.tensor([[3.0], [4.0]])
             ).requires_grad
         )
+
+    def test_nondefault_alpha_gradients_through_sum_match_pytorch_2_13(self):
+        actual_left = torch.tensor([[2.0, 3.0]], requires_grad=True)
+        expected_left = reference_torch.tensor([[2.0, 3.0]], requires_grad=True)
+        actual_right = torch.tensor([[5.0], [7.0]], requires_grad=True)
+        expected_right = reference_torch.tensor([[5.0], [7.0]], requires_grad=True)
+
+        torch.add(actual_left, actual_right, alpha=np.float32(-2.5)).sum().backward()
+        reference_torch.add(
+            expected_left, expected_right, alpha=np.float32(-2.5)
+        ).sum().backward()
+        self.assert_matches(
+            actual_left.grad, expected_left.grad, case="left alpha gradient"
+        )
+        self.assert_matches(
+            actual_right.grad, expected_right.grad, case="right alpha gradient"
+        )
+
+        actual_reflected = torch.tensor([2.0, -3.0], requires_grad=True)
+        expected_reflected = reference_torch.tensor([2.0, -3.0], requires_grad=True)
+        torch.add(4.0, actual_reflected, alpha=np.float32(-0.0)).sum().backward()
+        reference_torch.add(
+            4.0, expected_reflected, alpha=np.float32(-0.0)
+        ).sum().backward()
+        self.assert_matches(
+            actual_reflected.grad,
+            expected_reflected.grad,
+            case="scalar-left signed-zero alpha gradient",
+        )
+
 
     @staticmethod
     def dispatch_observation(module):

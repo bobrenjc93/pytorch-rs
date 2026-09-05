@@ -59,6 +59,16 @@ class TensorAddMethodTests(unittest.TestCase):
         )
         for case, call in calls:
             self.assert_tensor_matches(call(), expected, case=case)
+        self.assert_tensor_matches(
+            left.add(right, alpha=np.float32(-2.5)),
+            left + right * np.float32(-2.5),
+            case="keyword nondefault alpha",
+        )
+        self.assert_tensor_matches(
+            left.add(np.float32(-2.5), right),
+            left + right * np.float32(-2.5),
+            case="legacy positional nondefault alpha tensor other",
+        )
 
         self.assert_tensor_matches(
             left.add(1, right),
@@ -90,6 +100,11 @@ class TensorAddMethodTests(unittest.TestCase):
                 offset + scalar,
                 case=("keyword scalar", type(scalar).__name__, scalar),
             )
+        self.assert_tensor_matches(
+            offset.add(2.0, alpha=-3),
+            offset + -6.0,
+            case="scalar other nondefault alpha",
+        )
 
         empty = torch.zeros((2, 0, 3)).transpose(0, 2)
         broadcast = torch.ones((1, 1, 2))
@@ -107,6 +122,11 @@ class TensorAddMethodTests(unittest.TestCase):
         zeros = torch.zeros((5,))
         result = special.add(zeros)
         self.assert_tensor_matches(result, special + zeros, case="signed zero nan infinity")
+        self.assert_tensor_matches(
+            special.add(zeros, alpha=np.float32(-0.0)),
+            special + zeros * np.float32(-0.0),
+            case="signed zero nan infinity with signed-zero alpha",
+        )
         self.assertFalse(result.is_set_to(special))
         self.assertFalse(result.is_set_to(zeros))
         if result.numel():
@@ -137,6 +157,25 @@ class TensorAddMethodTests(unittest.TestCase):
         (shared_operator + shared_operator).sum().backward()
         self.assert_tensor_matches(
             shared_method.grad, shared_operator.grad, case="shared operand gradient"
+        )
+
+        alpha_method_left = torch.tensor([[2.0, 3.0]], requires_grad=True)
+        alpha_method_right = torch.tensor([[5.0], [7.0]], requires_grad=True)
+        alpha_operator_left = torch.tensor([[2.0, 3.0]], requires_grad=True)
+        alpha_operator_right = torch.tensor([[5.0], [7.0]], requires_grad=True)
+        alpha_method_left.add(
+            alpha_method_right, alpha=np.float32(-2.5)
+        ).sum().backward()
+        (alpha_operator_left + alpha_operator_right * np.float32(-2.5)).sum().backward()
+        self.assert_tensor_matches(
+            alpha_method_left.grad,
+            alpha_operator_left.grad,
+            case="left nondefault alpha gradient",
+        )
+        self.assert_tensor_matches(
+            alpha_method_right.grad,
+            alpha_operator_right.grad,
+            case="right nondefault alpha gradient",
         )
 
         scalar_method = torch.tensor([2.0, -3.0], requires_grad=True)
@@ -388,11 +427,6 @@ class TensorAddMethodTests(unittest.TestCase):
                 return object()
 
         with self.assertRaisesRegex(
-            NotImplementedError,
-            r"^add\(\): alpha values other than 1 are not supported$",
-        ):
-            tensor.add(tensor, alpha=2)
-        with self.assertRaisesRegex(
             RuntimeError, "^Boolean alpha only supported for Boolean results\\.$"
         ):
             tensor.add(tensor, alpha=True)
@@ -403,26 +437,6 @@ class TensorAddMethodTests(unittest.TestCase):
             tensor.add(tensor, dtype=torch.float32)
         with self.assertRaises(TypeError):
             tensor.add(tensor, device=torch.device("cpu"))
-        with self.assertRaisesRegex(
-            NotImplementedError,
-            r"^add\(\): alpha values other than 1 are not supported$",
-        ):
-            tensor.add(2, torch.tensor([3.0]))
-        with self.assertRaisesRegex(
-            NotImplementedError,
-            r"^add\(\): alpha values other than 1 are not supported$",
-        ):
-            tensor.add(2, 1)
-        with self.assertRaisesRegex(
-            NotImplementedError,
-            r"^add\(\): alpha values other than 1 are not supported$",
-        ):
-            tensor.add(2, other=torch.tensor([3.0]))
-        with self.assertRaisesRegex(
-            NotImplementedError,
-            r"^add\(\): alpha values other than 1 are not supported$",
-        ):
-            tensor.add(2, x2=torch.tensor([3.0]))
         with self.assertRaises(TypeError):
             tensor.add([])
         with self.assertRaisesRegex(

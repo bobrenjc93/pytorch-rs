@@ -89,7 +89,7 @@ enum GradFn {
         right: SavedTensor,
         output_shape: Vec<usize>,
         output_elements: usize,
-        right_sign: f32,
+        right_scale: f32,
         #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
         node: AutogradNode,
     },
@@ -142,6 +142,10 @@ enum GradFn {
 #[derive(Clone)]
 enum TransformMapping {
     Identity,
+    #[cfg(feature = "python-bindings")]
+    Scale {
+        factor: f32,
+    },
     Permute {
         dimensions: Vec<usize>,
         output_shape: Vec<usize>,
@@ -1452,7 +1456,7 @@ impl Tensor {
         other: &Self,
         mut output: Self,
         node: AutogradNode,
-        right_sign: f32,
+        right_scale: f32,
     ) -> Result<Self, TensorError> {
         if (self.requires_grad() || other.requires_grad()) && is_grad_enabled() {
             let output_shape = try_clone_result_shape(&output.shape, output.elements)?;
@@ -1463,7 +1467,7 @@ impl Tensor {
                         right: SavedTensor::try_from_tensor(other, false)?,
                         output_shape,
                         output_elements: output.elements,
-                        right_sign,
+                        right_scale,
                         node,
                     })),
                 },
@@ -3236,6 +3240,20 @@ impl Tensor {
         self.finish_add_subtract_vjp(other, output, AutogradNode::Add, 1.0)
     }
 
+    /// Adds tensors element by element with the right operand scaled by alpha.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the shapes are not broadcastable or when result
+    /// shape calculation or allocation fails.
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn add_scaled(&self, other: &Self, alpha: f32) -> Result<Self, TensorError> {
+        let output = self.zip_map(other, |left, right| {
+            add_scaled_value_matching_pytorch(left, right, alpha)
+        })?;
+        self.finish_add_subtract_vjp(other, output, AutogradNode::Add, alpha)
+    }
+
     /// Subtracts tensors element by element with trailing-dimension broadcasting.
     ///
     /// # Errors
@@ -3869,6 +3887,36 @@ impl Tensor {
     pub fn add_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
         let output = self.map_scalar(scalar, |value, scalar| value + scalar)?;
         self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Add)
+    }
+
+    /// Adds a scaled scalar to every element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn add_scaled_scalar(&self, scalar: f32, alpha: f32) -> Result<Self, TensorError> {
+        let output = self.map_scalar(scalar, |value, scalar| {
+            add_scaled_value_matching_pytorch(value, scalar, alpha)
+        })?;
+        self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Add)
+    }
+
+    /// Adds every scaled element to a scalar.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn scalar_add_scaled(&self, scalar: f32, alpha: f32) -> Result<Self, TensorError> {
+        let output = self.map_scalar(scalar, |value, scalar| {
+            add_scaled_value_matching_pytorch(scalar, value, alpha)
+        })?;
+        self.finish_copy_transform(
+            output,
+            TransformMapping::Scale { factor: alpha },
+            AutogradNode::Add,
+        )
     }
 
     /// Subtracts a scalar from every element.
@@ -4933,14 +4981,14 @@ fn apply_grad_fn(
             right,
             output_shape,
             output_elements,
-            right_sign,
+            right_scale,
             ..
         } => apply_add_subtract_grad_fn(
             left,
             right,
             output_shape,
             *output_elements,
-            *right_sign,
+            *right_scale,
             upstream,
             gradients,
         )?,
@@ -4987,7 +5035,7 @@ fn apply_add_subtract_grad_fn(
     right: &SavedTensor,
     output_shape: &[usize],
     output_elements: usize,
-    right_sign: f32,
+    right_scale: f32,
     upstream: &[f32],
     gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
@@ -5023,7 +5071,7 @@ fn apply_add_subtract_grad_fn(
             gradient.add(left_index, output_gradient);
         }
         if let Some(gradient) = &mut right_gradient {
-            gradient.add(right_index, output_gradient * right_sign);
+            gradient.add(right_index, output_gradient * right_scale);
         }
     }
     if let (Some(meta), Some(gradient)) = (&left.autograd, left_gradient) {
@@ -5523,6 +5571,12 @@ fn transform_backward(
 ) -> Result<Vec<f32>, TensorError> {
     match mapping {
         TransformMapping::Identity => copied_storage(upstream, input.elements),
+        #[cfg(feature = "python-bindings")]
+        TransformMapping::Scale { factor } => {
+            let mut gradient = try_result_vector(input.elements, input.elements)?;
+            gradient.extend(upstream.iter().map(|value| value * factor));
+            Ok(gradient)
+        }
         TransformMapping::Index { input_start } => {
             let mut gradient = filled_storage(input.elements, 0.0)?;
             let end = input_start
@@ -5726,6 +5780,27 @@ fn subtract_value_matching_pytorch(left: f32, right: f32) -> f32 {
         f32::from_bits(right_bits | F32_QUIET_NAN_MASK)
     } else {
         left - right
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+#[inline]
+fn add_scaled_value_matching_pytorch(left: f32, right: f32, alpha: f32) -> f32 {
+    let right_bits = right.to_bits();
+    if right_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        return f32::from_bits(right_bits | F32_QUIET_NAN_MASK);
+    }
+
+    let alpha_bits = alpha.to_bits();
+    if alpha_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        return f32::from_bits(alpha_bits | F32_QUIET_NAN_MASK);
+    }
+
+    let scaled = alpha * right;
+    if scaled.to_bits() & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        scaled
+    } else {
+        left + scaled
     }
 }
 

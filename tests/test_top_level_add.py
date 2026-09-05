@@ -45,6 +45,11 @@ class TopLevelAddTests(unittest.TestCase):
         )
         for case, call in calls:
             self.assert_tensor_matches(call(), expected, case=case)
+        self.assert_tensor_matches(
+            torch.add(left, right, alpha=np.float32(-2.5)),
+            left + right * np.float32(-2.5),
+            case="keyword nondefault alpha",
+        )
 
         offset_noncontiguous = torch.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
@@ -141,6 +146,11 @@ class TopLevelAddTests(unittest.TestCase):
                 special + scalar,
                 case=("signed zero nan infinity scalar", case),
             )
+        self.assert_tensor_matches(
+            torch.add(base, 2.0, alpha=-3),
+            base + -6.0,
+            case="scalar other nondefault alpha",
+        )
 
     def test_scalar_left_values_layouts_empty_and_special_bits(self):
         base = torch.tensor(
@@ -217,6 +227,11 @@ class TopLevelAddTests(unittest.TestCase):
                 special + scalar,
                 case=("scalar-left signed zero nan infinity", case),
             )
+        self.assert_tensor_matches(
+            torch.add(-3.0, base, alpha=np.float32(2.0)),
+            -3.0 + base * np.float32(2.0),
+            case="scalar-left nondefault alpha",
+        )
 
     def test_autograd_no_grad_and_full_sum_backward_reuse_tensor_add(self):
         function_left = torch.tensor([[2.0, 3.0]], requires_grad=True)
@@ -248,6 +263,25 @@ class TopLevelAddTests(unittest.TestCase):
             shared_function.grad,
             shared_operator.grad,
             case="shared operand gradient",
+        )
+
+        alpha_function_left = torch.tensor([[2.0, 3.0]], requires_grad=True)
+        alpha_function_right = torch.tensor([[5.0], [7.0]], requires_grad=True)
+        alpha_operator_left = torch.tensor([[2.0, 3.0]], requires_grad=True)
+        alpha_operator_right = torch.tensor([[5.0], [7.0]], requires_grad=True)
+        torch.add(
+            alpha_function_left, alpha_function_right, alpha=np.float32(-2.5)
+        ).sum().backward()
+        (alpha_operator_left + alpha_operator_right * np.float32(-2.5)).sum().backward()
+        self.assert_tensor_matches(
+            alpha_function_left.grad,
+            alpha_operator_left.grad,
+            case="left nondefault alpha gradient",
+        )
+        self.assert_tensor_matches(
+            alpha_function_right.grad,
+            alpha_operator_right.grad,
+            case="right nondefault alpha gradient",
         )
 
         scalar_function = torch.tensor([[2.0, -3.0]], requires_grad=True)
@@ -454,22 +488,6 @@ class TopLevelAddTests(unittest.TestCase):
             with self.subTest(call=call):
                 with self.assertRaisesRegex(NotImplementedError, unsupported_operand):
                     call()
-
-        with self.assertRaisesRegex(
-            NotImplementedError,
-            r"^add\(\): alpha values other than 1 are not supported$",
-        ):
-            torch.add(tensor, other, alpha=2)
-        with self.assertRaisesRegex(
-            NotImplementedError,
-            r"^add\(\): alpha values other than 1 are not supported$",
-        ):
-            torch.add(tensor, 2.0, alpha=2)
-        with self.assertRaisesRegex(
-            NotImplementedError,
-            r"^add\(\): alpha values other than 1 are not supported$",
-        ):
-            torch.add(2.0, tensor, alpha=2)
         for alpha in (True, np.bool_(True)):
             with self.subTest(alpha=type(alpha).__name__):
                 with self.assertRaisesRegex(
