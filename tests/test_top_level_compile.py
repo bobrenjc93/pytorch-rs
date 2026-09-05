@@ -977,6 +977,27 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         )
         self.assertTrue(all(call_program is program for call_program, _, _ in lowered))
 
+    def test_eager_fullgraph_requires_grad_branch_rejects_patched_descriptor(self):
+        def program(x):
+            if x.requires_grad:
+                return x.neg()
+            else:
+                return x.abs()
+
+        input = torch.tensor([2.0, -3.0], dtype=torch.float32, requires_grad=True)
+        original = torch.Tensor.__dict__["requires_grad"]
+        torch.Tensor.requires_grad = property(lambda self: False)
+        try:
+            self.assertEqual(program(input).tolist(), [2.0, 3.0])
+            compiled = torch.compile(program, backend="eager", fullgraph=True)
+            with self.assertRaisesRegex(
+                NotImplementedError,
+                "patched Tensor operation bindings: .*Tensor\\.requires_grad",
+            ):
+                compiled(input)
+        finally:
+            torch.Tensor.requires_grad = original
+
     def test_eager_fullgraph_recompile_limit_zero_rejects_first_graph(self):
         def program(x):
             return x.neg().abs()

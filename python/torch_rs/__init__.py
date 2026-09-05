@@ -284,6 +284,7 @@ _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
     "float",
     "neg",
     "negative",
+    "requires_grad",
     "relu",
     "square",
 )
