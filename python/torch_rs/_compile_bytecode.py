@@ -26,6 +26,47 @@ class _BytecodeConstant:
 
 
 @dataclass(frozen=True, slots=True)
+class _BytecodeFunction:
+    function: object
+    name: str
+    code: object
+
+
+@dataclass(frozen=True, slots=True)
+class _HelperCacheDependency:
+    global_name: str
+    function: object
+    code: object
+
+
+@dataclass(frozen=True, slots=True)
+class _GlobalLoadDependency:
+    name: str
+    instruction: object
+
+
+@dataclass(frozen=True, slots=True)
+class _CompileProgramDescriptor:
+    code: object
+    global_loads: tuple[_GlobalLoadDependency, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _CompileCacheRequest:
+    key: object
+    descriptor: _CompileProgramDescriptor
+    input_metadatas: tuple
+    helper_dependencies: tuple[_HelperCacheDependency, ...]
+
+
+@dataclass(slots=True)
+class _LoweringState:
+    root_program: object
+    helper_dependencies: tuple[_HelperCacheDependency, ...] = ()
+    helper_call_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class _MethodTarget:
     kind: str
     target: str
@@ -120,7 +161,6 @@ _OPCODE_FORMS = (
                 "IMPORT_FROM",
                 "IMPORT_NAME",
                 "LOAD_BUILD_CLASS",
-                "LOAD_GLOBAL",
                 "LOAD_NAME",
                 "STORE_GLOBAL",
                 "STORE_NAME",
@@ -178,9 +218,11 @@ _OPCODE_FORMS = (
     _OpcodeForm("store", frozenset(("STORE_FAST",))),
     _OpcodeForm("store_load", frozenset(("STORE_FAST_LOAD_FAST",))),
     _OpcodeForm("store_store", frozenset(("STORE_FAST_STORE_FAST",))),
+    _OpcodeForm("load_global", frozenset(("LOAD_GLOBAL",))),
     _OpcodeForm("load_method", frozenset(("LOAD_ATTR", "LOAD_METHOD"))),
     _OpcodeForm("call", frozenset(("CALL", "CALL_FUNCTION", "CALL_METHOD"))),
     _OpcodeForm("precall", frozenset(("PRECALL",))),
+    _OpcodeForm("push_null", frozenset(("PUSH_NULL",))),
     _OpcodeForm("load_const", frozenset(("LOAD_CONST",))),
     _OpcodeForm("binary", frozenset(("BINARY_ADD", "BINARY_OP", "INPLACE_ADD"))),
     _OpcodeForm("unary_neg", frozenset(("UNARY_NEGATIVE",))),
@@ -210,14 +252,7 @@ def _instruction_form(program, instruction):
     _unsupported_bytecode(program, instruction, "unsupported bytecode")
 
 
-def _validate_program(program):
-    if _builtins.type(program) is not _types.FunctionType:
-        raise _trace.CompileTraceUnsupportedError(
-            "torch.compile trace bytecode lowering currently supports exact "
-            "Python functions only"
-        )
-
-    code = program.__code__
+def _validate_function_code(program, code):
     if (
         code.co_argcount not in (1, 2)
         or code.co_kwonlyargcount != 0
@@ -237,6 +272,152 @@ def _validate_program(program):
             "handling"
         )
     return code
+
+
+def _validate_program(program):
+    if _builtins.type(program) is not _types.FunctionType:
+        raise _trace.CompileTraceUnsupportedError(
+            "torch.compile trace bytecode lowering currently supports exact "
+            "Python functions only"
+        )
+
+    code = program.__code__
+    return _validate_function_code(program, code)
+
+
+def _validate_helper_function(root_program, helper, program, instruction, code=None):
+    if _builtins.type(helper) is not _types.FunctionType:
+        _unsupported_bytecode(program, instruction, "global or import access")
+    if helper.__defaults__ is not None or helper.__kwdefaults__ is not None:
+        _unsupported_bytecode(program, instruction, "helper function defaults")
+    if code is None:
+        code = helper.__code__
+    if helper.__closure__ is not None or code.co_freevars or code.co_cellvars:
+        raise _trace.CompileTraceUnsupportedError(
+            "torch.compile trace bytecode lowering does not support closures"
+        )
+    if (
+        helper.__globals__ is not root_program.__globals__
+        or helper.__module__ != root_program.__module__
+    ):
+        _unsupported_bytecode(program, instruction, "global or import access")
+    helper_name = helper.__name__
+    if (
+        not _builtins.isinstance(helper_name, _builtins.str)
+        or root_program.__globals__.get(helper_name) is not helper
+    ):
+        _unsupported_bytecode(program, instruction, "global or import access")
+    return _validate_function_code(helper, code)
+
+
+def _global_name(program, instruction):
+    name = instruction.argval
+    if _builtins.isinstance(name, _builtins.str) and name:
+        return name
+
+    argrepr = _builtins.str(instruction.argrepr).strip()
+    if argrepr.startswith("NULL + "):
+        argrepr = argrepr[7:].strip()
+    if argrepr:
+        return argrepr
+    _unsupported_bytecode(program, instruction, "global operand decoding")
+
+
+def _resolve_live_global_helper(root_program, program, instruction, name):
+    try:
+        helper = program.__globals__[name]
+    except KeyError:
+        _unsupported_bytecode(program, instruction, "global or import access")
+    helper_code = (
+        helper.__code__ if _builtins.type(helper) is _types.FunctionType else None
+    )
+    helper_code = _validate_helper_function(
+        root_program,
+        helper,
+        program,
+        instruction,
+        helper_code,
+    )
+    return _HelperCacheDependency(name, helper, helper_code)
+
+
+def analyze_compile_program(program):
+    code = _validate_program(program)
+    global_loads = []
+    for instruction in _dis.get_instructions(code):
+        kind = _instruction_form(program, instruction)
+        if kind != "load_global":
+            continue
+        name = _global_name(program, instruction)
+        _resolve_live_global_helper(program, program, instruction, name)
+        global_loads.append(_GlobalLoadDependency(name, instruction))
+    return _CompileProgramDescriptor(code, tuple(global_loads))
+
+
+def _helper_cache_dependencies(program, descriptor):
+    return tuple(
+        _resolve_live_global_helper(
+            program,
+            program,
+            global_load.instruction,
+            global_load.name,
+        )
+        for global_load in descriptor.global_loads
+    )
+
+
+def _resolve_global_helper(state, program, instruction, name):
+    if program is state.root_program:
+        for dependency in state.helper_dependencies:
+            if dependency.global_name == name:
+                return dependency
+        _unsupported_bytecode(program, instruction, "helper dependency snapshot")
+    return _resolve_live_global_helper(state.root_program, program, instruction, name)
+
+
+def _validate_input_metadatas(code, input_metadatas):
+    if not _builtins.isinstance(input_metadatas, tuple):
+        raise TypeError(
+            "torch.compile trace bytecode lowering expected a tuple of "
+            "CompileTraceTensorMetadata inputs"
+        )
+    if len(input_metadatas) != code.co_argcount:
+        raise _trace.CompileTraceUnsupportedError(
+            "torch.compile trace bytecode lowering expected metadata for "
+            f"{code.co_argcount} positional Tensor arguments, got "
+            f"{len(input_metadatas)}"
+        )
+    for input_metadata in input_metadatas:
+        if not _builtins.isinstance(
+            input_metadata,
+            _trace.CompileTraceTensorMetadata,
+        ):
+            raise TypeError(
+                "torch.compile trace bytecode lowering expected "
+                "CompileTraceTensorMetadata"
+            )
+
+
+def prepare_compile_cache_request(program, input_metadatas, descriptor=None):
+    """Return cache metadata and the exact helper snapshot used for lowering."""
+    code = getattr(program, "__code__", None)
+    if descriptor is None or descriptor.code is not code:
+        descriptor = analyze_compile_program(program)
+    else:
+        _validate_function_code(program, descriptor.code)
+    _validate_input_metadatas(descriptor.code, input_metadatas)
+    helper_dependencies = _helper_cache_dependencies(program, descriptor)
+    return _CompileCacheRequest(
+        key=(descriptor.code, input_metadatas, helper_dependencies),
+        descriptor=descriptor,
+        input_metadatas=input_metadatas,
+        helper_dependencies=helper_dependencies,
+    )
+
+
+def compile_cache_key(program, input_metadatas):
+    """Return a cache key that includes validated helper function dependencies."""
+    return prepare_compile_cache_request(program, input_metadatas).key
 
 
 def _pop(stack, program, instruction):
@@ -303,7 +484,37 @@ def _load_attr_pushes_method(instruction):
     return instruction.argval in _BYTECODE_METHOD_NAMES
 
 
-def _handle_load_method(recorder, locals, stack, program, instruction):
+def _handle_load_global(
+    recorder,
+    locals,
+    stack,
+    program,
+    instruction,
+    state,
+    active,
+):
+    del recorder, locals, active
+    name = _global_name(program, instruction)
+    helper_dependency = _resolve_global_helper(state, program, instruction, name)
+    stack.append(
+        _BytecodeFunction(
+            helper_dependency.function,
+            name,
+            helper_dependency.code,
+        )
+    )
+
+
+def _handle_load_method(
+    recorder,
+    locals,
+    stack,
+    program,
+    instruction,
+    state,
+    active,
+):
+    del state, active
     if not _load_attr_pushes_method(instruction):
         _unsupported_bytecode(program, instruction, "attribute access")
     receiver = _require_tensor(
@@ -313,6 +524,25 @@ def _handle_load_method(recorder, locals, stack, program, instruction):
         f"Tensor.{instruction.argval} receiver",
     )
     stack.append(_BytecodeMethod(receiver, _builtins.str(instruction.argval)))
+
+
+def _lower_function_body(recorder, locals, stack, program, code, state, active):
+    for instruction in _dis.get_instructions(code):
+        output = _lower_instruction(
+            recorder,
+            locals,
+            stack,
+            program,
+            instruction,
+            state,
+            active,
+        )
+        if output is not None:
+            return output
+
+    raise _trace.CompileTraceUnsupportedError(
+        "torch.compile trace bytecode lowering did not find a Tensor return"
+    )
 
 
 def _record_method_call(recorder, method, args, program, instruction):
@@ -349,22 +579,78 @@ def _record_method_call(recorder, method, args, program, instruction):
     )
 
 
-def _handle_call(recorder, locals, stack, program, instruction):
+def _record_function_call(
+    recorder,
+    function,
+    args,
+    program,
+    instruction,
+    state,
+    active,
+):
+    helper = function.function
+    if helper in active:
+        _unsupported_bytecode(program, instruction, "recursive helper function calls")
+    if state.helper_call_count >= 1:
+        _unsupported_bytecode(program, instruction, "helper function calls")
+    helper_code = function.code
+    if len(args) != helper_code.co_argcount:
+        _unsupported_bytecode(
+            program,
+            instruction,
+            f"helper function argument count {len(args)}",
+        )
+    helper_locals = {}
+    for index, arg in enumerate(args):
+        helper_locals[helper_code.co_varnames[index]] = _require_tensor(
+            arg,
+            program,
+            instruction,
+            f"helper argument {index}",
+        )
+    state.helper_call_count += 1
+    return _lower_function_body(
+        recorder,
+        helper_locals,
+        [],
+        helper,
+        helper_code,
+        state,
+        (*active, helper),
+    )
+
+
+def _handle_call(recorder, locals, stack, program, instruction, state, active):
+    del locals
     argument_count = instruction.arg or 0
     args = [_pop(stack, program, instruction) for _ in range(argument_count)]
     args.reverse()
     callable_value = _pop(stack, program, instruction)
-    if not _builtins.isinstance(callable_value, _BytecodeMethod):
-        _unsupported_bytecode(program, instruction, "function calls")
-    stack.append(
-        _record_method_call(
-            recorder,
-            callable_value,
-            tuple(args),
-            program,
-            instruction,
+    if _builtins.isinstance(callable_value, _BytecodeMethod):
+        stack.append(
+            _record_method_call(
+                recorder,
+                callable_value,
+                tuple(args),
+                program,
+                instruction,
+            )
         )
-    )
+        return
+    if _builtins.isinstance(callable_value, _BytecodeFunction):
+        stack.append(
+            _record_function_call(
+                recorder,
+                callable_value,
+                tuple(args),
+                program,
+                instruction,
+                state,
+                active,
+            )
+        )
+        return
+    _unsupported_bytecode(program, instruction, "function calls")
 
 
 def _record_binary_add(recorder, stack, program, instruction):
@@ -391,7 +677,8 @@ def _binary_operator_symbol(instruction):
     return instruction.argrepr
 
 
-def _handle_binary(recorder, locals, stack, program, instruction):
+def _handle_binary(recorder, locals, stack, program, instruction, state, active):
+    del locals, state, active
     symbol = _binary_operator_symbol(instruction)
     if symbol == "+":
         _record_binary_add(recorder, stack, program, instruction)
@@ -401,7 +688,8 @@ def _handle_binary(recorder, locals, stack, program, instruction):
     _unsupported_bytecode(program, instruction, f"binary operator {symbol!r}")
 
 
-def _handle_unary_neg(recorder, locals, stack, program, instruction):
+def _handle_unary_neg(recorder, locals, stack, program, instruction, state, active):
+    del locals, state, active
     input = _require_tensor(
         _pop(stack, program, instruction),
         program,
@@ -411,7 +699,8 @@ def _handle_unary_neg(recorder, locals, stack, program, instruction):
     stack.append(recorder.record_unary("neg", input))
 
 
-def _handle_return(recorder, locals, stack, program, instruction):
+def _handle_return(recorder, locals, stack, program, instruction, state, active):
+    del recorder, locals, state, active
     if instruction.opname == "RETURN_CONST":
         _unsupported_bytecode(program, instruction, "non-Tensor return value")
     output = _require_tensor(
@@ -425,39 +714,70 @@ def _handle_return(recorder, locals, stack, program, instruction):
     return output
 
 
-def _handle_local_load(recorder, locals, stack, program, instruction):
+def _handle_local_load(recorder, locals, stack, program, instruction, state, active):
+    del recorder, state, active
     (name,) = _local_names(program, instruction, 1)
     _load_local(locals, stack, program, instruction, name)
 
 
-def _handle_local_load_pair(recorder, locals, stack, program, instruction):
+def _handle_local_load_pair(
+    recorder,
+    locals,
+    stack,
+    program,
+    instruction,
+    state,
+    active,
+):
+    del recorder, state, active
     first_name, second_name = _local_names(program, instruction, 2)
     _load_local(locals, stack, program, instruction, first_name)
     _load_local(locals, stack, program, instruction, second_name)
 
 
-def _handle_store(recorder, locals, stack, program, instruction):
+def _handle_store(recorder, locals, stack, program, instruction, state, active):
+    del recorder, state, active
     (name,) = _local_names(program, instruction, 1)
     _store_local(locals, stack, program, instruction, name)
 
 
-def _handle_store_load(recorder, locals, stack, program, instruction):
+def _handle_store_load(
+    recorder,
+    locals,
+    stack,
+    program,
+    instruction,
+    state,
+    active,
+):
+    del recorder, state, active
     store_name, load_name = _local_names(program, instruction, 2)
     _store_local(locals, stack, program, instruction, store_name)
     _load_local(locals, stack, program, instruction, load_name)
 
 
-def _handle_store_store(recorder, locals, stack, program, instruction):
+def _handle_store_store(
+    recorder,
+    locals,
+    stack,
+    program,
+    instruction,
+    state,
+    active,
+):
+    del recorder, state, active
     first_name, second_name = _local_names(program, instruction, 2)
     _store_local(locals, stack, program, instruction, first_name)
     _store_local(locals, stack, program, instruction, second_name)
 
 
-def _handle_load_const(recorder, locals, stack, program, instruction):
+def _handle_load_const(recorder, locals, stack, program, instruction, state, active):
+    del recorder, locals, program, state, active
     stack.append(_BytecodeConstant(instruction.argval))
 
 
-def _handle_noop(recorder, locals, stack, program, instruction):
+def _handle_noop(recorder, locals, stack, program, instruction, state, active):
+    del recorder, locals, stack, program, instruction, state, active
     return None
 
 
@@ -468,9 +788,11 @@ _OPCODE_HANDLERS = {
     "store": _handle_store,
     "store_load": _handle_store_load,
     "store_store": _handle_store_store,
+    "load_global": _handle_load_global,
     "load_method": _handle_load_method,
     "call": _handle_call,
     "precall": _handle_noop,
+    "push_null": _handle_noop,
     "load_const": _handle_load_const,
     "binary": _handle_binary,
     "unary_neg": _handle_unary_neg,
@@ -478,34 +800,29 @@ _OPCODE_HANDLERS = {
 }
 
 
-def _lower_instruction(recorder, locals, stack, program, instruction):
+def _lower_instruction(recorder, locals, stack, program, instruction, state, active):
     kind = _instruction_form(program, instruction)
-    return _OPCODE_HANDLERS[kind](recorder, locals, stack, program, instruction)
+    return _OPCODE_HANDLERS[kind](
+        recorder,
+        locals,
+        stack,
+        program,
+        instruction,
+        state,
+        active,
+    )
 
 
-def lower_compile_graph(program, input_metadatas, *, name=None):
+def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=None):
     """Lower a narrow straight-line Python function into a native trace graph."""
-    code = _validate_program(program)
-    if not _builtins.isinstance(input_metadatas, tuple):
+    if compile_request is None:
+        compile_request = prepare_compile_cache_request(program, input_metadatas)
+    elif compile_request.input_metadatas != input_metadatas:
         raise TypeError(
-            "torch.compile trace bytecode lowering expected a tuple of "
-            "CompileTraceTensorMetadata inputs"
+            "torch.compile trace bytecode lowering compile request metadata "
+            "does not match inputs"
         )
-    if len(input_metadatas) != code.co_argcount:
-        raise _trace.CompileTraceUnsupportedError(
-            "torch.compile trace bytecode lowering expected metadata for "
-            f"{code.co_argcount} positional Tensor arguments, got "
-            f"{len(input_metadatas)}"
-        )
-    for input_metadata in input_metadatas:
-        if not _builtins.isinstance(
-            input_metadata,
-            _trace.CompileTraceTensorMetadata,
-        ):
-            raise TypeError(
-                "torch.compile trace bytecode lowering expected "
-                "CompileTraceTensorMetadata"
-            )
+    code = compile_request.descriptor.code
 
     recorder = _trace.CompileTraceRecorder(
         name or getattr(program, "__name__", "compile_trace")
@@ -522,22 +839,41 @@ def lower_compile_graph(program, input_metadatas, *, name=None):
             requires_grad=input_metadata.requires_grad,
         )
     stack = []
+    state = _LoweringState(
+        root_program=program,
+        helper_dependencies=compile_request.helper_dependencies,
+    )
+    output = _lower_function_body(
+        recorder,
+        locals,
+        stack,
+        program,
+        code,
+        state,
+        (program,),
+    )
+    return recorder.finish(output)
 
-    for instruction in _dis.get_instructions(program):
-        output = _lower_instruction(recorder, locals, stack, program, instruction)
-        if output is not None:
-            return recorder.finish(output)
 
-    raise _trace.CompileTraceUnsupportedError(
-        "torch.compile trace bytecode lowering did not find a Tensor return"
+def lower_one_input_compile_graph(
+    program,
+    input_metadata,
+    *,
+    name=None,
+    compile_request=None,
+):
+    return lower_compile_graph(
+        program,
+        (input_metadata,),
+        name=name,
+        compile_request=compile_request,
     )
 
 
-def lower_one_input_compile_graph(program, input_metadata, *, name=None):
-    return lower_compile_graph(program, (input_metadata,), name=name)
-
-
 __all__ = [
+    "analyze_compile_program",
+    "compile_cache_key",
+    "prepare_compile_cache_request",
     "lower_compile_graph",
     "lower_one_input_compile_graph",
 ]

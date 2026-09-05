@@ -1,15 +1,15 @@
 # torch.compile Coverage Evaluator
 
-The deterministic compile-coverage evaluator runs the versioned v8
+The deterministic compile-coverage evaluator runs the versioned v9
 reference-eligible corpus against stock PyTorch 2.13 and the current
 `torch_rs` wheel. It fails closed on malformed corpus metadata,
 reference-import or compile failures, candidate import, compile, runtime, output
 or observable-semantic mismatches, opted-in backward-through-sum leaf-gradient
 mismatches, eager fallback, installed-PyTorch forwarding, unsupported candidate
 cases, skipped eligible cases, and invalid guard coverage. The evaluator pins
-the v8 category weights, case order, case callables, input factories, input
-payload hashes, no-grad inference flags, and guard-step definitions before
-scoring.
+the v9 category weights, case order, case callables, helper source hashes,
+input factories, input payload hashes, no-grad inference flags, and guard-step
+definitions before scoring.
 
 Run the full Burner evaluator from the repository root:
 
@@ -33,7 +33,7 @@ The public subset uses the same corpus metadata, reference eligibility checks,
 candidate execution checks, category weights, and scoring formula as the full
 gate, but omits held-out cases. The full gate includes the held-out
 recompilation-guard, training-autograd, no-grad inference, decomposition, and
-mutation-aliasing cases and validates that the current v8 guard scenarios are
+mutation-aliasing cases and validates that the current v9 guard scenarios are
 present before scoring.
 
 After the wheel and dependencies are already installed, the Python entry point
