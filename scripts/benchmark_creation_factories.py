@@ -22,7 +22,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "creation_factories_cpu_eager_benchmark_v1"
+BENCHMARK_VERSION = "creation_factories_cpu_eager_benchmark_v2"
 DEFAULT_WARMUPS = 15
 DEFAULT_SAMPLES = 81
 DEFAULT_THREADS = 1
@@ -57,6 +57,7 @@ class Workload:
     shape: tuple[int, ...]
     repeats: int
     description: str
+    generated: bool = False
 
 
 WORKLOADS = tuple(
@@ -262,16 +263,27 @@ def _create_tensor(module, workload):
     return factory(workload.shape, dtype=module.float32, device="cpu")
 
 
-def _validate_factory_values(tensor, workload, implementation):
+def _expected_value_checksum(workload):
     if workload.api == "empty":
         return None
-    if workload.shape:
-        expected_value = (
-            0.0 if workload.api == "zeros" else float(_expected_numel(workload.shape))
-        )
-    else:
-        expected_value = 0.0 if workload.api == "zeros" else 1.0
-    actual_value = float(tensor.sum().item())
+    if workload.api == "zeros":
+        return 0.0
+    if workload.api == "ones":
+        return float(_expected_numel(workload.shape))
+    raise AssertionError(f"unexpected factory API: {workload.api!r}")
+
+
+def _factory_value_checksum(tensor, workload):
+    if _expected_value_checksum(workload) is None:
+        return None
+    return float(tensor.sum().item())
+
+
+def _validate_factory_values(tensor, workload, implementation):
+    expected_value = _expected_value_checksum(workload)
+    if expected_value is None:
+        return None
+    actual_value = _factory_value_checksum(tensor, workload)
     if actual_value != expected_value:
         raise AssertionError(
             f"{workload.name}/{implementation} value check failed: "
@@ -299,13 +311,17 @@ def _time_block(module, workload, repeats):
     output = None
     sink = 0
     metadata = None
+    value_checksum = None
     for _ in range(repeats):
         output = _create_tensor(module, workload)
         metadata = _tensor_metadata(output)
         sink ^= _metadata_sink(metadata)
         _synchronize(module)
+    if output is not None:
+        value_checksum = _factory_value_checksum(output, workload)
+        _synchronize(module)
     elapsed_ns = time.perf_counter_ns() - started_ns
-    return elapsed_ns, metadata, sink, output
+    return elapsed_ns, metadata, sink, output, value_checksum
 
 
 def _summarize_samples(samples_ns, repeats):
@@ -324,7 +340,9 @@ def _summarize_samples(samples_ns, repeats):
 
 
 def _measure_one_pass(module, implementation, workload, reference_metadata, args):
-    cold_ns, cold_metadata, cold_sink, cold_output = _time_block(module, workload, 1)
+    cold_ns, cold_metadata, cold_sink, cold_output, cold_value_checksum = _time_block(
+        module, workload, 1
+    )
     _assert_metadata_matches(
         cold_metadata,
         reference_metadata,
@@ -332,29 +350,47 @@ def _measure_one_pass(module, implementation, workload, reference_metadata, args
         implementation=implementation,
     )
     value_check = _validate_factory_values(cold_output, workload, implementation)
+    if cold_value_checksum != value_check:
+        raise AssertionError(
+            f"{workload.name}/{implementation} timed cold checksum mismatch: "
+            f"timed={cold_value_checksum!r} checked={value_check!r}"
+        )
 
     for _ in range(args.warmups):
         _time_block(module, workload, workload.repeats)
 
     sample_ns = []
     sample_sinks = []
+    sample_value_checksums = []
     for _ in range(args.samples):
-        elapsed_ns, metadata, sink, _ = _time_block(module, workload, workload.repeats)
+        elapsed_ns, metadata, sink, _, value_checksum = _time_block(
+            module, workload, workload.repeats
+        )
         _assert_metadata_matches(
             metadata,
             reference_metadata,
             workload=workload,
             implementation=implementation,
         )
+        if value_checksum != value_check:
+            raise AssertionError(
+                f"{workload.name}/{implementation} timed sample checksum mismatch: "
+                f"timed={value_checksum!r} checked={value_check!r}"
+            )
         sample_ns.append(elapsed_ns)
         sample_sinks.append(sink)
+        sample_value_checksums.append(value_checksum)
 
     return {
         "cold_first_call_us": cold_ns / 1000.0,
         "cold_metadata": cold_metadata,
         "cold_metadata_sink": cold_sink,
+        "cold_value_checksum": cold_value_checksum,
         "steady": _summarize_samples(sample_ns, workload.repeats),
         "steady_metadata_sinks": sorted(set(sample_sinks)),
+        "steady_value_checksums": sorted(
+            {checksum for checksum in sample_value_checksums if checksum is not None}
+        ),
         "value_check_sum": value_check,
     }
 
@@ -393,7 +429,15 @@ def _output_path(path):
     return resolved
 
 
-def _environment(torch_rs, reference_torch, affinity, args):
+def _environment(
+    torch_rs,
+    reference_torch,
+    affinity,
+    args,
+    workloads,
+    workload_set,
+    validator_context,
+):
     command = [sys.executable, *sys.argv]
     return {
         "benchmark_version": BENCHMARK_VERSION,
@@ -410,6 +454,21 @@ def _environment(torch_rs, reference_torch, affinity, args):
         },
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
         "private_cuda_roundtrip_included": False,
+        "benchmark_integrity": {
+            "workload_set": workload_set,
+            "merge_decision_usage": (
+                "candidate-local timing evidence only until paired with an "
+                "independent generated-shape validator run"
+            ),
+            "required_validator_path": "scripts/validate_creation_factory_benchmark.py",
+            "timing_scope": (
+                "factory allocation plus metadata materialization, with one "
+                "timed final-output sum checksum per block for zeros/ones"
+            ),
+            "empty_values": "unspecified_not_read",
+            "candidate_may_modify_evaluator": False,
+        },
+        "validator": validator_context,
         "pytorch": {
             "version": reference_torch.__version__,
             "path": getattr(reference_torch, "__file__", None),
@@ -440,17 +499,24 @@ def _environment(torch_rs, reference_torch, affinity, args):
         "factory_apis": list(FACTORY_APIS),
         "shape_cases": [
             {
-                "label": label,
-                "shape": list(shape),
-                "repeats": repeats,
-                "description": description,
+                "label": workload.shape_label,
+                "shape": list(workload.shape),
+                "repeats": workload.repeats,
+                "description": workload.description,
+                "generated": workload.generated,
             }
-            for label, shape, repeats, description in SHAPE_CASES
+            for workload in workloads
         ],
     }
 
 
-def run_benchmark(args):
+def run_benchmark(
+    args,
+    *,
+    workloads=None,
+    workload_set="fixed_public_matrix",
+    validator_context=None,
+):
     affinity = _pin_cpu(args.cpu)
     _configure_thread_environment(args.threads, args.cuda_visible_devices)
     torch_rs, reference_torch = _import_backends()
@@ -458,7 +524,10 @@ def run_benchmark(args):
     _configure_reference_threads(reference_torch, args.threads)
     _validate_thread_configuration(torch_rs, reference_torch, args.threads)
 
-    workloads = _select_workloads(args.workloads)
+    if workloads is None:
+        workloads = _select_workloads(args.workloads)
+    else:
+        workloads = tuple(workloads)
     cases = []
     gc_was_enabled = gc.isenabled()
     gc.disable()
@@ -532,6 +601,7 @@ def run_benchmark(args):
                     "description": workload.description,
                     "shape": list(workload.shape),
                     "repeats": workload.repeats,
+                    "generated": workload.generated,
                     "metadata": reference_metadata,
                     "implementations": implementations,
                     "ratios": {
@@ -542,8 +612,17 @@ def run_benchmark(args):
                         "metadata_checked": True,
                         "metadata_materialized_inside_timed_loop": True,
                         "filled_values_checked_for_zeros_and_ones": True,
+                        "filled_value_checksum_materialized_inside_timed_loop": (
+                            workload.api != "empty"
+                        ),
+                        "filled_value_checksum_scope": (
+                            "final_output_sum_once_per_timed_block"
+                            if workload.api != "empty"
+                            else None
+                        ),
                         "empty_values_unchecked_unspecified": workload.api == "empty",
                         "private_cuda_roundtrip_excluded": True,
+                        "held_out_generated_shape": workload.generated,
                     },
                 }
             )
@@ -560,7 +639,15 @@ def run_benchmark(args):
         ratios_by_shape[case["shape_label"]].append(ratio)
 
     return {
-        "environment": _environment(torch_rs, reference_torch, affinity, args),
+        "environment": _environment(
+            torch_rs,
+            reference_torch,
+            affinity,
+            args,
+            workloads,
+            workload_set,
+            validator_context,
+        ),
         "cases": cases,
         "aggregates": {
             "timed_cell_count": len(cases),
@@ -572,8 +659,8 @@ def run_benchmark(args):
                 api: _geomean(ratios_by_api[api]) for api in FACTORY_APIS
             },
             "steady_geomean_by_shape": {
-                label: _geomean(ratios_by_shape[label])
-                for label, _, _, _ in SHAPE_CASES
+                label: _geomean(ratios)
+                for label, ratios in sorted(ratios_by_shape.items())
             },
         },
     }

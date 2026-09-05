@@ -61,11 +61,22 @@ The script requires PyTorch 2.13 and compares public eager CPU factory calls
 for `torch.empty`, `torch.zeros`, and `torch.ones` across scalar, zero-element,
 small, and large shapes. It uses identical warmup/sample counts, two reversed
 implementation-order passes, one CPU thread by default, and metadata
-materialization inside the timed loop. `torch.empty` element values remain
-unspecified by contract; the current safe `torch_rs` storage implementation
-zero-initializes its CPU float32 backing allocation, and the benchmark records
-that cost explicitly. Private CUDA driver/runtime probes are not part of this
-parity benchmark.
+materialization inside the timed loop. `zeros` and `ones` also include one
+final-output sum checksum inside each timed block. `torch.empty` element values
+remain unspecified by contract; the current safe `torch_rs` storage
+implementation zero-initializes its CPU float32 backing allocation, and the
+benchmark records that cost explicitly. Private CUDA driver/runtime probes are
+not part of this parity benchmark. Treat the fixed public matrix as
+repeatability evidence only until it is paired with a generated-shape validator
+run using a held-out seed:
+
+```bash
+CUDA_VISIBLE_DEVICES= .venv/bin/python \
+  scripts/validate_creation_factory_benchmark.py --seed <held-out-seed>
+```
+
+The generated validator excludes the public fixed shapes and records the seed
+and generated workload matrix in its JSON output.
 
 ### Elementwise ops
 

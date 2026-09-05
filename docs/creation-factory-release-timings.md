@@ -22,10 +22,12 @@ Every `factory x shape` cell is timed for both `torch_rs` and PyTorch 2.13 in
 two reversed implementation orders. Each timed call materializes tensor
 metadata (`shape`, `stride`, `storage_offset`, `numel`, `dtype`, `device`,
 `layout`, contiguity, leaf state, gradient state, and pointer nonzero status)
-to keep both implementations doing equivalent observable work. `zeros` and
-`ones` also validate the filled value sum outside the timed loop. `empty`
-values are intentionally not read or compared because PyTorch leaves them
-unspecified.
+to keep both implementations doing equivalent observable work. For `zeros` and
+`ones`, each timed block also computes one final-output sum checksum after its
+allocation repeats and before the timer stops; this keeps filled-value
+materialization symmetric without turning every repeated allocation into a full
+reduction. `empty` values are intentionally not read or compared because
+PyTorch leaves them unspecified.
 
 ## Current `torch.empty` Storage Behavior
 
@@ -36,6 +38,28 @@ read paths and the crate denies unsafe code. Today that means `torch.empty`
 uses a zero-initialized backing allocation as an implementation detail. The
 factory benchmark includes that cost directly instead of crediting it as a
 PyTorch-style uninitialized allocation.
+
+## Benchmark Integrity
+
+The fixed matrix above is a public repeatability benchmark. It is useful as
+local release evidence, but it is not sufficient by itself for merge scoring
+when the same candidate branch is also adding benchmark coverage. Before
+creation-factory timing numbers are used for a merge decision, run the
+independent generated-shape validator with an evaluator-supplied held-out seed:
+
+```bash
+CUDA_VISIBLE_DEVICES= .venv/bin/python \
+  scripts/validate_creation_factory_benchmark.py \
+  --seed <held-out-seed> \
+  --output target/creation-factory-generated-validator.json
+```
+
+The validator excludes the fixed public matrix shapes, generates additional
+CPU float32 creation shapes from the supplied seed, and reuses the same
+symmetric warmup, sampling, metadata, and timed checksum checks. Benchmark
+campaign changes should land separately from optimization claims; this report
+documents the campaign shape and local evidence without treating fixed public
+creation timings as standalone merge-gating proof.
 
 ## Command
 
@@ -76,22 +100,30 @@ host-specific timing artifact.
 
 Times are median microseconds per call across two reversed implementation-order
 passes. `torch_rs / PyTorch` is a slowdown ratio, so lower is better and 1.00x
-is parity. The overall geometric mean was `0.635x`; by API, `empty` was
-`1.403x`, `zeros` was `0.489x`, and `ones` was `0.373x`. The large `empty`
+is parity. The overall geometric mean was `0.740x`; by API, `empty` was
+`1.402x`, `zeros` was `0.526x`, and `ones` was `0.550x`. The large `empty`
 cell shows the expected cost of zero-initializing storage while PyTorch returns
-uninitialized memory.
+uninitialized memory. The `zeros` and `ones` timings include one full-output
+checksum per timed block, so they are not metadata-only allocation timings.
 
 | Workload | Repeats | `torch_rs` median | PyTorch median | `torch_rs` / PyTorch |
 | --- | ---: | ---: | ---: | ---: |
-| `empty_scalar` | 4096 | 2.261 us | 4.408 us | 0.51x |
-| `empty_empty` | 4096 | 2.893 us | 5.042 us | 0.57x |
-| `empty_small` | 512 | 2.959 us | 5.202 us | 0.57x |
-| `empty_large` | 8 | 114.402 us | 4.946 us | 23.13x |
-| `zeros_scalar` | 4096 | 2.230 us | 4.594 us | 0.49x |
-| `zeros_empty` | 4096 | 2.861 us | 5.315 us | 0.54x |
-| `zeros_small` | 512 | 2.957 us | 5.288 us | 0.56x |
-| `zeros_large` | 8 | 121.399 us | 310.707 us | 0.39x |
-| `ones_scalar` | 4096 | 2.246 us | 4.611 us | 0.49x |
-| `ones_empty` | 4096 | 2.867 us | 5.310 us | 0.54x |
-| `ones_small` | 512 | 3.058 us | 5.596 us | 0.55x |
-| `ones_large` | 8 | 79.379 us | 588.455 us | 0.13x |
+| `empty_scalar` | 4096 | 2.269 us | 4.474 us | 0.51x |
+| `empty_empty` | 4096 | 2.883 us | 4.956 us | 0.58x |
+| `empty_small` | 512 | 2.968 us | 5.035 us | 0.59x |
+| `empty_large` | 8 | 112.982 us | 5.085 us | 22.22x |
+| `zeros_scalar` | 4096 | 2.224 us | 4.670 us | 0.48x |
+| `zeros_empty` | 4096 | 2.846 us | 5.266 us | 0.54x |
+| `zeros_small` | 512 | 2.917 us | 5.175 us | 0.56x |
+| `zeros_large` | 8 | 281.562 us | 534.503 us | 0.53x |
+| `ones_scalar` | 4096 | 2.222 us | 4.646 us | 0.48x |
+| `ones_empty` | 4096 | 2.865 us | 5.338 us | 0.54x |
+| `ones_small` | 512 | 3.877 us | 5.606 us | 0.69x |
+| `ones_large` | 8 | 318.195 us | 615.416 us | 0.52x |
+
+The generated-validator audit run used seed `20260905`, four generated shapes
+(`(31, 7, 0)`, `(1, 0, 5, 4)`, `(0, 1)`, and `(257,)`), one backend thread,
+CPU affinity pinned to CPU 24, five warmups, and 17 samples. It wrote
+`target/creation-factory-generated-validator.json`, covered 12 held-out
+`factory x shape` cells, and reported an overall geometric mean of `0.547x`
+with all metadata and timed filled-value checksum checks passing.

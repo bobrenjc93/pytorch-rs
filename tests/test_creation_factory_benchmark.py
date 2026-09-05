@@ -9,6 +9,9 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 BENCHMARK_SCRIPT = REPOSITORY_ROOT / "scripts" / "benchmark_creation_factories.py"
+VALIDATOR_SCRIPT = (
+    REPOSITORY_ROOT / "scripts" / "validate_creation_factory_benchmark.py"
+)
 
 spec = importlib.util.spec_from_file_location(
     "_torch_rs_creation_factory_benchmark_for_tests",
@@ -18,6 +21,15 @@ benchmark_creation_factories = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 sys.modules[spec.name] = benchmark_creation_factories
 spec.loader.exec_module(benchmark_creation_factories)
+
+validator_spec = importlib.util.spec_from_file_location(
+    "_torch_rs_creation_factory_validator_for_tests",
+    VALIDATOR_SCRIPT,
+)
+validate_creation_factory_benchmark = importlib.util.module_from_spec(validator_spec)
+assert validator_spec.loader is not None
+sys.modules[validator_spec.name] = validate_creation_factory_benchmark
+validator_spec.loader.exec_module(validate_creation_factory_benchmark)
 
 
 def _has_reference_torch_2_13():
@@ -105,6 +117,24 @@ class CreationFactoryBenchmarkTests(unittest.TestCase):
                 True,
             )
             self.assertIs(case["validation"]["private_cuda_roundtrip_excluded"], True)
+            if case["api"] == "empty":
+                self.assertIs(
+                    case["validation"][
+                        "filled_value_checksum_materialized_inside_timed_loop"
+                    ],
+                    False,
+                )
+            else:
+                self.assertIs(
+                    case["validation"][
+                        "filled_value_checksum_materialized_inside_timed_loop"
+                    ],
+                    True,
+                )
+                self.assertEqual(
+                    case["validation"]["filled_value_checksum_scope"],
+                    "final_output_sum_once_per_timed_block",
+                )
             self.assertEqual(
                 set(case["implementations"]),
                 {"torch_rs", "pytorch"},
@@ -120,6 +150,11 @@ class CreationFactoryBenchmarkTests(unittest.TestCase):
                     case["implementations"][implementation]["steady_median_us"],
                     0.0,
                 )
+                if case["api"] != "empty":
+                    self.assertTrue(
+                        passes[0]["steady_value_checksums"],
+                        msg=f"missing timed checksum for {case['name']}",
+                    )
 
         self.assertIs(
             by_name["empty_scalar"]["validation"][
@@ -135,6 +170,91 @@ class CreationFactoryBenchmarkTests(unittest.TestCase):
             ],
             1024.0,
         )
+
+    def test_generated_validator_shapes_are_held_out_and_deterministic(self):
+        first = validate_creation_factory_benchmark.generate_shapes(
+            seed=20260905,
+            count=5,
+            max_elements=4096,
+        )
+        second = validate_creation_factory_benchmark.generate_shapes(
+            seed=20260905,
+            count=5,
+            max_elements=4096,
+        )
+        self.assertEqual(first, second)
+
+        public_shapes = {
+            tuple(shape)
+            for _, shape, _, _ in benchmark_creation_factories.SHAPE_CASES
+        }
+        self.assertFalse(public_shapes.intersection(first))
+        self.assertEqual(len(set(first)), len(first))
+
+        workloads = validate_creation_factory_benchmark._workloads_for_shapes(first)
+        self.assertEqual(len(workloads), 15)
+        self.assertEqual(
+            {workload.api for workload in workloads},
+            {"empty", "zeros", "ones"},
+        )
+        self.assertTrue(all(workload.generated for workload in workloads))
+
+    @unittest.skipUnless(
+        _has_reference_torch_2_13(),
+        "requires pinned PyTorch 2.13 reference dependency",
+    )
+    def test_generated_validator_smoke_report_uses_held_out_shapes(self):
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(VALIDATOR_SCRIPT),
+                "--seed",
+                "20260905",
+                "--shape-count",
+                "2",
+                "--max-elements",
+                "2048",
+                "--warmups",
+                "0",
+                "--samples",
+                "1",
+            ],
+            check=False,
+            capture_output=True,
+            env={**os.environ, "CUDA_VISIBLE_DEVICES": "0"},
+            text=True,
+            timeout=90,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+
+        report = json.loads(completed.stdout)
+        self.assertEqual(report["validator"]["seed"], 20260905)
+        self.assertEqual(report["validator"]["shape_count"], 2)
+        self.assertIs(report["validator"]["fixed_public_shapes_excluded"], True)
+        self.assertEqual(
+            report["environment"]["benchmark_integrity"]["workload_set"],
+            "generated_heldout_validator",
+        )
+        self.assertEqual(report["aggregates"]["timed_cell_count"], 6)
+
+        public_shapes = {
+            tuple(shape)
+            for _, shape, _, _ in benchmark_creation_factories.SHAPE_CASES
+        }
+        for case in report["cases"]:
+            self.assertTrue(case["generated"])
+            self.assertTrue(case["validation"]["held_out_generated_shape"])
+            self.assertNotIn(tuple(case["shape"]), public_shapes)
+            if case["api"] != "empty":
+                for implementation in ("torch_rs", "pytorch"):
+                    for pass_result in case["implementations"][implementation][
+                        "passes"
+                    ]:
+                        self.assertTrue(pass_result["steady_value_checksums"])
 
 
 if __name__ == "__main__":
