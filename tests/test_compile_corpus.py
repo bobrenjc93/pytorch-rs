@@ -17,7 +17,7 @@ except ImportError:
 
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-COMPILE_CORPUS_VERSION = "torch_compile_corpus_v9"
+COMPILE_CORPUS_VERSION = "torch_compile_corpus_v10"
 
 CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -105,6 +105,21 @@ def cpu_float32_training_unary_neg_abs_add(x):
     y = x.neg()
     z = y.abs()
     return z.add(x.negative())
+
+
+def cpu_float32_requires_grad_branch_unary(x):
+    if x.requires_grad:
+        return x.neg().abs()
+    else:
+        return x.relu().add(x)
+
+
+def cpu_float32_heldout_requires_grad_branch_binary(x, y):
+    if y.requires_grad:
+        z = x.add(y.neg())
+    else:
+        z = x.neg().add(y.abs())
+    return z.relu()
 
 
 def cpu_float32_self_add_inputs(module):
@@ -254,6 +269,49 @@ def cpu_float32_training_broadcast_requires_grad_inputs(module):
         ),
         module.tensor(
             [0.5, -1.5, 2.5],
+            dtype=module.float32,
+            requires_grad=True,
+        ),
+    )
+
+
+def cpu_float32_control_flow_requires_grad_false_inputs(module):
+    return (
+        module.tensor(
+            [[-2.0, 0.0, 3.0], [4.5, -5.5, 6.25]],
+            dtype=module.float32,
+        ),
+    )
+
+
+def cpu_float32_control_flow_requires_grad_true_inputs(module):
+    return (
+        module.tensor(
+            [[-2.0, 0.0, 3.0], [4.5, -5.5, 6.25]],
+            dtype=module.float32,
+            requires_grad=True,
+        ),
+    )
+
+
+def cpu_float32_heldout_control_flow_requires_grad_false_inputs(module):
+    return (
+        module.tensor(
+            [[-1.5, 2.5, -3.5], [4.0, -5.0, 6.0]],
+            dtype=module.float32,
+        ),
+        module.tensor([-0.25, 0.75, -1.25], dtype=module.float32),
+    )
+
+
+def cpu_float32_heldout_control_flow_requires_grad_true_inputs(module):
+    return (
+        module.tensor(
+            [[-1.5, 2.5, -3.5], [4.0, -5.0, 6.0]],
+            dtype=module.float32,
+        ),
+        module.tensor(
+            [-0.25, 0.75, -1.25],
             dtype=module.float32,
             requires_grad=True,
         ),
@@ -594,6 +652,12 @@ COMPILE_CORPUS = (
         make_inputs=cpu_float32_unary_inputs,
     ),
     CompileCorpusCase(
+        name="cpu_float32_requires_grad_branch_unary",
+        category="python_control_flow",
+        program=cpu_float32_requires_grad_branch_unary,
+        make_inputs=cpu_float32_control_flow_requires_grad_false_inputs,
+    ),
+    CompileCorpusCase(
         name="cpu_float32_matrix_vector_add",
         category="broadcasting",
         program=cpu_float32_matrix_vector_add,
@@ -699,6 +763,12 @@ COMPILE_HELD_OUT_CORPUS = (
         make_inputs=cpu_float32_matrix_vector_inputs,
     ),
     CompileCorpusCase(
+        name="cpu_float32_heldout_requires_grad_branch_binary",
+        category="python_control_flow",
+        program=cpu_float32_heldout_requires_grad_branch_binary,
+        make_inputs=cpu_float32_heldout_control_flow_requires_grad_false_inputs,
+    ),
+    CompileCorpusCase(
         name="cpu_float32_heldout_guard_unary_metadata",
         category="recompilation_guards",
         program=cpu_float32_heldout_guard_unary_metadata,
@@ -796,6 +866,30 @@ COMPILE_RECOMPILATION_GUARD_SCENARIOS = (
         ),
     ),
     CompileRecompilationGuardScenario(
+        name="requires_grad_branch_unary_cache",
+        case_name="cpu_float32_requires_grad_branch_unary",
+        steps=(
+            CompileGuardStep(
+                "false_branch",
+                cpu_float32_control_flow_requires_grad_false_inputs,
+                "initial",
+                1,
+            ),
+            CompileGuardStep(
+                "same_false_metadata",
+                cpu_float32_control_flow_requires_grad_false_inputs,
+                "same_metadata",
+                1,
+            ),
+            CompileGuardStep(
+                "true_branch",
+                cpu_float32_control_flow_requires_grad_true_inputs,
+                "requires_grad",
+                2,
+            ),
+        ),
+    ),
+    CompileRecompilationGuardScenario(
         name="bounded_limit_then_reset",
         case_name="cpu_float32_recompile_limit_reset",
         steps=(
@@ -837,6 +931,30 @@ COMPILE_RECOMPILATION_GUARD_SCENARIOS = (
 
 
 COMPILE_HELD_OUT_RECOMPILATION_GUARD_SCENARIOS = (
+    CompileRecompilationGuardScenario(
+        name="heldout_requires_grad_branch_binary_cache",
+        case_name="cpu_float32_heldout_requires_grad_branch_binary",
+        steps=(
+            CompileGuardStep(
+                "false_branch",
+                cpu_float32_heldout_control_flow_requires_grad_false_inputs,
+                "initial",
+                1,
+            ),
+            CompileGuardStep(
+                "true_branch",
+                cpu_float32_heldout_control_flow_requires_grad_true_inputs,
+                "requires_grad",
+                2,
+            ),
+            CompileGuardStep(
+                "same_true_metadata",
+                cpu_float32_heldout_control_flow_requires_grad_true_inputs,
+                "same_metadata",
+                2,
+            ),
+        ),
+    ),
     CompileRecompilationGuardScenario(
         name="heldout_unary_rank3_metadata_mix",
         case_name="cpu_float32_heldout_guard_unary_metadata",
@@ -1073,10 +1191,10 @@ def assert_leaf_gradients_unchanged(testcase, inputs, before_gradients, *, case)
 
 class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
-        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v9")
+        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v10")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(len(COMPILE_CORPUS), 18)
-        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 10)
+        self.assertEqual(len(COMPILE_CORPUS), 19)
+        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 11)
 
         case_names = [case.name for case in COMPILE_CORPUS]
         self.assertEqual(
@@ -1092,6 +1210,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_training_unary_neg_abs_add",
                 "cpu_float32_decomposition_square_scalar",
                 "cpu_float32_custom_function_unary",
+                "cpu_float32_requires_grad_branch_unary",
                 "cpu_float32_matrix_vector_add",
                 "cpu_float32_matrix_vector_add_method",
                 "cpu_float32_tensor_scalar_add",
@@ -1114,6 +1233,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_heldout_list_tuple_output_pytree",
                 "cpu_float32_heldout_decomposition_square_noncontiguous",
                 "cpu_float32_heldout_custom_function_binary",
+                "cpu_float32_heldout_requires_grad_branch_binary",
                 "cpu_float32_heldout_guard_unary_metadata",
                 "cpu_float32_heldout_guard_binary_metadata",
             ],
@@ -1131,6 +1251,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "containers_pytrees",
                 "decompositions",
                 "custom_functions",
+                "python_control_flow",
                 "recompilation_guards",
             },
         )
@@ -1165,6 +1286,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                         "containers_pytrees",
                         "decompositions",
                         "custom_functions",
+                        "python_control_flow",
                         "recompilation_guards",
                     },
                 )
@@ -1197,6 +1319,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
             [
                 "unary_shape_stride_requires_grad_guards",
                 "binary_argument_metadata_guards",
+                "requires_grad_branch_unary_cache",
                 "bounded_limit_then_reset",
             ],
         )
@@ -1206,6 +1329,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 for scenario in COMPILE_HELD_OUT_RECOMPILATION_GUARD_SCENARIOS
             ],
             [
+                "heldout_requires_grad_branch_binary_cache",
                 "heldout_unary_rank3_metadata_mix",
                 "heldout_binary_broadcast_metadata_mix",
             ],
@@ -1227,6 +1351,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
         scenario_case_names = {
             scenario.case_name
             for scenario in COMPILE_RECOMPILATION_GUARD_SCENARIOS
+            if scenario.case.category == "recompilation_guards"
         }
         self.assertEqual(public_guard_cases, scenario_case_names)
 
@@ -1553,6 +1678,104 @@ class CompileCorpusTraceTests(unittest.TestCase):
                     expected,
                     case=f"{program.__name__}/compiled",
                 )
+
+    def test_bytecode_lowerer_selects_requires_grad_branch_graphlets(self):
+        cases = (
+            (
+                "public_false",
+                cpu_float32_requires_grad_branch_unary,
+                cpu_float32_control_flow_requires_grad_false_inputs,
+                ["relu", "add"],
+            ),
+            (
+                "public_true",
+                cpu_float32_requires_grad_branch_unary,
+                cpu_float32_control_flow_requires_grad_true_inputs,
+                ["neg", "abs"],
+            ),
+            (
+                "heldout_false",
+                cpu_float32_heldout_requires_grad_branch_binary,
+                cpu_float32_heldout_control_flow_requires_grad_false_inputs,
+                ["neg", "abs", "add", "relu"],
+            ),
+            (
+                "heldout_true",
+                cpu_float32_heldout_requires_grad_branch_binary,
+                cpu_float32_heldout_control_flow_requires_grad_true_inputs,
+                ["neg", "add", "relu"],
+            ),
+        )
+        for case, program, make_inputs, expected_targets in cases:
+            with self.subTest(case=case):
+                inputs = make_inputs(torch)
+                graph = _compile_bytecode.lower_compile_graph(
+                    program,
+                    tuple(
+                        _compile_trace._metadata_from_native_tensor(input)
+                        for input in inputs
+                    ),
+                    name=program.__name__,
+                )
+                expected = program(*inputs)
+
+                self.assertEqual(
+                    [operation.target for operation in graph.operations],
+                    expected_targets,
+                )
+                self.assert_native_tensor_matches(
+                    graph.forward(*inputs),
+                    expected,
+                    case=case,
+                )
+
+    def test_bytecode_lowerer_rejects_non_requires_grad_control_flow(self):
+        def nested_branch(x):
+            if x.requires_grad:
+                if x.requires_grad:
+                    return x.neg()
+                else:
+                    return x.abs()
+            else:
+                return x.relu()
+
+        def comparison_branch(x):
+            if x.requires_grad == True:
+                return x.neg()
+            else:
+                return x.abs()
+
+        def loop_branch(x):
+            if x.requires_grad:
+                for element in (x,):
+                    return element.neg()
+            else:
+                return x.abs()
+
+        def global_condition_branch(x):
+            if COMPILE_CORPUS_VERSION:
+                return x.neg()
+            else:
+                return x.abs()
+
+        input = torch.tensor([1.0, -2.0], dtype=torch.float32)
+        metadata = (_compile_trace._metadata_from_native_tensor(input),)
+        for program in (
+            nested_branch,
+            comparison_branch,
+            loop_branch,
+            global_condition_branch,
+        ):
+            with self.subTest(program=program.__name__):
+                with self.assertRaisesRegex(
+                    _compile_trace.CompileTraceUnsupportedError,
+                    "control flow",
+                ):
+                    _compile_bytecode.lower_compile_graph(
+                        program,
+                        metadata,
+                        name=program.__name__,
+                    )
 
     def test_bytecode_lowerer_accepts_cpython_314_borrowed_local_loads(self):
         def program(x):
@@ -3324,11 +3547,13 @@ try:
 except NotImplementedError as error:
     assert str(error) == (
         "torch.compile(): only backend='eager', fullgraph=True straight-line "
-        "Tensor neg/abs/relu/square/detach/add functions, optionally inlining one "
-        "exact same-module helper call, with one or two positional exact native CPU "
-        "float32 Tensor inputs and Tensor or tuple/list Tensor-pytree outputs are "
-        "supported; eager fallback, installed-PyTorch forwarding, callable backend "
-        "invocation, CUDA compilation, and broader graph capture remain unsupported"
+        "Tensor neg/abs/relu/square/detach/add functions, plus one top-level "
+        "if over an input Tensor.requires_grad selecting from that same subset, "
+        "optionally inlining one exact same-module helper call, with one or two "
+        "positional exact native CPU float32 Tensor inputs and Tensor or tuple/list "
+        "Tensor-pytree outputs are supported; eager fallback, installed-PyTorch "
+        "forwarding, callable backend invocation, CUDA compilation, and broader "
+        "graph capture remain unsupported"
     )
 else:
     raise AssertionError("callable backend compile should remain non-executing")

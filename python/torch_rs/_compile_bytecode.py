@@ -67,6 +67,17 @@ class _LoweringState:
 
 
 @dataclass(frozen=True, slots=True)
+class _RequiresGradBranchLayout:
+    input_name: str
+    predicate_start: int
+    jump_index: int
+    false_start: int
+    true_body: tuple
+    false_body: tuple
+    tail: tuple = ()
+
+
+@dataclass(frozen=True, slots=True)
 class _MethodTarget:
     kind: str
     target: str
@@ -109,6 +120,11 @@ _METHOD_TARGETS = {
     ),
 }
 _BYTECODE_METHOD_NAMES = frozenset(_METHOD_TARGETS)
+_IGNORED_OPCODE_NAMES = frozenset(("CACHE", "EXTENDED_ARG", "NOP", "RESUME"))
+_REQUIRES_GRAD_BRANCH_JUMPS = frozenset(
+    ("POP_JUMP_FORWARD_IF_FALSE", "POP_JUMP_IF_FALSE")
+)
+_UNCONDITIONAL_FORWARD_JUMPS = frozenset(("JUMP_FORWARD",))
 
 
 def _is_two_local_load(instruction):
@@ -127,10 +143,18 @@ def _contains_jump(instruction):
     return "JUMP" in instruction.opname
 
 
+def _is_return_instruction(instruction):
+    return instruction.opname in ("RETURN_VALUE", "RETURN_CONST")
+
+
+def _is_ignored_instruction(instruction):
+    return instruction.opname in _IGNORED_OPCODE_NAMES
+
+
 _OPCODE_FORMS = (
     _OpcodeForm(
         "ignored",
-        frozenset(("CACHE", "EXTENDED_ARG", "NOP", "RESUME")),
+        _IGNORED_OPCODE_NAMES,
     ),
     _OpcodeForm(
         "unsupported",
@@ -346,7 +370,7 @@ def _resolve_live_global_helper(root_program, program, instruction, name):
 def analyze_compile_program(program):
     code = _validate_program(program)
     global_loads = []
-    for instruction in _dis.get_instructions(code):
+    for instruction in _analyzable_bytecode_instructions(program, code):
         kind = _instruction_form(program, instruction)
         if kind != "load_global":
             continue
@@ -454,6 +478,206 @@ def _local_names(program, instruction, count):
     return names
 
 
+def _jump_offset(program, instruction):
+    target = getattr(instruction, "argval", None)
+    if _builtins.type(target) is not _builtins.int:
+        _unsupported_bytecode(program, instruction, "control flow")
+    return target
+
+
+def _instruction_offsets(program, instructions):
+    offsets = {}
+    for index, instruction in enumerate(instructions):
+        offset = getattr(instruction, "offset", None)
+        if _builtins.type(offset) is not _builtins.int:
+            _unsupported_bytecode(program, instruction, "control flow")
+        if offset in offsets:
+            _unsupported_bytecode(program, instruction, "control flow")
+        offsets[offset] = index
+    return offsets
+
+
+def _instruction_index_for_offset(program, instructions, instruction):
+    offsets = _instruction_offsets(program, instructions)
+    target = _jump_offset(program, instruction)
+    try:
+        return offsets[target]
+    except KeyError:
+        _unsupported_bytecode(program, instruction, "control flow")
+
+
+def _control_flow_indices(instructions):
+    return tuple(
+        index
+        for index, instruction in enumerate(instructions)
+        if _contains_jump(instruction) or instruction.opname == "FOR_ITER"
+    )
+
+
+def _last_non_ignored_index(instructions, start, stop):
+    for index in range(stop - 1, start - 1, -1):
+        if not _is_ignored_instruction(instructions[index]):
+            return index
+    return None
+
+
+def _stored_local_names(program, instruction):
+    kind = _instruction_form(program, instruction)
+    if kind == "store":
+        return _local_names(program, instruction, 1)
+    if kind == "store_load":
+        return _local_names(program, instruction, 2)[:1]
+    if kind == "store_store":
+        return _local_names(program, instruction, 2)
+    return ()
+
+
+def _branch_condition_input_name(program, code, instructions, jump_index):
+    attr_index = jump_index - 1
+    if attr_index >= 0 and instructions[attr_index].opname == "TO_BOOL":
+        attr_index -= 1
+    local_index = attr_index - 1
+    if local_index < 0:
+        _unsupported_bytecode(program, instructions[jump_index], "control flow")
+
+    local_load = instructions[local_index]
+    if _instruction_form(program, local_load) != "local_load":
+        _unsupported_bytecode(program, instructions[jump_index], "control flow")
+    (input_name,) = _local_names(program, local_load, 1)
+    if input_name not in code.co_varnames[: code.co_argcount]:
+        _unsupported_bytecode(program, local_load, "non-input requires_grad guard")
+
+    load_attr = instructions[attr_index]
+    if (
+        load_attr.opname != "LOAD_ATTR"
+        or _builtins.str(load_attr.argval) != "requires_grad"
+        or _load_attr_pushes_method(load_attr)
+    ):
+        _unsupported_bytecode(program, load_attr, "control flow")
+    for prefix_instruction in instructions[:local_index]:
+        if input_name in _stored_local_names(program, prefix_instruction):
+            _unsupported_bytecode(
+                program,
+                prefix_instruction,
+                "non-input requires_grad guard",
+            )
+    return input_name, local_index
+
+
+def _requires_grad_branch_layout(program, code, instructions):
+    control_flow = _control_flow_indices(instructions)
+    if not control_flow:
+        return None
+
+    branch_jumps = tuple(
+        index
+        for index in control_flow
+        if instructions[index].opname in _REQUIRES_GRAD_BRANCH_JUMPS
+    )
+    if len(branch_jumps) != 1:
+        _unsupported_bytecode(program, instructions[control_flow[0]], "control flow")
+    (jump_index,) = branch_jumps
+
+    other_jumps = tuple(index for index in control_flow if index != jump_index)
+    if not all(
+        instructions[index].opname in _UNCONDITIONAL_FORWARD_JUMPS
+        for index in other_jumps
+    ):
+        _unsupported_bytecode(program, instructions[control_flow[0]], "control flow")
+    if len(other_jumps) > 1:
+        _unsupported_bytecode(program, instructions[other_jumps[1]], "control flow")
+
+    input_name, predicate_start = _branch_condition_input_name(
+        program,
+        code,
+        instructions,
+        jump_index,
+    )
+    false_start = _instruction_index_for_offset(
+        program,
+        instructions,
+        instructions[jump_index],
+    )
+    true_start = jump_index + 1
+    if false_start <= true_start:
+        _unsupported_bytecode(program, instructions[jump_index], "control flow")
+
+    if other_jumps:
+        (join_jump_index,) = other_jumps
+        if not (true_start <= join_jump_index < false_start):
+            _unsupported_bytecode(program, instructions[join_jump_index], "control flow")
+        if _last_non_ignored_index(instructions, true_start, false_start) != (
+            join_jump_index
+        ):
+            _unsupported_bytecode(program, instructions[join_jump_index], "control flow")
+        join_start = _instruction_index_for_offset(
+            program,
+            instructions,
+            instructions[join_jump_index],
+        )
+        if join_start <= false_start:
+            _unsupported_bytecode(program, instructions[join_jump_index], "control flow")
+        true_body = instructions[true_start:join_jump_index]
+        false_body = instructions[false_start:join_start]
+        tail = instructions[join_start:]
+    else:
+        last_true_instruction_index = _last_non_ignored_index(
+            instructions,
+            true_start,
+            false_start,
+        )
+        if last_true_instruction_index is None or not _is_return_instruction(
+            instructions[last_true_instruction_index]
+        ):
+            _unsupported_bytecode(program, instructions[jump_index], "control flow")
+        true_body = instructions[true_start:false_start]
+        false_body = instructions[false_start:]
+        tail = ()
+
+    return _RequiresGradBranchLayout(
+        input_name=input_name,
+        predicate_start=predicate_start,
+        jump_index=jump_index,
+        false_start=false_start,
+        true_body=true_body,
+        false_body=false_body,
+        tail=tail,
+    )
+
+
+def _analyzable_bytecode_instructions(program, code):
+    instructions = tuple(_dis.get_instructions(code))
+    layout = _requires_grad_branch_layout(program, code, instructions)
+    if layout is None:
+        return instructions
+    return (
+        *instructions[: layout.predicate_start],
+        *layout.true_body,
+        *layout.false_body,
+        *layout.tail,
+    )
+
+
+def _lowerable_bytecode_instructions(program, code, input_metadatas):
+    instructions = tuple(_dis.get_instructions(code))
+    layout = _requires_grad_branch_layout(program, code, instructions)
+    if layout is None:
+        return instructions
+
+    input_names = code.co_varnames[: code.co_argcount]
+    input_index = input_names.index(layout.input_name)
+    selected_body = (
+        layout.true_body
+        if input_metadatas[input_index].requires_grad
+        else layout.false_body
+    )
+    return (
+        *instructions[: layout.predicate_start],
+        *selected_body,
+        *layout.tail,
+    )
+
+
 def _load_local(locals, stack, program, instruction, name):
     try:
         stack.append(locals[name])
@@ -543,8 +767,19 @@ def _handle_load_method(
     stack.append(_BytecodeMethod(receiver, _builtins.str(instruction.argval)))
 
 
-def _lower_function_body(recorder, locals, stack, program, code, state, active):
-    for instruction in _dis.get_instructions(code):
+def _lower_function_body(
+    recorder,
+    locals,
+    stack,
+    program,
+    code,
+    state,
+    active,
+    instructions=None,
+):
+    if instructions is None:
+        instructions = _dis.get_instructions(code)
+    for instruction in instructions:
         output = _lower_instruction(
             recorder,
             locals,
@@ -853,7 +1088,7 @@ def _lower_instruction(recorder, locals, stack, program, instruction, state, act
 
 
 def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=None):
-    """Lower a narrow straight-line Python function into a native trace graph."""
+    """Lower a narrow Python function into a native trace graph."""
     if compile_request is None:
         compile_request = prepare_compile_cache_request(program, input_metadatas)
     elif compile_request.input_metadatas != input_metadatas:
@@ -890,6 +1125,7 @@ def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=
         code,
         state,
         (program,),
+        _lowerable_bytecode_instructions(program, code, input_metadatas),
     )
     return recorder.finish(output)
 
