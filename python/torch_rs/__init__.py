@@ -980,6 +980,7 @@ if "matmul" in _native.__all__:
 from . import __future__ as __future__
 from . import accelerator as accelerator
 from . import autograd as autograd
+set_grad_enabled = autograd.grad_mode.set_grad_enabled
 from . import backends as backends
 from . import compiler as compiler
 from . import cpu as cpu
