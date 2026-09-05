@@ -1,8 +1,10 @@
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -543,6 +545,68 @@ print(json.dumps({{
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertIs(torch.cuda.is_initialized(), False)
+
+    def test_private_cuda_pointwise_build_directory_rejects_symlinked_parent(self):
+        target_root = REPOSITORY_ROOT / "target"
+        target_root.mkdir(exist_ok=True)
+        temp_root = Path(tempfile.mkdtemp(dir=target_root))
+        try:
+            repository_root = temp_root / "repo"
+            repository_root.mkdir()
+            target = repository_root / "target"
+            target.mkdir()
+            symlink_target = temp_root / "outside-build"
+            symlink_target.mkdir()
+            pointwise_target = target / "torch_rs_private_cuda_pointwise"
+            pointwise_target.symlink_to(symlink_target, target_is_directory=True)
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "refusing symlinked CUDA pointwise build directory",
+            ):
+                _cuda_pointwise_kernel._target_build_directory(
+                    repository_root,
+                    "abc123",
+                )
+        finally:
+            shutil.rmtree(temp_root)
+
+    def test_private_cuda_pointwise_build_rejects_symlinked_artifact_path(self):
+        target_root = REPOSITORY_ROOT / "target"
+        target_root.mkdir(exist_ok=True)
+        temp_root = Path(tempfile.mkdtemp(dir=target_root))
+        original_target_build_directory = (
+            _cuda_pointwise_kernel._target_build_directory
+        )
+        try:
+            build_directory = temp_root / "build"
+            build_directory.mkdir()
+            source_target = temp_root / "outside.cu"
+            source_target.write_text("// outside\n", encoding="utf-8")
+            source_path = build_directory / "torch_rs_private_pointwise.cu"
+            source_path.symlink_to(source_target)
+
+            def fake_target_build_directory(repository_root, key):
+                del repository_root, key
+                return build_directory
+
+            _cuda_pointwise_kernel._target_build_directory = (
+                fake_target_build_directory
+            )
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "refusing symlinked CUDA pointwise artifact path",
+            ):
+                _cuda_pointwise_kernel._build_kernel(
+                    repository_root=REPOSITORY_ROOT,
+                    driver_probe={"device_0": {"compute_capability": [9, 0]}},
+                    nvcc={"path": "/bin/true", "version": {"stdout": ""}},
+                )
+        finally:
+            _cuda_pointwise_kernel._target_build_directory = (
+                original_target_build_directory
+            )
+            shutil.rmtree(temp_root)
 
     def test_cpu_eager_compile_execution_is_not_eligible_cuda_evidence(self):
         def cpu_program(value):

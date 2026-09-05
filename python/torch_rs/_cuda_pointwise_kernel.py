@@ -320,7 +320,18 @@ def _target_build_directory(root: Path, key: str) -> Path:
     if target.is_symlink():
         raise RuntimeError(f"refusing symlinked target directory: {target}")
     target.mkdir(exist_ok=True)
-    build_directory = target / "torch_rs_private_cuda_pointwise" / key
+    pointwise_target = target / "torch_rs_private_cuda_pointwise"
+    if pointwise_target.is_symlink():
+        raise RuntimeError(
+            "refusing symlinked CUDA pointwise build directory: "
+            f"{pointwise_target}"
+        )
+    pointwise_target.mkdir(exist_ok=True)
+    build_directory = pointwise_target / key
+    if build_directory.is_symlink():
+        raise RuntimeError(
+            f"refusing symlinked CUDA pointwise build directory: {build_directory}"
+        )
     build_directory.mkdir(parents=True, exist_ok=True)
     resolved = build_directory.resolve()
     if root not in (resolved, *resolved.parents):
@@ -380,7 +391,16 @@ def _build_kernel(
     build["source_path"] = str(source_path)
     build["library_path"] = str(library_path)
 
-    if not source_path.exists() or source_path.read_text(encoding="utf-8") != _CUDA_SOURCE:
+    for artifact_path in (source_path, library_path):
+        if artifact_path.is_symlink():
+            raise RuntimeError(
+                f"refusing symlinked CUDA pointwise artifact path: {artifact_path}"
+            )
+
+    if (
+        not source_path.exists()
+        or source_path.read_text(encoding="utf-8") != _CUDA_SOURCE
+    ):
         source_path.write_text(_CUDA_SOURCE, encoding="utf-8")
 
     if library_path.exists():
