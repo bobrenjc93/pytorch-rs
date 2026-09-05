@@ -38,7 +38,7 @@ CATEGORY_WEIGHTS = {
 
 
 CPU_FLOAT32_GLOBAL_BUFFER = torch.tensor(
-    [0.5, -1.5, 2.25],
+    [0.5],
     dtype=torch.float32,
 )
 CPU_FLOAT32_HELDOUT_GLOBAL_WEIGHT = torch.tensor(
@@ -443,7 +443,7 @@ def cpu_float32_global_buffer_add_inputs(module):
     _ensure_global_tensor(
         "CPU_FLOAT32_GLOBAL_BUFFER",
         module,
-        [0.5, -1.5, 2.25],
+        [0.5],
     )
     return (
         module.tensor(

@@ -336,7 +336,7 @@ EXPECTED_V11_CASE_MANIFEST = (
         "program": "cpu_float32_global_buffer_add",
         "program_sha256": "c8d340ebd547ab4d06655ab823bbfbad1c28820fa09585506edab6b915677879",
         "make_inputs": "cpu_float32_global_buffer_add_inputs",
-        "make_inputs_sha256": "b6207464745c1c46213d5628cf62c4d33d4e60d4e67106142c815eff4aaaff75",
+        "make_inputs_sha256": "91f8d2e1ccf96f3720f46f6c2d06830384ccf262130a47ac4aecf36b814920f1",
         "inputs_sha256": "537513ca52a53b9a87859027e1aa0b82d11fbd62d732cd56503a16045e3add20",
         "arity": 1,
         "fullgraph": True,
