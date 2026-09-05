@@ -3,7 +3,6 @@
 set -euo pipefail
 
 repository_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
-virtualenv="$repository_root/.venv"
 target_path="$repository_root/target"
 wheel_directory=
 
@@ -16,10 +15,6 @@ trap cleanup EXIT
 
 cd "$repository_root"
 
-if [[ -L "$virtualenv" ]]; then
-    echo "refusing symlinked virtual environment: $virtualenv" >&2
-    exit 1
-fi
 if [[ -L "$target_path" ]]; then
     echo "refusing symlinked target directory: $target_path" >&2
     exit 1
@@ -31,6 +26,38 @@ if [[ "$target_directory" != "$target_path" ]]; then
     exit 1
 fi
 
+evaluator_path="$target_directory/torch-compile-coverage"
+if [[ -L "$evaluator_path" ]]; then
+    echo "refusing symlinked evaluator directory: $evaluator_path" >&2
+    exit 1
+fi
+mkdir -p "$evaluator_path"
+evaluator_directory="$(cd "$evaluator_path" && pwd -P)"
+if [[ "$evaluator_directory" != "$evaluator_path" ]]; then
+    echo "evaluator directory resolved outside the worktree: $evaluator_directory" >&2
+    exit 1
+fi
+
+virtualenv="$evaluator_directory/venv"
+python="$virtualenv/bin/python"
+maturin="$virtualenv/bin/maturin"
+
+if [[ -L "$virtualenv" ]]; then
+    echo "refusing symlinked virtual environment: $virtualenv" >&2
+    exit 1
+fi
+if [[ -e "$virtualenv" && ! -d "$virtualenv" ]]; then
+    echo "virtual environment path is not a directory: $virtualenv" >&2
+    exit 1
+fi
+if ! command -v flock >/dev/null 2>&1; then
+    echo "missing flock command required to serialize evaluator setup" >&2
+    exit 1
+fi
+
+exec {setup_lock_fd}<"$evaluator_directory"
+flock "$setup_lock_fd"
+
 export CARGO_HOME="$target_directory/cargo-home"
 export CARGO_TARGET_DIR="$target_directory"
 export UV_CACHE_DIR="$target_directory/uv-cache"
@@ -38,22 +65,25 @@ export UV_PYTHON_INSTALL_DIR="$target_directory/uv-python"
 export UV_PROJECT_ENVIRONMENT="$virtualenv"
 export PYTHONNOUSERSITE=1
 
-if [[ ! -x "$virtualenv/bin/python" ]]; then
-    uv --no-config venv --python 3.12 "$virtualenv" >/dev/null
+if [[ ! -x "$python" ]] ||
+    ! "$python" -c 'import sys; raise SystemExit(sys.version_info[:2] != (3, 12))' \
+        >/dev/null 2>&1
+then
+    uv --no-config venv --clear --python 3.12 "$virtualenv" >/dev/null
 fi
 uv --no-config sync \
     --locked \
-    --python "$virtualenv/bin/python" \
+    --python "$python" \
     --no-install-project \
     --group dev \
     --group reference \
     >/dev/null
 
-wheel_directory="$(mktemp -d "$target_directory/compile-coverage-wheels.XXXXXX")"
-TMPDIR="$target_directory" \
+wheel_directory="$(mktemp -d "$evaluator_directory/compile-coverage-wheels.XXXXXX")"
+TMPDIR="$evaluator_directory" \
 VIRTUAL_ENV="$virtualenv" \
-PYO3_PYTHON="$virtualenv/bin/python" \
-    "$virtualenv/bin/maturin" build --release --locked --out "$wheel_directory" \
+PYO3_PYTHON="$python" \
+    "$maturin" build --release --locked --out "$wheel_directory" \
     >/dev/null
 
 shopt -s nullglob
@@ -65,11 +95,12 @@ if (( ${#wheels[@]} != 1 )); then
 fi
 
 uv --no-config pip install \
-    --python "$virtualenv/bin/python" \
+    --python "$python" \
     --force-reinstall \
     --no-deps \
     "${wheels[0]}" \
     >/dev/null
 
-"$virtualenv/bin/python" .github/scripts/verify_native_extension.py >/dev/null
-"$virtualenv/bin/python" scripts/evaluate_torch_compile_coverage.py "$@"
+TORCH_RS_VERIFY_VIRTUALENV="$virtualenv" "$python" \
+    .github/scripts/verify_native_extension.py >/dev/null
+"$python" scripts/evaluate_torch_compile_coverage.py "$@"
