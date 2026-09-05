@@ -264,7 +264,8 @@ _COMPILE_UNSUPPORTED_MESSAGE = (
     "torch.compile(): only backend='eager', fullgraph=True straight-line "
     "Tensor neg/abs/relu/square/detach/float/add functions, plus one top-level "
     "if over an input Tensor.requires_grad selecting from that same subset, "
-    "optionally inlining one exact same-module helper call, with one or two "
+    "optionally inlining one exact same-module helper call and reading "
+    "module-global exact native CPU float32 Tensor constants, with one or two "
     "positional exact native CPU float32 Tensor inputs and Tensor or tuple/list "
     "Tensor-pytree outputs are supported; eager fallback, installed-PyTorch "
     "forwarding, callable backend invocation, CUDA compilation, and broader "
@@ -625,10 +626,11 @@ def compile(
     ``float32`` Tensor inputs made only from Tensor ``neg``, ``abs``,
     ``relu``, ``square``, ``detach``, ``float``, binary ``add``, and one exact
     same-module helper call over Tensor arguments for ``backend="eager"``
-    with ``fullgraph=True``. Those functions may contain one top-level
-    ``if`` over an input Tensor's ``requires_grad`` metadata; the native path
-    lowers the selected branch and returns either a Tensor or a tuple/list
-    pytree with Tensor leaves.
+    with ``fullgraph=True``. Those functions may read module-global exact
+    native CPU ``float32`` Tensor constants. They may also contain one
+    top-level ``if`` over an input Tensor's ``requires_grad`` metadata; the
+    native path lowers the selected branch and returns either a Tensor or a
+    tuple/list pytree with Tensor leaves.
     Eager fallback, installed-PyTorch forwarding, callable backend invocation,
     CUDA compilation, and broader graph capture remain unsupported.
     """

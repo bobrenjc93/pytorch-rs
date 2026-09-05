@@ -10,6 +10,7 @@ import unittest
 
 import torch_rs as torch
 from torch_rs import _compile_bytecode
+from torch_rs import _compile_trace
 from torch_rs import _compiler_state as _state
 
 
@@ -17,7 +18,8 @@ UNSUPPORTED_MESSAGE = (
     "torch.compile(): only backend='eager', fullgraph=True straight-line "
     "Tensor neg/abs/relu/square/detach/float/add functions, plus one top-level "
     "if over an input Tensor.requires_grad selecting from that same subset, "
-    "optionally inlining one exact same-module helper call, with one or two "
+    "optionally inlining one exact same-module helper call and reading "
+    "module-global exact native CPU float32 Tensor constants, with one or two "
     "positional exact native CPU float32 Tensor inputs and Tensor or tuple/list "
     "Tensor-pytree outputs are supported; eager fallback, installed-PyTorch "
     "forwarding, callable backend invocation, CUDA compilation, and broader "
@@ -26,6 +28,10 @@ UNSUPPORTED_MESSAGE = (
 
 
 EAGER_COMPILE_MODEL_CALLS = []
+EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor(
+    [0.5, -1.5, 2.25],
+    dtype=torch.float32,
+)
 
 
 def eager_compile_inline_helper(value):
@@ -440,6 +446,204 @@ class TorchCompileEntrypointTests(unittest.TestCase):
                 for input in inputs:
                     if input.numel():
                         self.assertNotEqual(actual.data_ptr(), input.data_ptr())
+
+    def test_eager_fullgraph_executes_global_tensor_constants_natively(self):
+        global EAGER_COMPILE_GLOBAL_BUFFER
+
+        original_global = EAGER_COMPILE_GLOBAL_BUFFER
+        EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor(
+            [0.5, -1.5, 2.25],
+            dtype=torch.float32,
+        )
+        captured_global = EAGER_COMPILE_GLOBAL_BUFFER
+
+        def program(x):
+            return x.add(EAGER_COMPILE_GLOBAL_BUFFER.abs()).neg()
+
+        input = torch.tensor([1.0, -2.0, 3.5], dtype=torch.float32)
+        expected = program(input)
+        metadata = (_compile_trace._metadata_from_native_tensor(input),)
+        graph = _compile_bytecode.lower_compile_graph(
+            program,
+            metadata,
+            name="global_buffer",
+        )
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        calls = {"program": 0}
+        original_profile = sys.getprofile()
+
+        def count_program_calls(frame, event, arg):
+            if event == "call" and frame.f_code is program.__code__:
+                calls["program"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_program_calls
+
+        try:
+            sys.setprofile(count_program_calls)
+            actual = compiled(input)
+        finally:
+            sys.setprofile(original_profile)
+            EAGER_COMPILE_GLOBAL_BUFFER = original_global
+
+        self.assertEqual(calls, {"program": 0})
+        self.assertEqual([capture.name for capture in graph.captures], [
+            "global:EAGER_COMPILE_GLOBAL_BUFFER",
+        ])
+        self.assertIs(graph.captures[0].value, captured_global)
+        self.assertEqual(
+            [operation.target for operation in graph.operations],
+            ["abs", "add", "neg"],
+        )
+        self.assertEqual(
+            graph.operations[0].inputs,
+            ("global:EAGER_COMPILE_GLOBAL_BUFFER",),
+        )
+        self.assertEqual(graph.operations[1].inputs, ("x", "abs_0"))
+        self.assertEqual(actual.tolist(), expected.tolist())
+        self.assertEqual(captured_global.tolist(), [0.5, -1.5, 2.25])
+
+    def test_eager_fullgraph_cache_key_tracks_global_tensor_rebinding(self):
+        global EAGER_COMPILE_GLOBAL_BUFFER
+
+        def program(x):
+            return x + EAGER_COMPILE_GLOBAL_BUFFER
+
+        original_global = EAGER_COMPILE_GLOBAL_BUFFER
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            calls.append(compile_request.key)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([2.0, -3.0, 4.0], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor(
+                [1.0, 2.0, 3.0],
+                dtype=torch.float32,
+            )
+            metadata = (_compile_trace._metadata_from_native_tensor(input),)
+            request = _compile_bytecode.prepare_compile_cache_request(
+                program,
+                metadata,
+            )
+            (dependency,) = request.global_tensor_dependencies
+            self.assertEqual(dependency.global_name, "EAGER_COMPILE_GLOBAL_BUFFER")
+            self.assertEqual(dependency.tensor_identity, id(EAGER_COMPILE_GLOBAL_BUFFER))
+            self.assertEqual(dependency.metadata.shape, (3,))
+            self.assertEqual(dependency.metadata.stride, (1,))
+
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(len(calls), 1)
+
+            EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor(
+                [10.0, 20.0, 30.0],
+                dtype=torch.float32,
+            )
+            self.assertEqual(compiled(input).tolist(), program(input).tolist())
+            self.assertEqual(len(calls), 2)
+            self.assertNotEqual(calls[0], calls[1])
+
+            EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor(
+                [[1.0, 2.0, 3.0]],
+                dtype=torch.float32,
+            )
+            changed_request = _compile_bytecode.prepare_compile_cache_request(
+                program,
+                metadata,
+            )
+            (changed_dependency,) = changed_request.global_tensor_dependencies
+            self.assertEqual(changed_dependency.metadata.shape, (1, 3))
+            self.assertNotEqual(request.key, changed_request.key)
+        finally:
+            EAGER_COMPILE_GLOBAL_BUFFER = original_global
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_lowering_uses_global_tensor_cache_snapshot(self):
+        global EAGER_COMPILE_GLOBAL_BUFFER
+
+        def program(x):
+            return x + EAGER_COMPILE_GLOBAL_BUFFER
+
+        original_global = EAGER_COMPILE_GLOBAL_BUFFER
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor([1.0], dtype=torch.float32)
+
+        def rebinding_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            global EAGER_COMPILE_GLOBAL_BUFFER
+
+            EAGER_COMPILE_GLOBAL_BUFFER = torch.tensor(
+                [10.0],
+                dtype=torch.float32,
+            )
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([2.0], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = rebinding_lower
+            self.assertEqual(compiled(input).tolist(), [3.0])
+        finally:
+            EAGER_COMPILE_GLOBAL_BUFFER = original_global
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_rejects_non_tensor_global_operands_safely(self):
+        global EAGER_COMPILE_GLOBAL_BUFFER
+
+        def program(x):
+            return x + EAGER_COMPILE_GLOBAL_BUFFER
+
+        original_global = EAGER_COMPILE_GLOBAL_BUFFER
+        EAGER_COMPILE_GLOBAL_BUFFER = 1.0
+        input = torch.tensor([2.0], dtype=torch.float32)
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        calls = {"program": 0}
+        original_profile = sys.getprofile()
+
+        def count_program_calls(frame, event, arg):
+            if event == "call" and frame.f_code is program.__code__:
+                calls["program"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_program_calls
+
+        try:
+            sys.setprofile(count_program_calls)
+            with self.assertRaisesRegex(NotImplementedError, "global or import access"):
+                compiled(input)
+        finally:
+            sys.setprofile(original_profile)
+            EAGER_COMPILE_GLOBAL_BUFFER = original_global
+
+        self.assertEqual(calls, {"program": 0})
 
     def test_eager_fullgraph_executes_tuple_list_outputs_natively(self):
         def program(x, y):

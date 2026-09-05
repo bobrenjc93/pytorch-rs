@@ -26,8 +26,8 @@ import warnings
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CORPUS_PATH = REPOSITORY_ROOT / "tests" / "test_compile_corpus.py"
 EVALUATION_ID = "eval_a61c0e71"
-EVALUATOR_VERSION = "torch_compile_program_coverage_evaluator_v6"
-EXPECTED_CORPUS_VERSION = "torch_compile_corpus_v10"
+EVALUATOR_VERSION = "torch_compile_program_coverage_evaluator_v7"
+EXPECTED_CORPUS_VERSION = "torch_compile_corpus_v11"
 REFERENCE_PYTORCH_VERSION = "2.13.0"
 EXPECTED_CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -57,7 +57,7 @@ EXPECTED_HELD_OUT_GUARD_SCENARIOS = (
     "heldout_unary_rank3_metadata_mix",
     "heldout_binary_broadcast_metadata_mix",
 )
-EXPECTED_V10_CASE_MANIFEST = (
+EXPECTED_V11_CASE_MANIFEST = (
     {
         "name": "cpu_float32_unary_abs_neg",
         "held_out": False,
@@ -330,6 +330,24 @@ EXPECTED_V10_CASE_MANIFEST = (
         "recompile_limit": None,
     },
     {
+        "name": "cpu_float32_global_buffer_add",
+        "held_out": False,
+        "category": "modules_parameters_buffers",
+        "program": "cpu_float32_global_buffer_add",
+        "program_sha256": "c8d340ebd547ab4d06655ab823bbfbad1c28820fa09585506edab6b915677879",
+        "make_inputs": "cpu_float32_global_buffer_add_inputs",
+        "make_inputs_sha256": "b6207464745c1c46213d5628cf62c4d33d4e60d4e67106142c815eff4aaaff75",
+        "inputs_sha256": "537513ca52a53b9a87859027e1aa0b82d11fbd62d732cd56503a16045e3add20",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
         "name": "cpu_float32_tuple_list_output_pytree",
         "held_out": False,
         "category": "containers_pytrees",
@@ -426,6 +444,24 @@ EXPECTED_V10_CASE_MANIFEST = (
         "mode": None,
         "options": None,
         "recompile_limit": None,
+    },
+    {
+        "name": "cpu_float32_heldout_global_weight_unary_add",
+        "held_out": True,
+        "category": "modules_parameters_buffers",
+        "program": "cpu_float32_heldout_global_weight_unary_add",
+        "program_sha256": "c564334680e4ff91cd13c4f6e357b023f0c1ff3a557b2787fe23c975389794cf",
+        "make_inputs": "cpu_float32_heldout_global_weight_unary_add_inputs",
+        "make_inputs_sha256": "acd670aa69fcb9029b0d97c869541dd2f5158cd9e1832f8e95c0c0224a614a2f",
+        "inputs_sha256": "3309d6bd5a238d115949a526c1b45db0a2a736d84a88de584b9ead464649a750",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
     },
     {
         "name": "cpu_float32_heldout_training_broadcast_neg_abs_add",
@@ -605,7 +641,7 @@ EXPECTED_V10_CASE_MANIFEST = (
         "recompile_limit": 4,
     },
 )
-EXPECTED_V10_GUARD_SCENARIO_MANIFEST = (
+EXPECTED_V11_GUARD_SCENARIO_MANIFEST = (
     {
         "name": "unary_shape_stride_requires_grad_guards",
         "held_out": False,
@@ -1269,19 +1305,19 @@ def _compare_manifest_entry(actual, expected, *, context, errors):
 
 def _expected_case_manifest(held_out):
     return tuple(
-        entry for entry in EXPECTED_V10_CASE_MANIFEST if entry["held_out"] is held_out
+        entry for entry in EXPECTED_V11_CASE_MANIFEST if entry["held_out"] is held_out
     )
 
 
 def _expected_guard_scenario_manifest(held_out):
     return tuple(
         entry
-        for entry in EXPECTED_V10_GUARD_SCENARIO_MANIFEST
+        for entry in EXPECTED_V11_GUARD_SCENARIO_MANIFEST
         if entry["held_out"] is held_out
     )
 
 
-def _validate_v10_case_manifest(
+def _validate_v11_case_manifest(
     corpus_module,
     cases,
     *,
@@ -1295,7 +1331,7 @@ def _validate_v10_case_manifest(
     actual_names = [getattr(case, "name", None) for case in cases]
     if actual_names != expected_names:
         errors.append(
-            f"{label} v10 case names/order changed: {actual_names!r} != {expected_names!r}"
+            f"{label} v11 case names/order changed: {actual_names!r} != {expected_names!r}"
         )
 
     expected_by_name = {entry["name"]: entry for entry in expected_entries}
@@ -1313,12 +1349,12 @@ def _validate_v10_case_manifest(
         _compare_manifest_entry(
             actual_entry,
             expected_entry,
-            context=f"{label} v10 case {case.name}",
+            context=f"{label} v11 case {case.name}",
             errors=errors,
         )
 
 
-def _validate_v10_guard_scenario_manifest(
+def _validate_v11_guard_scenario_manifest(
     corpus_module,
     scenarios,
     *,
@@ -1332,7 +1368,7 @@ def _validate_v10_guard_scenario_manifest(
     actual_names = [getattr(scenario, "name", None) for scenario in scenarios]
     if actual_names != expected_names:
         errors.append(
-            f"{label} v10 guard scenarios changed: {actual_names!r} != {expected_names!r}"
+            f"{label} v11 guard scenarios changed: {actual_names!r} != {expected_names!r}"
         )
 
     expected_by_name = {entry["name"]: entry for entry in expected_entries}
@@ -1350,7 +1386,7 @@ def _validate_v10_guard_scenario_manifest(
         _compare_manifest_entry(
             actual_entry,
             expected_entry,
-            context=f"{label} v10 guard scenario {scenario.name}",
+            context=f"{label} v11 guard scenario {scenario.name}",
             errors=errors,
         )
 
@@ -1390,10 +1426,10 @@ def _validate_corpus_metadata(corpus_module):
 
     public_cases = tuple(getattr(corpus_module, "COMPILE_CORPUS", ()))
     held_out_cases = tuple(getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ()))
-    if len(public_cases) != 20:
-        errors.append(f"expected 20 public v10 cases, found {len(public_cases)}")
-    if len(held_out_cases) != 12:
-        errors.append(f"expected 12 held-out v10 cases, found {len(held_out_cases)}")
+    if len(public_cases) != 21:
+        errors.append(f"expected 21 public v11 cases, found {len(public_cases)}")
+    if len(held_out_cases) != 13:
+        errors.append(f"expected 13 held-out v11 cases, found {len(held_out_cases)}")
 
     seen_names = set()
     for case in (*public_cases, *held_out_cases):
@@ -1451,11 +1487,11 @@ def _validate_corpus_metadata(corpus_module):
         getattr(corpus_module, "COMPILE_HELD_OUT_RECOMPILATION_GUARD_SCENARIOS", ())
     )
     if _guard_scenario_names(public_scenarios) != list(EXPECTED_PUBLIC_GUARD_SCENARIOS):
-        errors.append("public recompilation guard scenarios do not match v10")
+        errors.append("public recompilation guard scenarios do not match v11")
     if _guard_scenario_names(held_out_scenarios) != list(
         EXPECTED_HELD_OUT_GUARD_SCENARIOS
     ):
-        errors.append("held-out recompilation guard scenarios do not match v10")
+        errors.append("held-out recompilation guard scenarios do not match v11")
     for scenario in (*public_scenarios, *held_out_scenarios):
         scenario_name = getattr(scenario, "name", None)
         case_name = getattr(scenario, "case_name", None)
@@ -1480,28 +1516,28 @@ def _validate_corpus_metadata(corpus_module):
             last_compile_count = expected_count if type(expected_count) is int else 0
 
     tensor_module = _manifest_tensor_module(corpus_module, errors)
-    _validate_v10_case_manifest(
+    _validate_v11_case_manifest(
         corpus_module,
         public_cases,
         held_out=False,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v10_case_manifest(
+    _validate_v11_case_manifest(
         corpus_module,
         held_out_cases,
         held_out=True,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v10_guard_scenario_manifest(
+    _validate_v11_guard_scenario_manifest(
         corpus_module,
         public_scenarios,
         held_out=False,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v10_guard_scenario_manifest(
+    _validate_v11_guard_scenario_manifest(
         corpus_module,
         held_out_scenarios,
         held_out=True,
