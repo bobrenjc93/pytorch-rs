@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 thread_local! {
+    static GRAD_MODE_ENABLED: Cell<bool> = const { Cell::new(true) };
     static GRAD_MODE_STACK: RefCell<Vec<GradModeEntry>> = const { RefCell::new(Vec::new()) };
     static NEXT_GRAD_MODE_TOKEN: Cell<usize> = const { Cell::new(0) };
 }
@@ -70,7 +71,11 @@ pub fn enable_grad() -> EnableGradGuard {
 /// Returns whether eager graph recording is enabled on the current thread.
 #[must_use]
 pub fn is_grad_enabled() -> bool {
-    GRAD_MODE_STACK.with_borrow(|stack| stack.last().is_none_or(|entry| entry.enabled))
+    GRAD_MODE_STACK.with_borrow(|stack| {
+        stack
+            .last()
+            .map_or_else(|| GRAD_MODE_ENABLED.get(), |entry| entry.enabled)
+    })
 }
 
 pub(crate) fn enter_no_grad() -> GradModeToken {
@@ -79,6 +84,17 @@ pub(crate) fn enter_no_grad() -> GradModeToken {
 
 pub(crate) fn enter_enable_grad() -> GradModeToken {
     enter_grad_mode(true)
+}
+
+#[cfg(feature = "python-bindings")]
+pub(crate) fn set_grad_enabled(enabled: bool) {
+    GRAD_MODE_STACK.with_borrow_mut(|stack| {
+        if let Some(entry) = stack.last_mut() {
+            entry.enabled = enabled;
+        } else {
+            GRAD_MODE_ENABLED.set(enabled);
+        }
+    });
 }
 
 pub(crate) fn exit_grad_mode(token: GradModeToken) {
