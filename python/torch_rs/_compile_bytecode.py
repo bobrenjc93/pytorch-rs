@@ -398,15 +398,36 @@ def _resolve_live_global_dependency(root_program, program, instruction, name):
 
 def analyze_compile_program(program):
     code = _validate_program(program)
+    instructions = tuple(_dis.get_instructions(code))
+    layout = _requires_grad_branch_layout(program, code, instructions)
+    if layout is None:
+        analyzable_instructions = instructions
+    else:
+        analyzable_instructions = (
+            *instructions[: layout.predicate_start],
+            *layout.true_body,
+            *layout.false_body,
+            *layout.tail,
+        )
+    global_loads = _global_load_dependencies_from_instructions(
+        program,
+        analyzable_instructions,
+        resolve=layout is None,
+    )
+    return _CompileProgramDescriptor(code, global_loads)
+
+
+def _global_load_dependencies_from_instructions(program, instructions, *, resolve=False):
     global_loads = []
-    for instruction in _analyzable_bytecode_instructions(program, code):
+    for instruction in instructions:
         kind = _instruction_form(program, instruction)
         if kind != "load_global":
             continue
         name = _global_name(program, instruction)
-        _resolve_live_global_dependency(program, program, instruction, name)
+        if resolve:
+            _resolve_live_global_dependency(program, program, instruction, name)
         global_loads.append(_GlobalLoadDependency(name, instruction))
-    return _CompileProgramDescriptor(code, tuple(global_loads))
+    return tuple(global_loads)
 
 
 def _global_cache_dependencies_for_loads(
@@ -461,11 +482,21 @@ def _global_cache_dependencies_for_loads(
     return tuple(helper_dependencies), tuple(global_tensor_dependencies)
 
 
-def _global_cache_dependencies(program, descriptor):
+def _global_cache_dependencies(program, descriptor, input_metadatas):
+    if not descriptor.global_loads:
+        return (), ()
+    global_loads = _global_load_dependencies_from_instructions(
+        program,
+        _lowerable_bytecode_instructions(
+            program,
+            descriptor.code,
+            input_metadatas,
+        ),
+    )
     return _global_cache_dependencies_for_loads(
         program,
         program,
-        descriptor.global_loads,
+        global_loads,
         (program,),
     )
 
@@ -519,6 +550,7 @@ def prepare_compile_cache_request(program, input_metadatas, descriptor=None):
     helper_dependencies, global_tensor_dependencies = _global_cache_dependencies(
         program,
         descriptor,
+        input_metadatas,
     )
     return _CompileCacheRequest(
         key=(
