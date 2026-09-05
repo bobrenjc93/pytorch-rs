@@ -250,6 +250,24 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
             ["CPU_FLOAT32_GLOBAL_BUFFER"],
         )
 
+    def test_default_benchmark_cases_exclude_unsupported_dynamic_cases(self):
+        corpus = benchmark_compile_cpu._load_compile_corpus_module()
+        cases = benchmark_compile_cpu._benchmark_public_cases(corpus)
+        names = {case.name for case in cases}
+
+        self.assertEqual(len(cases), 21)
+        self.assertIn("cpu_float32_unary_abs_neg", names)
+        self.assertNotIn("cpu_float32_dynamic_true_shape_stride_unary", names)
+
+        with self.assertRaisesRegex(
+            SystemExit,
+            "unsupported native eager benchmark case",
+        ):
+            benchmark_compile_cpu._select_benchmark_cases(
+                corpus,
+                ("cpu_float32_dynamic_true_shape_stride_unary",),
+            )
+
     def test_validator_rejects_previous_corpus_version_artifact(self):
         report = benchmark_compile_cpu._load_artifact(
             benchmark_compile_cpu.DEFAULT_ARTIFACT_PATH,

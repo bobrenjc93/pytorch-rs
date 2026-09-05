@@ -35,6 +35,9 @@ PROTECTED_OUTPUT_PATHS = {
 }
 REFERENCE_PYTORCH_VERSION = "2.13.0"
 BENCHMARK_VERSION = "torch_compile_cpu_eager_benchmark_v3"
+# CPU timing artifacts measure the native eager/fullgraph subset supported by
+# torch_rs today; coverage-only dynamic cases move under the evaluator corpus.
+BENCHMARK_CORPUS_VERSION = "torch_compile_corpus_v11"
 DEFAULT_WARMUPS = 7
 DEFAULT_SAMPLES = 31
 IMPLEMENTATION_ORDERS = (
@@ -380,14 +383,12 @@ def _corpus_metadata(corpus_module):
         }
 
     return {
-        "version": corpus_module.COMPILE_CORPUS_VERSION,
+        "version": BENCHMARK_CORPUS_VERSION,
         "public_cases": [
-            case_summary(case) for case in corpus_module.compile_corpus_cases()
+            case_summary(case) for case in _benchmark_public_cases(corpus_module)
         ],
         "held_out_cases": [
-            case_summary(case)
-            for case in corpus_module.compile_corpus_cases(include_held_out=True)
-            if case not in corpus_module.compile_corpus_cases()
+            case_summary(case) for case in _benchmark_held_out_cases(corpus_module)
         ],
         "public_recompilation_guard_scenarios": [
             scenario_summary(scenario)
@@ -424,6 +425,31 @@ def _program_input_count(case):
     if code is None:
         raise AssertionError(f"{case.name} program is not an exact Python function")
     return code.co_argcount
+
+
+def _case_is_native_eager_benchmark_supported(case):
+    return (
+        case.fullgraph is True
+        and case.dynamic is None
+        and case.mode is None
+        and case.options is None
+    )
+
+
+def _benchmark_public_cases(corpus_module):
+    return tuple(
+        case
+        for case in corpus_module.COMPILE_CORPUS
+        if _case_is_native_eager_benchmark_supported(case)
+    )
+
+
+def _benchmark_held_out_cases(corpus_module):
+    return tuple(
+        case
+        for case in getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ())
+        if _case_is_native_eager_benchmark_supported(case)
+    )
 
 
 def _variant_applies_to_case(variant, case):
@@ -886,8 +912,8 @@ def _geomean(values):
 def _coverage_denominator(corpus_module, selected_cases):
     category_weights = dict(corpus_module.CATEGORY_WEIGHTS)
     selected_names = {case.name for case in selected_cases}
-    public_cases = tuple(corpus_module.COMPILE_CORPUS)
-    held_out_cases = tuple(getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ()))
+    public_cases = _benchmark_public_cases(corpus_module)
+    held_out_cases = _benchmark_held_out_cases(corpus_module)
 
     supported_categories = []
     zero_credit_categories = []
@@ -1010,6 +1036,31 @@ def _select_named(items, selected_names, *, item_kind):
     return tuple(by_name[name] for name in selected_names)
 
 
+def _select_benchmark_cases(corpus_module, selected_names):
+    supported_cases = _benchmark_public_cases(corpus_module)
+    if not selected_names:
+        return supported_cases
+
+    all_public_cases = {case.name: case for case in corpus_module.COMPILE_CORPUS}
+    supported_names = {case.name for case in supported_cases}
+    unsupported = [
+        name
+        for name in selected_names
+        if name in all_public_cases and name not in supported_names
+    ]
+    if unsupported:
+        raise SystemExit(
+            "unsupported native eager benchmark case: "
+            f"{', '.join(unsupported)}. The CPU benchmark only times public "
+            "cases supported by the current native eager/fullgraph torch_rs path."
+        )
+    return _select_named(
+        supported_cases,
+        selected_names,
+        item_kind="native eager benchmark-supported case",
+    )
+
+
 def _output_path(path):
     resolved = path.resolve()
     try:
@@ -1057,7 +1108,7 @@ def run_benchmark(args):
         )
 
     _configure_reference_threads(reference_torch, args.threads)
-    cases = _select_named(corpus_module.COMPILE_CORPUS, args.cases, item_kind="case")
+    cases = _select_benchmark_cases(corpus_module, args.cases)
     variants = _select_named(INPUT_VARIANTS, args.variants, item_kind="variant")
 
     gc_was_enabled = gc.isenabled()
@@ -1086,7 +1137,7 @@ def run_benchmark(args):
         "environment": _environment(
             torch_rs,
             reference_torch,
-            corpus_module.COMPILE_CORPUS_VERSION,
+            BENCHMARK_CORPUS_VERSION,
             args,
         ),
         "corpus": _corpus_metadata(corpus_module),
@@ -1591,7 +1642,7 @@ def _validate_expected_artifact_shape(report):
     errors = []
     corpus_module = _load_compile_corpus_module()
     current_corpus = _corpus_metadata(corpus_module)
-    current_corpus_version = getattr(corpus_module, "COMPILE_CORPUS_VERSION", None)
+    current_corpus_version = BENCHMARK_CORPUS_VERSION
     category_weights = dict(corpus_module.CATEGORY_WEIGHTS)
 
     environment = report.get("environment", {})
