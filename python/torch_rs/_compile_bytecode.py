@@ -26,6 +26,18 @@ class _BytecodeConstant:
 
 
 @dataclass(frozen=True, slots=True)
+class _BytecodeFunction:
+    function: object
+    name: str
+
+
+@dataclass(slots=True)
+class _LoweringState:
+    root_program: object
+    helper_call_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class _MethodTarget:
     kind: str
     target: str
@@ -120,7 +132,6 @@ _OPCODE_FORMS = (
                 "IMPORT_FROM",
                 "IMPORT_NAME",
                 "LOAD_BUILD_CLASS",
-                "LOAD_GLOBAL",
                 "LOAD_NAME",
                 "STORE_GLOBAL",
                 "STORE_NAME",
@@ -178,9 +189,11 @@ _OPCODE_FORMS = (
     _OpcodeForm("store", frozenset(("STORE_FAST",))),
     _OpcodeForm("store_load", frozenset(("STORE_FAST_LOAD_FAST",))),
     _OpcodeForm("store_store", frozenset(("STORE_FAST_STORE_FAST",))),
+    _OpcodeForm("load_global", frozenset(("LOAD_GLOBAL",))),
     _OpcodeForm("load_method", frozenset(("LOAD_ATTR", "LOAD_METHOD"))),
     _OpcodeForm("call", frozenset(("CALL", "CALL_FUNCTION", "CALL_METHOD"))),
     _OpcodeForm("precall", frozenset(("PRECALL",))),
+    _OpcodeForm("push_null", frozenset(("PUSH_NULL",))),
     _OpcodeForm("load_const", frozenset(("LOAD_CONST",))),
     _OpcodeForm("binary", frozenset(("BINARY_ADD", "BINARY_OP", "INPLACE_ADD"))),
     _OpcodeForm("unary_neg", frozenset(("UNARY_NEGATIVE",))),
@@ -237,6 +250,52 @@ def _validate_program(program):
             "handling"
         )
     return code
+
+
+def _validate_helper_function(root_program, helper, program, instruction):
+    if _builtins.type(helper) is not _types.FunctionType:
+        _unsupported_bytecode(program, instruction, "global or import access")
+    if helper.__defaults__ is not None or helper.__kwdefaults__ is not None:
+        _unsupported_bytecode(program, instruction, "helper function defaults")
+    code = helper.__code__
+    if helper.__closure__ is not None or code.co_freevars or code.co_cellvars:
+        raise _trace.CompileTraceUnsupportedError(
+            "torch.compile trace bytecode lowering does not support closures"
+        )
+    if (
+        helper.__globals__ is not root_program.__globals__
+        or helper.__module__ != root_program.__module__
+    ):
+        _unsupported_bytecode(program, instruction, "global or import access")
+    helper_name = helper.__name__
+    if (
+        not _builtins.isinstance(helper_name, _builtins.str)
+        or root_program.__globals__.get(helper_name) is not helper
+    ):
+        _unsupported_bytecode(program, instruction, "global or import access")
+    return _validate_program(helper)
+
+
+def _global_name(program, instruction):
+    name = instruction.argval
+    if _builtins.isinstance(name, _builtins.str) and name:
+        return name
+
+    argrepr = _builtins.str(instruction.argrepr).strip()
+    if argrepr.startswith("NULL + "):
+        argrepr = argrepr[7:].strip()
+    if argrepr:
+        return argrepr
+    _unsupported_bytecode(program, instruction, "global operand decoding")
+
+
+def _resolve_global_helper(state, program, instruction, name):
+    try:
+        helper = program.__globals__[name]
+    except KeyError:
+        _unsupported_bytecode(program, instruction, "global or import access")
+    _validate_helper_function(state.root_program, helper, program, instruction)
+    return helper
 
 
 def _pop(stack, program, instruction):
@@ -303,7 +362,31 @@ def _load_attr_pushes_method(instruction):
     return instruction.argval in _BYTECODE_METHOD_NAMES
 
 
-def _handle_load_method(recorder, locals, stack, program, instruction):
+def _handle_load_global(
+    recorder,
+    locals,
+    stack,
+    program,
+    instruction,
+    state,
+    active,
+):
+    del recorder, locals, active
+    name = _global_name(program, instruction)
+    helper = _resolve_global_helper(state, program, instruction, name)
+    stack.append(_BytecodeFunction(helper, name))
+
+
+def _handle_load_method(
+    recorder,
+    locals,
+    stack,
+    program,
+    instruction,
+    state,
+    active,
+):
+    del state, active
     if not _load_attr_pushes_method(instruction):
         _unsupported_bytecode(program, instruction, "attribute access")
     receiver = _require_tensor(
@@ -313,6 +396,25 @@ def _handle_load_method(recorder, locals, stack, program, instruction):
         f"Tensor.{instruction.argval} receiver",
     )
     stack.append(_BytecodeMethod(receiver, _builtins.str(instruction.argval)))
+
+
+def _lower_function_body(recorder, locals, stack, program, state, active):
+    for instruction in _dis.get_instructions(program):
+        output = _lower_instruction(
+            recorder,
+            locals,
+            stack,
+            program,
+            instruction,
+            state,
+            active,
+        )
+        if output is not None:
+            return output
+
+    raise _trace.CompileTraceUnsupportedError(
+        "torch.compile trace bytecode lowering did not find a Tensor return"
+    )
 
 
 def _record_method_call(recorder, method, args, program, instruction):
@@ -349,22 +451,82 @@ def _record_method_call(recorder, method, args, program, instruction):
     )
 
 
-def _handle_call(recorder, locals, stack, program, instruction):
+def _record_function_call(
+    recorder,
+    function,
+    args,
+    program,
+    instruction,
+    state,
+    active,
+):
+    helper = function.function
+    if helper in active:
+        _unsupported_bytecode(program, instruction, "recursive helper function calls")
+    if state.helper_call_count >= 1:
+        _unsupported_bytecode(program, instruction, "helper function calls")
+    helper_code = _validate_helper_function(
+        state.root_program,
+        helper,
+        program,
+        instruction,
+    )
+    if len(args) != helper_code.co_argcount:
+        _unsupported_bytecode(
+            program,
+            instruction,
+            f"helper function argument count {len(args)}",
+        )
+    helper_locals = {}
+    for index, arg in enumerate(args):
+        helper_locals[helper_code.co_varnames[index]] = _require_tensor(
+            arg,
+            program,
+            instruction,
+            f"helper argument {index}",
+        )
+    state.helper_call_count += 1
+    return _lower_function_body(
+        recorder,
+        helper_locals,
+        [],
+        helper,
+        state,
+        (*active, helper),
+    )
+
+
+def _handle_call(recorder, locals, stack, program, instruction, state, active):
+    del locals
     argument_count = instruction.arg or 0
     args = [_pop(stack, program, instruction) for _ in range(argument_count)]
     args.reverse()
     callable_value = _pop(stack, program, instruction)
-    if not _builtins.isinstance(callable_value, _BytecodeMethod):
-        _unsupported_bytecode(program, instruction, "function calls")
-    stack.append(
-        _record_method_call(
-            recorder,
-            callable_value,
-            tuple(args),
-            program,
-            instruction,
+    if _builtins.isinstance(callable_value, _BytecodeMethod):
+        stack.append(
+            _record_method_call(
+                recorder,
+                callable_value,
+                tuple(args),
+                program,
+                instruction,
+            )
         )
-    )
+        return
+    if _builtins.isinstance(callable_value, _BytecodeFunction):
+        stack.append(
+            _record_function_call(
+                recorder,
+                callable_value,
+                tuple(args),
+                program,
+                instruction,
+                state,
+                active,
+            )
+        )
+        return
+    _unsupported_bytecode(program, instruction, "function calls")
 
 
 def _record_binary_add(recorder, stack, program, instruction):
@@ -391,7 +553,8 @@ def _binary_operator_symbol(instruction):
     return instruction.argrepr
 
 
-def _handle_binary(recorder, locals, stack, program, instruction):
+def _handle_binary(recorder, locals, stack, program, instruction, state, active):
+    del locals, state, active
     symbol = _binary_operator_symbol(instruction)
     if symbol == "+":
         _record_binary_add(recorder, stack, program, instruction)
@@ -401,7 +564,8 @@ def _handle_binary(recorder, locals, stack, program, instruction):
     _unsupported_bytecode(program, instruction, f"binary operator {symbol!r}")
 
 
-def _handle_unary_neg(recorder, locals, stack, program, instruction):
+def _handle_unary_neg(recorder, locals, stack, program, instruction, state, active):
+    del locals, state, active
     input = _require_tensor(
         _pop(stack, program, instruction),
         program,
@@ -411,7 +575,8 @@ def _handle_unary_neg(recorder, locals, stack, program, instruction):
     stack.append(recorder.record_unary("neg", input))
 
 
-def _handle_return(recorder, locals, stack, program, instruction):
+def _handle_return(recorder, locals, stack, program, instruction, state, active):
+    del recorder, locals, state, active
     if instruction.opname == "RETURN_CONST":
         _unsupported_bytecode(program, instruction, "non-Tensor return value")
     output = _require_tensor(
@@ -425,39 +590,70 @@ def _handle_return(recorder, locals, stack, program, instruction):
     return output
 
 
-def _handle_local_load(recorder, locals, stack, program, instruction):
+def _handle_local_load(recorder, locals, stack, program, instruction, state, active):
+    del recorder, state, active
     (name,) = _local_names(program, instruction, 1)
     _load_local(locals, stack, program, instruction, name)
 
 
-def _handle_local_load_pair(recorder, locals, stack, program, instruction):
+def _handle_local_load_pair(
+    recorder,
+    locals,
+    stack,
+    program,
+    instruction,
+    state,
+    active,
+):
+    del recorder, state, active
     first_name, second_name = _local_names(program, instruction, 2)
     _load_local(locals, stack, program, instruction, first_name)
     _load_local(locals, stack, program, instruction, second_name)
 
 
-def _handle_store(recorder, locals, stack, program, instruction):
+def _handle_store(recorder, locals, stack, program, instruction, state, active):
+    del recorder, state, active
     (name,) = _local_names(program, instruction, 1)
     _store_local(locals, stack, program, instruction, name)
 
 
-def _handle_store_load(recorder, locals, stack, program, instruction):
+def _handle_store_load(
+    recorder,
+    locals,
+    stack,
+    program,
+    instruction,
+    state,
+    active,
+):
+    del recorder, state, active
     store_name, load_name = _local_names(program, instruction, 2)
     _store_local(locals, stack, program, instruction, store_name)
     _load_local(locals, stack, program, instruction, load_name)
 
 
-def _handle_store_store(recorder, locals, stack, program, instruction):
+def _handle_store_store(
+    recorder,
+    locals,
+    stack,
+    program,
+    instruction,
+    state,
+    active,
+):
+    del recorder, state, active
     first_name, second_name = _local_names(program, instruction, 2)
     _store_local(locals, stack, program, instruction, first_name)
     _store_local(locals, stack, program, instruction, second_name)
 
 
-def _handle_load_const(recorder, locals, stack, program, instruction):
+def _handle_load_const(recorder, locals, stack, program, instruction, state, active):
+    del recorder, locals, program, state, active
     stack.append(_BytecodeConstant(instruction.argval))
 
 
-def _handle_noop(recorder, locals, stack, program, instruction):
+def _handle_noop(recorder, locals, stack, program, instruction, state, active):
+    del recorder, locals, stack, program, instruction, state, active
     return None
 
 
@@ -468,9 +664,11 @@ _OPCODE_HANDLERS = {
     "store": _handle_store,
     "store_load": _handle_store_load,
     "store_store": _handle_store_store,
+    "load_global": _handle_load_global,
     "load_method": _handle_load_method,
     "call": _handle_call,
     "precall": _handle_noop,
+    "push_null": _handle_noop,
     "load_const": _handle_load_const,
     "binary": _handle_binary,
     "unary_neg": _handle_unary_neg,
@@ -478,9 +676,17 @@ _OPCODE_HANDLERS = {
 }
 
 
-def _lower_instruction(recorder, locals, stack, program, instruction):
+def _lower_instruction(recorder, locals, stack, program, instruction, state, active):
     kind = _instruction_form(program, instruction)
-    return _OPCODE_HANDLERS[kind](recorder, locals, stack, program, instruction)
+    return _OPCODE_HANDLERS[kind](
+        recorder,
+        locals,
+        stack,
+        program,
+        instruction,
+        state,
+        active,
+    )
 
 
 def lower_compile_graph(program, input_metadatas, *, name=None):
@@ -522,15 +728,9 @@ def lower_compile_graph(program, input_metadatas, *, name=None):
             requires_grad=input_metadata.requires_grad,
         )
     stack = []
-
-    for instruction in _dis.get_instructions(program):
-        output = _lower_instruction(recorder, locals, stack, program, instruction)
-        if output is not None:
-            return recorder.finish(output)
-
-    raise _trace.CompileTraceUnsupportedError(
-        "torch.compile trace bytecode lowering did not find a Tensor return"
-    )
+    state = _LoweringState(root_program=program)
+    output = _lower_function_body(recorder, locals, stack, program, state, (program,))
+    return recorder.finish(output)
 
 
 def lower_one_input_compile_graph(program, input_metadata, *, name=None):

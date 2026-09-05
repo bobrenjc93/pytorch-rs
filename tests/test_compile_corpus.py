@@ -17,7 +17,7 @@ except ImportError:
 
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-COMPILE_CORPUS_VERSION = "torch_compile_corpus_v8"
+COMPILE_CORPUS_VERSION = "torch_compile_corpus_v9"
 
 CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -82,6 +82,23 @@ def cpu_float32_detach_alias_view(x):
 def cpu_float32_decomposition_square_scalar(x):
     squared = x.square()
     return squared.add(x.abs())
+
+
+def cpu_float32_custom_helper_unary(x):
+    return x.neg().abs().relu().detach()
+
+
+def cpu_float32_custom_function_unary(x):
+    return cpu_float32_custom_helper_unary(x).add(x.abs())
+
+
+def cpu_float32_heldout_custom_helper_binary(x, y):
+    z = x.detach().add(y.neg())
+    return z.relu()
+
+
+def cpu_float32_heldout_custom_function_binary(x, y):
+    return cpu_float32_heldout_custom_helper_binary(x, y).abs()
 
 
 def cpu_float32_training_unary_neg_abs_add(x):
@@ -560,6 +577,12 @@ COMPILE_CORPUS = (
         make_inputs=cpu_float32_scalar_inputs,
     ),
     CompileCorpusCase(
+        name="cpu_float32_custom_function_unary",
+        category="custom_functions",
+        program=cpu_float32_custom_function_unary,
+        make_inputs=cpu_float32_unary_inputs,
+    ),
+    CompileCorpusCase(
         name="cpu_float32_matrix_vector_add",
         category="broadcasting",
         program=cpu_float32_matrix_vector_add,
@@ -645,6 +668,12 @@ COMPILE_HELD_OUT_CORPUS = (
         category="decompositions",
         program=cpu_float32_heldout_decomposition_square_noncontiguous,
         make_inputs=cpu_float32_recompile_guard_unary_stride_inputs,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_heldout_custom_function_binary",
+        category="custom_functions",
+        program=cpu_float32_heldout_custom_function_binary,
+        make_inputs=cpu_float32_matrix_vector_inputs,
     ),
     CompileCorpusCase(
         name="cpu_float32_heldout_guard_unary_metadata",
@@ -969,10 +998,10 @@ def assert_leaf_gradients_unchanged(testcase, inputs, before_gradients, *, case)
 
 class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
-        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v8")
+        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v9")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(len(COMPILE_CORPUS), 16)
-        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 8)
+        self.assertEqual(len(COMPILE_CORPUS), 17)
+        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 9)
 
         case_names = [case.name for case in COMPILE_CORPUS]
         self.assertEqual(
@@ -987,6 +1016,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_detach_alias_view",
                 "cpu_float32_training_unary_neg_abs_add",
                 "cpu_float32_decomposition_square_scalar",
+                "cpu_float32_custom_function_unary",
                 "cpu_float32_matrix_vector_add",
                 "cpu_float32_matrix_vector_add_method",
                 "cpu_float32_tensor_scalar_add",
@@ -1006,6 +1036,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_heldout_inference_relu_broadcast_no_grad",
                 "cpu_float32_heldout_detach_alias_view",
                 "cpu_float32_heldout_decomposition_square_noncontiguous",
+                "cpu_float32_heldout_custom_function_binary",
                 "cpu_float32_heldout_guard_unary_metadata",
                 "cpu_float32_heldout_guard_binary_metadata",
             ],
@@ -1021,6 +1052,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "mutation_aliasing_views",
                 "training_autograd",
                 "decompositions",
+                "custom_functions",
                 "recompilation_guards",
             },
         )
@@ -1053,6 +1085,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                         "mutation_aliasing_views",
                         "training_autograd",
                         "decompositions",
+                        "custom_functions",
                         "recompilation_guards",
                     },
                 )
@@ -1298,6 +1331,11 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 ["square", "abs", "add"],
             ),
             (
+                cpu_float32_custom_function_unary,
+                cpu_float32_unary_inputs,
+                ["neg", "abs", "relu", "detach", "abs", "add"],
+            ),
+            (
                 cpu_float32_training_unary_neg_abs_add,
                 cpu_float32_training_unary_requires_grad_inputs,
                 ["neg", "abs", "neg", "add"],
@@ -1337,6 +1375,11 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 cpu_float32_recompile_guard_unary_inputs,
                 ["abs", "neg", "add"],
             ),
+            (
+                cpu_float32_heldout_custom_function_binary,
+                cpu_float32_matrix_vector_inputs,
+                ["detach", "neg", "add", "relu", "abs"],
+            ),
         )
         for program, make_inputs, expected_targets in cases:
             with self.subTest(program=program.__name__):
@@ -1364,6 +1407,72 @@ class CompileCorpusTraceTests(unittest.TestCase):
                     graph.forward(*inputs),
                     expected,
                     case=program.__name__,
+                )
+
+    def test_bytecode_lowerer_inlines_custom_function_helpers_without_calls(self):
+        cases = (
+            (
+                cpu_float32_custom_function_unary,
+                cpu_float32_custom_helper_unary,
+                cpu_float32_unary_inputs,
+                ["neg", "abs", "relu", "detach", "abs", "add"],
+            ),
+            (
+                cpu_float32_heldout_custom_function_binary,
+                cpu_float32_heldout_custom_helper_binary,
+                cpu_float32_matrix_vector_inputs,
+                ["detach", "neg", "add", "relu", "abs"],
+            ),
+        )
+        for program, helper, make_inputs, expected_targets in cases:
+            with self.subTest(program=program.__name__):
+                inputs = make_inputs(torch)
+                metadata = tuple(
+                    _compile_trace._metadata_from_native_tensor(input)
+                    for input in inputs
+                )
+                graph = _compile_bytecode.lower_compile_graph(
+                    program,
+                    metadata,
+                    name=program.__name__,
+                )
+                expected = program(*inputs)
+
+                self.assertEqual(
+                    [operation.target for operation in graph.operations],
+                    expected_targets,
+                )
+                self.assert_native_tensor_matches(
+                    graph.forward(*inputs),
+                    expected,
+                    case=program.__name__,
+                )
+
+                compiled = torch.compile(program, backend="eager", fullgraph=True)
+                calls = {"program": 0, "helper": 0}
+                original_profile = sys.getprofile()
+
+                def count_user_calls(frame, event, arg):
+                    if event == "call":
+                        if frame.f_code is program.__code__:
+                            calls["program"] += 1
+                        if frame.f_code is helper.__code__:
+                            calls["helper"] += 1
+                    if original_profile is not None:
+                        original_profile(frame, event, arg)
+                    return count_user_calls
+
+                try:
+                    sys.setprofile(count_user_calls)
+                    actual = compiled(*inputs)
+                finally:
+                    sys.setprofile(original_profile)
+
+                self.assertEqual(calls, {"program": 0, "helper": 0})
+                self.assert_native_tensor_matches(
+                    actual,
+                    expected,
+                    case=f"{program.__name__}/compiled",
                 )
 
     def test_bytecode_lowerer_accepts_cpython_314_borrowed_local_loads(self):
@@ -2648,6 +2757,12 @@ def square_decomposition(x):
     squared = x.square()
     return squared.add(x.abs())
 
+def custom_helper(x):
+    return x.neg().abs().relu().detach()
+
+def custom_function(x):
+    return custom_helper(x).add(x.abs())
+
 def detach_alias(x):
     return x.detach()
 
@@ -2787,6 +2902,34 @@ for actual in (
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
+custom_graph = _compile_trace.trace_one_input_compile_graph(
+    custom_function,
+    make_inputs,
+    name="cpu_float32_custom_function",
+)
+assert custom_graph.output == "add_5"
+assert [operation.target for operation in custom_graph.operations] == [
+    "neg",
+    "abs",
+    "relu",
+    "detach",
+    "abs",
+    "add",
+]
+custom_expected = custom_function(native_input)
+for actual in (
+    custom_graph.forward(native_input),
+    _compile_trace.execute_compile_trace_graph(custom_graph, native_input),
+):
+    assert actual.tolist() == custom_expected.tolist()
+    assert actual.shape == custom_expected.shape
+    assert actual.stride() == custom_expected.stride()
+    assert actual.dtype is custom_expected.dtype
+    assert actual.device == custom_expected.device
+    assert actual.requires_grad is custom_expected.requires_grad
+assert backend_calls == []
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
 detach_graph = _compile_trace.trace_one_input_compile_graph(
     detach_alias,
     make_detach_inputs,
@@ -2879,6 +3022,17 @@ assert compiled_square_actual.requires_grad is square_expected.requires_grad
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
+compiled_custom = torch.compile(custom_function, backend="eager", fullgraph=True)
+compiled_custom_actual = compiled_custom(native_input)
+assert compiled_custom_actual.tolist() == custom_expected.tolist()
+assert compiled_custom_actual.shape == custom_expected.shape
+assert compiled_custom_actual.stride() == custom_expected.stride()
+assert compiled_custom_actual.dtype is custom_expected.dtype
+assert compiled_custom_actual.device == custom_expected.device
+assert compiled_custom_actual.requires_grad is custom_expected.requires_grad
+assert backend_calls == []
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
 compiled = torch.compile(self_add, backend="eager", fullgraph=True)
 compiled_actual = compiled(native_input)
 assert compiled_actual.tolist() == self_add_expected.tolist()
@@ -2952,7 +3106,8 @@ try:
 except NotImplementedError as error:
     assert str(error) == (
         "torch.compile(): only backend='eager', fullgraph=True straight-line "
-        "Tensor neg/abs/relu/square/detach/add functions with one or two positional exact "
+        "Tensor neg/abs/relu/square/detach/add functions, optionally inlining one "
+        "exact same-module helper call, with one or two positional exact "
         "native CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
         "forwarding, callable backend invocation, CUDA compilation, and broader "
         "graph capture remain unsupported"

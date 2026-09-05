@@ -15,7 +15,8 @@ from torch_rs import _compiler_state as _state
 
 UNSUPPORTED_MESSAGE = (
     "torch.compile(): only backend='eager', fullgraph=True straight-line "
-    "Tensor neg/abs/relu/square/detach/add functions with one or two positional exact "
+    "Tensor neg/abs/relu/square/detach/add functions, optionally inlining one "
+    "exact same-module helper call, with one or two positional exact "
     "native CPU float32 Tensor are supported; eager fallback, installed-PyTorch "
     "forwarding, callable backend invocation, CUDA compilation, and broader "
     "graph capture remain unsupported"
@@ -23,6 +24,42 @@ UNSUPPORTED_MESSAGE = (
 
 
 EAGER_COMPILE_MODEL_CALLS = []
+
+
+def eager_compile_inline_helper(value):
+    return value.neg().relu()
+
+
+def eager_compile_inline_add_helper(value, other):
+    return value.abs().add(other.detach())
+
+
+def eager_compile_helper_with_default(value, other=None):
+    del other
+    return value.neg()
+
+
+def eager_compile_helper_with_kwargs(value, **kwargs):
+    del kwargs
+    return value.neg()
+
+
+def eager_compile_closure_helper_factory():
+    enabled = True
+
+    def helper(value):
+        if enabled:
+            return value.neg()
+        return value
+
+    return helper
+
+
+eager_compile_closure_helper = eager_compile_closure_helper_factory()
+
+
+def eager_compile_recursive_helper(value):
+    return eager_compile_recursive_helper(value)
 
 
 def eager_compile_global_side_effect(value):
@@ -288,6 +325,55 @@ class TorchCompileEntrypointTests(unittest.TestCase):
 
         self.assertIs(compiled.__wrapped__, program)
         self.assertIs(compiled._torch_rs_compile_backend, "eager")
+        self.assertEqual(actual.tolist(), expected.tolist())
+        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+        self.assertEqual(actual.stride(), expected.stride())
+        self.assertIs(actual.dtype, expected.dtype)
+        self.assertEqual(actual.device, expected.device)
+
+    def test_eager_fullgraph_inlines_same_module_helper_without_running_user_code(self):
+        def program(x):
+            return eager_compile_inline_helper(x).add(x.abs())
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([[-2.0, 0.5, 3.0], [4.25, -5.5, 6.0]])
+        expected = program(input)
+        original_profile = sys.getprofile()
+        calls = {"program": 0, "helper": 0}
+
+        def count_user_calls(frame, event, arg):
+            if event == "call":
+                if frame.f_code is program.__code__:
+                    calls["program"] += 1
+                if frame.f_code is eager_compile_inline_helper.__code__:
+                    calls["helper"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_user_calls
+
+        try:
+            sys.setprofile(count_user_calls)
+            actual = compiled(input)
+        finally:
+            sys.setprofile(original_profile)
+
+        self.assertEqual(calls, {"program": 0, "helper": 0})
+        self.assertEqual(actual.tolist(), expected.tolist())
+        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+        self.assertEqual(actual.stride(), expected.stride())
+        self.assertIs(actual.dtype, expected.dtype)
+        self.assertEqual(actual.device, expected.device)
+
+    def test_eager_fullgraph_inlines_two_argument_helper_natively(self):
+        def program(x, y):
+            return eager_compile_inline_add_helper(x, y).relu()
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        left = torch.tensor([[-2.0, 0.5, 3.0], [4.25, -5.5, 6.0]])
+        right = torch.tensor([[1.0, -2.0, 0.25], [3.0, -4.0, 5.0]])
+        expected = program(left, right)
+        actual = compiled(left, right)
+
         self.assertEqual(actual.tolist(), expected.tolist())
         self.assertEqual(tuple(actual.shape), tuple(expected.shape))
         self.assertEqual(actual.stride(), expected.stride())
@@ -851,6 +937,27 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         def global_call(value):
             return torch.abs(value)
 
+        def helper_global_side_effect(value):
+            return eager_compile_global_side_effect(value)
+
+        def helper_default(value):
+            return eager_compile_helper_with_default(value)
+
+        def helper_var_kwargs(value):
+            return eager_compile_helper_with_kwargs(value)
+
+        def helper_closure(value):
+            return eager_compile_closure_helper(value)
+
+        def helper_non_tensor_argument(value):
+            return eager_compile_inline_add_helper(value, 1.0)
+
+        def recursive_helper_call(value):
+            return eager_compile_recursive_helper(value)
+
+        def nested_helper_call(value):
+            return eager_compile_inline_helper(eager_compile_inline_helper(value))
+
         def control_flow(value):
             if value:
                 return value
@@ -873,6 +980,33 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         cases = (
             ("closure", closure_factory(), "closures"),
             ("global", global_call, "global or import access"),
+            (
+                "helper global side effect",
+                helper_global_side_effect,
+                "global or import access",
+            ),
+            ("helper default", helper_default, "helper function defaults"),
+            (
+                "helper var kwargs",
+                helper_var_kwargs,
+                "one or two positional Tensor arguments",
+            ),
+            ("helper closure", helper_closure, "closures"),
+            (
+                "helper non tensor argument",
+                helper_non_tensor_argument,
+                "non-Tensor helper argument 1",
+            ),
+            (
+                "recursive helper",
+                recursive_helper_call,
+                "recursive helper function calls",
+            ),
+            (
+                "nested helper",
+                nested_helper_call,
+                "helper function calls",
+            ),
             (
                 "global side effect",
                 eager_compile_global_side_effect,
