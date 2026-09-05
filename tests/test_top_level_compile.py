@@ -15,7 +15,8 @@ from torch_rs import _compiler_state as _state
 
 
 UNSUPPORTED_MESSAGE = (
-    "torch.compile(): only backend='eager', fullgraph=True straight-line "
+    "torch.compile(): only backend='eager', fullgraph=True or no-break "
+    "fullgraph=False straight-line "
     "Tensor neg/abs/relu/square/detach/float/add functions, plus one top-level "
     "if over an input Tensor.requires_grad selecting from that same subset, "
     "optionally inlining one exact same-module helper call and reading "
@@ -347,6 +348,61 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         self.assertIs(compiled.__wrapped__, program)
         self.assertIs(compiled._torch_rs_compile_backend, "eager")
         self.assertEqual(actual.tolist(), expected.tolist())
+        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+        self.assertEqual(actual.stride(), expected.stride())
+        self.assertIs(actual.dtype, expected.dtype)
+        self.assertEqual(actual.device, expected.device)
+
+    def test_eager_fullgraph_false_executes_no_break_program_natively(self):
+        def program(x):
+            y = x.neg()
+            return y.abs().add(x.relu())
+
+        input = torch.tensor([[-2.0, 0.5, 3.0], [4.25, -5.5, 6.0]])
+        expected = program(input)
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        lower_calls = []
+
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            lower_calls.append((requested_program, input_metadata))
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+
+        compiled = torch.compile(program, backend="eager", fullgraph=False)
+        self.assertIs(compiled._torch_rs_compile_fullgraph, False)
+        original_profile = sys.getprofile()
+        program_calls = {"count": 0}
+
+        def count_program_calls(frame, event, arg):
+            if event == "call" and frame.f_code is program.__code__:
+                program_calls["count"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_program_calls
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            sys.setprofile(count_program_calls)
+            actual = compiled(input)
+            cache_hit = compiled(input)
+        finally:
+            sys.setprofile(original_profile)
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+        self.assertEqual(program_calls["count"], 0)
+        self.assertEqual(len(lower_calls), 1)
+        self.assertEqual(actual.tolist(), expected.tolist())
+        self.assertEqual(cache_hit.tolist(), expected.tolist())
         self.assertEqual(tuple(actual.shape), tuple(expected.shape))
         self.assertEqual(actual.stride(), expected.stride())
         self.assertIs(actual.dtype, expected.dtype)
@@ -1893,6 +1949,42 @@ class TorchCompileEntrypointTests(unittest.TestCase):
                 with self.assertRaisesRegex(NotImplementedError, message):
                     compiled(input)
                 self.assertEqual(calls, [])
+                self.assertEqual(EAGER_COMPILE_MODEL_CALLS, [])
+
+    def test_eager_fullgraph_false_rejects_graph_breaks_without_fallback(self):
+        def side_effect_then_supported(value):
+            EAGER_COMPILE_MODEL_CALLS.append("ran")
+            return value + value
+
+        def unsupported_op(value):
+            return value.sqrt()
+
+        input = torch.tensor([1.0, -2.0], dtype=torch.float32)
+        EAGER_COMPILE_MODEL_CALLS.clear()
+        for case, program, message in (
+            ("side effect", side_effect_then_supported, "global or import access"),
+            ("unsupported op", unsupported_op, "Tensor.sqrt"),
+        ):
+            with self.subTest(case=case):
+                compiled = torch.compile(program, backend="eager", fullgraph=False)
+                original_profile = sys.getprofile()
+                program_calls = {"count": 0}
+
+                def count_program_calls(frame, event, arg):
+                    if event == "call" and frame.f_code is program.__code__:
+                        program_calls["count"] += 1
+                    if original_profile is not None:
+                        original_profile(frame, event, arg)
+                    return count_program_calls
+
+                try:
+                    sys.setprofile(count_program_calls)
+                    with self.assertRaisesRegex(NotImplementedError, message):
+                        compiled(input)
+                finally:
+                    sys.setprofile(original_profile)
+
+                self.assertEqual(program_calls["count"], 0)
                 self.assertEqual(EAGER_COMPILE_MODEL_CALLS, [])
 
     def test_eager_fullgraph_rejects_two_input_unsupported_forms(self):

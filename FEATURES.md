@@ -85,9 +85,10 @@ Within an area, coverage includes ordinary use plus error behavior, empty tensor
 The compilation row's eager JIT helper coverage explicitly includes tested `torch.jit.annotate`, `torch.jit.export`, `torch.jit.ignore`, `torch.jit.unused`, `torch.jit.is_scripting`, `torch.jit.is_tracing`, `torch.jit.script_if_tracing`, and `torch.jit.optimized_execution` behavior. In scope are eager pass-through/no-op/state-query semantics, decorator marker attributes without changing Python call behavior, import and wildcard boundaries, canonical copy/pickle ownership, ordinary stateless reload behavior, and the boundary that TorchScript modules, `torch.jit.script`, `torch.jit.trace`, compilation/tracing execution, graph execution, graph executor optimization, `torch.jit.fork`, `torch.jit.wait`, and `torch.export` graph capture remain unsupported.
 
 The same row includes the public `torch.compile(..., backend="eager",
-fullgraph=True)` subset for exact one-argument Python functions whose
-straight-line bytecode is limited to native CPU `float32` Tensor `neg`, `abs`,
-`relu`, `square`, `detach`, zero-argument `float`, and binary `add` compositions, plus two-argument
+fullgraph=True)` and no-break `fullgraph=False` subset for exact one-argument
+Python functions whose straight-line bytecode is limited to native CPU
+`float32` Tensor `neg`, `abs`, `relu`, `square`, `detach`, zero-argument
+`float`, and binary `add` compositions, plus two-argument
 broadcasting programs, one exact same-module helper call over the same
 operation set, module-global exact native CPU `float32` Tensor constants, and
 tuple/list output pytrees with Tensor leaves. The compile corpus includes
@@ -95,11 +96,12 @@ no-grad ReLU inference graphlets, square decomposition graphlets,
 custom-function helper graphlets, module-global Tensor buffer graphlets,
 tuple/list output-pytree graphlets, storage-aliasing detach graphlets, and
 zero-argument `Tensor.float()` identity graphlets over grad-requiring CPU
-`float32` inputs and verifies that captured globals preserve values and
-metadata, detach outputs do not require gradients and share storage with the
-input view, `Tensor.float()` outputs preserve values, shape, stride, storage
-offset, dtype, device, and `requires_grad`, and input gradients remain
-unchanged.
+`float32` inputs, plus no-break `fullgraph=False` graphlets in the
+graph-break/fullgraph category. The corpus verifies that captured globals
+preserve values and metadata, detach outputs do not require gradients and share
+storage with the input view, `Tensor.float()` outputs preserve values, shape,
+stride, storage offset, dtype, device, and `requires_grad`, and input gradients
+remain unchanged.
 Its per-wrapper graph cache is guarded on input shape, stride, dtype, device,
 and `requires_grad` plus captured-global identity and metadata, is bounded by
 exact non-negative integer `recompile_limit` values, and uses an internal
@@ -108,5 +110,5 @@ default cap when
 `torch.compiler.reset()` clears those per-wrapper native graph caches without
 changing the configured default backend. Unsupported compiler programs and
 `isolate_recompiles=True` fail before user code runs and without active
-`__torch_function__` modes, forwarding to installed PyTorch, eager fallback,
-callable backend invocation, or unguarded graph caching.
+`__torch_function__` modes, forwarding to installed PyTorch, graph-break eager
+fallback, callable backend invocation, or unguarded graph caching.
