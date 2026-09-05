@@ -173,6 +173,24 @@ EXPECTED_V9_CASE_MANIFEST = (
         "run_under_no_grad": False,
     },
     {
+        "name": "cpu_float32_float_identity_view",
+        "held_out": False,
+        "category": "dtype_device_transitions",
+        "program": "cpu_float32_float_identity_view",
+        "program_sha256": "8ba3f0f1ac4bb7d96a2509a397daddb511b83f15a7b252eb1504fc20d0f34895",
+        "make_inputs": "cpu_float32_float_identity_view_inputs",
+        "make_inputs_sha256": "bdd401b4335ce587640c7409f5fee7802733415eb3c5220025fa2ee2bf648bd6",
+        "inputs_sha256": "924af58460b92ff3526e16d8cdbf6cd6862e3850c206e4d1dcbfb086df93e661",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
         "name": "cpu_float32_training_unary_neg_abs_add",
         "held_out": False,
         "category": "training_autograd",
@@ -433,6 +451,24 @@ EXPECTED_V9_CASE_MANIFEST = (
         "make_inputs": "cpu_float32_heldout_detach_alias_view_inputs",
         "make_inputs_sha256": "41a7df473962e8fae63eda143399044b23dcf353c19a9c1e6e8a56bf30369f51",
         "inputs_sha256": "b51bde0b06081b6eb85e8378169bedd5c419f83e8ca95eeaa9e6dc024c901d54",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
+        "name": "cpu_float32_heldout_float_identity_rank3_view",
+        "held_out": True,
+        "category": "dtype_device_transitions",
+        "program": "cpu_float32_heldout_float_identity_rank3_view",
+        "program_sha256": "2045e4af858790176580ef8c1af7e6497473ad15e5a837497cb09bb73edd8894",
+        "make_inputs": "cpu_float32_heldout_float_identity_rank3_view_inputs",
+        "make_inputs_sha256": "51d4c762c92f169dfc952544cdd0d68a7eb92c7fbdf1a0a3b4ca0d3366c4d948",
+        "inputs_sha256": "34435fe0d3c5b6aa7673bc0ad4e6f21ddac24806ed7a9d0479afd8456298067f",
         "arity": 1,
         "fullgraph": True,
         "dynamic": None,
@@ -1242,10 +1278,10 @@ def _validate_corpus_metadata(corpus_module):
 
     public_cases = tuple(getattr(corpus_module, "COMPILE_CORPUS", ()))
     held_out_cases = tuple(getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ()))
-    if len(public_cases) != 18:
-        errors.append(f"expected 18 public v9 cases, found {len(public_cases)}")
-    if len(held_out_cases) != 10:
-        errors.append(f"expected 10 held-out v9 cases, found {len(held_out_cases)}")
+    if len(public_cases) != 19:
+        errors.append(f"expected 19 public v9 cases, found {len(public_cases)}")
+    if len(held_out_cases) != 11:
+        errors.append(f"expected 11 held-out v9 cases, found {len(held_out_cases)}")
 
     seen_names = set()
     for case in (*public_cases, *held_out_cases):

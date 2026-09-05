@@ -79,6 +79,14 @@ def cpu_float32_detach_alias_view(x):
     return x.detach()
 
 
+def cpu_float32_float_identity_view(x):
+    return x.float()
+
+
+def cpu_float32_heldout_float_identity_rank3_view(x):
+    return x.float()
+
+
 def cpu_float32_decomposition_square_scalar(x):
     squared = x.square()
     return squared.add(x.abs())
@@ -275,6 +283,32 @@ def cpu_float32_heldout_detach_alias_view_inputs(module):
             [[0.0, 1.0, 2.0, 3.0], [4.0, 5.0, 6.0, 7.0]],
             [[8.0, 9.0, 10.0, 11.0], [12.0, 13.0, 14.0, 15.0]],
             [[16.0, 17.0, 18.0, 19.0], [20.0, 21.0, 22.0, 23.0]],
+        ],
+        dtype=module.float32,
+        requires_grad=True,
+    )
+    return (base.transpose(0, 2)[1],)
+
+
+def cpu_float32_float_identity_view_inputs(module):
+    base = module.tensor(
+        [
+            [1.0, -2.0, 3.5, -4.5],
+            [5.25, -6.75, 7.5, -8.0],
+            [9.0, -10.5, 11.25, -12.75],
+        ],
+        dtype=module.float32,
+        requires_grad=True,
+    )
+    return (base.transpose(0, 1)[1],)
+
+
+def cpu_float32_heldout_float_identity_rank3_view_inputs(module):
+    base = module.tensor(
+        [
+            [[0.0, 1.0, -2.0, 3.0], [4.5, -5.5, 6.5, -7.5]],
+            [[8.0, -9.0, 10.0, -11.0], [12.5, -13.5, 14.5, -15.5]],
+            [[16.0, -17.0, 18.0, -19.0], [20.5, -21.5, 22.5, -23.5]],
         ],
         dtype=module.float32,
         requires_grad=True,
@@ -575,6 +609,12 @@ COMPILE_CORPUS = (
         make_inputs=cpu_float32_detach_alias_view_inputs,
     ),
     CompileCorpusCase(
+        name="cpu_float32_float_identity_view",
+        category="dtype_device_transitions",
+        program=cpu_float32_float_identity_view,
+        make_inputs=cpu_float32_float_identity_view_inputs,
+    ),
+    CompileCorpusCase(
         name="cpu_float32_training_unary_neg_abs_add",
         category="training_autograd",
         program=cpu_float32_training_unary_neg_abs_add,
@@ -679,6 +719,12 @@ COMPILE_HELD_OUT_CORPUS = (
         category="mutation_aliasing_views",
         program=cpu_float32_heldout_detach_alias_view,
         make_inputs=cpu_float32_heldout_detach_alias_view_inputs,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_heldout_float_identity_rank3_view",
+        category="dtype_device_transitions",
+        program=cpu_float32_heldout_float_identity_rank3_view,
+        make_inputs=cpu_float32_heldout_float_identity_rank3_view_inputs,
     ),
     CompileCorpusCase(
         name="cpu_float32_heldout_list_tuple_output_pytree",
@@ -1075,8 +1121,8 @@ class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
         self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v9")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(len(COMPILE_CORPUS), 18)
-        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 10)
+        self.assertEqual(len(COMPILE_CORPUS), 19)
+        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 11)
 
         case_names = [case.name for case in COMPILE_CORPUS]
         self.assertEqual(
@@ -1089,6 +1135,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_add_unary_composition",
                 "cpu_float32_inference_relu_no_grad",
                 "cpu_float32_detach_alias_view",
+                "cpu_float32_float_identity_view",
                 "cpu_float32_training_unary_neg_abs_add",
                 "cpu_float32_decomposition_square_scalar",
                 "cpu_float32_custom_function_unary",
@@ -1111,6 +1158,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_heldout_training_broadcast_neg_abs_add",
                 "cpu_float32_heldout_inference_relu_broadcast_no_grad",
                 "cpu_float32_heldout_detach_alias_view",
+                "cpu_float32_heldout_float_identity_rank3_view",
                 "cpu_float32_heldout_list_tuple_output_pytree",
                 "cpu_float32_heldout_decomposition_square_noncontiguous",
                 "cpu_float32_heldout_custom_function_binary",
@@ -1132,6 +1180,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "decompositions",
                 "custom_functions",
                 "recompilation_guards",
+                "dtype_device_transitions",
             },
         )
         for case in COMPILE_CORPUS:
@@ -1166,6 +1215,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                         "decompositions",
                         "custom_functions",
                         "recompilation_guards",
+                        "dtype_device_transitions",
                     },
                 )
                 self.assertIn(case.category, CATEGORY_WEIGHTS)
@@ -1405,6 +1455,11 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 ["detach"],
             ),
             (
+                cpu_float32_float_identity_view,
+                cpu_float32_float_identity_view_inputs,
+                ["float"],
+            ),
+            (
                 cpu_float32_decomposition_square_scalar,
                 cpu_float32_scalar_inputs,
                 ["square", "abs", "add"],
@@ -1458,6 +1513,11 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 cpu_float32_heldout_custom_function_binary,
                 cpu_float32_matrix_vector_inputs,
                 ["detach", "neg", "add", "relu", "abs"],
+            ),
+            (
+                cpu_float32_heldout_float_identity_rank3_view,
+                cpu_float32_heldout_float_identity_rank3_view_inputs,
+                ["float"],
             ),
         )
         for program, make_inputs, expected_targets in cases:
@@ -1639,6 +1699,47 @@ class CompileCorpusTraceTests(unittest.TestCase):
             "control flow",
         ):
             self.lower_with_bytecode_instructions(program, instructions, input)
+
+    def test_bytecode_lowerer_rejects_float_conversion_forms(self):
+        def positional_memory_format(x):
+            return x.float(None)
+
+        def keyword_memory_format(x):
+            return x.float(memory_format=None)
+
+        def to_call(x):
+            return x.to("cpu")
+
+        def dtype_changing_method(x):
+            return x.double()
+
+        input = torch.tensor([-2.0, 0.5, 3.0], dtype=torch.float32)
+        metadata = (_compile_trace._metadata_from_native_tensor(input),)
+        cases = (
+            (
+                "positional memory format",
+                positional_memory_format,
+                "Tensor.float argument count 1",
+            ),
+            (
+                "keyword memory format",
+                keyword_memory_format,
+                "keyword arguments",
+            ),
+            ("to call", to_call, "Tensor.to"),
+            ("dtype-changing method", dtype_changing_method, "Tensor.double"),
+        )
+        for case, program, expected in cases:
+            with self.subTest(case=case):
+                with self.assertRaisesRegex(
+                    _compile_trace.CompileTraceUnsupportedError,
+                    expected,
+                ):
+                    _compile_bytecode.lower_compile_graph(
+                        program,
+                        metadata,
+                        name=program.__name__,
+                    )
 
     def test_bytecode_lowerer_rejects_cpython_314_small_int_output_leaf(self):
         def program(x):
@@ -2280,6 +2381,38 @@ class CompileCorpusTraceTests(unittest.TestCase):
 
         self.assertEqual(operation_calls, [])
 
+    def test_private_cuda_float_trace_rejects_cpu_tensor_before_execution(self):
+        recorder = _compile_trace.CompileTraceRecorder(name="cuda_float_guard")
+        proxy = recorder.input(
+            shape=(2,),
+            dtype=_compile_trace.float32,
+            device=_compile_trace._cuda_device_metadata(0),
+            requires_grad=True,
+        )
+        graph = recorder.finish(proxy.float())
+        input = torch.tensor([1.0, -2.0], dtype=torch.float32, requires_grad=True)
+        operation_calls = []
+        original_execute_operation = _compile_trace._execute_operation
+
+        def blocking_execute_operation(operation, values):
+            operation_calls.append(operation)
+            raise AssertionError("CPU tensor reached CUDA trace operation execution")
+
+        try:
+            _compile_trace._execute_operation = blocking_execute_operation
+            with self.assertRaisesRegex(
+                ValueError,
+                (
+                    "metadata mismatch for 'arg0': "
+                    "device expected 'cuda:0', got 'cpu'"
+                ),
+            ):
+                _compile_trace.execute_compile_trace_graph(graph, input)
+        finally:
+            _compile_trace._execute_operation = original_execute_operation
+
+        self.assertEqual(operation_calls, [])
+
     def test_binary_self_add_executes_private_native_graph_for_key_layouts(self):
         cases = (
             ("scalar operator", torch.tensor(2.5, dtype=torch.float32), False),
@@ -2590,6 +2723,85 @@ class CompileCorpusTraceTests(unittest.TestCase):
                     case=case.name,
                 )
 
+    def test_float_identity_cases_preserve_input_metadata_and_grad_state(self):
+        cases = (
+            compile_corpus_case("cpu_float32_float_identity_view"),
+            compile_corpus_case("cpu_float32_heldout_float_identity_rank3_view"),
+        )
+        for case in cases:
+            with self.subTest(case=case.name):
+                inputs = case.make_inputs(torch)
+                (input,) = inputs
+                self.assertGreater(input.storage_offset(), 0)
+                self.assertFalse(input.is_contiguous())
+                self.assertTrue(input.requires_grad)
+                before_gradients = input_gradients(inputs)
+                graph = _compile_bytecode.lower_compile_graph(
+                    case.program,
+                    tuple(
+                        _compile_trace._metadata_from_native_tensor(input)
+                        for input in inputs
+                    ),
+                    name=case.name,
+                )
+
+                self.assertEqual(
+                    [operation.target for operation in graph.operations],
+                    ["float"],
+                )
+                self.assertEqual(graph.output, "float_0")
+                self.assertEqual(graph.operations[0].inputs, ("x",))
+                self.assertEqual(graph.operations[0].metadata.shape, tuple(input.shape))
+                self.assertEqual(graph.operations[0].metadata.stride, input.stride())
+                self.assertIs(
+                    graph.operations[0].metadata.dtype,
+                    _compile_trace.float32,
+                )
+                self.assertEqual(str(graph.operations[0].metadata.device), "cpu")
+                self.assertTrue(graph.operations[0].metadata.requires_grad)
+                self.assertTrue(graph.output_metadata.requires_grad)
+
+                expected = case.program(*inputs)
+                actual = graph.forward(*inputs)
+                compiled = torch.compile(case.program, **case.compile_kwargs("eager"))
+                original_profile = sys.getprofile()
+                program_calls = {"count": 0}
+
+                def count_program_calls(frame, event, arg):
+                    if event == "call" and frame.f_code is case.program.__code__:
+                        program_calls["count"] += 1
+                    if original_profile is not None:
+                        original_profile(frame, event, arg)
+                    return count_program_calls
+
+                try:
+                    sys.setprofile(count_program_calls)
+                    compiled_actual = compiled(*inputs)
+                finally:
+                    sys.setprofile(original_profile)
+                self.assertEqual(program_calls["count"], 0)
+
+                for label, output in (
+                    ("private graph", actual),
+                    ("public compiled", compiled_actual),
+                ):
+                    with self.subTest(case=case.name, executor=label):
+                        self.assert_native_tensor_matches(
+                            output,
+                            expected,
+                            case=f"{case.name}/{label}",
+                        )
+                        self.assertIs(output, input)
+                        self.assertTrue(input.is_set_to(output))
+                        self.assertTrue(output.requires_grad)
+
+                assert_leaf_gradients_unchanged(
+                    self,
+                    inputs,
+                    before_gradients,
+                    case=case.name,
+                )
+
     def test_square_decomposition_cases_cover_scalar_empty_and_noncontiguous_inputs(
         self,
     ):
@@ -2849,7 +3061,37 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 self.assertIn("Tensor.relu", message)
                 self.assertIn("Tensor.square", message)
                 self.assertIn("Tensor.detach", message)
+                self.assertIn("Tensor.float", message)
                 self.assertIn("Tensor.add", message)
+
+    def test_float_proxy_rejects_compile_conversion_forms(self):
+        recorder = _compile_trace.CompileTraceRecorder()
+        x = recorder.input(shape=(2, 3))
+
+        cases = (
+            (
+                "positional memory format",
+                lambda: x.float(None),
+                "Tensor.float only supports zero arguments",
+            ),
+            (
+                "keyword memory format",
+                lambda: x.float(memory_format=None),
+                "Tensor.float does not support keyword arguments: memory_format",
+            ),
+            (
+                "to remains unsupported",
+                lambda: x.to(),
+                "Tensor.to",
+            ),
+        )
+        for case, call, expected in cases:
+            with self.subTest(case=case):
+                with self.assertRaisesRegex(
+                    _compile_trace.CompileTraceUnsupportedError,
+                    expected,
+                ):
+                    call()
 
     def test_augmented_self_add_aliasing_rejects_instead_of_recording_add(self):
         def augmented_alias_program(x):
@@ -2972,6 +3214,9 @@ def custom_function(x):
 
 def detach_alias(x):
     return x.detach()
+
+def float_identity(x):
+    return x.float()
 
 def broadcast_add(x, y):
     return x.neg().abs() + y.negative()
@@ -3165,6 +3410,35 @@ for actual in (
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
+float_graph = _compile_trace.trace_one_input_compile_graph(
+    float_identity,
+    make_detach_inputs,
+    name="cpu_float32_float_identity",
+)
+assert float_graph.output == "float_0"
+assert [operation.target for operation in float_graph.operations] == ["float"]
+assert float_graph.inputs[0].metadata.requires_grad is True
+assert float_graph.output_metadata.requires_grad is True
+native_float_input = make_detach_inputs(torch)[0]
+float_expected = float_identity(native_float_input)
+before_float_grad = native_float_input.grad
+for actual in (
+    float_graph.forward(native_float_input),
+    _compile_trace.execute_compile_trace_graph(float_graph, native_float_input),
+):
+    assert actual is native_float_input
+    assert actual.tolist() == float_expected.tolist()
+    assert actual.shape == float_expected.shape
+    assert actual.stride() == float_expected.stride()
+    assert actual.storage_offset() == float_expected.storage_offset()
+    assert actual.dtype is float_expected.dtype
+    assert actual.device == float_expected.device
+    assert actual.requires_grad is True
+    assert native_float_input.is_set_to(actual)
+    assert native_float_input.grad is before_float_grad
+assert backend_calls == []
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
 two_input_graph = _compile_trace.trace_compile_graph(
     broadcast_add,
     make_two_inputs,
@@ -3215,6 +3489,21 @@ assert compiled_detach_actual.device == detach_expected.device
 assert compiled_detach_actual.requires_grad is False
 assert native_detach_input.is_set_to(compiled_detach_actual)
 assert native_detach_input.grad is before_detach_grad
+assert backend_calls == []
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
+compiled_float = torch.compile(float_identity, backend="eager", fullgraph=True)
+compiled_float_actual = compiled_float(native_float_input)
+assert compiled_float_actual is native_float_input
+assert compiled_float_actual.tolist() == float_expected.tolist()
+assert compiled_float_actual.shape == float_expected.shape
+assert compiled_float_actual.stride() == float_expected.stride()
+assert compiled_float_actual.storage_offset() == float_expected.storage_offset()
+assert compiled_float_actual.dtype is float_expected.dtype
+assert compiled_float_actual.device == float_expected.device
+assert compiled_float_actual.requires_grad is True
+assert native_float_input.is_set_to(compiled_float_actual)
+assert native_float_input.grad is before_float_grad
 assert backend_calls == []
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
@@ -3324,7 +3613,7 @@ try:
 except NotImplementedError as error:
     assert str(error) == (
         "torch.compile(): only backend='eager', fullgraph=True straight-line "
-        "Tensor neg/abs/relu/square/detach/add functions, optionally inlining one "
+        "Tensor neg/abs/relu/square/detach/float/add functions, optionally inlining one "
         "exact same-module helper call, with one or two positional exact native CPU "
         "float32 Tensor inputs and Tensor or tuple/list Tensor-pytree outputs are "
         "supported; eager fallback, installed-PyTorch forwarding, callable backend "

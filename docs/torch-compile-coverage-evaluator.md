@@ -31,9 +31,9 @@ bash scripts/evaluate_torch_compile_coverage.sh --subset public
 
 The public subset uses the same corpus metadata, reference eligibility checks,
 candidate execution checks, category weights, and scoring formula as the full
-gate, but omits held-out cases. The full gate includes the held-out
-recompilation-guard, training-autograd, no-grad inference, decomposition, and
-mutation-aliasing cases and validates that the current v9 guard scenarios are
+gate, but omits held-out cases. The full gate includes held-out cases for every
+currently supported category, including dtype/device-transition `Tensor.float()`
+identity graphlets, and validates that the current v9 guard scenarios are
 present before scoring.
 
 After the wheel and dependencies are already installed, the Python entry point
