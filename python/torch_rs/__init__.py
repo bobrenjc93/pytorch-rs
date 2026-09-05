@@ -262,11 +262,13 @@ def set_default_device(device: "Device") -> None:
 
 _COMPILE_UNSUPPORTED_MESSAGE = (
     "torch.compile(): only backend='eager', fullgraph=True straight-line "
-    "Tensor neg/abs/relu/square/detach/float/add functions, optionally inlining one "
-    "exact same-module helper call, with one or two positional exact native CPU "
-    "float32 Tensor inputs and Tensor or tuple/list Tensor-pytree outputs are "
-    "supported; eager fallback, installed-PyTorch forwarding, callable backend "
-    "invocation, CUDA compilation, and broader graph capture remain unsupported"
+    "Tensor neg/abs/relu/square/detach/float/add functions, plus one top-level "
+    "if over an input Tensor.requires_grad selecting from that same subset, "
+    "optionally inlining one exact same-module helper call, with one or two "
+    "positional exact native CPU float32 Tensor inputs and Tensor or tuple/list "
+    "Tensor-pytree outputs are supported; eager fallback, installed-PyTorch "
+    "forwarding, callable backend invocation, CUDA compilation, and broader "
+    "graph capture remain unsupported"
 )
 _COMPILE_DEFAULT_RECOMPILE_LIMIT = 8
 _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
@@ -282,6 +284,7 @@ _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
     "float",
     "neg",
     "negative",
+    "requires_grad",
     "relu",
     "square",
 )
@@ -622,8 +625,10 @@ def compile(
     ``float32`` Tensor inputs made only from Tensor ``neg``, ``abs``,
     ``relu``, ``square``, ``detach``, ``float``, binary ``add``, and one exact
     same-module helper call over Tensor arguments for ``backend="eager"``
-    with ``fullgraph=True``. The native path returns either a Tensor or a
-    tuple/list pytree with Tensor leaves.
+    with ``fullgraph=True``. Those functions may contain one top-level
+    ``if`` over an input Tensor's ``requires_grad`` metadata; the native path
+    lowers the selected branch and returns either a Tensor or a tuple/list
+    pytree with Tensor leaves.
     Eager fallback, installed-PyTorch forwarding, callable backend invocation,
     CUDA compilation, and broader graph capture remain unsupported.
     """

@@ -15,11 +15,13 @@ from torch_rs import _compiler_state as _state
 
 UNSUPPORTED_MESSAGE = (
     "torch.compile(): only backend='eager', fullgraph=True straight-line "
-    "Tensor neg/abs/relu/square/detach/float/add functions, optionally inlining one "
-    "exact same-module helper call, with one or two positional exact native CPU "
-    "float32 Tensor inputs and Tensor or tuple/list Tensor-pytree outputs are "
-    "supported; eager fallback, installed-PyTorch forwarding, callable backend "
-    "invocation, CUDA compilation, and broader graph capture remain unsupported"
+    "Tensor neg/abs/relu/square/detach/float/add functions, plus one top-level "
+    "if over an input Tensor.requires_grad selecting from that same subset, "
+    "optionally inlining one exact same-module helper call, with one or two "
+    "positional exact native CPU float32 Tensor inputs and Tensor or tuple/list "
+    "Tensor-pytree outputs are supported; eager fallback, installed-PyTorch "
+    "forwarding, callable backend invocation, CUDA compilation, and broader "
+    "graph capture remain unsupported"
 )
 
 
@@ -887,6 +889,115 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         finally:
             _compile_bytecode.lower_compile_graph = original_lower
 
+    def test_eager_fullgraph_requires_grad_branch_uses_metadata_cache(self):
+        def program(x):
+            if x.requires_grad:
+                return x.neg().abs()
+            else:
+                return x.relu().add(x)
+
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        lowered = []
+
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            graph = original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+            lowered.append(
+                (
+                    requested_program,
+                    input_metadata.requires_grad,
+                    [operation.target for operation in graph.operations],
+                )
+            )
+            return graph
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        no_grad_input = torch.tensor([-2.0, 0.0, 3.0], dtype=torch.float32)
+        same_metadata_input = torch.tensor([1.5, -4.0, 2.25], dtype=torch.float32)
+        requires_grad_input = torch.tensor(
+            [-2.0, 0.0, 3.0],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        same_requires_grad_input = torch.tensor(
+            [1.5, -4.0, 2.25],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        inputs = (
+            no_grad_input,
+            same_metadata_input,
+            requires_grad_input,
+            same_requires_grad_input,
+        )
+        expected_outputs = tuple(program(input) for input in inputs)
+        calls = {"program": 0}
+        original_profile = sys.getprofile()
+
+        def count_program_calls(frame, event, arg):
+            if event == "call" and frame.f_code is program.__code__:
+                calls["program"] += 1
+            if original_profile is not None:
+                original_profile(frame, event, arg)
+            return count_program_calls
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = counting_lower
+            sys.setprofile(count_program_calls)
+            for input, expected in zip(inputs, expected_outputs):
+                with self.subTest(requires_grad=input.requires_grad):
+                    actual = compiled(input)
+                    self.assertEqual(actual.tolist(), expected.tolist())
+                    self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+                    self.assertEqual(actual.stride(), expected.stride())
+                    self.assertIs(actual.dtype, expected.dtype)
+                    self.assertEqual(actual.device, expected.device)
+                    self.assertEqual(actual.requires_grad, expected.requires_grad)
+        finally:
+            sys.setprofile(original_profile)
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+        self.assertEqual(calls, {"program": 0})
+        self.assertEqual(
+            [(requires_grad, targets) for _, requires_grad, targets in lowered],
+            [
+                (False, ["relu", "add"]),
+                (True, ["neg", "abs"]),
+            ],
+        )
+        self.assertTrue(all(call_program is program for call_program, _, _ in lowered))
+
+    def test_eager_fullgraph_requires_grad_branch_rejects_patched_descriptor(self):
+        def program(x):
+            if x.requires_grad:
+                return x.neg()
+            else:
+                return x.abs()
+
+        input = torch.tensor([2.0, -3.0], dtype=torch.float32, requires_grad=True)
+        original = torch.Tensor.__dict__["requires_grad"]
+        torch.Tensor.requires_grad = property(lambda self: False)
+        try:
+            self.assertEqual(program(input).tolist(), [2.0, 3.0])
+            compiled = torch.compile(program, backend="eager", fullgraph=True)
+            with self.assertRaisesRegex(
+                NotImplementedError,
+                "patched Tensor operation bindings: .*Tensor\\.requires_grad",
+            ):
+                compiled(input)
+        finally:
+            torch.Tensor.requires_grad = original
+
     def test_eager_fullgraph_recompile_limit_zero_rejects_first_graph(self):
         def program(x):
             return x.neg().abs()
@@ -1382,6 +1493,34 @@ class TorchCompileEntrypointTests(unittest.TestCase):
                 return value
             return value.neg()
 
+        def nested_requires_grad_branch(value):
+            if value.requires_grad:
+                if value.requires_grad:
+                    return value.neg()
+                else:
+                    return value.abs()
+            else:
+                return value.relu()
+
+        def requires_grad_comparison(value):
+            if value.requires_grad == True:
+                return value.neg()
+            else:
+                return value.abs()
+
+        def loop_in_requires_grad_branch(value):
+            if value.requires_grad:
+                for element in (value,):
+                    return element.neg()
+            else:
+                return value.abs()
+
+        def global_branch_condition(value):
+            if EAGER_COMPILE_MODEL_CALLS:
+                return value.neg()
+            else:
+                return value.abs()
+
         def exception_handling(value):
             try:
                 return value + value
@@ -1432,6 +1571,10 @@ class TorchCompileEntrypointTests(unittest.TestCase):
                 "global or import access",
             ),
             ("control flow", control_flow, "control flow"),
+            ("nested requires_grad branch", nested_requires_grad_branch, "control flow"),
+            ("requires_grad comparison", requires_grad_comparison, "control flow"),
+            ("requires_grad loop", loop_in_requires_grad_branch, "control flow"),
+            ("global branch condition", global_branch_condition, "control flow"),
             ("exception handling", exception_handling, "exception handling"),
             ("mutation", mutation, "mutation"),
             ("unsupported method", unsupported_method, "Tensor.sqrt"),

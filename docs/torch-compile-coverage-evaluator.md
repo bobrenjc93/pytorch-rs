@@ -1,13 +1,13 @@
 # torch.compile Coverage Evaluator
 
-The deterministic compile-coverage evaluator runs the versioned v9
+The deterministic compile-coverage evaluator runs the versioned v10
 reference-eligible corpus against stock PyTorch 2.13 and the current
 `torch_rs` wheel. It fails closed on malformed corpus metadata,
 reference-import or compile failures, candidate import, compile, runtime, output
 or observable-semantic mismatches, opted-in backward-through-sum leaf-gradient
 mismatches, eager fallback, installed-PyTorch forwarding, unsupported candidate
 cases, skipped eligible cases, and invalid guard coverage. The evaluator pins
-the v9 category weights, case order, case callables, helper source hashes,
+the v10 category weights, case order, case callables, helper source hashes,
 input factories, input payload hashes, no-grad inference flags, and guard-step
 definitions before scoring.
 
@@ -33,8 +33,8 @@ The public subset uses the same corpus metadata, reference eligibility checks,
 candidate execution checks, category weights, and scoring formula as the full
 gate, but omits held-out cases. The full gate includes held-out cases for every
 currently supported category, including dtype/device-transition `Tensor.float()`
-identity graphlets, and validates that the current v9 guard scenarios are
-present before scoring.
+identity graphlets and `requires_grad` Python control-flow graphlets, and
+validates that the current v10 guard scenarios are present before scoring.
 
 After the wheel and dependencies are already installed, the Python entry point
 can be run directly:
