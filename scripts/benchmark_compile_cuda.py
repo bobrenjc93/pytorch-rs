@@ -11,6 +11,7 @@ eligible CUDA compile evidence.
 from __future__ import annotations
 
 import argparse
+import array
 import gc
 import hashlib
 import importlib.metadata as importlib_metadata
@@ -31,7 +32,7 @@ PROTECTED_OUTPUT_PATHS = {
 }
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v4"
+BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v5"
 WORKLOAD_VERSION = "h100_cuda_pointwise_reduce_float32_v1"
 WORKLOAD_SHAPE = (1024, 1024)
 WORKLOAD_SEED = 20260904
@@ -228,6 +229,18 @@ def _checksum_tensor(tensor):
     return hashlib.blake2b(encoded, digest_size=8).hexdigest()
 
 
+def _tensor_float32_bytes(tensor):
+    if str(tensor.dtype) != "torch.float32":
+        raise AssertionError(f"expected torch.float32 tensor, got {tensor.dtype}")
+    contiguous = tensor.detach().cpu().contiguous().view(-1)
+    values = array.array("f", contiguous.tolist())
+    if values.itemsize != 4:
+        raise AssertionError("array('f') is not a 32-bit float on this platform")
+    if sys.byteorder != "little":
+        values.byteswap()
+    return values.tobytes()
+
+
 def _summarize_samples(samples_ns, repeats):
     samples_us = [sample / repeats / 1000.0 for sample in samples_ns]
     median_us = statistics.median(samples_us)
@@ -313,7 +326,7 @@ def _run_pytorch_reference(reference_torch, args):
             f"{checksums!r}"
         )
 
-    return {
+    report = {
         "implementation": "pytorch",
         "status": "ok",
         "workload_version": WORKLOAD_VERSION,
@@ -330,6 +343,14 @@ def _run_pytorch_reference(reference_torch, args):
             "assert_close": True,
         },
     }
+    private_workload_buffers = {
+        "x_host_bytes": _tensor_float32_bytes(inputs[0]),
+        "bias_host_bytes": _tensor_float32_bytes(inputs[1]),
+        "expected_output_bytes": _tensor_float32_bytes(cold_output),
+        "expected_output_checksum": cold_checksum,
+        "expected_output_metadata": _tensor_metadata(cold_output),
+    }
+    return report, private_workload_buffers
 
 
 def classify_torch_rs_cuda_compile_evidence(evidence):
@@ -397,6 +418,24 @@ def _torch_rs_private_cuda_pointwise_kernel(required_cuda_visible_devices):
     )
 
 
+def _torch_rs_private_cuda_pointwise_reduce_workload(
+    required_cuda_visible_devices,
+    workload_buffers,
+):
+    from torch_rs import _cuda_pointwise_reduce_workload
+
+    return _cuda_pointwise_reduce_workload.launch_h100_float32_pointwise_reduce_device0(
+        workload_buffers["x_host_bytes"],
+        workload_buffers["bias_host_bytes"],
+        rows=WORKLOAD_SHAPE[0],
+        columns=WORKLOAD_SHAPE[1],
+        expected_output_bytes=workload_buffers["expected_output_bytes"],
+        expected_output_checksum=workload_buffers["expected_output_checksum"],
+        expected_output_metadata=workload_buffers["expected_output_metadata"],
+        required_cuda_visible_devices=required_cuda_visible_devices,
+    )
+
+
 def _require_private_cuda_runtime_roundtrip(roundtrip):
     if roundtrip.get("status") != "ok":
         raise AssertionError(
@@ -404,7 +443,9 @@ def _require_private_cuda_runtime_roundtrip(roundtrip):
             f"{roundtrip.get('reason')}"
         )
     if roundtrip.get("cpu_fallback") is not False:
-        raise AssertionError("private torch_rs CUDA runtime roundtrip used CPU fallback")
+        raise AssertionError(
+            "private torch_rs CUDA runtime roundtrip used CPU fallback"
+        )
     if roundtrip.get("device_type") != "cuda" or roundtrip.get("device_index") != 0:
         raise AssertionError(
             "private torch_rs CUDA runtime roundtrip did not run on CUDA device 0"
@@ -438,6 +479,55 @@ def _require_private_cuda_pointwise_kernel(pointwise):
         raise AssertionError("private torch_rs CUDA pointwise kernel did not sync")
 
 
+def _require_private_cuda_pointwise_reduce_workload(pointwise_reduce):
+    if pointwise_reduce.get("status") != "ok":
+        raise AssertionError(
+            "private torch_rs CUDA pointwise-reduce workload failed: "
+            f"{pointwise_reduce.get('reason')}"
+        )
+    if pointwise_reduce.get("cpu_fallback") is not False:
+        raise AssertionError(
+            "private torch_rs CUDA pointwise-reduce workload used CPU fallback"
+        )
+    if (
+        pointwise_reduce.get("device_type") != "cuda"
+        or pointwise_reduce.get("device_index") != 0
+    ):
+        raise AssertionError(
+            "private torch_rs CUDA pointwise-reduce workload did not run on "
+            "CUDA device 0"
+        )
+    if pointwise_reduce.get("workload_shape") != list(WORKLOAD_SHAPE):
+        raise AssertionError(
+            "private torch_rs CUDA pointwise-reduce workload shape changed"
+        )
+    if pointwise_reduce.get("output_shape") != [WORKLOAD_SHAPE[0]]:
+        raise AssertionError(
+            "private torch_rs CUDA pointwise-reduce output shape changed"
+        )
+    if pointwise_reduce.get("output_metadata_match") is not True:
+        raise AssertionError(
+            "private torch_rs CUDA pointwise-reduce output metadata did not "
+            "match PyTorch"
+        )
+    if pointwise_reduce.get("checksum_match") is not True:
+        raise AssertionError(
+            "private torch_rs CUDA pointwise-reduce checksum did not match "
+            "PyTorch"
+        )
+    if (
+        pointwise_reduce.get("device_output_checksum")
+        != pointwise_reduce.get("pytorch_reference_output_checksum")
+    ):
+        raise AssertionError(
+            "private torch_rs CUDA pointwise-reduce checksum is unexpected"
+        )
+    if (pointwise_reduce.get("launch") or {}).get("sync_error", {}).get("result") != 0:
+        raise AssertionError(
+            "private torch_rs CUDA pointwise-reduce kernel did not sync"
+        )
+
+
 def torch_rs_zero_credit_unsupported_row(torch_rs):
     evidence = {
         "implementation": "torch_rs",
@@ -461,8 +551,9 @@ def torch_rs_zero_credit_unsupported_row(torch_rs):
             "torch.compile backend; this benchmark records the unsupported "
             "cell explicitly instead of substituting CPU execution, "
             "backend='eager', eager fallback, or installed-PyTorch forwarding. "
-            "Private benchmark-only CUDA driver/runtime/kernel evidence is not "
-            "compiled torch_rs CUDA output and does not receive compile credit."
+            "Private benchmark-only CUDA driver/runtime/kernel/workload "
+            "evidence is not compiled torch_rs CUDA output and does not "
+            "receive compile credit."
         ),
         "cuda_probes": _torch_rs_public_cuda_probes(torch_rs),
         "rejected_fallbacks": [
@@ -557,7 +648,19 @@ def run_benchmark(args):
     gc_was_enabled = gc.isenabled()
     gc.disable()
     try:
-        pytorch_reference = _run_pytorch_reference(reference_torch, args)
+        pytorch_reference, private_workload_buffers = _run_pytorch_reference(
+            reference_torch,
+            args,
+        )
+        torch_rs_cuda_pointwise_reduce_workload = (
+            _torch_rs_private_cuda_pointwise_reduce_workload(
+                args.required_cuda_visible_devices,
+                private_workload_buffers,
+            )
+        )
+        _require_private_cuda_pointwise_reduce_workload(
+            torch_rs_cuda_pointwise_reduce_workload,
+        )
         torch_rs_row = torch_rs_zero_credit_unsupported_row(torch_rs)
     finally:
         if gc_was_enabled:
@@ -569,6 +672,9 @@ def run_benchmark(args):
         "torch_rs_cuda_driver_probe": torch_rs_cuda_driver_probe,
         "torch_rs_cuda_runtime_roundtrip": torch_rs_cuda_runtime_roundtrip,
         "torch_rs_cuda_pointwise_kernel": torch_rs_cuda_pointwise_kernel,
+        "torch_rs_cuda_pointwise_reduce_workload": (
+            torch_rs_cuda_pointwise_reduce_workload
+        ),
         "candidate": torch_rs_row,
         "aggregates": {
             "common_success_geomean_speed_ratio": None,

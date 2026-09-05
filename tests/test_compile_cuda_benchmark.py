@@ -7,11 +7,13 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import torch_rs as torch
 from torch_rs import (
     _cuda_driver_probe,
     _cuda_pointwise_kernel,
+    _cuda_pointwise_reduce_workload,
     _cuda_runtime_roundtrip,
 )
 
@@ -127,6 +129,19 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertIs(torch.cuda.is_initialized(), False)
 
+    def test_private_cuda_pointwise_reduce_workload_is_not_public_cuda_support(self):
+        self.assertNotIn("_cuda_pointwise_reduce_workload", torch.__all__)
+        self.assertFalse(hasattr(torch.cuda, "_cuda_pointwise_reduce_workload"))
+        self.assertFalse(hasattr(torch.cuda, "pointwise_reduce_workload"))
+        self.assertEqual(
+            _cuda_pointwise_reduce_workload.WORKLOAD_SHAPE,
+            benchmark_compile_cuda.WORKLOAD_SHAPE,
+        )
+        self.assertEqual(_cuda_pointwise_reduce_workload.OUTPUT_SHAPE, (1024,))
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
+        self.assertIs(torch.cuda.is_initialized(), False)
+
     def test_private_cuda_runtime_roundtrip_reports_no_visible_cuda_cleanly(self):
         script = r"""
 import json
@@ -208,6 +223,55 @@ print(json.dumps({
         self.assertEqual(probe["public_cuda_device_count"], 0)
         self.assertIs(probe["public_cuda_is_initialized"], False)
 
+    def test_private_cuda_pointwise_reduce_reports_no_visible_cuda_cleanly(self):
+        script = r"""
+import json
+import torch_rs as torch
+from torch_rs import _cuda_pointwise_reduce_workload
+
+rows, columns = _cuda_pointwise_reduce_workload.WORKLOAD_SHAPE
+pointwise_reduce = (
+    _cuda_pointwise_reduce_workload.launch_h100_float32_pointwise_reduce_device0(
+        b"\0" * (rows * columns * 4),
+        b"\0" * (columns * 4),
+    )
+)
+print(json.dumps({
+    "status": pointwise_reduce["status"],
+    "reason": pointwise_reduce["reason"],
+    "cuda_visible_devices": pointwise_reduce["cuda_visible_devices"],
+    "cpu_fallback": pointwise_reduce["cpu_fallback"],
+    "checksum_match": pointwise_reduce["checksum_match"],
+    "workload_shape": pointwise_reduce["workload_shape"],
+    "public_cuda_is_available": torch.cuda.is_available(),
+    "public_cuda_device_count": torch.cuda.device_count(),
+    "public_cuda_is_initialized": torch.cuda.is_initialized(),
+}))
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            env={**os.environ, "CUDA_VISIBLE_DEVICES": ""},
+            text=True,
+            timeout=60,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+        probe = json.loads(completed.stdout)
+        self.assertEqual(probe["cuda_visible_devices"], "")
+        self.assertEqual(probe["status"], "unavailable")
+        self.assertEqual(probe["reason"], "CUDA_VISIBLE_DEVICES=0 is required")
+        self.assertIs(probe["cpu_fallback"], False)
+        self.assertIs(probe["checksum_match"], False)
+        self.assertEqual(probe["workload_shape"], [1024, 1024])
+        self.assertIs(probe["public_cuda_is_available"], False)
+        self.assertEqual(probe["public_cuda_device_count"], 0)
+        self.assertIs(probe["public_cuda_is_initialized"], False)
+
     def test_private_cuda_runtime_roundtrip_validator_rejects_cpu_fallback(self):
         with self.assertRaisesRegex(AssertionError, "CPU fallback"):
             benchmark_compile_cuda._require_private_cuda_runtime_roundtrip(
@@ -241,6 +305,24 @@ print(json.dumps({
                     "expected_checksum": (
                         _cuda_pointwise_kernel.DEFAULT_POINTWISE_CHECKSUM
                     ),
+                    "launch": {"sync_error": {"result": 0}},
+                }
+            )
+
+    def test_private_cuda_pointwise_reduce_validator_rejects_cpu_fallback(self):
+        with self.assertRaisesRegex(AssertionError, "CPU fallback"):
+            benchmark_compile_cuda._require_private_cuda_pointwise_reduce_workload(
+                {
+                    "status": "ok",
+                    "cpu_fallback": True,
+                    "device_type": "cpu",
+                    "device_index": None,
+                    "workload_shape": list(benchmark_compile_cuda.WORKLOAD_SHAPE),
+                    "output_shape": [benchmark_compile_cuda.WORKLOAD_SHAPE[0]],
+                    "output_metadata_match": True,
+                    "checksum_match": True,
+                    "device_output_checksum": "checksum",
+                    "pytorch_reference_output_checksum": "checksum",
                     "launch": {"sync_error": {"result": 0}},
                 }
             )
@@ -404,6 +486,146 @@ print(json.dumps({
         self.assertIn("Cuda compilation tools", pointwise["nvcc"]["version"]["stdout"])
         self.assertEqual(pointwise["build"]["architecture"], "sm_90")
         self.assertIs(pointwise["kernel_library"]["loaded"], True)
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
+        self.assertIs(torch.cuda.is_initialized(), False)
+
+    def test_private_cuda_pointwise_reduce_matches_pytorch_compile_on_h100(self):
+        probe = _reference_cuda_probe()
+        if not probe.get("imported"):
+            self.skipTest("requires reference PyTorch")
+        if not probe.get("available"):
+            self.skipTest("requires a CUDA-visible reference PyTorch runtime")
+        if benchmark_compile_cuda._version_without_local(
+            probe["version"],
+        ) != benchmark_compile_cuda.REFERENCE_PYTORCH_VERSION:
+            self.skipTest(
+                "requires PyTorch "
+                f"{benchmark_compile_cuda.REFERENCE_PYTORCH_VERSION}, "
+                f"got {probe['version']}"
+            )
+        if "H100" not in probe.get("device_name", ""):
+            self.skipTest(
+                f"requires an H100 CUDA device, got {probe['device_name']!r}"
+            )
+        if os.environ.get("CUDA_VISIBLE_DEVICES") != "0":
+            self.skipTest("requires CUDA_VISIBLE_DEVICES=0")
+
+        import torch as reference_torch
+
+        args = SimpleNamespace(warmups=0, samples=1, repeats=1)
+        pytorch_reference, buffers = benchmark_compile_cuda._run_pytorch_reference(
+            reference_torch,
+            args,
+        )
+
+        launch_pointwise_reduce = (
+            _cuda_pointwise_reduce_workload.launch_h100_float32_pointwise_reduce_device0
+        )
+        pointwise_reduce = launch_pointwise_reduce(
+            buffers["x_host_bytes"],
+            buffers["bias_host_bytes"],
+            expected_output_bytes=buffers["expected_output_bytes"],
+            expected_output_checksum=buffers["expected_output_checksum"],
+            expected_output_metadata=buffers["expected_output_metadata"],
+        )
+        self.assertEqual(
+            pointwise_reduce["status"],
+            "ok",
+            msg=json.dumps(pointwise_reduce, indent=2, sort_keys=True),
+        )
+        self.assertIs(pointwise_reduce["public_torch_cuda_api"], False)
+        self.assertIs(pointwise_reduce["cpu_fallback"], False)
+        self.assertEqual(pointwise_reduce["device_type"], "cuda")
+        self.assertEqual(pointwise_reduce["device_index"], 0)
+        self.assertEqual(pointwise_reduce["cuda_visible_devices"], "0")
+        self.assertEqual(pointwise_reduce["required_cuda_visible_devices"], "0")
+        self.assertTrue(pointwise_reduce["cuda_visible_devices_match"])
+        self.assertTrue(pointwise_reduce["single_visible_cuda_device"])
+        self.assertEqual(pointwise_reduce["dtype"], "float32")
+        self.assertEqual(pointwise_reduce["workload_shape"], [1024, 1024])
+        self.assertEqual(pointwise_reduce["output_shape"], [1024])
+        self.assertEqual(
+            pointwise_reduce["pytorch_reference_output_checksum"],
+            pytorch_reference["cold_checksum"],
+        )
+        self.assertEqual(
+            pointwise_reduce["device_output_checksum"],
+            pytorch_reference["cold_checksum"],
+        )
+        self.assertIs(pointwise_reduce["checksum_match"], True)
+        self.assertEqual(
+            pointwise_reduce["output_metadata"],
+            pytorch_reference["output_metadata"],
+        )
+        self.assertIs(pointwise_reduce["output_metadata_match"], True)
+        self.assertIs(
+            pointwise_reduce["output_comparison"]["exact_bytes_match"],
+            True,
+        )
+        self.assertEqual(
+            pointwise_reduce["output_comparison"]["mismatched_element_count"],
+            0,
+        )
+        self.assertIs(pointwise_reduce["device_x_pointer_nonzero"], True)
+        self.assertIs(pointwise_reduce["device_bias_pointer_nonzero"], True)
+        self.assertIs(pointwise_reduce["device_output_pointer_nonzero"], True)
+        self.assertEqual(pointwise_reduce["calls"]["cudaGetDeviceCount"]["result"], 0)
+        self.assertGreaterEqual(
+            pointwise_reduce["calls"]["cudaGetDeviceCount"]["value"],
+            1,
+        )
+        self.assertEqual(pointwise_reduce["calls"]["cudaSetDevice"]["result"], 0)
+        self.assertEqual(pointwise_reduce["calls"]["cudaGetDevice"]["result"], 0)
+        self.assertEqual(pointwise_reduce["calls"]["cudaMalloc_x"]["result"], 0)
+        self.assertEqual(pointwise_reduce["calls"]["cudaMalloc_bias"]["result"], 0)
+        self.assertEqual(pointwise_reduce["calls"]["cudaMalloc_output"]["result"], 0)
+        self.assertEqual(
+            pointwise_reduce["calls"]["cudaMemcpyHostToDevice_x"]["result"],
+            0,
+        )
+        self.assertEqual(
+            pointwise_reduce["calls"]["cudaMemcpyHostToDevice_bias"]["result"],
+            0,
+        )
+        self.assertEqual(pointwise_reduce["launch"]["result"], 0)
+        self.assertEqual(pointwise_reduce["launch"]["blocks"], 1024)
+        self.assertEqual(pointwise_reduce["launch"]["threads_per_block"], 32)
+        self.assertEqual(pointwise_reduce["launch"]["launch_error"]["result"], 0)
+        self.assertEqual(pointwise_reduce["launch"]["sync_error"]["result"], 0)
+        self.assertEqual(
+            pointwise_reduce["calls"]["cudaMemcpyDeviceToHost_output"]["result"],
+            0,
+        )
+        self.assertEqual(
+            pointwise_reduce["calls"]["cudaDeviceSynchronize_after_device_to_host"][
+                "result"
+            ],
+            0,
+        )
+        self.assertEqual(pointwise_reduce["calls"]["cudaFree_x"]["result"], 0)
+        self.assertEqual(pointwise_reduce["calls"]["cudaFree_bias"]["result"], 0)
+        self.assertEqual(pointwise_reduce["calls"]["cudaFree_output"]["result"], 0)
+        self.assertIn("H100", pointwise_reduce["device_0"]["name"])
+        self.assertEqual(pointwise_reduce["device_0"]["compute_capability"], [9, 0])
+        self.assertIn("H100", pointwise_reduce["gpu"]["name"])
+        self.assertEqual(pointwise_reduce["gpu"]["compute_capability"], [9, 0])
+        self.assertIsInstance(
+            pointwise_reduce["driver"]["version"]["version_text"],
+            str,
+        )
+        self.assertIsInstance(
+            pointwise_reduce["runtime"]["runtime_version_text"],
+            str,
+        )
+        self.assertIs(pointwise_reduce["nvcc"]["available"], True)
+        self.assertEqual(pointwise_reduce["nvcc"]["version"]["returncode"], 0)
+        self.assertIn(
+            "Cuda compilation tools",
+            pointwise_reduce["nvcc"]["version"]["stdout"],
+        )
+        self.assertEqual(pointwise_reduce["build"]["architecture"], "sm_90")
+        self.assertIs(pointwise_reduce["kernel_library"]["loaded"], True)
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertIs(torch.cuda.is_initialized(), False)
@@ -770,6 +992,41 @@ print(json.dumps({{
         self.assertEqual(pointwise["gpu"]["compute_capability"], [9, 0])
         self.assertEqual(pointwise["launch"]["sync_error"]["result"], 0)
         self.assertIs(pointwise["kernel_library"]["loaded"], True)
+        pointwise_reduce = report["torch_rs_cuda_pointwise_reduce_workload"]
+        self.assertEqual(
+            pointwise_reduce["schema_version"],
+            _cuda_pointwise_reduce_workload.POINTWISE_REDUCE_SCHEMA_VERSION,
+        )
+        self.assertEqual(pointwise_reduce["status"], "ok")
+        self.assertIs(pointwise_reduce["cpu_fallback"], False)
+        self.assertEqual(pointwise_reduce["device_type"], "cuda")
+        self.assertEqual(pointwise_reduce["device_index"], 0)
+        self.assertEqual(pointwise_reduce["cuda_visible_devices"], "0")
+        self.assertEqual(pointwise_reduce["workload_shape"], [1024, 1024])
+        self.assertEqual(pointwise_reduce["output_shape"], [1024])
+        self.assertEqual(
+            pointwise_reduce["output_metadata"],
+            report["reference_workload"]["output_metadata"],
+        )
+        self.assertIs(pointwise_reduce["output_metadata_match"], True)
+        self.assertEqual(
+            pointwise_reduce["device_output_checksum"],
+            report["reference_workload"]["cold_checksum"],
+        )
+        self.assertEqual(
+            pointwise_reduce["pytorch_reference_output_checksum"],
+            report["reference_workload"]["cold_checksum"],
+        )
+        self.assertIs(pointwise_reduce["checksum_match"], True)
+        self.assertEqual(pointwise_reduce["launch"]["sync_error"]["result"], 0)
+        self.assertIs(pointwise_reduce["kernel_library"]["loaded"], True)
+        self.assertIn("H100", pointwise_reduce["gpu"]["name"])
+        self.assertEqual(pointwise_reduce["gpu"]["compute_capability"], [9, 0])
+        self.assertIs(pointwise_reduce["nvcc"]["available"], True)
+        self.assertIn(
+            "Cuda compilation tools",
+            pointwise_reduce["nvcc"]["version"]["stdout"],
+        )
         self.assertGreater(report["reference_workload"]["cold_first_call_us"], 0.0)
         self.assertGreater(
             report["reference_workload"]["steady"]["median_us"],
