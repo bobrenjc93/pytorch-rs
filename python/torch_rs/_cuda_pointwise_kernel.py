@@ -467,6 +467,7 @@ def _base_result(
     byte_count: int,
     input_checksum: str,
     expected_checksum: str,
+    required_cuda_visible_devices: str | None,
     runtime: ctypes.CDLL | None,
     runtime_library: str | None,
     runtime_load_error: str | None,
@@ -478,8 +479,12 @@ def _base_result(
         "primitive": "torch_rs_private_cuda_pointwise_float32_kernel_device0",
         "public_torch_cuda_api": False,
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
-        "required_cuda_visible_devices": "0",
-        "cuda_visible_devices_match": os.environ.get("CUDA_VISIBLE_DEVICES") == "0",
+        "required_cuda_visible_devices": required_cuda_visible_devices,
+        "cuda_visible_devices_match": (
+            required_cuda_visible_devices is None
+            or os.environ.get("CUDA_VISIBLE_DEVICES") == required_cuda_visible_devices
+        ),
+        "single_visible_cuda_device": None,
         "status": "unavailable",
         "reason": None,
         "cpu_fallback": False,
@@ -510,6 +515,8 @@ def _base_result(
 
 def launch_float32_pointwise_device0(
     element_count: int = DEFAULT_ELEMENT_COUNT,
+    *,
+    required_cuda_visible_devices: str | None = "0",
 ) -> dict[str, Any]:
     """Compile, launch, synchronize, and verify one CUDA pointwise kernel.
 
@@ -521,6 +528,11 @@ def launch_float32_pointwise_device0(
         raise TypeError("element_count must be int")
     if element_count <= 0:
         raise ValueError("element_count must be positive")
+    if (
+        required_cuda_visible_devices is not None
+        and type(required_cuda_visible_devices) is not str
+    ):
+        raise TypeError("required_cuda_visible_devices must be str or None")
 
     host_input_bytes = _deterministic_input_bytes(element_count)
     expected_output = _expected_output_bytes(element_count)
@@ -542,6 +554,7 @@ def launch_float32_pointwise_device0(
         byte_count=byte_count,
         input_checksum=input_checksum,
         expected_checksum=expected_checksum,
+        required_cuda_visible_devices=required_cuda_visible_devices,
         runtime=runtime,
         runtime_library=runtime_library,
         runtime_load_error=runtime_load_error,
@@ -549,8 +562,14 @@ def launch_float32_pointwise_device0(
         nvcc=nvcc,
     )
 
-    if os.environ.get("CUDA_VISIBLE_DEVICES") != "0":
-        result["reason"] = "CUDA_VISIBLE_DEVICES=0 is required"
+    if (
+        required_cuda_visible_devices is not None
+        and os.environ.get("CUDA_VISIBLE_DEVICES") != required_cuda_visible_devices
+    ):
+        result["reason"] = (
+            "CUDA_VISIBLE_DEVICES="
+            f"{required_cuda_visible_devices} is required"
+        )
         return result
     if runtime is None:
         result["reason"] = "CUDA runtime shared library was not loaded"
@@ -582,6 +601,10 @@ def launch_float32_pointwise_device0(
         return result
     if device_count.value < 1:
         result["reason"] = "no CUDA runtime devices are visible"
+        return result
+    result["single_visible_cuda_device"] = int(device_count.value) == 1
+    if required_cuda_visible_devices is None and device_count.value != 1:
+        result["reason"] = "exactly one CUDA runtime device must be visible"
         return result
     if not nvcc["available"]:
         result["status"] = "error"

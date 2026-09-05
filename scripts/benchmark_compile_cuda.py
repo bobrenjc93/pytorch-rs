@@ -381,16 +381,20 @@ def _torch_rs_private_cuda_driver_probe():
     return _cuda_driver_probe.probe_cuda_driver_device0()
 
 
-def _torch_rs_private_cuda_runtime_roundtrip():
+def _torch_rs_private_cuda_runtime_roundtrip(required_cuda_visible_devices):
     from torch_rs import _cuda_runtime_roundtrip
 
-    return _cuda_runtime_roundtrip.roundtrip_float32_device0()
+    return _cuda_runtime_roundtrip.roundtrip_float32_device0(
+        required_cuda_visible_devices=required_cuda_visible_devices,
+    )
 
 
-def _torch_rs_private_cuda_pointwise_kernel():
+def _torch_rs_private_cuda_pointwise_kernel(required_cuda_visible_devices):
     from torch_rs import _cuda_pointwise_kernel
 
-    return _cuda_pointwise_kernel.launch_float32_pointwise_device0()
+    return _cuda_pointwise_kernel.launch_float32_pointwise_device0(
+        required_cuda_visible_devices=required_cuda_visible_devices,
+    )
 
 
 def _require_private_cuda_runtime_roundtrip(roundtrip):
@@ -541,9 +545,13 @@ def run_benchmark(args):
 
     torch_rs_cuda_driver_probe = _torch_rs_private_cuda_driver_probe()
     _require_reference_environment(reference_torch, args)
-    torch_rs_cuda_runtime_roundtrip = _torch_rs_private_cuda_runtime_roundtrip()
+    torch_rs_cuda_runtime_roundtrip = _torch_rs_private_cuda_runtime_roundtrip(
+        args.required_cuda_visible_devices,
+    )
     _require_private_cuda_runtime_roundtrip(torch_rs_cuda_runtime_roundtrip)
-    torch_rs_cuda_pointwise_kernel = _torch_rs_private_cuda_pointwise_kernel()
+    torch_rs_cuda_pointwise_kernel = _torch_rs_private_cuda_pointwise_kernel(
+        args.required_cuda_visible_devices,
+    )
     _require_private_cuda_pointwise_kernel(torch_rs_cuda_pointwise_kernel)
 
     gc_was_enabled = gc.isenabled()

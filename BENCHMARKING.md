@@ -100,6 +100,10 @@ on the H100 host with a single visible device:
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py
 ```
 
+To reserve a different physical GPU, mask exactly one device and pass the same
+literal value to `--required-cuda-visible-devices`; benchmark-private CUDA work
+still uses logical CUDA device 0 after masking.
+
 The script requires PyTorch 2.13, records GPU, driver, CUDA runtime, `nvcc`,
 compile configuration, cold first-call timing, synchronized steady-state
 timings, and checksum/correctness evidence for one versioned PyTorch CUDA
