@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import torch_rs as torch
 from torch_rs import (
+    _cuda_buffer,
     _cuda_driver_probe,
     _cuda_pointwise_kernel,
     _cuda_pointwise_reduce_workload,
@@ -101,6 +102,30 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
         self.assertIn("driver", probe)
         self.assertIn("runtime", probe)
         self.assertIn("cuda_visible_devices", probe)
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
+        self.assertIs(torch.cuda.is_initialized(), False)
+
+    def test_private_cuda_float32_buffer_is_not_public_cuda_support(self):
+        self.assertNotIn("_cuda_buffer", torch.__all__)
+        self.assertFalse(hasattr(torch.cuda, "_cuda_buffer"))
+        self.assertFalse(hasattr(torch.cuda, "Float32Buffer"))
+        self.assertEqual(
+            _cuda_buffer.BUFFER_SCHEMA_VERSION,
+            "torch_rs_private_cuda_float32_buffer_v1",
+        )
+
+        metadata = _cuda_buffer.float32_metadata((2, 3), device_index=0)
+        self.assertEqual(metadata["shape"], [2, 3])
+        self.assertEqual(metadata["stride"], [3, 1])
+        self.assertEqual(metadata["dtype"], "torch.float32")
+        self.assertEqual(metadata["device"], "cuda:0")
+        self.assertEqual(metadata["device_type"], "cuda")
+        self.assertEqual(metadata["device_index"], 0)
+        self.assertIs(metadata["requires_grad"], False)
+        self.assertIs(metadata["is_contiguous"], True)
+        self.assertEqual(_cuda_buffer.element_count((2, 3)), 6)
+        self.assertEqual(_cuda_buffer.contiguous_stride((2, 3, 4)), (12, 4, 1))
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertIs(torch.cuda.is_initialized(), False)
@@ -354,6 +379,17 @@ print(json.dumps({
         self.assertTrue(roundtrip["cuda_visible_devices_match"])
         self.assertEqual(roundtrip["dtype"], "float32")
         self.assertEqual(
+            roundtrip["buffer_schema_version"],
+            _cuda_buffer.BUFFER_SCHEMA_VERSION,
+        )
+        self.assertEqual(
+            roundtrip["buffer_metadata"],
+            _cuda_buffer.float32_metadata(
+                (_cuda_runtime_roundtrip.DEFAULT_ELEMENT_COUNT,),
+                device_index=0,
+            ),
+        )
+        self.assertEqual(
             roundtrip["element_count"],
             _cuda_runtime_roundtrip.DEFAULT_ELEMENT_COUNT,
         )
@@ -426,6 +462,18 @@ print(json.dumps({
         self.assertTrue(pointwise["cuda_visible_devices_match"])
         self.assertTrue(pointwise["single_visible_cuda_device"])
         self.assertEqual(pointwise["dtype"], "float32")
+        self.assertEqual(
+            pointwise["buffer_schema_version"],
+            _cuda_buffer.BUFFER_SCHEMA_VERSION,
+        )
+        self.assertEqual(
+            pointwise["input_metadata"],
+            _cuda_buffer.float32_metadata(
+                (_cuda_pointwise_kernel.DEFAULT_ELEMENT_COUNT,),
+                device_index=0,
+            ),
+        )
+        self.assertEqual(pointwise["output_metadata"], pointwise["input_metadata"])
         self.assertEqual(
             pointwise["element_count"],
             _cuda_pointwise_kernel.DEFAULT_ELEMENT_COUNT,
@@ -543,8 +591,19 @@ print(json.dumps({
         self.assertTrue(pointwise_reduce["cuda_visible_devices_match"])
         self.assertTrue(pointwise_reduce["single_visible_cuda_device"])
         self.assertEqual(pointwise_reduce["dtype"], "float32")
+        self.assertEqual(
+            pointwise_reduce["buffer_schema_version"],
+            _cuda_buffer.BUFFER_SCHEMA_VERSION,
+        )
         self.assertEqual(pointwise_reduce["workload_shape"], [1024, 1024])
         self.assertEqual(pointwise_reduce["output_shape"], [1024])
+        self.assertEqual(
+            pointwise_reduce["input_metadata"],
+            [
+                _cuda_buffer.float32_metadata((1024, 1024), device_index=0),
+                _cuda_buffer.float32_metadata((1024,), device_index=0),
+            ],
+        )
         self.assertEqual(
             pointwise_reduce["pytorch_reference_output_checksum"],
             pytorch_reference["cold_checksum"],
@@ -955,6 +1014,10 @@ print(json.dumps({{
             runtime_roundtrip["schema_version"],
             _cuda_runtime_roundtrip.ROUNDTRIP_SCHEMA_VERSION,
         )
+        self.assertEqual(
+            runtime_roundtrip["buffer_schema_version"],
+            _cuda_buffer.BUFFER_SCHEMA_VERSION,
+        )
         self.assertEqual(runtime_roundtrip["status"], "ok")
         self.assertIs(runtime_roundtrip["cpu_fallback"], False)
         self.assertEqual(runtime_roundtrip["device_type"], "cuda")
@@ -976,6 +1039,10 @@ print(json.dumps({{
             pointwise["schema_version"],
             _cuda_pointwise_kernel.POINTWISE_SCHEMA_VERSION,
         )
+        self.assertEqual(
+            pointwise["buffer_schema_version"],
+            _cuda_buffer.BUFFER_SCHEMA_VERSION,
+        )
         self.assertEqual(pointwise["status"], "ok")
         self.assertIs(pointwise["cpu_fallback"], False)
         self.assertEqual(pointwise["device_type"], "cuda")
@@ -996,6 +1063,10 @@ print(json.dumps({{
         self.assertEqual(
             pointwise_reduce["schema_version"],
             _cuda_pointwise_reduce_workload.POINTWISE_REDUCE_SCHEMA_VERSION,
+        )
+        self.assertEqual(
+            pointwise_reduce["buffer_schema_version"],
+            _cuda_buffer.BUFFER_SCHEMA_VERSION,
         )
         self.assertEqual(pointwise_reduce["status"], "ok")
         self.assertIs(pointwise_reduce["cpu_fallback"], False)

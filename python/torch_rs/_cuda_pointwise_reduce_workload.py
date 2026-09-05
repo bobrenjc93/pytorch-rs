@@ -16,6 +16,7 @@ import struct
 from pathlib import Path
 from typing import Any
 
+from . import _cuda_buffer
 from . import _cuda_driver_probe
 from . import _cuda_pointwise_kernel as _cuda_kernel_support
 
@@ -31,12 +32,7 @@ OUTPUT_SHAPE = (1024,)
 
 _FLOAT32_SIZE = 4
 _THREADS_PER_BLOCK = 32
-_CUDA_MEMCPY_HOST_TO_DEVICE = 1
-_CUDA_MEMCPY_DEVICE_TO_HOST = 2
-_CUDA_UNAVAILABLE_ERRORS = {
-    "cudaErrorInsufficientDriver",
-    "cudaErrorNoDevice",
-}
+_CUDA_UNAVAILABLE_ERRORS = _cuda_buffer.CUDA_UNAVAILABLE_ERRORS
 _CUDA_SOURCE = r"""
 #include <cuda_runtime.h>
 #include <math.h>
@@ -475,6 +471,7 @@ def _base_result(
         "device_type": None,
         "device_index": None,
         "dtype": "float32",
+        "buffer_schema_version": _cuda_buffer.BUFFER_SCHEMA_VERSION,
         "workload_shape": [rows, columns],
         "output_shape": [rows],
         "x_byte_count": len(x_bytes),
@@ -492,6 +489,7 @@ def _base_result(
         "pytorch_reference_output_checksum": expected_output_checksum,
         "device_output_checksum": None,
         "checksum_match": False,
+        "input_metadata": None,
         "expected_output_metadata": expected_output_metadata,
         "output_metadata": None,
         "output_metadata_match": False,
@@ -736,104 +734,70 @@ def launch_h100_float32_pointwise_reduce_device0(
 
     result["device_type"] = "cuda"
     result["device_index"] = int(current_device.value)
-    result["input_metadata"] = _input_metadata(
-        rows,
-        columns,
-        result["device_index"],
+    device_x = _cuda_buffer.PrivateCudaFloat32Buffer(
+        runtime,
+        (rows, columns),
+        name="x",
+        device_index=result["device_index"],
     )
-    result["output_metadata"] = _output_metadata(rows, result["device_index"])
-    result["output_metadata_match"] = (
-        expected_output_metadata is not None
-        and result["output_metadata"] == expected_output_metadata
-    )
+    result["calls"]["cudaMalloc_x"] = device_x.malloc_call
+    result["device_x_pointer_nonzero"] = device_x.pointer_nonzero
+    if not device_x.allocation_ok:
+        result["status"] = "error"
+        result["reason"] = "cudaMalloc failed for x"
+        return result
 
-    x_byte_count = len(x_host_bytes)
-    bias_byte_count = len(bias_host_bytes)
-    output_byte_count = rows * _FLOAT32_SIZE
-    device_x = ctypes.c_void_p()
-    device_bias = ctypes.c_void_p()
-    device_output = ctypes.c_void_p()
-
+    device_bias = None
+    device_output = None
     try:
-        x_malloc = _runtime_call(
+        device_bias = _cuda_buffer.PrivateCudaFloat32Buffer(
             runtime,
-            "cudaMalloc",
-            ctypes.byref(device_x),
-            x_byte_count,
+            (columns,),
+            name="bias",
+            device_index=result["device_index"],
         )
-        x_malloc["byte_count"] = x_byte_count
-        result["calls"]["cudaMalloc_x"] = x_malloc
-        result["device_x_pointer_nonzero"] = bool(device_x.value)
-        if x_malloc["result"] != 0 or not device_x.value:
-            result["status"] = "error"
-            result["reason"] = "cudaMalloc failed for x"
-            return result
-
-        bias_malloc = _runtime_call(
-            runtime,
-            "cudaMalloc",
-            ctypes.byref(device_bias),
-            bias_byte_count,
-        )
-        bias_malloc["byte_count"] = bias_byte_count
-        result["calls"]["cudaMalloc_bias"] = bias_malloc
-        result["device_bias_pointer_nonzero"] = bool(device_bias.value)
-        if bias_malloc["result"] != 0 or not device_bias.value:
+        result["calls"]["cudaMalloc_bias"] = device_bias.malloc_call
+        result["device_bias_pointer_nonzero"] = device_bias.pointer_nonzero
+        if not device_bias.allocation_ok:
             result["status"] = "error"
             result["reason"] = "cudaMalloc failed for bias"
             return result
 
-        output_malloc = _runtime_call(
+        device_output = _cuda_buffer.PrivateCudaFloat32Buffer(
             runtime,
-            "cudaMalloc",
-            ctypes.byref(device_output),
-            output_byte_count,
+            (rows,),
+            name="output",
+            device_index=result["device_index"],
         )
-        output_malloc["byte_count"] = output_byte_count
-        result["calls"]["cudaMalloc_output"] = output_malloc
-        result["device_output_pointer_nonzero"] = bool(device_output.value)
-        if output_malloc["result"] != 0 or not device_output.value:
+        result["calls"]["cudaMalloc_output"] = device_output.malloc_call
+        result["device_output_pointer_nonzero"] = device_output.pointer_nonzero
+        if not device_output.allocation_ok:
             result["status"] = "error"
             result["reason"] = "cudaMalloc failed for output"
             return result
 
-        host_x = ctypes.create_string_buffer(x_host_bytes, x_byte_count)
-        host_bias = ctypes.create_string_buffer(bias_host_bytes, bias_byte_count)
-        host_output = ctypes.create_string_buffer(output_byte_count)
-
-        x_h2d_call = _runtime_call(
-            runtime,
-            "cudaMemcpy",
-            device_x,
-            ctypes.c_void_p(ctypes.addressof(host_x)),
-            x_byte_count,
-            _CUDA_MEMCPY_HOST_TO_DEVICE,
+        result["input_metadata"] = [device_x.metadata(), device_bias.metadata()]
+        result["output_metadata"] = device_output.metadata()
+        result["output_metadata_match"] = (
+            expected_output_metadata is not None
+            and result["output_metadata"] == expected_output_metadata
         )
-        x_h2d_call["kind"] = "cudaMemcpyHostToDevice"
-        x_h2d_call["byte_count"] = x_byte_count
+
+        x_h2d_call = device_x.copy_from_host(x_host_bytes)
         result["calls"]["cudaMemcpyHostToDevice_x"] = x_h2d_call
         if x_h2d_call["result"] != 0:
             result["status"] = "error"
             result["reason"] = "cudaMemcpy host-to-device failed for x"
             return result
 
-        bias_h2d_call = _runtime_call(
-            runtime,
-            "cudaMemcpy",
-            device_bias,
-            ctypes.c_void_p(ctypes.addressof(host_bias)),
-            bias_byte_count,
-            _CUDA_MEMCPY_HOST_TO_DEVICE,
-        )
-        bias_h2d_call["kind"] = "cudaMemcpyHostToDevice"
-        bias_h2d_call["byte_count"] = bias_byte_count
+        bias_h2d_call = device_bias.copy_from_host(bias_host_bytes)
         result["calls"]["cudaMemcpyHostToDevice_bias"] = bias_h2d_call
         if bias_h2d_call["result"] != 0:
             result["status"] = "error"
             result["reason"] = "cudaMemcpy host-to-device failed for bias"
             return result
 
-        sync_after_h2d = _runtime_call(runtime, "cudaDeviceSynchronize")
+        sync_after_h2d = device_x.synchronize()
         result["calls"]["cudaDeviceSynchronize_after_host_to_device"] = (
             sync_after_h2d
         )
@@ -852,9 +816,9 @@ def launch_h100_float32_pointwise_reduce_device0(
         )
         kernel_result = int(
             kernel_function(
-                device_x,
-                device_bias,
-                device_output,
+                device_x.pointer,
+                device_bias.pointer,
+                device_output.pointer,
                 rows,
                 columns,
                 ctypes.byref(blocks),
@@ -893,40 +857,27 @@ def launch_h100_float32_pointwise_reduce_device0(
             result["reason"] = "private CUDA pointwise-reduce kernel launch failed"
             return result
 
-        d2h_call = _runtime_call(
-            runtime,
-            "cudaMemcpy",
-            ctypes.c_void_p(ctypes.addressof(host_output)),
-            device_output,
-            output_byte_count,
-            _CUDA_MEMCPY_DEVICE_TO_HOST,
+        readback = device_output.checksum_readback(
+            lambda payload: _checksum_output_bytes(payload, rows, columns),
         )
-        d2h_call["kind"] = "cudaMemcpyDeviceToHost"
-        d2h_call["byte_count"] = output_byte_count
+        d2h_call = readback.copy_call
         result["calls"]["cudaMemcpyDeviceToHost_output"] = d2h_call
         if d2h_call["result"] != 0:
             result["status"] = "error"
             result["reason"] = "cudaMemcpy device-to-host failed for output"
             return result
 
-        sync_after_d2h = _runtime_call(runtime, "cudaDeviceSynchronize")
+        sync_after_d2h = readback.sync_call
         result["calls"]["cudaDeviceSynchronize_after_device_to_host"] = (
             sync_after_d2h
         )
-        if sync_after_d2h["result"] != 0:
+        if sync_after_d2h is None or sync_after_d2h["result"] != 0:
             result["status"] = "error"
             result["reason"] = "cudaDeviceSynchronize failed after device-to-host"
             return result
 
-        host_output_bytes = ctypes.string_at(
-            ctypes.addressof(host_output),
-            output_byte_count,
-        )
-        result["device_output_bytes_checksum"] = _checksum_output_bytes(
-            host_output_bytes,
-            rows,
-            columns,
-        )
+        host_output_bytes = readback.payload
+        result["device_output_bytes_checksum"] = readback.checksum
         result["device_output_checksum"] = _checksum_tensor_metadata_values(
             host_output_bytes,
             result["output_metadata"],
@@ -958,20 +909,26 @@ def launch_h100_float32_pointwise_reduce_device0(
         result["reason"] = "pointwise-reduce workload checksum verified"
         return result
     finally:
-        if device_output.value:
-            free_output = _runtime_call(runtime, "cudaFree", device_output)
+        if device_output is not None:
+            free_output = device_output.close()
+        else:
+            free_output = None
+        if free_output is not None:
             result["calls"]["cudaFree_output"] = free_output
             if result["status"] == "ok" and free_output["result"] != 0:
                 result["status"] = "error"
                 result["reason"] = "cudaFree failed for output"
-        if device_bias.value:
-            free_bias = _runtime_call(runtime, "cudaFree", device_bias)
+        if device_bias is not None:
+            free_bias = device_bias.close()
+        else:
+            free_bias = None
+        if free_bias is not None:
             result["calls"]["cudaFree_bias"] = free_bias
             if result["status"] == "ok" and free_bias["result"] != 0:
                 result["status"] = "error"
                 result["reason"] = "cudaFree failed for bias"
-        if device_x.value:
-            free_x = _runtime_call(runtime, "cudaFree", device_x)
+        free_x = device_x.close()
+        if free_x is not None:
             result["calls"]["cudaFree_x"] = free_x
             if result["status"] == "ok" and free_x["result"] != 0:
                 result["status"] = "error"
