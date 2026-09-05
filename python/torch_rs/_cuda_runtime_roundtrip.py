@@ -175,6 +175,7 @@ def _base_result(
     byte_count: int,
     input_checksum: str,
     expected_checksum: str,
+    required_cuda_visible_devices: str | None,
     runtime: ctypes.CDLL | None,
     runtime_library: str | None,
     runtime_load_error: str | None,
@@ -185,8 +186,11 @@ def _base_result(
         "primitive": "torch_rs_private_cuda_runtime_float32_roundtrip_device0",
         "public_torch_cuda_api": False,
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
-        "required_cuda_visible_devices": "0",
-        "cuda_visible_devices_match": os.environ.get("CUDA_VISIBLE_DEVICES") == "0",
+        "required_cuda_visible_devices": required_cuda_visible_devices,
+        "cuda_visible_devices_match": (
+            required_cuda_visible_devices is None
+            or os.environ.get("CUDA_VISIBLE_DEVICES") == required_cuda_visible_devices
+        ),
         "status": "unavailable",
         "reason": None,
         "cpu_fallback": False,
@@ -210,6 +214,8 @@ def _base_result(
 
 def roundtrip_float32_device0(
     element_count: int = DEFAULT_ELEMENT_COUNT,
+    *,
+    required_cuda_visible_devices: str | None = "0",
 ) -> dict[str, Any]:
     """Allocate device-0 CUDA memory, copy deterministic float32 bytes, and sync.
 
@@ -221,6 +227,11 @@ def roundtrip_float32_device0(
         raise TypeError("element_count must be int")
     if element_count <= 0:
         raise ValueError("element_count must be positive")
+    if (
+        required_cuda_visible_devices is not None
+        and type(required_cuda_visible_devices) is not str
+    ):
+        raise TypeError("required_cuda_visible_devices must be str or None")
 
     host_input_bytes = _deterministic_float32_bytes(element_count)
     byte_count = len(host_input_bytes)
@@ -237,6 +248,7 @@ def roundtrip_float32_device0(
         expected_checksum=DEFAULT_ROUNDTRIP_CHECKSUM
         if element_count == DEFAULT_ELEMENT_COUNT
         else input_checksum,
+        required_cuda_visible_devices=required_cuda_visible_devices,
         runtime=runtime,
         runtime_library=runtime_library,
         runtime_load_error=runtime_load_error,

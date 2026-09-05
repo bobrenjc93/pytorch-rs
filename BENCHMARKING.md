@@ -100,13 +100,22 @@ on the H100 host with a single visible device:
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py
 ```
 
+To reserve a different physical GPU, mask exactly one device and pass the same
+literal value to `--required-cuda-visible-devices`; benchmark-private CUDA work
+still uses logical CUDA device 0 after masking.
+Passing an empty `--required-cuda-visible-devices` preserves the local
+experimentation escape hatch by skipping the literal environment check; CUDA
+work still runs on logical device 0 and records the visible-device count.
+
 The script requires PyTorch 2.13, records GPU, driver, CUDA runtime, `nvcc`,
 compile configuration, cold first-call timing, synchronized steady-state
 timings, and checksum/correctness evidence for one versioned PyTorch CUDA
 reference workload. It also records private benchmark-only `torch_rs` CUDA
 driver/runtime evidence, separate from the public `torch.cuda` compatibility
 API: device 0 metadata plus a float32 runtime allocation, host-to-device copy,
-device-to-host copy, synchronization, and checksum roundtrip. The current
+device-to-host copy, synchronization, checksum roundtrip, and one compiled
+torch_rs-owned float32 pointwise kernel launch with synchronized output
+checksum verification. The current
 `torch_rs` CUDA compile cell is emitted as explicit `zero_credit_unsupported`:
 CPU tensors, `backend="eager"`, eager fallback, skipped execution, or
 forwarding to installed PyTorch are rejected as eligible CUDA compile evidence.

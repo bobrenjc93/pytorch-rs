@@ -31,7 +31,7 @@ PROTECTED_OUTPUT_PATHS = {
 }
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v3"
+BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v4"
 WORKLOAD_VERSION = "h100_cuda_pointwise_reduce_float32_v1"
 WORKLOAD_SHAPE = (1024, 1024)
 WORKLOAD_SEED = 20260904
@@ -381,10 +381,20 @@ def _torch_rs_private_cuda_driver_probe():
     return _cuda_driver_probe.probe_cuda_driver_device0()
 
 
-def _torch_rs_private_cuda_runtime_roundtrip():
+def _torch_rs_private_cuda_runtime_roundtrip(required_cuda_visible_devices):
     from torch_rs import _cuda_runtime_roundtrip
 
-    return _cuda_runtime_roundtrip.roundtrip_float32_device0()
+    return _cuda_runtime_roundtrip.roundtrip_float32_device0(
+        required_cuda_visible_devices=required_cuda_visible_devices,
+    )
+
+
+def _torch_rs_private_cuda_pointwise_kernel(required_cuda_visible_devices):
+    from torch_rs import _cuda_pointwise_kernel
+
+    return _cuda_pointwise_kernel.launch_float32_pointwise_device0(
+        required_cuda_visible_devices=required_cuda_visible_devices,
+    )
 
 
 def _require_private_cuda_runtime_roundtrip(roundtrip):
@@ -406,6 +416,26 @@ def _require_private_cuda_runtime_roundtrip(roundtrip):
         != roundtrip.get("expected_checksum")
     ):
         raise AssertionError("private torch_rs CUDA runtime checksum is unexpected")
+
+
+def _require_private_cuda_pointwise_kernel(pointwise):
+    if pointwise.get("status") != "ok":
+        raise AssertionError(
+            "private torch_rs CUDA pointwise kernel failed: "
+            f"{pointwise.get('reason')}"
+        )
+    if pointwise.get("cpu_fallback") is not False:
+        raise AssertionError("private torch_rs CUDA pointwise kernel used CPU fallback")
+    if pointwise.get("device_type") != "cuda" or pointwise.get("device_index") != 0:
+        raise AssertionError(
+            "private torch_rs CUDA pointwise kernel did not run on CUDA device 0"
+        )
+    if pointwise.get("checksum_match") is not True:
+        raise AssertionError("private torch_rs CUDA pointwise checksum did not match")
+    if pointwise.get("device_output_checksum") != pointwise.get("expected_checksum"):
+        raise AssertionError("private torch_rs CUDA pointwise checksum is unexpected")
+    if (pointwise.get("launch") or {}).get("sync_error", {}).get("result") != 0:
+        raise AssertionError("private torch_rs CUDA pointwise kernel did not sync")
 
 
 def torch_rs_zero_credit_unsupported_row(torch_rs):
@@ -430,7 +460,9 @@ def torch_rs_zero_credit_unsupported_row(torch_rs):
             "torch_rs currently has no native CUDA tensor execution or CUDA "
             "torch.compile backend; this benchmark records the unsupported "
             "cell explicitly instead of substituting CPU execution, "
-            "backend='eager', eager fallback, or installed-PyTorch forwarding."
+            "backend='eager', eager fallback, or installed-PyTorch forwarding. "
+            "Private benchmark-only CUDA driver/runtime/kernel evidence is not "
+            "compiled torch_rs CUDA output and does not receive compile credit."
         ),
         "cuda_probes": _torch_rs_public_cuda_probes(torch_rs),
         "rejected_fallbacks": [
@@ -513,8 +545,14 @@ def run_benchmark(args):
 
     torch_rs_cuda_driver_probe = _torch_rs_private_cuda_driver_probe()
     _require_reference_environment(reference_torch, args)
-    torch_rs_cuda_runtime_roundtrip = _torch_rs_private_cuda_runtime_roundtrip()
+    torch_rs_cuda_runtime_roundtrip = _torch_rs_private_cuda_runtime_roundtrip(
+        args.required_cuda_visible_devices,
+    )
     _require_private_cuda_runtime_roundtrip(torch_rs_cuda_runtime_roundtrip)
+    torch_rs_cuda_pointwise_kernel = _torch_rs_private_cuda_pointwise_kernel(
+        args.required_cuda_visible_devices,
+    )
+    _require_private_cuda_pointwise_kernel(torch_rs_cuda_pointwise_kernel)
 
     gc_was_enabled = gc.isenabled()
     gc.disable()
@@ -530,6 +568,7 @@ def run_benchmark(args):
         "reference_workload": pytorch_reference,
         "torch_rs_cuda_driver_probe": torch_rs_cuda_driver_probe,
         "torch_rs_cuda_runtime_roundtrip": torch_rs_cuda_runtime_roundtrip,
+        "torch_rs_cuda_pointwise_kernel": torch_rs_cuda_pointwise_kernel,
         "candidate": torch_rs_row,
         "aggregates": {
             "common_success_geomean_speed_ratio": None,
