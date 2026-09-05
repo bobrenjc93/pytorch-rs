@@ -17,7 +17,7 @@ except ImportError:
 
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-COMPILE_CORPUS_VERSION = "torch_compile_corpus_v11"
+COMPILE_CORPUS_VERSION = "torch_compile_corpus_v12"
 
 CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -164,6 +164,16 @@ def cpu_float32_heldout_requires_grad_branch_binary(x, y):
     else:
         z = x.neg().add(y.abs())
     return z.relu()
+
+
+def cpu_float32_fullgraph_false_no_break_unary(x):
+    y = x.neg()
+    return y.abs().add(x.relu())
+
+
+def cpu_float32_heldout_fullgraph_false_no_break_binary(x, y):
+    z = x.add(y.abs())
+    return z.neg().relu()
 
 
 def cpu_float32_self_add_inputs(module):
@@ -771,6 +781,13 @@ COMPILE_CORPUS = (
         make_inputs=cpu_float32_control_flow_requires_grad_false_inputs,
     ),
     CompileCorpusCase(
+        name="cpu_float32_fullgraph_false_no_break_unary",
+        category="graph_breaks_fullgraph",
+        program=cpu_float32_fullgraph_false_no_break_unary,
+        make_inputs=cpu_float32_unary_inputs,
+        fullgraph=False,
+    ),
+    CompileCorpusCase(
         name="cpu_float32_matrix_vector_add",
         category="broadcasting",
         program=cpu_float32_matrix_vector_add,
@@ -898,6 +915,13 @@ COMPILE_HELD_OUT_CORPUS = (
         category="python_control_flow",
         program=cpu_float32_heldout_requires_grad_branch_binary,
         make_inputs=cpu_float32_heldout_control_flow_requires_grad_false_inputs,
+    ),
+    CompileCorpusCase(
+        name="cpu_float32_heldout_fullgraph_false_no_break_binary",
+        category="graph_breaks_fullgraph",
+        program=cpu_float32_heldout_fullgraph_false_no_break_binary,
+        make_inputs=cpu_float32_matrix_vector_inputs,
+        fullgraph=False,
     ),
     CompileCorpusCase(
         name="cpu_float32_heldout_guard_unary_metadata",
@@ -1322,10 +1346,10 @@ def assert_leaf_gradients_unchanged(testcase, inputs, before_gradients, *, case)
 
 class CompileCorpusMetadataTests(unittest.TestCase):
     def test_corpus_has_versioned_weighted_skeleton(self):
-        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v11")
+        self.assertEqual(COMPILE_CORPUS_VERSION, "torch_compile_corpus_v12")
         self.assertEqual(sum(CATEGORY_WEIGHTS.values()), 100)
-        self.assertEqual(len(COMPILE_CORPUS), 21)
-        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 13)
+        self.assertEqual(len(COMPILE_CORPUS), 22)
+        self.assertEqual(len(COMPILE_HELD_OUT_CORPUS), 14)
 
         case_names = [case.name for case in COMPILE_CORPUS]
         self.assertEqual(
@@ -1343,6 +1367,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_decomposition_square_scalar",
                 "cpu_float32_custom_function_unary",
                 "cpu_float32_requires_grad_branch_unary",
+                "cpu_float32_fullgraph_false_no_break_unary",
                 "cpu_float32_matrix_vector_add",
                 "cpu_float32_matrix_vector_add_method",
                 "cpu_float32_tensor_scalar_add",
@@ -1369,6 +1394,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "cpu_float32_heldout_decomposition_square_noncontiguous",
                 "cpu_float32_heldout_custom_function_binary",
                 "cpu_float32_heldout_requires_grad_branch_binary",
+                "cpu_float32_heldout_fullgraph_false_no_break_binary",
                 "cpu_float32_heldout_guard_unary_metadata",
                 "cpu_float32_heldout_guard_binary_metadata",
             ],
@@ -1388,6 +1414,7 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                 "decompositions",
                 "custom_functions",
                 "python_control_flow",
+                "graph_breaks_fullgraph",
                 "recompilation_guards",
                 "dtype_device_transitions",
             },
@@ -1395,7 +1422,10 @@ class CompileCorpusMetadataTests(unittest.TestCase):
         for case in COMPILE_CORPUS:
             with self.subTest(case=case.name):
                 self.assertIn(case.category, CATEGORY_WEIGHTS)
-                self.assertTrue(case.fullgraph)
+                self.assertIs(
+                    case.fullgraph,
+                    case.category != "graph_breaks_fullgraph",
+                )
                 self.assertIsNone(case.dynamic)
                 self.assertIsNone(case.mode)
                 self.assertIsNone(case.options)
@@ -1425,12 +1455,16 @@ class CompileCorpusMetadataTests(unittest.TestCase):
                         "decompositions",
                         "custom_functions",
                         "python_control_flow",
+                        "graph_breaks_fullgraph",
                         "recompilation_guards",
                         "dtype_device_transitions",
                     },
                 )
                 self.assertIn(case.category, CATEGORY_WEIGHTS)
-                self.assertTrue(case.fullgraph)
+                self.assertIs(
+                    case.fullgraph,
+                    case.category != "graph_breaks_fullgraph",
+                )
                 self.assertIsNone(case.dynamic)
                 self.assertIsNone(case.mode)
                 self.assertIsNone(case.options)
@@ -1700,6 +1734,11 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 ["neg", "abs", "neg", "add"],
             ),
             (
+                cpu_float32_fullgraph_false_no_break_unary,
+                cpu_float32_unary_inputs,
+                ["neg", "abs", "relu", "add"],
+            ),
+            (
                 cpu_float32_matrix_vector_add,
                 cpu_float32_matrix_vector_inputs,
                 ["neg", "abs", "neg", "add"],
@@ -1753,6 +1792,11 @@ class CompileCorpusTraceTests(unittest.TestCase):
                 cpu_float32_heldout_float_identity_rank3_view,
                 cpu_float32_heldout_float_identity_rank3_view_inputs,
                 ["float"],
+            ),
+            (
+                cpu_float32_heldout_fullgraph_false_no_break_binary,
+                cpu_float32_matrix_vector_inputs,
+                ["abs", "add", "neg", "relu"],
             ),
         )
         for program, make_inputs, expected_targets in cases:
@@ -4035,7 +4079,8 @@ try:
     compiled_with_callable_backend(make_inputs(torch)[0])
 except NotImplementedError as error:
     assert str(error) == (
-        "torch.compile(): only backend='eager', fullgraph=True straight-line "
+        "torch.compile(): only backend='eager', fullgraph=True or no-break "
+        "fullgraph=False straight-line "
         "Tensor neg/abs/relu/square/detach/float/add functions, plus one top-level "
         "if over an input Tensor.requires_grad selecting from that same subset, "
         "optionally inlining one exact same-module helper call and reading "

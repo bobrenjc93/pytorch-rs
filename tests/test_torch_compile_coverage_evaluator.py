@@ -257,8 +257,31 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
 
         self.assertIn("duplicate case name 'tensor_0'", str(raised.exception))
 
-    def test_current_v11_corpus_matches_pinned_manifest(self):
+    def test_current_v12_corpus_matches_pinned_manifest(self):
         evaluator._validate_corpus_metadata(_real_corpus_namespace())
+
+    def test_graph_break_category_requires_fullgraph_false(self):
+        corpus = _real_corpus_namespace()
+        graph_break_case = next(
+            case
+            for case in corpus.COMPILE_CORPUS
+            if case.category == "graph_breaks_fullgraph"
+        )
+        replacement = replace(graph_break_case, fullgraph=True)
+        index = corpus.COMPILE_CORPUS.index(graph_break_case)
+        corpus.COMPILE_CORPUS = (
+            *corpus.COMPILE_CORPUS[:index],
+            replacement,
+            *corpus.COMPILE_CORPUS[index + 1 :],
+        )
+
+        with self.assertRaises(evaluator.EvaluationFatalError) as raised:
+            evaluator._validate_corpus_metadata(corpus)
+
+        self.assertIn(
+            f"{graph_break_case.name} must use fullgraph=False",
+            str(raised.exception),
+        )
 
     def test_pinned_manifest_rejects_case_program_replacement(self):
         corpus = _real_corpus_namespace()
@@ -272,7 +295,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v11 case cpu_float32_unary_abs_neg program changed",
+            "public v12 case cpu_float32_unary_abs_neg program changed",
             str(raised.exception),
         )
 
@@ -288,7 +311,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v11 case cpu_float32_unary_abs_neg make_inputs changed",
+            "public v12 case cpu_float32_unary_abs_neg make_inputs changed",
             str(raised.exception),
         )
 
@@ -308,7 +331,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             program_globals["cpu_float32_custom_helper_unary"] = original_helper
 
         self.assertIn(
-            "public v11 case cpu_float32_custom_function_unary helper_sha256s changed",
+            "public v12 case cpu_float32_custom_function_unary helper_sha256s changed",
             str(raised.exception),
         )
 
@@ -340,7 +363,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v11 guard scenario "
+            "public v12 guard scenario "
             "unary_shape_stride_requires_grad_guards/same_metadata "
             "guard_change changed",
             str(raised.exception),

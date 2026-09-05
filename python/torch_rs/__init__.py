@@ -261,7 +261,8 @@ def set_default_device(device: "Device") -> None:
 
 
 _COMPILE_UNSUPPORTED_MESSAGE = (
-    "torch.compile(): only backend='eager', fullgraph=True straight-line "
+    "torch.compile(): only backend='eager', fullgraph=True or no-break "
+    "fullgraph=False straight-line "
     "Tensor neg/abs/relu/square/detach/float/add functions, plus one top-level "
     "if over an input Tensor.requires_grad selecting from that same subset, "
     "optionally inlining one exact same-module helper call and reading "
@@ -382,7 +383,7 @@ def _supports_native_eager_compile(
     return (
         _builtins.type(resolved_backend) is _builtins.str
         and resolved_backend == "eager"
-        and fullgraph is True
+        and (fullgraph is True or fullgraph is False)
         and dynamic is None
         and mode is None
         and options is None
@@ -626,7 +627,8 @@ def compile(
     ``float32`` Tensor inputs made only from Tensor ``neg``, ``abs``,
     ``relu``, ``square``, ``detach``, ``float``, binary ``add``, and one exact
     same-module helper call over Tensor arguments for ``backend="eager"``
-    with ``fullgraph=True``. Those functions may read module-global exact
+    with ``fullgraph=True`` or no-break ``fullgraph=False``. Those functions
+    may read module-global exact
     native CPU ``float32`` Tensor constants. They may also contain one
     top-level ``if`` over an input Tensor's ``requires_grad`` metadata; the
     native path lowers the selected branch and returns either a Tensor or a
