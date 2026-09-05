@@ -89,8 +89,9 @@ The same row includes the public `torch.compile(..., backend="eager",
 fullgraph=True)` subset for exact one-argument Python functions whose
 straight-line bytecode is limited to native CPU `float32` Tensor `neg`, `abs`,
 `relu`, `square`, `detach`, and binary `add` compositions, plus two-argument
-broadcasting programs over the same operation set. The compile corpus includes
-no-grad ReLU inference graphlets, square decomposition graphlets, and
+broadcasting programs and one exact same-module helper call over the same
+operation set. The compile corpus includes no-grad ReLU inference graphlets,
+square decomposition graphlets, custom-function helper graphlets, and
 storage-aliasing detach graphlets over grad-requiring CPU `float32` inputs and
 verifies that outputs do not require gradients, detach outputs share storage
 with the input view, and input gradients remain unchanged.

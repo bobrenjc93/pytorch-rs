@@ -143,12 +143,14 @@ def _valid_fake_corpus():
             for index in range(2)
         ),
         _case("guard_limit", "recompilation_guards", recompile_limit=2),
+        _case("custom_public", "custom_functions"),
     )
     held_out_cases = (
         _case("heldout_broadcast_0", "broadcasting"),
         _case("heldout_broadcast_1", "broadcasting"),
         _case("heldout_guard_0", "recompilation_guards", recompile_limit=4),
         _case("heldout_guard_1", "recompilation_guards", recompile_limit=4),
+        _case("heldout_custom", "custom_functions"),
     )
     return SimpleNamespace(
         COMPILE_CORPUS_VERSION=evaluator.EXPECTED_CORPUS_VERSION,
@@ -239,7 +241,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
 
         self.assertIn("duplicate case name 'tensor_0'", str(raised.exception))
 
-    def test_current_v8_corpus_matches_pinned_manifest(self):
+    def test_current_v9_corpus_matches_pinned_manifest(self):
         evaluator._validate_corpus_metadata(_real_corpus_namespace())
 
     def test_pinned_manifest_rejects_case_program_replacement(self):
@@ -254,7 +256,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v8 case cpu_float32_unary_abs_neg program changed",
+            "public v9 case cpu_float32_unary_abs_neg program changed",
             str(raised.exception),
         )
 
@@ -270,7 +272,27 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v8 case cpu_float32_unary_abs_neg make_inputs changed",
+            "public v9 case cpu_float32_unary_abs_neg make_inputs changed",
+            str(raised.exception),
+        )
+
+    def test_pinned_manifest_rejects_custom_helper_replacement(self):
+        corpus = _real_corpus_namespace()
+        original_helper = corpus.cpu_float32_custom_helper_unary
+
+        def replacement_helper(x):
+            return x
+
+        program_globals = corpus.cpu_float32_custom_function_unary.__globals__
+        program_globals["cpu_float32_custom_helper_unary"] = replacement_helper
+        try:
+            with self.assertRaises(evaluator.EvaluationFatalError) as raised:
+                evaluator._validate_corpus_metadata(corpus)
+        finally:
+            program_globals["cpu_float32_custom_helper_unary"] = original_helper
+
+        self.assertIn(
+            "public v9 case cpu_float32_custom_function_unary helper_sha256s changed",
             str(raised.exception),
         )
 
@@ -302,7 +324,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             evaluator._validate_corpus_metadata(corpus)
 
         self.assertIn(
-            "public v8 guard scenario "
+            "public v9 guard scenario "
             "unary_shape_stride_requires_grad_guards/same_metadata "
             "guard_change changed",
             str(raised.exception),
@@ -338,10 +360,13 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
     def test_guard_case_resolution_uses_pinned_constants_not_helper(self):
         corpus = _valid_fake_corpus()
         corpus.compile_corpus_case = lambda name: corpus.COMPILE_CORPUS[0]
+        guard_limit = next(
+            case for case in corpus.COMPILE_CORPUS if case.name == "guard_limit"
+        )
 
         self.assertIs(
             evaluator._case_by_name(corpus, "guard_limit"),
-            corpus.COMPILE_CORPUS[-1],
+            guard_limit,
         )
 
     def test_compile_execution_uses_pinned_fields_not_case_helper(self):
