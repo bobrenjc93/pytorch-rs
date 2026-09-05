@@ -445,9 +445,20 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         original_lower = _compile_bytecode.lower_one_input_compile_graph
         calls = []
 
-        def counting_lower(requested_program, input_metadata, *, name=None):
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             calls.append((requested_program, input_metadata, name))
-            return original_lower(requested_program, input_metadata, name=name)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(program, backend="eager", fullgraph=True)
         first = torch.tensor([[-2.0, 3.0], [4.0, -5.0]], dtype=torch.float32)
@@ -478,9 +489,20 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         original_lower = _compile_bytecode.lower_one_input_compile_graph
         calls = []
 
-        def counting_lower(requested_program, input_metadata, *, name=None):
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             calls.append((requested_program, input_metadata, name))
-            return original_lower(requested_program, input_metadata, name=name)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(program, backend="eager", fullgraph=True)
         input = torch.tensor([2.0], dtype=torch.float32)
@@ -508,9 +530,20 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         original_lower = _compile_bytecode.lower_one_input_compile_graph
         calls = []
 
-        def counting_lower(requested_program, input_metadata, *, name=None):
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             calls.append((requested_program, input_metadata, name))
-            return original_lower(requested_program, input_metadata, name=name)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(program, backend="eager", fullgraph=True)
         input = torch.tensor([2.0], dtype=torch.float32)
@@ -532,6 +565,111 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             eager_compile_mutable_helper.__code__ = original_code
             _compile_bytecode.lower_one_input_compile_graph = original_lower
 
+    def test_eager_fullgraph_lowering_uses_helper_binding_cache_snapshot(self):
+        global eager_compile_inline_helper
+
+        def program(x):
+            return eager_compile_inline_helper(x)
+
+        original_helper = eager_compile_inline_helper
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def rebinding_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            global eager_compile_inline_helper
+
+            calls.append((requested_program, input_metadata, name))
+            eager_compile_inline_helper = eager_compile_inline_abs_helper
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([2.0], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = rebinding_lower
+            self.assertEqual(compiled(input).tolist(), [0.0])
+            eager_compile_inline_helper = original_helper
+            self.assertEqual(compiled(input).tolist(), [0.0])
+            self.assertEqual(len(calls), 1)
+        finally:
+            eager_compile_inline_helper = original_helper
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_lowering_uses_helper_code_cache_snapshot(self):
+        def program(x):
+            return eager_compile_mutable_helper(x)
+
+        original_code = eager_compile_mutable_helper.__code__
+        original_lower = _compile_bytecode.lower_one_input_compile_graph
+        calls = []
+
+        def mutating_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
+            calls.append((requested_program, input_metadata, name))
+            eager_compile_mutable_helper.__code__ = (
+                eager_compile_mutable_helper_abs.__code__
+            )
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        input = torch.tensor([2.0], dtype=torch.float32)
+
+        try:
+            _compile_bytecode.lower_one_input_compile_graph = mutating_lower
+            self.assertEqual(compiled(input).tolist(), [-2.0])
+            eager_compile_mutable_helper.__code__ = original_code
+            self.assertEqual(compiled(input).tolist(), [-2.0])
+            self.assertEqual(len(calls), 1)
+        finally:
+            eager_compile_mutable_helper.__code__ = original_code
+            _compile_bytecode.lower_one_input_compile_graph = original_lower
+
+    def test_eager_fullgraph_cached_no_helper_calls_do_not_rescan_bytecode(self):
+        def program(x):
+            return x.neg().abs() + x
+
+        original_get_instructions = _compile_bytecode._dis.get_instructions
+        scans = []
+
+        def counting_get_instructions(target, *args, **kwargs):
+            scans.append(target)
+            return original_get_instructions(target, *args, **kwargs)
+
+        compiled = torch.compile(program, backend="eager", fullgraph=True)
+        first = torch.tensor([[-2.0, 3.0], [4.0, -5.0]], dtype=torch.float32)
+        second = torch.tensor([[1.0, -1.5], [2.5, -3.0]], dtype=torch.float32)
+
+        try:
+            _compile_bytecode._dis.get_instructions = counting_get_instructions
+            self.assertEqual(compiled(first).tolist(), program(first).tolist())
+            scan_count = len(scans)
+            self.assertGreater(scan_count, 0)
+            self.assertEqual(compiled(second).tolist(), program(second).tolist())
+            self.assertEqual(len(scans), scan_count)
+        finally:
+            _compile_bytecode._dis.get_instructions = original_get_instructions
+
     def test_eager_fullgraph_caches_two_input_graphs_by_all_input_metadata(self):
         def program(x, y):
             return x + y.abs()
@@ -539,9 +677,20 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         original_lower = _compile_bytecode.lower_compile_graph
         calls = []
 
-        def counting_lower(requested_program, input_metadatas, *, name=None):
+        def counting_lower(
+            requested_program,
+            input_metadatas,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             calls.append((requested_program, input_metadatas, name))
-            return original_lower(requested_program, input_metadatas, name=name)
+            return original_lower(
+                requested_program,
+                input_metadatas,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(program, backend="eager", fullgraph=True)
         matrix = torch.tensor(
@@ -610,9 +759,20 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         original_lower = _compile_bytecode.lower_one_input_compile_graph
         calls = []
 
-        def counting_lower(requested_program, input_metadata, *, name=None):
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             calls.append((requested_program, input_metadata, name))
-            return original_lower(requested_program, input_metadata, name=name)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(
             program,
@@ -635,9 +795,20 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         original_lower = _compile_bytecode.lower_one_input_compile_graph
         calls = []
 
-        def counting_lower(requested_program, input_metadata, *, name=None):
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             calls.append((requested_program, input_metadata, name))
-            return original_lower(requested_program, input_metadata, name=name)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(
             program,
@@ -679,7 +850,13 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         second_lower_started = threading.Event()
         release_lowerers = threading.Event()
 
-        def blocking_lower(requested_program, input_metadata, *, name=None):
+        def blocking_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             with calls_lock:
                 calls.append((requested_program, input_metadata, name))
                 is_first_call = len(calls) == 1
@@ -688,7 +865,12 @@ class TorchCompileEntrypointTests(unittest.TestCase):
             else:
                 second_lower_started.set()
             release_lowerers.wait(5.0)
-            return original_lower(requested_program, input_metadata, name=name)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(
             program,
@@ -754,9 +936,20 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         original_lower = _compile_bytecode.lower_one_input_compile_graph
         calls = []
 
-        def counting_lower(requested_program, input_metadata, *, name=None):
+        def counting_lower(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             calls.append((requested_program, input_metadata, name))
-            return original_lower(requested_program, input_metadata, name=name)
+            return original_lower(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(
             program,
@@ -790,9 +983,20 @@ class TorchCompileEntrypointTests(unittest.TestCase):
         original_lower = _compile_bytecode.lower_compile_graph
         calls = []
 
-        def counting_lower(requested_program, input_metadatas, *, name=None):
+        def counting_lower(
+            requested_program,
+            input_metadatas,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             calls.append((requested_program, input_metadatas, name))
-            return original_lower(requested_program, input_metadatas, name=name)
+            return original_lower(
+                requested_program,
+                input_metadatas,
+                name=name,
+                compile_request=compile_request,
+            )
 
         compiled = torch.compile(
             program,

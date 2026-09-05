@@ -1224,7 +1224,7 @@ class CompileCorpusTraceTests(unittest.TestCase):
         original_get_instructions = _compile_bytecode._dis.get_instructions
 
         def fake_get_instructions(requested_program):
-            self.assertIs(requested_program, program)
+            self.assertIn(requested_program, (program, program.__code__))
             return iter(instructions)
 
         try:
@@ -3048,9 +3048,20 @@ from torch_rs import _compile_bytecode
 guard_lower_calls = []
 original_lower = _compile_bytecode.lower_one_input_compile_graph
 
-def counting_lower(requested_program, input_metadata, *, name=None):
+def counting_lower(
+    requested_program,
+    input_metadata,
+    *,
+    name=None,
+    compile_request=None,
+):
     guard_lower_calls.append(input_metadata)
-    return original_lower(requested_program, input_metadata, name=name)
+    return original_lower(
+        requested_program,
+        input_metadata,
+        name=name,
+        compile_request=compile_request,
+    )
 
 _compile_bytecode.lower_one_input_compile_graph = counting_lower
 try:
@@ -3146,14 +3157,36 @@ class CompileRecompilationGuardCorpusTests(unittest.TestCase):
         original_lower_two = _compile_bytecode.lower_compile_graph
         calls = []
 
-        def counting_lower_one(requested_program, input_metadata, *, name=None):
+        def counting_lower_one(
+            requested_program,
+            input_metadata,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             calls.append((requested_program, (input_metadata,), name))
-            return original_lower_one(requested_program, input_metadata, name=name)
+            return original_lower_one(
+                requested_program,
+                input_metadata,
+                name=name,
+                compile_request=compile_request,
+            )
 
-        def counting_lower_two(requested_program, input_metadatas, *, name=None):
+        def counting_lower_two(
+            requested_program,
+            input_metadatas,
+            *,
+            name=None,
+            compile_request=None,
+        ):
             if requested_program.__code__.co_argcount == 2:
                 calls.append((requested_program, tuple(input_metadatas), name))
-            return original_lower_two(requested_program, input_metadatas, name=name)
+            return original_lower_two(
+                requested_program,
+                input_metadatas,
+                name=name,
+                compile_request=compile_request,
+            )
 
         try:
             _compile_bytecode.lower_one_input_compile_graph = counting_lower_one

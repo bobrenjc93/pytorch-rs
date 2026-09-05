@@ -29,6 +29,7 @@ class _BytecodeConstant:
 class _BytecodeFunction:
     function: object
     name: str
+    code: object
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,9 +39,30 @@ class _HelperCacheDependency:
     code: object
 
 
+@dataclass(frozen=True, slots=True)
+class _GlobalLoadDependency:
+    name: str
+    instruction: object
+
+
+@dataclass(frozen=True, slots=True)
+class _CompileProgramDescriptor:
+    code: object
+    global_loads: tuple[_GlobalLoadDependency, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _CompileCacheRequest:
+    key: object
+    descriptor: _CompileProgramDescriptor
+    input_metadatas: tuple
+    helper_dependencies: tuple[_HelperCacheDependency, ...]
+
+
 @dataclass(slots=True)
 class _LoweringState:
     root_program: object
+    helper_dependencies: tuple[_HelperCacheDependency, ...] = ()
     helper_call_count: int = 0
 
 
@@ -230,14 +252,7 @@ def _instruction_form(program, instruction):
     _unsupported_bytecode(program, instruction, "unsupported bytecode")
 
 
-def _validate_program(program):
-    if _builtins.type(program) is not _types.FunctionType:
-        raise _trace.CompileTraceUnsupportedError(
-            "torch.compile trace bytecode lowering currently supports exact "
-            "Python functions only"
-        )
-
-    code = program.__code__
+def _validate_function_code(program, code):
     if (
         code.co_argcount not in (1, 2)
         or code.co_kwonlyargcount != 0
@@ -259,12 +274,24 @@ def _validate_program(program):
     return code
 
 
-def _validate_helper_function(root_program, helper, program, instruction):
+def _validate_program(program):
+    if _builtins.type(program) is not _types.FunctionType:
+        raise _trace.CompileTraceUnsupportedError(
+            "torch.compile trace bytecode lowering currently supports exact "
+            "Python functions only"
+        )
+
+    code = program.__code__
+    return _validate_function_code(program, code)
+
+
+def _validate_helper_function(root_program, helper, program, instruction, code=None):
     if _builtins.type(helper) is not _types.FunctionType:
         _unsupported_bytecode(program, instruction, "global or import access")
     if helper.__defaults__ is not None or helper.__kwdefaults__ is not None:
         _unsupported_bytecode(program, instruction, "helper function defaults")
-    code = helper.__code__
+    if code is None:
+        code = helper.__code__
     if helper.__closure__ is not None or code.co_freevars or code.co_cellvars:
         raise _trace.CompileTraceUnsupportedError(
             "torch.compile trace bytecode lowering does not support closures"
@@ -280,7 +307,7 @@ def _validate_helper_function(root_program, helper, program, instruction):
         or root_program.__globals__.get(helper_name) is not helper
     ):
         _unsupported_bytecode(program, instruction, "global or import access")
-    return _validate_program(helper)
+    return _validate_function_code(helper, code)
 
 
 def _global_name(program, instruction):
@@ -296,31 +323,56 @@ def _global_name(program, instruction):
     _unsupported_bytecode(program, instruction, "global operand decoding")
 
 
-def _resolve_global_helper(state, program, instruction, name):
+def _resolve_live_global_helper(root_program, program, instruction, name):
     try:
         helper = program.__globals__[name]
     except KeyError:
         _unsupported_bytecode(program, instruction, "global or import access")
-    _validate_helper_function(state.root_program, helper, program, instruction)
-    return helper
+    helper_code = (
+        helper.__code__ if _builtins.type(helper) is _types.FunctionType else None
+    )
+    helper_code = _validate_helper_function(
+        root_program,
+        helper,
+        program,
+        instruction,
+        helper_code,
+    )
+    return _HelperCacheDependency(name, helper, helper_code)
 
 
-def _helper_cache_dependencies(program):
-    state = _LoweringState(root_program=program)
-    dependencies = []
-    for instruction in _dis.get_instructions(program):
-        if _instruction_form(program, instruction) != "load_global":
+def analyze_compile_program(program):
+    code = _validate_program(program)
+    global_loads = []
+    for instruction in _dis.get_instructions(code):
+        kind = _instruction_form(program, instruction)
+        if kind != "load_global":
             continue
         name = _global_name(program, instruction)
-        helper = _resolve_global_helper(state, program, instruction, name)
-        dependencies.append(
-            _HelperCacheDependency(
-                global_name=name,
-                function=helper,
-                code=helper.__code__,
-            )
+        _resolve_live_global_helper(program, program, instruction, name)
+        global_loads.append(_GlobalLoadDependency(name, instruction))
+    return _CompileProgramDescriptor(code, tuple(global_loads))
+
+
+def _helper_cache_dependencies(program, descriptor):
+    return tuple(
+        _resolve_live_global_helper(
+            program,
+            program,
+            global_load.instruction,
+            global_load.name,
         )
-    return tuple(dependencies)
+        for global_load in descriptor.global_loads
+    )
+
+
+def _resolve_global_helper(state, program, instruction, name):
+    if program is state.root_program:
+        for dependency in state.helper_dependencies:
+            if dependency.global_name == name:
+                return dependency
+        _unsupported_bytecode(program, instruction, "helper dependency snapshot")
+    return _resolve_live_global_helper(state.root_program, program, instruction, name)
 
 
 def _validate_input_metadatas(code, input_metadatas):
@@ -346,11 +398,26 @@ def _validate_input_metadatas(code, input_metadatas):
             )
 
 
+def prepare_compile_cache_request(program, input_metadatas, descriptor=None):
+    """Return cache metadata and the exact helper snapshot used for lowering."""
+    code = getattr(program, "__code__", None)
+    if descriptor is None or descriptor.code is not code:
+        descriptor = analyze_compile_program(program)
+    else:
+        _validate_function_code(program, descriptor.code)
+    _validate_input_metadatas(descriptor.code, input_metadatas)
+    helper_dependencies = _helper_cache_dependencies(program, descriptor)
+    return _CompileCacheRequest(
+        key=(descriptor.code, input_metadatas, helper_dependencies),
+        descriptor=descriptor,
+        input_metadatas=input_metadatas,
+        helper_dependencies=helper_dependencies,
+    )
+
+
 def compile_cache_key(program, input_metadatas):
     """Return a cache key that includes validated helper function dependencies."""
-    code = _validate_program(program)
-    _validate_input_metadatas(code, input_metadatas)
-    return (code, input_metadatas, _helper_cache_dependencies(program))
+    return prepare_compile_cache_request(program, input_metadatas).key
 
 
 def _pop(stack, program, instruction):
@@ -428,8 +495,14 @@ def _handle_load_global(
 ):
     del recorder, locals, active
     name = _global_name(program, instruction)
-    helper = _resolve_global_helper(state, program, instruction, name)
-    stack.append(_BytecodeFunction(helper, name))
+    helper_dependency = _resolve_global_helper(state, program, instruction, name)
+    stack.append(
+        _BytecodeFunction(
+            helper_dependency.function,
+            name,
+            helper_dependency.code,
+        )
+    )
 
 
 def _handle_load_method(
@@ -453,8 +526,8 @@ def _handle_load_method(
     stack.append(_BytecodeMethod(receiver, _builtins.str(instruction.argval)))
 
 
-def _lower_function_body(recorder, locals, stack, program, state, active):
-    for instruction in _dis.get_instructions(program):
+def _lower_function_body(recorder, locals, stack, program, code, state, active):
+    for instruction in _dis.get_instructions(code):
         output = _lower_instruction(
             recorder,
             locals,
@@ -520,12 +593,7 @@ def _record_function_call(
         _unsupported_bytecode(program, instruction, "recursive helper function calls")
     if state.helper_call_count >= 1:
         _unsupported_bytecode(program, instruction, "helper function calls")
-    helper_code = _validate_helper_function(
-        state.root_program,
-        helper,
-        program,
-        instruction,
-    )
+    helper_code = function.code
     if len(args) != helper_code.co_argcount:
         _unsupported_bytecode(
             program,
@@ -546,6 +614,7 @@ def _record_function_call(
         helper_locals,
         [],
         helper,
+        helper_code,
         state,
         (*active, helper),
     )
@@ -744,10 +813,16 @@ def _lower_instruction(recorder, locals, stack, program, instruction, state, act
     )
 
 
-def lower_compile_graph(program, input_metadatas, *, name=None):
+def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=None):
     """Lower a narrow straight-line Python function into a native trace graph."""
-    code = _validate_program(program)
-    _validate_input_metadatas(code, input_metadatas)
+    if compile_request is None:
+        compile_request = prepare_compile_cache_request(program, input_metadatas)
+    elif compile_request.input_metadatas != input_metadatas:
+        raise TypeError(
+            "torch.compile trace bytecode lowering compile request metadata "
+            "does not match inputs"
+        )
+    code = compile_request.descriptor.code
 
     recorder = _trace.CompileTraceRecorder(
         name or getattr(program, "__name__", "compile_trace")
@@ -764,17 +839,41 @@ def lower_compile_graph(program, input_metadatas, *, name=None):
             requires_grad=input_metadata.requires_grad,
         )
     stack = []
-    state = _LoweringState(root_program=program)
-    output = _lower_function_body(recorder, locals, stack, program, state, (program,))
+    state = _LoweringState(
+        root_program=program,
+        helper_dependencies=compile_request.helper_dependencies,
+    )
+    output = _lower_function_body(
+        recorder,
+        locals,
+        stack,
+        program,
+        code,
+        state,
+        (program,),
+    )
     return recorder.finish(output)
 
 
-def lower_one_input_compile_graph(program, input_metadata, *, name=None):
-    return lower_compile_graph(program, (input_metadata,), name=name)
+def lower_one_input_compile_graph(
+    program,
+    input_metadata,
+    *,
+    name=None,
+    compile_request=None,
+):
+    return lower_compile_graph(
+        program,
+        (input_metadata,),
+        name=name,
+        compile_request=compile_request,
+    )
 
 
 __all__ = [
+    "analyze_compile_program",
     "compile_cache_key",
+    "prepare_compile_cache_request",
     "lower_compile_graph",
     "lower_one_input_compile_graph",
 ]

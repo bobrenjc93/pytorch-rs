@@ -1682,9 +1682,20 @@ def _candidate_compile_counters():
         "execute_compile_trace_graph": 0,
     }
 
-    def counting_lower_compile_graph(program, input_metadatas, *, name=None):
+    def counting_lower_compile_graph(
+        program,
+        input_metadatas,
+        *,
+        name=None,
+        compile_request=None,
+    ):
         counters["lower_compile_graph"] += 1
-        return original_lower_compile_graph(program, input_metadatas, name=name)
+        return original_lower_compile_graph(
+            program,
+            input_metadatas,
+            name=name,
+            compile_request=compile_request,
+        )
 
     def counting_execute_compile_trace_graph(graph, *inputs):
         counters["execute_compile_trace_graph"] += 1
