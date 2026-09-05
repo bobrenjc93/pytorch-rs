@@ -50,6 +50,7 @@ CATEGORY_LABELS = {
     "decompositions": "decomposition",
     "custom_functions": "custom-functions",
     "recompilation_guards": "recompilation-guard",
+    "dtype_device_transitions": "dtype-device-transitions",
 }
 CATEGORY_PHRASES = {
     "tensor_arithmetic": "tensor arithmetic",
@@ -60,6 +61,7 @@ CATEGORY_PHRASES = {
     "decompositions": "decompositions",
     "custom_functions": "custom functions",
     "recompilation_guards": "recompilation guards",
+    "dtype_device_transitions": "dtype/device transitions",
 }
 CATEGORY_PROGRAM_LABELS = {
     "tensor_arithmetic": "tensor-arithmetic",
@@ -70,6 +72,7 @@ CATEGORY_PROGRAM_LABELS = {
     "decompositions": "decomposition",
     "custom_functions": "custom-function",
     "recompilation_guards": "recompilation-guard",
+    "dtype_device_transitions": "dtype/device-transition",
 }
 
 
