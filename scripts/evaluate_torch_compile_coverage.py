@@ -26,8 +26,8 @@ import warnings
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CORPUS_PATH = REPOSITORY_ROOT / "tests" / "test_compile_corpus.py"
 EVALUATION_ID = "eval_a61c0e71"
-EVALUATOR_VERSION = "torch_compile_program_coverage_evaluator_v5"
-EXPECTED_CORPUS_VERSION = "torch_compile_corpus_v9"
+EVALUATOR_VERSION = "torch_compile_program_coverage_evaluator_v6"
+EXPECTED_CORPUS_VERSION = "torch_compile_corpus_v10"
 REFERENCE_PYTORCH_VERSION = "2.13.0"
 EXPECTED_CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -49,13 +49,15 @@ REQUIRED_CATEGORIES = tuple(EXPECTED_CATEGORY_WEIGHTS)
 EXPECTED_PUBLIC_GUARD_SCENARIOS = (
     "unary_shape_stride_requires_grad_guards",
     "binary_argument_metadata_guards",
+    "requires_grad_branch_unary_cache",
     "bounded_limit_then_reset",
 )
 EXPECTED_HELD_OUT_GUARD_SCENARIOS = (
+    "heldout_requires_grad_branch_binary_cache",
     "heldout_unary_rank3_metadata_mix",
     "heldout_binary_broadcast_metadata_mix",
 )
-EXPECTED_V9_CASE_MANIFEST = (
+EXPECTED_V10_CASE_MANIFEST = (
     {
         "name": "cpu_float32_unary_abs_neg",
         "held_out": False,
@@ -173,6 +175,24 @@ EXPECTED_V9_CASE_MANIFEST = (
         "run_under_no_grad": False,
     },
     {
+        "name": "cpu_float32_float_identity_view",
+        "held_out": False,
+        "category": "dtype_device_transitions",
+        "program": "cpu_float32_float_identity_view",
+        "program_sha256": "8ba3f0f1ac4bb7d96a2509a397daddb511b83f15a7b252eb1504fc20d0f34895",
+        "make_inputs": "cpu_float32_float_identity_view_inputs",
+        "make_inputs_sha256": "bdd401b4335ce587640c7409f5fee7802733415eb3c5220025fa2ee2bf648bd6",
+        "inputs_sha256": "924af58460b92ff3526e16d8cdbf6cd6862e3850c206e4d1dcbfb086df93e661",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
         "name": "cpu_float32_training_unary_neg_abs_add",
         "held_out": False,
         "category": "training_autograd",
@@ -226,6 +246,24 @@ EXPECTED_V9_CASE_MANIFEST = (
         "mode": None,
         "options": None,
         "recompile_limit": None,
+    },
+    {
+        "name": "cpu_float32_requires_grad_branch_unary",
+        "held_out": False,
+        "category": "python_control_flow",
+        "program": "cpu_float32_requires_grad_branch_unary",
+        "program_sha256": "d32515c11079b8b24c3d043162eed47422828c3f77f5afcb848f51ca1f593ac5",
+        "make_inputs": "cpu_float32_control_flow_requires_grad_false_inputs",
+        "make_inputs_sha256": "fc6e0b56689ee7e83d8762fa86e52a3362e9456416818403c85799d45320f170",
+        "inputs_sha256": "45bc0581ad4e4b64a4752682357d741919fd0a4a7bc62b1ddb4b74761fb98b64",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
     },
     {
         "name": "cpu_float32_matrix_vector_add",
@@ -443,6 +481,24 @@ EXPECTED_V9_CASE_MANIFEST = (
         "run_under_no_grad": False,
     },
     {
+        "name": "cpu_float32_heldout_float_identity_rank3_view",
+        "held_out": True,
+        "category": "dtype_device_transitions",
+        "program": "cpu_float32_heldout_float_identity_rank3_view",
+        "program_sha256": "2045e4af858790176580ef8c1af7e6497473ad15e5a837497cb09bb73edd8894",
+        "make_inputs": "cpu_float32_heldout_float_identity_rank3_view_inputs",
+        "make_inputs_sha256": "51d4c762c92f169dfc952544cdd0d68a7eb92c7fbdf1a0a3b4ca0d3366c4d948",
+        "inputs_sha256": "34435fe0d3c5b6aa7673bc0ad4e6f21ddac24806ed7a9d0479afd8456298067f",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
         "name": "cpu_float32_heldout_list_tuple_output_pytree",
         "held_out": True,
         "category": "containers_pytrees",
@@ -499,6 +555,24 @@ EXPECTED_V9_CASE_MANIFEST = (
         "recompile_limit": None,
     },
     {
+        "name": "cpu_float32_heldout_requires_grad_branch_binary",
+        "held_out": True,
+        "category": "python_control_flow",
+        "program": "cpu_float32_heldout_requires_grad_branch_binary",
+        "program_sha256": "a6c8fd10376c28928b2a6f341edc2f6b7590a17257a8068a4dd66168dd7e12ce",
+        "make_inputs": "cpu_float32_heldout_control_flow_requires_grad_false_inputs",
+        "make_inputs_sha256": "c4d0607c9d4758aea3e21110756b869a4f4276cb65c30c1cfd885b06410c18da",
+        "inputs_sha256": "d10f538dcc605a7a97347eb7e0ab4fe39997ca36b6ae09612ed2494fcbaf736f",
+        "arity": 2,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
         "name": "cpu_float32_heldout_guard_unary_metadata",
         "held_out": True,
         "category": "recompilation_guards",
@@ -531,7 +605,7 @@ EXPECTED_V9_CASE_MANIFEST = (
         "recompile_limit": 4,
     },
 )
-EXPECTED_V9_GUARD_SCENARIO_MANIFEST = (
+EXPECTED_V10_GUARD_SCENARIO_MANIFEST = (
     {
         "name": "unary_shape_stride_requires_grad_guards",
         "held_out": False,
@@ -647,6 +721,43 @@ EXPECTED_V9_GUARD_SCENARIO_MANIFEST = (
         ),
     },
     {
+        "name": "requires_grad_branch_unary_cache",
+        "held_out": False,
+        "case_name": "cpu_float32_requires_grad_branch_unary",
+        "steps": (
+            {
+                "name": "false_branch",
+                "make_inputs": "cpu_float32_control_flow_requires_grad_false_inputs",
+                "make_inputs_sha256": "fc6e0b56689ee7e83d8762fa86e52a3362e9456416818403c85799d45320f170",
+                "inputs_sha256": "45bc0581ad4e4b64a4752682357d741919fd0a4a7bc62b1ddb4b74761fb98b64",
+                "guard_change": "initial",
+                "expected_compile_count": 1,
+                "reset_before": False,
+                "expect_limit_error": False,
+            },
+            {
+                "name": "same_false_metadata",
+                "make_inputs": "cpu_float32_control_flow_requires_grad_false_inputs",
+                "make_inputs_sha256": "fc6e0b56689ee7e83d8762fa86e52a3362e9456416818403c85799d45320f170",
+                "inputs_sha256": "45bc0581ad4e4b64a4752682357d741919fd0a4a7bc62b1ddb4b74761fb98b64",
+                "guard_change": "same_metadata",
+                "expected_compile_count": 1,
+                "reset_before": False,
+                "expect_limit_error": False,
+            },
+            {
+                "name": "true_branch",
+                "make_inputs": "cpu_float32_control_flow_requires_grad_true_inputs",
+                "make_inputs_sha256": "5958cb3be400344b74dc3f8e50761aa3fc8207a8fd0ce698397df9d135ab0ae8",
+                "inputs_sha256": "d28d2c7fba11ed6ce0f83af22ed44979aca58ccdc62900ba1099827577af7169",
+                "guard_change": "requires_grad",
+                "expected_compile_count": 2,
+                "reset_before": False,
+                "expect_limit_error": False,
+            },
+        ),
+    },
+    {
         "name": "bounded_limit_then_reset",
         "held_out": False,
         "case_name": "cpu_float32_recompile_limit_reset",
@@ -699,6 +810,43 @@ EXPECTED_V9_GUARD_SCENARIO_MANIFEST = (
                 "guard_change": "reset",
                 "expected_compile_count": 3,
                 "reset_before": True,
+                "expect_limit_error": False,
+            },
+        ),
+    },
+    {
+        "name": "heldout_requires_grad_branch_binary_cache",
+        "held_out": True,
+        "case_name": "cpu_float32_heldout_requires_grad_branch_binary",
+        "steps": (
+            {
+                "name": "false_branch",
+                "make_inputs": "cpu_float32_heldout_control_flow_requires_grad_false_inputs",
+                "make_inputs_sha256": "c4d0607c9d4758aea3e21110756b869a4f4276cb65c30c1cfd885b06410c18da",
+                "inputs_sha256": "d10f538dcc605a7a97347eb7e0ab4fe39997ca36b6ae09612ed2494fcbaf736f",
+                "guard_change": "initial",
+                "expected_compile_count": 1,
+                "reset_before": False,
+                "expect_limit_error": False,
+            },
+            {
+                "name": "true_branch",
+                "make_inputs": "cpu_float32_heldout_control_flow_requires_grad_true_inputs",
+                "make_inputs_sha256": "be9f33ab1287cf4093e391c1bfe0e6ffd47305d98aa069f49629386bd3a295b0",
+                "inputs_sha256": "12a9408be1920daf3d18e8002cea1cab121022b34f10b9222a67570ff608e6a0",
+                "guard_change": "requires_grad",
+                "expected_compile_count": 2,
+                "reset_before": False,
+                "expect_limit_error": False,
+            },
+            {
+                "name": "same_true_metadata",
+                "make_inputs": "cpu_float32_heldout_control_flow_requires_grad_true_inputs",
+                "make_inputs_sha256": "be9f33ab1287cf4093e391c1bfe0e6ffd47305d98aa069f49629386bd3a295b0",
+                "inputs_sha256": "12a9408be1920daf3d18e8002cea1cab121022b34f10b9222a67570ff608e6a0",
+                "guard_change": "same_metadata",
+                "expected_compile_count": 2,
+                "reset_before": False,
                 "expect_limit_error": False,
             },
         ),
@@ -1121,19 +1269,19 @@ def _compare_manifest_entry(actual, expected, *, context, errors):
 
 def _expected_case_manifest(held_out):
     return tuple(
-        entry for entry in EXPECTED_V9_CASE_MANIFEST if entry["held_out"] is held_out
+        entry for entry in EXPECTED_V10_CASE_MANIFEST if entry["held_out"] is held_out
     )
 
 
 def _expected_guard_scenario_manifest(held_out):
     return tuple(
         entry
-        for entry in EXPECTED_V9_GUARD_SCENARIO_MANIFEST
+        for entry in EXPECTED_V10_GUARD_SCENARIO_MANIFEST
         if entry["held_out"] is held_out
     )
 
 
-def _validate_v9_case_manifest(
+def _validate_v10_case_manifest(
     corpus_module,
     cases,
     *,
@@ -1147,7 +1295,7 @@ def _validate_v9_case_manifest(
     actual_names = [getattr(case, "name", None) for case in cases]
     if actual_names != expected_names:
         errors.append(
-            f"{label} v9 case names/order changed: {actual_names!r} != {expected_names!r}"
+            f"{label} v10 case names/order changed: {actual_names!r} != {expected_names!r}"
         )
 
     expected_by_name = {entry["name"]: entry for entry in expected_entries}
@@ -1165,12 +1313,12 @@ def _validate_v9_case_manifest(
         _compare_manifest_entry(
             actual_entry,
             expected_entry,
-            context=f"{label} v9 case {case.name}",
+            context=f"{label} v10 case {case.name}",
             errors=errors,
         )
 
 
-def _validate_v9_guard_scenario_manifest(
+def _validate_v10_guard_scenario_manifest(
     corpus_module,
     scenarios,
     *,
@@ -1184,7 +1332,7 @@ def _validate_v9_guard_scenario_manifest(
     actual_names = [getattr(scenario, "name", None) for scenario in scenarios]
     if actual_names != expected_names:
         errors.append(
-            f"{label} v9 guard scenarios changed: {actual_names!r} != {expected_names!r}"
+            f"{label} v10 guard scenarios changed: {actual_names!r} != {expected_names!r}"
         )
 
     expected_by_name = {entry["name"]: entry for entry in expected_entries}
@@ -1202,7 +1350,7 @@ def _validate_v9_guard_scenario_manifest(
         _compare_manifest_entry(
             actual_entry,
             expected_entry,
-            context=f"{label} v9 guard scenario {scenario.name}",
+            context=f"{label} v10 guard scenario {scenario.name}",
             errors=errors,
         )
 
@@ -1242,10 +1390,10 @@ def _validate_corpus_metadata(corpus_module):
 
     public_cases = tuple(getattr(corpus_module, "COMPILE_CORPUS", ()))
     held_out_cases = tuple(getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ()))
-    if len(public_cases) != 18:
-        errors.append(f"expected 18 public v9 cases, found {len(public_cases)}")
-    if len(held_out_cases) != 10:
-        errors.append(f"expected 10 held-out v9 cases, found {len(held_out_cases)}")
+    if len(public_cases) != 20:
+        errors.append(f"expected 20 public v10 cases, found {len(public_cases)}")
+    if len(held_out_cases) != 12:
+        errors.append(f"expected 12 held-out v10 cases, found {len(held_out_cases)}")
 
     seen_names = set()
     for case in (*public_cases, *held_out_cases):
@@ -1303,11 +1451,11 @@ def _validate_corpus_metadata(corpus_module):
         getattr(corpus_module, "COMPILE_HELD_OUT_RECOMPILATION_GUARD_SCENARIOS", ())
     )
     if _guard_scenario_names(public_scenarios) != list(EXPECTED_PUBLIC_GUARD_SCENARIOS):
-        errors.append("public recompilation guard scenarios do not match v9")
+        errors.append("public recompilation guard scenarios do not match v10")
     if _guard_scenario_names(held_out_scenarios) != list(
         EXPECTED_HELD_OUT_GUARD_SCENARIOS
     ):
-        errors.append("held-out recompilation guard scenarios do not match v9")
+        errors.append("held-out recompilation guard scenarios do not match v10")
     for scenario in (*public_scenarios, *held_out_scenarios):
         scenario_name = getattr(scenario, "name", None)
         case_name = getattr(scenario, "case_name", None)
@@ -1332,28 +1480,28 @@ def _validate_corpus_metadata(corpus_module):
             last_compile_count = expected_count if type(expected_count) is int else 0
 
     tensor_module = _manifest_tensor_module(corpus_module, errors)
-    _validate_v9_case_manifest(
+    _validate_v10_case_manifest(
         corpus_module,
         public_cases,
         held_out=False,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v9_case_manifest(
+    _validate_v10_case_manifest(
         corpus_module,
         held_out_cases,
         held_out=True,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v9_guard_scenario_manifest(
+    _validate_v10_guard_scenario_manifest(
         corpus_module,
         public_scenarios,
         held_out=False,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v9_guard_scenario_manifest(
+    _validate_v10_guard_scenario_manifest(
         corpus_module,
         held_out_scenarios,
         held_out=True,
