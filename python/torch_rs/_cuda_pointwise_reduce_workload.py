@@ -2,7 +2,7 @@
 
 This module is intentionally separate from ``torch_rs.cuda``. It verifies that
 benchmark code can allocate torch_rs-owned CUDA buffers and run the H100 CUDA
-``torch.compile`` reference workload shape without claiming public CUDA tensor
+``torch.compile`` reference workload shapes without claiming public CUDA tensor
 or compile support.
 """
 
@@ -47,6 +47,12 @@ POINTWISE_REDUCE_KERNEL_VERSION = (
 )
 WORKLOAD_SHAPE = (1024, 1024)
 OUTPUT_SHAPE = (1024,)
+SUPPORTED_WORKLOAD_SHAPES = (
+    (256, 256),
+    (1024, 1024),
+    (4096, 256),
+    (256, 4096),
+)
 _WORKLOAD_X_METADATA = _cuda_buffer.float32_metadata(WORKLOAD_SHAPE, device_index=0)
 _WORKLOAD_BIAS_METADATA = _cuda_buffer.float32_metadata(
     (WORKLOAD_SHAPE[1],),
@@ -58,12 +64,32 @@ _WORKLOAD_OUTPUT_METADATA = _cuda_buffer.float32_metadata(
 )
 
 _FLOAT32_SIZE = 4
-_THREADS_PER_BLOCK = 32
+_COMPILE_DEFAULT_THREADS_PER_BLOCK = 32
 _OUTPUT_POOL_INITIAL_CAPACITY = 2
 _CUDA_UNAVAILABLE_ERRORS = _cuda_buffer.CUDA_UNAVAILABLE_ERRORS
 _CUDA_SOURCE = r"""
 #include <cuda_runtime.h>
 #include <math.h>
+
+__device__ __forceinline__ float torch_rs_private_pointwise_reduce_value_v1(
+    float x_value,
+    float bias_value
+) {
+    float mixed = sinf(x_value + bias_value)
+        * cosf(x_value - bias_value);
+    float relu = x_value > 0.0f ? x_value : 0.0f;
+    return mixed + relu;
+}
+
+__device__ __forceinline__ float torch_rs_private_warp_reduce_sum_v1(
+    float partial
+) {
+    unsigned int mask = 0xffffffffu;
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        partial += __shfl_xor_sync(mask, partial, offset, 32);
+    }
+    return partial;
+}
 
 extern "C" __global__ void torch_rs_private_pointwise_reduce_kernel_v1(
     const float* x,
@@ -73,8 +99,76 @@ extern "C" __global__ void torch_rs_private_pointwise_reduce_kernel_v1(
     int columns
 ) {
     int row = blockIdx.x;
-    int lane = threadIdx.x & 31;
+    int thread = threadIdx.x;
+    int lane = thread & 31;
     if (row >= rows) {
+        return;
+    }
+
+    if ((columns == 256 && rows == 256) || columns == 4096) {
+        __shared__ float warp_partials[16];
+        float acc0 = 0.0f;
+        float acc1 = 0.0f;
+        float acc2 = 0.0f;
+        float acc3 = 0.0f;
+        int row_offset = row * columns;
+        int columns_per_iteration = blockDim.x * 4;
+        int first_column = thread * 4;
+        for (
+            int tile_column = first_column;
+            tile_column < columns;
+            tile_column += columns_per_iteration
+        ) {
+            int column = tile_column;
+            if (column < columns) {
+                acc0 += torch_rs_private_pointwise_reduce_value_v1(
+                    x[row_offset + column],
+                    bias[column]
+                );
+            }
+            column = tile_column + 1;
+            if (column < columns) {
+                acc1 += torch_rs_private_pointwise_reduce_value_v1(
+                    x[row_offset + column],
+                    bias[column]
+                );
+            }
+            column = tile_column + 2;
+            if (column < columns) {
+                acc2 += torch_rs_private_pointwise_reduce_value_v1(
+                    x[row_offset + column],
+                    bias[column]
+                );
+            }
+            column = tile_column + 3;
+            if (column < columns) {
+                acc3 += torch_rs_private_pointwise_reduce_value_v1(
+                    x[row_offset + column],
+                    bias[column]
+                );
+            }
+        }
+
+        float partial = acc0 + acc1;
+        partial += acc2;
+        partial += acc3;
+        partial = torch_rs_private_warp_reduce_sum_v1(partial);
+
+        int warp = thread >> 5;
+        if (lane == 0) {
+            warp_partials[warp] = partial;
+        }
+        __syncthreads();
+
+        int warp_count = blockDim.x >> 5;
+        float block_partial = thread < warp_count ? warp_partials[thread] : 0.0f;
+        unsigned int mask = 0xffffffffu;
+        for (int offset = warp_count >> 1; offset > 0; offset >>= 1) {
+            block_partial += __shfl_xor_sync(mask, block_partial, offset, 32);
+        }
+        if (thread == 0) {
+            output[row] = block_partial;
+        }
         return;
     }
 
@@ -85,20 +179,15 @@ extern "C" __global__ void torch_rs_private_pointwise_reduce_kernel_v1(
         for (int offset = 0; offset < 4; ++offset) {
             int column = base_column + offset;
             if (column < columns) {
-                float x_value = x[row_offset + column];
-                float bias_value = bias[column];
-                float mixed = sinf(x_value + bias_value)
-                    * cosf(x_value - bias_value);
-                float relu = x_value > 0.0f ? x_value : 0.0f;
-                partial += mixed + relu;
+                partial += torch_rs_private_pointwise_reduce_value_v1(
+                    x[row_offset + column],
+                    bias[column]
+                );
             }
         }
     }
 
-    unsigned int mask = 0xffffffffu;
-    for (int offset = 16; offset > 0; offset >>= 1) {
-        partial += __shfl_xor_sync(mask, partial, offset, 32);
-    }
+    partial = torch_rs_private_warp_reduce_sum_v1(partial);
 
     if (lane == 0) {
         output[row] = partial;
@@ -123,6 +212,11 @@ extern "C" int torch_rs_private_h100_pointwise_reduce_float32_launch_async_v1(
     }
 
     int threads = 32;
+    if (columns == 4096) {
+        threads = 512;
+    } else if (columns == 256 && rows == 256) {
+        threads = 64;
+    }
     int blocks = rows;
     if (blocks_out != nullptr) {
         *blocks_out = blocks;
@@ -150,6 +244,8 @@ struct torch_rs_private_h100_pointwise_reduce_launch_report_v1 {
     int get_device_error;
     int observed_device;
     int launch_error;
+    int blocks;
+    int threads_per_block;
 };
 
 extern "C" int torch_rs_private_h100_pointwise_reduce_float32_device0_guarded_launch_async_v1(
@@ -165,6 +261,8 @@ extern "C" int torch_rs_private_h100_pointwise_reduce_float32_device0_guarded_la
         report->get_device_error = 0;
         report->observed_device = -1;
         report->launch_error = 0;
+        report->blocks = 0;
+        report->threads_per_block = 0;
     }
 
     cudaError_t set_device_error = cudaSetDevice(0);
@@ -194,8 +292,8 @@ extern "C" int torch_rs_private_h100_pointwise_reduce_float32_device0_guarded_la
         output,
         rows,
         columns,
-        nullptr,
-        nullptr,
+        report == nullptr ? nullptr : &report->blocks,
+        report == nullptr ? nullptr : &report->threads_per_block,
         report == nullptr ? nullptr : &report->launch_error
     );
 }
@@ -241,12 +339,68 @@ extern "C" int torch_rs_private_h100_pointwise_reduce_float32_v1(
 """
 
 
+def _validate_compile_workload_shape(
+    workload_shape: tuple[int, int],
+) -> tuple[int, int]:
+    if type(workload_shape) is not tuple:
+        raise TypeError("workload_shape must be tuple[int, int]")
+    if len(workload_shape) != 2:
+        raise ValueError("workload_shape must have exactly two dimensions")
+    rows, columns = workload_shape
+    if type(rows) is not int or type(columns) is not int:
+        raise TypeError("workload_shape dimensions must be int")
+    if workload_shape not in SUPPORTED_WORKLOAD_SHAPES:
+        raise _cuda_compile_unsupported(
+            f"unsupported workload shape {list(workload_shape)}"
+        )
+    return rows, columns
+
+
+def _compile_bias_shape(workload_shape: tuple[int, int]) -> tuple[int]:
+    _rows, columns = _validate_compile_workload_shape(workload_shape)
+    return (columns,)
+
+
+def _compile_output_shape(workload_shape: tuple[int, int]) -> tuple[int]:
+    rows, _columns = _validate_compile_workload_shape(workload_shape)
+    return (rows,)
+
+
+def _compile_input_metadata(
+    workload_shape: tuple[int, int],
+) -> list[dict[str, Any]]:
+    rows, columns = _validate_compile_workload_shape(workload_shape)
+    return [
+        _cuda_buffer.float32_metadata((rows, columns), device_index=0),
+        _cuda_buffer.float32_metadata((columns,), device_index=0),
+    ]
+
+
+def _compile_output_metadata(workload_shape: tuple[int, int]) -> dict[str, Any]:
+    return _cuda_buffer.float32_metadata(
+        _compile_output_shape(workload_shape),
+        device_index=0,
+    )
+
+
+def _compile_launch_dimensions(workload_shape: tuple[int, int]) -> tuple[int, int]:
+    rows, columns = _validate_compile_workload_shape(workload_shape)
+    threads = _COMPILE_DEFAULT_THREADS_PER_BLOCK
+    if columns == 4096:
+        threads = 512
+    elif columns == 256 and rows == 256:
+        threads = 64
+    return rows, threads
+
+
 class _GuardedLaunchReport(ctypes.Structure):
     _fields_ = [
         ("set_device_error", ctypes.c_int),
         ("get_device_error", ctypes.c_int),
         ("observed_device", ctypes.c_int),
         ("launch_error", ctypes.c_int),
+        ("blocks", ctypes.c_int),
+        ("threads_per_block", ctypes.c_int),
     ]
 
 
@@ -263,6 +417,8 @@ class _CompiledExecutionToken:
     get_device_error: int
     observed_device: int
     launch_error: int
+    blocks: int
+    threads_per_block: int
 
     def __deepcopy__(self, memo: dict[int, Any]) -> "_CompiledExecutionToken":
         del memo
@@ -1115,11 +1271,14 @@ def make_h100_float32_pointwise_reduce_inputs_device0(
 
 
 def _cuda_compile_unsupported(reason: str) -> NotImplementedError:
+    shape_family = ", ".join(
+        f"[{rows}, {columns}]" for rows, columns in SUPPORTED_WORKLOAD_SHAPES
+    )
     return NotImplementedError(
         "torch.compile(): native CUDA inductor execution is supported only "
         "for the versioned H100 float32 pointwise-reduce benchmark with "
-        "two live CUDA benchmark tensor inputs shaped [1024, 1024] and "
-        f"[1024]; {reason}"
+        "two live CUDA benchmark tensor inputs matching one explicit "
+        f"workload marker shape in {{{shape_family}}}; {reason}"
     )
 
 
@@ -1134,11 +1293,7 @@ def _require_compiled_cuda_benchmark_input(
         name=name,
         expected_shape=expected_shape,
     )
-    expected_metadata = (
-        _WORKLOAD_X_METADATA
-        if expected_shape == WORKLOAD_SHAPE
-        else _WORKLOAD_BIAS_METADATA
-    )
+    expected_metadata = _cuda_buffer.float32_metadata(expected_shape, device_index=0)
     return buffer, copy.deepcopy(expected_metadata)
 
 
@@ -1153,11 +1308,7 @@ def _require_compiled_cuda_benchmark_input_buffer(
             f"{name} is not a torch_rs CudaBenchmarkTensor"
         )
 
-    expected_metadata = (
-        _WORKLOAD_X_METADATA
-        if expected_shape == WORKLOAD_SHAPE
-        else _WORKLOAD_BIAS_METADATA
-    )
+    expected_metadata = _cuda_buffer.float32_metadata(expected_shape, device_index=0)
     mismatched = []
     if value.shape != expected_shape:
         mismatched.append("shape")
@@ -1221,6 +1372,14 @@ class H100Float32PointwiseReduceCompiledExecutor:
         "_nvcc",
         "_output_metadata",
         "_output_pool",
+        "_rows",
+        "_columns",
+        "_workload_shape",
+        "_bias_shape",
+        "_output_shape",
+        "_input_metadata",
+        "_launch_blocks",
+        "_threads_per_block",
         "_preparation",
         "_required_cuda_visible_devices",
         "_runtime",
@@ -1242,7 +1401,9 @@ class H100Float32PointwiseReduceCompiledExecutor:
         kernel_library_evidence: dict[str, Any],
         required_cuda_visible_devices: str | None,
         preparation: dict[str, Any],
+        workload_shape: tuple[int, int] = WORKLOAD_SHAPE,
     ) -> None:
+        rows, columns = _validate_compile_workload_shape(workload_shape)
         self._runtime = runtime
         self._runtime_library = runtime_library
         self._runtime_load_error = runtime_load_error
@@ -1255,6 +1416,16 @@ class H100Float32PointwiseReduceCompiledExecutor:
         self._invocation_count = 0
         self._closed = False
         self._lifecycle_lock = threading.RLock()
+        self._rows = rows
+        self._columns = columns
+        self._workload_shape = (rows, columns)
+        self._bias_shape = _compile_bias_shape(self._workload_shape)
+        self._output_shape = _compile_output_shape(self._workload_shape)
+        self._input_metadata = _compile_input_metadata(self._workload_shape)
+        self._output_metadata = _compile_output_metadata(self._workload_shape)
+        self._launch_blocks, self._threads_per_block = _compile_launch_dimensions(
+            self._workload_shape
+        )
         self._kernel_function = getattr(
             self._kernel_library,
             (
@@ -1266,6 +1437,7 @@ class H100Float32PointwiseReduceCompiledExecutor:
         key_payload = json.dumps(
             {
                 "workload_version": POINTWISE_REDUCE_COMPILE_WORKLOAD_VERSION,
+                "workload_shape": list(self._workload_shape),
                 "kernel_version": POINTWISE_REDUCE_KERNEL_VERSION,
                 "build_key": self._build.get("build_key"),
                 "library_path": self._build.get("library_path"),
@@ -1283,7 +1455,7 @@ class H100Float32PointwiseReduceCompiledExecutor:
         self._preparation = copy.deepcopy(preparation)
         self._output_pool = _cuda_runtime_ownership.PrivateCudaBufferPool(
             self._runtime,
-            OUTPUT_SHAPE,
+            self._output_shape,
             name_prefix="compiled_output_pool",
             device_index=0,
             owner_id=self._executor_key,
@@ -1300,7 +1472,10 @@ class H100Float32PointwiseReduceCompiledExecutor:
         self._preparation["invocation_count"] = 0
         self._preparation["closed"] = False
         self._preparation["output_pool"] = self._output_pool.metadata()
-        self._output_metadata = copy.deepcopy(_WORKLOAD_OUTPUT_METADATA)
+        self._preparation["launch_dimensions"] = {
+            "blocks": self._launch_blocks,
+            "threads_per_block": self._threads_per_block,
+        }
         self._executor_static_evidence = {
             "schema_version": POINTWISE_REDUCE_COMPILE_EXECUTOR_SCHEMA_VERSION,
             "preparation_id": self._executor_key,
@@ -1335,13 +1510,14 @@ class H100Float32PointwiseReduceCompiledExecutor:
             "device_type": "cuda",
             "device_index": 0,
             "dtype": "float32",
-            "workload_shape": list(WORKLOAD_SHAPE),
-            "output_shape": list(OUTPUT_SHAPE),
-            "input_metadata": [
-                copy.deepcopy(_WORKLOAD_X_METADATA),
-                copy.deepcopy(_WORKLOAD_BIAS_METADATA),
-            ],
+            "workload_shape": list(self._workload_shape),
+            "output_shape": list(self._output_shape),
+            "input_metadata": copy.deepcopy(self._input_metadata),
             "output_metadata": copy.deepcopy(self._output_metadata),
+            "launch_dimensions": {
+                "blocks": self._launch_blocks,
+                "threads_per_block": self._threads_per_block,
+            },
             "device_output_bytes_checksum": None,
             "device_output_checksum": None,
             "readback_synchronized": False,
@@ -1455,8 +1631,8 @@ class H100Float32PointwiseReduceCompiledExecutor:
     def _launch_evidence(self, token: _CompiledExecutionToken) -> dict[str, Any]:
         return {
             "result": token.result,
-            "blocks": WORKLOAD_SHAPE[0],
-            "threads_per_block": _THREADS_PER_BLOCK,
+            "blocks": token.blocks,
+            "threads_per_block": token.threads_per_block,
             "launch_error": self._runtime_error_evidence(token.launch_error),
             "sync_error": {
                 "result": None,
@@ -1565,12 +1741,12 @@ class H100Float32PointwiseReduceCompiledExecutor:
         device_x = _require_compiled_cuda_benchmark_input_buffer(
             x,
             name="x",
-            expected_shape=WORKLOAD_SHAPE,
+            expected_shape=self._workload_shape,
         )
         device_bias = _require_compiled_cuda_benchmark_input_buffer(
             bias,
             name="bias",
-            expected_shape=(WORKLOAD_SHAPE[1],),
+            expected_shape=self._bias_shape,
         )
         if device_x.runtime is not device_bias.runtime:
             raise _cuda_compile_unsupported(
@@ -1595,8 +1771,8 @@ class H100Float32PointwiseReduceCompiledExecutor:
                     device_x.pointer,
                     device_bias.pointer,
                     device_output.pointer,
-                    WORKLOAD_SHAPE[0],
-                    WORKLOAD_SHAPE[1],
+                    self._rows,
+                    self._columns,
                     report_ref,
                 )
             )
@@ -1610,6 +1786,8 @@ class H100Float32PointwiseReduceCompiledExecutor:
                 get_device_error=int(report.get_device_error),
                 observed_device=int(report.observed_device),
                 launch_error=int(report.launch_error),
+                blocks=int(report.blocks),
+                threads_per_block=int(report.threads_per_block),
             )
             if token.set_device_error != 0:
                 raise RuntimeError("cudaSetDevice(0) failed for compiled workload")
@@ -1623,6 +1801,13 @@ class H100Float32PointwiseReduceCompiledExecutor:
             if kernel_result != 0:
                 raise RuntimeError(
                     "private CUDA pointwise-reduce kernel launch failed"
+                )
+            if (
+                token.blocks != self._launch_blocks
+                or token.threads_per_block != self._threads_per_block
+            ):
+                raise RuntimeError(
+                    "private CUDA pointwise-reduce launch dimensions changed"
                 )
 
             def materialized_metadata_updates(
@@ -1644,8 +1829,8 @@ class H100Float32PointwiseReduceCompiledExecutor:
                 checksum=(
                     lambda payload: _checksum_output_bytes(
                         payload,
-                        WORKLOAD_SHAPE[0],
-                        WORKLOAD_SHAPE[1],
+                        self._rows,
+                        self._columns,
                     )
                 ),
                 checksum_name="torch_rs_private_cuda_pointwise_reduce_output_v1",
@@ -1677,8 +1862,13 @@ class H100Float32PointwiseReduceCompiledExecutor:
 def prepare_h100_float32_pointwise_reduce_compiled_executor_device0(
     *,
     required_cuda_visible_devices: str | None = "0",
+    workload_shape: tuple[int, int] = WORKLOAD_SHAPE,
 ) -> H100Float32PointwiseReduceCompiledExecutor:
     """Prepare invariant CUDA compile executor state once per wrapper."""
+    rows, columns = _validate_compile_workload_shape(workload_shape)
+    workload_shape = (rows, columns)
+    output_shape = _compile_output_shape(workload_shape)
+    launch_blocks, launch_threads = _compile_launch_dimensions(workload_shape)
     if (
         required_cuda_visible_devices is not None
         and type(required_cuda_visible_devices) is not str
@@ -1727,8 +1917,12 @@ def prepare_h100_float32_pointwise_reduce_compiled_executor_device0(
         "device_type": None,
         "device_index": None,
         "dtype": "float32",
-        "workload_shape": list(WORKLOAD_SHAPE),
-        "output_shape": list(OUTPUT_SHAPE),
+        "workload_shape": list(workload_shape),
+        "output_shape": list(output_shape),
+        "launch_dimensions": {
+            "blocks": launch_blocks,
+            "threads_per_block": launch_threads,
+        },
         "driver": driver_probe["driver"],
         "runtime": _cuda_kernel_support._runtime_versions(
             runtime,
@@ -1828,6 +2022,7 @@ def prepare_h100_float32_pointwise_reduce_compiled_executor_device0(
         kernel_library_evidence=load,
         required_cuda_visible_devices=required_cuda_visible_devices,
         preparation=preparation,
+        workload_shape=workload_shape,
     )
 
 
@@ -1836,10 +2031,12 @@ def execute_h100_float32_pointwise_reduce_compiled_device0(
     bias: CudaBenchmarkTensor,
     *,
     required_cuda_visible_devices: str | None = "0",
+    workload_shape: tuple[int, int] = WORKLOAD_SHAPE,
 ) -> CudaBenchmarkTensor:
     """Execute the benchmark pointwise-reduce kernel for the CUDA compile path."""
     executor = prepare_h100_float32_pointwise_reduce_compiled_executor_device0(
         required_cuda_visible_devices=required_cuda_visible_devices,
+        workload_shape=workload_shape,
     )
     return executor.execute(x, bias, close_executor_on_output_release=True)
 
@@ -2218,6 +2415,7 @@ __all__ = [
     "POINTWISE_REDUCE_KERNEL_VERSION",
     "POINTWISE_REDUCE_OUTPUT_POOL_SCHEMA_VERSION",
     "POINTWISE_REDUCE_SCHEMA_VERSION",
+    "SUPPORTED_WORKLOAD_SHAPES",
     "WORKLOAD_SHAPE",
     "execute_h100_float32_pointwise_reduce_compiled_device0",
     "launch_h100_float32_pointwise_reduce_device0",
