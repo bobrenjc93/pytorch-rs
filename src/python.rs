@@ -2126,6 +2126,47 @@ pub(crate) fn broadcast_tensors_variable_function(
     Ok(inputs.clone().into_any().unbind())
 }
 
+pub(crate) fn cat_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (tensors, dim, out, keyword_error) = bind_top_level_cat_arguments(args, kwargs)?;
+    let tensors = parse_cat_tensor_sequence(&tensors)?;
+    let dim = parse_cat_dimension(dim.as_ref())?;
+    normalize_dimension(dim, 1)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    validate_cat_out(out.as_ref())?;
+    if !torch_function_mode_stack::is_empty() {
+        return Err(PyNotImplementedError::new_err(
+            "cat(): __torch_function__ modes are not supported",
+        ));
+    }
+
+    let mut borrowed_tensors = try_size_vector(tensors.len())?;
+    let mut any_requires_grad = false;
+    for (index, tensor) in tensors.iter().enumerate() {
+        let tensor = tensor.try_borrow()?;
+        validate_cat_tensor(&tensor, index)?;
+        any_requires_grad |= tensor.inner.requires_grad();
+        try_push_size(&mut borrowed_tensors, tensor)?;
+    }
+    if any_requires_grad && is_grad_enabled() {
+        return Err(PyRuntimeError::new_err(
+            "cat(): autograd recording is not supported",
+        ));
+    }
+
+    let mut inner_tensors = try_size_vector(borrowed_tensors.len())?;
+    for tensor in &borrowed_tensors {
+        try_push_size(&mut inner_tensors, &tensor.inner)?;
+    }
+    let result = CoreTensor::cat_1d(&inner_tensors).map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(result))?.into_any())
+}
+
 pub(crate) fn adjoint_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -10993,6 +11034,194 @@ fn validate_device_argument_type(
     }
     let error = device_argument_type_error(function, device)?;
     Err(error)
+}
+
+fn bind_top_level_cat_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(
+    ParsedCallArgument<'py>,
+    Option<ParsedCallArgument<'py>>,
+    Option<ParsedCallArgument<'py>>,
+    Option<PyErr>,
+)> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "cat() takes from 1 to 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut tensors = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut dim = if positional.len() > 1 {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    } else {
+        None
+    };
+    let mut out = None;
+    let mut keyword_error = None;
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "tensors" => {
+                    if tensors.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("cat() got multiple values for argument 'tensors'")
+                        });
+                    } else {
+                        tensors = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                "dim" => {
+                    if dim.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("cat() got multiple values for argument 'dim'")
+                        });
+                    } else {
+                        dim = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                "out" => {
+                    if out.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("cat() got multiple values for argument 'out'")
+                        });
+                    } else {
+                        out = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "cat() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let Some(tensors) = tensors else {
+        return Err(PyTypeError::new_err(
+            "cat() missing 1 required positional arguments: \"tensors\"",
+        ));
+    };
+
+    if let Some(dim) = &dim {
+        validate_dimension_swap_dimension("cat", "dim", dim.position, &dim.value)?;
+    }
+
+    Ok((tensors, dim, out, keyword_error))
+}
+
+fn parse_cat_tensor_sequence<'py>(
+    tensors: &ParsedCallArgument<'py>,
+) -> PyResult<Vec<Bound<'py, PyTensor>>> {
+    if !tensors.value.is_instance_of::<PyTuple>() && !tensors.value.is_instance_of::<PyList>() {
+        return Err(cat_tensor_sequence_type_error(tensors)?);
+    }
+
+    let sequence = tensors.value.cast::<PySequence>()?;
+    let length = sequence.len()?;
+    if length == 0 {
+        return Err(PyValueError::new_err(
+            "torch.cat(): expected a non-empty list of Tensors",
+        ));
+    }
+
+    let mut parsed = try_size_vector(length)?;
+    for index in 0..length {
+        let item = sequence.get_item(index)?;
+        if !item.is_exact_instance_of::<PyTensor>() {
+            if item.is_instance_of::<PyTensor>() {
+                return Err(cat_unsupported_native_input());
+            }
+            let actual = python_type_name(&item)?;
+            return Err(PyTypeError::new_err(format!(
+                "expected Tensor as element {index} in argument 0, but got {actual}"
+            )));
+        }
+        try_push_size(&mut parsed, item.cast_into::<PyTensor>()?)?;
+    }
+    Ok(parsed)
+}
+
+fn parse_cat_dimension(dimension: Option<&ParsedCallArgument<'_>>) -> PyResult<i64> {
+    let Some(dimension) = dimension else {
+        return Ok(0);
+    };
+    extract_dimension_swap_dimension(&dimension.value)
+}
+
+fn validate_cat_out(out: Option<&ParsedCallArgument<'_>>) -> PyResult<()> {
+    let Some(out) = out else {
+        return Ok(());
+    };
+    if out.value.is_none() {
+        return Ok(());
+    }
+    if !out.value.is_instance_of::<PyTensor>() {
+        let actual = python_type_name(&out.value)?;
+        return Err(PyTypeError::new_err(format!(
+            "cat(): argument 'out' must be Tensor, not {actual}"
+        )));
+    }
+    Err(PyRuntimeError::new_err(
+        "cat(): the 'out' argument is not supported",
+    ))
+}
+
+fn validate_cat_tensor(tensor: &PyTensor, index: usize) -> PyResult<()> {
+    if tensor.inner.shape().is_empty() {
+        return Err(PyRuntimeError::new_err(format!(
+            "zero-dimensional tensor (at position {index}) cannot be concatenated"
+        )));
+    }
+    if tensor.inner.dtype() == DType::Float32
+        && tensor.inner.device() == Device::Cpu
+        && tensor.inner.shape().len() == 1
+    {
+        Ok(())
+    } else {
+        Err(cat_unsupported_native_input())
+    }
+}
+
+fn cat_tensor_sequence_type_error(tensors: &ParsedCallArgument<'_>) -> PyResult<PyErr> {
+    let position = tensors
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(&tensors.value)?;
+    Ok(PyTypeError::new_err(format!(
+        "cat(): argument 'tensors'{position} must be tuple of Tensors, not {actual}"
+    )))
+}
+
+fn cat_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "cat(): only exact native CPU float32 1-D Tensor inputs are supported",
+    )
 }
 
 fn parse_eye_dimension(argument: &str, dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
