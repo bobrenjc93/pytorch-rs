@@ -6474,8 +6474,8 @@ struct ScalarTensorCallArguments<'py> {
 struct ArangeCallArguments<'py> {
     start: Option<ParsedCallArgument<'py>>,
     end: Option<ParsedCallArgument<'py>>,
+    step: Option<ParsedCallArgument<'py>>,
     unsupported_overload: bool,
-    explicit_step: bool,
     out: Option<Bound<'py, PyAny>>,
     dtype: Option<Bound<'py, PyAny>>,
     layout: Option<Bound<'py, PyAny>>,
@@ -7838,12 +7838,14 @@ fn arange_impl(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyTensor> {
-    let (start, elements, requires_grad) =
+    let (start, step, elements, requires_grad) =
         parse_arange_arguments(bind_arange_arguments(args, kwargs)?)?;
-    let inner = if start.to_bits() == 0.0_f64.to_bits() {
+    let inner = if start.to_bits() == 0.0_f64.to_bits() && step.to_bits() == 1.0_f64.to_bits() {
         CoreTensor::arange_float32(elements)
-    } else {
+    } else if step.to_bits() == 1.0_f64.to_bits() {
         CoreTensor::arange_float32_from(start, elements)
+    } else {
+        CoreTensor::arange_float32_step(start, step, elements)
     };
     inner
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
@@ -9295,9 +9297,6 @@ fn bind_arange_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<ArangeCallArguments<'py>> {
-    if positional.len() == 3 {
-        return Err(arange_explicit_step_unsupported());
-    }
     if positional.len() > 3 {
         return Err(arange_overload_unsupported());
     }
@@ -9305,8 +9304,8 @@ fn bind_arange_arguments<'py>(
     let mut arguments = ArangeCallArguments {
         start: None,
         end: None,
+        step: None,
         unsupported_overload: false,
-        explicit_step: false,
         out: None,
         dtype: None,
         layout: None,
@@ -9331,6 +9330,20 @@ fn bind_arange_arguments<'py>(
             arguments.end = Some(ParsedCallArgument {
                 value: positional.get_item(1)?,
                 position: Some(2),
+            });
+        }
+        3 => {
+            arguments.start = Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            });
+            arguments.end = Some(ParsedCallArgument {
+                value: positional.get_item(1)?,
+                position: Some(2),
+            });
+            arguments.step = Some(ParsedCallArgument {
+                value: positional.get_item(2)?,
+                position: Some(3),
             });
         }
         _ => unreachable!("positional arange arguments were checked above"),
@@ -9373,7 +9386,16 @@ fn bind_arange_arguments<'py>(
                     });
                 }
             }
-            "step" => arguments.explicit_step = true,
+            "step" => {
+                if arguments.step.is_some() {
+                    arguments.unsupported_overload = true;
+                } else {
+                    arguments.step = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            }
             "out" => arguments.out = optional_call_argument(value),
             "dtype" => arguments.dtype = optional_call_argument(value),
             "layout" => arguments.layout = optional_call_argument(value),
@@ -9392,10 +9414,7 @@ fn bind_arange_arguments<'py>(
     Ok(arguments)
 }
 
-fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(f64, usize, bool)> {
-    if arguments.explicit_step {
-        return Err(arange_explicit_step_unsupported());
-    }
+fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(f64, f64, usize, bool)> {
     if arguments.unsupported_overload {
         return Err(arange_overload_unsupported());
     }
@@ -9408,12 +9427,15 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(f64, 
     if arguments.start.is_some() {
         return parse_two_bound_arange_arguments(arguments);
     }
+    if arguments.step.is_some() {
+        return Err(arange_explicit_step_unsupported());
+    }
 
     let ArangeCallArguments {
         start: _,
         end,
+        step: _,
         unsupported_overload: _,
-        explicit_step: _,
         out,
         dtype,
         layout,
@@ -9465,17 +9487,17 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(f64, 
         ));
     }
     let elements = arange_element_count(extract_arange_endpoint(&end.value, end_kind)?)?;
-    Ok((0.0, elements, requires_grad))
+    Ok((0.0, 1.0, elements, requires_grad))
 }
 
 fn parse_two_bound_arange_arguments(
     arguments: ArangeCallArguments<'_>,
-) -> PyResult<(f64, usize, bool)> {
+) -> PyResult<(f64, f64, usize, bool)> {
     let ArangeCallArguments {
         start,
         end,
+        step,
         unsupported_overload: _,
-        explicit_step: _,
         out,
         dtype,
         layout,
@@ -9501,6 +9523,24 @@ fn parse_two_bound_arange_arguments(
         Some(ArangeEndpointKind::ExactPythonInteger | ArangeEndpointKind::NumpyInteger)
     ) {
         return Err(arange_two_bound_endpoint_type_error("end", &end)?);
+    }
+
+    let step_kind = if let Some(step) = step.as_ref() {
+        classify_arange_endpoint(&step.value)?
+    } else {
+        None
+    };
+    if step.is_some()
+        && !matches!(
+            step_kind,
+            Some(ArangeEndpointKind::ExactPythonInteger | ArangeEndpointKind::NumpyInteger)
+        )
+    {
+        return Err(arange_two_bound_endpoint_type_error(
+            "step",
+            step.as_ref()
+                .expect("step kind was checked only when step is present"),
+        )?);
     }
 
     let explicit_float32_dtype = arange_has_explicit_float32_dtype(dtype.as_ref())?;
@@ -9535,8 +9575,16 @@ fn parse_two_bound_arange_arguments(
 
     let start = extract_arange_endpoint(&start.value, start_kind)?;
     let end = extract_arange_endpoint(&end.value, end_kind)?;
-    let elements = arange_two_bound_element_count(start, end)?;
-    Ok((start, elements, requires_grad))
+    let step = match (step, step_kind) {
+        (Some(step), kind) => extract_arange_endpoint(&step.value, kind)?,
+        (None, _) => 1.0,
+    };
+    let elements = if step.to_bits() == 1.0_f64.to_bits() {
+        arange_two_bound_element_count(start, end)?
+    } else {
+        arange_step_element_count(start, end, step)?
+    };
+    Ok((start, step, elements, requires_grad))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -9629,13 +9677,21 @@ fn arange_two_bound_dtype_unsupported() -> PyErr {
 }
 
 fn arange_two_bound_element_count(start: f64, end: f64) -> PyResult<usize> {
+    arange_step_element_count(start, end, 1.0)
+}
+
+fn arange_step_element_count(start: f64, end: f64, step: f64) -> PyResult<usize> {
+    if step == 0.0 {
+        return Err(PyRuntimeError::new_err("step must be nonzero"));
+    }
+
     let span = end - start;
-    if span < 0.0 {
+    if (span > 0.0 && step < 0.0) || (span < 0.0 && step > 0.0) {
         return Err(PyRuntimeError::new_err(
             "upper bound and lower bound inconsistent with step sign",
         ));
     }
-    arange_element_count(span)
+    arange_element_count(span / step)
 }
 
 fn arange_element_count(end: f64) -> PyResult<usize> {
@@ -9682,13 +9738,13 @@ fn arange_element_count(end: f64) -> PyResult<usize> {
 
 fn arange_overload_unsupported() -> PyErr {
     PyTypeError::new_err(
-        "arange(): only one-bound float endpoints, one-bound integer endpoints with explicit dtype=torch.float32, and two-bound integer endpoints with explicit dtype=torch.float32 are supported",
+        "arange(): only one-bound float endpoints, one-bound integer endpoints with explicit dtype=torch.float32, two-bound integer endpoints with explicit dtype=torch.float32, and three-bound integer endpoints with explicit dtype=torch.float32 are supported",
     )
 }
 
 fn arange_explicit_step_unsupported() -> PyErr {
     PyTypeError::new_err(
-        "arange(): explicit step is not supported; only implicit step=1 is implemented",
+        "arange(): explicit step requires integer start and end with explicit dtype=torch.float32",
     )
 }
 

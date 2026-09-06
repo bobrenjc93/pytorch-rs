@@ -328,6 +328,128 @@ class ArangeReferenceTests(unittest.TestCase):
                             self.tensor_contract(reference_torch, expected),
                         )
 
+    def test_three_bound_exact_integer_endpoints_match_pytorch_2_13(self):
+        cases = (
+            (1, 8, 2),
+            (-3, 5, 3),
+            (8, 1, -2),
+            (5, 5, 2),
+            (5, 5, -2),
+            (16_777_217, 16_777_225, 2),
+            (2**63, 2**63 + 1, 1),
+            (2**64 - 1, 2**64 - 1, 1),
+        )
+        for start, end, step in cases:
+            for dtype_name in ("float32", "float"):
+                actual_dtype = getattr(torch, dtype_name)
+                expected_dtype = getattr(reference_torch, dtype_name)
+                for form in (
+                    "positional",
+                    "positional_step_keyword",
+                    "positional_start_keyword_end_step",
+                    "keywords",
+                ):
+                    with self.subTest(
+                        start=start,
+                        end=end,
+                        step=step,
+                        dtype=dtype_name,
+                        form=form,
+                    ):
+                        if form == "positional":
+                            actual = torch.arange(
+                                start, end, step, dtype=actual_dtype
+                            )
+                            expected = reference_torch.arange(
+                                start, end, step, dtype=expected_dtype
+                            )
+                        elif form == "positional_step_keyword":
+                            actual = torch.arange(
+                                start, end, step=step, dtype=actual_dtype
+                            )
+                            expected = reference_torch.arange(
+                                start, end, step=step, dtype=expected_dtype
+                            )
+                        elif form == "positional_start_keyword_end_step":
+                            actual = torch.arange(
+                                start,
+                                end=end,
+                                step=step,
+                                dtype=actual_dtype,
+                            )
+                            expected = reference_torch.arange(
+                                start,
+                                end=end,
+                                step=step,
+                                dtype=expected_dtype,
+                            )
+                        else:
+                            actual = torch.arange(
+                                start=start,
+                                end=end,
+                                step=step,
+                                dtype=actual_dtype,
+                            )
+                            expected = reference_torch.arange(
+                                start=start,
+                                end=end,
+                                step=step,
+                                dtype=expected_dtype,
+                            )
+                        self.assertEqual(
+                            self.tensor_contract(torch, actual),
+                            self.tensor_contract(reference_torch, expected),
+                        )
+
+    def test_three_bound_numpy_integer_endpoints_match_pytorch_2_13(self):
+        cases = tuple(
+            (scalar_type(1), scalar_type(8), scalar_type(2))
+            for scalar_type in NUMPY_INTEGER_TYPES
+        ) + (
+            (np.int64(8), np.int32(1), np.int8(-3)),
+            (
+                NumpyIntegerSubclass(1),
+                NumpyIntegerSubclass(5),
+                NumpyIntegerSubclass(2),
+            ),
+        )
+        for start, end, step in cases:
+            for dtype_name in ("float32", "float"):
+                actual_dtype = getattr(torch, dtype_name)
+                expected_dtype = getattr(reference_torch, dtype_name)
+                for form in ("positional", "keywords"):
+                    with self.subTest(
+                        start_type=type(start).__name__,
+                        end_type=type(end).__name__,
+                        step_type=type(step).__name__,
+                        dtype=dtype_name,
+                        form=form,
+                    ):
+                        if form == "positional":
+                            actual = torch.arange(
+                                start, end, step, dtype=actual_dtype
+                            )
+                            expected = reference_torch.arange(
+                                start, end, step, dtype=expected_dtype
+                            )
+                        else:
+                            actual = torch.arange(
+                                start=start,
+                                end=end,
+                                step=step,
+                                dtype=actual_dtype,
+                            )
+                            expected = reference_torch.arange(
+                                start=start,
+                                end=end,
+                                step=step,
+                                dtype=expected_dtype,
+                            )
+                        self.assertEqual(
+                            self.tensor_contract(torch, actual),
+                            self.tensor_contract(reference_torch, expected),
+                        )
+
     def test_default_equivalent_options_match_pytorch_2_13(self):
         option_factories = (
             lambda module: {},
@@ -528,6 +650,45 @@ class ArangeReferenceTests(unittest.TestCase):
                 empty = module.arange(
                     np.int64(2),
                     np.int64(2),
+                    dtype=module.float32,
+                    requires_grad=True,
+                )
+
+            weights = module.tensor(
+                [1.0, 2.0, 3.0, 4.0], dtype=module.float32
+            )
+            module_outcomes = []
+            for leaf in (ordinary, no_grad):
+                gradients = []
+                for _ in range(2):
+                    (leaf * weights).sum().backward()
+                    gradients.append(leaf.grad.tolist())
+                module_outcomes.append(
+                    (self.tensor_contract(module, leaf), gradients)
+                )
+            module_outcomes.append(self.tensor_contract(module, empty))
+            outcomes.append(module_outcomes)
+
+        self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_three_bound_integer_leaf_semantics_match_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            ordinary = module.arange(
+                -1, 7, 2, dtype=module.float32, requires_grad=True
+            )
+            with module.no_grad():
+                no_grad = module.arange(
+                    start=8,
+                    end=1,
+                    step=-2,
+                    dtype=module.float,
+                    requires_grad=True,
+                )
+                empty = module.arange(
+                    np.int64(2),
+                    np.int64(2),
+                    np.int64(-1),
                     dtype=module.float32,
                     requires_grad=True,
                 )
@@ -1013,6 +1174,75 @@ class ArangeReferenceTests(unittest.TestCase):
                                 ),
                                 lambda start=start, end=end, dtype=expected_dtype: reference_torch.arange(
                                     start=start, end=end, dtype=dtype
+                                ),
+                            )
+
+    def test_three_bound_integer_boundary_errors_match_pytorch_2_13(self):
+        exact_python_cases = (
+            (1, 8, -2),
+            (8, 1, 2),
+            (1, 8, 0),
+            (5, 5, 0),
+            (0, 2**63 - 1, 2),
+            (0, 2**63, 2),
+            (-(2**63), 2**63 - 1, 2),
+            (2**64 - 1, 2**64, 1),
+            (0, 2**64, 0),
+        )
+        numpy_cases = (
+            (np.uint64(2**63), np.uint64(2**63 + 1), np.uint64(1)),
+        )
+        for start, end, step in (*exact_python_cases, *numpy_cases):
+            for dtype_name in ("float32", "float"):
+                actual_dtype = getattr(torch, dtype_name)
+                expected_dtype = getattr(reference_torch, dtype_name)
+                for form in (
+                    "positional",
+                    "positional_step_keyword",
+                    "positional_start_keyword_end_step",
+                    "keywords",
+                ):
+                    with self.subTest(
+                        start=start,
+                        end=end,
+                        step=step,
+                        dtype=dtype_name,
+                        form=form,
+                    ):
+                        if form == "positional":
+                            self.assert_error_matches(
+                                lambda start=start, end=end, step=step, dtype=actual_dtype: torch.arange(
+                                    start, end, step, dtype=dtype
+                                ),
+                                lambda start=start, end=end, step=step, dtype=expected_dtype: reference_torch.arange(
+                                    start, end, step, dtype=dtype
+                                ),
+                            )
+                        elif form == "positional_step_keyword":
+                            self.assert_error_matches(
+                                lambda start=start, end=end, step=step, dtype=actual_dtype: torch.arange(
+                                    start, end, step=step, dtype=dtype
+                                ),
+                                lambda start=start, end=end, step=step, dtype=expected_dtype: reference_torch.arange(
+                                    start, end, step=step, dtype=dtype
+                                ),
+                            )
+                        elif form == "positional_start_keyword_end_step":
+                            self.assert_error_matches(
+                                lambda start=start, end=end, step=step, dtype=actual_dtype: torch.arange(
+                                    start, end=end, step=step, dtype=dtype
+                                ),
+                                lambda start=start, end=end, step=step, dtype=expected_dtype: reference_torch.arange(
+                                    start, end=end, step=step, dtype=dtype
+                                ),
+                            )
+                        else:
+                            self.assert_error_matches(
+                                lambda start=start, end=end, step=step, dtype=actual_dtype: torch.arange(
+                                    start=start, end=end, step=step, dtype=dtype
+                                ),
+                                lambda start=start, end=end, step=step, dtype=expected_dtype: reference_torch.arange(
+                                    start=start, end=end, step=step, dtype=dtype
                                 ),
                             )
 
