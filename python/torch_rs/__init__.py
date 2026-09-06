@@ -774,6 +774,7 @@ def _compile_bound_model(
             isolate_recompiles=isolate_recompiles,
             shapes_spec=shapes_spec,
         ):
+            _validated_compile_recompile_limit(recompile_limit)
             implementation = _native_h100_cuda_compile_implementation(model)
     elif _supports_native_eager_compile(
         fullgraph=fullgraph,

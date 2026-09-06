@@ -31,7 +31,7 @@ PROTECTED_OUTPUT_PATHS = {
 }
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v6"
+BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v7"
 WORKLOAD_VERSION = "h100_cuda_pointwise_reduce_float32_v1"
 WORKLOAD_SHAPE = (1024, 1024)
 WORKLOAD_SEED = 20260904

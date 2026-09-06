@@ -1101,6 +1101,30 @@ print(json.dumps({
         with self.assertRaisesRegex(NotImplementedError, "only backend='eager'"):
             compiled(None, None)
 
+    def test_torch_compile_inductor_pointwise_reduce_rejects_invalid_recompile_limit(
+        self,
+    ):
+        invalid_type_values = (True, False, "1", 1.0, object())
+        for value in invalid_type_values:
+            with self.subTest(value=repr(value)):
+                with self.assertRaisesRegex(TypeError, "recompile_limit"):
+                    torch.compile(
+                        benchmark_compile_cuda.h100_cuda_pointwise_reduce_float32,
+                        backend="inductor",
+                        fullgraph=True,
+                        dynamic=False,
+                        recompile_limit=value,
+                    )
+
+        with self.assertRaisesRegex(ValueError, "recompile_limit"):
+            torch.compile(
+                benchmark_compile_cuda.h100_cuda_pointwise_reduce_float32,
+                backend="inductor",
+                fullgraph=True,
+                dynamic=False,
+                recompile_limit=-1,
+            )
+
     def test_torch_compile_inductor_pointwise_reduce_rejects_wrong_backend_on_h100(
         self,
     ):
