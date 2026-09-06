@@ -9,6 +9,7 @@ or compile support.
 from __future__ import annotations
 
 import ctypes
+import copy
 import hashlib
 import json
 import os
@@ -25,6 +26,13 @@ from . import _cuda_pointwise_kernel as _cuda_kernel_support
 POINTWISE_REDUCE_SCHEMA_VERSION = (
     "torch_rs_private_cuda_pointwise_reduce_workload_v1"
 )
+POINTWISE_REDUCE_INPUTS_SCHEMA_VERSION = (
+    "torch_rs_private_cuda_pointwise_reduce_inputs_v1"
+)
+POINTWISE_REDUCE_COMPILE_EXECUTION_SCHEMA_VERSION = (
+    "torch_rs_private_cuda_pointwise_reduce_compile_execution_v1"
+)
+POINTWISE_REDUCE_COMPILE_WORKLOAD_VERSION = "h100_cuda_pointwise_reduce_float32_v1"
 POINTWISE_REDUCE_KERNEL_VERSION = (
     "h100_cuda_pointwise_plus_row_reduce_float32_v1"
 )
@@ -581,6 +589,686 @@ def _validate_inputs(
         raise TypeError("required_cuda_visible_devices must be str or None")
 
 
+class H100Float32PointwiseReduceInputBundle:
+    """Lifetime owner for private CUDA inputs wrapped as benchmark tensors."""
+
+    __slots__ = ("x", "bias", "_device_x", "_device_bias", "_evidence", "_closed")
+
+    def __init__(
+        self,
+        *,
+        x: CudaBenchmarkTensor,
+        bias: CudaBenchmarkTensor,
+        device_x: _cuda_buffer.PrivateCudaFloat32Buffer,
+        device_bias: _cuda_buffer.PrivateCudaFloat32Buffer,
+        evidence: dict[str, Any],
+    ) -> None:
+        self.x = x
+        self.bias = bias
+        self._device_x = device_x
+        self._device_bias = device_bias
+        self._evidence = evidence
+        self._closed = False
+
+    @property
+    def inputs(self) -> tuple[CudaBenchmarkTensor, CudaBenchmarkTensor]:
+        return (self.x, self.bias)
+
+    def metadata(self) -> dict[str, Any]:
+        return copy.deepcopy(self._evidence)
+
+    def close(self) -> dict[str, Any]:
+        if self._closed:
+            return {}
+        self._closed = True
+        calls: dict[str, Any] = {}
+        free_bias = self._device_bias.close()
+        if free_bias is not None:
+            calls["cudaFree_bias"] = free_bias
+            self._evidence["calls"]["cudaFree_bias"] = free_bias
+        free_x = self._device_x.close()
+        if free_x is not None:
+            calls["cudaFree_x"] = free_x
+            self._evidence["calls"]["cudaFree_x"] = free_x
+        return copy.deepcopy(calls)
+
+    def __enter__(self) -> "H100Float32PointwiseReduceInputBundle":
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        del exc_type, exc, traceback
+        self.close()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
+def _input_bundle_base_result(
+    *,
+    rows: int,
+    columns: int,
+    x_bytes: bytes,
+    bias_bytes: bytes,
+    required_cuda_visible_devices: str | None,
+    runtime: ctypes.CDLL | None,
+    runtime_library: str | None,
+    runtime_load_error: str | None,
+    driver_probe: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema_version": POINTWISE_REDUCE_INPUTS_SCHEMA_VERSION,
+        "primitive": (
+            "torch_rs_private_cuda_h100_pointwise_reduce_float32_inputs_device0"
+        ),
+        "public_torch_cuda_api": False,
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        "required_cuda_visible_devices": required_cuda_visible_devices,
+        "cuda_visible_devices_match": (
+            required_cuda_visible_devices is None
+            or os.environ.get("CUDA_VISIBLE_DEVICES") == required_cuda_visible_devices
+        ),
+        "single_visible_cuda_device": None,
+        "status": "unavailable",
+        "reason": None,
+        "cpu_fallback": False,
+        "device_type": None,
+        "device_index": None,
+        "dtype": "float32",
+        "buffer_schema_version": _cuda_buffer.BUFFER_SCHEMA_VERSION,
+        "workload_shape": [rows, columns],
+        "input_metadata": None,
+        "public_cuda_tensor_inputs": None,
+        "x_byte_count": len(x_bytes),
+        "bias_byte_count": len(bias_bytes),
+        "host_x_checksum": _checksum_x_bytes(x_bytes, rows, columns),
+        "host_bias_checksum": _checksum_bias_bytes(bias_bytes, rows, columns),
+        "device_x_checksum": None,
+        "device_bias_checksum": None,
+        "checksum_match": False,
+        "device_x_pointer_nonzero": False,
+        "device_bias_pointer_nonzero": False,
+        "driver": driver_probe["driver"],
+        "runtime": _cuda_kernel_support._runtime_versions(
+            runtime,
+            runtime_library,
+            runtime_load_error,
+        ),
+        "device_0": driver_probe["device_0"],
+        "gpu": _cuda_kernel_support._gpu_provenance(driver_probe),
+        "calls": {},
+    }
+
+
+def _close_input_buffers_on_failure(
+    result: dict[str, Any],
+    device_x: _cuda_buffer.PrivateCudaFloat32Buffer | None,
+    device_bias: _cuda_buffer.PrivateCudaFloat32Buffer | None,
+) -> None:
+    if device_bias is not None:
+        free_bias = device_bias.close()
+        if free_bias is not None:
+            result["calls"]["cudaFree_bias"] = free_bias
+    if device_x is not None:
+        free_x = device_x.close()
+        if free_x is not None:
+            result["calls"]["cudaFree_x"] = free_x
+
+
+def make_h100_float32_pointwise_reduce_inputs_device0(
+    x_host_bytes: bytes,
+    bias_host_bytes: bytes,
+    *,
+    rows: int = WORKLOAD_SHAPE[0],
+    columns: int = WORKLOAD_SHAPE[1],
+    required_cuda_visible_devices: str | None = "0",
+) -> tuple[H100Float32PointwiseReduceInputBundle | None, dict[str, Any]]:
+    """Allocate private CUDA inputs and expose them as benchmark tensor views."""
+    _validate_inputs(
+        x_host_bytes,
+        bias_host_bytes,
+        rows,
+        columns,
+        None,
+        None,
+        None,
+        required_cuda_visible_devices,
+    )
+
+    driver_probe = _cuda_driver_probe.probe_cuda_driver_device0()
+    (
+        runtime,
+        runtime_library,
+        runtime_load_error,
+    ) = _cuda_driver_probe._load_shared_library(
+        "cudart",
+        _cuda_driver_probe._CUDA_RUNTIME_NAMES,
+    )
+    result = _input_bundle_base_result(
+        rows=rows,
+        columns=columns,
+        x_bytes=x_host_bytes,
+        bias_bytes=bias_host_bytes,
+        required_cuda_visible_devices=required_cuda_visible_devices,
+        runtime=runtime,
+        runtime_library=runtime_library,
+        runtime_load_error=runtime_load_error,
+        driver_probe=driver_probe,
+    )
+
+    if (
+        required_cuda_visible_devices is not None
+        and os.environ.get("CUDA_VISIBLE_DEVICES") != required_cuda_visible_devices
+    ):
+        result["reason"] = (
+            "CUDA_VISIBLE_DEVICES="
+            f"{required_cuda_visible_devices} is required"
+        )
+        return None, result
+    if runtime is None:
+        result["reason"] = "CUDA runtime shared library was not loaded"
+        return None, result
+
+    missing_symbols = _configure_runtime_symbols(runtime)
+    if missing_symbols:
+        result["status"] = "error"
+        result["reason"] = "CUDA runtime is missing required symbols"
+        result["missing_symbols"] = missing_symbols
+        return None, result
+
+    device_count = ctypes.c_int()
+    device_count_call = _runtime_call(
+        runtime,
+        "cudaGetDeviceCount",
+        ctypes.byref(device_count),
+    )
+    device_count_call["value"] = (
+        int(device_count.value) if device_count_call["result"] == 0 else None
+    )
+    result["calls"]["cudaGetDeviceCount"] = device_count_call
+    if device_count_call["result"] != 0:
+        if device_count_call["error_name"] in _CUDA_UNAVAILABLE_ERRORS:
+            result["status"] = "unavailable"
+        else:
+            result["status"] = "error"
+        result["reason"] = "cudaGetDeviceCount failed"
+        return None, result
+    if device_count.value < 1:
+        result["reason"] = "no CUDA runtime devices are visible"
+        return None, result
+    result["single_visible_cuda_device"] = int(device_count.value) == 1
+
+    set_device_call = _runtime_call(runtime, "cudaSetDevice", 0)
+    result["calls"]["cudaSetDevice"] = set_device_call
+    if set_device_call["result"] != 0:
+        result["status"] = "error"
+        result["reason"] = "cudaSetDevice(0) failed"
+        return None, result
+
+    current_device = ctypes.c_int(-1)
+    get_device_call = _runtime_call(
+        runtime,
+        "cudaGetDevice",
+        ctypes.byref(current_device),
+    )
+    get_device_call["value"] = (
+        int(current_device.value) if get_device_call["result"] == 0 else None
+    )
+    result["calls"]["cudaGetDevice"] = get_device_call
+    if get_device_call["result"] != 0:
+        result["status"] = "error"
+        result["reason"] = "cudaGetDevice failed after cudaSetDevice(0)"
+        return None, result
+
+    result["device_type"] = "cuda"
+    result["device_index"] = int(current_device.value)
+    device_x = _cuda_buffer.PrivateCudaFloat32Buffer(
+        runtime,
+        (rows, columns),
+        name="x",
+        device_index=result["device_index"],
+    )
+    device_bias = None
+    try:
+        result["calls"]["cudaMalloc_x"] = device_x.malloc_call
+        result["device_x_pointer_nonzero"] = device_x.pointer_nonzero
+        if not device_x.allocation_ok:
+            result["status"] = "error"
+            result["reason"] = "cudaMalloc failed for x"
+            return None, result
+
+        device_bias = _cuda_buffer.PrivateCudaFloat32Buffer(
+            runtime,
+            (columns,),
+            name="bias",
+            device_index=result["device_index"],
+        )
+        result["calls"]["cudaMalloc_bias"] = device_bias.malloc_call
+        result["device_bias_pointer_nonzero"] = device_bias.pointer_nonzero
+        if not device_bias.allocation_ok:
+            result["status"] = "error"
+            result["reason"] = "cudaMalloc failed for bias"
+            return None, result
+
+        x_h2d_call = device_x.copy_from_host(x_host_bytes)
+        result["calls"]["cudaMemcpyHostToDevice_x"] = x_h2d_call
+        if x_h2d_call["result"] != 0:
+            result["status"] = "error"
+            result["reason"] = "cudaMemcpy host-to-device failed for x"
+            return None, result
+
+        bias_h2d_call = device_bias.copy_from_host(bias_host_bytes)
+        result["calls"]["cudaMemcpyHostToDevice_bias"] = bias_h2d_call
+        if bias_h2d_call["result"] != 0:
+            result["status"] = "error"
+            result["reason"] = "cudaMemcpy host-to-device failed for bias"
+            return None, result
+
+        sync_after_h2d = device_x.synchronize()
+        result["calls"]["cudaDeviceSynchronize_after_host_to_device"] = (
+            sync_after_h2d
+        )
+        if sync_after_h2d["result"] != 0:
+            result["status"] = "error"
+            result["reason"] = "cudaDeviceSynchronize failed after host-to-device"
+            return None, result
+
+        x_readback = device_x.checksum_readback(
+            lambda payload: _checksum_x_bytes(payload, rows, columns),
+        )
+        result["calls"]["cudaMemcpyDeviceToHost_x_input"] = x_readback.copy_call
+        result["calls"]["cudaDeviceSynchronize_after_x_input_readback"] = (
+            x_readback.sync_call
+        )
+        if x_readback.copy_call["result"] != 0:
+            result["status"] = "error"
+            result["reason"] = "cudaMemcpy device-to-host failed for x input"
+            return None, result
+        if x_readback.sync_call is None or x_readback.sync_call["result"] != 0:
+            result["status"] = "error"
+            result["reason"] = "cudaDeviceSynchronize failed after x input readback"
+            return None, result
+
+        bias_readback = device_bias.checksum_readback(
+            lambda payload: _checksum_bias_bytes(payload, rows, columns),
+        )
+        result["calls"]["cudaMemcpyDeviceToHost_bias_input"] = (
+            bias_readback.copy_call
+        )
+        result["calls"]["cudaDeviceSynchronize_after_bias_input_readback"] = (
+            bias_readback.sync_call
+        )
+        if bias_readback.copy_call["result"] != 0:
+            result["status"] = "error"
+            result["reason"] = "cudaMemcpy device-to-host failed for bias input"
+            return None, result
+        if (
+            bias_readback.sync_call is None
+            or bias_readback.sync_call["result"] != 0
+        ):
+            result["status"] = "error"
+            result["reason"] = (
+                "cudaDeviceSynchronize failed after bias input readback"
+            )
+            return None, result
+
+        x_tensor = CudaBenchmarkTensor(
+            device_x,
+            readback=x_readback,
+            checksum_name="torch_rs_private_cuda_pointwise_reduce_x_v1",
+        )
+        bias_tensor = CudaBenchmarkTensor(
+            device_bias,
+            readback=bias_readback,
+            checksum_name="torch_rs_private_cuda_pointwise_reduce_bias_v1",
+        )
+        result["input_metadata"] = [device_x.metadata(), device_bias.metadata()]
+        result["public_cuda_tensor_inputs"] = [
+            x_tensor.metadata(),
+            bias_tensor.metadata(),
+        ]
+        result["device_x_checksum"] = x_readback.checksum
+        result["device_bias_checksum"] = bias_readback.checksum
+        result["checksum_match"] = (
+            result["device_x_checksum"] == result["host_x_checksum"]
+            and result["device_bias_checksum"] == result["host_bias_checksum"]
+        )
+        if not result["checksum_match"]:
+            result["status"] = "error"
+            result["reason"] = "input CUDA tensor checksum mismatch"
+            return None, result
+
+        result["status"] = "ok"
+        result["reason"] = "pointwise-reduce CUDA inputs allocated and verified"
+        return (
+            H100Float32PointwiseReduceInputBundle(
+                x=x_tensor,
+                bias=bias_tensor,
+                device_x=device_x,
+                device_bias=device_bias,
+                evidence=result,
+            ),
+            result,
+        )
+    finally:
+        if result["status"] != "ok":
+            _close_input_buffers_on_failure(result, device_x, device_bias)
+
+
+def _cuda_compile_unsupported(reason: str) -> NotImplementedError:
+    return NotImplementedError(
+        "torch.compile(): native CUDA inductor execution is supported only "
+        "for the versioned H100 float32 pointwise-reduce benchmark with "
+        "two live CUDA benchmark tensor inputs shaped [1024, 1024] and "
+        f"[1024]; {reason}"
+    )
+
+
+def _require_compiled_cuda_benchmark_input(
+    value: Any,
+    *,
+    name: str,
+    expected_shape: tuple[int, ...],
+) -> tuple[_cuda_buffer.PrivateCudaFloat32Buffer, dict[str, Any]]:
+    if type(value) is not CudaBenchmarkTensor:
+        raise _cuda_compile_unsupported(
+            f"{name} is not a torch_rs CudaBenchmarkTensor"
+        )
+
+    metadata = value.metadata()
+    expected_metadata = _cuda_buffer.float32_metadata(expected_shape, device_index=0)
+    mismatched = [
+        key
+        for key, expected_value in expected_metadata.items()
+        if metadata.get(key) != expected_value
+    ]
+    if metadata.get("is_cuda") is not True:
+        mismatched.append("is_cuda")
+    if metadata.get("cpu_fallback") is not False:
+        mismatched.append("cpu_fallback")
+    if mismatched:
+        joined = ", ".join(sorted(set(mismatched)))
+        raise _cuda_compile_unsupported(f"{name} metadata mismatch: {joined}")
+
+    try:
+        buffer = value._torch_rs_private_cuda_buffer()
+    except ValueError as error:
+        raise _cuda_compile_unsupported(f"{name} private buffer is not live") from error
+    if buffer.metadata() != expected_metadata:
+        raise _cuda_compile_unsupported(f"{name} private buffer metadata mismatch")
+    return buffer, metadata
+
+
+def execute_h100_float32_pointwise_reduce_compiled_device0(
+    x: CudaBenchmarkTensor,
+    bias: CudaBenchmarkTensor,
+    *,
+    required_cuda_visible_devices: str | None = "0",
+) -> CudaBenchmarkTensor:
+    """Execute the benchmark pointwise-reduce kernel for the CUDA compile path."""
+    if (
+        required_cuda_visible_devices is not None
+        and type(required_cuda_visible_devices) is not str
+    ):
+        raise TypeError("required_cuda_visible_devices must be str or None")
+    if (
+        required_cuda_visible_devices is not None
+        and os.environ.get("CUDA_VISIBLE_DEVICES") != required_cuda_visible_devices
+    ):
+        raise _cuda_compile_unsupported(
+            "CUDA_VISIBLE_DEVICES="
+            f"{required_cuda_visible_devices} is required"
+        )
+
+    device_x, x_metadata = _require_compiled_cuda_benchmark_input(
+        x,
+        name="x",
+        expected_shape=WORKLOAD_SHAPE,
+    )
+    device_bias, bias_metadata = _require_compiled_cuda_benchmark_input(
+        bias,
+        name="bias",
+        expected_shape=(WORKLOAD_SHAPE[1],),
+    )
+    if device_x.runtime is not device_bias.runtime:
+        raise _cuda_compile_unsupported("input buffers do not share a CUDA runtime")
+
+    runtime = device_x.runtime
+    (
+        _runtime_for_global_load,
+        runtime_library,
+        runtime_load_error,
+    ) = _cuda_driver_probe._load_shared_library(
+        "cudart",
+        _cuda_driver_probe._CUDA_RUNTIME_NAMES,
+    )
+    missing_symbols = _configure_runtime_symbols(runtime)
+    if missing_symbols:
+        raise RuntimeError(
+            "CUDA runtime is missing required symbols: "
+            + ", ".join(missing_symbols)
+        )
+
+    driver_probe = _cuda_driver_probe.probe_cuda_driver_device0()
+    nvcc = _cuda_kernel_support._nvcc_provenance()
+    evidence: dict[str, Any] = {
+        "schema_version": POINTWISE_REDUCE_COMPILE_EXECUTION_SCHEMA_VERSION,
+        "implementation": "torch_rs",
+        "status": "error",
+        "workload_version": POINTWISE_REDUCE_COMPILE_WORKLOAD_VERSION,
+        "compile_backend": "inductor",
+        "compile_fullgraph": True,
+        "compile_dynamic": False,
+        "native_cuda_compile": True,
+        "eager_fallback": False,
+        "forwarded_to_pytorch": False,
+        "public_torch_cuda_api": False,
+        "cpu_fallback": False,
+        "input_device_type": "cuda",
+        "output_device_type": None,
+        "device_type": None,
+        "device_index": None,
+        "dtype": "float32",
+        "workload_shape": list(WORKLOAD_SHAPE),
+        "output_shape": list(OUTPUT_SHAPE),
+        "input_metadata": [x_metadata, bias_metadata],
+        "output_metadata": None,
+        "device_output_bytes_checksum": None,
+        "device_output_checksum": None,
+        "readback_synchronized": False,
+        "driver": driver_probe["driver"],
+        "runtime": _cuda_kernel_support._runtime_versions(
+            runtime,
+            runtime_library,
+            runtime_load_error,
+        ),
+        "device_0": driver_probe["device_0"],
+        "gpu": _cuda_kernel_support._gpu_provenance(driver_probe),
+        "nvcc": nvcc,
+        "build": None,
+        "kernel_library": None,
+        "launch": None,
+        "calls": {},
+    }
+
+    device_count = ctypes.c_int()
+    device_count_call = _runtime_call(
+        runtime,
+        "cudaGetDeviceCount",
+        ctypes.byref(device_count),
+    )
+    device_count_call["value"] = (
+        int(device_count.value) if device_count_call["result"] == 0 else None
+    )
+    evidence["calls"]["cudaGetDeviceCount"] = device_count_call
+    if device_count_call["result"] != 0 or device_count.value < 1:
+        raise RuntimeError("CUDA runtime has no visible device for compiled workload")
+
+    set_device_call = _runtime_call(runtime, "cudaSetDevice", 0)
+    evidence["calls"]["cudaSetDevice"] = set_device_call
+    if set_device_call["result"] != 0:
+        raise RuntimeError("cudaSetDevice(0) failed for compiled workload")
+
+    current_device = ctypes.c_int(-1)
+    get_device_call = _runtime_call(
+        runtime,
+        "cudaGetDevice",
+        ctypes.byref(current_device),
+    )
+    get_device_call["value"] = (
+        int(current_device.value) if get_device_call["result"] == 0 else None
+    )
+    evidence["calls"]["cudaGetDevice"] = get_device_call
+    if get_device_call["result"] != 0:
+        raise RuntimeError("cudaGetDevice failed for compiled workload")
+    if int(current_device.value) != 0:
+        raise RuntimeError("compiled workload did not select CUDA device 0")
+    evidence["device_type"] = "cuda"
+    evidence["device_index"] = 0
+
+    if not nvcc["available"]:
+        raise RuntimeError("nvcc was not found for compiled CUDA workload")
+
+    repository_root = _cuda_kernel_support._repository_root()
+    if repository_root is None:
+        raise RuntimeError("worktree root was not found")
+
+    try:
+        library_path, build = _build_kernel(
+            repository_root=repository_root,
+            driver_probe=driver_probe,
+            nvcc=nvcc,
+        )
+    except RuntimeError:
+        raise
+    evidence["build"] = build
+    if library_path is None:
+        raise RuntimeError(
+            "nvcc failed to compile the private CUDA pointwise-reduce kernel"
+        )
+
+    kernel_library, load = _load_kernel_library(library_path, runtime_library)
+    evidence["kernel_library"] = load
+    if kernel_library is None:
+        raise RuntimeError("compiled CUDA pointwise-reduce library was not loaded")
+
+    device_output = _cuda_buffer.PrivateCudaFloat32Buffer(
+        runtime,
+        OUTPUT_SHAPE,
+        name="compiled_output",
+        device_index=0,
+    )
+    evidence["calls"]["cudaMalloc_output"] = device_output.malloc_call
+    evidence["device_output_pointer_nonzero"] = device_output.pointer_nonzero
+    if not device_output.allocation_ok:
+        device_output.close()
+        raise RuntimeError("cudaMalloc failed for compiled output")
+
+    try:
+        blocks = ctypes.c_int(0)
+        threads = ctypes.c_int(0)
+        launch_error = ctypes.c_int(0)
+        sync_error = ctypes.c_int(0)
+        kernel_function = getattr(
+            kernel_library,
+            "torch_rs_private_h100_pointwise_reduce_float32_v1",
+        )
+        kernel_result = int(
+            kernel_function(
+                device_x.pointer,
+                device_bias.pointer,
+                device_output.pointer,
+                WORKLOAD_SHAPE[0],
+                WORKLOAD_SHAPE[1],
+                ctypes.byref(blocks),
+                ctypes.byref(threads),
+                ctypes.byref(launch_error),
+                ctypes.byref(sync_error),
+            )
+        )
+        launch = {
+            "result": kernel_result,
+            "blocks": int(blocks.value),
+            "threads_per_block": int(threads.value),
+            "launch_error": {
+                "result": int(launch_error.value),
+                "error_name": _cuda_driver_probe._runtime_error_name(
+                    runtime,
+                    int(launch_error.value),
+                )
+                if launch_error.value
+                else None,
+            },
+            "sync_error": {
+                "result": int(sync_error.value),
+                "error_name": _cuda_driver_probe._runtime_error_name(
+                    runtime,
+                    int(sync_error.value),
+                )
+                if sync_error.value
+                else None,
+            },
+        }
+        evidence["launch"] = launch
+        evidence["calls"]["torchRsPrivateH100PointwiseReduceFloat32"] = launch
+        if kernel_result != 0:
+            raise RuntimeError("private CUDA pointwise-reduce kernel launch failed")
+
+        readback = device_output.checksum_readback(
+            lambda payload: _checksum_output_bytes(
+                payload,
+                WORKLOAD_SHAPE[0],
+                WORKLOAD_SHAPE[1],
+            ),
+        )
+        evidence["calls"]["cudaMemcpyDeviceToHost_output"] = readback.copy_call
+        evidence["calls"]["cudaDeviceSynchronize_after_device_to_host"] = (
+            readback.sync_call
+        )
+        if readback.copy_call["result"] != 0:
+            raise RuntimeError("cudaMemcpy device-to-host failed for compiled output")
+        if readback.sync_call is None or readback.sync_call["result"] != 0:
+            raise RuntimeError(
+                "cudaDeviceSynchronize failed after compiled output readback"
+            )
+        if readback.payload is None:
+            raise RuntimeError("compiled output readback payload is missing")
+
+        output_metadata = device_output.metadata()
+        evidence["status"] = "ok"
+        evidence["reason"] = "compiled pointwise-reduce workload checksum read back"
+        evidence["output_device_type"] = "cuda"
+        evidence["output_metadata"] = output_metadata
+        evidence["device_output_bytes_checksum"] = readback.checksum
+        evidence["device_output_checksum"] = _checksum_tensor_metadata_values(
+            readback.payload,
+            output_metadata,
+        )
+        evidence["readback_synchronized"] = True
+
+        return CudaBenchmarkTensor(
+            device_output,
+            readback=readback,
+            checksum_name="torch_rs_private_cuda_pointwise_reduce_output_v1",
+            metadata_updates={
+                "workload_version": POINTWISE_REDUCE_COMPILE_WORKLOAD_VERSION,
+                "pointwise_reduce_kernel_version": POINTWISE_REDUCE_KERNEL_VERSION,
+                "native_cuda_compile": True,
+                "compile_backend": "inductor",
+                "compile_fullgraph": True,
+                "compile_dynamic": False,
+                "eager_fallback": False,
+                "forwarded_to_pytorch": False,
+                "compile_execution": evidence,
+            },
+        )
+    except Exception:
+        device_output.close()
+        raise
+
+
 def launch_h100_float32_pointwise_reduce_device0(
     x_host_bytes: bytes,
     bias_host_bytes: bytes,
@@ -945,9 +1633,15 @@ def launch_h100_float32_pointwise_reduce_device0(
 
 
 __all__ = [
+    "H100Float32PointwiseReduceInputBundle",
     "OUTPUT_SHAPE",
+    "POINTWISE_REDUCE_COMPILE_EXECUTION_SCHEMA_VERSION",
+    "POINTWISE_REDUCE_COMPILE_WORKLOAD_VERSION",
+    "POINTWISE_REDUCE_INPUTS_SCHEMA_VERSION",
     "POINTWISE_REDUCE_KERNEL_VERSION",
     "POINTWISE_REDUCE_SCHEMA_VERSION",
     "WORKLOAD_SHAPE",
+    "execute_h100_float32_pointwise_reduce_compiled_device0",
     "launch_h100_float32_pointwise_reduce_device0",
+    "make_h100_float32_pointwise_reduce_inputs_device0",
 ]
