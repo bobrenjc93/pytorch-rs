@@ -3,7 +3,7 @@
 Date: 2026-09-06
 
 Candidate provenance: clean worktree at
-`5264993bf00a764e65fe133cfa45ee4ed08896a7`. The JSON artifact records
+`a95e19fe5e7aaedd026a40bc1423ed52a868f12e`. The JSON artifact records
 empty `git.status_short` and `git.diff_stat` before writing the refreshed
 output.
 
@@ -45,18 +45,18 @@ Results:
 
 | Measurement | Steady median us | MAD us | Notes |
 | --- | ---: | ---: | --- |
-| PyTorch 2.13 `torch.compile(..., backend="inductor")` | 47.819 | 4.089 | Reference workload on the same visible H100 |
-| `torch_rs` prepared compile wrapper | 46.627 | 2.187 | Eligible native CUDA compile evidence using pooled outputs |
-| `torch_rs` unprepared compatibility call | 11547.487 | 615.418 | Non-scoring comparison that prepares on every invocation |
+| PyTorch 2.13 `torch.compile(..., backend="inductor")` | 42.124 | 1.098 | Reference workload on the same visible H100 |
+| `torch_rs` prepared compile wrapper | 43.840 | 1.499 | Eligible native CUDA compile evidence using pooled outputs |
+| `torch_rs` unprepared compatibility call | 13759.141 | 2166.988 | Non-scoring comparison that prepares on every invocation |
 
 The prepared wrapper recorded executor invocation count 0 before the first
 call and 67 after timing; the last steady-state call used the same preparation
-id `35e8853b569a0964`. Cold compile wrapper creation took 12823.447 us, and
-the first compiled call took 212.111 us. The output pool allocated two buffers,
+id `01ad652f08d9d291`. Cold compile wrapper creation took 12210.071 us, and
+the first compiled call took 203.128 us. The output pool allocated two buffers,
 released 67 leases, had zero live buffers after timing, and reused a released
 buffer for the steady-state path. The measured prepared-vs-unprepared
-steady-state speedup was 247.66x. The candidate matched or exceeded the
-PyTorch reference, with a CUDA compile score of 100.00% for this single
+steady-state speedup was 313.85x. The candidate stayed within a few percent of
+the PyTorch reference, with a CUDA compile score of 96.09% for this single
 workload.
 
 This release artifact is intentionally narrow: it proves one fixed H100
