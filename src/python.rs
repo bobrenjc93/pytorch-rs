@@ -2131,7 +2131,12 @@ pub(crate) fn cat_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let (tensors, dim, out, keyword_error) = bind_top_level_cat_arguments(args, kwargs)?;
+    let TopLevelCatArguments {
+        tensors,
+        dim,
+        out,
+        keyword_error,
+    } = bind_top_level_cat_arguments(args, kwargs)?;
     let tensors = parse_cat_tensors_argument(&tensors)?;
     let dim = parse_cat_dimension(dim)?;
     let out = parse_cat_out(out)?;
@@ -2880,6 +2885,13 @@ enum BoundTopLevelCatTensors<'py> {
 enum BoundTopLevelCatDimension<'py> {
     Native(Option<ParsedCallArgument<'py>>),
     Override(ProbedTorchFunctionOverride<'py>),
+}
+
+struct TopLevelCatArguments<'py> {
+    tensors: ParsedCallArgument<'py>,
+    dim: Option<ParsedCallArgument<'py>>,
+    out: Option<ParsedCallArgument<'py>>,
+    keyword_error: Option<PyErr>,
 }
 
 struct BoundTopLevelCatCall<'py> {
@@ -11173,12 +11185,7 @@ fn validate_device_argument_type(
 fn bind_top_level_cat_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-) -> PyResult<(
-    ParsedCallArgument<'py>,
-    Option<ParsedCallArgument<'py>>,
-    Option<ParsedCallArgument<'py>>,
-    Option<PyErr>,
-)> {
+) -> PyResult<TopLevelCatArguments<'py>> {
     if positional.len() > 2 {
         return Err(PyTypeError::new_err(format!(
             "cat() takes from 1 to 2 positional arguments but {} were given",
@@ -11277,7 +11284,12 @@ fn bind_top_level_cat_arguments<'py>(
         });
     }
 
-    Ok((tensors, dim, out, keyword_error))
+    Ok(TopLevelCatArguments {
+        tensors,
+        dim,
+        out,
+        keyword_error,
+    })
 }
 
 fn parse_cat_tensors_argument<'py>(
@@ -11325,9 +11337,9 @@ fn parse_cat_tensor_sequence<'py>(
     Ok(parsed)
 }
 
-fn parse_cat_dimension<'py>(
-    dimension: Option<ParsedCallArgument<'py>>,
-) -> PyResult<BoundTopLevelCatDimension<'py>> {
+fn parse_cat_dimension(
+    dimension: Option<ParsedCallArgument<'_>>,
+) -> PyResult<BoundTopLevelCatDimension<'_>> {
     let Some(dimension) = dimension else {
         return Ok(BoundTopLevelCatDimension::Native(None));
     };
@@ -11341,9 +11353,9 @@ fn parse_cat_dimension<'py>(
     unreachable!("invalid cat dimension type should have returned a Python error")
 }
 
-fn parse_cat_out<'py>(
-    out: Option<ParsedCallArgument<'py>>,
-) -> PyResult<Option<BoundTensorOrTorchFunction<'py>>> {
+fn parse_cat_out(
+    out: Option<ParsedCallArgument<'_>>,
+) -> PyResult<Option<BoundTensorOrTorchFunction<'_>>> {
     let Some(out) = out else {
         return Ok(None);
     };
