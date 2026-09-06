@@ -1658,6 +1658,93 @@ print(json.dumps({
         finally:
             pool.close()
 
+    def test_private_cuda_buffer_pool_serializes_close_during_allocation(self):
+        class BlockingSetDeviceRuntime(_FakeCudaRuntime):
+            def __init__(self):
+                super().__init__()
+                self.entered_first_set_device = threading.Event()
+                self.release_first_set_device = threading.Event()
+                self._block_next_set_device = True
+
+            def cudaSetDevice(self, device):
+                if self._block_next_set_device:
+                    self._block_next_set_device = False
+                    self.entered_first_set_device.set()
+                    if not self.release_first_set_device.wait(timeout=5):
+                        raise AssertionError("allocation was not released")
+                return super().cudaSetDevice(device)
+
+        runtime = BlockingSetDeviceRuntime()
+        pool = _cuda_runtime_ownership.PrivateCudaBufferPool(
+            runtime,
+            (2,),
+            name_prefix="race_pool",
+            owner_id="race",
+        )
+        leases = []
+        close_results = []
+        errors = []
+        close_started = threading.Event()
+        close_done = threading.Event()
+
+        def acquire_from_pool():
+            try:
+                leases.append(pool.acquire())
+            except BaseException as error:
+                errors.append(error)
+
+        def close_pool():
+            try:
+                close_started.set()
+                close_results.append(pool.close())
+            except BaseException as error:
+                errors.append(error)
+            finally:
+                close_done.set()
+
+        acquire_thread = threading.Thread(target=acquire_from_pool)
+        close_thread = threading.Thread(target=close_pool)
+        try:
+            acquire_thread.start()
+            self.assertTrue(runtime.entered_first_set_device.wait(timeout=5))
+
+            close_thread.start()
+            self.assertTrue(close_started.wait(timeout=5))
+            self.assertFalse(close_done.wait(timeout=0.1))
+
+            runtime.release_first_set_device.set()
+            acquire_thread.join(timeout=5)
+            close_thread.join(timeout=5)
+            self.assertFalse(acquire_thread.is_alive())
+            self.assertFalse(close_thread.is_alive())
+            self.assertEqual(errors, [])
+            self.assertEqual(len(leases), 1)
+            self.assertEqual(len(close_results), 1)
+
+            close = close_results[0]
+            self.assertEqual(close["free_count"], 0)
+            self.assertEqual(close["deferred_live_buffers"], 1)
+            metadata = pool.metadata()
+            self.assertIs(metadata["closed"], True)
+            self.assertEqual(metadata["total_buffers"], 1)
+            self.assertEqual(metadata["live_buffers"], 1)
+            self.assertEqual(metadata["available_buffers"], 0)
+
+            release = leases[0].release()
+            self.assertEqual(release["released_to_pool"], False)
+            self.assertIs(release["freed_after_pool_close"], True)
+            self.assertEqual(release["pool_free_count"], 1)
+            self.assertEqual(pool.metadata()["live_buffers"], 0)
+        finally:
+            runtime.release_first_set_device.set()
+            acquire_thread.join(timeout=5)
+            close_thread.join(timeout=5)
+            for lease in leases:
+                lease.release()
+            pool.close()
+
+        self.assertEqual(len(runtime.frees), 1)
+
     def test_prepared_executor_output_pool_reuses_released_buffers(self):
         executor, runtime = _fake_prepared_executor()
         x = _fake_input_tensor(

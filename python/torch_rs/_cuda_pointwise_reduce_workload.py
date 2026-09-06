@@ -1217,6 +1217,7 @@ class H100Float32PointwiseReduceCompiledExecutor:
         "_kernel_library",
         "_kernel_library_evidence",
         "_launch_report_tls",
+        "_lifecycle_lock",
         "_nvcc",
         "_output_metadata",
         "_output_pool",
@@ -1253,6 +1254,7 @@ class H100Float32PointwiseReduceCompiledExecutor:
         self._required_cuda_visible_devices = required_cuda_visible_devices
         self._invocation_count = 0
         self._closed = False
+        self._lifecycle_lock = threading.RLock()
         self._kernel_function = getattr(
             self._kernel_library,
             (
@@ -1356,15 +1358,17 @@ class H100Float32PointwiseReduceCompiledExecutor:
         }
 
     def metadata(self) -> dict[str, Any]:
-        metadata = copy.deepcopy(self._preparation)
-        metadata["invocation_count"] = self._invocation_count
-        metadata["closed"] = self._closed
-        metadata["output_pool"] = self._output_pool.metadata()
-        return metadata
+        with self._lifecycle_lock:
+            metadata = copy.deepcopy(self._preparation)
+            metadata["invocation_count"] = self._invocation_count
+            metadata["closed"] = self._closed
+            metadata["output_pool"] = self._output_pool.metadata()
+            return metadata
 
     @property
     def closed(self) -> bool:
-        return self._closed
+        with self._lifecycle_lock:
+            return self._closed
 
     def _require_open(self) -> None:
         if self._closed:
@@ -1391,9 +1395,10 @@ class H100Float32PointwiseReduceCompiledExecutor:
         )
 
     def _require_materializable_output(self) -> None:
-        if self._closed and self._output_pool.metadata()["live_buffers"] == 0:
-            raise RuntimeError("compiled CUDA executor is closed")
-        self._require_visible_device0()
+        with self._lifecycle_lock:
+            if self._closed and self._output_pool.metadata()["live_buffers"] == 0:
+                raise RuntimeError("compiled CUDA executor is closed")
+            self._require_visible_device0()
 
     def _release_output_lease(
         self,
@@ -1401,30 +1406,31 @@ class H100Float32PointwiseReduceCompiledExecutor:
         *,
         close_executor: bool = False,
     ) -> dict[str, Any] | None:
-        release = lease.release(compact=not close_executor)
-        if release is None:
-            return None
-        freed_after_executor_close = release.get(
-            "freed_after_pool_close",
-            False,
-        )
-        if close_executor:
-            release = dict(release)
-            release["executor_close"] = self.close()
-            release["freed_after_executor_close"] = (
-                freed_after_executor_close
-                or release["buffer_name"] in {
-                    key.removeprefix("cudaFree_")
-                    for key in release["executor_close"].get("calls", {})
-                }
+        with self._lifecycle_lock:
+            release = lease.release(compact=not close_executor)
+            if release is None:
+                return None
+            freed_after_executor_close = release.get(
+                "freed_after_pool_close",
+                False,
             )
+            if close_executor:
+                release = dict(release)
+                release["executor_close"] = self.close()
+                release["freed_after_executor_close"] = (
+                    freed_after_executor_close
+                    or release["buffer_name"] in {
+                        key.removeprefix("cudaFree_")
+                        for key in release["executor_close"].get("calls", {})
+                    }
+                )
+                return release
+            if hasattr(release, "with_executor_close"):
+                return release.with_executor_close(
+                    freed_after_executor_close=freed_after_executor_close,
+                )
+            release["freed_after_executor_close"] = freed_after_executor_close
             return release
-        if hasattr(release, "with_executor_close"):
-            return release.with_executor_close(
-                freed_after_executor_close=freed_after_executor_close,
-            )
-        release["freed_after_executor_close"] = freed_after_executor_close
-        return release
 
     def _thread_launch_report(self) -> tuple[_GuardedLaunchReport, Any]:
         report = getattr(self._launch_report_tls, "report", None)
@@ -1528,13 +1534,15 @@ class H100Float32PointwiseReduceCompiledExecutor:
         return materialized_execution
 
     def close(self) -> dict[str, Any]:
-        self._closed = True
-        self._preparation["closed"] = True
-        return self._output_pool.close()
+        with self._lifecycle_lock:
+            self._closed = True
+            self._preparation["closed"] = True
+            return self._output_pool.close()
 
     def synchronize(self, *, label: str) -> dict[str, Any]:
-        self._require_open()
-        self._require_visible_mask()
+        with self._lifecycle_lock:
+            self._require_open()
+            self._require_visible_mask()
         return _cuda_runtime_ownership.synchronize_current_device(
             self._runtime,
             0,
@@ -1554,9 +1562,6 @@ class H100Float32PointwiseReduceCompiledExecutor:
         *,
         close_executor_on_output_release: bool = False,
     ) -> CudaBenchmarkTensor:
-        self._require_open()
-        self._require_visible_mask()
-
         device_x = _require_compiled_cuda_benchmark_input_buffer(
             x,
             name="x",
@@ -1572,10 +1577,12 @@ class H100Float32PointwiseReduceCompiledExecutor:
                 "input buffers do not share a CUDA runtime"
             )
 
-        self._invocation_count += 1
-        invocation_index = self._invocation_count
-
-        output_lease = self._output_pool.acquire()
+        with self._lifecycle_lock:
+            self._require_open()
+            self._require_visible_mask()
+            self._invocation_count += 1
+            invocation_index = self._invocation_count
+            output_lease = self._output_pool.acquire()
         device_output = output_lease.buffer
         if not device_output.allocation_ok:
             output_lease.release()
