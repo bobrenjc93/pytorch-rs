@@ -235,6 +235,17 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "checksum must be callable"):
             CudaBenchmarkTensor(_synthetic_private_buffer())
 
+    def test_public_cuda_benchmark_tensor_rejects_metadata_update_collisions(self):
+        buffer = _synthetic_private_buffer()
+        for key in ("status", "shape", "device", "is_cuda", "readback"):
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ValueError, "unsupported metadata keys"):
+                    CudaBenchmarkTensor(
+                        buffer,
+                        readback=_successful_synthetic_readback(buffer),
+                        metadata_updates={key: "spoofed"},
+                    )
+
     def test_public_cuda_benchmark_tensor_rejects_cpu_wrong_device_and_wrong_dtype(self):
         cases = (
             (
@@ -1066,6 +1077,30 @@ print(json.dumps({
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertIs(torch.cuda.is_initialized(), False)
 
+    def test_torch_compile_inductor_pointwise_reduce_rejects_spoofed_body(self):
+        def spoofed_workload(x, bias):
+            del x, bias
+            raise RuntimeError("spoofed body ran")
+
+        spoofed_workload.__name__ = "h100_cuda_pointwise_reduce_float32"
+        spoofed_workload._torch_rs_cuda_compile_workload_version = (
+            benchmark_compile_cuda.WORKLOAD_VERSION
+        )
+        spoofed_workload._torch_rs_cuda_compile_workload_shape = (
+            benchmark_compile_cuda.WORKLOAD_SHAPE
+        )
+        spoofed_workload._torch_rs_cuda_compile_output_shape = (1024,)
+        spoofed_workload._torch_rs_cuda_compile_dtype = "torch.float32"
+
+        compiled = torch.compile(
+            spoofed_workload,
+            backend="inductor",
+            fullgraph=True,
+            dynamic=False,
+        )
+        with self.assertRaisesRegex(NotImplementedError, "only backend='eager'"):
+            compiled(None, None)
+
     def test_torch_compile_inductor_pointwise_reduce_rejects_wrong_backend_on_h100(
         self,
     ):
@@ -1389,6 +1424,119 @@ print(json.dumps({{
         self.assertIn(
             "eager fallback is not eligible CUDA compile evidence",
             classification["rejection_reasons"],
+        )
+
+    def test_cuda_compile_classifier_rejects_contradictory_compile_settings(self):
+        classification = benchmark_compile_cuda.classify_torch_rs_cuda_compile_evidence(
+            {
+                "implementation": "torch_rs",
+                "status": "ok",
+                "workload_version": benchmark_compile_cuda.WORKLOAD_VERSION,
+                "compile_backend": "inductor",
+                "compile_fullgraph": False,
+                "compile_dynamic": True,
+                "compile_config": {
+                    "backend": "inductor",
+                    "fullgraph": True,
+                    "dynamic": False,
+                },
+                "input_device_type": "cuda",
+                "output_device_type": "cuda",
+                "native_cuda_compile": True,
+                "eager_fallback": False,
+                "forwarded_to_pytorch": False,
+            }
+        )
+
+        self.assertFalse(classification["eligible_cuda_compile_evidence"])
+        self.assertEqual(classification["score_credit"], 0.0)
+        self.assertIn(
+            "compile fullgraph setting is not True",
+            classification["rejection_reasons"],
+        )
+        self.assertIn(
+            "compile dynamic setting is not False",
+            classification["rejection_reasons"],
+        )
+
+    def test_cuda_compile_benchmark_empty_override_honors_visible_mask_on_h100(self):
+        cuda_visible_devices = "1"
+        probe = _reference_cuda_probe(cuda_visible_devices=cuda_visible_devices)
+        if not probe.get("imported"):
+            self.skipTest("requires reference PyTorch")
+        if not probe.get("available"):
+            self.skipTest(
+                f"requires CUDA_VISIBLE_DEVICES={cuda_visible_devices!r} "
+                "to expose a GPU"
+            )
+        if benchmark_compile_cuda._version_without_local(
+            probe["version"],
+        ) != benchmark_compile_cuda.REFERENCE_PYTORCH_VERSION:
+            self.skipTest(
+                "requires PyTorch "
+                f"{benchmark_compile_cuda.REFERENCE_PYTORCH_VERSION}, "
+                f"got {probe['version']}"
+            )
+        if "H100" not in probe.get("device_name", ""):
+            self.skipTest(
+                f"requires an H100 CUDA device, got {probe['device_name']!r}"
+            )
+
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(BENCHMARK_SCRIPT),
+                "--warmups",
+                "0",
+                "--samples",
+                "1",
+                "--repeats",
+                "1",
+                "--required-cuda-visible-devices",
+                "",
+            ],
+            check=False,
+            capture_output=True,
+            env={**os.environ, "CUDA_VISIBLE_DEVICES": cuda_visible_devices},
+            text=True,
+            timeout=180,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+
+        report = json.loads(completed.stdout)
+        self.assertEqual(report["environment"]["cuda_visible_devices"], "1")
+        self.assertEqual(report["candidate"]["status"], "ok")
+        self.assertIs(
+            report["candidate"]["eligibility"]["eligible_cuda_compile_evidence"],
+            True,
+        )
+        self.assertIs(
+            report["candidate"]["input_tensor_evidence"][
+                "required_cuda_visible_devices"
+            ],
+            None,
+        )
+        self.assertIs(
+            report["candidate"]["compile_execution"][
+                "required_cuda_visible_devices"
+            ],
+            None,
+        )
+        self.assertIs(
+            report["candidate"]["compile_execution"]["cuda_visible_devices_match"],
+            True,
+        )
+        self.assertEqual(
+            report["candidate"]["compile_execution"]["cuda_visible_devices"],
+            "1",
+        )
+        self.assertEqual(
+            report["candidate"]["compile_execution"]["device_output_checksum"],
+            report["reference_workload"]["cold_checksum"],
         )
 
     def test_cuda_reference_benchmark_smoke(self):

@@ -367,7 +367,12 @@ def _run_pytorch_reference(reference_torch, args):
 def classify_torch_rs_cuda_compile_evidence(evidence):
     """Return fail-closed CUDA compile eligibility for a torch_rs evidence row."""
     reasons = []
-    compile_config = evidence.get("compile_config") or {}
+    compile_config = evidence.get("compile_config")
+    if compile_config is None:
+        compile_config = {}
+    elif type(compile_config) is not dict:
+        reasons.append("compile_config is not a dict")
+        compile_config = {}
 
     if evidence.get("implementation") != "torch_rs":
         reasons.append("implementation is not torch_rs")
@@ -380,15 +385,29 @@ def classify_torch_rs_cuda_compile_evidence(evidence):
             "compile backend is not the declared CUDA reference backend "
             f"{REFERENCE_COMPILE_CONFIG['backend']!r}"
         )
-    if not (
-        evidence.get("compile_fullgraph") is True
-        or compile_config.get("fullgraph") is True
+    if (
+        "backend" in compile_config
+        and compile_config.get("backend") != REFERENCE_COMPILE_CONFIG["backend"]
     ):
+        reasons.append(
+            "compile_config backend is not the declared CUDA reference backend "
+            f"{REFERENCE_COMPILE_CONFIG['backend']!r}"
+        )
+
+    fullgraph_values = []
+    if "compile_fullgraph" in evidence:
+        fullgraph_values.append(evidence.get("compile_fullgraph"))
+    if "fullgraph" in compile_config:
+        fullgraph_values.append(compile_config.get("fullgraph"))
+    if not fullgraph_values or any(value is not True for value in fullgraph_values):
         reasons.append("compile fullgraph setting is not True")
-    if not (
-        evidence.get("compile_dynamic") is False
-        or compile_config.get("dynamic") is False
-    ):
+
+    dynamic_values = []
+    if "compile_dynamic" in evidence:
+        dynamic_values.append(evidence.get("compile_dynamic"))
+    if "dynamic" in compile_config:
+        dynamic_values.append(compile_config.get("dynamic"))
+    if not dynamic_values or any(value is not False for value in dynamic_values):
         reasons.append("compile dynamic setting is not False")
     if evidence.get("input_device_type") != "cuda":
         reasons.append("inputs did not execute on CUDA")
@@ -847,6 +866,18 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
     _require_private_cuda_pointwise_reduce_inputs(input_evidence)
     assert input_bundle is not None
 
+    mask_attribute = "_torch_rs_cuda_compile_required_cuda_visible_devices"
+    missing_attribute = object()
+    previous_mask = getattr(
+        h100_cuda_pointwise_reduce_float32,
+        mask_attribute,
+        missing_attribute,
+    )
+    setattr(
+        h100_cuda_pointwise_reduce_float32,
+        mask_attribute,
+        args.required_cuda_visible_devices,
+    )
     try:
         factory_started_ns = time.perf_counter_ns()
         compiled = torch_rs.compile(
@@ -933,6 +964,13 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
             evidence["status"] = "zero_credit_rejected"
         return evidence
     finally:
+        if previous_mask is missing_attribute:
+            try:
+                delattr(h100_cuda_pointwise_reduce_float32, mask_attribute)
+            except AttributeError:
+                pass
+        else:
+            setattr(h100_cuda_pointwise_reduce_float32, mask_attribute, previous_mask)
         input_bundle.close()
 
 

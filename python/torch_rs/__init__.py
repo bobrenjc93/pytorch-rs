@@ -278,6 +278,45 @@ _COMPILE_H100_CUDA_WORKLOAD_VERSION = "h100_cuda_pointwise_reduce_float32_v1"
 _COMPILE_H100_CUDA_WORKLOAD_SHAPE = (1024, 1024)
 _COMPILE_H100_CUDA_OUTPUT_SHAPE = (1024,)
 _COMPILE_H100_CUDA_DTYPE = "torch.float32"
+_COMPILE_H100_CUDA_WORKLOAD_INSTRUCTIONS = (
+    ("LOAD_FAST", "x"),
+    ("LOAD_FAST", "bias"),
+    ("BINARY_OP", "+"),
+    ("LOAD_METHOD", "sin"),
+    ("CALL", 0),
+    ("LOAD_FAST", "x"),
+    ("LOAD_FAST", "bias"),
+    ("BINARY_OP", "-"),
+    ("LOAD_METHOD", "cos"),
+    ("CALL", 0),
+    ("BINARY_OP", "*"),
+    ("STORE_FAST", "mixed"),
+    ("LOAD_FAST", "mixed"),
+    ("LOAD_FAST", "x"),
+    ("LOAD_METHOD", "relu"),
+    ("CALL", 0),
+    ("BINARY_OP", "+"),
+    ("LOAD_METHOD", "sum"),
+    ("LOAD_CONST", 1),
+    ("KW_NAMES", ("dim",)),
+    ("CALL", 1),
+    ("RETURN_VALUE", None),
+)
+_COMPILE_H100_CUDA_BINARY_OPS = {
+    "BINARY_ADD": "+",
+    "BINARY_SUBTRACT": "-",
+    "BINARY_MULTIPLY": "*",
+}
+_COMPILE_H100_CUDA_SKIPPED_OPS = _builtins.frozenset(
+    {
+        "CACHE",
+        "COPY_FREE_VARS",
+        "EXTENDED_ARG",
+        "NOP",
+        "PRECALL",
+        "RESUME",
+    }
+)
 _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
     "__abs__",
     "__add__",
@@ -409,6 +448,63 @@ def _marker_tuple(model, name):
     return tuple(value)
 
 
+def _normalized_h100_cuda_workload_instructions(model):
+    import dis as _compile_dis
+
+    code = getattr(model, "__code__", None)
+    if code is None:
+        return None
+
+    instructions = []
+    for instruction in _compile_dis.get_instructions(model):
+        opname = instruction.opname
+        if opname in _COMPILE_H100_CUDA_SKIPPED_OPS:
+            continue
+        if opname in {"LOAD_FAST", "STORE_FAST"}:
+            instructions.append((opname, instruction.argval))
+        elif opname in {"LOAD_METHOD", "LOAD_ATTR"}:
+            instructions.append(("LOAD_METHOD", instruction.argval))
+        elif opname == "LOAD_CONST":
+            value = instruction.argval
+            if (
+                _builtins.type(value) is tuple
+                and all(_builtins.type(item) is str for item in value)
+            ):
+                instructions.append(("KW_NAMES", value))
+            else:
+                instructions.append(("LOAD_CONST", value))
+        elif opname == "KW_NAMES":
+            value = instruction.argval
+            if _builtins.type(value) is not tuple and instruction.arg is not None:
+                value = code.co_consts[instruction.arg]
+            instructions.append(("KW_NAMES", value))
+        elif opname == "BINARY_OP":
+            instructions.append(("BINARY_OP", instruction.argrepr.strip()))
+        elif opname in _COMPILE_H100_CUDA_BINARY_OPS:
+            instructions.append(("BINARY_OP", _COMPILE_H100_CUDA_BINARY_OPS[opname]))
+        elif opname in {"CALL", "CALL_METHOD", "CALL_FUNCTION", "CALL_FUNCTION_KW"}:
+            instructions.append(("CALL", instruction.arg))
+        else:
+            instructions.append((opname, instruction.argval))
+    return tuple(instructions)
+
+
+def _h100_cuda_workload_code_matches(model):
+    code = getattr(model, "__code__", None)
+    return (
+        code is not None
+        and code.co_argcount == 2
+        and code.co_posonlyargcount == 0
+        and code.co_kwonlyargcount == 0
+        and code.co_varnames[:3] == ("x", "bias", "mixed")
+        and code.co_names == ("sin", "cos", "relu", "sum")
+        and code.co_freevars == ()
+        and code.co_cellvars == ()
+        and _normalized_h100_cuda_workload_instructions(model)
+        == _COMPILE_H100_CUDA_WORKLOAD_INSTRUCTIONS
+    )
+
+
 def _is_h100_cuda_pointwise_reduce_compile_target(model):
     return (
         _is_exact_python_function(model)
@@ -421,6 +517,7 @@ def _is_h100_cuda_pointwise_reduce_compile_target(model):
         == _COMPILE_H100_CUDA_OUTPUT_SHAPE
         and getattr(model, "_torch_rs_cuda_compile_dtype", None)
         == _COMPILE_H100_CUDA_DTYPE
+        and _h100_cuda_workload_code_matches(model)
     )
 
 
@@ -447,7 +544,16 @@ def _supports_native_h100_cuda_compile(
 
 
 def _native_h100_cuda_compile_implementation(model):
-    del model
+    required_cuda_visible_devices = getattr(
+        model,
+        "_torch_rs_cuda_compile_required_cuda_visible_devices",
+        "0",
+    )
+    if (
+        required_cuda_visible_devices is not None
+        and _builtins.type(required_cuda_visible_devices) is not str
+    ):
+        required_cuda_visible_devices = "0"
 
     def compiled_model(*args, **kwargs):
         if kwargs:
@@ -467,7 +573,7 @@ def _native_h100_cuda_compile_implementation(model):
         return _cuda_workload.execute_h100_float32_pointwise_reduce_compiled_device0(
             args[0],
             args[1],
-            required_cuda_visible_devices="0",
+            required_cuda_visible_devices=required_cuda_visible_devices,
         )
 
     return compiled_model

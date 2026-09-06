@@ -1065,6 +1065,12 @@ def execute_h100_float32_pointwise_reduce_compiled_device0(
         "eager_fallback": False,
         "forwarded_to_pytorch": False,
         "public_torch_cuda_api": False,
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        "required_cuda_visible_devices": required_cuda_visible_devices,
+        "cuda_visible_devices_match": (
+            required_cuda_visible_devices is None
+            or os.environ.get("CUDA_VISIBLE_DEVICES") == required_cuda_visible_devices
+        ),
         "cpu_fallback": False,
         "input_device_type": "cuda",
         "output_device_type": None,

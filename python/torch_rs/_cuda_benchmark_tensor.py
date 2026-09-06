@@ -16,6 +16,19 @@ from .torch_rs import float32 as _torch_float32
 
 
 CUDA_BENCHMARK_TENSOR_SCHEMA_VERSION = "torch_rs_public_cuda_benchmark_tensor_v1"
+_CUDA_BENCHMARK_TENSOR_EXTRA_METADATA_KEYS = frozenset(
+    {
+        "compile_backend",
+        "compile_dynamic",
+        "compile_execution",
+        "compile_fullgraph",
+        "eager_fallback",
+        "forwarded_to_pytorch",
+        "native_cuda_compile",
+        "pointwise_reduce_kernel_version",
+        "workload_version",
+    }
+)
 
 
 class CudaBenchmarkTensor:
@@ -60,6 +73,16 @@ class CudaBenchmarkTensor:
             raise TypeError("checksum_name must be str or None")
         if metadata_updates is not None and type(metadata_updates) is not dict:
             raise TypeError("metadata_updates must be dict or None")
+        if metadata_updates is not None:
+            unexpected_keys = (
+                set(metadata_updates) - _CUDA_BENCHMARK_TENSOR_EXTRA_METADATA_KEYS
+            )
+            if unexpected_keys:
+                keys = ", ".join(sorted(unexpected_keys))
+                raise ValueError(
+                    "metadata_updates contains unsupported metadata keys: "
+                    f"{keys}"
+                )
 
         metadata = dict(buffer.metadata())
         self._validate_buffer(buffer, metadata)
