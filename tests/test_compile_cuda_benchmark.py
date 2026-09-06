@@ -1197,6 +1197,52 @@ print(json.dumps({
             2,
         )
 
+    def test_torch_compile_inductor_wrong_mask_rejects_before_cuda_probe(self):
+        workload = benchmark_compile_cuda.h100_cuda_pointwise_reduce_float32
+        mask_attribute = "_torch_rs_cuda_compile_required_cuda_visible_devices"
+        missing_attribute = object()
+        previous_mask = getattr(workload, mask_attribute, missing_attribute)
+        setattr(workload, mask_attribute, "0")
+        try:
+            with unittest.mock.patch.dict(
+                os.environ,
+                {"CUDA_VISIBLE_DEVICES": "1"},
+            ), unittest.mock.patch.object(
+                _cuda_driver_probe,
+                "probe_cuda_driver_device0",
+                side_effect=AssertionError("driver probe should not run"),
+            ) as driver_probe, unittest.mock.patch.object(
+                _cuda_driver_probe,
+                "_load_shared_library",
+                side_effect=AssertionError("CUDA runtime load should not run"),
+            ) as load_shared_library, unittest.mock.patch.object(
+                _cuda_pointwise_kernel,
+                "_nvcc_provenance",
+                side_effect=AssertionError("nvcc provenance should not run"),
+            ) as nvcc_provenance:
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    "CUDA_VISIBLE_DEVICES=0 is required",
+                ):
+                    torch.compile(
+                        workload,
+                        backend="inductor",
+                        fullgraph=True,
+                        dynamic=False,
+                    )
+
+                driver_probe.assert_not_called()
+                load_shared_library.assert_not_called()
+                nvcc_provenance.assert_not_called()
+        finally:
+            if previous_mask is missing_attribute:
+                try:
+                    delattr(workload, mask_attribute)
+                except AttributeError:
+                    pass
+            else:
+                setattr(workload, mask_attribute, previous_mask)
+
     def test_torch_compile_inductor_pointwise_reduce_reuses_executor_on_h100(self):
         self._require_h100_reference_torch()
 

@@ -1328,6 +1328,14 @@ def prepare_h100_float32_pointwise_reduce_compiled_executor_device0(
         and type(required_cuda_visible_devices) is not str
     ):
         raise TypeError("required_cuda_visible_devices must be str or None")
+    if (
+        required_cuda_visible_devices is not None
+        and os.environ.get("CUDA_VISIBLE_DEVICES") != required_cuda_visible_devices
+    ):
+        raise _cuda_compile_unsupported(
+            "CUDA_VISIBLE_DEVICES="
+            f"{required_cuda_visible_devices} is required"
+        )
 
     driver_probe = _cuda_driver_probe.probe_cuda_driver_device0()
     (
@@ -1382,14 +1390,6 @@ def prepare_h100_float32_pointwise_reduce_compiled_executor_device0(
         "calls": {},
     }
 
-    if (
-        required_cuda_visible_devices is not None
-        and os.environ.get("CUDA_VISIBLE_DEVICES") != required_cuda_visible_devices
-    ):
-        raise _cuda_compile_unsupported(
-            "CUDA_VISIBLE_DEVICES="
-            f"{required_cuda_visible_devices} is required"
-        )
     if runtime is None:
         raise RuntimeError("CUDA runtime shared library was not loaded")
 
