@@ -3,7 +3,7 @@
 Date: 2026-09-06
 
 Candidate provenance: clean worktree at
-`9cf041a853d930df2fd1ede80bf7076bca53bcf2`. The JSON artifact records
+`5264993bf00a764e65fe133cfa45ee4ed08896a7`. The JSON artifact records
 empty `git.status_short` and `git.diff_stat` before writing the refreshed
 output.
 
@@ -35,6 +35,7 @@ Environment recorded by the JSON artifact:
 - Benchmark: `torch_compile_cuda_h100_reference_benchmark_v10`
 - Workload: `h100_cuda_pointwise_reduce_float32_v1`, shape `(1024, 1024)`,
   dtype `torch.float32`, seed `20260904`
+- Native CUDA source checksum: `db19ead9f1bddd35e91e1de643e0b810`
 - Timing: 5 warmups, 17 samples, 3 repeated calls per sample
 - Timing boundary: both PyTorch and `torch_rs` synchronize before and after
   timed compiled calls; output checksum materialization occurs after the timed
@@ -44,18 +45,18 @@ Results:
 
 | Measurement | Steady median us | MAD us | Notes |
 | --- | ---: | ---: | --- |
-| PyTorch 2.13 `torch.compile(..., backend="inductor")` | 51.221 | 1.242 | Reference workload on the same visible H100 |
-| `torch_rs` prepared compile wrapper | 55.791 | 0.945 | Eligible native CUDA compile evidence using pooled outputs |
-| `torch_rs` unprepared compatibility call | 10423.256 | 505.972 | Non-scoring comparison that prepares on every invocation |
+| PyTorch 2.13 `torch.compile(..., backend="inductor")` | 47.819 | 4.089 | Reference workload on the same visible H100 |
+| `torch_rs` prepared compile wrapper | 46.627 | 2.187 | Eligible native CUDA compile evidence using pooled outputs |
+| `torch_rs` unprepared compatibility call | 11547.487 | 615.418 | Non-scoring comparison that prepares on every invocation |
 
 The prepared wrapper recorded executor invocation count 0 before the first
 call and 67 after timing; the last steady-state call used the same preparation
-id `2bd5fe5c38740d2f`. Cold compile wrapper creation took 12124.790 us, and
-the first compiled call took 175.005 us. The output pool allocated two buffers,
+id `35e8853b569a0964`. Cold compile wrapper creation took 12823.447 us, and
+the first compiled call took 212.111 us. The output pool allocated two buffers,
 released 67 leases, had zero live buffers after timing, and reused a released
 buffer for the steady-state path. The measured prepared-vs-unprepared
-steady-state speedup was 186.83x. The candidate remains slightly slower than
-the PyTorch reference, with a CUDA compile score of 91.81% for this single
+steady-state speedup was 247.66x. The candidate matched or exceeded the
+PyTorch reference, with a CUDA compile score of 100.00% for this single
 workload.
 
 This release artifact is intentionally narrow: it proves one fixed H100
