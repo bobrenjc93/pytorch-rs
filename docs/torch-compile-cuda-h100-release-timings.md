@@ -3,14 +3,13 @@
 Date: 2026-09-06
 
 Candidate provenance: clean worktree at
-`f3a9b6e2f33c7eacc0b15d7d7b9b23fed74c11c6`, regenerated from the
-worktree-local exact checkout
-`target/benchmark-regenerate/run.cuda.SKuDSS/checkout`.
+`9cf041a853d930df2fd1ede80bf7076bca53bcf2`. The JSON artifact records
+empty `git.status_short` and `git.diff_stat` before writing the refreshed
+output.
 
 Command:
 
 ```bash
-cd target/benchmark-regenerate/run.cuda.SKuDSS/checkout
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py \
   --include-unprepared-comparison \
   --output docs/benchmark-data/torch-compile-cuda-h100-runtime-ownership-v10.json
@@ -45,19 +44,25 @@ Results:
 
 | Measurement | Steady median us | MAD us | Notes |
 | --- | ---: | ---: | --- |
-| PyTorch 2.13 `torch.compile(..., backend="inductor")` | 50.236 | 1.960 | Reference workload on the same visible H100 |
-| `torch_rs` prepared compile wrapper | 202.757 | 3.515 | Eligible native CUDA compile evidence using pooled outputs |
-| `torch_rs` unprepared compatibility call | 11498.730 | 675.949 | Non-scoring comparison that prepares on every invocation |
+| PyTorch 2.13 `torch.compile(..., backend="inductor")` | 51.221 | 1.242 | Reference workload on the same visible H100 |
+| `torch_rs` prepared compile wrapper | 55.791 | 0.945 | Eligible native CUDA compile evidence using pooled outputs |
+| `torch_rs` unprepared compatibility call | 10423.256 | 505.972 | Non-scoring comparison that prepares on every invocation |
 
 The prepared wrapper recorded executor invocation count 0 before the first
 call and 67 after timing; the last steady-state call used the same preparation
-id `79f7a37e3d7bdd52`. Cold compile wrapper creation took 12440.951 us, and
-the first compiled call took 367.575 us. The output pool allocated two buffers,
+id `2bd5fe5c38740d2f`. Cold compile wrapper creation took 12124.790 us, and
+the first compiled call took 175.005 us. The output pool allocated two buffers,
 released 67 leases, had zero live buffers after timing, and reused a released
 buffer for the steady-state path. The measured prepared-vs-unprepared
-steady-state speedup was 56.71x. The candidate remains slower than the PyTorch
-reference, with a coverage-adjusted CUDA compile score of 24.78% for this
-single workload.
+steady-state speedup was 186.83x. The candidate remains slightly slower than
+the PyTorch reference, with a CUDA compile score of 91.81% for this single
+workload.
+
+This release artifact is intentionally narrow: it proves one fixed H100
+CUDA pointwise-plus-row-reduction workload and should not be treated as broad
+CUDA compile coverage until paired with held-out shapes, more operators,
+dynamic/fullgraph variants, backward cases where applicable, and explicit
+unsupported zero-credit categories.
 
 Correctness evidence remained fail-closed: the candidate ran on CUDA device 0,
 used `backend="inductor"`, `fullgraph=True`, `dynamic=False`, reported

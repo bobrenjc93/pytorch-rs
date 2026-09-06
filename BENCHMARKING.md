@@ -106,7 +106,7 @@ Prepared-executor comparison evidence can be reproduced with:
 ```bash
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py \
   --include-unprepared-comparison \
-  --output docs/benchmark-data/torch-compile-cuda-h100-prepared-executor-v8.json
+  --output docs/benchmark-data/torch-compile-cuda-h100-runtime-ownership-v10.json
 ```
 
 To reserve a different physical GPU, mask exactly one device and pass the same
@@ -115,6 +115,11 @@ still uses logical CUDA device 0 after masking.
 Passing an empty `--required-cuda-visible-devices` preserves the local
 experimentation escape hatch by skipping the literal environment check; CUDA
 work still runs on logical device 0 and records the visible-device count.
+
+This is single-workload release evidence, not broad CUDA compile coverage.
+Held-out shapes, operators, dynamic/fullgraph modes, backward cases where
+applicable, and explicit unsupported zero-credit categories remain required
+before CUDA compile results should be treated as general benchmark coverage.
 
 The script requires PyTorch 2.13, records GPU, driver, CUDA runtime, `nvcc`,
 compile configuration, cold first-call timing, synchronized steady-state
