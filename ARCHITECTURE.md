@@ -21,6 +21,7 @@ operators, and limited eager reverse-mode autograd.
 | Python package shell | [python/torch_rs/__init__.py](python/torch_rs/__init__.py) | Imports the native extension, exposes `_C`, patches package-level compatibility helpers, and binds Python submodules. |
 | Compile bytecode frontend | [python/torch_rs/_compile_bytecode.py](python/torch_rs/_compile_bytecode.py) | Normalizes and validates the narrow CPython 3.10-3.14 straight-line bytecode subset used by public `torch.compile(..., backend="eager", fullgraph=True)` and no-break `fullgraph=False`, then emits operations through `CompileTraceRecorder`. It owns opcode compatibility only. |
 | Compile trace IR | [python/torch_rs/_compile_trace.py](python/torch_rs/_compile_trace.py) | Defines the private immutable `CompileTraceGraph`, Tensor proxy recording helpers, centralized layout and broadcast metadata planning, and native graph execution dispatch. It stays independent of CPython bytecode opcodes. |
+| Private CUDA benchmark lane | [python/torch_rs/_cuda_buffer.py](python/torch_rs/_cuda_buffer.py), [python/torch_rs/_cuda_benchmark_tensor.py](python/torch_rs/_cuda_benchmark_tensor.py), [python/torch_rs/_cuda_pointwise_kernel.py](python/torch_rs/_cuda_pointwise_kernel.py), [python/torch_rs/_cuda_pointwise_reduce_workload.py](python/torch_rs/_cuda_pointwise_reduce_workload.py) | Owns benchmark-only CUDA runtime probes, private buffers, synchronized metadata wrappers, H100 kernels, and the exact prepared-executor evidence path for the release benchmark. This lane is intentionally outside the native Rust tensor/device model and must not be expanded into general tensor semantics without first adding a real Rust-side backend/device abstraction. |
 | Python wrappers | [python/torch_rs/_tensor.py](python/torch_rs/_tensor.py), [python/torch_rs/functional.py](python/torch_rs/functional.py), [python/torch_rs/nn/functional.py](python/torch_rs/nn/functional.py), [python/torch_rs/autograd/__init__.py](python/torch_rs/autograd/__init__.py), [python/torch_rs/overrides.py](python/torch_rs/overrides.py) | Add Python-owned methods and functions when Python-level validation, dispatch, or namespace compatibility is better expressed outside Rust. |
 | Public scope docs | [README.md](README.md), [FEATURES.md](FEATURES.md), [docs/supported-surface.md](docs/supported-surface.md), [BENCHMARKING.md](BENCHMARKING.md) | README gives setup and scope; the other documents record API coverage and benchmark policy. |
 | Tests | [tests/](tests) and Rust `#[cfg(test)]` modules | Python tests compare public behavior against PyTorch references where available; Rust unit tests exercise core layout, storage, and autograd internals. |
@@ -87,6 +88,11 @@ operators, and limited eager reverse-mode autograd.
   API changes, including unsupported argument and error cases.
 - `FEATURES.md` and [docs/supported-surface.md](docs/supported-surface.md):
   update supported-surface documentation when the user-visible API changes.
+- Private CUDA benchmark helpers: keep exact H100 workload gates, evidence
+  schemas, runtime allocation, and kernel-launch code isolated in
+  `python/torch_rs/_cuda_*`. Do not route ordinary tensors through this lane or
+  add more benchmark shapes there as a substitute for a Rust-side backend/device
+  abstraction.
 
 ## Focused Validation Commands
 

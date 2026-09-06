@@ -2,9 +2,9 @@
 
 Date: 2026-09-06
 
-Candidate provenance: source snapshot based on
-`ad65a59b184522802029d794edab5538a7667035` with the prepared CUDA compile
-executor changes in this branch.
+Candidate provenance: composite worktree at
+`92f7fb6278b5a6415f2b4cbba84d30e0ece7c640` with the review-response
+architecture note present in the artifact git status.
 
 Command:
 
@@ -17,7 +17,7 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py \
 Checks run for this evidence:
 
 ```bash
-python -m py_compile \
+.venv/bin/python -m py_compile \
   python/torch_rs/_cuda_pointwise_reduce_workload.py \
   python/torch_rs/__init__.py \
   scripts/benchmark_compile_cuda.py \
@@ -44,15 +44,17 @@ Results:
 
 | Measurement | Steady median us | MAD us | Notes |
 | --- | ---: | ---: | --- |
-| PyTorch 2.13 `torch.compile(..., backend="inductor")` | 180.126 | 2.177 | Reference workload on the same visible H100 |
-| `torch_rs` prepared compile wrapper | 841.793 | 12.589 | Eligible native CUDA compile evidence |
-| `torch_rs` unprepared compatibility call | 10178.015 | 522.470 | Non-scoring comparison that prepares on every invocation |
+| PyTorch 2.13 `torch.compile(..., backend="inductor")` | 238.688 | 5.051 | Reference workload on the same visible H100 |
+| `torch_rs` prepared compile wrapper | 1115.080 | 15.370 | Eligible native CUDA compile evidence |
+| `torch_rs` unprepared compatibility call | 12825.971 | 575.734 | Non-scoring comparison that prepares on every invocation |
 
 The prepared wrapper recorded executor invocation count 0 before the first
 call and 67 after timing; the last steady-state call used the same preparation
-id `bc07109ed81ac893`. The measured prepared-vs-unprepared steady-state
-speedup was 12.09x. The candidate remains slower than the PyTorch reference,
-with a coverage-adjusted CUDA compile score of 21.40% for this single workload.
+id `de8a8200afa4686b`. Cold compile wrapper creation took 13530.280 us, and
+the first compiled call took 1445.466 us. The measured prepared-vs-unprepared
+steady-state speedup was 11.50x. The candidate remains slower than the PyTorch
+reference, with a coverage-adjusted CUDA compile score of 21.41% for this
+single workload.
 
 Correctness evidence remained fail-closed: the candidate ran on CUDA device 0,
 used `backend="inductor"`, `fullgraph=True`, `dynamic=False`, reported
