@@ -934,18 +934,22 @@ def _time_torch_rs_cuda_compile_once(compiled, inputs):
 
 
 def _time_torch_rs_cuda_compile_repeated(compiled, inputs, repeats):
+    outputs = []
     started_ns = time.perf_counter_ns()
-    output = None
-    for _ in range(repeats):
-        output = compiled(*inputs)
-    elapsed_ns = time.perf_counter_ns() - started_ns
-    metadata, compile_execution = _compile_execution_from_output(output)
-    return (
-        elapsed_ns,
-        compile_execution["device_output_checksum"],
-        metadata,
-        compile_execution,
-    )
+    try:
+        for _ in range(repeats):
+            outputs.append(compiled(*inputs))
+        elapsed_ns = time.perf_counter_ns() - started_ns
+        metadata, compile_execution = _compile_execution_from_output(outputs[-1])
+        return (
+            elapsed_ns,
+            compile_execution["device_output_checksum"],
+            metadata,
+            compile_execution,
+        )
+    finally:
+        for output in outputs:
+            output._torch_rs_close_private_cuda_buffer()
 
 
 def _time_torch_rs_cuda_unprepared_compatibility_repeated(
@@ -1072,12 +1076,15 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
             cold_metadata,
             cold_execution,
         ) = _time_torch_rs_cuda_compile_once(compiled, input_bundle.inputs)
-        cold_metadata, cold_execution = _require_torch_rs_cuda_compile_output(
-            cold_output,
-            expected_checksum=workload_buffers["expected_output_checksum"],
-            expected_output_bytes=workload_buffers["expected_output_bytes"],
-            expected_output_metadata=workload_buffers["expected_output_metadata"],
-        )
+        try:
+            cold_metadata, cold_execution = _require_torch_rs_cuda_compile_output(
+                cold_output,
+                expected_checksum=workload_buffers["expected_output_checksum"],
+                expected_output_bytes=workload_buffers["expected_output_bytes"],
+                expected_output_metadata=workload_buffers["expected_output_metadata"],
+            )
+        finally:
+            cold_output._torch_rs_close_private_cuda_buffer()
         last_execution = cold_execution
 
         for _ in range(args.warmups):

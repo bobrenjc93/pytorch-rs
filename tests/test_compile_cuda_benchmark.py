@@ -1197,6 +1197,48 @@ print(json.dumps({
             2,
         )
 
+    def test_torch_rs_cuda_compile_repeated_closes_temporary_outputs(self):
+        class FakeOutput:
+            def __init__(self, index):
+                self.index = index
+                self.close_calls = 0
+
+            def metadata(self):
+                return {
+                    "compile_execution": {
+                        "device_output_checksum": f"checksum-{self.index}",
+                        "executor": {"invocation_index": self.index},
+                    }
+                }
+
+            def _torch_rs_close_private_cuda_buffer(self):
+                self.close_calls += 1
+                return {"result": 0, "index": self.index}
+
+        outputs = []
+
+        def compiled(*inputs):
+            self.assertEqual(inputs, ("x", "bias"))
+            output = FakeOutput(len(outputs) + 1)
+            outputs.append(output)
+            return output
+
+        _elapsed_ns, checksum, metadata, execution = (
+            benchmark_compile_cuda._time_torch_rs_cuda_compile_repeated(
+                compiled,
+                ("x", "bias"),
+                3,
+            )
+        )
+
+        self.assertEqual(checksum, "checksum-3")
+        self.assertEqual(
+            metadata["compile_execution"]["executor"]["invocation_index"],
+            3,
+        )
+        self.assertEqual(execution["executor"]["invocation_index"], 3)
+        self.assertEqual([output.close_calls for output in outputs], [1, 1, 1])
+
     def test_torch_compile_inductor_wrong_mask_rejects_before_cuda_probe(self):
         workload = benchmark_compile_cuda.h100_cuda_pointwise_reduce_float32
         mask_attribute = "_torch_rs_cuda_compile_required_cuda_visible_devices"
