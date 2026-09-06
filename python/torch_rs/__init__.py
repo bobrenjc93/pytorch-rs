@@ -641,15 +641,9 @@ def compile(
     the selected branch and returns either a Tensor or a tuple/list pytree with
     Tensor leaves. ``dynamic=True`` reuses a graph across same-rank shape
     changes while keeping stride, dtype, device, and ``requires_grad``
-    specialized, matching the covered PyTorch eager-backend guards.
-    The same no-break subset is also supported with ``fullgraph=False`` and
-    default ``dynamic=None``. Those functions may read module-global exact
-    native CPU ``float32`` Tensor constants. They may also contain one top-level
-    ``if`` over an input Tensor's ``requires_grad`` metadata; the native path
-    lowers the selected branch and returns either a Tensor or a tuple/list
-    pytree with Tensor leaves. ``dynamic=True`` reuses a graph across same-rank
-    shape changes while keeping stride, dtype, device, and ``requires_grad``
-    specialized, matching the covered PyTorch eager-backend guards.
+    specialized, matching the covered PyTorch eager-backend guards. The same
+    no-break subset is also supported with ``fullgraph=False`` and default
+    ``dynamic=None``.
     Eager fallback, installed-PyTorch forwarding, callable backend invocation,
     CUDA compilation, and broader graph capture remain unsupported.
     """
