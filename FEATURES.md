@@ -72,7 +72,8 @@ The dtypes and compilation rows' CPU-build CUDA probes also include
 importing PyTorch, probing CUDA/NVML or other hardware state, initializing CUDA,
 or adding mutable runtime state. CUDA tensors, device selection, streams,
 events, synchronization, allocator APIs, memory APIs, runtime initialization,
-and `torch.compile` CUDA execution remain unsupported.
+and general `torch.compile` CUDA execution remain unsupported outside the
+private benchmark-only H100 pointwise-reduce compile evidence path.
 
 The autograd surface also includes reference-tested no-argument state queries:
 `torch.is_grad_enabled()`, `torch.is_inference_mode_enabled()`,

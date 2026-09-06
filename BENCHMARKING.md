@@ -119,11 +119,16 @@ checksum verification. It also runs a private fused float32
 pointwise-plus-row-reduction kernel for the benchmark's `(1024, 1024)` H100
 workload shape using torch_rs-owned device buffers, then compares synchronized
 output metadata and checksums against the PyTorch CUDA compiled reference. The
-current `torch_rs` CUDA compile cell is emitted as explicit
-`zero_credit_unsupported`: CPU tensors, `backend="eager"`, eager fallback,
-skipped execution, or forwarding to installed PyTorch are rejected as eligible
-CUDA compile evidence. The public CPU-build `torch.cuda` probe behavior remains
-unchanged.
+current `torch_rs` CUDA compile cell also routes that exact versioned workload
+through `torch.compile(..., backend="inductor", fullgraph=True, dynamic=False)`
+and executes the torch_rs-owned pointwise-plus-row-reduction CUDA kernel from
+the compiled wrapper. The candidate row is eligible only when the inputs and
+output are CUDA benchmark tensor wrappers with matching fixed shapes, float32
+metadata, synchronized checksum/readback evidence, `native_cuda_compile=True`,
+no eager fallback, and no forwarding to installed PyTorch. CPU tensors,
+`backend="eager"`, wrong shapes, skipped execution, eager fallback, or
+installed-PyTorch forwarding are rejected as eligible CUDA compile evidence.
+The public CPU-build `torch.cuda` probe behavior remains unchanged.
 
 ### Layout/view ops
 

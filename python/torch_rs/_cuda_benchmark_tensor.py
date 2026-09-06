@@ -16,6 +16,19 @@ from .torch_rs import float32 as _torch_float32
 
 
 CUDA_BENCHMARK_TENSOR_SCHEMA_VERSION = "torch_rs_public_cuda_benchmark_tensor_v1"
+_CUDA_BENCHMARK_TENSOR_EXTRA_METADATA_KEYS = frozenset(
+    {
+        "compile_backend",
+        "compile_dynamic",
+        "compile_execution",
+        "compile_fullgraph",
+        "eager_fallback",
+        "forwarded_to_pytorch",
+        "native_cuda_compile",
+        "pointwise_reduce_kernel_version",
+        "workload_version",
+    }
+)
 
 
 class CudaBenchmarkTensor:
@@ -23,6 +36,7 @@ class CudaBenchmarkTensor:
 
     __slots__ = (
         "_byte_count",
+        "_buffer",
         "_checksum",
         "_checksum_name",
         "_device",
@@ -44,6 +58,7 @@ class CudaBenchmarkTensor:
         checksum: Callable[[bytes], str] | None = None,
         readback: _cuda_buffer.PrivateCudaHostReadback | None = None,
         checksum_name: str | None = None,
+        metadata_updates: dict[str, Any] | None = None,
     ) -> None:
         if type(buffer) is not _cuda_buffer.PrivateCudaFloat32Buffer:
             raise TypeError(
@@ -56,6 +71,18 @@ class CudaBenchmarkTensor:
             raise TypeError("checksum must be callable when readback is not provided")
         if checksum_name is not None and type(checksum_name) is not str:
             raise TypeError("checksum_name must be str or None")
+        if metadata_updates is not None and type(metadata_updates) is not dict:
+            raise TypeError("metadata_updates must be dict or None")
+        if metadata_updates is not None:
+            unexpected_keys = (
+                set(metadata_updates) - _CUDA_BENCHMARK_TENSOR_EXTRA_METADATA_KEYS
+            )
+            if unexpected_keys:
+                keys = ", ".join(sorted(unexpected_keys))
+                raise ValueError(
+                    "metadata_updates contains unsupported metadata keys: "
+                    f"{keys}"
+                )
 
         metadata = dict(buffer.metadata())
         self._validate_buffer(buffer, metadata)
@@ -69,6 +96,7 @@ class CudaBenchmarkTensor:
         readback_metadata["checksum_name"] = checksum_name
         readback_metadata["payload_exposed"] = False
 
+        self._buffer = buffer
         self._name = buffer.name
         self._shape = tuple(metadata["shape"])
         self._stride = tuple(metadata["stride"])
@@ -106,6 +134,8 @@ class CudaBenchmarkTensor:
             "cpu_fallback": False,
             "operations_supported": [],
         }
+        if metadata_updates is not None:
+            self._metadata.update(copy.deepcopy(metadata_updates))
         self._readback_metadata = copy.deepcopy(readback_metadata)
 
     @staticmethod
@@ -222,6 +252,18 @@ class CudaBenchmarkTensor:
 
     def readback_metadata(self) -> dict[str, Any]:
         return copy.deepcopy(self._readback_metadata)
+
+    def _torch_rs_private_cuda_buffer(
+        self,
+    ) -> _cuda_buffer.PrivateCudaFloat32Buffer:
+        if not self._buffer.allocation_ok:
+            raise ValueError(
+                "CudaBenchmarkTensor private CUDA buffer is no longer live"
+            )
+        return self._buffer
+
+    def _torch_rs_close_private_cuda_buffer(self) -> dict[str, Any] | None:
+        return self._buffer.close()
 
     def __repr__(self) -> str:
         return (

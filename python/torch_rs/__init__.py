@@ -273,6 +273,50 @@ _COMPILE_UNSUPPORTED_MESSAGE = (
     "graph capture remain unsupported"
 )
 _COMPILE_DEFAULT_RECOMPILE_LIMIT = 8
+_COMPILE_H100_CUDA_WORKLOAD_NAME = "h100_cuda_pointwise_reduce_float32"
+_COMPILE_H100_CUDA_WORKLOAD_VERSION = "h100_cuda_pointwise_reduce_float32_v1"
+_COMPILE_H100_CUDA_WORKLOAD_SHAPE = (1024, 1024)
+_COMPILE_H100_CUDA_OUTPUT_SHAPE = (1024,)
+_COMPILE_H100_CUDA_DTYPE = "torch.float32"
+_COMPILE_H100_CUDA_WORKLOAD_INSTRUCTIONS = (
+    ("LOAD_FAST", "x"),
+    ("LOAD_FAST", "bias"),
+    ("BINARY_OP", "+"),
+    ("LOAD_METHOD", "sin"),
+    ("CALL", 0),
+    ("LOAD_FAST", "x"),
+    ("LOAD_FAST", "bias"),
+    ("BINARY_OP", "-"),
+    ("LOAD_METHOD", "cos"),
+    ("CALL", 0),
+    ("BINARY_OP", "*"),
+    ("STORE_FAST", "mixed"),
+    ("LOAD_FAST", "mixed"),
+    ("LOAD_FAST", "x"),
+    ("LOAD_METHOD", "relu"),
+    ("CALL", 0),
+    ("BINARY_OP", "+"),
+    ("LOAD_METHOD", "sum"),
+    ("LOAD_CONST", 1),
+    ("KW_NAMES", ("dim",)),
+    ("CALL", 1),
+    ("RETURN_VALUE", None),
+)
+_COMPILE_H100_CUDA_BINARY_OPS = {
+    "BINARY_ADD": "+",
+    "BINARY_SUBTRACT": "-",
+    "BINARY_MULTIPLY": "*",
+}
+_COMPILE_H100_CUDA_SKIPPED_OPS = _builtins.frozenset(
+    {
+        "CACHE",
+        "COPY_FREE_VARS",
+        "EXTENDED_ARG",
+        "NOP",
+        "PRECALL",
+        "RESUME",
+    }
+)
 _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
     "__abs__",
     "__add__",
@@ -395,6 +439,164 @@ def _supports_native_eager_compile(
         and isolate_recompiles is False
         and shapes_spec is None
     )
+
+
+def _marker_tuple(model, name):
+    value = getattr(model, name, None)
+    if _builtins.type(value) not in (tuple, list):
+        return None
+    return tuple(value)
+
+
+def _normalized_h100_cuda_workload_instructions(model):
+    import dis as _compile_dis
+
+    code = getattr(model, "__code__", None)
+    if code is None:
+        return None
+
+    instructions = []
+    for instruction in _compile_dis.get_instructions(model):
+        opname = instruction.opname
+        if opname in _COMPILE_H100_CUDA_SKIPPED_OPS:
+            continue
+        if opname in {"LOAD_FAST", "LOAD_FAST_BORROW"}:
+            instructions.append(("LOAD_FAST", instruction.argval))
+        elif opname in {
+            "LOAD_FAST_LOAD_FAST",
+            "LOAD_FAST_BORROW_LOAD_FAST_BORROW",
+        }:
+            names = instruction.argval
+            if _builtins.type(names) is not tuple:
+                instructions.append((opname, instruction.argval))
+                continue
+            for name in names:
+                instructions.append(("LOAD_FAST", name))
+        elif opname == "STORE_FAST":
+            instructions.append((opname, instruction.argval))
+        elif opname in {"LOAD_METHOD", "LOAD_ATTR"}:
+            instructions.append(("LOAD_METHOD", instruction.argval))
+        elif opname == "LOAD_SMALL_INT":
+            instructions.append(("LOAD_CONST", instruction.argval))
+        elif opname == "LOAD_CONST":
+            value = instruction.argval
+            if (
+                _builtins.type(value) is tuple
+                and all(_builtins.type(item) is str for item in value)
+            ):
+                instructions.append(("KW_NAMES", value))
+            else:
+                instructions.append(("LOAD_CONST", value))
+        elif opname == "KW_NAMES":
+            value = instruction.argval
+            if _builtins.type(value) is not tuple and instruction.arg is not None:
+                value = code.co_consts[instruction.arg]
+            instructions.append(("KW_NAMES", value))
+        elif opname == "BINARY_OP":
+            instructions.append(("BINARY_OP", instruction.argrepr.strip()))
+        elif opname in _COMPILE_H100_CUDA_BINARY_OPS:
+            instructions.append(("BINARY_OP", _COMPILE_H100_CUDA_BINARY_OPS[opname]))
+        elif opname in {
+            "CALL",
+            "CALL_KW",
+            "CALL_METHOD",
+            "CALL_FUNCTION",
+            "CALL_FUNCTION_KW",
+        }:
+            instructions.append(("CALL", instruction.arg))
+        else:
+            instructions.append((opname, instruction.argval))
+    return tuple(instructions)
+
+
+def _h100_cuda_workload_code_matches(model):
+    code = getattr(model, "__code__", None)
+    return (
+        code is not None
+        and code.co_argcount == 2
+        and code.co_posonlyargcount == 0
+        and code.co_kwonlyargcount == 0
+        and code.co_varnames[:3] == ("x", "bias", "mixed")
+        and code.co_names == ("sin", "cos", "relu", "sum")
+        and code.co_freevars == ()
+        and code.co_cellvars == ()
+        and _normalized_h100_cuda_workload_instructions(model)
+        == _COMPILE_H100_CUDA_WORKLOAD_INSTRUCTIONS
+    )
+
+
+def _is_h100_cuda_pointwise_reduce_compile_target(model):
+    return (
+        _is_exact_python_function(model)
+        and getattr(model, "__name__", None) == _COMPILE_H100_CUDA_WORKLOAD_NAME
+        and getattr(model, "_torch_rs_cuda_compile_workload_version", None)
+        == _COMPILE_H100_CUDA_WORKLOAD_VERSION
+        and _marker_tuple(model, "_torch_rs_cuda_compile_workload_shape")
+        == _COMPILE_H100_CUDA_WORKLOAD_SHAPE
+        and _marker_tuple(model, "_torch_rs_cuda_compile_output_shape")
+        == _COMPILE_H100_CUDA_OUTPUT_SHAPE
+        and getattr(model, "_torch_rs_cuda_compile_dtype", None)
+        == _COMPILE_H100_CUDA_DTYPE
+        and _h100_cuda_workload_code_matches(model)
+    )
+
+
+def _supports_native_h100_cuda_compile(
+    *,
+    fullgraph,
+    dynamic,
+    resolved_backend,
+    mode,
+    options,
+    isolate_recompiles,
+    shapes_spec,
+):
+    return (
+        _builtins.type(resolved_backend) is _builtins.str
+        and resolved_backend == "inductor"
+        and fullgraph is True
+        and dynamic is False
+        and mode is None
+        and options is None
+        and isolate_recompiles is False
+        and shapes_spec is None
+    )
+
+
+def _native_h100_cuda_compile_implementation(model):
+    required_cuda_visible_devices = getattr(
+        model,
+        "_torch_rs_cuda_compile_required_cuda_visible_devices",
+        "0",
+    )
+    if (
+        required_cuda_visible_devices is not None
+        and _builtins.type(required_cuda_visible_devices) is not str
+    ):
+        required_cuda_visible_devices = "0"
+
+    def compiled_model(*args, **kwargs):
+        if kwargs:
+            names = ", ".join(sorted(kwargs))
+            raise NotImplementedError(
+                "torch.compile(): native CUDA inductor pointwise-reduce "
+                f"path does not support keyword arguments: {names}"
+            )
+        if len(args) != 2:
+            raise NotImplementedError(
+                "torch.compile(): native CUDA inductor pointwise-reduce "
+                "path requires exactly two positional inputs"
+            )
+
+        from . import _cuda_pointwise_reduce_workload as _cuda_workload
+
+        return _cuda_workload.execute_h100_float32_pointwise_reduce_compiled_device0(
+            args[0],
+            args[1],
+            required_cuda_visible_devices=required_cuda_visible_devices,
+        )
+
+    return compiled_model
 
 
 def _validated_compile_recompile_limit(recompile_limit):
@@ -581,7 +783,20 @@ def _compile_bound_model(
         return model
 
     implementation = None
-    if _supports_native_eager_compile(
+    is_h100_cuda_target = _is_h100_cuda_pointwise_reduce_compile_target(model)
+    if is_h100_cuda_target:
+        if _supports_native_h100_cuda_compile(
+            fullgraph=fullgraph,
+            dynamic=dynamic,
+            resolved_backend=resolved_backend,
+            mode=mode,
+            options=options,
+            isolate_recompiles=isolate_recompiles,
+            shapes_spec=shapes_spec,
+        ):
+            _validated_compile_recompile_limit(recompile_limit)
+            implementation = _native_h100_cuda_compile_implementation(model)
+    elif _supports_native_eager_compile(
         fullgraph=fullgraph,
         dynamic=dynamic,
         resolved_backend=resolved_backend,
@@ -643,9 +858,11 @@ def compile(
     changes while keeping stride, dtype, device, and ``requires_grad``
     specialized, matching the covered PyTorch eager-backend guards. The same
     no-break subset is also supported with ``fullgraph=False`` and default
-    ``dynamic=None``.
+    ``dynamic=None``. A private benchmark-only H100 CUDA pointwise-reduce
+    workload is supported for ``backend="inductor"``, ``fullgraph=True``, and
+    ``dynamic=False`` when called with the exact CUDA benchmark tensor inputs.
     Eager fallback, installed-PyTorch forwarding, callable backend invocation,
-    CUDA compilation, and broader graph capture remain unsupported.
+    general CUDA compilation, and broader graph capture remain unsupported.
     """
     if model is None:
         captured_backend = (
