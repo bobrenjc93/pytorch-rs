@@ -202,9 +202,13 @@ class _FakePointwiseReduceLibrary:
         threads_out,
         launch_error_out,
     ):
-        del x, bias, output, columns
-        blocks_out._obj.value = int(rows)
-        threads_out._obj.value = 32
+        del x, bias, output
+        workload_shape = (int(rows), int(columns))
+        blocks, threads = _cuda_pointwise_reduce_workload._compile_launch_dimensions(
+            workload_shape
+        )
+        blocks_out._obj.value = blocks
+        threads_out._obj.value = threads
         launch_error_out._obj.value = 0
         return 0
 
@@ -222,6 +226,8 @@ class _FakePointwiseReduceLibrary:
         report.get_device_error = 0
         report.observed_device = 0
         report.launch_error = 0
+        report.blocks = 0
+        report.threads_per_block = 0
         runtime = getattr(self, "runtime", None)
         if runtime is None:
             runtime = getattr(self, "observed_runtime", None)
@@ -253,6 +259,8 @@ class _FakePointwiseReduceLibrary:
             ctypes.byref(launch_error),
         )
         report.launch_error = int(launch_error.value)
+        report.blocks = int(blocks.value)
+        report.threads_per_block = int(threads.value)
         return int(result)
 
 
@@ -260,9 +268,14 @@ def _fake_prepared_executor(
     runtime=None,
     required_cuda_visible_devices=None,
     kernel_library=None,
+    workload_shape=_cuda_pointwise_reduce_workload.WORKLOAD_SHAPE,
 ):
     runtime = runtime or _FakeCudaRuntime()
     kernel_library = kernel_library or _FakePointwiseReduceLibrary(runtime)
+    rows, columns = workload_shape
+    launch_blocks, launch_threads = (
+        _cuda_pointwise_reduce_workload._compile_launch_dimensions(workload_shape)
+    )
     preparation = {
         "schema_version": (
             _cuda_pointwise_reduce_workload
@@ -294,8 +307,12 @@ def _fake_prepared_executor(
         "device_type": "cuda",
         "device_index": 0,
         "dtype": "float32",
-        "workload_shape": list(_cuda_pointwise_reduce_workload.WORKLOAD_SHAPE),
-        "output_shape": list(_cuda_pointwise_reduce_workload.OUTPUT_SHAPE),
+        "workload_shape": [rows, columns],
+        "output_shape": [rows],
+        "launch_dimensions": {
+            "blocks": launch_blocks,
+            "threads_per_block": launch_threads,
+        },
         "driver": {},
         "runtime": {},
         "device_0": {},
@@ -314,7 +331,11 @@ def _fake_prepared_executor(
         "invocation_count": 0,
         "calls": {},
     }
-    executor = _cuda_pointwise_reduce_workload.H100Float32PointwiseReduceCompiledExecutor(
+    executor_class = (
+        _cuda_pointwise_reduce_workload
+        .H100Float32PointwiseReduceCompiledExecutor
+    )
+    executor = executor_class(
         runtime=runtime,
         runtime_library="fake-cudart",
         runtime_load_error=None,
@@ -325,8 +346,33 @@ def _fake_prepared_executor(
         kernel_library_evidence=preparation["kernel_library"],
         required_cuda_visible_devices=required_cuda_visible_devices,
         preparation=preparation,
+        workload_shape=workload_shape,
     )
     return executor, runtime
+
+
+def _marked_h100_pointwise_reduce_workload(
+    workload_shape,
+    *,
+    output_shape=None,
+    workload_version=benchmark_compile_cuda.WORKLOAD_VERSION,
+    dtype="torch.float32",
+):
+    def h100_cuda_pointwise_reduce_float32(x, bias):
+        mixed = (x + bias).sin() * (x - bias).cos()
+        return (mixed + x.relu()).sum(dim=1)
+
+    h100_cuda_pointwise_reduce_float32._torch_rs_cuda_compile_workload_version = (
+        workload_version
+    )
+    h100_cuda_pointwise_reduce_float32._torch_rs_cuda_compile_workload_shape = (
+        workload_shape
+    )
+    h100_cuda_pointwise_reduce_float32._torch_rs_cuda_compile_output_shape = (
+        (workload_shape[0],) if output_shape is None else output_shape
+    )
+    h100_cuda_pointwise_reduce_float32._torch_rs_cuda_compile_dtype = dtype
+    return h100_cuda_pointwise_reduce_float32
 
 
 def _fake_input_tensor(runtime, name, shape):
@@ -1435,6 +1481,157 @@ print(json.dumps({
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertIs(torch.cuda.is_initialized(), False)
 
+    def test_torch_compile_inductor_pointwise_reduce_shape_family_on_h100(self):
+        reference_torch = self._require_h100_reference_torch()
+
+        for workload_shape in _cuda_pointwise_reduce_workload.SUPPORTED_WORKLOAD_SHAPES:
+            rows, columns = workload_shape
+            with self.subTest(workload_shape=workload_shape):
+                reference_torch.manual_seed(
+                    benchmark_compile_cuda.WORKLOAD_SEED + rows * 31 + columns
+                )
+                x = reference_torch.randn(
+                    workload_shape,
+                    device="cuda",
+                    dtype=reference_torch.float32,
+                )
+                bias = reference_torch.randn(
+                    (columns,),
+                    device="cuda",
+                    dtype=reference_torch.float32,
+                )
+                workload = _marked_h100_pointwise_reduce_workload(workload_shape)
+                reference_compiled = reference_torch.compile(
+                    workload,
+                    backend=benchmark_compile_cuda.REFERENCE_COMPILE_CONFIG[
+                        "backend"
+                    ],
+                    fullgraph=benchmark_compile_cuda.REFERENCE_COMPILE_CONFIG[
+                        "fullgraph"
+                    ],
+                    dynamic=benchmark_compile_cuda.REFERENCE_COMPILE_CONFIG[
+                        "dynamic"
+                    ],
+                )
+                expected = reference_compiled(x, bias)
+                reference_torch.cuda.synchronize(0)
+                expected_output_bytes = benchmark_compile_cuda._tensor_float32_bytes(
+                    expected
+                )
+                expected_output_metadata = benchmark_compile_cuda._tensor_metadata(
+                    expected
+                )
+                expected_tensor_checksum = benchmark_compile_cuda._checksum_tensor(
+                    expected
+                )
+                expected_bytes_checksum = (
+                    _cuda_pointwise_reduce_workload._checksum_output_bytes(
+                        expected_output_bytes,
+                        rows,
+                        columns,
+                    )
+                )
+                expected_blocks, expected_threads = (
+                    _cuda_pointwise_reduce_workload._compile_launch_dimensions(
+                        workload_shape
+                    )
+                )
+
+                input_bundle = None
+                output = None
+                compiled = None
+                try:
+                    input_bundle, input_evidence = (
+                        _cuda_pointwise_reduce_workload
+                        .make_h100_float32_pointwise_reduce_inputs_device0(
+                            benchmark_compile_cuda._tensor_float32_bytes(x),
+                            benchmark_compile_cuda._tensor_float32_bytes(bias),
+                            rows=rows,
+                            columns=columns,
+                        )
+                    )
+                    self.assertEqual(
+                        input_evidence["status"],
+                        "ok",
+                        msg=json.dumps(input_evidence, indent=2, sort_keys=True),
+                    )
+                    self.assertIsNotNone(input_bundle)
+
+                    compiled = torch.compile(
+                        workload,
+                        backend="inductor",
+                        fullgraph=True,
+                        dynamic=False,
+                    )
+                    preparation = compiled._torch_rs_cuda_compile_preparation
+                    self.assertEqual(preparation["workload_shape"], [rows, columns])
+                    self.assertEqual(preparation["output_shape"], [rows])
+                    self.assertEqual(
+                        preparation["launch_dimensions"],
+                        {
+                            "blocks": expected_blocks,
+                            "threads_per_block": expected_threads,
+                        },
+                    )
+                    self.assertEqual(
+                        {
+                            tuple(buffer["shape"])
+                            for buffer in preparation["output_pool"]["buffers"]
+                        },
+                        {(rows,)},
+                    )
+
+                    output = compiled(*input_bundle.inputs)
+                    self.assertIs(type(output), CudaBenchmarkTensor)
+                    metadata, execution = (
+                        benchmark_compile_cuda._compile_execution_from_output(
+                            output
+                        )
+                    )
+                    self.assertEqual(metadata["shape"], [rows])
+                    self.assertEqual(metadata["checksum"], expected_bytes_checksum)
+                    self.assertIs(metadata["native_cuda_compile"], True)
+                    self.assertIs(metadata["eager_fallback"], False)
+                    self.assertIs(metadata["forwarded_to_pytorch"], False)
+                    self.assertEqual(execution["status"], "ok")
+                    self.assertEqual(execution["workload_shape"], [rows, columns])
+                    self.assertEqual(execution["output_shape"], [rows])
+                    self.assertEqual(
+                        execution["output_metadata"],
+                        expected_output_metadata,
+                    )
+                    self.assertEqual(
+                        execution["device_output_checksum"],
+                        expected_tensor_checksum,
+                    )
+                    self.assertEqual(
+                        execution["device_output_bytes_checksum"],
+                        expected_bytes_checksum,
+                    )
+                    self.assertEqual(execution["launch"]["blocks"], expected_blocks)
+                    self.assertEqual(
+                        execution["launch"]["threads_per_block"],
+                        expected_threads,
+                    )
+                    self.assertIsNone(execution["launch"]["sync_error"]["result"])
+                    comparison = benchmark_compile_cuda._compare_compiled_output_bytes(
+                        output,
+                        execution,
+                        expected_output_bytes,
+                    )
+                    self.assertIs(comparison["exact_bytes_match"], True)
+                    self.assertEqual(comparison["mismatched_element_count"], 0)
+                    self.assertIs(torch.cuda.is_available(), False)
+                    self.assertEqual(torch.cuda.device_count(), 0)
+                    self.assertIs(torch.cuda.is_initialized(), False)
+                finally:
+                    if output is not None:
+                        output._torch_rs_close_private_cuda_buffer()
+                    if compiled is not None:
+                        compiled._torch_rs_cuda_compile_executor.close()
+                    if input_bundle is not None:
+                        input_bundle.close()
+
     def test_torch_compile_inductor_pointwise_reduce_prepares_executor_once(self):
         class FakePreparedExecutor:
             def __init__(self):
@@ -1464,8 +1661,12 @@ print(json.dumps({
         prepared_executor = FakePreparedExecutor()
         prepare_calls = []
 
-        def prepare_executor(*, required_cuda_visible_devices="0"):
-            prepare_calls.append(required_cuda_visible_devices)
+        def prepare_executor(
+            *,
+            required_cuda_visible_devices="0",
+            workload_shape=_cuda_pointwise_reduce_workload.WORKLOAD_SHAPE,
+        ):
+            prepare_calls.append((required_cuda_visible_devices, workload_shape))
             return prepared_executor
 
         with unittest.mock.patch.object(
@@ -1480,7 +1681,10 @@ print(json.dumps({
                 dynamic=False,
             )
 
-        self.assertEqual(prepare_calls, ["0"])
+        self.assertEqual(
+            prepare_calls,
+            [("0", _cuda_pointwise_reduce_workload.WORKLOAD_SHAPE)],
+        )
         self.assertIs(
             compiled._torch_rs_cuda_compile_executor,
             prepared_executor,
@@ -1495,7 +1699,10 @@ print(json.dumps({
 
         self.assertEqual(first["call_count"], 1)
         self.assertEqual(second["call_count"], 2)
-        self.assertEqual(prepare_calls, ["0"])
+        self.assertEqual(
+            prepare_calls,
+            [("0", _cuda_pointwise_reduce_workload.WORKLOAD_SHAPE)],
+        )
         self.assertEqual(
             compiled._torch_rs_cuda_compile_executor.metadata()[
                 "invocation_count"
@@ -1544,8 +1751,12 @@ print(json.dumps({
         prepared_executors = []
         prepare_calls = []
 
-        def prepare_executor(*, required_cuda_visible_devices="0"):
-            prepare_calls.append(required_cuda_visible_devices)
+        def prepare_executor(
+            *,
+            required_cuda_visible_devices="0",
+            workload_shape=_cuda_pointwise_reduce_workload.WORKLOAD_SHAPE,
+        ):
+            prepare_calls.append((required_cuda_visible_devices, workload_shape))
             executor = FakePreparedExecutor(
                 f"fake-prepared-executor-{len(prepared_executors) + 1}",
             )
@@ -1570,7 +1781,13 @@ print(json.dumps({
                 self.assertIs(prepared_executors[0].closed, True)
                 second = compiled("x", "bias")
 
-            self.assertEqual(prepare_calls, ["0", "0"])
+            self.assertEqual(
+                prepare_calls,
+                [
+                    ("0", _cuda_pointwise_reduce_workload.WORKLOAD_SHAPE),
+                    ("0", _cuda_pointwise_reduce_workload.WORKLOAD_SHAPE),
+                ],
+            )
             self.assertEqual(first["executor"], "fake-prepared-executor-1")
             self.assertEqual(second["executor"], "fake-prepared-executor-2")
             self.assertEqual(second["call_count"], 1)
@@ -1904,7 +2121,12 @@ print(json.dumps({
                 columns,
                 report,
             ):
-                del x, bias, output, rows, columns
+                del x, bias, output
+                launch_blocks, launch_threads = (
+                    _cuda_pointwise_reduce_workload._compile_launch_dimensions(
+                        (int(rows), int(columns))
+                    )
+                )
                 report = report._obj
                 with self._lock:
                     self._calls += 1
@@ -1916,6 +2138,8 @@ print(json.dumps({
                     report.get_device_error = 0
                     report.observed_device = 0
                     report.launch_error = 0
+                    report.blocks = launch_blocks
+                    report.threads_per_block = launch_threads
                     self.first_report_ready.set()
                     if not self.second_report_reset.wait(timeout=5):
                         raise AssertionError("second launch did not reset report")
@@ -1928,6 +2152,8 @@ print(json.dumps({
                     report.get_device_error = 0
                     report.observed_device = -1
                     report.launch_error = 0
+                    report.blocks = launch_blocks
+                    report.threads_per_block = launch_threads
                     self.second_report_reset.set()
                     if not self.second_can_finish.wait(timeout=5):
                         raise AssertionError("second launch was not released")
@@ -2122,6 +2348,235 @@ print(json.dumps({
 
         self.assertEqual(len(runtime.frees), 4)
         self.assertEqual(len(set(runtime.frees)), len(runtime.frees))
+
+    def test_prepared_executor_derives_metadata_pool_and_launch_from_shape(self):
+        workload_shape = (4096, 256)
+        rows, columns = workload_shape
+        runtime = _FakeCudaRuntime()
+
+        class RecordingLaunchLibrary(_FakePointwiseReduceLibrary):
+            def __init__(self, observed_runtime):
+                super().__init__(observed_runtime)
+                self.launch_shapes = []
+
+            def torch_rs_private_h100_pointwise_reduce_float32_launch_async_v1(
+                self,
+                x,
+                bias,
+                output,
+                rows,
+                columns,
+                blocks_out,
+                threads_out,
+                launch_error_out,
+            ):
+                self.launch_shapes.append((int(rows), int(columns)))
+                launch = (
+                    super()
+                    .torch_rs_private_h100_pointwise_reduce_float32_launch_async_v1
+                )
+                return launch(
+                    x,
+                    bias,
+                    output,
+                    rows,
+                    columns,
+                    blocks_out,
+                    threads_out,
+                    launch_error_out,
+                )
+
+        library = RecordingLaunchLibrary(runtime)
+        executor, runtime = _fake_prepared_executor(
+            runtime=runtime,
+            kernel_library=library,
+            workload_shape=workload_shape,
+        )
+        x = _fake_input_tensor(runtime, "x", workload_shape)
+        bias = _fake_input_tensor(runtime, "bias", (columns,))
+        try:
+            preparation = executor.metadata()
+            expected_blocks, expected_threads = (
+                _cuda_pointwise_reduce_workload._compile_launch_dimensions(
+                    workload_shape
+                )
+            )
+            self.assertEqual(preparation["workload_shape"], [rows, columns])
+            self.assertEqual(preparation["output_shape"], [rows])
+            self.assertEqual(
+                preparation["launch_dimensions"],
+                {
+                    "blocks": expected_blocks,
+                    "threads_per_block": expected_threads,
+                },
+            )
+            self.assertEqual(preparation["output_pool"]["initial_capacity"], 2)
+            self.assertEqual(
+                {
+                    tuple(buffer["shape"])
+                    for buffer in preparation["output_pool"]["buffers"]
+                },
+                {(rows,)},
+            )
+            self.assertEqual(
+                {
+                    buffer["byte_count"]
+                    for buffer in preparation["output_pool"]["buffers"]
+                },
+                {rows * _cuda_buffer.FLOAT32_ITEMSIZE},
+            )
+
+            output = executor.execute(x, bias)
+            try:
+                execution = output.metadata()["compile_execution"]
+                self.assertEqual(library.launch_shapes, [workload_shape])
+                self.assertEqual(execution["workload_shape"], [rows, columns])
+                self.assertEqual(execution["output_shape"], [rows])
+                self.assertEqual(
+                    execution["launch_dimensions"],
+                    {
+                        "blocks": expected_blocks,
+                        "threads_per_block": expected_threads,
+                    },
+                )
+                self.assertEqual(
+                    execution["input_metadata"],
+                    [
+                        _cuda_buffer.float32_metadata(workload_shape),
+                        _cuda_buffer.float32_metadata((columns,)),
+                    ],
+                )
+                self.assertEqual(
+                    execution["output_metadata"],
+                    _cuda_buffer.float32_metadata((rows,)),
+                )
+                self.assertEqual(execution["launch"]["blocks"], expected_blocks)
+                self.assertEqual(
+                    execution["launch"]["threads_per_block"],
+                    expected_threads,
+                )
+                self.assertIs(
+                    execution["output_buffer_pool"]["allocated_in_execute"],
+                    False,
+                )
+            finally:
+                output._torch_rs_close_private_cuda_buffer()
+        finally:
+            executor.close()
+            x._torch_rs_close_private_cuda_buffer()
+            bias._torch_rs_close_private_cuda_buffer()
+
+    def test_prepared_executor_rejects_mismatched_shape_family_inputs(self):
+        workload_shape = (256, 4096)
+        rows, columns = workload_shape
+        executor, runtime = _fake_prepared_executor(workload_shape=workload_shape)
+        valid_x = _fake_input_tensor(runtime, "x", workload_shape)
+        valid_bias = _fake_input_tensor(runtime, "bias", (columns,))
+        wrong_x = _fake_input_tensor(runtime, "wrong_x", (1024, 1024))
+        wrong_bias = _fake_input_tensor(runtime, "wrong_bias", (rows,))
+        try:
+            with self.assertRaisesRegex(NotImplementedError, "x metadata mismatch"):
+                executor.execute(wrong_x, valid_bias)
+            with self.assertRaisesRegex(
+                NotImplementedError,
+                "bias metadata mismatch",
+            ):
+                executor.execute(valid_x, wrong_bias)
+        finally:
+            executor.close()
+            valid_x._torch_rs_close_private_cuda_buffer()
+            valid_bias._torch_rs_close_private_cuda_buffer()
+            wrong_x._torch_rs_close_private_cuda_buffer()
+            wrong_bias._torch_rs_close_private_cuda_buffer()
+
+    def test_torch_compile_inductor_pointwise_reduce_reprepares_same_marker_shape_after_reset(
+        self,
+    ):
+        workload_shape = (256, 4096)
+        workload = _marked_h100_pointwise_reduce_workload(workload_shape)
+
+        class FakePreparedExecutor:
+            def __init__(self, name):
+                self.name = name
+                self.calls = 0
+                self.closed = False
+
+            def metadata(self):
+                return {
+                    "schema_version": (
+                        _cuda_pointwise_reduce_workload
+                        .POINTWISE_REDUCE_COMPILE_EXECUTOR_SCHEMA_VERSION
+                    ),
+                    "status": "ok",
+                    "prepared": True,
+                    "setup_hoisted_to_compile_wrapper": True,
+                    "preparation_id": self.name,
+                    "invocation_count": self.calls,
+                    "workload_shape": list(workload_shape),
+                    "output_shape": [workload_shape[0]],
+                    "closed": self.closed,
+                }
+
+            def execute(self, x, bias):
+                if self.closed:
+                    raise RuntimeError("compiled CUDA executor is closed")
+                self.calls += 1
+                return {
+                    "executor": self.name,
+                    "call_count": self.calls,
+                    "x": x,
+                    "bias": bias,
+                }
+
+            def close(self):
+                self.closed = True
+                return {"closed": True, "executor": self.name}
+
+        prepared_executors = []
+        prepare_calls = []
+
+        def prepare_executor(
+            *,
+            required_cuda_visible_devices="0",
+            workload_shape=_cuda_pointwise_reduce_workload.WORKLOAD_SHAPE,
+        ):
+            prepare_calls.append((required_cuda_visible_devices, workload_shape))
+            executor = FakePreparedExecutor(
+                f"fake-prepared-executor-{len(prepared_executors) + 1}",
+            )
+            prepared_executors.append(executor)
+            return executor
+
+        try:
+            with unittest.mock.patch.object(
+                _cuda_pointwise_reduce_workload,
+                "prepare_h100_float32_pointwise_reduce_compiled_executor_device0",
+                side_effect=prepare_executor,
+            ):
+                compiled = torch.compile(
+                    workload,
+                    backend="inductor",
+                    fullgraph=True,
+                    dynamic=False,
+                )
+                first = compiled("x", "bias")
+                torch.compiler.reset()
+                second = compiled("x", "bias")
+
+            self.assertEqual(
+                prepare_calls,
+                [("0", workload_shape), ("0", workload_shape)],
+            )
+            self.assertIs(prepared_executors[0].closed, True)
+            self.assertEqual(first["executor"], "fake-prepared-executor-1")
+            self.assertEqual(second["executor"], "fake-prepared-executor-2")
+            self.assertEqual(
+                compiled._torch_rs_cuda_compile_preparation["workload_shape"],
+                list(workload_shape),
+            )
+        finally:
+            for executor in prepared_executors:
+                executor.close()
 
     def test_prepared_executor_lazy_readback_rejects_visibility_mask_change(self):
         with unittest.mock.patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "0"}):
@@ -2855,6 +3310,145 @@ print(json.dumps({
             torch._is_h100_cuda_pointwise_reduce_compile_target(workload),
             True,
         )
+
+    def test_torch_compile_inductor_pointwise_reduce_accepts_fixed_shape_family(
+        self,
+    ):
+        class FakePreparedExecutor:
+            def __init__(self, shape):
+                self.shape = shape
+                self.calls = 0
+                self.closed = False
+
+            def metadata(self):
+                return {
+                    "schema_version": (
+                        _cuda_pointwise_reduce_workload
+                        .POINTWISE_REDUCE_COMPILE_EXECUTOR_SCHEMA_VERSION
+                    ),
+                    "status": "ok",
+                    "prepared": True,
+                    "setup_hoisted_to_compile_wrapper": True,
+                    "preparation_id": f"fake-{self.shape[0]}x{self.shape[1]}",
+                    "invocation_count": self.calls,
+                    "workload_shape": list(self.shape),
+                    "output_shape": [self.shape[0]],
+                    "closed": self.closed,
+                }
+
+            def execute(self, x, bias):
+                if self.closed:
+                    raise RuntimeError("compiled CUDA executor is closed")
+                self.calls += 1
+                return {
+                    "shape": self.shape,
+                    "call_count": self.calls,
+                    "x": x,
+                    "bias": bias,
+                }
+
+            def close(self):
+                self.closed = True
+                return {"closed": True, "shape": self.shape}
+
+        for workload_shape in _cuda_pointwise_reduce_workload.SUPPORTED_WORKLOAD_SHAPES:
+            with self.subTest(workload_shape=workload_shape):
+                workload = _marked_h100_pointwise_reduce_workload(workload_shape)
+                prepare_calls = []
+
+                def prepare_executor(
+                    *,
+                    required_cuda_visible_devices="0",
+                    workload_shape=_cuda_pointwise_reduce_workload.WORKLOAD_SHAPE,
+                ):
+                    prepare_calls.append(
+                        (required_cuda_visible_devices, workload_shape)
+                    )
+                    return FakePreparedExecutor(workload_shape)
+
+                with unittest.mock.patch.object(
+                    _cuda_pointwise_reduce_workload,
+                    "prepare_h100_float32_pointwise_reduce_compiled_executor_device0",
+                    side_effect=prepare_executor,
+                ):
+                    compiled = torch.compile(
+                        workload,
+                        backend="inductor",
+                        fullgraph=True,
+                        dynamic=False,
+                    )
+                    result = compiled("x", "bias")
+
+                self.assertIs(
+                    torch._is_h100_cuda_pointwise_reduce_compile_target(workload),
+                    True,
+                )
+                self.assertEqual(prepare_calls, [("0", workload_shape)])
+                self.assertEqual(result["shape"], workload_shape)
+                self.assertEqual(
+                    compiled._torch_rs_cuda_compile_preparation["workload_shape"],
+                    list(workload_shape),
+                )
+
+    def test_torch_compile_inductor_pointwise_reduce_rejects_unsupported_markers(
+        self,
+    ):
+        unsupported_workloads = (
+            _marked_h100_pointwise_reduce_workload((512, 1024)),
+            _marked_h100_pointwise_reduce_workload(
+                (1024, 1024),
+                output_shape=(4096,),
+            ),
+            _marked_h100_pointwise_reduce_workload(
+                (1024, 1024),
+                workload_version="h100_cuda_pointwise_reduce_float32_v2",
+            ),
+            _marked_h100_pointwise_reduce_workload(
+                (True, 1024),
+                output_shape=(True,),
+            ),
+        )
+        for workload in unsupported_workloads:
+            with self.subTest(
+                workload_shape=workload._torch_rs_cuda_compile_workload_shape,
+            ):
+                self.assertIs(
+                    torch._is_h100_cuda_pointwise_reduce_compile_target(workload),
+                    False,
+                )
+                with unittest.mock.patch.object(
+                    _cuda_pointwise_reduce_workload,
+                    "prepare_h100_float32_pointwise_reduce_compiled_executor_device0",
+                    side_effect=AssertionError(
+                        "unsupported marker should not prepare CUDA executor"
+                    ),
+                ):
+                    compiled = torch.compile(
+                        workload,
+                        backend="inductor",
+                        fullgraph=True,
+                        dynamic=False,
+                    )
+                with self.assertRaisesRegex(NotImplementedError, "CUDA compilation"):
+                    compiled(None, None)
+
+    def test_prepared_executor_launch_dimensions_are_shape_derived(self):
+        expected = {
+            (256, 256): (256, 64),
+            (1024, 1024): (1024, 32),
+            (4096, 256): (4096, 32),
+            (256, 4096): (256, 512),
+        }
+        for workload_shape, launch_dimensions in expected.items():
+            with self.subTest(workload_shape=workload_shape):
+                self.assertEqual(
+                    _cuda_pointwise_reduce_workload._compile_launch_dimensions(
+                        workload_shape
+                    ),
+                    launch_dimensions,
+                )
+        with self.assertRaisesRegex(NotImplementedError, "unsupported workload shape"):
+            _cuda_pointwise_reduce_workload._compile_launch_dimensions((512, 512))
 
     def test_torch_compile_inductor_pointwise_reduce_normalizes_python314_bytecode(
         self,

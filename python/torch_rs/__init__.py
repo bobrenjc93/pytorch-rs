@@ -277,6 +277,15 @@ _COMPILE_H100_CUDA_WORKLOAD_NAME = "h100_cuda_pointwise_reduce_float32"
 _COMPILE_H100_CUDA_WORKLOAD_VERSION = "h100_cuda_pointwise_reduce_float32_v1"
 _COMPILE_H100_CUDA_WORKLOAD_SHAPE = (1024, 1024)
 _COMPILE_H100_CUDA_OUTPUT_SHAPE = (1024,)
+_COMPILE_H100_CUDA_WORKLOAD_SHAPES = (
+    (256, 256),
+    (1024, 1024),
+    (4096, 256),
+    (256, 4096),
+)
+_COMPILE_H100_CUDA_WORKLOAD_SHAPE_SET = _builtins.frozenset(
+    _COMPILE_H100_CUDA_WORKLOAD_SHAPES
+)
 _COMPILE_H100_CUDA_DTYPE = "torch.float32"
 _COMPILE_H100_CUDA_WORKLOAD_INSTRUCTIONS = (
     ("LOAD_FAST", "x"),
@@ -547,18 +556,41 @@ def _h100_cuda_workload_code_matches(model):
     )
 
 
-def _is_h100_cuda_pointwise_reduce_compile_target(model):
-    return (
+def _h100_cuda_pointwise_reduce_marker_shape(model):
+    if not (
         _is_exact_python_function(model)
         and getattr(model, "__name__", None) == _COMPILE_H100_CUDA_WORKLOAD_NAME
         and getattr(model, "_torch_rs_cuda_compile_workload_version", None)
         == _COMPILE_H100_CUDA_WORKLOAD_VERSION
-        and _marker_tuple(model, "_torch_rs_cuda_compile_workload_shape")
-        == _COMPILE_H100_CUDA_WORKLOAD_SHAPE
-        and _marker_tuple(model, "_torch_rs_cuda_compile_output_shape")
-        == _COMPILE_H100_CUDA_OUTPUT_SHAPE
         and getattr(model, "_torch_rs_cuda_compile_dtype", None)
         == _COMPILE_H100_CUDA_DTYPE
+    ):
+        return None
+
+    workload_shape = _marker_tuple(model, "_torch_rs_cuda_compile_workload_shape")
+    if (
+        _builtins.type(workload_shape) is not tuple
+        or len(workload_shape) != 2
+        or any(
+            _builtins.type(dimension) is not _builtins.int
+            for dimension in workload_shape
+        )
+        or workload_shape not in _COMPILE_H100_CUDA_WORKLOAD_SHAPE_SET
+    ):
+        return None
+
+    expected_output_shape = (workload_shape[0],)
+    if (
+        _marker_tuple(model, "_torch_rs_cuda_compile_output_shape")
+        != expected_output_shape
+    ):
+        return None
+    return workload_shape
+
+
+def _is_h100_cuda_pointwise_reduce_compile_target(model):
+    return (
+        _h100_cuda_pointwise_reduce_marker_shape(model) is not None
         and _h100_cuda_workload_code_matches(model)
     )
 
@@ -586,6 +618,10 @@ def _supports_native_h100_cuda_compile(
 
 
 def _native_h100_cuda_compile_implementation(model):
+    workload_shape = _h100_cuda_pointwise_reduce_marker_shape(model)
+    if workload_shape is None or not _h100_cuda_workload_code_matches(model):
+        raise NotImplementedError(_COMPILE_UNSUPPORTED_MESSAGE)
+
     required_cuda_visible_devices = getattr(
         model,
         "_torch_rs_cuda_compile_required_cuda_visible_devices",
@@ -605,6 +641,7 @@ def _native_h100_cuda_compile_implementation(model):
             _cuda_workload
             .prepare_h100_float32_pointwise_reduce_compiled_executor_device0(
                 required_cuda_visible_devices=required_cuda_visible_devices,
+                workload_shape=workload_shape,
             )
         )
         _compile_state.register_native_cuda_compile_executor(prepared_executor)
