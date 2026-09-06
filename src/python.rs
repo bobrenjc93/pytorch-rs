@@ -369,12 +369,27 @@ impl PyTensorBase {
             } else if let Some(indices) = parse_leading_integer_full_slice(&tensor.inner, indices)?
             {
                 tensor.inner.index(indices)
+            } else if let Some((indices, range)) =
+                parse_leading_integer_range_slice(&tensor.inner, indices)?
+            {
+                match tensor.inner.index(indices) {
+                    Ok(indexed) => indexed.slice_dimension(0, range.start, range.length),
+                    Err(error) => Err(error),
+                }
             } else {
                 let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
                 tensor.inner.index(indices)
             }
         } else if is_exact_full_slice(index)? {
             tensor.inner.index_full_slice()
+        } else if index.cast::<PySlice>().is_ok() {
+            if tensor.inner.shape().is_empty() {
+                tensor.inner.slice_dimension(0, 0, 0)
+            } else if let Some(range) = parse_unit_range_slice(index, tensor.inner.shape()[0])? {
+                tensor.inner.slice_dimension(0, range.start, range.length)
+            } else {
+                return Err(invalid_index(index));
+            }
         } else if is_fast_integer_index(index)? {
             let index = parse_integer_index(index)?;
             tensor.inner.index_integer(index)
@@ -18545,6 +18560,33 @@ fn is_exact_full_slice(index: &Bound<'_, PyAny>) -> PyResult<bool> {
         && slice.getattr("step")?.is_none())
 }
 
+#[derive(Clone, Copy)]
+struct UnitRangeSlice {
+    start: usize,
+    length: usize,
+}
+
+fn parse_unit_range_slice(
+    index: &Bound<'_, PyAny>,
+    dimension_size: usize,
+) -> PyResult<Option<UnitRangeSlice>> {
+    let Ok(slice) = index.cast::<PySlice>() else {
+        return Ok(None);
+    };
+    let dimension_size = isize::try_from(dimension_size)
+        .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds the platform limit"))?;
+    let indices = slice.indices(dimension_size)?;
+    if indices.step != 1 {
+        return Ok(None);
+    }
+    let start = usize::try_from(indices.start)
+        .map_err(|_| PyOverflowError::new_err("slice start exceeds the platform limit"))?;
+    Ok(Some(UnitRangeSlice {
+        start,
+        length: indices.slicelength,
+    }))
+}
+
 // The caller checks tuple arity against the tensor rank first so lower-rank
 // integer-prefix/full-slice forms retain PyTorch's "too many indices" error
 // without converting their integer-like objects.
@@ -18567,6 +18609,31 @@ fn parse_leading_integer_full_slice(
         indices.iter().take(integer_dimensions),
     )
     .map(Some)
+}
+
+fn parse_leading_integer_range_slice(
+    tensor: &CoreTensor,
+    indices: &Bound<'_, PyTuple>,
+) -> PyResult<Option<(Vec<i64>, UnitRangeSlice)>> {
+    let Some(integer_dimensions) = indices.len().checked_sub(1) else {
+        return Ok(None);
+    };
+    let slice_index = indices.get_item(integer_dimensions)?;
+    if !slice_index.is_instance_of::<PySlice>() {
+        return Ok(None);
+    }
+    let parsed_indices = parse_integer_indices(
+        tensor,
+        integer_dimensions,
+        indices.iter().take(integer_dimensions),
+    )?;
+    let Some(&dimension_size) = tensor.shape().get(integer_dimensions) else {
+        return Err(too_many_indices(tensor.shape().len()));
+    };
+    let Some(range) = parse_unit_range_slice(&slice_index, dimension_size)? else {
+        return Err(invalid_index(&slice_index));
+    };
+    Ok(Some((parsed_indices, range)))
 }
 
 // Return how many tensor dimensions an alias-only tuple consumes. A single

@@ -149,6 +149,11 @@ enum TransformMapping {
     Index {
         input_start: usize,
     },
+    Slice {
+        dimension: usize,
+        start: usize,
+        length: usize,
+    },
     Select {
         dimension: usize,
         index: usize,
@@ -2360,6 +2365,68 @@ impl Tensor {
         self.metadata_alias_with_grad_fn(AutogradNode::Slice)
     }
 
+    /// Applies a normalized positive-step range slice to one dimension.
+    ///
+    /// `start` is the clamped inclusive start index and `length` is the
+    /// normalized slice length for a step of one. The returned tensor keeps the
+    /// selected dimension, shares storage with `self`, preserves strides, and
+    /// advances the storage offset to the clamped start.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for scalar tensors, missing dimensions, invalid
+    /// normalized bounds, checked arithmetic overflow, or view metadata
+    /// allocation failure.
+    #[cfg_attr(not(any(feature = "python-bindings", test)), allow(dead_code))]
+    pub(crate) fn slice_dimension(
+        &self,
+        dimension: usize,
+        start: usize,
+        length: usize,
+    ) -> Result<Self, TensorError> {
+        let Some(&size) = self.shape.get(dimension) else {
+            return if self.shape.is_empty() {
+                Err(TensorError::SliceCannotApplyToScalar)
+            } else {
+                Err(TensorError::TooManyIndices {
+                    dimensions: self.shape.len(),
+                })
+            };
+        };
+        if start > size || length > size.saturating_sub(start) {
+            return Err(TensorError::IndexOutOfBounds {
+                index: i64::try_from(start).unwrap_or(i64::MAX),
+                dimension,
+                size,
+            });
+        }
+
+        let offset = self.checked_slice_start_offset(self.offset, dimension, start)?;
+        let mut shape = try_clone_result_shape(&self.shape, self.elements)?;
+        shape[dimension] = length;
+        let strides = try_clone_result_shape(&self.strides, self.elements)?;
+        let elements = element_count(&shape)?;
+        validate_view_bounds(&shape, &strides, offset, elements, self.storage.len())?;
+        self.finish_view_transform(
+            Self {
+                storage: Arc::clone(&self.storage),
+                shape,
+                strides,
+                offset,
+                elements,
+                output_nr: 0,
+                view_requires_grad: false,
+                autograd: None,
+            },
+            TransformMapping::Slice {
+                dimension,
+                start,
+                length,
+            },
+            AutogradNode::Slice,
+        )
+    }
+
     fn metadata_alias_with_grad_fn(&self, node: AutogradNode) -> Result<Self, TensorError> {
         let mut output = self.metadata_alias_detached()?;
         self.record_view_transform(&mut output, TransformMapping::Identity, node)?;
@@ -3010,6 +3077,36 @@ impl Tensor {
                 .map_err(|_| TensorError::InvalidStorageOffset { offset });
         }
         let contribution = normalized
+            .checked_mul(self.strides[dimension])
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let offset = offset
+            .checked_add(contribution)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        if i64::try_from(offset).is_err() {
+            let offset = i64::try_from(offset.cast_signed())
+                .expect("an isize storage offset must fit in i64");
+            return Err(TensorError::InvalidStorageOffset { offset });
+        }
+        Ok(offset)
+    }
+
+    fn checked_slice_start_offset(
+        &self,
+        offset: usize,
+        dimension: usize,
+        start: usize,
+    ) -> Result<usize, TensorError> {
+        if self.elements == 0 {
+            let offset =
+                i64::try_from(offset).map_err(|_| TensorError::IndexCalculationOverflow)?;
+            let stride = i64::try_from(self.strides[dimension])
+                .map_err(|_| TensorError::IndexCalculationOverflow)?;
+            let start = i64::try_from(start).map_err(|_| TensorError::IndexCalculationOverflow)?;
+            let offset = offset.wrapping_add(start.wrapping_mul(stride));
+            return usize::try_from(offset)
+                .map_err(|_| TensorError::InvalidStorageOffset { offset });
+        }
+        let contribution = start
             .checked_mul(self.strides[dimension])
             .ok_or(TensorError::IndexCalculationOverflow)?;
         let offset = offset
@@ -5534,6 +5631,11 @@ fn transform_backward(
                 .copy_from_slice(upstream);
             Ok(gradient)
         }
+        TransformMapping::Slice {
+            dimension,
+            start,
+            length,
+        } => slice_backward(input, *dimension, *start, *length, upstream),
         TransformMapping::Select { dimension, index } => {
             select_backward(input, *dimension, *index, upstream)
         }
@@ -5589,6 +5691,58 @@ fn transform_backward(
             Ok(gradient)
         }
     }
+}
+
+fn slice_backward(
+    input: &SavedTensor,
+    dimension: usize,
+    start: usize,
+    length: usize,
+    upstream: &[f32],
+) -> Result<Vec<f32>, TensorError> {
+    let mut gradient = filled_storage(input.elements, 0.0)?;
+    if upstream.is_empty() {
+        return Ok(gradient);
+    }
+
+    let input_strides = contiguous_strides(&input.shape, input.elements)?;
+    let mut coordinates = try_result_vector(input.shape.len(), upstream.len())?;
+    coordinates.resize(input.shape.len(), 0_usize);
+    for (output_index, &value) in upstream.iter().enumerate() {
+        let mut remaining = output_index;
+        for axis in (0..input.shape.len()).rev() {
+            let size = if axis == dimension {
+                length
+            } else {
+                input.shape[axis]
+            };
+            if size == 0 {
+                return Err(TensorError::IndexCalculationOverflow);
+            }
+            coordinates[axis] = remaining % size;
+            remaining /= size;
+        }
+        if remaining != 0 {
+            return Err(TensorError::IndexCalculationOverflow);
+        }
+        coordinates[dimension] = coordinates[dimension]
+            .checked_add(start)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+
+        let mut input_index = 0_usize;
+        for (axis, &stride) in input_strides.iter().enumerate() {
+            let contribution = coordinates[axis]
+                .checked_mul(stride)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            input_index = input_index
+                .checked_add(contribution)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+        }
+        *gradient
+            .get_mut(input_index)
+            .ok_or(TensorError::IndexCalculationOverflow)? = value;
+    }
+    Ok(gradient)
 }
 
 fn select_backward(
@@ -11472,6 +11626,60 @@ mod tests {
         let scalar = Tensor::from_vec(vec![1.0], []).unwrap();
         assert_eq!(
             scalar.index_full_slice(),
+            Err(TensorError::SliceCannotApplyToScalar)
+        );
+    }
+
+    #[test]
+    fn range_slice_is_a_strided_view_and_backpropagates_through_sum() {
+        let source = Tensor::from_vec((0_u16..24).map(f32::from).collect::<Vec<_>>(), [4, 3, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let selected = source.slice_dimension(0, 1, 2).unwrap();
+
+        assert!(selected.shares_storage_with(&source));
+        assert_eq!(selected.shape(), [2, 3, 2]);
+        assert_eq!(selected.stride(), [6, 2, 1]);
+        assert_eq!(selected.storage_offset(), 6);
+        assert_eq!(
+            selected.try_to_vec().unwrap(),
+            (6_u16..18).map(f32::from).collect::<Vec<_>>()
+        );
+
+        selected.sum().backward().unwrap();
+        let mut expected_gradient = vec![0.0; 24];
+        expected_gradient[6..18].fill(1.0);
+        assert_eq!(
+            source.grad().unwrap().unwrap().as_slice(),
+            expected_gradient
+        );
+    }
+
+    #[test]
+    fn range_slice_preserves_noncontiguous_strides_and_empty_offsets() {
+        let transposed = Tensor::from_vec((0_u16..6).map(f32::from).collect::<Vec<_>>(), [2, 3])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let selected = transposed.slice_dimension(0, 1, 2).unwrap();
+
+        assert!(selected.shares_storage_with(&transposed));
+        assert_eq!(selected.shape(), [2, 2]);
+        assert_eq!(selected.stride(), [1, 3]);
+        assert_eq!(selected.storage_offset(), 1);
+        assert_eq!(selected.try_to_vec().unwrap(), [1.0, 4.0, 2.0, 5.0]);
+
+        let empty_middle = Tensor::zeros([3, 0, 4]).unwrap();
+        let empty_selected = empty_middle.slice_dimension(0, 2, 1).unwrap();
+        assert!(empty_selected.shares_storage_with(&empty_middle));
+        assert_eq!(empty_selected.shape(), [1, 0, 4]);
+        assert_eq!(empty_selected.stride(), [4, 4, 1]);
+        assert_eq!(empty_selected.storage_offset(), 8);
+        assert_eq!(empty_selected.data_ptr(), 0);
+
+        let scalar = Tensor::from_vec(vec![1.0], []).unwrap();
+        assert_eq!(
+            scalar.slice_dimension(0, 0, 0),
             Err(TensorError::SliceCannotApplyToScalar)
         );
     }
