@@ -1,3 +1,4 @@
+use std::cmp::Ordering as CmpOrdering;
 use std::ffi::{CStr, c_char};
 use std::os::raw::c_long;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -369,12 +370,37 @@ impl PyTensorBase {
             } else if let Some(indices) = parse_leading_integer_full_slice(&tensor.inner, indices)?
             {
                 tensor.inner.index(indices)
+            } else if let Some((indices, range)) =
+                parse_leading_integer_range_slice(&tensor.inner, indices)?
+            {
+                if range.covers_full_dimension {
+                    if indices.is_empty() {
+                        tensor.inner.metadata_alias()
+                    } else {
+                        tensor.inner.index(indices)
+                    }
+                } else if indices.is_empty() {
+                    tensor.inner.slice_dimension(0, range.start, range.length)
+                } else {
+                    match tensor.inner.index(indices) {
+                        Ok(indexed) => indexed.slice_dimension(0, range.start, range.length),
+                        Err(error) => Err(error),
+                    }
+                }
             } else {
                 let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
                 tensor.inner.index(indices)
             }
         } else if is_exact_full_slice(index)? {
             tensor.inner.index_full_slice()
+        } else if index.cast::<PySlice>().is_ok() {
+            if tensor.inner.shape().is_empty() {
+                tensor.inner.slice_dimension(0, 0, 0)
+            } else if let Some(range) = parse_unit_range_slice(index, tensor.inner.shape()[0])? {
+                tensor.inner.slice_dimension(0, range.start, range.length)
+            } else {
+                return Err(invalid_index(index));
+            }
         } else if is_fast_integer_index(index)? {
             let index = parse_integer_index(index)?;
             tensor.inner.index_integer(index)
@@ -18545,6 +18571,113 @@ fn is_exact_full_slice(index: &Bound<'_, PyAny>) -> PyResult<bool> {
         && slice.getattr("step")?.is_none())
 }
 
+#[derive(Clone, Copy)]
+struct UnitRangeSlice {
+    start: usize,
+    length: usize,
+    covers_full_dimension: bool,
+}
+
+#[derive(Clone, Copy)]
+struct PositiveStepSliceBound {
+    value: isize,
+    original_nonnegative: bool,
+}
+
+fn parse_unit_range_slice(
+    index: &Bound<'_, PyAny>,
+    dimension_size: usize,
+) -> PyResult<Option<UnitRangeSlice>> {
+    let Ok(slice) = index.cast::<PySlice>() else {
+        return Ok(None);
+    };
+    let signed_dimension_size = isize::try_from(dimension_size)
+        .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds the platform limit"))?;
+    if !parse_unit_slice_step(slice)? {
+        return Ok(None);
+    }
+
+    let start = parse_positive_step_slice_start(slice, signed_dimension_size)?;
+    let stop = parse_positive_step_slice_stop(slice, signed_dimension_size)?;
+    let start_value = usize::try_from(start.value)
+        .map_err(|_| PyOverflowError::new_err("slice start exceeds the platform limit"))?;
+    let length = if stop > start.value {
+        usize::try_from(stop - start.value)
+            .map_err(|_| PyOverflowError::new_err("slice length exceeds the platform limit"))?
+    } else {
+        0
+    };
+    Ok(Some(UnitRangeSlice {
+        start: start_value,
+        length,
+        covers_full_dimension: start.original_nonnegative
+            && start_value == 0
+            && length == dimension_size,
+    }))
+}
+
+fn parse_unit_slice_step(slice: &Bound<'_, PySlice>) -> PyResult<bool> {
+    let step = slice.getattr("step")?;
+    if step.is_none() {
+        return Ok(true);
+    }
+
+    let step = python_number_index(&step)?;
+    if step.compare(0_i32)? == CmpOrdering::Equal {
+        return Err(PyValueError::new_err("slice step cannot be zero"));
+    }
+    Ok(step.compare(1_i32)? == CmpOrdering::Equal)
+}
+
+fn parse_positive_step_slice_start(
+    slice: &Bound<'_, PySlice>,
+    dimension_size: isize,
+) -> PyResult<PositiveStepSliceBound> {
+    let start = slice.getattr("start")?;
+    if start.is_none() {
+        return Ok(PositiveStepSliceBound {
+            value: 0,
+            original_nonnegative: true,
+        });
+    }
+
+    let start = python_number_index(&start)?;
+    Ok(PositiveStepSliceBound {
+        value: adjust_positive_step_slice_bound(&start, dimension_size)?,
+        original_nonnegative: start.ge(0_i32)?,
+    })
+}
+
+fn parse_positive_step_slice_stop(
+    slice: &Bound<'_, PySlice>,
+    dimension_size: isize,
+) -> PyResult<isize> {
+    let stop = slice.getattr("stop")?;
+    if stop.is_none() {
+        return Ok(dimension_size);
+    }
+
+    let stop = python_number_index(&stop)?;
+    adjust_positive_step_slice_bound(&stop, dimension_size)
+}
+
+fn adjust_positive_step_slice_bound(
+    bound: &Bound<'_, PyInt>,
+    dimension_size: isize,
+) -> PyResult<isize> {
+    if bound.lt(0_i32)? {
+        if bound.lt(-dimension_size)? {
+            Ok(0)
+        } else {
+            Ok(bound.extract::<isize>()? + dimension_size)
+        }
+    } else if bound.gt(dimension_size)? {
+        Ok(dimension_size)
+    } else {
+        bound.extract()
+    }
+}
+
 // The caller checks tuple arity against the tensor rank first so lower-rank
 // integer-prefix/full-slice forms retain PyTorch's "too many indices" error
 // without converting their integer-like objects.
@@ -18567,6 +18700,31 @@ fn parse_leading_integer_full_slice(
         indices.iter().take(integer_dimensions),
     )
     .map(Some)
+}
+
+fn parse_leading_integer_range_slice(
+    tensor: &CoreTensor,
+    indices: &Bound<'_, PyTuple>,
+) -> PyResult<Option<(Vec<i64>, UnitRangeSlice)>> {
+    let Some(integer_dimensions) = indices.len().checked_sub(1) else {
+        return Ok(None);
+    };
+    let slice_index = indices.get_item(integer_dimensions)?;
+    if !slice_index.is_instance_of::<PySlice>() {
+        return Ok(None);
+    }
+    let parsed_indices = parse_integer_indices(
+        tensor,
+        integer_dimensions,
+        indices.iter().take(integer_dimensions),
+    )?;
+    let Some(&dimension_size) = tensor.shape().get(integer_dimensions) else {
+        return Err(too_many_indices(tensor.shape().len()));
+    };
+    let Some(range) = parse_unit_range_slice(&slice_index, dimension_size)? else {
+        return Err(invalid_index(&slice_index));
+    };
+    Ok(Some((parsed_indices, range)))
 }
 
 // Return how many tensor dimensions an alias-only tuple consumes. A single

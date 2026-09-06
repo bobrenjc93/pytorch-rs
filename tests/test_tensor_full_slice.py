@@ -1647,7 +1647,7 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "^tuple iteration exploded$"):
             source[IterationErrorTuple((slice(None),))]
 
-    def test_existing_indices_and_unsupported_slice_forms_are_unchanged(self):
+    def test_existing_indices_and_remaining_unsupported_slice_forms(self):
         tensor = torch.tensor(
             [
                 [[0.0, 1.0], [2.0, 3.0]],
@@ -1661,22 +1661,10 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         self.assert_metadata_alias(tensor, tensor[...])
 
         unsupported = (
-            slice(1, None),
-            slice(None, -1),
-            slice(None, None, 1),
             slice(None, None, 2),
-            (slice(1, None),),
-            (slice(None, -1),),
-            (slice(None, None, 1),),
             (slice(None, None, 2),),
             (slice(None), 0),
-            (0, slice(1, None)),
-            (0, slice(None, -1)),
-            (0, slice(None, None, 1)),
             (0, slice(None, None, 2)),
-            (0, 0, slice(1, None)),
-            (0, 0, slice(None, -1)),
-            (0, 0, slice(None, None, 1)),
             (0, 0, slice(None, None, 2)),
             (slice(1, None), slice(None)),
             (slice(None), slice(None, -1)),
@@ -1709,9 +1697,6 @@ class TensorFullSliceIndexTests(unittest.TestCase):
 
         rank_four_tensor = torch.zeros((2, 3, 4, 5))
         unsupported_four_item_tuples = (
-            (0, 0, 0, slice(1, None)),
-            (0, 0, 0, slice(None, -1)),
-            (0, 0, 0, slice(None, None, 1)),
             (0, 0, 0, slice(None, None, 2)),
             (0, 0, slice(None), slice(None)),
             (0, slice(None), 0, slice(None)),
@@ -1730,9 +1715,6 @@ class TensorFullSliceIndexTests(unittest.TestCase):
 
         rank_five_tensor = torch.zeros((2, 3, 4, 5, 6))
         unsupported_five_item_tuples = (
-            (0, 0, 0, 0, slice(1, None)),
-            (0, 0, 0, 0, slice(None, -1)),
-            (0, 0, 0, 0, slice(None, None, 1)),
             (0, 0, 0, 0, slice(None, None, 2)),
             (0, 0, 0, slice(None), slice(None)),
             (0, 0, slice(None), 0, slice(None)),
@@ -1753,9 +1735,6 @@ class TensorFullSliceIndexTests(unittest.TestCase):
 
         rank_six_tensor = torch.zeros((2, 3, 4, 5, 6, 7))
         unsupported_six_item_tuples = (
-            (0, 0, 0, 0, 0, slice(1, None)),
-            (0, 0, 0, 0, 0, slice(None, -1)),
-            (0, 0, 0, 0, 0, slice(None, None, 1)),
             (0, 0, 0, 0, 0, slice(None, None, 2)),
             (0, 0, 0, 0, slice(None), slice(None)),
             (0, 0, 0, slice(None), 0, slice(None)),
