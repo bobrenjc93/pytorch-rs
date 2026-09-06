@@ -3,11 +3,13 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import signal
 import shutil
 import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 from contextlib import contextmanager
 from dataclasses import replace
@@ -973,6 +975,10 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             REPOSITORY_ROOT / "scripts" / "evaluate_torch_compile_coverage.sh",
             scripts_dir / "evaluate_torch_compile_coverage.sh",
         )
+        shutil.copy2(
+            REPOSITORY_ROOT / "scripts" / "run_with_unix_lock.py",
+            scripts_dir / "run_with_unix_lock.py",
+        )
         (scripts_dir / "evaluate_torch_compile_coverage.py").write_text(
             textwrap.dedent(
                 """
@@ -1010,13 +1016,9 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
 
         _write_executable(
             fake_bin / "flock",
-            f"""#!{sys.executable}
-            import fcntl
-            import sys
-
-            if len(sys.argv) != 2:
-                raise SystemExit(f"unexpected flock args: {{sys.argv[1:]!r}}")
-            fcntl.flock(int(sys.argv[1]), fcntl.LOCK_EX)
+            """#!/usr/bin/env bash
+            echo "wrapper unexpectedly called flock" >&2
+            exit 99
             """,
         )
         _write_executable(
@@ -1033,6 +1035,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
             workspace_venv = repo / ".venv"
             real_python = os.environ["FAKE_REAL_PYTHON"]
             delay = float(os.environ.get("FAKE_EVAL_DELAY", "0"))
+            fail_at = os.environ.get("FAKE_EVAL_FAIL_AT", "")
             args = sys.argv[1:]
 
 
@@ -1065,6 +1068,10 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
                 try:
                     os.write(fd, str(os.getpid()).encode("ascii"))
                     log(f"enter:{{name}}")
+                    if fail_at == name:
+                        log(f"fail:{{name}}")
+                        print(f"intentional failure in {{name}}", file=sys.stderr)
+                        raise SystemExit(87)
                     if delay:
                         time.sleep(delay)
                     callback()
@@ -1103,6 +1110,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
                     "log_path = pathlib.Path(os.environ['FAKE_EVAL_LOG'])\\n"
                     "active_path = pathlib.Path(os.environ['FAKE_EVAL_ACTIVE'])\\n"
                     "delay = float(os.environ.get('FAKE_EVAL_DELAY', '0'))\\n"
+                    "fail_at = os.environ.get('FAKE_EVAL_FAIL_AT', '')\\n"
                     "args = sys.argv[1:]\\n"
                     "\\n"
                     "def log(message):\\n"
@@ -1120,6 +1128,10 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
                     "try:\\n"
                     "    os.write(fd, str(os.getpid()).encode('ascii'))\\n"
                     "    log('enter:maturin-build')\\n"
+                    "    if fail_at == 'maturin-build':\\n"
+                    "        log('fail:maturin-build')\\n"
+                    "        print('intentional failure in maturin-build', file=sys.stderr)\\n"
+                    "        raise SystemExit(87)\\n"
                     "    if delay:\\n"
                     "        time.sleep(delay)\\n"
                     "    out_dir = pathlib.Path(args[args.index('--out') + 1])\\n"
@@ -1176,6 +1188,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
                 "FAKE_EVAL_REPO_ROOT": str(repo),
                 "FAKE_REAL_PYTHON": sys.executable,
                 "PATH": f"{fake_bin}{os.pathsep}{env.get('PATH', '')}",
+                "PYTHON": sys.executable,
             }
         )
         return repo, env, log_path
@@ -1287,6 +1300,160 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
         log = log_path.read_text(encoding="utf-8")
         self.assertNotIn("overlap:", log)
         self.assertEqual(log.count("evaluate|"), 2)
+
+    def test_wrapper_releases_lock_and_cleans_wheels_after_setup_failure(self):
+        repo, env, log_path = self._make_wrapper_fixture()
+        failing_env = env.copy()
+        failing_env["FAKE_EVAL_FAIL_AT"] = "uv-pip-install"
+        command = [
+            "bash",
+            str(repo / "scripts" / "evaluate_torch_compile_coverage.sh"),
+            "--subset",
+            "public",
+        ]
+
+        failed = subprocess.run(
+            command,
+            cwd=repo,
+            env=failing_env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        self.assertNotEqual(
+            failed.returncode,
+            0,
+            f"stdout:\n{failed.stdout}\nstderr:\n{failed.stderr}",
+        )
+        self.assertIn("intentional failure in uv-pip-install", failed.stderr)
+        evaluator_dir = repo / "target" / "torch-compile-coverage"
+        self.assertEqual(
+            list(evaluator_dir.glob("compile-coverage-wheels.*")),
+            [],
+        )
+
+        completed = subprocess.run(
+            command,
+            cwd=repo,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertEqual(json.loads(completed.stdout)["summary"], "stub evaluator")
+        log = log_path.read_text(encoding="utf-8")
+        self.assertIn("fail:uv-pip-install", log)
+        self.assertNotIn("overlap:", log)
+
+    def test_unix_lock_helper_forwards_signal_and_releases_lock(self):
+        fixture_parent = REPOSITORY_ROOT / "target"
+        fixture_parent.mkdir(exist_ok=True)
+        fixture_root = Path(
+            tempfile.mkdtemp(
+                prefix="unix-lock-helper-signal-",
+                dir=fixture_parent,
+            )
+        )
+        self.addCleanup(shutil.rmtree, fixture_root, ignore_errors=True)
+        helper = REPOSITORY_ROOT / "scripts" / "run_with_unix_lock.py"
+        lock_path = fixture_root / "setup.lockfile"
+        started_path = fixture_root / "started"
+        terminated_path = fixture_root / "terminated"
+        reacquired_path = fixture_root / "reacquired"
+        sleeper = textwrap.dedent(
+            """
+            import pathlib
+            import signal
+            import sys
+            import time
+
+            started = pathlib.Path(sys.argv[1])
+            terminated = pathlib.Path(sys.argv[2])
+
+            def handle_signal(signum, _frame):
+                terminated.write_text(str(signum), encoding="utf-8")
+                raise SystemExit(0)
+
+            signal.signal(signal.SIGTERM, handle_signal)
+            started.write_text("started", encoding="utf-8")
+            while True:
+                time.sleep(1)
+            """
+        )
+        writer = (
+            "import pathlib, sys; "
+            "pathlib.Path(sys.argv[1]).write_text('reacquired', encoding='utf-8')"
+        )
+
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                str(helper),
+                str(lock_path),
+                "--",
+                sys.executable,
+                "-c",
+                sleeper,
+                str(started_path),
+                str(terminated_path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            for _ in range(100):
+                if started_path.exists():
+                    break
+                time.sleep(0.05)
+            else:
+                self.fail("lock helper child did not start")
+
+            process.terminate()
+            stdout, stderr = process.communicate(timeout=10)
+            self.assertEqual(
+                process.returncode,
+                128 + signal.SIGTERM,
+                f"stdout:\n{stdout}\nstderr:\n{stderr}",
+            )
+            self.assertEqual(terminated_path.read_text(encoding="utf-8"), "15")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(helper),
+                    str(lock_path),
+                    "--",
+                    sys.executable,
+                    "-c",
+                    writer,
+                    str(reacquired_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+            )
+            self.assertEqual(
+                reacquired_path.read_text(encoding="utf-8"),
+                "reacquired",
+            )
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
 
     def test_burner_evaluation_config_is_command_backed(self):
         with (REPOSITORY_ROOT / ".burner" / "evaluations.json").open(
