@@ -74,6 +74,13 @@ class TensorRangeSliceTests(unittest.TestCase):
         self.assertEqual(empty_range.storage_offset(), 8)
         self.assertEqual(empty_range.data_ptr(), 0)
 
+        huge_start = base[10**5000:]
+        self.assertEqual(huge_start.tolist(), [])
+        self.assertEqual(huge_start.shape, (0, 3, 4))
+        self.assertEqual(huge_start.stride(), (12, 4, 1))
+        self.assertEqual(huge_start.storage_offset(), 24)
+        self.assertEqual(huge_start.data_ptr(), 0)
+
     def test_integer_prefix_trailing_range_slice(self):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         source = torch.tensor(values.tolist())
@@ -116,11 +123,23 @@ class TensorRangeSliceTests(unittest.TestCase):
             "AliasBackward0",
         )
         self.assert_dropout_probability_node(
+            torch.tensor([2.0], requires_grad=True)[
+                (slice(np.int64(0), None, 1),)
+            ],
+            "AliasBackward0",
+        )
+        self.assert_dropout_probability_node(
             torch.tensor([[2.0]], requires_grad=True)[0, slice(None, None, 1)],
             "SelectBackward0",
         )
         self.assert_dropout_probability_node(
             torch.tensor([[2.0]], requires_grad=True)[0, slice(0, 1)],
+            "SelectBackward0",
+        )
+        self.assert_dropout_probability_node(
+            torch.tensor([[2.0]], requires_grad=True)[
+                0, slice(np.int64(0), None, 1)
+            ],
             "SelectBackward0",
         )
         self.assert_dropout_probability_node(

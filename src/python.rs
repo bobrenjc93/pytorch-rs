@@ -18593,13 +18593,10 @@ fn parse_unit_range_slice(
 
     let start = usize::try_from(indices.start)
         .map_err(|_| PyOverflowError::new_err("slice start exceeds the platform limit"))?;
-    let start_allows_metadata_alias = slice_start_allows_metadata_alias(slice)?;
     Ok(Some(UnitRangeSlice {
         start,
         length: indices.slicelength,
-        covers_full_dimension: start_allows_metadata_alias
-            && start == 0
-            && indices.slicelength == dimension_size,
+        covers_full_dimension: start == 0 && indices.slicelength == dimension_size,
     }))
 }
 
@@ -18609,13 +18606,8 @@ fn slice_start_allows_metadata_alias(slice: &Bound<'_, PySlice>) -> PyResult<boo
         return Ok(true);
     }
 
-    let Ok(start) = start.cast::<PyInt>() else {
-        return Ok(false);
-    };
-    if let Ok(value) = start.extract::<i128>() {
-        return Ok(value >= 0);
-    }
-    Ok(!start.str()?.to_str()?.starts_with('-'))
+    let indexed = start.call_method0("__index__")?;
+    indexed.ge(0_i32)
 }
 
 // The caller checks tuple arity against the tensor rank first so lower-rank
@@ -18661,9 +18653,13 @@ fn parse_leading_integer_range_slice(
     let Some(&dimension_size) = tensor.shape().get(integer_dimensions) else {
         return Err(too_many_indices(tensor.shape().len()));
     };
-    let Some(range) = parse_unit_range_slice(&slice_index, dimension_size)? else {
+    let Some(mut range) = parse_unit_range_slice(&slice_index, dimension_size)? else {
         return Err(invalid_index(&slice_index));
     };
+    if range.covers_full_dimension {
+        range.covers_full_dimension =
+            slice_start_allows_metadata_alias(slice_index.cast::<PySlice>()?)?;
+    }
     Ok(Some((parsed_indices, range)))
 }
 

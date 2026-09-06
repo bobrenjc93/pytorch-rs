@@ -66,6 +66,7 @@ class TensorRangeSliceReferenceTests(unittest.TestCase):
             self.view_observation(base[1], slice(1, 3)),
             self.view_observation(empty_middle, slice(2, 3)),
             self.view_observation(module.zeros((5, 2), dtype=module.float32), slice(4, 1)),
+            self.view_observation(base, slice(10**5000, None)),
             self.view_observation(base[1], (1, slice(None, None, 1))),
         )
 
@@ -144,6 +145,12 @@ class TensorRangeSliceReferenceTests(unittest.TestCase):
                 ),
                 self.dropout_probability_node(
                     module,
+                    module.tensor([2.0], dtype=module.float32, requires_grad=True)[
+                        (slice(np.int64(0), None, 1),)
+                    ],
+                ),
+                self.dropout_probability_node(
+                    module,
                     module.tensor([[2.0]], dtype=module.float32, requires_grad=True)[
                         0, slice(None, None, 1)
                     ],
@@ -152,6 +159,12 @@ class TensorRangeSliceReferenceTests(unittest.TestCase):
                     module,
                     module.tensor([[2.0]], dtype=module.float32, requires_grad=True)[
                         0, slice(0, 1)
+                    ],
+                ),
+                self.dropout_probability_node(
+                    module,
+                    module.tensor([[2.0]], dtype=module.float32, requires_grad=True)[
+                        0, slice(np.int64(0), None, 1)
                     ],
                 ),
                 self.dropout_probability_node(
