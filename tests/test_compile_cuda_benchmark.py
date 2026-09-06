@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1076,6 +1077,85 @@ print(json.dumps({
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertIs(torch.cuda.is_initialized(), False)
+
+    def test_torch_compile_inductor_pointwise_reduce_signature_matches_bytecode(
+        self,
+    ):
+        workload = benchmark_compile_cuda.h100_cuda_pointwise_reduce_float32
+        self.assertEqual(
+            torch._normalized_h100_cuda_workload_instructions(workload),
+            torch._COMPILE_H100_CUDA_WORKLOAD_INSTRUCTIONS,
+        )
+        self.assertIs(
+            torch._is_h100_cuda_pointwise_reduce_compile_target(workload),
+            True,
+        )
+
+    def test_torch_compile_inductor_pointwise_reduce_normalizes_python314_bytecode(
+        self,
+    ):
+        def instruction(opname, arg=None, argval=None, argrepr=""):
+            return SimpleNamespace(
+                opname=opname,
+                arg=arg,
+                argval=argval,
+                argrepr=argrepr,
+            )
+
+        python314_instructions = [
+            instruction("RESUME", 0, 0),
+            instruction(
+                "LOAD_FAST_BORROW_LOAD_FAST_BORROW",
+                1,
+                ("x", "bias"),
+                "x, bias",
+            ),
+            instruction("BINARY_OP", 0, 0, "+"),
+            instruction("LOAD_ATTR", 1, "sin", "sin + NULL|self"),
+            instruction("CALL", 0, 0),
+            instruction(
+                "LOAD_FAST_BORROW_LOAD_FAST_BORROW",
+                1,
+                ("x", "bias"),
+                "x, bias",
+            ),
+            instruction("BINARY_OP", 10, 10, "-"),
+            instruction("LOAD_ATTR", 3, "cos", "cos + NULL|self"),
+            instruction("CALL", 0, 0),
+            instruction("BINARY_OP", 5, 5, "*"),
+            instruction("STORE_FAST", 2, "mixed", "mixed"),
+            instruction(
+                "LOAD_FAST_BORROW_LOAD_FAST_BORROW",
+                32,
+                ("mixed", "x"),
+                "mixed, x",
+            ),
+            instruction("LOAD_ATTR", 5, "relu", "relu + NULL|self"),
+            instruction("CALL", 0, 0),
+            instruction("BINARY_OP", 0, 0, "+"),
+            instruction("LOAD_ATTR", 7, "sum", "sum + NULL|self"),
+            instruction("LOAD_SMALL_INT", 1, 1),
+            instruction("LOAD_CONST", 1, ("dim",), "('dim',)"),
+            instruction("CALL_KW", 1, 1),
+            instruction("RETURN_VALUE", None, None),
+        ]
+
+        with unittest.mock.patch(
+            "dis.get_instructions",
+            return_value=python314_instructions,
+        ):
+            self.assertEqual(
+                torch._normalized_h100_cuda_workload_instructions(
+                    benchmark_compile_cuda.h100_cuda_pointwise_reduce_float32,
+                ),
+                torch._COMPILE_H100_CUDA_WORKLOAD_INSTRUCTIONS,
+            )
+            self.assertIs(
+                torch._h100_cuda_workload_code_matches(
+                    benchmark_compile_cuda.h100_cuda_pointwise_reduce_float32,
+                ),
+                True,
+            )
 
     def test_torch_compile_inductor_pointwise_reduce_rejects_spoofed_body(self):
         def spoofed_workload(x, bias):

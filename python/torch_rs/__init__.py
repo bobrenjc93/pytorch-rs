@@ -460,10 +460,24 @@ def _normalized_h100_cuda_workload_instructions(model):
         opname = instruction.opname
         if opname in _COMPILE_H100_CUDA_SKIPPED_OPS:
             continue
-        if opname in {"LOAD_FAST", "STORE_FAST"}:
+        if opname in {"LOAD_FAST", "LOAD_FAST_BORROW"}:
+            instructions.append(("LOAD_FAST", instruction.argval))
+        elif opname in {
+            "LOAD_FAST_LOAD_FAST",
+            "LOAD_FAST_BORROW_LOAD_FAST_BORROW",
+        }:
+            names = instruction.argval
+            if _builtins.type(names) is not tuple:
+                instructions.append((opname, instruction.argval))
+                continue
+            for name in names:
+                instructions.append(("LOAD_FAST", name))
+        elif opname == "STORE_FAST":
             instructions.append((opname, instruction.argval))
         elif opname in {"LOAD_METHOD", "LOAD_ATTR"}:
             instructions.append(("LOAD_METHOD", instruction.argval))
+        elif opname == "LOAD_SMALL_INT":
+            instructions.append(("LOAD_CONST", instruction.argval))
         elif opname == "LOAD_CONST":
             value = instruction.argval
             if (
@@ -482,7 +496,13 @@ def _normalized_h100_cuda_workload_instructions(model):
             instructions.append(("BINARY_OP", instruction.argrepr.strip()))
         elif opname in _COMPILE_H100_CUDA_BINARY_OPS:
             instructions.append(("BINARY_OP", _COMPILE_H100_CUDA_BINARY_OPS[opname]))
-        elif opname in {"CALL", "CALL_METHOD", "CALL_FUNCTION", "CALL_FUNCTION_KW"}:
+        elif opname in {
+            "CALL",
+            "CALL_KW",
+            "CALL_METHOD",
+            "CALL_FUNCTION",
+            "CALL_FUNCTION_KW",
+        }:
             instructions.append(("CALL", instruction.arg))
         else:
             instructions.append((opname, instruction.argval))
