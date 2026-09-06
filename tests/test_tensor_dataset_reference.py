@@ -48,7 +48,7 @@ class TensorDatasetReferenceTests(unittest.TestCase):
             expected_source.untyped_storage().data_ptr(),
         )
 
-    def test_values_layout_integer_indexing_and_aliasing_match_pytorch_2_13(self):
+    def test_values_layout_indexing_slicing_and_aliasing_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         values = np.arange(24, dtype=np.float32).reshape(3, 2, 4)
         actual_sources = (
@@ -63,7 +63,16 @@ class TensorDatasetReferenceTests(unittest.TestCase):
         expected_dataset = reference_torch.utils.data.TensorDataset(*expected_sources)
 
         self.assertEqual(len(actual_dataset), len(expected_dataset))
-        for index in (0, 1, 2, -1, -3, np.int64(1)):
+        for index in (
+            0,
+            1,
+            2,
+            -1,
+            -3,
+            np.int64(1),
+            slice(1, None),
+            slice(None, None, 1),
+        ):
             with self.subTest(index=index):
                 actual_sample = actual_dataset[index]
                 expected_sample = expected_dataset[index]

@@ -107,7 +107,8 @@ class TensorDatasetTests(unittest.TestCase):
             TensorDataset(tensors=(torch.zeros((1,)),))
 
     def test_index_and_method_diagnostics(self):
-        dataset = TensorDataset(torch.zeros((3, 2)))
+        source = torch.zeros((3, 2))
+        dataset = TensorDataset(source)
         self.assertEqual(dataset.__getitem__(index=1)[0].shape, (2,))
 
         for index in (3, -4):
@@ -118,6 +119,13 @@ class TensorDatasetTests(unittest.TestCase):
                 ):
                     dataset[index]
 
+        sliced = dataset[1:]
+        self.assertEqual(len(sliced), 1)
+        self.assertTrue(sliced[0].is_set_to(source[1:]))
+        self.assertEqual(sliced[0].shape, (2, 2))
+        self.assertEqual(sliced[0].stride(), (2, 1))
+        self.assertEqual(sliced[0].storage_offset(), 2)
+
         with self.assertRaisesRegex(
             IndexError,
             "^only integers, slices \\(`:`\\), ellipsis \\(`\\.\\.\\.`\\), "
@@ -125,7 +133,7 @@ class TensorDatasetTests(unittest.TestCase):
         ):
             dataset[1.5]
         with self.assertRaises(IndexError):
-            dataset[1:]
+            dataset[::2]
 
         with self.assertRaisesRegex(
             TypeError,

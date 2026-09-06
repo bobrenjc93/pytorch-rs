@@ -372,9 +372,19 @@ impl PyTensorBase {
             } else if let Some((indices, range)) =
                 parse_leading_integer_range_slice(&tensor.inner, indices)?
             {
-                match tensor.inner.index(indices) {
-                    Ok(indexed) => indexed.slice_dimension(0, range.start, range.length),
-                    Err(error) => Err(error),
+                if range.covers_full_dimension {
+                    if indices.is_empty() {
+                        tensor.inner.metadata_alias()
+                    } else {
+                        tensor.inner.index(indices)
+                    }
+                } else if indices.is_empty() {
+                    tensor.inner.slice_dimension(0, range.start, range.length)
+                } else {
+                    match tensor.inner.index(indices) {
+                        Ok(indexed) => indexed.slice_dimension(0, range.start, range.length),
+                        Err(error) => Err(error),
+                    }
                 }
             } else {
                 let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
@@ -18564,6 +18574,7 @@ fn is_exact_full_slice(index: &Bound<'_, PyAny>) -> PyResult<bool> {
 struct UnitRangeSlice {
     start: usize,
     length: usize,
+    covers_full_dimension: bool,
 }
 
 fn parse_unit_range_slice(
@@ -18573,18 +18584,38 @@ fn parse_unit_range_slice(
     let Ok(slice) = index.cast::<PySlice>() else {
         return Ok(None);
     };
-    let dimension_size = isize::try_from(dimension_size)
+    let signed_dimension_size = isize::try_from(dimension_size)
         .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds the platform limit"))?;
-    let indices = slice.indices(dimension_size)?;
+    let indices = slice.indices(signed_dimension_size)?;
     if indices.step != 1 {
         return Ok(None);
     }
+
     let start = usize::try_from(indices.start)
         .map_err(|_| PyOverflowError::new_err("slice start exceeds the platform limit"))?;
+    let start_allows_metadata_alias = slice_start_allows_metadata_alias(slice)?;
     Ok(Some(UnitRangeSlice {
         start,
         length: indices.slicelength,
+        covers_full_dimension: start_allows_metadata_alias
+            && start == 0
+            && indices.slicelength == dimension_size,
     }))
+}
+
+fn slice_start_allows_metadata_alias(slice: &Bound<'_, PySlice>) -> PyResult<bool> {
+    let start = slice.getattr("start")?;
+    if start.is_none() {
+        return Ok(true);
+    }
+
+    let Ok(start) = start.cast::<PyInt>() else {
+        return Ok(false);
+    };
+    if let Ok(value) = start.extract::<i128>() {
+        return Ok(value >= 0);
+    }
+    Ok(!start.str()?.to_str()?.starts_with('-'))
 }
 
 // The caller checks tuple arity against the tensor rank first so lower-rank

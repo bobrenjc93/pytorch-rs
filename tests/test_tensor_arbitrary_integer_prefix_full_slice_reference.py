@@ -109,6 +109,12 @@ class TensorArbitraryIntegerPrefixFullSliceReferenceTests(unittest.TestCase):
             source[1, 0, 1, 0, 1, 0],
         )
 
+        unit_step_dynamic = [IndexValue(0) for _ in range(6)]
+        unit_step_range = self.view_contract(
+            source[tuple(unit_step_dynamic) + (slice(None, None, 1),)],
+            source[(0,) * 6],
+        )
+
         class RemappedTuple(tuple):
             def __iter__(self):
                 return iter((1, 0, 1, 0, 1, 0, slice(None)))
@@ -127,6 +133,8 @@ class TensorArbitraryIntegerPrefixFullSliceReferenceTests(unittest.TestCase):
                 third_dynamic.calls,
                 fifth_dynamic.calls,
             ),
+            "unit_step_range": unit_step_range,
+            "unit_step_range_calls": tuple(item.calls for item in unit_step_dynamic),
             "tuple_subclass": tuple_subclass,
         }
 

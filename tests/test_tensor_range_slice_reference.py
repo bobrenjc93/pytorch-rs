@@ -1,3 +1,4 @@
+import re
 import unittest
 
 import numpy as np
@@ -36,6 +37,16 @@ class TensorRangeSliceReferenceTests(unittest.TestCase):
             "same_dtype": selected.dtype is source.dtype,
             "same_device": selected.device == source.device,
         }
+
+    def dropout_probability_node(self, module, value):
+        try:
+            module.nn.functional.dropout(None, p=value, training=False)
+        except ValueError as error:
+            match = re.search(r"grad_fn=<([^>]+)>", str(error))
+            if match is None:
+                return str(error)
+            return match.group(1)
+        self.fail("dropout unexpectedly accepted a tensor probability")
 
     def view_contract(self, module):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
@@ -118,6 +129,44 @@ class TensorRangeSliceReferenceTests(unittest.TestCase):
             "empty_gradient_stride": empty.grad.stride(),
             "empty_gradient_offset": empty.grad.storage_offset(),
             "empty_gradient": empty.grad.tolist(),
+            "node_diagnostics": (
+                self.dropout_probability_node(
+                    module,
+                    module.tensor([2.0], dtype=module.float32, requires_grad=True)[
+                        (slice(None, None, 1),)
+                    ],
+                ),
+                self.dropout_probability_node(
+                    module,
+                    module.tensor([2.0], dtype=module.float32, requires_grad=True)[
+                        (slice(0, 1),)
+                    ],
+                ),
+                self.dropout_probability_node(
+                    module,
+                    module.tensor([[2.0]], dtype=module.float32, requires_grad=True)[
+                        0, slice(None, None, 1)
+                    ],
+                ),
+                self.dropout_probability_node(
+                    module,
+                    module.tensor([[2.0]], dtype=module.float32, requires_grad=True)[
+                        0, slice(0, 1)
+                    ],
+                ),
+                self.dropout_probability_node(
+                    module,
+                    module.tensor([2.0], dtype=module.float32, requires_grad=True)[
+                        (slice(-1, None),)
+                    ],
+                ),
+                self.dropout_probability_node(
+                    module,
+                    module.tensor([[2.0]], dtype=module.float32, requires_grad=True)[
+                        0, slice(-1, None)
+                    ],
+                ),
+            ),
         }
 
     def test_backward_through_sum_matches_pytorch_2_13(self):

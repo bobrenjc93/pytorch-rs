@@ -6,6 +6,10 @@ import torch_rs as torch
 
 
 class TensorRangeSliceTests(unittest.TestCase):
+    def assert_dropout_probability_node(self, value, node_name):
+        with self.assertRaisesRegex(ValueError, rf"grad_fn=<{node_name}>"):
+            torch.nn.functional.dropout(None, p=value, training=False)
+
     def assert_data_pointer_matches_offset(self, source, selected):
         if selected.numel() == 0:
             self.assertEqual(selected.data_ptr(), 0)
@@ -100,10 +104,33 @@ class TensorRangeSliceTests(unittest.TestCase):
         )
 
         diagnostic_leaf = torch.tensor([1.0, 2.0, 3.0], requires_grad=True)
-        with self.assertRaisesRegex(ValueError, r"grad_fn=<SliceBackward0>"):
-            torch.nn.functional.dropout(
-                None, p=diagnostic_leaf[1:2], training=False
-            )
+        self.assert_dropout_probability_node(diagnostic_leaf[1:2], "SliceBackward0")
+
+    def test_full_span_tuple_range_slices_reuse_alias_and_select_nodes(self):
+        self.assert_dropout_probability_node(
+            torch.tensor([2.0], requires_grad=True)[(slice(None, None, 1),)],
+            "AliasBackward0",
+        )
+        self.assert_dropout_probability_node(
+            torch.tensor([2.0], requires_grad=True)[(slice(0, 1),)],
+            "AliasBackward0",
+        )
+        self.assert_dropout_probability_node(
+            torch.tensor([[2.0]], requires_grad=True)[0, slice(None, None, 1)],
+            "SelectBackward0",
+        )
+        self.assert_dropout_probability_node(
+            torch.tensor([[2.0]], requires_grad=True)[0, slice(0, 1)],
+            "SelectBackward0",
+        )
+        self.assert_dropout_probability_node(
+            torch.tensor([2.0], requires_grad=True)[(slice(-1, None),)],
+            "SliceBackward0",
+        )
+        self.assert_dropout_probability_node(
+            torch.tensor([[2.0]], requires_grad=True)[0, slice(-1, None)],
+            "SliceBackward0",
+        )
 
     def test_unsupported_slice_forms_stay_unsupported(self):
         source = torch.zeros((3, 4, 5))

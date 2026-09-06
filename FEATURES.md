@@ -16,7 +16,7 @@ the source of truth.
 
 | Weighted area | Weight | Primary supported examples | Main unsupported boundary |
 | --- | ---: | --- | --- |
-| tensor storage, shapes, strides, views, indexing | 15% | CPU `f32` tensor metadata, query helpers, shared-storage views, reshape/transpose, direct and integer-prefix range slicing, contiguous materialization | Non-unit, negative-step, or full-slice/ellipsis-combined range indexing; advanced indexing, dtype/device expansion, storage-object APIs |
+| tensor storage, shapes, strides, views, indexing | 15% | CPU `f32` tensor metadata, query helpers, shared-storage views, reshape/transpose, direct and integer-prefix range slicing, contiguous materialization | Range slicing with non-unit, negative-step, or full-slice/ellipsis-combined range indexing; advanced indexing, dtype/device expansion, storage-object APIs |
 | dtypes, promotion, devices, dispatch | 10% | CPU/default-device metadata, CPU-build CUDA probes, float32 dtype helpers, selected dispatch probes | Actual CUDA tensors/runtime, mutable device routing, mixed precision, broader promotion |
 | creation, elementwise, reductions | 15% | `as_tensor`/`asarray`, `empty`/scalar/list factories, arithmetic and unary ops, full-tensor `sum`/`mean` | Non-float32 or accelerator creation, concrete `out`, dimension reductions, in-place ops |
 | linear algebra and signal operations | 10% | Rank-2 `matmul`/`mm`, float32 matmul precision preference state | `bmm`, `addmm`, rank-1 or batched `matmul` under `mm`, spectral ops |

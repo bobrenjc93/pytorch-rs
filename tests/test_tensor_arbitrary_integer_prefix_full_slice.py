@@ -225,9 +225,10 @@ class TensorArbitraryIntegerPrefixFullSliceTests(unittest.TestCase):
         self.assertEqual(events, [0, 1, 2, 3])
 
         events.clear()
-        non_full_slice = tuple(IndexValue(index, 0) for index in range(6))
-        with self.assertRaisesRegex(IndexError, "only integers"):
-            torch.zeros((2,) * 7)[non_full_slice + (slice(None, None, 1),)]
+        unit_step_slice = tuple(IndexValue(index, 0) for index in range(6))
+        unit_step_source = torch.zeros((2,) * 7)
+        selected = unit_step_source[unit_step_slice + (slice(None, None, 1),)]
+        self.assert_same_view(selected, unit_step_source[(0,) * 6])
         self.assertEqual(events, list(range(6)))
 
         events.clear()
