@@ -517,15 +517,19 @@ class AsArrayReferenceTests(unittest.TestCase):
                         )
                         self.assertEqual(actual_contract, expected_contract)
 
-    def test_explicit_float32_numpy_integer_scalar_copy_true_is_supported_extension(self):
+    def test_explicit_float32_numpy_integer_scalar_copy_true_errors_match_pytorch_2_13(self):
         values = (
             np.int8(-128),
             np.uint8(255),
+            np.int16(np.iinfo(np.int16).min),
+            np.uint16(np.iinfo(np.uint16).max),
+            np.int32(np.iinfo(np.int32).min),
+            np.uint32(np.iinfo(np.uint32).max),
             np.int64(np.iinfo(np.int64).min),
             np.int64(np.iinfo(np.int64).max),
             np.uint64(np.iinfo(np.uint64).max),
         )
-        option_cases = (
+        actual_options = (
             {"dtype": torch.float32, "copy": True},
             {
                 "dtype": torch.float32,
@@ -534,28 +538,32 @@ class AsArrayReferenceTests(unittest.TestCase):
                 "requires_grad": None,
             },
         )
+        expected_options = (
+            {"dtype": reference_torch.float32, "copy": True},
+            {
+                "dtype": reference_torch.float32,
+                "device": reference_torch.device("cpu"),
+                "copy": True,
+                "requires_grad": None,
+            },
+        )
         for value in values:
             for actual_kwargs, expected_kwargs in zip(
-                option_cases,
-                (
-                    {"dtype": reference_torch.float32, "copy": None},
-                    {
-                        "dtype": reference_torch.float32,
-                        "device": reference_torch.device("cpu"),
-                        "copy": None,
-                        "requires_grad": None,
-                    },
-                ),
-                strict=True,
+                actual_options, expected_options, strict=True
             ):
                 with self.subTest(value=repr(value), options=actual_kwargs):
-                    actual_contract = self.asarray_float_scalar_contract(
-                        torch, value, actual_kwargs
+                    self.assertEqual(
+                        self.error_observation(
+                            lambda value=value, options=actual_kwargs: torch.asarray(
+                                value, **options
+                            )
+                        ),
+                        self.error_observation(
+                            lambda value=value, options=expected_kwargs: reference_torch.asarray(
+                                value, **options
+                            )
+                        ),
                     )
-                    expected_contract = self.asarray_float_scalar_contract(
-                        reference_torch, value, expected_kwargs
-                    )
-                    self.assertEqual(actual_contract, expected_contract)
 
     def test_explicit_float32_integer_sequence_creation_matches_pytorch_2_13(self):
         sequence_cases = (

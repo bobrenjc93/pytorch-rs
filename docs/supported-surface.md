@@ -8,7 +8,7 @@ contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 
 | Adopter task | Supported APIs | Unsupported boundaries to verify |
 | --- | --- | --- |
-| Create CPU `float32` tensors | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.arange`, `torch.empty`, `torch.zeros`, `torch.ones`, `torch.empty_like`, `torch.zeros_like`, `torch.ones_like`, `torch.full_like`, `torch.full`, `torch.eye` in [Tensors](#tensors) and [Creation](#creation) | `torch.as_tensor` and `torch.asarray` accept exact native tensors, exact Python `float` scalars, exact list/tuple sequences of Python floats, and Python/NumPy integer scalars or exact list/tuple integer sequences when `dtype=torch.float32`/`torch.float` is explicit; `torch.as_tensor` also accepts exact NumPy `float32` scalars; `torch.asarray` also accepts `copy=True` for exact native CPU `float32` tensors and already-materializing supported scalar/list/tuple inputs with default-equivalent metadata. NumPy arrays, NumPy non-`float32` non-integer scalars for `torch.as_tensor`, NumPy non-integer scalars for `torch.asarray`, omitted-dtype integer inference, boolean inputs, dtype conversions, accelerator or meta devices, list/tuple subclasses, and unsupported copy/output requests remain unsupported; factories reject non-`float32` dtypes, non-CPU devices, concrete `out`, pinning, sparse layouts, and backend-specific allocation. |
+| Create CPU `float32` tensors | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.arange`, `torch.empty`, `torch.zeros`, `torch.ones`, `torch.empty_like`, `torch.zeros_like`, `torch.ones_like`, `torch.full_like`, `torch.full`, `torch.eye` in [Tensors](#tensors) and [Creation](#creation) | `torch.as_tensor` and `torch.asarray` accept exact native tensors, exact Python `float` scalars, exact list/tuple sequences of Python floats, and Python/NumPy integer scalars or exact list/tuple integer sequences when `dtype=torch.float32`/`torch.float` is explicit; `torch.as_tensor` also accepts exact NumPy `float32` scalars; `torch.asarray` also accepts `copy=True` for exact native CPU `float32` tensors, Python scalar inputs, and exact list/tuple inputs with default-equivalent metadata, while NumPy integer scalar `copy=True` follows PyTorch 2.13's dtype-aliasing error. NumPy arrays, NumPy non-`float32` non-integer scalars for `torch.as_tensor`, NumPy non-integer scalars for `torch.asarray`, omitted-dtype integer inference, boolean inputs, dtype conversions, accelerator or meta devices, list/tuple subclasses, and unsupported copy/output requests remain unsupported; factories reject non-`float32` dtypes, non-CPU devices, concrete `out`, pinning, sparse layouts, and backend-specific allocation. |
 | Preserve or change tensor layout | `Tensor.select`, `torch.select`, `Tensor.unbind`, `torch.unbind`, supported `Tensor.__getitem__` integer, full-slice, and direct/integer-prefix range-slice views, `Tensor.view`, `Tensor.view_as`, `Tensor.reshape`, `Tensor.reshape_as`, `torch.reshape`, `Tensor.unsqueeze`, `torch.unsqueeze`, `Tensor.permute`, `torch.permute`, `Tensor.movedim`, `Tensor.moveaxis`, `torch.movedim`, `torch.moveaxis`, `Tensor.contiguous`, `Tensor.cpu` in [Metadata and views](#metadata-and-views) | Unsupported edges include range slicing with non-unit or negative steps, range slices combined with full-slice or ellipsis tuple axes, multi-range-slice tuples, advanced indexing, broader `None` indexing expansion, sequence `movedim` axes, variadic top-level reshape dimensions, cross-dtype views, complex dtypes, and imaginary views. |
 | Run eager math and reductions | Python `+`, `-`, `*`, and `/` operators, `Tensor.add`, `torch.add`, `Tensor.sub`, `Tensor.subtract`, `Tensor.mul`, `Tensor.multiply`, `Tensor.div`, `Tensor.divide`, `torch.div`, `torch.divide`, `torch.sub`, `torch.subtract`, `torch.mul`, `torch.multiply`, `torch.cat`, `torch.matmul`, `torch.mm`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.cos`, `torch.exp`, `torch.log`, `torch.reciprocal`, `torch.rsqrt`, `torch.sin`, `torch.sqrt`, `torch.square`, `torch.sigmoid`, `torch.tanh` in [Elementwise and reductions](#elementwise-and-reductions) | scalar-only `torch.add` calls, concrete `out` tensors, in-place variants, active-autograd division, `rsqrt`, and `cat`, nondefault `alpha` or `rounding_mode`, scalar-only multiplication/division, dimension reductions, general-dimensional concatenation, dtype conversions, and non-CPU/non-`float32` tensors remain outside the contract. |
 | Use functional NN helpers | `torch.nn.functional.linear`, `torch.nn.functional.relu`, `torch.nn.functional.l1_loss`, `torch.nn.functional.mse_loss`, `torch.nn.functional.dropout`, `torch.nn.functional.dropout1d`, `torch.nn.functional.dropout2d`, `torch.nn.functional.dropout3d`, `torch.nn.functional.sigmoid`, `torch.nn.functional.silu`, `torch.nn.functional.softsign`, `torch.nn.functional.tanh`, `torch.nn.init.calculate_gain` in [NN/data helpers](#nn-and-data-helpers) and [math activations](#elementwise-and-reductions) | Module layers, active autograd for `l1_loss`, `mse_loss(reduction="none")`, and softsign paths, `l1_loss` reductions other than `"none"`/`"sum"`, `mse_loss` reductions other than `"none"`/`"mean"`/`"sum"`, loss `weight` arguments, legacy loss reduction arguments, nondeterministic dropout, nonidentity inplace dropout, and mutating initializers remain unsupported. |
@@ -793,10 +793,12 @@ autograd, and `no_grad` behavior without mutating the input. Exact Python
 metadata, omitted, `None`, or `True` `copy`, and omitted or `None`
 `requires_grad` options create fresh rank-0 CPU `float32` leaves with
 `requires_grad=False`, including finite values, signed zero, infinities, and
-NaN. Python/NumPy integer scalars also create fresh rank-0 CPU `float32` leaves
-when `dtype=torch.float32` or `dtype=torch.float` is explicit and `copy` is
-omitted, `None`, or `True`. Exact list/tuple sequences of Python floats, plus
-integer sequences under the same explicit dtype requirement, share the
+NaN. Python integer scalars also create fresh rank-0 CPU `float32` leaves when
+`dtype=torch.float32` or `dtype=torch.float` is explicit and `copy` is omitted,
+`None`, or `True`. NumPy integer scalars support the same explicit dtype
+requirement with omitted or `None` `copy`; `copy=True` matches PyTorch 2.13's
+dtype-aliasing error. Exact list/tuple sequences of Python floats, plus integer
+sequences under the same explicit dtype requirement, share the
 `torch.as_tensor` rectangular construction path, including empty flat
 sequences, nested empty and rectangular inputs, mixed list/tuple containers,
 signed zero, infinities, NaN, and signed/unsigned integer boundary rounding.
@@ -806,9 +808,9 @@ gradient mode. NumPy arrays, NumPy non-integer scalars, omitted-dtype integer
 inference, boolean scalar or sequence inputs, non-list/tuple sequence-like
 objects, list/tuple subclasses, float subclasses, tensor subclasses, dtype
 conversions, accelerator or meta devices, indexed CPU devices that would
-require a copy, pinned-memory options, `out`, `copy=True` for unsupported
-non-tensor inputs, scalar or sequence `copy=False`, and explicit
-`requires_grad` mutation requests remain unsupported.
+require a copy, pinned-memory options, `out`, `copy=True` for NumPy integer
+scalars or unsupported non-tensor inputs, scalar or sequence `copy=False`, and
+explicit `requires_grad` mutation requests remain unsupported.
 
 `torch.arange` creates fresh one-dimensional CPU `float32` tensors for the
 supported numeric overloads. One-bound exact Python `float` and NumPy floating

@@ -419,7 +419,7 @@ class AsArrayTests(unittest.TestCase):
                     )
 
     def test_explicit_float32_integer_scalars_create_fresh_cpu_float32_leaves(self):
-        option_cases = (
+        python_option_cases = (
             {"dtype": torch.float32},
             {"dtype": torch.float},
             {"dtype": torch.float32, "device": None},
@@ -434,22 +434,61 @@ class AsArrayTests(unittest.TestCase):
                 "requires_grad": None,
             },
         )
-        value_cases = (
+        numpy_option_cases = python_option_cases[:6]
+        python_value_cases = (
             (0, 0x00000000),
             (-1, 0xBF800000),
             (2**64 - 1, 0x5F800000),
             (2**100, 0x71800000),
             (-(2**100), 0xF1800000),
+        )
+        numpy_value_cases = (
             (np.int8(-128), 0xC3000000),
             (np.uint8(255), 0x437F0000),
             (np.int64(np.iinfo(np.int64).min), 0xDF000000),
             (np.int64(np.iinfo(np.int64).max), 0x5F000000),
             (np.uint64(np.iinfo(np.uint64).max), 0x5F800000),
         )
-        for value, expected_bits in value_cases:
+        for value_cases, option_cases in (
+            (python_value_cases, python_option_cases),
+            (numpy_value_cases, numpy_option_cases),
+        ):
+            for value, expected_bits in value_cases:
+                for options in option_cases:
+                    with self.subTest(value=repr(value), options=options):
+                        self.assert_scalar_result(value, expected_bits, **options)
+
+    def test_explicit_float32_numpy_integer_scalar_copy_true_matches_pytorch_error(self):
+        value_cases = (
+            (np.int8(-128), "Char"),
+            (np.uint8(255), "Byte"),
+            (np.int16(-32768), "Short"),
+            (np.uint16(65535), "UInt16"),
+            (np.int32(np.iinfo(np.int32).min), "Int"),
+            (np.uint32(np.iinfo(np.uint32).max), "UInt32"),
+            (np.int64(np.iinfo(np.int64).min), "Long"),
+            (np.uint64(np.iinfo(np.uint64).max), "UInt64"),
+        )
+        option_cases = (
+            {"dtype": torch.float32, "copy": True},
+            {
+                "dtype": torch.float32,
+                "device": torch.device("cpu"),
+                "copy": True,
+                "requires_grad": None,
+            },
+        )
+        for value, dtype_name in value_cases:
+            expected = f"can't alias tensor with dtype '{dtype_name}' into dtype 'Float'."
             for options in option_cases:
                 with self.subTest(value=repr(value), options=options):
-                    self.assert_scalar_result(value, expected_bits, **options)
+                    self.assert_error(
+                        lambda value=value, options=options: torch.asarray(
+                            value, **options
+                        ),
+                        ValueError,
+                        expected,
+                    )
 
     def test_explicit_float32_integer_sequences_create_fresh_cpu_float32_leaves(self):
         sequence_cases = (

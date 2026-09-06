@@ -1788,7 +1788,7 @@ fn asarray_non_tensor_object(
         return Ok(Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any());
     }
     if explicit_float32_dtype && let Some(value) = extract_integer_as_float32_scalar(obj)? {
-        validate_asarray_scalar_copy(copy)?;
+        validate_asarray_integer_scalar_copy(obj, copy)?;
         return Ok(Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any());
     }
     if let Some((flattened, shape)) = literal_sequence {
@@ -10111,6 +10111,38 @@ fn validate_asarray_scalar_copy(copy: Option<&Bound<'_, PyAny>>) -> PyResult<()>
     Err(PyNotImplementedError::new_err(
         "asarray(): copy=False for Python float scalar inputs is not supported because scalar conversion requires fresh storage",
     ))
+}
+
+fn validate_asarray_integer_scalar_copy(
+    value: &Bound<'_, PyAny>,
+    copy: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    if asarray_copy_requested(copy)? && is_numpy_scalar_of_types(value, &["integer"])? {
+        return Err(PyValueError::new_err(format!(
+            "can't alias tensor with dtype '{}' into dtype 'Float'.",
+            numpy_integer_scalar_torch_dtype_name(value)?
+        )));
+    }
+    validate_asarray_scalar_copy(copy)
+}
+
+fn numpy_integer_scalar_torch_dtype_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    let dtype_name = value
+        .getattr("dtype")?
+        .getattr("name")?
+        .extract::<String>()?;
+    let name = match dtype_name.as_str() {
+        "int8" => "Char",
+        "uint8" => "Byte",
+        "int16" => "Short",
+        "uint16" => "UInt16",
+        "int32" => "Int",
+        "uint32" => "UInt32",
+        "int64" => "Long",
+        "uint64" => "UInt64",
+        other => other,
+    };
+    Ok(name.to_owned())
 }
 
 fn validate_asarray_sequence_copy(copy: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
