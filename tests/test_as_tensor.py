@@ -287,6 +287,28 @@ class AsTensorTests(unittest.TestCase):
             ("empty list", [], (0,), (1,), ()),
             ("empty tuple", (), (0,), (1,), ()),
             ("nested empty", [[], []], (2, 0), (1, 1), ()),
+            ("zero child skips scalar sibling", [[], 1], (2, 0), (1, 1), ()),
+            (
+                "zero child skips numpy scalar sibling",
+                [[], np.int64(1)],
+                (2, 0),
+                (1, 1),
+                (),
+            ),
+            (
+                "nested zero child skips nonempty sibling",
+                [[[]], [[1, 2]]],
+                (2, 1, 0),
+                (1, 1, 1),
+                (),
+            ),
+            (
+                "deep zero child skips ragged sibling",
+                [[[], []], [[1], [2, 3]]],
+                (2, 2, 0),
+                (2, 1, 1),
+                (),
+            ),
             (
                 "flat python ints",
                 [1, -2, 2**64 - 1],
@@ -803,6 +825,26 @@ class AsTensorTests(unittest.TestCase):
             lambda: torch.as_tensor([[1], [2, 3]], dtype=torch.float32),
             ValueError,
             "expected sequence of length 1 at dim 1 (got 2)",
+        )
+        self.assert_error(
+            lambda: torch.as_tensor([[[1]], [[2, 3]]], dtype=torch.float32),
+            ValueError,
+            "expected sequence of length 1 at dim 2 (got 2)",
+        )
+        self.assert_error(
+            lambda: torch.as_tensor([[[1, 2]], [[3]]], dtype=torch.float32),
+            ValueError,
+            "expected sequence of length 2 at dim 2 (got 1)",
+        )
+        self.assert_error(
+            lambda: torch.as_tensor([[1], 2], dtype=torch.float32),
+            TypeError,
+            "not a sequence",
+        )
+        self.assert_error(
+            lambda: torch.as_tensor([1, [2]], dtype=torch.float32),
+            TypeError,
+            "must be real number, not list",
         )
 
         class ListSubclass(list):

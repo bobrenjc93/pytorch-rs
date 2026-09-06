@@ -7860,9 +7860,17 @@ fn flatten_as_tensor_float_sequence(
         active_containers.pop();
         return Ok(None);
     };
+    if first_shape.contains(&0) {
+        let mut shape = Vec::with_capacity(first_shape.len() + 1);
+        shape.push(length);
+        shape.extend(first_shape);
+        active_containers.pop();
+        return Ok(Some(shape));
+    }
     for index in 1..length {
+        let item = value.get_item(index)?;
         let Some(shape) = flatten_as_tensor_float_sequence(
-            &value.get_item(index)?,
+            &item,
             output,
             active_containers,
             depth + 1,
@@ -7874,11 +7882,12 @@ fn flatten_as_tensor_float_sequence(
         };
         if shape != first_shape {
             active_containers.pop();
-            return Err(as_tensor_ragged_sequence_error(
+            return Err(as_tensor_sequence_shape_error(
+                &item,
                 &first_shape,
                 &shape,
                 depth + 1,
-            ));
+            )?);
         }
     }
 
@@ -7902,13 +7911,41 @@ fn as_tensor_too_many_dimensions_error(value: &Bound<'_, PyAny>) -> PyErr {
     PyValueError::new_err(format!("too many dimensions '{container}'"))
 }
 
-fn as_tensor_ragged_sequence_error(
+fn as_tensor_sequence_shape_error(
+    actual_value: &Bound<'_, PyAny>,
     expected_shape: &[usize],
     actual_shape: &[usize],
     dimension: usize,
-) -> PyErr {
-    let expected = expected_shape.first().copied().unwrap_or(0);
-    let actual = actual_shape.first().copied().unwrap_or(0);
+) -> PyResult<PyErr> {
+    if expected_shape.is_empty() {
+        let actual = python_type_name(actual_value)?;
+        return Ok(PyTypeError::new_err(format!(
+            "must be real number, not {actual}"
+        )));
+    }
+    if actual_shape.is_empty() {
+        return Ok(PyTypeError::new_err("not a sequence"));
+    }
+    for (offset, (expected, actual)) in expected_shape.iter().zip(actual_shape).enumerate() {
+        if expected != actual {
+            return Ok(as_tensor_ragged_sequence_error(
+                *expected,
+                *actual,
+                dimension + offset,
+            ));
+        }
+    }
+    if expected_shape.len() > actual_shape.len() {
+        Ok(PyTypeError::new_err("not a sequence"))
+    } else {
+        let actual = python_type_name(actual_value)?;
+        Ok(PyTypeError::new_err(format!(
+            "must be real number, not {actual}"
+        )))
+    }
+}
+
+fn as_tensor_ragged_sequence_error(expected: usize, actual: usize, dimension: usize) -> PyErr {
     PyValueError::new_err(format!(
         "expected sequence of length {expected} at dim {dimension} (got {actual})"
     ))

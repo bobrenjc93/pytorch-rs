@@ -301,6 +301,10 @@ class AsTensorReferenceTests(unittest.TestCase):
             ("empty list", []),
             ("empty tuple", ()),
             ("nested empty", [[], []]),
+            ("zero child skips scalar sibling", [[], 1]),
+            ("zero child skips numpy scalar sibling", [[], np.int64(1)]),
+            ("nested zero child skips nonempty sibling", [[[]], [[1, 2]]]),
+            ("deep zero child skips ragged sibling", [[[], []], [[1], [2, 3]]]),
             ("flat python ints", [1, -2, 2**64 - 1]),
             ("nested rectangular", [[1, -2], [3, 4]]),
             (
@@ -336,6 +340,10 @@ class AsTensorReferenceTests(unittest.TestCase):
         cases = (
             ("python ints", [[1], [2, 3]]),
             ("numpy ints", ((np.int8(1),), (np.uint8(2), np.uint8(3)))),
+            ("deep python ints", [[[1]], [[2, 3]]]),
+            ("deep short python ints", [[[1, 2]], [[3]]]),
+            ("sequence then scalar", [[1], 2]),
+            ("scalar then sequence", [1, [2]]),
         )
         for case, data in cases:
             for actual_kwargs, expected_kwargs in zip(
