@@ -1313,13 +1313,6 @@ class H100Float32PointwiseReduceCompiledExecutor:
             "device_output_bytes_checksum": None,
             "device_output_checksum": None,
             "readback_synchronized": False,
-            "driver": copy.deepcopy(self._driver_probe["driver"]),
-            "runtime": copy.deepcopy(self._preparation["runtime"]),
-            "device_0": copy.deepcopy(self._driver_probe["device_0"]),
-            "gpu": copy.deepcopy(self._preparation["gpu"]),
-            "nvcc": copy.deepcopy(self._nvcc),
-            "build": copy.deepcopy(self._build),
-            "kernel_library": copy.deepcopy(self._kernel_library_evidence),
             "executor": {
                 "schema_version": POINTWISE_REDUCE_COMPILE_EXECUTOR_SCHEMA_VERSION,
                 "preparation_id": self._executor_key,
@@ -1341,7 +1334,7 @@ class H100Float32PointwiseReduceCompiledExecutor:
 
         output_lease = self._output_pool.acquire()
         device_output = output_lease.buffer
-        output_pool_evidence = copy.deepcopy(output_lease.acquisition)
+        output_pool_evidence = dict(output_lease.acquisition)
         output_pool_evidence["allocated_in_execute"] = output_pool_evidence[
             "allocated_in_acquire"
         ]

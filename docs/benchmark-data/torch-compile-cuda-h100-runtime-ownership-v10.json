@@ -1,13 +1,13 @@
 {
   "aggregates": {
-    "common_success_geomean_speed_ratio": 0.6430965781140949,
-    "coverage_adjusted_overall_percent": 64.3096578114095,
-    "torch_rs_cuda_compile_score_percent": 64.3096578114095,
+    "common_success_geomean_speed_ratio": 0.28781968700639654,
+    "coverage_adjusted_overall_percent": 28.781968700639656,
+    "torch_rs_cuda_compile_score_percent": 28.781968700639656,
     "zero_credit_unsupported_cell_count": 0
   },
   "candidate": {
     "cold_checksum": "72f74be90b99aea7",
-    "cold_first_call_us": 448.889,
+    "cold_first_call_us": 279.543,
     "compile_backend": "inductor",
     "compile_config": {
       "backend": "inductor",
@@ -385,7 +385,7 @@
       "rejection_reasons": [],
       "score_credit": 1.0
     },
-    "factory_us": 11812.347,
+    "factory_us": 12420.194,
     "forwarded_to_pytorch": false,
     "implementation": "torch_rs",
     "input_device_type": "cuda",
@@ -2002,23 +2002,23 @@
       "output_pool_live_buffers_after_timing": 0,
       "output_pool_release_count": 67,
       "preparation_id": "8b49f61b273d8214",
-      "prepared_steady_median_us": 290.863,
-      "prepared_vs_unprepared_steady_speedup": 36.6163119177528,
+      "prepared_steady_median_us": 148.77833333333334,
+      "prepared_vs_unprepared_steady_speedup": 68.4283240167139,
       "setup_hoisted_to_compile_wrapper": true,
       "steady_state_output_allocated_in_execute": false,
       "steady_state_reused_output_buffer": true,
       "steady_state_reused_prepared_executor": true,
-      "unprepared_compatibility_steady_median_us": 10650.330333333333
+      "unprepared_compatibility_steady_median_us": 10180.652
     },
     "score_credit": 1.0,
     "status": "ok",
     "steady": {
-      "mad_us": 2.339999999999975,
-      "max_us": 316.051,
-      "median_us": 290.863,
-      "min_us": 282.991,
+      "mad_us": 1.7990000000000066,
+      "max_us": 154.64366666666666,
+      "median_us": 148.77833333333334,
+      "min_us": 144.32466666666664,
       "sample_count": 17,
-      "variance_us2": 74.91649368550554
+      "variance_us2": 8.288936412149193
     },
     "steady_checksums": [
       "72f74be90b99aea7"
@@ -2375,12 +2375,12 @@
       "setup_repeated_per_invocation": true,
       "status": "ok",
       "steady": {
-        "mad_us": 345.021999999999,
-        "max_us": 11380.490666666667,
-        "median_us": 10650.330333333333,
-        "min_us": 9712.869666666666,
+        "mad_us": 471.2960000000003,
+        "max_us": 12041.404666666665,
+        "median_us": 10180.652,
+        "min_us": 9465.003666666666,
         "sample_count": 17,
-        "variance_us2": 195278.22762122698
+        "variance_us2": 539426.4027250602
       },
       "steady_checksums": [
         "72f74be90b99aea7"
@@ -2390,12 +2390,12 @@
     "workload_version": "h100_cuda_pointwise_reduce_float32_v1"
   },
   "environment": {
-    "benchmark_version": "torch_compile_cuda_h100_reference_benchmark_v9",
+    "benchmark_version": "torch_compile_cuda_h100_reference_benchmark_v10",
     "cuda_visible_devices": "0",
     "git": {
-      "diff_stat": "python/torch_rs/__init__.py                        |   46 +-\n python/torch_rs/_compiler_state.py                 |   14 +\n python/torch_rs/_cuda_benchmark_tensor.py          |  145 ++-\n python/torch_rs/_cuda_pointwise_reduce_workload.py |  381 ++++++--\n scripts/benchmark_compile_cuda.py                  |  263 +++--\n tests/test_compile_cuda_benchmark.py               | 1004 +++++++++++++++++++-\n 6 files changed, 1637 insertions(+), 216 deletions(-)",
-      "head": "18aa88a6ba9153d840c1f7e9ba9b5f54cba149ff",
-      "status_short": "M python/torch_rs/__init__.py\n M python/torch_rs/_compiler_state.py\n M python/torch_rs/_cuda_benchmark_tensor.py\n M python/torch_rs/_cuda_pointwise_reduce_workload.py\n M scripts/benchmark_compile_cuda.py\n M tests/test_compile_cuda_benchmark.py\n?? python/torch_rs/_cuda_runtime_ownership.py"
+      "diff_stat": "...rch-compile-cuda-h100-runtime-ownership-v9.json | 4259 --------------------\n docs/torch-compile-cuda-h100-release-timings.md    |   38 +-\n python/torch_rs/_cuda_pointwise_reduce_workload.py |    9 +-\n scripts/benchmark_compile_cuda.py                  |   13 +-\n tests/test_compile_cuda_benchmark.py               |  146 +-\n 5 files changed, 177 insertions(+), 4288 deletions(-)",
+      "head": "01ce6941236d3dd894eb857e0daf026875c376ec",
+      "status_short": "D docs/benchmark-data/torch-compile-cuda-h100-runtime-ownership-v9.json\n M docs/torch-compile-cuda-h100-release-timings.md\n M python/torch_rs/_cuda_pointwise_reduce_workload.py\n M scripts/benchmark_compile_cuda.py\n M tests/test_compile_cuda_benchmark.py\n?? docs/benchmark-data/torch-compile-cuda-h100-runtime-ownership-v10.json"
     },
     "gpu": {
       "nvcc_version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
@@ -2441,7 +2441,7 @@
     "repeats": 3,
     "samples": 17,
     "torch_rs": {
-      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38a1ddca/target/test-python-site-2/torch_rs/__init__.py",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38a1ddca/target/test-python-site-review/torch_rs/__init__.py",
       "version": "0.1.0"
     },
     "warmups": 5,
@@ -2458,7 +2458,7 @@
   },
   "reference_workload": {
     "cold_checksum": "72f74be90b99aea7",
-    "cold_first_call_us": 1104674.596,
+    "cold_first_call_us": 1190179.445,
     "compile_config": {
       "backend": "inductor",
       "dynamic": false,
@@ -2470,7 +2470,7 @@
       "assert_close": true,
       "eager_reference_checksum": "0fb113da67713207"
     },
-    "factory_us": 733935.918,
+    "factory_us": 756615.385,
     "implementation": "pytorch",
     "input_metadata": [
       {
@@ -2523,16 +2523,23 @@
     },
     "status": "ok",
     "steady": {
-      "mad_us": 4.182999999999993,
-      "max_us": 327.809,
-      "median_us": 187.053,
-      "min_us": 179.251,
+      "mad_us": 0.8079999999999998,
+      "max_us": 53.784666666666666,
+      "median_us": 42.821333333333335,
+      "min_us": 41.179,
       "sample_count": 17,
-      "variance_us2": 1111.0305644459827
+      "variance_us2": 12.2982385290273
     },
     "steady_checksums": [
       "72f74be90b99aea7"
     ],
+    "timing_boundary": {
+      "compiled_calls_only": true,
+      "explicit_cuda_synchronize_after_timed_region": true,
+      "explicit_cuda_synchronize_before_timed_region": true,
+      "materialization_outside_timed_region": true,
+      "torch_rs_equivalent_explicit_sync": true
+    },
     "workload_version": "h100_cuda_pointwise_reduce_float32_v1"
   },
   "torch_rs_cuda_compile_inputs": {

@@ -323,10 +323,11 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
             REPOSITORY_ROOT
             / "docs"
             / "benchmark-data"
-            / "torch-compile-cuda-h100-runtime-ownership-v9.json"
+            / "torch-compile-cuda-h100-runtime-ownership-v10.json"
         )
         report = json.loads(artifact.read_text(encoding="utf-8"))
         candidate = report["candidate"]
+        reference = report["reference_workload"]
         reuse = candidate["prepared_executor_reuse"]
         unprepared = candidate["unprepared_compatibility_comparison"]
 
@@ -376,6 +377,27 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
         self.assertIs(
             candidate["timing_boundary"]["materialization_outside_timed_region"],
             True,
+        )
+        self.assertIs(reference["timing_boundary"]["compiled_calls_only"], True)
+        self.assertIs(
+            reference["timing_boundary"]["materialization_outside_timed_region"],
+            True,
+        )
+        self.assertEqual(
+            reference["timing_boundary"][
+                "explicit_cuda_synchronize_before_timed_region"
+            ],
+            candidate["timing_boundary"][
+                "explicit_cuda_synchronize_before_timed_region"
+            ],
+        )
+        self.assertEqual(
+            reference["timing_boundary"][
+                "explicit_cuda_synchronize_after_timed_region"
+            ],
+            candidate["timing_boundary"][
+                "explicit_cuda_synchronize_after_timed_region"
+            ],
         )
         self.assertIs(candidate["compile_execution"]["readback_deferred"], True)
         self.assertIs(candidate["compile_execution"]["output_materialized"], True)
@@ -1864,6 +1886,116 @@ print(json.dumps({
         self.assertEqual(len(runtime.frees), 4)
         self.assertEqual(len(set(runtime.frees)), len(runtime.frees))
 
+    def test_pytorch_reference_timing_excludes_checksum_materialization(self):
+        events = []
+
+        fake_torch = SimpleNamespace(
+            cuda=SimpleNamespace(
+                synchronize=lambda index: events.append(f"sync:{index}"),
+            ),
+        )
+
+        once_output = object()
+
+        def compiled_once(*inputs):
+            self.assertEqual(inputs, ("x", "bias"))
+            events.append("compiled_once")
+            return once_output
+
+        once_times = iter([1000, 2000])
+
+        def perf_counter_once():
+            events.append("time")
+            return next(once_times)
+
+        def checksum_once(output):
+            self.assertIs(output, once_output)
+            events.append("checksum_once")
+            return "once"
+
+        with unittest.mock.patch.object(
+            benchmark_compile_cuda.time,
+            "perf_counter_ns",
+            side_effect=perf_counter_once,
+        ), unittest.mock.patch.object(
+            benchmark_compile_cuda,
+            "_checksum_tensor",
+            side_effect=checksum_once,
+        ):
+            elapsed_ns, checksum, output = benchmark_compile_cuda._time_once(
+                fake_torch,
+                compiled_once,
+                ("x", "bias"),
+            )
+
+        self.assertEqual(elapsed_ns, 1000)
+        self.assertEqual(checksum, "once")
+        self.assertIs(output, once_output)
+        self.assertEqual(
+            events,
+            [
+                "sync:0",
+                "time",
+                "compiled_once",
+                "sync:0",
+                "time",
+                "checksum_once",
+            ],
+        )
+
+        events.clear()
+        repeated_outputs = []
+
+        def compiled_repeated(*inputs):
+            self.assertEqual(inputs, ("x", "bias"))
+            output = object()
+            repeated_outputs.append(output)
+            events.append(f"compiled_repeated:{len(repeated_outputs)}")
+            return output
+
+        repeated_times = iter([3000, 4300])
+
+        def perf_counter_repeated():
+            events.append("time")
+            return next(repeated_times)
+
+        def checksum_repeated(output):
+            self.assertIs(output, repeated_outputs[-1])
+            events.append("checksum_repeated")
+            return "repeated"
+
+        with unittest.mock.patch.object(
+            benchmark_compile_cuda.time,
+            "perf_counter_ns",
+            side_effect=perf_counter_repeated,
+        ), unittest.mock.patch.object(
+            benchmark_compile_cuda,
+            "_checksum_tensor",
+            side_effect=checksum_repeated,
+        ):
+            elapsed_ns, checksum = benchmark_compile_cuda._time_repeated(
+                fake_torch,
+                compiled_repeated,
+                ("x", "bias"),
+                3,
+            )
+
+        self.assertEqual(elapsed_ns, 1300)
+        self.assertEqual(checksum, "repeated")
+        self.assertEqual(
+            events,
+            [
+                "sync:0",
+                "time",
+                "compiled_repeated:1",
+                "compiled_repeated:2",
+                "compiled_repeated:3",
+                "sync:0",
+                "time",
+                "checksum_repeated",
+            ],
+        )
+
     def test_torch_rs_cuda_compile_repeated_closes_temporary_outputs(self):
         class FakeOutput:
             def __init__(self, index):
@@ -3140,6 +3272,18 @@ print(json.dumps({{
         self.assertIs(
             report["candidate"]["timing_boundary"]["compiled_calls_only"],
             True,
+        )
+        self.assertIs(
+            report["reference_workload"]["timing_boundary"]["compiled_calls_only"],
+            True,
+        )
+        self.assertEqual(
+            report["reference_workload"]["timing_boundary"][
+                "materialization_outside_timed_region"
+            ],
+            report["candidate"]["timing_boundary"][
+                "materialization_outside_timed_region"
+            ],
         )
         self.assertGreater(
             report["aggregates"]["torch_rs_cuda_compile_score_percent"],

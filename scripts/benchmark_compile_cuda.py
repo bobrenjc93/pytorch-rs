@@ -31,7 +31,7 @@ PROTECTED_OUTPUT_PATHS = {
 }
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v9"
+BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v10"
 WORKLOAD_VERSION = "h100_cuda_pointwise_reduce_float32_v1"
 PREPARED_EXECUTOR_SCHEMA_VERSION = (
     "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1"
@@ -275,8 +275,8 @@ def _time_once(reference_torch, compiled, inputs):
     started_ns = time.perf_counter_ns()
     output = compiled(*inputs)
     _synchronize(reference_torch)
-    checksum = _checksum_tensor(output)
     elapsed_ns = time.perf_counter_ns() - started_ns
+    checksum = _checksum_tensor(output)
     return elapsed_ns, checksum, output
 
 
@@ -287,8 +287,8 @@ def _time_repeated(reference_torch, compiled, inputs, repeats):
     for _ in range(repeats):
         output = compiled(*inputs)
     _synchronize(reference_torch)
-    checksum = _checksum_tensor(output)
     elapsed_ns = time.perf_counter_ns() - started_ns
+    checksum = _checksum_tensor(output)
     return elapsed_ns, checksum
 
 
@@ -348,6 +348,13 @@ def _run_pytorch_reference(reference_torch, args):
         "factory_us": factory_ns / 1000.0,
         "cold_first_call_us": cold_ns / 1000.0,
         "cold_checksum": cold_checksum,
+        "timing_boundary": {
+            "explicit_cuda_synchronize_before_timed_region": True,
+            "explicit_cuda_synchronize_after_timed_region": True,
+            "torch_rs_equivalent_explicit_sync": True,
+            "compiled_calls_only": True,
+            "materialization_outside_timed_region": True,
+        },
         "steady": _summarize_samples(sample_ns, args.repeats),
         "steady_checksums": sorted(set(sample_checksums)),
         "input_metadata": [_tensor_metadata(input) for input in inputs],

@@ -9,11 +9,11 @@ implementation changes listed in the artifact git status.
 Command:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 PYTHONPATH=target/test-python-site-2 \
+CUDA_VISIBLE_DEVICES=0 PYTHONPATH=target/test-python-site-review \
   /data/users/bobren/a/pytorch-rs-burner/.venv/bin/python \
   scripts/benchmark_compile_cuda.py \
   --include-unprepared-comparison \
-  --output docs/benchmark-data/torch-compile-cuda-h100-runtime-ownership-v9.json
+  --output docs/benchmark-data/torch-compile-cuda-h100-runtime-ownership-v10.json
 ```
 
 Checks run for this evidence:
@@ -27,16 +27,19 @@ python -m py_compile \
   python/torch_rs/__init__.py \
   scripts/benchmark_compile_cuda.py \
   tests/test_compile_cuda_benchmark.py
-PYTHONPATH=target/test-python-site-2 python -m unittest \
-  tests.test_compile_cuda_benchmark
-CUDA_VISIBLE_DEVICES=0 PYTHONPATH=target/test-python-site-2 \
+PYTHONPATH=target/test-python-site-review python -m unittest \
+  tests.test_compile_cuda_benchmark.CompileCudaBenchmarkTests.\
+test_pytorch_reference_timing_excludes_checksum_materialization \
+  tests.test_compile_cuda_benchmark.CompileCudaBenchmarkTests.\
+test_checked_in_cuda_prepared_executor_artifact_records_reuse
+CUDA_VISIBLE_DEVICES=0 PYTHONPATH=target/test-python-site-review \
   /data/users/bobren/a/pytorch-rs-burner/.venv/bin/python -m unittest \
   tests.test_compile_cuda_benchmark
-CUDA_VISIBLE_DEVICES=0,1 PYTHONPATH=target/test-python-site-2 \
+CUDA_VISIBLE_DEVICES=0,1 PYTHONPATH=target/test-python-site-review \
   /data/users/bobren/a/pytorch-rs-burner/.venv/bin/python -m unittest \
   tests.test_compile_cuda_benchmark.CompileCudaBenchmarkTests.\
 test_torch_compile_inductor_pointwise_reduce_restores_device0_before_launch_on_h100
-CUDA_VISIBLE_DEVICES=0 PYTHONPATH=target/test-python-site-2 \
+CUDA_VISIBLE_DEVICES=0 PYTHONPATH=target/test-python-site-review \
   /data/users/bobren/a/pytorch-rs-burner/.venv/bin/python -m unittest \
   discover -s tests -p 'test_*.py'
 env CARGO_HOME="$PWD/target/cargo-home" \
@@ -48,29 +51,30 @@ Environment recorded by the JSON artifact:
 - GPU: NVIDIA H100, compute capability 9.0, driver 580.82.07
 - PyTorch: 2.13.0+cu130, CUDA runtime 13.0
 - `nvcc`: CUDA compilation tools 12.6, V12.6.85
-- Benchmark: `torch_compile_cuda_h100_reference_benchmark_v9`
+- Benchmark: `torch_compile_cuda_h100_reference_benchmark_v10`
 - Workload: `h100_cuda_pointwise_reduce_float32_v1`, shape `(1024, 1024)`,
   dtype `torch.float32`, seed `20260904`
 - Timing: 5 warmups, 17 samples, 3 repeated calls per sample
-- Timing boundary: explicit CUDA synchronization before and after timed
-  compiled calls; output checksum materialization occurs after the timed region
+- Timing boundary: both PyTorch and `torch_rs` synchronize before and after
+  timed compiled calls; output checksum materialization occurs after the timed
+  region for both paths
 
 Results:
 
 | Measurement | Steady median us | MAD us | Notes |
 | --- | ---: | ---: | --- |
-| PyTorch 2.13 `torch.compile(..., backend="inductor")` | 187.053 | 4.183 | Reference workload on the same visible H100 |
-| `torch_rs` prepared compile wrapper | 290.863 | 2.340 | Eligible native CUDA compile evidence using pooled outputs |
-| `torch_rs` unprepared compatibility call | 10650.330 | 345.022 | Non-scoring comparison that prepares on every invocation |
+| PyTorch 2.13 `torch.compile(..., backend="inductor")` | 42.821 | 0.808 | Reference workload on the same visible H100 |
+| `torch_rs` prepared compile wrapper | 148.778 | 1.799 | Eligible native CUDA compile evidence using pooled outputs |
+| `torch_rs` unprepared compatibility call | 10180.652 | 471.296 | Non-scoring comparison that prepares on every invocation |
 
 The prepared wrapper recorded executor invocation count 0 before the first
 call and 67 after timing; the last steady-state call used the same preparation
-id `8b49f61b273d8214`. Cold compile wrapper creation took 11812.347 us, and
-the first compiled call took 448.889 us. The output pool allocated two buffers,
+id `8b49f61b273d8214`. Cold compile wrapper creation took 12420.194 us, and
+the first compiled call took 279.543 us. The output pool allocated two buffers,
 released 67 leases, had zero live buffers after timing, and reused a released
 buffer for the steady-state path. The measured prepared-vs-unprepared
-steady-state speedup was 36.62x. The candidate remains slower than the PyTorch
-reference, with a coverage-adjusted CUDA compile score of 64.31% for this
+steady-state speedup was 68.43x. The candidate remains slower than the PyTorch
+reference, with a coverage-adjusted CUDA compile score of 28.78% for this
 single workload.
 
 Correctness evidence remained fail-closed: the candidate ran on CUDA device 0,
