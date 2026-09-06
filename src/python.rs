@@ -1631,6 +1631,7 @@ pub(crate) fn as_tensor_variable_function(
         ));
     };
 
+    let explicit_float32_dtype = has_explicit_float32_dtype(arguments.dtype.as_ref())?;
     let dtype = parse_as_tensor_dtype(arguments.dtype.as_ref())?;
     validate_as_tensor_device_type("as_tensor", arguments.device.as_ref())?;
     if let Some(keyword_error) = arguments.keyword_error {
@@ -1657,7 +1658,16 @@ pub(crate) fn as_tensor_variable_function(
                 Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
             );
         }
-        if let Some((flattened, shape)) = as_tensor_float_sequence(&data.value)? {
+        if explicit_float32_dtype
+            && let Some(value) = extract_integer_as_float32_scalar(&data.value)?
+        {
+            return Ok(
+                Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
+            );
+        }
+        if let Some((flattened, shape)) =
+            as_tensor_float_sequence(&data.value, explicit_float32_dtype)?
+        {
             return Ok(Py::new(
                 py,
                 CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
@@ -1667,7 +1677,7 @@ pub(crate) fn as_tensor_variable_function(
             .into_any());
         }
         return Err(PyNotImplementedError::new_err(
-            "as_tensor(): only exact native CPU float32 Tensor inputs, Python float scalars, exact numpy.float32 scalars, or exact list/tuple sequences of Python floats are supported; NumPy arrays/non-float32 scalars, integer and boolean inference, and other conversions are not implemented",
+            "as_tensor(): only exact native CPU float32 Tensor inputs, Python float scalars, exact numpy.float32 scalars, exact list/tuple sequences of Python floats, or Python/NumPy integer scalars and exact list/tuple integer sequences with explicit dtype=torch.float32 are supported; NumPy arrays, other NumPy scalars, integer and boolean inference, and other conversions are not implemented",
         ));
     }
     Ok(data.value.unbind())
@@ -1696,6 +1706,7 @@ pub(crate) fn asarray_variable_function(
         return Ok(result);
     }
 
+    let explicit_float32_dtype = has_explicit_float32_dtype(arguments.dtype.as_ref())?;
     let dtype = parse_identity_dtype("asarray", arguments.dtype.as_ref())?;
     validate_asarray_device_string_syntax(arguments.device.as_ref())?;
     if is_exact_list_or_tuple(&obj.value) {
@@ -1707,7 +1718,12 @@ pub(crate) fn asarray_variable_function(
     let literal_sequence = if is_exact_native_tensor {
         None
     } else {
-        asarray_sequence_for_copy_request(&obj.value, copy_requested, arguments.copy.as_ref())?
+        asarray_sequence_for_copy_request(
+            &obj.value,
+            copy_requested,
+            arguments.copy.as_ref(),
+            explicit_float32_dtype,
+        )?
     };
     validate_asarray_requires_grad(arguments.requires_grad.as_ref())?;
 
@@ -1717,31 +1733,15 @@ pub(crate) fn asarray_variable_function(
         ));
     }
     if !is_exact_native_tensor {
-        if let Some(value) = extract_exact_python_float_scalar(&obj.value)? {
-            validate_asarray_scalar_copy(arguments.copy.as_ref())?;
-            return Ok(
-                Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
-            );
-        }
-        if let Some((flattened, shape)) = literal_sequence {
-            return asarray_float_sequence_tensor(py, flattened, shape, dtype, device);
-        }
-        match as_tensor_float_sequence(&obj.value) {
-            Ok(Some((flattened, shape))) => {
-                return asarray_float_sequence_tensor(py, flattened, shape, dtype, device);
-            }
-            Ok(None) => {}
-            Err(error) => {
-                if asarray_copy_requested(arguments.copy.as_ref())? {
-                    validate_asarray_copy(arguments.copy.as_ref())?;
-                }
-                return Err(error);
-            }
-        }
-        validate_asarray_copy(arguments.copy.as_ref())?;
-        return Err(PyNotImplementedError::new_err(
-            "asarray(): only exact native CPU float32 Tensor inputs, Python float scalars, or exact list/tuple sequences of Python floats are supported; NumPy arrays/scalars, integer and boolean inference, and other conversions are not implemented",
-        ));
+        return asarray_non_tensor_object(
+            py,
+            &obj.value,
+            literal_sequence,
+            explicit_float32_dtype,
+            dtype,
+            device,
+            arguments.copy.as_ref(),
+        );
     }
     let source_requires_grad = {
         let tensor = obj.value.cast::<PyTensor>()?.try_borrow()?;
@@ -1774,19 +1774,61 @@ pub(crate) fn asarray_variable_function(
     Ok(obj.value.unbind())
 }
 
+fn asarray_non_tensor_object(
+    py: Python<'_>,
+    obj: &Bound<'_, PyAny>,
+    literal_sequence: Option<(Vec<f32>, Vec<usize>)>,
+    explicit_float32_dtype: bool,
+    dtype: DType,
+    device: Device,
+    copy: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Py<PyAny>> {
+    if let Some(value) = extract_exact_python_float_scalar(obj)? {
+        validate_asarray_scalar_copy(copy)?;
+        return Ok(Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any());
+    }
+    if explicit_float32_dtype && let Some(value) = extract_integer_as_float32_scalar(obj)? {
+        validate_asarray_scalar_copy(copy)?;
+        return Ok(Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any());
+    }
+    if let Some((flattened, shape)) = literal_sequence {
+        return asarray_float_sequence_tensor(py, flattened, shape, dtype, device);
+    }
+    match as_tensor_float_sequence(obj, explicit_float32_dtype) {
+        Ok(Some((flattened, shape))) => {
+            return asarray_float_sequence_tensor(py, flattened, shape, dtype, device);
+        }
+        Ok(None) => {}
+        Err(error) => {
+            if asarray_copy_requested(copy)? {
+                validate_asarray_copy(copy)?;
+            }
+            return Err(error);
+        }
+    }
+    validate_asarray_copy(copy)?;
+    Err(PyNotImplementedError::new_err(
+        "asarray(): only exact native CPU float32 Tensor inputs, Python float scalars, exact list/tuple sequences of Python floats, or Python/NumPy integer scalars and exact list/tuple integer sequences with explicit dtype=torch.float32 are supported; NumPy arrays, NumPy non-integer scalars, integer and boolean inference, and other conversions are not implemented",
+    ))
+}
+
 fn asarray_sequence_for_copy_request(
     obj: &Bound<'_, PyAny>,
     copy_requested: bool,
     copy: Option<&Bound<'_, PyAny>>,
+    explicit_float32_dtype: bool,
 ) -> PyResult<Option<(Vec<f32>, Vec<usize>)>> {
-    if !copy_requested || extract_exact_python_float_scalar(obj)?.is_some() {
+    if !copy_requested
+        || extract_exact_python_float_scalar(obj)?.is_some()
+        || (explicit_float32_dtype && extract_integer_as_float32_scalar(obj)?.is_some())
+    {
         return Ok(None);
     }
     if !is_exact_list_or_tuple(obj) {
         validate_asarray_copy(copy)?;
         return Ok(None);
     }
-    match as_tensor_float_sequence(obj) {
+    match as_tensor_float_sequence(obj, explicit_float32_dtype) {
         Ok(Some(sequence)) => Ok(Some(sequence)),
         Ok(None) => {
             validate_asarray_copy(copy)?;
@@ -7707,6 +7749,26 @@ fn extract_exact_numpy_float32_scalar(value: &Bound<'_, PyAny>) -> PyResult<Opti
     value.extract::<f32>().map(Some)
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn extract_integer_as_float32_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<f32>> {
+    if value.is_exact_instance_of::<PyBool>() {
+        return Ok(None);
+    }
+    if value.is_exact_instance_of::<PyInt>() {
+        return value.extract::<f64>().map(|value| Some(value as f32));
+    }
+    if !is_numpy_scalar_of_types(value, &["integer"])? {
+        return Ok(None);
+    }
+    if let Ok(value) = value.extract::<i64>() {
+        return Ok(Some(value as f32));
+    }
+    if let Ok(value) = value.extract::<u64>() {
+        return Ok(Some(value as f32));
+    }
+    value.extract::<f64>().map(|value| Some(value as f32))
+}
+
 fn canonical_numpy_float32_type(py: Python<'_>) -> Option<Bound<'_, PyAny>> {
     let multiarray = match PyModule::import(py, "numpy._core.multiarray") {
         Ok(module) => module,
@@ -7727,15 +7789,23 @@ fn canonical_numpy_float32_type(py: Python<'_>) -> Option<Bound<'_, PyAny>> {
     Some(scalar_type)
 }
 
-fn as_tensor_float_sequence(value: &Bound<'_, PyAny>) -> PyResult<Option<(Vec<f32>, Vec<usize>)>> {
+fn as_tensor_float_sequence(
+    value: &Bound<'_, PyAny>,
+    accept_integers: bool,
+) -> PyResult<Option<(Vec<f32>, Vec<usize>)>> {
     if !is_exact_list_or_tuple(value) {
         return Ok(None);
     }
 
     let mut flattened = Vec::new();
     let mut active_containers = Vec::new();
-    let Some(shape) =
-        flatten_as_tensor_float_sequence(value, &mut flattened, &mut active_containers, 0)?
+    let Some(shape) = flatten_as_tensor_float_sequence(
+        value,
+        &mut flattened,
+        &mut active_containers,
+        0,
+        accept_integers,
+    )?
     else {
         return Ok(None);
     };
@@ -7747,8 +7817,13 @@ fn flatten_as_tensor_float_sequence(
     output: &mut Vec<f32>,
     active_containers: &mut Vec<*mut ffi::PyObject>,
     depth: usize,
+    accept_integers: bool,
 ) -> PyResult<Option<Vec<usize>>> {
     if let Some(scalar) = extract_exact_python_float_scalar(value)? {
+        output.push(scalar);
+        return Ok(Some(Vec::new()));
+    }
+    if accept_integers && let Some(scalar) = extract_integer_as_float32_scalar(value)? {
         output.push(scalar);
         return Ok(Some(Vec::new()));
     }
@@ -7779,6 +7854,7 @@ fn flatten_as_tensor_float_sequence(
         output,
         active_containers,
         depth + 1,
+        accept_integers,
     )?
     else {
         active_containers.pop();
@@ -7790,6 +7866,7 @@ fn flatten_as_tensor_float_sequence(
             output,
             active_containers,
             depth + 1,
+            accept_integers,
         )?
         else {
             active_containers.pop();
@@ -7797,8 +7874,10 @@ fn flatten_as_tensor_float_sequence(
         };
         if shape != first_shape {
             active_containers.pop();
-            return Err(PyValueError::new_err(
-                "expected a rectangular sequence, but nested shapes differ",
+            return Err(as_tensor_ragged_sequence_error(
+                &first_shape,
+                &shape,
+                depth + 1,
             ));
         }
     }
@@ -7821,6 +7900,18 @@ fn as_tensor_too_many_dimensions_error(value: &Bound<'_, PyAny>) -> PyErr {
         "tuple"
     };
     PyValueError::new_err(format!("too many dimensions '{container}'"))
+}
+
+fn as_tensor_ragged_sequence_error(
+    expected_shape: &[usize],
+    actual_shape: &[usize],
+    dimension: usize,
+) -> PyErr {
+    let expected = expected_shape.first().copied().unwrap_or(0);
+    let actual = actual_shape.first().copied().unwrap_or(0);
+    PyValueError::new_err(format!(
+        "expected sequence of length {expected} at dim {dimension} (got {actual})"
+    ))
 }
 
 fn rank_zero_scalar_tensor(
@@ -9430,7 +9521,7 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(f64, 
     let integer_with_explicit_float32 = matches!(
         end_kind,
         Some(ArangeEndpointKind::ExactPythonInteger | ArangeEndpointKind::NumpyInteger)
-    ) && arange_has_explicit_float32_dtype(dtype.as_ref())?;
+    ) && has_explicit_float32_dtype(dtype.as_ref())?;
     if !matches!(
         end_kind,
         Some(ArangeEndpointKind::ExactPythonFloat | ArangeEndpointKind::NumpyFloating)
@@ -9503,7 +9594,7 @@ fn parse_two_bound_arange_arguments(
         return Err(arange_two_bound_endpoint_type_error("end", &end)?);
     }
 
-    let explicit_float32_dtype = arange_has_explicit_float32_dtype(dtype.as_ref())?;
+    let explicit_float32_dtype = has_explicit_float32_dtype(dtype.as_ref())?;
     let dtype = parse_dtype("arange", dtype.as_ref())?;
     parse_factory_layout("arange", layout.as_ref())?;
     validate_device_argument_type("arange", device.as_ref())?;
@@ -9561,16 +9652,6 @@ fn classify_arange_endpoint(value: &Bound<'_, PyAny>) -> PyResult<Option<ArangeE
         return Ok(Some(ArangeEndpointKind::NumpyInteger));
     }
     Ok(None)
-}
-
-fn arange_has_explicit_float32_dtype(dtype: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
-    let Some(dtype) = dtype else {
-        return Ok(false);
-    };
-    let Ok(dtype) = dtype.cast::<PyDType>() else {
-        return Ok(false);
-    };
-    Ok(dtype.try_borrow()?.inner() == DType::Float32)
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -9812,6 +9893,16 @@ fn bind_asarray_arguments<'py>(
 
 fn parse_as_tensor_dtype(dtype: Option<&Bound<'_, PyAny>>) -> PyResult<DType> {
     parse_identity_dtype("as_tensor", dtype)
+}
+
+fn has_explicit_float32_dtype(dtype: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+    let Some(dtype) = dtype else {
+        return Ok(false);
+    };
+    let Ok(dtype) = dtype.cast::<PyDType>() else {
+        return Ok(false);
+    };
+    Ok(dtype.try_borrow()?.inner() == DType::Float32)
 }
 
 fn validate_identity_dtype_type(function: &str, dtype: Option<&Bound<'_, PyAny>>) -> PyResult<()> {

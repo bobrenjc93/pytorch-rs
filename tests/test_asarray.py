@@ -25,8 +25,10 @@ REQUIRES_GRAD_WARNING = (
 )
 UNSUPPORTED_ASARRAY_CONVERSION = (
     "asarray(): only exact native CPU float32 Tensor inputs, Python float scalars, "
-    "or exact list/tuple sequences of Python floats are supported; NumPy "
-    "arrays/scalars, integer and boolean inference, and other conversions are "
+    "exact list/tuple sequences of Python floats, or Python/NumPy integer "
+    "scalars and exact list/tuple integer sequences with explicit "
+    "dtype=torch.float32 are supported; NumPy arrays, NumPy non-integer "
+    "scalars, integer and boolean inference, and other conversions are "
     "not implemented"
 )
 SEQUENCE_COPY_FALSE_ERROR = "can't alias arbitrary sequence into a tensor."
@@ -130,6 +132,27 @@ class AsArrayTests(unittest.TestCase):
 
     def float32_bits(self, tensor):
         return np.asarray(tensor).reshape(-1).view(np.uint32).tolist()
+
+    def assert_scalar_result(self, value, expected_bits, **options):
+        result = torch.asarray(value, **options)
+        duplicate = torch.asarray(value, **options)
+
+        self.assertIsInstance(result, torch.Tensor)
+        self.assertIsNot(result, duplicate)
+        self.assertNotEqual(result.data_ptr(), duplicate.data_ptr())
+        self.assertFalse(result.is_set_to(duplicate))
+        self.assertEqual(result.shape, ())
+        self.assertEqual(result.stride(), ())
+        self.assertEqual(result.storage_offset(), 0)
+        self.assertEqual(result.numel(), 1)
+        self.assertIs(result.dtype, torch.float32)
+        self.assertEqual(result.device, torch.device("cpu"))
+        self.assertIs(result.layout, torch.strided)
+        self.assertFalse(result.requires_grad)
+        self.assertTrue(result.is_leaf)
+        self.assertEqual(result.output_nr, 0)
+        self.assertIsNone(result.grad)
+        self.assertEqual(self.float32_bits(result), [expected_bits])
 
     def assert_sequence_result(
         self, data, expected_shape, expected_stride, expected_bits, **options
@@ -395,6 +418,99 @@ class AsArrayTests(unittest.TestCase):
                         **options,
                     )
 
+    def test_explicit_float32_integer_scalars_create_fresh_cpu_float32_leaves(self):
+        option_cases = (
+            {"dtype": torch.float32},
+            {"dtype": torch.float},
+            {"dtype": torch.float32, "device": None},
+            {"dtype": torch.float32, "device": "cpu"},
+            {"dtype": torch.float, "device": torch.device("cpu")},
+            {"dtype": torch.float32, "copy": None},
+            {"dtype": torch.float32, "copy": True},
+            {
+                "dtype": torch.float32,
+                "device": torch.device("cpu"),
+                "copy": True,
+                "requires_grad": None,
+            },
+        )
+        value_cases = (
+            (0, 0x00000000),
+            (-1, 0xBF800000),
+            (2**64 - 1, 0x5F800000),
+            (2**100, 0x71800000),
+            (-(2**100), 0xF1800000),
+            (np.int8(-128), 0xC3000000),
+            (np.uint8(255), 0x437F0000),
+            (np.int64(np.iinfo(np.int64).min), 0xDF000000),
+            (np.int64(np.iinfo(np.int64).max), 0x5F000000),
+            (np.uint64(np.iinfo(np.uint64).max), 0x5F800000),
+        )
+        for value, expected_bits in value_cases:
+            for options in option_cases:
+                with self.subTest(value=repr(value), options=options):
+                    self.assert_scalar_result(value, expected_bits, **options)
+
+    def test_explicit_float32_integer_sequences_create_fresh_cpu_float32_leaves(self):
+        sequence_cases = (
+            ("empty list", [], (0,), (1,), ()),
+            ("empty tuple", (), (0,), (1,), ()),
+            ("nested empty", [[], []], (2, 0), (1, 1), ()),
+            (
+                "flat python ints",
+                [1, -2, 2**64 - 1],
+                (3,),
+                (1,),
+                (0x3F800000, 0xC0000000, 0x5F800000),
+            ),
+            (
+                "nested rectangular",
+                [[1, -2], [3, 4]],
+                (2, 2),
+                (2, 1),
+                (0x3F800000, 0xC0000000, 0x40400000, 0x40800000),
+            ),
+            (
+                "mixed tuple/list numpy ints",
+                ([np.int8(-128), np.uint8(255)], (np.int64(-1), np.uint64(0))),
+                (2, 2),
+                (2, 1),
+                (0xC3000000, 0x437F0000, 0xBF800000, 0x00000000),
+            ),
+            (
+                "signed unsigned numpy bounds",
+                [np.int64(np.iinfo(np.int64).min), np.uint64(np.iinfo(np.uint64).max)],
+                (2,),
+                (1,),
+                (0xDF000000, 0x5F800000),
+            ),
+        )
+        option_cases = (
+            {"dtype": torch.float32},
+            {"dtype": torch.float},
+            {"dtype": torch.float32, "device": None},
+            {"dtype": torch.float32, "device": "cpu"},
+            {"dtype": torch.float, "device": torch.device("cpu")},
+            {"dtype": torch.float32, "copy": None},
+            {"dtype": torch.float32, "copy": True},
+            {
+                "dtype": torch.float32,
+                "device": torch.device("cpu"),
+                "copy": True,
+                "requires_grad": None,
+            },
+        )
+        for case, data, expected_shape, expected_stride, expected_bits in sequence_cases:
+            for options in option_cases:
+                with self.subTest(case=case, options=options):
+                    self.assert_sequence_result(
+                        data,
+                        expected_shape,
+                        expected_stride,
+                        list(expected_bits),
+                        **options,
+                    )
+
     def test_python_float_literal_construction_ignores_no_grad(self):
         with torch.no_grad():
             scalar = torch.asarray(-0.0, copy=True)
@@ -456,12 +572,12 @@ class AsArrayTests(unittest.TestCase):
             (
                 "ragged list",
                 [[1.0], [2.0, 3.0]],
-                "expected a rectangular sequence, but nested shapes differ",
+                "expected sequence of length 1 at dim 1 (got 2)",
             ),
             (
                 "ragged tuple",
                 ((1.0,), (2.0, 3.0)),
-                "expected a rectangular sequence, but nested shapes differ",
+                "expected sequence of length 1 at dim 1 (got 2)",
             ),
             ("recursive list", recursive_list, "too many dimensions 'list'"),
             ("recursive tuple", recursive_tuple, "too many dimensions 'tuple'"),
@@ -806,6 +922,16 @@ class AsArrayTests(unittest.TestCase):
                 "asarray(): device 'meta' is not supported; only 'cpu' is implemented",
             ),
             (
+                lambda: torch.asarray(1, dtype=torch.float32, device="cuda"),
+                RuntimeError,
+                "asarray(): device 'cuda' is not supported; only 'cpu' is implemented",
+            ),
+            (
+                lambda: torch.asarray([1], dtype=torch.float32, device="meta"),
+                RuntimeError,
+                "asarray(): device 'meta' is not supported; only 'cpu' is implemented",
+            ),
+            (
                 lambda: torch.asarray(tensor, device="cpu:0"),
                 NotImplementedError,
                 "asarray(): explicit indexed CPU devices require a copy and are not supported",
@@ -892,13 +1018,61 @@ class AsArrayTests(unittest.TestCase):
                 UNSUPPORTED_ASARRAY_CONVERSION,
             ),
             (
+                lambda: torch.asarray(
+                    np.asarray([1], dtype=np.int64), dtype=torch.float32
+                ),
+                NotImplementedError,
+                UNSUPPORTED_ASARRAY_CONVERSION,
+            ),
+            (
+                lambda: torch.asarray(
+                    np.asarray([1], dtype=np.int64),
+                    dtype=torch.float32,
+                    copy=True,
+                ),
+                NotImplementedError,
+                "asarray(): copy=True requires a copy and is not supported",
+            ),
+            (
                 lambda: torch.asarray(np.float32(1.0)),
+                NotImplementedError,
+                UNSUPPORTED_ASARRAY_CONVERSION,
+            ),
+            (
+                lambda: torch.asarray(np.int64(1), dtype=None),
+                NotImplementedError,
+                UNSUPPORTED_ASARRAY_CONVERSION,
+            ),
+            (
+                lambda: torch.asarray(np.bool_(True), dtype=torch.float32),
                 NotImplementedError,
                 UNSUPPORTED_ASARRAY_CONVERSION,
             ),
             (lambda: torch.asarray(1), NotImplementedError, UNSUPPORTED_ASARRAY_CONVERSION),
             (
+                lambda: torch.asarray(1, dtype=None),
+                NotImplementedError,
+                UNSUPPORTED_ASARRAY_CONVERSION,
+            ),
+            (
+                lambda: torch.asarray(1, dtype=torch.float32, copy=False),
+                NotImplementedError,
+                "asarray(): copy=False for Python float scalar inputs is not "
+                "supported because scalar conversion requires fresh storage",
+            ),
+            (
+                lambda: torch.asarray(np.int64(1), dtype=torch.float32, copy=False),
+                NotImplementedError,
+                "asarray(): copy=False for Python float scalar inputs is not "
+                "supported because scalar conversion requires fresh storage",
+            ),
+            (
                 lambda: torch.asarray(True),
+                NotImplementedError,
+                UNSUPPORTED_ASARRAY_CONVERSION,
+            ),
+            (
+                lambda: torch.asarray(True, dtype=torch.float32),
                 NotImplementedError,
                 UNSUPPORTED_ASARRAY_CONVERSION,
             ),
@@ -908,12 +1082,27 @@ class AsArrayTests(unittest.TestCase):
                 UNSUPPORTED_ASARRAY_CONVERSION,
             ),
             (
+                lambda: torch.asarray([1], dtype=None),
+                NotImplementedError,
+                UNSUPPORTED_ASARRAY_CONVERSION,
+            ),
+            (
                 lambda: torch.asarray([1], copy=True),
                 NotImplementedError,
                 "asarray(): copy=True requires a copy and is not supported",
             ),
             (
+                lambda: torch.asarray([1], dtype=torch.float32, copy=False),
+                ValueError,
+                SEQUENCE_COPY_FALSE_ERROR,
+            ),
+            (
                 lambda: torch.asarray([True]),
+                NotImplementedError,
+                UNSUPPORTED_ASARRAY_CONVERSION,
+            ),
+            (
+                lambda: torch.asarray([True], dtype=torch.float32),
                 NotImplementedError,
                 UNSUPPORTED_ASARRAY_CONVERSION,
             ),
@@ -923,7 +1112,17 @@ class AsArrayTests(unittest.TestCase):
                 "asarray(): copy=True requires a copy and is not supported",
             ),
             (
+                lambda: torch.asarray([True], dtype=torch.float32, copy=True),
+                NotImplementedError,
+                "asarray(): copy=True requires a copy and is not supported",
+            ),
+            (
                 lambda: torch.asarray([np.float32(1.0)]),
+                NotImplementedError,
+                UNSUPPORTED_ASARRAY_CONVERSION,
+            ),
+            (
+                lambda: torch.asarray([np.float32(1.0)], dtype=torch.float32),
                 NotImplementedError,
                 UNSUPPORTED_ASARRAY_CONVERSION,
             ),
@@ -940,7 +1139,17 @@ class AsArrayTests(unittest.TestCase):
         self.assert_error(
             lambda: torch.asarray([[1.0], [2.0, 3.0]]),
             ValueError,
-            "expected a rectangular sequence, but nested shapes differ",
+            "expected sequence of length 1 at dim 1 (got 2)",
+        )
+        self.assert_error(
+            lambda: torch.asarray([[1], [2, 3]], dtype=torch.float32),
+            ValueError,
+            "expected sequence of length 1 at dim 1 (got 2)",
+        )
+        self.assert_error(
+            lambda: torch.asarray([[1], [2, 3]], dtype=torch.float32, copy=True),
+            ValueError,
+            "expected sequence of length 1 at dim 1 (got 2)",
         )
 
         class ListSubclass(list):

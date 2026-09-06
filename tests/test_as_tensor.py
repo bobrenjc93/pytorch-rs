@@ -18,9 +18,10 @@ FUNCTION_DOC_PREFIX = (
 )
 UNSUPPORTED_AS_TENSOR_CONVERSION = (
     "as_tensor(): only exact native CPU float32 Tensor inputs, Python float scalars, "
-    "exact numpy.float32 scalars, or exact list/tuple sequences of Python floats "
-    "are supported; NumPy arrays/non-float32 scalars, integer and boolean inference, "
-    "and other conversions are "
+    "exact numpy.float32 scalars, exact list/tuple sequences of Python floats, "
+    "or Python/NumPy integer scalars and exact list/tuple integer sequences with "
+    "explicit dtype=torch.float32 are supported; NumPy arrays, other NumPy "
+    "scalars, integer and boolean inference, and other conversions are "
     "not implemented"
 )
 
@@ -202,6 +203,31 @@ class AsTensorTests(unittest.TestCase):
                 with self.subTest(value=repr(value), options=options):
                     self.assert_scalar_result(value, expected_bits, **options)
 
+    def test_explicit_float32_integer_scalars_create_fresh_cpu_float32_leaves(self):
+        option_cases = (
+            {"dtype": torch.float32},
+            {"dtype": torch.float},
+            {"dtype": torch.float32, "device": None},
+            {"dtype": torch.float32, "device": "cpu"},
+            {"dtype": torch.float, "device": torch.device("cpu")},
+        )
+        value_cases = (
+            (0, 0x00000000),
+            (-1, 0xBF800000),
+            (2**64 - 1, 0x5F800000),
+            (2**100, 0x71800000),
+            (-(2**100), 0xF1800000),
+            (np.int8(-128), 0xC3000000),
+            (np.uint8(255), 0x437F0000),
+            (np.int64(np.iinfo(np.int64).min), 0xDF000000),
+            (np.int64(np.iinfo(np.int64).max), 0x5F000000),
+            (np.uint64(np.iinfo(np.uint64).max), 0x5F800000),
+        )
+        for value, expected_bits in value_cases:
+            for options in option_cases:
+                with self.subTest(value=repr(value), options=options):
+                    self.assert_scalar_result(value, expected_bits, **options)
+
     def test_python_float_sequences_create_fresh_cpu_float32_leaves(self):
         sequence_cases = (
             ("empty list", [], (0,), (1,), ()),
@@ -244,6 +270,58 @@ class AsTensorTests(unittest.TestCase):
             {"device": "cpu"},
             {"device": torch.device("cpu")},
             {"dtype": torch.float32, "device": torch.device("cpu")},
+        )
+        for case, data, expected_shape, expected_stride, expected_bits in sequence_cases:
+            for options in option_cases:
+                with self.subTest(case=case, options=options):
+                    self.assert_sequence_result(
+                        data,
+                        expected_shape,
+                        expected_stride,
+                        list(expected_bits),
+                        **options,
+                    )
+
+    def test_explicit_float32_integer_sequences_create_fresh_cpu_float32_leaves(self):
+        sequence_cases = (
+            ("empty list", [], (0,), (1,), ()),
+            ("empty tuple", (), (0,), (1,), ()),
+            ("nested empty", [[], []], (2, 0), (1, 1), ()),
+            (
+                "flat python ints",
+                [1, -2, 2**64 - 1],
+                (3,),
+                (1,),
+                (0x3F800000, 0xC0000000, 0x5F800000),
+            ),
+            (
+                "nested rectangular",
+                [[1, -2], [3, 4]],
+                (2, 2),
+                (2, 1),
+                (0x3F800000, 0xC0000000, 0x40400000, 0x40800000),
+            ),
+            (
+                "mixed tuple/list numpy ints",
+                ([np.int8(-128), np.uint8(255)], (np.int64(-1), np.uint64(0))),
+                (2, 2),
+                (2, 1),
+                (0xC3000000, 0x437F0000, 0xBF800000, 0x00000000),
+            ),
+            (
+                "signed unsigned numpy bounds",
+                [np.int64(np.iinfo(np.int64).min), np.uint64(np.iinfo(np.uint64).max)],
+                (2,),
+                (1,),
+                (0xDF000000, 0x5F800000),
+            ),
+        )
+        option_cases = (
+            {"dtype": torch.float32},
+            {"dtype": torch.float},
+            {"dtype": torch.float32, "device": None},
+            {"dtype": torch.float32, "device": "cpu"},
+            {"dtype": torch.float, "device": torch.device("cpu")},
         )
         for case, data, expected_shape, expected_stride, expected_bits in sequence_cases:
             for options in option_cases:
@@ -593,6 +671,16 @@ class AsTensorTests(unittest.TestCase):
                 "as_tensor(): device 'meta' is not supported; only 'cpu' is implemented",
             ),
             (
+                lambda: torch.as_tensor(1, dtype=torch.float32, device="cuda"),
+                RuntimeError,
+                "as_tensor(): device 'cuda' is not supported; only 'cpu' is implemented",
+            ),
+            (
+                lambda: torch.as_tensor([1], dtype=torch.float32, device="meta"),
+                RuntimeError,
+                "as_tensor(): device 'meta' is not supported; only 'cpu' is implemented",
+            ),
+            (
                 lambda: torch.as_tensor(tensor, device="cpu:0"),
                 NotImplementedError,
                 "as_tensor(): explicit indexed CPU devices require a copy and are not supported",
@@ -618,6 +706,13 @@ class AsTensorTests(unittest.TestCase):
                 UNSUPPORTED_AS_TENSOR_CONVERSION,
             ),
             (
+                lambda: torch.as_tensor(
+                    np.asarray([1], dtype=np.int64), dtype=torch.float32
+                ),
+                NotImplementedError,
+                UNSUPPORTED_AS_TENSOR_CONVERSION,
+            ),
+            (
                 lambda: torch.as_tensor(np.float64(1.0)),
                 NotImplementedError,
                 UNSUPPORTED_AS_TENSOR_CONVERSION,
@@ -633,24 +728,59 @@ class AsTensorTests(unittest.TestCase):
                 UNSUPPORTED_AS_TENSOR_CONVERSION,
             ),
             (
+                lambda: torch.as_tensor(np.int64(1), dtype=None),
+                NotImplementedError,
+                UNSUPPORTED_AS_TENSOR_CONVERSION,
+            ),
+            (
                 lambda: torch.as_tensor(np.bool_(True)),
+                NotImplementedError,
+                UNSUPPORTED_AS_TENSOR_CONVERSION,
+            ),
+            (
+                lambda: torch.as_tensor(np.bool_(True), dtype=torch.float32),
                 NotImplementedError,
                 UNSUPPORTED_AS_TENSOR_CONVERSION,
             ),
             (lambda: torch.as_tensor(1), NotImplementedError, UNSUPPORTED_AS_TENSOR_CONVERSION),
             (
+                lambda: torch.as_tensor(1, dtype=None),
+                NotImplementedError,
+                UNSUPPORTED_AS_TENSOR_CONVERSION,
+            ),
+            (
                 lambda: torch.as_tensor(True),
                 NotImplementedError,
                 UNSUPPORTED_AS_TENSOR_CONVERSION,
             ),
+            (
+                lambda: torch.as_tensor(True, dtype=torch.float32),
+                NotImplementedError,
+                UNSUPPORTED_AS_TENSOR_CONVERSION,
+            ),
             (lambda: torch.as_tensor([1]), NotImplementedError, UNSUPPORTED_AS_TENSOR_CONVERSION),
+            (
+                lambda: torch.as_tensor([1], dtype=None),
+                NotImplementedError,
+                UNSUPPORTED_AS_TENSOR_CONVERSION,
+            ),
             (
                 lambda: torch.as_tensor([True]),
                 NotImplementedError,
                 UNSUPPORTED_AS_TENSOR_CONVERSION,
             ),
             (
+                lambda: torch.as_tensor([True], dtype=torch.float32),
+                NotImplementedError,
+                UNSUPPORTED_AS_TENSOR_CONVERSION,
+            ),
+            (
                 lambda: torch.as_tensor([np.float32(1.0)]),
+                NotImplementedError,
+                UNSUPPORTED_AS_TENSOR_CONVERSION,
+            ),
+            (
+                lambda: torch.as_tensor([np.float32(1.0)], dtype=torch.float32),
                 NotImplementedError,
                 UNSUPPORTED_AS_TENSOR_CONVERSION,
             ),
@@ -667,7 +797,12 @@ class AsTensorTests(unittest.TestCase):
         self.assert_error(
             lambda: torch.as_tensor([[1.0], [2.0, 3.0]]),
             ValueError,
-            "expected a rectangular sequence, but nested shapes differ",
+            "expected sequence of length 1 at dim 1 (got 2)",
+        )
+        self.assert_error(
+            lambda: torch.as_tensor([[1], [2, 3]], dtype=torch.float32),
+            ValueError,
+            "expected sequence of length 1 at dim 1 (got 2)",
         )
 
         class ListSubclass(list):
