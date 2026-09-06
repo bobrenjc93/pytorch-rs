@@ -392,7 +392,18 @@ def _make_compile_wrapper(
     else:
 
         def compiled_model(*args, **kwargs):
-            return implementation(*args, **kwargs)
+            result = implementation(*args, **kwargs)
+            for attribute_name in (
+                "_torch_rs_cuda_compile_executor",
+                "_torch_rs_cuda_compile_preparation",
+            ):
+                if hasattr(implementation, attribute_name):
+                    setattr(
+                        compiled_model,
+                        attribute_name,
+                        getattr(implementation, attribute_name),
+                    )
+            return result
 
     import functools as _compile_functools
 
@@ -586,13 +597,31 @@ def _native_h100_cuda_compile_implementation(model):
     ):
         required_cuda_visible_devices = "0"
 
+    from . import _compiler_state as _compile_state
     from . import _cuda_pointwise_reduce_workload as _cuda_workload
 
-    executor = (
-        _cuda_workload.prepare_h100_float32_pointwise_reduce_compiled_executor_device0(
-            required_cuda_visible_devices=required_cuda_visible_devices,
+    def prepare_executor():
+        prepared_executor = (
+            _cuda_workload
+            .prepare_h100_float32_pointwise_reduce_compiled_executor_device0(
+                required_cuda_visible_devices=required_cuda_visible_devices,
+            )
         )
-    )
+        _compile_state.register_native_cuda_compile_executor(prepared_executor)
+        return prepared_executor
+
+    executor_state = {"executor": prepare_executor()}
+
+    def current_executor():
+        executor = executor_state["executor"]
+        closed = getattr(executor, "closed", False)
+        is_closed = closed() if _builtins.callable(closed) else closed
+        if is_closed:
+            executor = prepare_executor()
+            executor_state["executor"] = executor
+            compiled_model._torch_rs_cuda_compile_executor = executor
+            compiled_model._torch_rs_cuda_compile_preparation = executor.metadata()
+        return executor
 
     def compiled_model(*args, **kwargs):
         if kwargs:
@@ -607,10 +636,13 @@ def _native_h100_cuda_compile_implementation(model):
                 "path requires exactly two positional inputs"
             )
 
+        executor = current_executor()
         return executor.execute(args[0], args[1])
 
-    compiled_model._torch_rs_cuda_compile_executor = executor
-    compiled_model._torch_rs_cuda_compile_preparation = executor.metadata()
+    compiled_model._torch_rs_cuda_compile_executor = executor_state["executor"]
+    compiled_model._torch_rs_cuda_compile_preparation = (
+        executor_state["executor"].metadata()
+    )
     return compiled_model
 
 
