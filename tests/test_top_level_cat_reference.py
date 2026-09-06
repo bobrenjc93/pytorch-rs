@@ -89,6 +89,15 @@ class TopLevelCatReferenceTests(unittest.TestCase):
                 ],
                 0,
             ),
+            (
+                "axis alias",
+                [torch.tensor([14.0]), torch.tensor([15.0])],
+                [
+                    reference_torch.tensor([14.0], dtype=reference_torch.float32),
+                    reference_torch.tensor([15.0], dtype=reference_torch.float32),
+                ],
+                0,
+            ),
         )
         for case, actual_inputs, expected_inputs, dimension in cases:
             with self.subTest(case=case):
@@ -97,6 +106,9 @@ class TopLevelCatReferenceTests(unittest.TestCase):
                     expected = reference_torch.cat(
                         tensors=expected_inputs, dim=dimension, out=None
                     )
+                elif case == "axis alias":
+                    actual = torch.cat(actual_inputs, axis=dimension)
+                    expected = reference_torch.cat(expected_inputs, axis=dimension)
                 else:
                     actual = torch.cat(actual_inputs, dim=dimension)
                     expected = reference_torch.cat(expected_inputs, dim=dimension)
@@ -126,6 +138,34 @@ class TopLevelCatReferenceTests(unittest.TestCase):
         self.assertIsNone(actual_right.grad)
         self.assertIsNone(expected_left.grad)
         self.assertIsNone(expected_right.grad)
+
+    def test_axis_dim_conflicts_match_pytorch_2_13(self):
+        actual = [torch.tensor([1.0])]
+        expected = [reference_torch.tensor([1.0], dtype=reference_torch.float32)]
+        cases = (
+            (
+                "dim keyword",
+                lambda: torch.cat(actual, dim=0, axis=0),
+                lambda: reference_torch.cat(expected, dim=0, axis=0),
+            ),
+            (
+                "dim positional",
+                lambda: torch.cat(actual, 0, axis=0),
+                lambda: reference_torch.cat(expected, 0, axis=0),
+            ),
+        )
+        for case, actual_call, expected_call in cases:
+            with self.subTest(case=case):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^cat\(\) got an unexpected keyword argument 'axis'$",
+                ):
+                    actual_call()
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^cat\(\) got an unexpected keyword argument 'axis'$",
+                ):
+                    expected_call()
 
 
 if __name__ == "__main__":

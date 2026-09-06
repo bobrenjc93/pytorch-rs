@@ -11068,6 +11068,7 @@ fn bind_top_level_cat_arguments<'py>(
     } else {
         None
     };
+    let mut axis = None;
     let mut out = None;
     let mut keyword_error = None;
 
@@ -11099,6 +11100,12 @@ fn bind_top_level_cat_arguments<'py>(
                         });
                     }
                 }
+                "axis" => {
+                    axis = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
                 "out" => {
                     if out.is_some() {
                         keyword_error.get_or_insert_with(|| {
@@ -11128,8 +11135,15 @@ fn bind_top_level_cat_arguments<'py>(
         ));
     };
 
+    let axis_conflicts_with_dim = axis.is_some() && dim.is_some();
+    let dim = dim.or(axis);
     if let Some(dim) = &dim {
         validate_dimension_swap_dimension("cat", "dim", dim.position, &dim.value)?;
+    }
+    if axis_conflicts_with_dim {
+        keyword_error.get_or_insert_with(|| {
+            PyTypeError::new_err("cat() got an unexpected keyword argument 'axis'")
+        });
     }
 
     Ok((tensors, dim, out, keyword_error))

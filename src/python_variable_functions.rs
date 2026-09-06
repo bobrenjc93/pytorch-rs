@@ -1126,8 +1126,9 @@ cat(tensors, dim=0, *, out=None) -> Tensor
 Concatenates the given sequence of tensors in :attr:`tensors` in the given dimension.
 
 The current native implementation supports non-empty tuple/list inputs of
-exact native CPU ``float32`` 1-D tensors for ``dim=0`` and ``dim=-1``. Concrete
-``out`` tensors, empty input sequences, scalar and non-1-D tensors,
+exact native CPU ``float32`` 1-D tensors for ``dim=0`` and ``dim=-1``, including
+the PyTorch ``axis`` keyword alias. Concrete ``out`` tensors, empty input
+sequences, scalar and non-1-D tensors,
 mixed dtype/device metadata, tensor subclasses, active autograd recording, and
 other dimensions remain unsupported.
 ";

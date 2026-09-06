@@ -47,6 +47,9 @@ class TopLevelCatTests(unittest.TestCase):
         )
         self.assert_cat_matches(keyword_result, [8.0, 9.0], case="keywords")
 
+        axis_result = torch.cat([torch.tensor([14.0]), torch.tensor([15.0])], axis=0)
+        self.assert_cat_matches(axis_result, [14.0, 15.0], case="axis alias")
+
         single = torch.tensor([11.0, 13.0])
         single_result = torch.cat([single])
         self.assert_cat_matches(single_result, [11.0, 13.0], case="single tensor")
@@ -121,6 +124,12 @@ class TopLevelCatTests(unittest.TestCase):
                 ):
                     torch.cat([tensor], dim=dimension)
 
+        with self.assertRaisesRegex(
+            IndexError,
+            r"^Dimension out of range \(expected to be in range of \[-1, 0\], but got 1\)$",
+        ):
+            torch.cat([tensor], axis=1)
+
         for dimension, type_name in ((True, "bool"), (None, "NoneType"), ("0", "str")):
             with self.subTest(dimension=dimension):
                 with self.assertRaisesRegex(
@@ -128,6 +137,22 @@ class TopLevelCatTests(unittest.TestCase):
                     rf"^cat\(\): argument 'dim' must be int, not {type_name}$",
                 ):
                     torch.cat([tensor], dim=dimension)
+
+        with self.assertRaisesRegex(
+            TypeError, r"^cat\(\): argument 'dim' must be int, not str$"
+        ):
+            torch.cat([tensor], axis="0")
+
+        for call in (
+            lambda: torch.cat([tensor], dim=0, axis=0),
+            lambda: torch.cat([tensor], 0, axis=0),
+        ):
+            with self.subTest(call=call):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^cat\(\) got an unexpected keyword argument 'axis'$",
+                ):
+                    call()
 
     def test_public_callable_surface(self):
         self.assertTrue(hasattr(torch, "cat"))
