@@ -32,7 +32,7 @@ PROTECTED_OUTPUT_PATHS = {
 }
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v5"
+BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v6"
 WORKLOAD_VERSION = "h100_cuda_pointwise_reduce_float32_v1"
 WORKLOAD_SHAPE = (1024, 1024)
 WORKLOAD_SEED = 20260904
@@ -528,7 +528,50 @@ def _require_private_cuda_pointwise_reduce_workload(pointwise_reduce):
         )
 
 
-def torch_rs_zero_credit_unsupported_row(torch_rs):
+def _require_public_cuda_tensor_wrapper_evidence(wrapper):
+    if wrapper is None:
+        raise AssertionError("public torch_rs CUDA tensor wrapper evidence is missing")
+    if wrapper.get("schema_version") != (
+        "torch_rs_public_cuda_benchmark_tensor_v1"
+    ):
+        raise AssertionError("public torch_rs CUDA tensor wrapper schema changed")
+    if wrapper.get("status") != "ok":
+        raise AssertionError(
+            "public torch_rs CUDA tensor wrapper status is not ok"
+        )
+    if wrapper.get("cpu_fallback") is not False:
+        raise AssertionError("public torch_rs CUDA tensor wrapper used CPU fallback")
+    if wrapper.get("device_type") != "cuda" or wrapper.get("device_index") != 0:
+        raise AssertionError(
+            "public torch_rs CUDA tensor wrapper did not observe CUDA device 0"
+        )
+    if wrapper.get("device") != "cuda:0":
+        raise AssertionError(
+            "public torch_rs CUDA tensor wrapper device is unexpected"
+        )
+    if wrapper.get("dtype") != "torch.float32":
+        raise AssertionError(
+            "public torch_rs CUDA tensor wrapper did not expose torch.float32"
+        )
+    if wrapper.get("is_cuda") is not True:
+        raise AssertionError(
+            "public torch_rs CUDA tensor wrapper did not report CUDA residency"
+        )
+    if wrapper.get("shape") != [WORKLOAD_SHAPE[0]]:
+        raise AssertionError("public torch_rs CUDA tensor wrapper shape changed")
+    if wrapper.get("stride") != [1]:
+        raise AssertionError("public torch_rs CUDA tensor wrapper stride changed")
+    if (wrapper.get("readback") or {}).get("synchronized") is not True:
+        raise AssertionError(
+            "public torch_rs CUDA tensor wrapper readback was not synchronized"
+        )
+    if not wrapper.get("checksum"):
+        raise AssertionError(
+            "public torch_rs CUDA tensor wrapper checksum is missing"
+        )
+
+
+def torch_rs_zero_credit_unsupported_row(torch_rs, cuda_tensor_evidence=None):
     evidence = {
         "implementation": "torch_rs",
         "status": "unsupported",
@@ -547,15 +590,18 @@ def torch_rs_zero_credit_unsupported_row(torch_rs):
         "workload_version": WORKLOAD_VERSION,
         "score_credit": 0.0,
         "reason": (
-            "torch_rs currently has no native CUDA tensor execution or CUDA "
-            "torch.compile backend; this benchmark records the unsupported "
-            "cell explicitly instead of substituting CPU execution, "
-            "backend='eager', eager fallback, or installed-PyTorch forwarding. "
-            "Private benchmark-only CUDA driver/runtime/kernel/workload "
-            "evidence is not compiled torch_rs CUDA output and does not "
+            "torch_rs currently has no native CUDA torch.compile backend or "
+            "general CUDA tensor execution backend; this benchmark records "
+            "the unsupported cell explicitly instead of substituting CPU "
+            "execution, backend='eager', eager fallback, or installed-PyTorch "
+            "forwarding. Private benchmark-only CUDA "
+            "driver/runtime/kernel/workload evidence and the public "
+            "benchmark tensor wrapper are prerequisites, not compiled "
+            "torch_rs CUDA output; this prerequisite evidence does not "
             "receive compile credit."
         ),
         "cuda_probes": _torch_rs_public_cuda_probes(torch_rs),
+        "prerequisite_cuda_tensor_evidence": cuda_tensor_evidence,
         "rejected_fallbacks": [
             "CPU tensor execution",
             "backend='eager' compile execution",
@@ -661,7 +707,14 @@ def run_benchmark(args):
         _require_private_cuda_pointwise_reduce_workload(
             torch_rs_cuda_pointwise_reduce_workload,
         )
-        torch_rs_row = torch_rs_zero_credit_unsupported_row(torch_rs)
+        torch_rs_cuda_tensor_wrapper = torch_rs_cuda_pointwise_reduce_workload[
+            "public_cuda_tensor_wrapper"
+        ]
+        _require_public_cuda_tensor_wrapper_evidence(torch_rs_cuda_tensor_wrapper)
+        torch_rs_row = torch_rs_zero_credit_unsupported_row(
+            torch_rs,
+            torch_rs_cuda_tensor_wrapper,
+        )
     finally:
         if gc_was_enabled:
             gc.enable()
@@ -675,6 +728,7 @@ def run_benchmark(args):
         "torch_rs_cuda_pointwise_reduce_workload": (
             torch_rs_cuda_pointwise_reduce_workload
         ),
+        "torch_rs_cuda_tensor_wrapper": torch_rs_cuda_tensor_wrapper,
         "candidate": torch_rs_row,
         "aggregates": {
             "common_success_geomean_speed_ratio": None,

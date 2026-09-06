@@ -11,7 +11,9 @@ from types import SimpleNamespace
 
 import torch_rs as torch
 from torch_rs import (
+    CudaBenchmarkTensor,
     _cuda_buffer,
+    _cuda_benchmark_tensor,
     _cuda_driver_probe,
     _cuda_pointwise_kernel,
     _cuda_pointwise_reduce_workload,
@@ -61,6 +63,61 @@ else:
     return json.loads(completed.stdout)
 
 
+def _synthetic_private_buffer(
+    *,
+    device_type="cuda",
+    device_index=0,
+    device="cuda:0",
+    dtype="torch.float32",
+):
+    buffer = object.__new__(_cuda_buffer.PrivateCudaFloat32Buffer)
+    buffer.runtime = None
+    buffer.name = "synthetic"
+    buffer.shape = (2,)
+    buffer.stride = (1,)
+    buffer.element_count = 2
+    buffer.byte_count = 8
+    buffer.device_index = device_index
+    buffer._pointer = SimpleNamespace(value=1)
+    buffer._closed = False
+    buffer.malloc_call = {"result": 0}
+
+    def metadata():
+        return {
+            "shape": [2],
+            "stride": [1],
+            "storage_offset": 0,
+            "dtype": dtype,
+            "device": device,
+            "device_type": device_type,
+            "device_index": device_index,
+            "requires_grad": False,
+            "is_contiguous": True,
+        }
+
+    buffer.metadata = metadata
+    return buffer
+
+
+def _successful_synthetic_readback(buffer, checksum="checksum"):
+    return _cuda_buffer.PrivateCudaHostReadback(
+        payload=b"\0" * buffer.byte_count,
+        copy_call={
+            "result": 0,
+            "kind": "cudaMemcpyDeviceToHost",
+            "byte_count": buffer.byte_count,
+            "buffer_name": buffer.name,
+            "device_index": buffer.device_index,
+        },
+        sync_call={
+            "result": 0,
+            "buffer_name": buffer.name,
+            "device_index": buffer.device_index,
+        },
+        checksum=checksum,
+    )
+
+
 class CompileCudaBenchmarkTests(unittest.TestCase):
     def test_torch_rs_cuda_zero_credit_row_is_explicit(self):
         row = benchmark_compile_cuda.torch_rs_zero_credit_unsupported_row(torch)
@@ -82,6 +139,135 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
         self.assertEqual(probes["accelerator_device_count"], 0)
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
+
+    def test_public_cuda_benchmark_tensor_wrapper_is_narrow(self):
+        self.assertIn("CudaBenchmarkTensor", torch.__all__)
+        self.assertIs(torch.CudaBenchmarkTensor, CudaBenchmarkTensor)
+        self.assertFalse(hasattr(torch.cuda, "CudaBenchmarkTensor"))
+        self.assertNotIn("CudaBenchmarkTensor", torch.cuda.__all__)
+        self.assertEqual(
+            torch.cuda.__all__,
+            ["device_count", "is_available", "is_initialized"],
+        )
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
+        self.assertIs(torch.cuda.is_initialized(), False)
+        self.assertFalse(hasattr(torch.Tensor, "cuda"))
+        self.assertIs(torch.is_tensor(CudaBenchmarkTensor), False)
+
+    def test_public_cuda_benchmark_tensor_exposes_metadata_snapshot(self):
+        buffer = _synthetic_private_buffer()
+        wrapper = CudaBenchmarkTensor(
+            buffer,
+            readback=_successful_synthetic_readback(buffer),
+            checksum_name="synthetic_checksum_v1",
+        )
+
+        self.assertEqual(wrapper.shape, (2,))
+        self.assertEqual(wrapper.stride, (1,))
+        self.assertEqual(str(wrapper.dtype), "torch.float32")
+        self.assertEqual(wrapper.device, "cuda:0")
+        self.assertEqual(wrapper.device_type, "cuda")
+        self.assertEqual(wrapper.device_index, 0)
+        self.assertIs(wrapper.is_cuda, True)
+        self.assertIs(wrapper.is_contiguous, True)
+        self.assertIs(wrapper.requires_grad, False)
+        self.assertEqual(wrapper.checksum, "checksum")
+        self.assertIn("CudaBenchmarkTensor", repr(wrapper))
+        self.assertIs(torch.is_tensor(wrapper), False)
+        self.assertFalse(hasattr(wrapper, "cpu"))
+        self.assertFalse(hasattr(wrapper, "tolist"))
+        with self.assertRaises(TypeError):
+            wrapper + wrapper
+
+        metadata = wrapper.metadata()
+        self.assertEqual(
+            metadata["schema_version"],
+            _cuda_benchmark_tensor.CUDA_BENCHMARK_TENSOR_SCHEMA_VERSION,
+        )
+        self.assertEqual(metadata["status"], "ok")
+        self.assertEqual(metadata["shape"], [2])
+        self.assertEqual(metadata["stride"], [1])
+        self.assertEqual(metadata["dtype"], "torch.float32")
+        self.assertEqual(metadata["device"], "cuda:0")
+        self.assertEqual(metadata["device_type"], "cuda")
+        self.assertEqual(metadata["device_index"], 0)
+        self.assertIs(metadata["is_cuda"], True)
+        self.assertIs(metadata["cpu_fallback"], False)
+        self.assertEqual(metadata["checksum"], "checksum")
+        self.assertEqual(metadata["checksum_name"], "synthetic_checksum_v1")
+        self.assertEqual(metadata["operations_supported"], [])
+        self.assertIs(metadata["readback"]["synchronized"], True)
+        self.assertIs(metadata["readback"]["payload_exposed"], False)
+        self.assertNotIn("payload", metadata["readback"])
+
+        metadata["shape"].append(3)
+        self.assertEqual(wrapper.metadata()["shape"], [2])
+
+    def test_public_cuda_benchmark_tensor_rejects_non_private_buffers(self):
+        with self.assertRaisesRegex(TypeError, "private CUDA float32"):
+            CudaBenchmarkTensor(object(), checksum=lambda payload: "checksum")
+        with self.assertRaisesRegex(TypeError, "checksum must be callable"):
+            CudaBenchmarkTensor(_synthetic_private_buffer())
+
+    def test_public_cuda_benchmark_tensor_rejects_cpu_wrong_device_and_wrong_dtype(self):
+        cases = (
+            (
+                _synthetic_private_buffer(device_type="cpu", device="cpu"),
+                ValueError,
+                "CUDA buffer metadata",
+            ),
+            (
+                _synthetic_private_buffer(device_index=1, device="cuda:1"),
+                ValueError,
+                "CUDA device 0",
+            ),
+            (
+                _synthetic_private_buffer(dtype="torch.float64"),
+                TypeError,
+                "torch.float32",
+            ),
+        )
+        for buffer, error_type, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(error_type, message):
+                    CudaBenchmarkTensor(
+                        buffer,
+                        readback=_successful_synthetic_readback(buffer),
+                    )
+
+    def test_public_cuda_benchmark_tensor_validator_rejects_fallback_device_and_dtype(self):
+        base = {
+            "schema_version": (
+                _cuda_benchmark_tensor.CUDA_BENCHMARK_TENSOR_SCHEMA_VERSION
+            ),
+            "status": "ok",
+            "cpu_fallback": False,
+            "device": "cuda:0",
+            "device_type": "cuda",
+            "device_index": 0,
+            "dtype": "torch.float32",
+            "is_cuda": True,
+            "shape": [benchmark_compile_cuda.WORKLOAD_SHAPE[0]],
+            "stride": [1],
+            "checksum": "checksum",
+            "readback": {"synchronized": True},
+        }
+        bad_cpu = dict(base, cpu_fallback=True)
+        with self.assertRaisesRegex(AssertionError, "CPU fallback"):
+            benchmark_compile_cuda._require_public_cuda_tensor_wrapper_evidence(
+                bad_cpu
+            )
+        bad_device = dict(base, device="cuda:1", device_index=1)
+        with self.assertRaisesRegex(AssertionError, "CUDA device 0"):
+            benchmark_compile_cuda._require_public_cuda_tensor_wrapper_evidence(
+                bad_device
+            )
+        bad_dtype = dict(base, dtype="torch.float64")
+        with self.assertRaisesRegex(AssertionError, "torch.float32"):
+            benchmark_compile_cuda._require_public_cuda_tensor_wrapper_evidence(
+                bad_dtype
+            )
 
     def test_private_cuda_driver_probe_is_not_public_cuda_support(self):
         self.assertNotIn("_cuda_driver_probe", torch.__all__)
@@ -323,6 +509,7 @@ print(json.dumps({
     "cpu_fallback": pointwise_reduce["cpu_fallback"],
     "checksum_match": pointwise_reduce["checksum_match"],
     "workload_shape": pointwise_reduce["workload_shape"],
+    "public_cuda_tensor_wrapper": pointwise_reduce["public_cuda_tensor_wrapper"],
     "public_cuda_is_available": torch.cuda.is_available(),
     "public_cuda_device_count": torch.cuda.device_count(),
     "public_cuda_is_initialized": torch.cuda.is_initialized(),
@@ -348,6 +535,7 @@ print(json.dumps({
         self.assertIs(probe["cpu_fallback"], False)
         self.assertIs(probe["checksum_match"], False)
         self.assertEqual(probe["workload_shape"], [1024, 1024])
+        self.assertIsNone(probe["public_cuda_tensor_wrapper"])
         self.assertIs(probe["public_cuda_is_available"], False)
         self.assertEqual(probe["public_cuda_device_count"], 0)
         self.assertIs(probe["public_cuda_is_initialized"], False)
@@ -672,6 +860,27 @@ print(json.dumps({
             pointwise_reduce["output_metadata"],
             pytorch_reference["output_metadata"],
         )
+        wrapper = pointwise_reduce["public_cuda_tensor_wrapper"]
+        self.assertEqual(
+            wrapper["schema_version"],
+            _cuda_benchmark_tensor.CUDA_BENCHMARK_TENSOR_SCHEMA_VERSION,
+        )
+        self.assertEqual(wrapper["status"], "ok")
+        self.assertEqual(wrapper["shape"], [1024])
+        self.assertEqual(wrapper["stride"], [1])
+        self.assertEqual(wrapper["dtype"], "torch.float32")
+        self.assertEqual(wrapper["device"], "cuda:0")
+        self.assertEqual(wrapper["device_type"], "cuda")
+        self.assertEqual(wrapper["device_index"], 0)
+        self.assertIs(wrapper["is_cuda"], True)
+        self.assertIs(wrapper["cpu_fallback"], False)
+        self.assertEqual(
+            wrapper["checksum"],
+            pointwise_reduce["device_output_bytes_checksum"],
+        )
+        self.assertIs(wrapper["readback"]["synchronized"], True)
+        self.assertIs(wrapper["readback"]["payload_exposed"], False)
+        self.assertNotIn("payload", wrapper["readback"])
         self.assertIs(pointwise_reduce["output_metadata_match"], True)
         self.assertIs(
             pointwise_reduce["output_comparison"]["exact_bytes_match"],
@@ -1134,6 +1343,26 @@ print(json.dumps({{
             pointwise_reduce["output_metadata"],
             report["reference_workload"]["output_metadata"],
         )
+        tensor_wrapper = report["torch_rs_cuda_tensor_wrapper"]
+        self.assertEqual(
+            tensor_wrapper,
+            pointwise_reduce["public_cuda_tensor_wrapper"],
+        )
+        self.assertEqual(
+            tensor_wrapper["schema_version"],
+            _cuda_benchmark_tensor.CUDA_BENCHMARK_TENSOR_SCHEMA_VERSION,
+        )
+        self.assertEqual(tensor_wrapper["status"], "ok")
+        self.assertEqual(tensor_wrapper["shape"], [1024])
+        self.assertEqual(tensor_wrapper["stride"], [1])
+        self.assertEqual(tensor_wrapper["dtype"], "torch.float32")
+        self.assertEqual(tensor_wrapper["device"], "cuda:0")
+        self.assertEqual(tensor_wrapper["device_type"], "cuda")
+        self.assertEqual(tensor_wrapper["device_index"], 0)
+        self.assertIs(tensor_wrapper["is_cuda"], True)
+        self.assertIs(tensor_wrapper["cpu_fallback"], False)
+        self.assertIs(tensor_wrapper["readback"]["synchronized"], True)
+        self.assertIs(tensor_wrapper["readback"]["payload_exposed"], False)
         self.assertIs(pointwise_reduce["output_metadata_match"], True)
         self.assertEqual(
             pointwise_reduce["device_output_checksum"],
@@ -1160,6 +1389,10 @@ print(json.dumps({{
         )
         self.assertEqual(report["candidate"]["implementation"], "torch_rs")
         self.assertEqual(report["candidate"]["status"], "zero_credit_unsupported")
+        self.assertEqual(
+            report["candidate"]["prerequisite_cuda_tensor_evidence"],
+            tensor_wrapper,
+        )
         self.assertIs(
             report["candidate"]["eligibility"]["eligible_cuda_compile_evidence"],
             False,

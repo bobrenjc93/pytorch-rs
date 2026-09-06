@@ -712,6 +712,9 @@ def get_device_module(device: torch.device | str | None = None):
     return device_module
 
 
+from ._cuda_benchmark_tensor import CudaBenchmarkTensor as CudaBenchmarkTensor
+
+
 def get_float32_matmul_precision() -> str:
     r"""Returns the current value of float32 matrix multiplication precision. Refer to
     :func:`torch.set_float32_matmul_precision` documentation for more details.
@@ -994,6 +997,7 @@ __all__ = [
     "get_default_device",
     "set_default_device",
     "compile",
+    "CudaBenchmarkTensor",
     "get_device_module",
     "get_float32_matmul_precision",
     "set_float32_matmul_precision",

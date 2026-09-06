@@ -18,6 +18,7 @@ from typing import Any
 
 from . import _cuda_buffer
 from . import _cuda_driver_probe
+from ._cuda_benchmark_tensor import CudaBenchmarkTensor
 from . import _cuda_pointwise_kernel as _cuda_kernel_support
 
 
@@ -492,6 +493,7 @@ def _base_result(
         "input_metadata": None,
         "expected_output_metadata": expected_output_metadata,
         "output_metadata": None,
+        "public_cuda_tensor_wrapper": None,
         "output_metadata_match": False,
         "output_comparison": _float32_comparison(b"", None),
         "device_x_pointer_nonzero": False,
@@ -875,6 +877,13 @@ def launch_h100_float32_pointwise_reduce_device0(
             result["status"] = "error"
             result["reason"] = "cudaDeviceSynchronize failed after device-to-host"
             return result
+
+        output_wrapper = CudaBenchmarkTensor(
+            device_output,
+            readback=readback,
+            checksum_name="torch_rs_private_cuda_pointwise_reduce_output_v1",
+        )
+        result["public_cuda_tensor_wrapper"] = output_wrapper.metadata()
 
         host_output_bytes = readback.payload
         result["device_output_bytes_checksum"] = readback.checksum
