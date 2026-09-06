@@ -184,6 +184,12 @@ class TensorRangeSliceTests(unittest.TestCase):
                 with self.assertRaises(IndexError):
                     source[index]
 
+        scalar = torch.tensor(1.0)
+        with self.assertRaisesRegex(ValueError, "slice step cannot be zero"):
+            scalar[::0]
+        with self.assertRaisesRegex(IndexError, "slice\\(\\) cannot be applied"):
+            scalar[::2]
+
 
 if __name__ == "__main__":
     unittest.main()

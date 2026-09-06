@@ -205,6 +205,24 @@ class TensorRangeSliceReferenceTests(unittest.TestCase):
             self.autograd_contract(reference_torch),
         )
 
+    def scalar_error_contract(self, module):
+        errors = []
+        scalar = module.tensor(1.0, dtype=module.float32)
+        for index in (slice(None, None, 0), slice(None, None, 2)):
+            try:
+                scalar[index]
+            except Exception as error:
+                errors.append((type(error).__name__, str(error).splitlines()[0]))
+            else:
+                self.fail(f"scalar slice {index!r} unexpectedly succeeded")
+        return tuple(errors)
+
+    def test_scalar_slice_errors_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.scalar_error_contract(torch),
+            self.scalar_error_contract(reference_torch),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

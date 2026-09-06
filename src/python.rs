@@ -395,6 +395,7 @@ impl PyTensorBase {
             tensor.inner.index_full_slice()
         } else if index.cast::<PySlice>().is_ok() {
             if tensor.inner.shape().is_empty() {
+                parse_unit_range_slice(index, 0)?;
                 tensor.inner.slice_dimension(0, 0, 0)
             } else if let Some(range) = parse_unit_range_slice(index, tensor.inner.shape()[0])? {
                 tensor.inner.slice_dimension(0, range.start, range.length)
