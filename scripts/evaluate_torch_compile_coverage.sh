@@ -50,13 +50,19 @@ if [[ -e "$virtualenv" && ! -d "$virtualenv" ]]; then
     echo "virtual environment path is not a directory: $virtualenv" >&2
     exit 1
 fi
-if ! command -v flock >/dev/null 2>&1; then
-    echo "missing flock command required to serialize evaluator setup" >&2
-    exit 1
-fi
 
-exec {setup_lock_fd}<"$evaluator_directory"
-flock "$setup_lock_fd"
+setup_lock_file="$evaluator_directory/setup.lockfile"
+if [[ "${TORCH_RS_COMPILE_COVERAGE_SETUP_LOCKED:-}" != "1" ]]; then
+    if [[ -L "$setup_lock_file" ]]; then
+        echo "refusing symlinked setup lock file: $setup_lock_file" >&2
+        exit 1
+    fi
+    exec "${PYTHON:-python3}" "$repository_root/scripts/run_with_unix_lock.py" \
+        "$setup_lock_file" \
+        -- \
+        env TORCH_RS_COMPILE_COVERAGE_SETUP_LOCKED=1 \
+        bash "$0" "$@"
+fi
 
 export CARGO_HOME="$target_directory/cargo-home"
 export CARGO_TARGET_DIR="$target_directory"

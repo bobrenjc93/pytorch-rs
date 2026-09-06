@@ -23,9 +23,9 @@ dedicated environment at `target/torch-compile-coverage/venv`, installs the
 locked development and reference dependency groups, builds the current wheel
 with maturin, installs it into that environment, verifies extension provenance,
 and then executes the evaluator. Its setup, install, verification, and evaluator
-steps are serialized by an automatically released `flock` on the evaluator
-directory so concurrent or retried invocations cannot race on the shared
-environment. Setup and progress diagnostics go to stderr; Burner
+steps are serialized by an automatically released Python stdlib advisory lock in
+the evaluator directory so concurrent or retried invocations cannot race on the
+shared environment. Setup and progress diagnostics go to stderr; Burner
 EvaluationOutput JSON goes to stdout.
 
 For a faster local screen, run the public strict subset:
