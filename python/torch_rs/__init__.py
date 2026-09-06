@@ -261,7 +261,8 @@ def set_default_device(device: "Device") -> None:
 
 
 _COMPILE_UNSUPPORTED_MESSAGE = (
-    "torch.compile(): only backend='eager', fullgraph=True straight-line "
+    "torch.compile(): only backend='eager', fullgraph=True or no-break "
+    "fullgraph=False straight-line "
     "Tensor neg/abs/relu/square/detach/float/add functions, plus one top-level "
     "if over an input Tensor.requires_grad selecting from that same subset, "
     "optionally inlining one exact same-module helper call and reading "
@@ -382,8 +383,13 @@ def _supports_native_eager_compile(
     return (
         _builtins.type(resolved_backend) is _builtins.str
         and resolved_backend == "eager"
-        and fullgraph is True
-        and (dynamic is None or _builtins.type(dynamic) is _builtins.bool)
+        and (
+            (
+                fullgraph is True
+                and (dynamic is None or _builtins.type(dynamic) is _builtins.bool)
+            )
+            or (fullgraph is False and dynamic is None)
+        )
         and mode is None
         and options is None
         and isolate_recompiles is False
@@ -635,6 +641,14 @@ def compile(
     the selected branch and returns either a Tensor or a tuple/list pytree with
     Tensor leaves. ``dynamic=True`` reuses a graph across same-rank shape
     changes while keeping stride, dtype, device, and ``requires_grad``
+    specialized, matching the covered PyTorch eager-backend guards.
+    The same no-break subset is also supported with ``fullgraph=False`` and
+    default ``dynamic=None``. Those functions may read module-global exact
+    native CPU ``float32`` Tensor constants. They may also contain one top-level
+    ``if`` over an input Tensor's ``requires_grad`` metadata; the native path
+    lowers the selected branch and returns either a Tensor or a tuple/list
+    pytree with Tensor leaves. ``dynamic=True`` reuses a graph across same-rank
+    shape changes while keeping stride, dtype, device, and ``requires_grad``
     specialized, matching the covered PyTorch eager-backend guards.
     Eager fallback, installed-PyTorch forwarding, callable backend invocation,
     CUDA compilation, and broader graph capture remain unsupported.

@@ -35,9 +35,6 @@ PROTECTED_OUTPUT_PATHS = {
 }
 REFERENCE_PYTORCH_VERSION = "2.13.0"
 BENCHMARK_VERSION = "torch_compile_cpu_eager_benchmark_v3"
-# CPU timing artifacts measure the native eager/fullgraph subset supported by
-# torch_rs today; coverage-only dynamic cases move under the evaluator corpus.
-BENCHMARK_CORPUS_VERSION = "torch_compile_corpus_v11"
 DEFAULT_WARMUPS = 7
 DEFAULT_SAMPLES = 31
 IMPLEMENTATION_ORDERS = (
@@ -51,6 +48,7 @@ CATEGORY_LABELS = {
     "inference": "inference",
     "training_autograd": "training-autograd",
     "python_control_flow": "python-control-flow",
+    "graph_breaks_fullgraph": "graph-breaks-fullgraph",
     "dynamic_shapes_symbolics": "dynamic-shape",
     "containers_pytrees": "containers-pytrees",
     "decompositions": "decomposition",
@@ -65,6 +63,7 @@ CATEGORY_PHRASES = {
     "inference": "inference",
     "training_autograd": "training autograd",
     "python_control_flow": "Python control flow",
+    "graph_breaks_fullgraph": "graph breaks and fullgraph",
     "dynamic_shapes_symbolics": "dynamic shapes",
     "containers_pytrees": "containers and pytrees",
     "decompositions": "decompositions",
@@ -79,6 +78,7 @@ CATEGORY_PROGRAM_LABELS = {
     "inference": "inference",
     "training_autograd": "training-autograd",
     "python_control_flow": "Python-control-flow",
+    "graph_breaks_fullgraph": "graph-breaks/fullgraph",
     "dynamic_shapes_symbolics": "dynamic-shape",
     "containers_pytrees": "containers-pytrees",
     "decompositions": "decomposition",
@@ -386,7 +386,7 @@ def _corpus_metadata(corpus_module):
         }
 
     return {
-        "version": BENCHMARK_CORPUS_VERSION,
+        "version": corpus_module.COMPILE_CORPUS_VERSION,
         "public_cases": [
             case_summary(case) for case in _benchmark_public_cases(corpus_module)
         ],
@@ -432,8 +432,16 @@ def _program_input_count(case):
 
 def _case_is_native_eager_benchmark_supported(case):
     return (
-        case.fullgraph is True
-        and case.dynamic is None
+        (
+            (
+                case.fullgraph is True
+                and (case.dynamic is None or type(case.dynamic) is bool)
+            )
+            or (
+                case.fullgraph is False
+                and case.dynamic is None
+            )
+        )
         and case.mode is None
         and case.options is None
     )
@@ -1140,7 +1148,7 @@ def run_benchmark(args):
         "environment": _environment(
             torch_rs,
             reference_torch,
-            BENCHMARK_CORPUS_VERSION,
+            corpus_module.COMPILE_CORPUS_VERSION,
             args,
         ),
         "corpus": _corpus_metadata(corpus_module),
@@ -1645,7 +1653,7 @@ def _validate_expected_artifact_shape(report):
     errors = []
     corpus_module = _load_compile_corpus_module()
     current_corpus = _corpus_metadata(corpus_module)
-    current_corpus_version = BENCHMARK_CORPUS_VERSION
+    current_corpus_version = getattr(corpus_module, "COMPILE_CORPUS_VERSION", None)
     category_weights = dict(corpus_module.CATEGORY_WEIGHTS)
 
     environment = report.get("environment", {})

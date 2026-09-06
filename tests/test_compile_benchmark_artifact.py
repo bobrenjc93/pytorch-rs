@@ -37,6 +37,8 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
         self.assertIn("7 training-autograd", summary)
         self.assertIn("7 python-control-flow", summary)
         self.assertIn("7 modules-parameters-buffers", summary)
+        self.assertIn("7 graph-breaks-fullgraph", summary)
+        self.assertIn("7 dynamic-shape", summary)
         self.assertIn("7 decomposition", summary)
         self.assertIn("7 mutation_aliasing_views", summary)
         self.assertIn("7 dtype-device-transitions", summary)
@@ -61,6 +63,16 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
             summary,
         )
         self.assertIn(
+            "| `graph_breaks_fullgraph` | 8 | Supported and timed public cases: "
+            "`cpu_float32_fullgraph_false_no_break_unary` |",
+            summary,
+        )
+        self.assertIn(
+            "| `dynamic_shapes_symbolics` | 8 | Supported and timed public cases: "
+            "`cpu_float32_dynamic_true_shape_stride_unary` |",
+            summary,
+        )
+        self.assertIn(
             "| `mutation_aliasing_views` | 8 | Supported and timed public cases: "
             "`cpu_float32_detach_alias_view` |",
             summary,
@@ -77,7 +89,8 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
         )
         self.assertNotIn("`training_autograd` | 8 | Zero credit", summary)
         self.assertNotIn("`python_control_flow` | 8 | Zero credit", summary)
-        self.assertIn("`dynamic_shapes_symbolics` | 8 | Zero credit", summary)
+        self.assertNotIn("`graph_breaks_fullgraph` | 8 | Zero credit", summary)
+        self.assertNotIn("`dynamic_shapes_symbolics` | 8 | Zero credit", summary)
         self.assertNotIn("`modules_parameters_buffers` | 8 | Zero credit", summary)
         self.assertNotIn("`mutation_aliasing_views` | 8 | Zero credit", summary)
         self.assertNotIn("`decompositions` | 6 | Zero credit", summary)
@@ -251,23 +264,30 @@ class CompileBenchmarkArtifactTests(unittest.TestCase):
             ["CPU_FLOAT32_GLOBAL_BUFFER"],
         )
 
-    def test_default_benchmark_cases_exclude_unsupported_dynamic_cases(self):
+    def test_default_benchmark_cases_include_dynamic_and_fullgraph_false_cases(self):
         corpus = benchmark_compile_cpu._load_compile_corpus_module()
         cases = benchmark_compile_cpu._benchmark_public_cases(corpus)
         names = {case.name for case in cases}
 
-        self.assertEqual(len(cases), 21)
+        self.assertEqual(len(cases), 23)
         self.assertIn("cpu_float32_unary_abs_neg", names)
-        self.assertNotIn("cpu_float32_dynamic_true_shape_stride_unary", names)
+        self.assertIn("cpu_float32_dynamic_true_shape_stride_unary", names)
+        self.assertIn("cpu_float32_fullgraph_false_no_break_unary", names)
 
-        with self.assertRaisesRegex(
-            SystemExit,
-            "unsupported native eager benchmark case",
-        ):
-            benchmark_compile_cpu._select_benchmark_cases(
-                corpus,
-                ("cpu_float32_dynamic_true_shape_stride_unary",),
-            )
+        selected = benchmark_compile_cpu._select_benchmark_cases(
+            corpus,
+            (
+                "cpu_float32_dynamic_true_shape_stride_unary",
+                "cpu_float32_fullgraph_false_no_break_unary",
+            ),
+        )
+        self.assertEqual(
+            [case.name for case in selected],
+            [
+                "cpu_float32_dynamic_true_shape_stride_unary",
+                "cpu_float32_fullgraph_false_no_break_unary",
+            ],
+        )
 
     def test_validator_rejects_previous_corpus_version_artifact(self):
         report = benchmark_compile_cpu._load_artifact(

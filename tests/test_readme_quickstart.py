@@ -449,7 +449,8 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "PyTorch 2.13-shaped argument binding",
     "`disable=True` pass-through",
     "backend default/name resolution through the `torch.compiler` registry",
-    "native `backend=\"eager\", fullgraph=True` execution",
+    "native `backend=\"eager\"` execution for `fullgraph=True` "
+    "or no-break `fullgraph=False`",
     "straight-line one- or two-input CPU `float32` Tensor functions",
     "Tensor `neg`, `abs`, `relu`, `square`, `detach`, "
     "zero-argument `float`, and binary `add`",
