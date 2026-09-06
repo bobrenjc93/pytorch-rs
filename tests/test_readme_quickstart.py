@@ -84,6 +84,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/torch-compile-cpu-release-timings.md",
     ),
     (
+        "`torch.compile` H100 CUDA prepared-executor timings",
+        "docs/torch-compile-cuda-h100-release-timings.md",
+    ),
+    (
         "`Tensor.view`, reshape, flatten, ravel, unbind, and edge-unsqueeze release timings",
         "docs/tensor-view-release-timings.md",
     ),
@@ -131,7 +135,10 @@ HISTORICAL_TIMING_GROUPS = (
     ),
     (
         "Compilation",
-        ("docs/torch-compile-cpu-release-timings.md",),
+        (
+            "docs/torch-compile-cpu-release-timings.md",
+            "docs/torch-compile-cuda-h100-release-timings.md",
+        ),
     ),
     (
         "Layout/view ops",
