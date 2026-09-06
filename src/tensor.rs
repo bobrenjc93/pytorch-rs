@@ -754,7 +754,21 @@ impl Tensor {
         validate_storage_capacity(elements)?;
 
         let mut data = try_result_vector(elements, elements)?;
-        for index in 0..elements {
+        // PyTorch's CPU float32 arange kernel uses float32 arithmetic for full
+        // non-unit vector chunks and the scalar expression for the tail.
+        let unit_step =
+            step.to_bits() == 1.0_f64.to_bits() || step.to_bits() == (-1.0_f64).to_bits();
+        let vectorized_elements = if unit_step {
+            0
+        } else {
+            elements - (elements % 16)
+        };
+        let start_f32 = start as f32;
+        let step_f32 = step as f32;
+        for index in 0..vectorized_elements {
+            data.push(start_f32 + index as f32 * step_f32);
+        }
+        for index in vectorized_elements..elements {
             data.push((start + index as f64 * step) as f32);
         }
 
