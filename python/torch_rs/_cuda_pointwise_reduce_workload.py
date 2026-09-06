@@ -1410,8 +1410,14 @@ class H100Float32PointwiseReduceCompiledExecutor:
         )
         if close_executor:
             release = dict(release)
-            release["freed_after_executor_close"] = freed_after_executor_close
             release["executor_close"] = self.close()
+            release["freed_after_executor_close"] = (
+                freed_after_executor_close
+                or release["buffer_name"] in {
+                    key.removeprefix("cudaFree_")
+                    for key in release["executor_close"].get("calls", {})
+                }
+            )
             return release
         if hasattr(release, "with_executor_close"):
             return release.with_executor_close(

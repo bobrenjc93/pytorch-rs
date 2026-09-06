@@ -1994,6 +1994,48 @@ print(json.dumps({
         self.assertEqual(len(runtime.frees), 4)
         self.assertEqual(len(set(runtime.frees)), len(runtime.frees))
 
+    def test_one_shot_executor_release_records_executor_close_free(self):
+        executor, runtime = _fake_prepared_executor()
+        x = _fake_input_tensor(
+            runtime,
+            "x",
+            _cuda_pointwise_reduce_workload.WORKLOAD_SHAPE,
+        )
+        bias = _fake_input_tensor(
+            runtime,
+            "bias",
+            (_cuda_pointwise_reduce_workload.WORKLOAD_SHAPE[1],),
+        )
+        try:
+            output = executor.execute(
+                x,
+                bias,
+                close_executor_on_output_release=True,
+            )
+            self.assertEqual(
+                output.metadata()["compile_execution"]["status"],
+                "ok",
+            )
+            release = output._torch_rs_close_private_cuda_buffer()
+            self.assertEqual(release["released_to_pool"], True)
+            self.assertIs(release["freed_after_pool_close"], False)
+            self.assertIs(release["freed_after_executor_close"], True)
+            self.assertEqual(release["executor_close"]["free_count"], 2)
+            self.assertEqual(
+                release["executor_close"]["deferred_live_buffers"],
+                0,
+            )
+            self.assertIs(executor.closed, True)
+            with self.assertRaisesRegex(RuntimeError, "executor is closed"):
+                executor.execute(x, bias)
+        finally:
+            executor.close()
+            x._torch_rs_close_private_cuda_buffer()
+            bias._torch_rs_close_private_cuda_buffer()
+
+        self.assertEqual(len(runtime.frees), 4)
+        self.assertEqual(len(set(runtime.frees)), len(runtime.frees))
+
     def test_prepared_executor_lazy_readback_rejects_visibility_mask_change(self):
         with unittest.mock.patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "0"}):
             executor, runtime = _fake_prepared_executor(
