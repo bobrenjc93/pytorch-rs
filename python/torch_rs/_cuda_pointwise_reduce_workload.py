@@ -19,8 +19,9 @@ from typing import Any
 
 from . import _cuda_buffer
 from . import _cuda_driver_probe
-from ._cuda_benchmark_tensor import CudaBenchmarkTensor
 from . import _cuda_pointwise_kernel as _cuda_kernel_support
+from . import _cuda_runtime_ownership
+from ._cuda_benchmark_tensor import CudaBenchmarkTensor
 
 
 POINTWISE_REDUCE_SCHEMA_VERSION = (
@@ -35,15 +36,28 @@ POINTWISE_REDUCE_COMPILE_EXECUTION_SCHEMA_VERSION = (
 POINTWISE_REDUCE_COMPILE_EXECUTOR_SCHEMA_VERSION = (
     "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1"
 )
+POINTWISE_REDUCE_OUTPUT_POOL_SCHEMA_VERSION = (
+    _cuda_runtime_ownership.CUDA_BUFFER_POOL_SCHEMA_VERSION
+)
 POINTWISE_REDUCE_COMPILE_WORKLOAD_VERSION = "h100_cuda_pointwise_reduce_float32_v1"
 POINTWISE_REDUCE_KERNEL_VERSION = (
-    "h100_cuda_pointwise_plus_row_reduce_float32_v1"
+    "h100_cuda_pointwise_plus_row_reduce_float32_v2"
 )
 WORKLOAD_SHAPE = (1024, 1024)
 OUTPUT_SHAPE = (1024,)
+_WORKLOAD_X_METADATA = _cuda_buffer.float32_metadata(WORKLOAD_SHAPE, device_index=0)
+_WORKLOAD_BIAS_METADATA = _cuda_buffer.float32_metadata(
+    (WORKLOAD_SHAPE[1],),
+    device_index=0,
+)
+_WORKLOAD_OUTPUT_METADATA = _cuda_buffer.float32_metadata(
+    OUTPUT_SHAPE,
+    device_index=0,
+)
 
 _FLOAT32_SIZE = 4
 _THREADS_PER_BLOCK = 32
+_OUTPUT_POOL_INITIAL_CAPACITY = 2
 _CUDA_UNAVAILABLE_ERRORS = _cuda_buffer.CUDA_UNAVAILABLE_ERRORS
 _CUDA_SOURCE = r"""
 #include <cuda_runtime.h>
@@ -89,7 +103,7 @@ extern "C" __global__ void torch_rs_private_pointwise_reduce_kernel_v1(
     }
 }
 
-extern "C" int torch_rs_private_h100_pointwise_reduce_float32_v1(
+extern "C" int torch_rs_private_h100_pointwise_reduce_float32_launch_async_v1(
     const float* x,
     const float* bias,
     float* output,
@@ -97,8 +111,7 @@ extern "C" int torch_rs_private_h100_pointwise_reduce_float32_v1(
     int columns,
     int* blocks_out,
     int* threads_out,
-    int* launch_error_out,
-    int* sync_error_out
+    int* launch_error_out
 ) {
     if (x == nullptr || bias == nullptr || output == nullptr) {
         return -1;
@@ -127,11 +140,35 @@ extern "C" int torch_rs_private_h100_pointwise_reduce_float32_v1(
     if (launch_error_out != nullptr) {
         *launch_error_out = static_cast<int>(launch_error);
     }
-    if (launch_error != cudaSuccess) {
+    return static_cast<int>(launch_error);
+}
+
+extern "C" int torch_rs_private_h100_pointwise_reduce_float32_v1(
+    const float* x,
+    const float* bias,
+    float* output,
+    int rows,
+    int columns,
+    int* blocks_out,
+    int* threads_out,
+    int* launch_error_out,
+    int* sync_error_out
+) {
+    int launch_result = torch_rs_private_h100_pointwise_reduce_float32_launch_async_v1(
+        x,
+        bias,
+        output,
+        rows,
+        columns,
+        blocks_out,
+        threads_out,
+        launch_error_out
+    );
+    if (launch_result != 0) {
         if (sync_error_out != nullptr) {
             *sync_error_out = 0;
         }
-        return static_cast<int>(launch_error);
+        return launch_result;
     }
 
     cudaError_t sync_error = cudaDeviceSynchronize();
@@ -421,13 +458,18 @@ def _load_kernel_library(
         return None, {"loaded": False, "error": str(error)}
 
     function_name = "torch_rs_private_h100_pointwise_reduce_float32_v1"
+    async_function_name = (
+        "torch_rs_private_h100_pointwise_reduce_float32_launch_async_v1"
+    )
     try:
         function = getattr(library, function_name)
+        async_function = getattr(library, async_function_name)
     except AttributeError as error:
         return None, {
             "loaded": False,
             "error": str(error),
             "function": function_name,
+            "async_function": async_function_name,
         }
 
     function.argtypes = [
@@ -442,10 +484,22 @@ def _load_kernel_library(
         ctypes.POINTER(ctypes.c_int),
     ]
     function.restype = ctypes.c_int
+    async_function.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_int),
+    ]
+    async_function.restype = ctypes.c_int
     return library, {
         "loaded": True,
         "error": None,
         "function": function_name,
+        "async_function": async_function_name,
     }
 
 
@@ -980,8 +1034,24 @@ def _require_compiled_cuda_benchmark_input(
             f"{name} is not a torch_rs CudaBenchmarkTensor"
         )
 
-    metadata = value.metadata()
-    expected_metadata = _cuda_buffer.float32_metadata(expected_shape, device_index=0)
+    expected_metadata = (
+        _WORKLOAD_X_METADATA
+        if expected_shape == WORKLOAD_SHAPE
+        else _WORKLOAD_BIAS_METADATA
+    )
+    metadata = {
+        "shape": list(value.shape),
+        "stride": list(value.stride),
+        "storage_offset": 0,
+        "dtype": str(value.dtype),
+        "device": value.device,
+        "device_type": value.device_type,
+        "device_index": value.device_index,
+        "requires_grad": value.requires_grad,
+        "is_contiguous": value.is_contiguous,
+        "is_cuda": value.is_cuda,
+        "cpu_fallback": False,
+    }
     mismatched = [
         key
         for key, expected_value in expected_metadata.items()
@@ -1001,7 +1071,7 @@ def _require_compiled_cuda_benchmark_input(
         raise _cuda_compile_unsupported(f"{name} private buffer is not live") from error
     if buffer.metadata() != expected_metadata:
         raise _cuda_compile_unsupported(f"{name} private buffer metadata mismatch")
-    return buffer, metadata
+    return buffer, copy.deepcopy(expected_metadata)
 
 
 class H100Float32PointwiseReduceCompiledExecutor:
@@ -1009,6 +1079,7 @@ class H100Float32PointwiseReduceCompiledExecutor:
 
     __slots__ = (
         "_build",
+        "_closed",
         "_driver_probe",
         "_executor_key",
         "_invocation_count",
@@ -1016,11 +1087,13 @@ class H100Float32PointwiseReduceCompiledExecutor:
         "_kernel_library",
         "_kernel_library_evidence",
         "_nvcc",
+        "_output_pool",
         "_preparation",
         "_required_cuda_visible_devices",
         "_runtime",
         "_runtime_library",
         "_runtime_load_error",
+        "__weakref__",
     )
 
     def __init__(
@@ -1047,9 +1120,10 @@ class H100Float32PointwiseReduceCompiledExecutor:
         self._kernel_library_evidence = copy.deepcopy(kernel_library_evidence)
         self._required_cuda_visible_devices = required_cuda_visible_devices
         self._invocation_count = 0
+        self._closed = False
         self._kernel_function = getattr(
             self._kernel_library,
-            "torch_rs_private_h100_pointwise_reduce_float32_v1",
+            "torch_rs_private_h100_pointwise_reduce_float32_launch_async_v1",
         )
         key_payload = json.dumps(
             {
@@ -1069,20 +1143,42 @@ class H100Float32PointwiseReduceCompiledExecutor:
             digest_size=8,
         ).hexdigest()
         self._preparation = copy.deepcopy(preparation)
+        self._output_pool = _cuda_runtime_ownership.PrivateCudaBufferPool(
+            self._runtime,
+            OUTPUT_SHAPE,
+            name_prefix="compiled_output_pool",
+            device_index=0,
+            owner_id=self._executor_key,
+        )
+        output_pool_allocations = self._output_pool.preallocate(
+            _OUTPUT_POOL_INITIAL_CAPACITY,
+        )
+        for index, allocation in enumerate(output_pool_allocations):
+            self._preparation["calls"][f"cudaMalloc_output_pool_{index}"] = (
+                allocation["malloc_call"]
+            )
         self._preparation["preparation_id"] = self._executor_key
         self._preparation["prepared"] = True
         self._preparation["invocation_count"] = 0
+        self._preparation["closed"] = False
+        self._preparation["output_pool"] = self._output_pool.metadata()
 
     def metadata(self) -> dict[str, Any]:
         metadata = copy.deepcopy(self._preparation)
         metadata["invocation_count"] = self._invocation_count
+        metadata["closed"] = self._closed
+        metadata["output_pool"] = self._output_pool.metadata()
         return metadata
 
-    def execute(
-        self,
-        x: CudaBenchmarkTensor,
-        bias: CudaBenchmarkTensor,
-    ) -> CudaBenchmarkTensor:
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def _require_open(self) -> None:
+        if self._closed:
+            raise RuntimeError("compiled CUDA executor is closed")
+
+    def _require_visible_mask(self) -> None:
         required_cuda_visible_devices = self._required_cuda_visible_devices
         if (
             required_cuda_visible_devices is not None
@@ -1093,6 +1189,79 @@ class H100Float32PointwiseReduceCompiledExecutor:
                 "CUDA_VISIBLE_DEVICES="
                 f"{required_cuda_visible_devices} is required"
             )
+
+    def _require_visible_device0(self) -> None:
+        self._require_visible_mask()
+        _cuda_runtime_ownership.verify_current_device(
+            self._runtime,
+            0,
+            context="compiled workload",
+        )
+
+    def _set_and_require_visible_device0(self) -> dict[str, Any]:
+        self._require_visible_mask()
+        calls = _cuda_runtime_ownership.set_and_verify_current_device(
+            self._runtime,
+            0,
+            context="compiled workload",
+        )
+        return {
+            "cudaSetDevice_before_launch": calls["cudaSetDevice"],
+            "cudaGetDevice_before_launch": calls["cudaGetDevice"],
+        }
+
+    def _require_materializable_output(self) -> None:
+        if self._closed and self._output_pool.metadata()["live_buffers"] == 0:
+            raise RuntimeError("compiled CUDA executor is closed")
+        self._require_visible_device0()
+
+    def _release_output_lease(
+        self,
+        lease: _cuda_runtime_ownership.PrivateCudaBufferLease,
+        *,
+        close_executor: bool = False,
+    ) -> dict[str, Any] | None:
+        release = lease.release()
+        if release is None:
+            return None
+        release["freed_after_executor_close"] = release.get(
+            "freed_after_pool_close",
+            False,
+        )
+        if close_executor:
+            release["executor_close"] = self.close()
+        return release
+
+    def close(self) -> dict[str, Any]:
+        self._closed = True
+        self._preparation["closed"] = True
+        return self._output_pool.close()
+
+    def synchronize(self, *, label: str) -> dict[str, Any]:
+        self._require_open()
+        self._require_visible_mask()
+        return _cuda_runtime_ownership.synchronize_current_device(
+            self._runtime,
+            0,
+            label=label,
+        )
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
+
+    def execute(
+        self,
+        x: CudaBenchmarkTensor,
+        bias: CudaBenchmarkTensor,
+        *,
+        close_executor_on_output_release: bool = False,
+    ) -> CudaBenchmarkTensor:
+        self._require_open()
+        required_cuda_visible_devices = self._required_cuda_visible_devices
+        self._require_visible_mask()
 
         device_x, x_metadata = _require_compiled_cuda_benchmark_input(
             x,
@@ -1144,13 +1313,6 @@ class H100Float32PointwiseReduceCompiledExecutor:
             "device_output_bytes_checksum": None,
             "device_output_checksum": None,
             "readback_synchronized": False,
-            "driver": copy.deepcopy(self._driver_probe["driver"]),
-            "runtime": copy.deepcopy(self._preparation["runtime"]),
-            "device_0": copy.deepcopy(self._driver_probe["device_0"]),
-            "gpu": copy.deepcopy(self._preparation["gpu"]),
-            "nvcc": copy.deepcopy(self._nvcc),
-            "build": copy.deepcopy(self._build),
-            "kernel_library": copy.deepcopy(self._kernel_library_evidence),
             "executor": {
                 "schema_version": POINTWISE_REDUCE_COMPILE_EXECUTOR_SCHEMA_VERSION,
                 "preparation_id": self._executor_key,
@@ -1163,61 +1325,33 @@ class H100Float32PointwiseReduceCompiledExecutor:
             "calls": {},
         }
 
-        device_count = ctypes.c_int()
-        device_count_call = _runtime_call(
-            runtime,
-            "cudaGetDeviceCount",
-            ctypes.byref(device_count),
+        evidence["single_visible_cuda_device"] = self._preparation.get(
+            "single_visible_cuda_device"
         )
-        device_count_call["value"] = (
-            int(device_count.value) if device_count_call["result"] == 0 else None
-        )
-        evidence["calls"]["cudaGetDeviceCount"] = device_count_call
-        if device_count_call["result"] != 0 or device_count.value < 1:
-            raise RuntimeError(
-                "CUDA runtime has no visible device for compiled workload"
-            )
-        evidence["single_visible_cuda_device"] = int(device_count.value) == 1
-
-        set_device_call = _runtime_call(runtime, "cudaSetDevice", 0)
-        evidence["calls"]["cudaSetDevice"] = set_device_call
-        if set_device_call["result"] != 0:
-            raise RuntimeError("cudaSetDevice(0) failed for compiled workload")
-
-        current_device = ctypes.c_int(-1)
-        get_device_call = _runtime_call(
-            runtime,
-            "cudaGetDevice",
-            ctypes.byref(current_device),
-        )
-        get_device_call["value"] = (
-            int(current_device.value) if get_device_call["result"] == 0 else None
-        )
-        evidence["calls"]["cudaGetDevice"] = get_device_call
-        if get_device_call["result"] != 0:
-            raise RuntimeError("cudaGetDevice failed for compiled workload")
-        if int(current_device.value) != 0:
-            raise RuntimeError("compiled workload did not select CUDA device 0")
         evidence["device_type"] = "cuda"
         evidence["device_index"] = 0
+        evidence["calls"].update(self._set_and_require_visible_device0())
 
-        device_output = _cuda_buffer.PrivateCudaFloat32Buffer(
-            runtime,
-            OUTPUT_SHAPE,
-            name="compiled_output",
-            device_index=0,
-        )
-        evidence["calls"]["cudaMalloc_output"] = device_output.malloc_call
+        output_lease = self._output_pool.acquire()
+        device_output = output_lease.buffer
+        output_pool_evidence = dict(output_lease.acquisition)
+        output_pool_evidence["allocated_in_execute"] = output_pool_evidence[
+            "allocated_in_acquire"
+        ]
+        if output_pool_evidence["allocated_in_execute"]:
+            output_pool_evidence["source"] = "allocated_during_execute"
+        evidence["output_buffer_pool"] = output_pool_evidence
+        if output_pool_evidence["allocated_in_execute"]:
+            evidence["calls"]["cudaMalloc_output"] = device_output.malloc_call
         evidence["device_output_pointer_nonzero"] = device_output.pointer_nonzero
         if not device_output.allocation_ok:
-            device_output.close()
+            output_lease.release()
             raise RuntimeError("cudaMalloc failed for compiled output")
 
         try:
             blocks = ctypes.c_int(0)
             threads = ctypes.c_int(0)
             launch_error = ctypes.c_int(0)
-            sync_error = ctypes.c_int(0)
             kernel_result = int(
                 self._kernel_function(
                     device_x.pointer,
@@ -1228,7 +1362,6 @@ class H100Float32PointwiseReduceCompiledExecutor:
                     ctypes.byref(blocks),
                     ctypes.byref(threads),
                     ctypes.byref(launch_error),
-                    ctypes.byref(sync_error),
                 )
             )
             launch = {
@@ -1245,13 +1378,9 @@ class H100Float32PointwiseReduceCompiledExecutor:
                     else None,
                 },
                 "sync_error": {
-                    "result": int(sync_error.value),
-                    "error_name": _cuda_driver_probe._runtime_error_name(
-                        runtime,
-                        int(sync_error.value),
-                    )
-                    if sync_error.value
-                    else None,
+                    "result": None,
+                    "error_name": None,
+                    "deferred_to_explicit_timing_boundary": True,
                 },
             }
             evidence["launch"] = launch
@@ -1261,45 +1390,81 @@ class H100Float32PointwiseReduceCompiledExecutor:
                     "private CUDA pointwise-reduce kernel launch failed"
                 )
 
-            readback = device_output.checksum_readback(
-                lambda payload: _checksum_output_bytes(
-                    payload,
-                    WORKLOAD_SHAPE[0],
-                    WORKLOAD_SHAPE[1],
-                ),
-            )
-            evidence["calls"]["cudaMemcpyDeviceToHost_output"] = readback.copy_call
-            evidence["calls"]["cudaDeviceSynchronize_after_device_to_host"] = (
-                readback.sync_call
-            )
-            if readback.copy_call["result"] != 0:
-                raise RuntimeError(
-                    "cudaMemcpy device-to-host failed for compiled output"
-                )
-            if readback.sync_call is None or readback.sync_call["result"] != 0:
-                raise RuntimeError(
-                    "cudaDeviceSynchronize failed after compiled output readback"
-                )
-            if readback.payload is None:
-                raise RuntimeError("compiled output readback payload is missing")
-
-            output_metadata = device_output.metadata()
+            output_metadata = copy.deepcopy(_WORKLOAD_OUTPUT_METADATA)
             evidence["status"] = "ok"
             evidence["reason"] = (
-                "compiled pointwise-reduce workload checksum read back"
+                "compiled pointwise-reduce workload launched with output "
+                "checksum readback pending"
             )
             evidence["output_device_type"] = "cuda"
             evidence["output_metadata"] = output_metadata
-            evidence["device_output_bytes_checksum"] = readback.checksum
-            evidence["device_output_checksum"] = _checksum_tensor_metadata_values(
-                readback.payload,
-                output_metadata,
-            )
-            evidence["readback_synchronized"] = True
+            evidence["kernel_synchronized_in_call"] = False
+            evidence["output_materialized"] = False
+            evidence["readback_deferred"] = True
+            evidence["readback_synchronized"] = False
+
+            def materialized_metadata_updates(
+                readback: _cuda_buffer.PrivateCudaHostReadback,
+                wrapper_metadata: dict[str, Any],
+            ) -> dict[str, Any]:
+                del wrapper_metadata
+                if readback.payload is None:
+                    raise RuntimeError("compiled output readback payload is missing")
+                materialized_execution = copy.deepcopy(evidence)
+                materialized_execution["reason"] = (
+                    "compiled pointwise-reduce workload checksum read back"
+                )
+                materialized_execution["device_output_bytes_checksum"] = (
+                    readback.checksum
+                )
+                materialized_execution["device_output_checksum"] = (
+                    _checksum_tensor_metadata_values(
+                        readback.payload,
+                        output_metadata,
+                    )
+                )
+                materialized_execution["readback_synchronized"] = True
+                materialized_execution["output_materialized"] = True
+                materialized_execution["driver"] = copy.deepcopy(
+                    self._driver_probe["driver"]
+                )
+                materialized_execution["runtime"] = copy.deepcopy(
+                    self._preparation["runtime"]
+                )
+                materialized_execution["device_0"] = copy.deepcopy(
+                    self._driver_probe["device_0"]
+                )
+                materialized_execution["gpu"] = copy.deepcopy(
+                    self._preparation["gpu"]
+                )
+                materialized_execution["nvcc"] = copy.deepcopy(self._nvcc)
+                materialized_execution["build"] = copy.deepcopy(self._build)
+                materialized_execution["kernel_library"] = copy.deepcopy(
+                    self._kernel_library_evidence
+                )
+                materialized_execution["calls"][
+                    "cudaMemcpyDeviceToHost_output"
+                ] = readback.copy_call
+                materialized_execution["calls"][
+                    "cudaDeviceSynchronize_after_device_to_host"
+                ] = readback.sync_call
+                materialized_execution["output_buffer_pool"] = (
+                    copy.deepcopy(output_pool_evidence)
+                )
+                materialized_execution["output_buffer_pool"][
+                    "pool_snapshot_after_materialization"
+                ] = self._output_pool.metadata()
+                return {"compile_execution": materialized_execution}
 
             return CudaBenchmarkTensor(
                 device_output,
-                readback=readback,
+                checksum=(
+                    lambda payload: _checksum_output_bytes(
+                        payload,
+                        WORKLOAD_SHAPE[0],
+                        WORKLOAD_SHAPE[1],
+                    )
+                ),
                 checksum_name="torch_rs_private_cuda_pointwise_reduce_output_v1",
                 metadata_updates={
                     "workload_version": POINTWISE_REDUCE_COMPILE_WORKLOAD_VERSION,
@@ -1312,9 +1477,17 @@ class H100Float32PointwiseReduceCompiledExecutor:
                     "forwarded_to_pytorch": False,
                     "compile_execution": evidence,
                 },
+                materialized_metadata_updates=materialized_metadata_updates,
+                materialization_guard=self._require_materializable_output,
+                release_buffer=(
+                    lambda lease=output_lease: self._release_output_lease(
+                        lease,
+                        close_executor=close_executor_on_output_release,
+                    )
+                ),
             )
         except Exception:
-            device_output.close()
+            output_lease.release()
             raise
 
 
@@ -1485,7 +1658,7 @@ def execute_h100_float32_pointwise_reduce_compiled_device0(
     executor = prepare_h100_float32_pointwise_reduce_compiled_executor_device0(
         required_cuda_visible_devices=required_cuda_visible_devices,
     )
-    return executor.execute(x, bias)
+    return executor.execute(x, bias, close_executor_on_output_release=True)
 
 
 def launch_h100_float32_pointwise_reduce_device0(
@@ -1860,6 +2033,7 @@ __all__ = [
     "POINTWISE_REDUCE_COMPILE_WORKLOAD_VERSION",
     "POINTWISE_REDUCE_INPUTS_SCHEMA_VERSION",
     "POINTWISE_REDUCE_KERNEL_VERSION",
+    "POINTWISE_REDUCE_OUTPUT_POOL_SCHEMA_VERSION",
     "POINTWISE_REDUCE_SCHEMA_VERSION",
     "WORKLOAD_SHAPE",
     "execute_h100_float32_pointwise_reduce_compiled_device0",

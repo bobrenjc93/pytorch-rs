@@ -31,7 +31,7 @@ PROTECTED_OUTPUT_PATHS = {
 }
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v8"
+BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v10"
 WORKLOAD_VERSION = "h100_cuda_pointwise_reduce_float32_v1"
 PREPARED_EXECUTOR_SCHEMA_VERSION = (
     "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1"
@@ -275,8 +275,8 @@ def _time_once(reference_torch, compiled, inputs):
     started_ns = time.perf_counter_ns()
     output = compiled(*inputs)
     _synchronize(reference_torch)
-    checksum = _checksum_tensor(output)
     elapsed_ns = time.perf_counter_ns() - started_ns
+    checksum = _checksum_tensor(output)
     return elapsed_ns, checksum, output
 
 
@@ -287,8 +287,8 @@ def _time_repeated(reference_torch, compiled, inputs, repeats):
     for _ in range(repeats):
         output = compiled(*inputs)
     _synchronize(reference_torch)
-    checksum = _checksum_tensor(output)
     elapsed_ns = time.perf_counter_ns() - started_ns
+    checksum = _checksum_tensor(output)
     return elapsed_ns, checksum
 
 
@@ -348,6 +348,13 @@ def _run_pytorch_reference(reference_torch, args):
         "factory_us": factory_ns / 1000.0,
         "cold_first_call_us": cold_ns / 1000.0,
         "cold_checksum": cold_checksum,
+        "timing_boundary": {
+            "explicit_cuda_synchronize_before_timed_region": True,
+            "explicit_cuda_synchronize_after_timed_region": True,
+            "torch_rs_equivalent_explicit_sync": True,
+            "compiled_calls_only": True,
+            "materialization_outside_timed_region": True,
+        },
         "steady": _summarize_samples(sample_ns, args.repeats),
         "steady_checksums": sorted(set(sample_checksums)),
         "input_metadata": [_tensor_metadata(input) for input in inputs],
@@ -843,8 +850,19 @@ def _require_torch_rs_cuda_compile_output(
         raise AssertionError("compiled CUDA output checksum did not match PyTorch")
     if compile_execution.get("readback_synchronized") is not True:
         raise AssertionError("compiled CUDA output readback was not synchronized")
-    if compile_execution.get("launch", {}).get("sync_error", {}).get("result") != 0:
-        raise AssertionError("compiled CUDA kernel did not synchronize")
+    launch_sync = compile_execution.get("launch", {}).get("sync_error", {})
+    if launch_sync.get("result") is not None or (
+        launch_sync.get("deferred_to_explicit_timing_boundary") is not True
+    ):
+        raise AssertionError(
+            "compiled CUDA kernel launch did not defer synchronization"
+        )
+    if compile_execution.get("kernel_synchronized_in_call") is not False:
+        raise AssertionError("compiled CUDA kernel synchronized inside the call")
+    if compile_execution.get("readback_deferred") is not True:
+        raise AssertionError("compiled CUDA output readback was not deferred")
+    if compile_execution.get("output_materialized") is not True:
+        raise AssertionError("compiled CUDA output was not materialized")
     executor = compile_execution.get("executor")
     if type(executor) is not dict:
         raise AssertionError("compiled CUDA execution is missing executor evidence")
@@ -876,14 +894,7 @@ def _require_torch_rs_cuda_compile_output(
 def _compare_compiled_output_bytes(output, compile_execution, expected_output_bytes):
     from torch_rs import _cuda_pointwise_reduce_workload
 
-    output_buffer = output._torch_rs_private_cuda_buffer()
-    readback = output_buffer.checksum_readback(
-        lambda payload: _cuda_pointwise_reduce_workload._checksum_output_bytes(
-            payload,
-            WORKLOAD_SHAPE[0],
-            WORKLOAD_SHAPE[1],
-        )
-    )
+    readback = output._torch_rs_private_cuda_materialized_readback()
     if readback.copy_call.get("result") != 0:
         return {
             "exact_bytes_match": False,
@@ -919,36 +930,74 @@ def _compare_compiled_output_bytes(output, compile_execution, expected_output_by
     }
 
 
+def _synchronize_torch_rs_cuda_compile(compiled, *, label):
+    executor = getattr(compiled, "_torch_rs_cuda_compile_executor", None)
+    if executor is None or not hasattr(executor, "synchronize"):
+        raise AssertionError("compiled torch_rs CUDA wrapper is missing synchronize")
+    return executor.synchronize(label=label)
+
+
+def _synchronize_torch_rs_cuda_tensor(tensor, *, label):
+    output_buffer = tensor._torch_rs_private_cuda_buffer()
+    call = output_buffer.synchronize()
+    call["boundary"] = label
+    if call["result"] != 0:
+        raise RuntimeError("cudaDeviceSynchronize failed for torch_rs CUDA tensor")
+    return call
+
+
 def _time_torch_rs_cuda_compile_once(compiled, inputs):
-    started_ns = time.perf_counter_ns()
-    output = compiled(*inputs)
-    elapsed_ns = time.perf_counter_ns() - started_ns
-    metadata, compile_execution = _compile_execution_from_output(output)
-    return (
-        elapsed_ns,
-        compile_execution["device_output_checksum"],
-        output,
-        metadata,
-        compile_execution,
+    before_sync = _synchronize_torch_rs_cuda_compile(
+        compiled,
+        label="before_cold_compiled_call",
     )
+    output = None
+    try:
+        started_ns = time.perf_counter_ns()
+        output = compiled(*inputs)
+        after_sync = _synchronize_torch_rs_cuda_compile(
+            compiled,
+            label="after_cold_compiled_call",
+        )
+        elapsed_ns = time.perf_counter_ns() - started_ns
+        return elapsed_ns, output, {
+            "before_timed_region": before_sync,
+            "after_timed_region": after_sync,
+            "materialization_outside_timed_region": True,
+            "timed_call_count": 1,
+        }
+    except Exception:
+        if output is not None:
+            output._torch_rs_close_private_cuda_buffer()
+        raise
 
 
 def _time_torch_rs_cuda_compile_repeated(compiled, inputs, repeats):
-    outputs = []
+    output = None
+    before_sync = _synchronize_torch_rs_cuda_compile(
+        compiled,
+        label="before_repeated_compiled_calls",
+    )
     started_ns = time.perf_counter_ns()
     try:
         for _ in range(repeats):
-            outputs.append(compiled(*inputs))
-        elapsed_ns = time.perf_counter_ns() - started_ns
-        metadata, compile_execution = _compile_execution_from_output(outputs[-1])
-        return (
-            elapsed_ns,
-            compile_execution["device_output_checksum"],
-            metadata,
-            compile_execution,
+            if output is not None:
+                output._torch_rs_close_private_cuda_buffer()
+            output = compiled(*inputs)
+        after_sync = _synchronize_torch_rs_cuda_compile(
+            compiled,
+            label="after_repeated_compiled_calls",
         )
+        elapsed_ns = time.perf_counter_ns() - started_ns
+        assert output is not None
+        return output, elapsed_ns, {
+            "before_timed_region": before_sync,
+            "after_timed_region": after_sync,
+            "materialization_outside_timed_region": True,
+            "timed_call_count": repeats,
+        }
     finally:
-        for output in outputs:
+        if sys.exc_info()[0] is not None and output is not None:
             output._torch_rs_close_private_cuda_buffer()
 
 
@@ -959,22 +1008,42 @@ def _time_torch_rs_cuda_unprepared_compatibility_repeated(
 ):
     from torch_rs import _cuda_pointwise_reduce_workload
 
-    started_ns = time.perf_counter_ns()
     output = None
-    for _ in range(repeats):
-        if output is not None:
-            output._torch_rs_close_private_cuda_buffer()
-        output = (
-            _cuda_pointwise_reduce_workload
-            .execute_h100_float32_pointwise_reduce_compiled_device0(
-                *inputs,
-                required_cuda_visible_devices=required_cuda_visible_devices,
-            )
-        )
-    elapsed_ns = time.perf_counter_ns() - started_ns
+    before_sync = _synchronize_torch_rs_cuda_tensor(
+        inputs[0],
+        label="before_unprepared_repeated_calls",
+    )
+    started_ns = time.perf_counter_ns()
     try:
+        for _ in range(repeats):
+            if output is not None:
+                output._torch_rs_close_private_cuda_buffer()
+            output = (
+                _cuda_pointwise_reduce_workload
+                .execute_h100_float32_pointwise_reduce_compiled_device0(
+                    *inputs,
+                    required_cuda_visible_devices=required_cuda_visible_devices,
+                )
+            )
+        assert output is not None
+        after_sync = _synchronize_torch_rs_cuda_tensor(
+            output,
+            label="after_unprepared_repeated_calls",
+        )
+        elapsed_ns = time.perf_counter_ns() - started_ns
         _metadata, compile_execution = _compile_execution_from_output(output)
-        return elapsed_ns, compile_execution["device_output_checksum"], compile_execution
+        compile_execution["timing_boundary"] = {
+            "before_timed_region": before_sync,
+            "after_timed_region": after_sync,
+            "materialization_outside_timed_region": True,
+            "timed_call_count": repeats,
+        }
+        return (
+            elapsed_ns,
+            compile_execution["device_output_checksum"],
+            _metadata,
+            compile_execution,
+        )
     finally:
         if output is not None:
             output._torch_rs_close_private_cuda_buffer()
@@ -990,7 +1059,7 @@ def _run_torch_rs_cuda_unprepared_compatibility_comparison(
     last_execution = None
 
     for _ in range(args.warmups):
-        _elapsed_ns, _checksum, last_execution = (
+        _elapsed_ns, _checksum, _metadata, last_execution = (
             _time_torch_rs_cuda_unprepared_compatibility_repeated(
                 input_bundle.inputs,
                 args.repeats,
@@ -999,7 +1068,7 @@ def _run_torch_rs_cuda_unprepared_compatibility_comparison(
         )
 
     for _ in range(args.samples):
-        elapsed_ns, checksum, last_execution = (
+        elapsed_ns, checksum, _metadata, last_execution = (
             _time_torch_rs_cuda_unprepared_compatibility_repeated(
                 input_bundle.inputs,
                 args.repeats,
@@ -1041,6 +1110,7 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
     )
     _require_private_cuda_pointwise_reduce_inputs(input_evidence)
     assert input_bundle is not None
+    compiled = None
 
     mask_attribute = "_torch_rs_cuda_compile_required_cuda_visible_devices"
     missing_attribute = object()
@@ -1069,13 +1139,9 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
             expected_invocation_count=0,
         )
 
-        (
-            cold_ns,
-            cold_checksum,
-            cold_output,
-            cold_metadata,
-            cold_execution,
-        ) = _time_torch_rs_cuda_compile_once(compiled, input_bundle.inputs)
+        cold_ns, cold_output, cold_timing_boundary = (
+            _time_torch_rs_cuda_compile_once(compiled, input_bundle.inputs)
+        )
         try:
             cold_metadata, cold_execution = _require_torch_rs_cuda_compile_output(
                 cold_output,
@@ -1083,33 +1149,69 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
                 expected_output_bytes=workload_buffers["expected_output_bytes"],
                 expected_output_metadata=workload_buffers["expected_output_metadata"],
             )
+            cold_execution["timing_boundary"] = cold_timing_boundary
+            cold_checksum = cold_execution["device_output_checksum"]
         finally:
             cold_output._torch_rs_close_private_cuda_buffer()
         last_execution = cold_execution
 
         for _ in range(args.warmups):
-            (
-                _warmup_ns,
-                _warmup_checksum,
-                _warmup_metadata,
-                warmup_execution,
-            ) = _time_torch_rs_cuda_compile_repeated(
-                compiled,
-                input_bundle.inputs,
-                args.repeats,
-            )
-            last_execution = warmup_execution
-
-        sample_ns = []
-        sample_checksums = []
-        for _ in range(args.samples):
-            elapsed_ns, checksum, _sample_metadata, sample_execution = (
+            warmup_output, _warmup_ns, warmup_timing_boundary = (
                 _time_torch_rs_cuda_compile_repeated(
                     compiled,
                     input_bundle.inputs,
                     args.repeats,
                 )
             )
+            try:
+                _warmup_metadata, warmup_execution = (
+                    _require_torch_rs_cuda_compile_output(
+                        warmup_output,
+                        expected_checksum=workload_buffers[
+                            "expected_output_checksum"
+                        ],
+                        expected_output_bytes=workload_buffers[
+                            "expected_output_bytes"
+                        ],
+                        expected_output_metadata=workload_buffers[
+                            "expected_output_metadata"
+                        ],
+                    )
+                )
+                warmup_execution["timing_boundary"] = warmup_timing_boundary
+            finally:
+                warmup_output._torch_rs_close_private_cuda_buffer()
+            last_execution = warmup_execution
+
+        sample_ns = []
+        sample_checksums = []
+        for _ in range(args.samples):
+            sample_output, elapsed_ns, sample_timing_boundary = (
+                _time_torch_rs_cuda_compile_repeated(
+                    compiled,
+                    input_bundle.inputs,
+                    args.repeats,
+                )
+            )
+            try:
+                _sample_metadata, sample_execution = (
+                    _require_torch_rs_cuda_compile_output(
+                        sample_output,
+                        expected_checksum=workload_buffers[
+                            "expected_output_checksum"
+                        ],
+                        expected_output_bytes=workload_buffers[
+                            "expected_output_bytes"
+                        ],
+                        expected_output_metadata=workload_buffers[
+                            "expected_output_metadata"
+                        ],
+                    )
+                )
+                sample_execution["timing_boundary"] = sample_timing_boundary
+                checksum = sample_execution["device_output_checksum"]
+            finally:
+                sample_output._torch_rs_close_private_cuda_buffer()
             last_execution = sample_execution
             sample_ns.append(elapsed_ns)
             sample_checksums.append(checksum)
@@ -1131,6 +1233,7 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
         )
         cold_executor = cold_execution.get("executor") or {}
         last_executor = last_execution.get("executor") or {}
+        last_output_pool = last_execution.get("output_buffer_pool") or {}
         prepared_executor_reuse = {
             "preparation_id": prepared_executor_after_timing["preparation_id"],
             "before_first_call_invocation_count": (
@@ -1155,6 +1258,33 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
                 )
                 is True
             ),
+            "output_pool_enabled": (
+                (prepared_executor_after_timing.get("output_pool") or {}).get(
+                    "enabled"
+                )
+                is True
+            ),
+            "output_pool_initial_capacity": (
+                prepared_executor_after_timing.get("output_pool") or {}
+            ).get("initial_capacity"),
+            "output_pool_allocation_count": (
+                prepared_executor_after_timing.get("output_pool") or {}
+            ).get("allocation_count"),
+            "output_pool_release_count": (
+                prepared_executor_after_timing.get("output_pool") or {}
+            ).get("release_count"),
+            "output_pool_live_buffers_after_timing": (
+                prepared_executor_after_timing.get("output_pool") or {}
+            ).get("live_buffers"),
+            "output_pool_available_buffers_after_timing": (
+                prepared_executor_after_timing.get("output_pool") or {}
+            ).get("available_buffers"),
+            "steady_state_reused_output_buffer": (
+                last_output_pool.get("reused_released_allocation") is True
+            ),
+            "steady_state_output_allocated_in_execute": (
+                last_output_pool.get("allocated_in_execute") is True
+            ),
         }
         if (
             prepared_executor_reuse["observed_invocation_count"]
@@ -1162,6 +1292,10 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
             or prepared_executor_reuse["last_invocation_index"]
             != expected_invocations
             or not prepared_executor_reuse["steady_state_reused_prepared_executor"]
+            or not prepared_executor_reuse["output_pool_enabled"]
+            or prepared_executor_reuse["output_pool_initial_capacity"] < 2
+            or not prepared_executor_reuse["steady_state_reused_output_buffer"]
+            or prepared_executor_reuse["steady_state_output_allocated_in_execute"]
         ):
             raise AssertionError("compiled CUDA prepared executor was not reused")
 
@@ -1203,6 +1337,13 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
             "factory_us": factory_ns / 1000.0,
             "cold_first_call_us": cold_ns / 1000.0,
             "cold_checksum": cold_checksum,
+            "timing_boundary": {
+                "explicit_cuda_synchronize_before_timed_region": True,
+                "explicit_cuda_synchronize_after_timed_region": True,
+                "pytorch_equivalent_explicit_sync": True,
+                "compiled_calls_only": True,
+                "materialization_outside_timed_region": True,
+            },
             "steady": _summarize_samples(sample_ns, args.repeats),
             "steady_checksums": sorted(set(sample_checksums)),
             "input_metadata": cold_execution["input_metadata"],
@@ -1236,6 +1377,11 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
                 pass
         else:
             setattr(h100_cuda_pointwise_reduce_float32, mask_attribute, previous_mask)
+        if compiled is not None:
+            executor = getattr(compiled, "_torch_rs_cuda_compile_executor", None)
+            close = getattr(executor, "close", None)
+            if close is not None:
+                close()
         input_bundle.close()
 
 
