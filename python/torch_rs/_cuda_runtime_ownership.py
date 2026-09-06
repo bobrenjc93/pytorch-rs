@@ -17,12 +17,180 @@ from __future__ import annotations
 
 import ctypes
 import hashlib
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
 from . import _cuda_buffer
 
 
 CUDA_BUFFER_POOL_SCHEMA_VERSION = "torch_rs_private_cuda_buffer_pool_v1"
+
+
+@dataclass(frozen=True, slots=True)
+class PrivateCudaBufferPoolAcquisition:
+    lease_id: str
+    buffer_name: str
+    source: str
+    allocated_in_acquire: bool
+    reused_released_allocation: bool
+    pool_initial_capacity: int
+    pool_allocation_count: int
+    pool_reuse_count: int
+    pool_release_count: int
+    pool_live_buffers_after_acquire: int
+    pool_available_buffers_after_acquire: int
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> "PrivateCudaBufferPoolAcquisition":
+        del memo
+        return self
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": CUDA_BUFFER_POOL_SCHEMA_VERSION,
+            "enabled": True,
+            "lease_id": self.lease_id,
+            "buffer_name": self.buffer_name,
+            "source": self.source,
+            "allocated_in_acquire": self.allocated_in_acquire,
+            "reused_released_allocation": self.reused_released_allocation,
+            "pool_initial_capacity": self.pool_initial_capacity,
+            "pool_allocation_count": self.pool_allocation_count,
+            "pool_reuse_count": self.pool_reuse_count,
+            "pool_release_count": self.pool_release_count,
+            "pool_live_buffers_after_acquire": self.pool_live_buffers_after_acquire,
+            "pool_available_buffers_after_acquire": (
+                self.pool_available_buffers_after_acquire
+            ),
+        }
+
+
+class PrivateCudaBufferPoolRelease(Mapping):
+    """Lazy mapping for release diagnostics.
+
+    The steady benchmark loop releases previous outputs inside the timed
+    section but ignores the return value. Keep the ownership bookkeeping
+    compact there and expand to a normal evidence dictionary only when tests or
+    diagnostics index the result.
+    """
+
+    __slots__ = (
+        "_buffer_name",
+        "_calls",
+        "_freed_after_executor_close",
+        "_freed_after_pool_close",
+        "_keys",
+        "_lease_id",
+        "_pool_available_buffers_after_release",
+        "_pool_free_count",
+        "_pool_live_buffers_after_release",
+        "_pool_release_count",
+        "_released_to_pool",
+    )
+
+    def __init__(
+        self,
+        *,
+        lease_id: str,
+        buffer_name: str,
+        pool_live_buffers_after_release: int,
+        pool_release_count: int,
+        released_to_pool: bool,
+        freed_after_pool_close: bool,
+        pool_available_buffers_after_release: int,
+        pool_free_count: int,
+        calls: dict[str, Any] | None = None,
+        freed_after_executor_close: bool | None = None,
+    ) -> None:
+        self._lease_id = lease_id
+        self._buffer_name = buffer_name
+        self._pool_live_buffers_after_release = pool_live_buffers_after_release
+        self._pool_release_count = pool_release_count
+        self._released_to_pool = released_to_pool
+        self._freed_after_pool_close = freed_after_pool_close
+        self._pool_available_buffers_after_release = (
+            pool_available_buffers_after_release
+        )
+        self._pool_free_count = pool_free_count
+        self._calls = calls
+        self._freed_after_executor_close = freed_after_executor_close
+        keys = [
+            "schema_version",
+            "lease_id",
+            "buffer_name",
+            "pool_live_buffers_after_release",
+            "pool_release_count",
+            "released_to_pool",
+            "freed_after_pool_close",
+            "pool_available_buffers_after_release",
+            "pool_free_count",
+        ]
+        if calls is not None:
+            keys.append("calls")
+        if freed_after_executor_close is not None:
+            keys.append("freed_after_executor_close")
+        self._keys = tuple(keys)
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> "PrivateCudaBufferPoolRelease":
+        del memo
+        return self
+
+    def __getitem__(self, key: str) -> Any:
+        if key == "schema_version":
+            return CUDA_BUFFER_POOL_SCHEMA_VERSION
+        if key == "lease_id":
+            return self._lease_id
+        if key == "buffer_name":
+            return self._buffer_name
+        if key == "pool_live_buffers_after_release":
+            return self._pool_live_buffers_after_release
+        if key == "pool_release_count":
+            return self._pool_release_count
+        if key == "released_to_pool":
+            return self._released_to_pool
+        if key == "freed_after_pool_close":
+            return self._freed_after_pool_close
+        if key == "pool_available_buffers_after_release":
+            return self._pool_available_buffers_after_release
+        if key == "pool_free_count":
+            return self._pool_free_count
+        if key == "calls" and self._calls is not None:
+            return self._calls
+        if (
+            key == "freed_after_executor_close"
+            and self._freed_after_executor_close is not None
+        ):
+            return self._freed_after_executor_close
+        raise KeyError(key)
+
+    def __iter__(self):
+        return iter(self._keys)
+
+    def __len__(self) -> int:
+        return len(self._keys)
+
+    def with_executor_close(
+        self,
+        *,
+        freed_after_executor_close: bool,
+    ) -> "PrivateCudaBufferPoolRelease":
+        return PrivateCudaBufferPoolRelease(
+            lease_id=self._lease_id,
+            buffer_name=self._buffer_name,
+            pool_live_buffers_after_release=self._pool_live_buffers_after_release,
+            pool_release_count=self._pool_release_count,
+            released_to_pool=self._released_to_pool,
+            freed_after_pool_close=self._freed_after_pool_close,
+            pool_available_buffers_after_release=(
+                self._pool_available_buffers_after_release
+            ),
+            pool_free_count=self._pool_free_count,
+            calls=self._calls,
+            freed_after_executor_close=freed_after_executor_close,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {key: self[key] for key in self._keys}
 
 
 def _validate_device_index(device_index: int) -> None:
@@ -112,27 +280,39 @@ def synchronize_current_device(
 class PrivateCudaBufferLease:
     """One live borrow from a ``PrivateCudaBufferPool``."""
 
-    __slots__ = ("_pool", "_released", "acquisition", "buffer", "lease_id")
+    __slots__ = ("_acquisition", "_pool", "_released", "buffer", "lease_id")
 
     def __init__(
         self,
         pool: "PrivateCudaBufferPool",
         buffer: _cuda_buffer.PrivateCudaFloat32Buffer,
         lease_id: str,
-        acquisition: dict[str, Any],
+        acquisition: PrivateCudaBufferPoolAcquisition,
     ) -> None:
         self._pool = pool
         self.buffer = buffer
         self.lease_id = lease_id
-        self.acquisition = acquisition
+        self._acquisition = acquisition
         self._released = False
+
+    @property
+    def acquisition_token(self) -> PrivateCudaBufferPoolAcquisition:
+        return self._acquisition
+
+    @property
+    def acquisition(self) -> dict[str, Any]:
+        return self._acquisition.to_dict()
 
     @property
     def released(self) -> bool:
         return self._released
 
-    def release(self) -> dict[str, Any] | None:
-        return self._pool.release(self)
+    def release(
+        self,
+        *,
+        compact: bool = False,
+    ) -> Mapping[str, Any] | dict[str, Any] | None:
+        return self._pool.release(self, compact=compact)
 
 
 class PrivateCudaBufferPool:
@@ -233,6 +413,11 @@ class PrivateCudaBufferPool:
     ) -> tuple[_cuda_buffer.PrivateCudaFloat32Buffer, dict[str, Any]]:
         index = self._next_index
         self._next_index += 1
+        device_guard = set_and_verify_current_device(
+            self._runtime,
+            self._device_index,
+            context=f"CUDA buffer pool allocation {self._name_prefix}",
+        )
         buffer = self._buffer_factory(
             self._runtime,
             self._shape,
@@ -246,6 +431,7 @@ class PrivateCudaBufferPool:
             "buffer_name": buffer.name,
             "byte_count": buffer.byte_count,
             "device_index": buffer.device_index,
+            "device_guard": device_guard,
             "malloc_call": dict(buffer.malloc_call),
         }
         if not buffer.allocation_ok:
@@ -264,7 +450,7 @@ class PrivateCudaBufferPool:
         self._require_open()
         allocated_in_acquire = False
         if self._available:
-            buffer = self._available.pop(0)
+            buffer = self._available.pop()
         else:
             buffer, _allocation = self._allocate_buffer()
             allocated_in_acquire = True
@@ -283,27 +469,30 @@ class PrivateCudaBufferPool:
         elif reused_released_allocation:
             source = "reused_released_allocation"
 
-        acquisition = {
-            "schema_version": CUDA_BUFFER_POOL_SCHEMA_VERSION,
-            "enabled": True,
-            "lease_id": lease_id,
-            "buffer_name": buffer.name,
-            "source": source,
-            "allocated_in_acquire": allocated_in_acquire,
-            "reused_released_allocation": reused_released_allocation,
-            "pool_initial_capacity": self._initial_capacity,
-            "pool_allocation_count": self._allocation_count,
-            "pool_reuse_count": self._reuse_count,
-            "pool_release_count": self._release_count,
-            "pool_live_buffers_after_acquire": len(self._live_leases) + 1,
-            "pool_available_buffers_after_acquire": len(self._available),
-        }
+        acquisition = PrivateCudaBufferPoolAcquisition(
+            lease_id=lease_id,
+            buffer_name=buffer.name,
+            source=source,
+            allocated_in_acquire=allocated_in_acquire,
+            reused_released_allocation=reused_released_allocation,
+            pool_initial_capacity=self._initial_capacity,
+            pool_allocation_count=self._allocation_count,
+            pool_reuse_count=self._reuse_count,
+            pool_release_count=self._release_count,
+            pool_live_buffers_after_acquire=len(self._live_leases) + 1,
+            pool_available_buffers_after_acquire=len(self._available),
+        )
         lease = PrivateCudaBufferLease(self, buffer, lease_id, acquisition)
         self._live_leases[id(buffer)] = lease
         self._max_live = max(self._max_live, len(self._live_leases))
         return lease
 
-    def release(self, lease: PrivateCudaBufferLease) -> dict[str, Any] | None:
+    def release(
+        self,
+        lease: PrivateCudaBufferLease,
+        *,
+        compact: bool = False,
+    ) -> Mapping[str, Any] | dict[str, Any] | None:
         if type(lease) is not PrivateCudaBufferLease:
             raise TypeError("lease must be PrivateCudaBufferLease")
         if lease._pool is not self:
@@ -325,40 +514,37 @@ class PrivateCudaBufferPool:
         del self._live_leases[id(buffer)]
         lease._released = True
         self._release_count += 1
-        release = {
-            "schema_version": CUDA_BUFFER_POOL_SCHEMA_VERSION,
-            "lease_id": lease.lease_id,
-            "buffer_name": buffer.name,
-            "pool_live_buffers_after_release": len(self._live_leases),
-            "pool_release_count": self._release_count,
-        }
         if self._closed:
             free_call = buffer.close()
             if free_call is not None:
                 self._free_count += 1
-            release.update(
-                {
-                    "released_to_pool": False,
-                    "freed_after_pool_close": free_call is not None,
-                    "pool_available_buffers_after_release": len(self._available),
-                    "pool_free_count": self._free_count,
-                    "calls": {}
-                    if free_call is None
-                    else {f"cudaFree_{buffer.name}": free_call},
-                }
+            release = PrivateCudaBufferPoolRelease(
+                lease_id=lease.lease_id,
+                buffer_name=buffer.name,
+                pool_live_buffers_after_release=len(self._live_leases),
+                pool_release_count=self._release_count,
+                released_to_pool=False,
+                freed_after_pool_close=free_call is not None,
+                pool_available_buffers_after_release=len(self._available),
+                pool_free_count=self._free_count,
+                calls={}
+                if free_call is None
+                else {f"cudaFree_{buffer.name}": free_call},
             )
-            return release
+            return release if compact else release.to_dict()
 
-        self._available.insert(0, buffer)
-        release.update(
-            {
-                "released_to_pool": True,
-                "freed_after_pool_close": False,
-                "pool_available_buffers_after_release": len(self._available),
-                "pool_free_count": self._free_count,
-            }
+        self._available.append(buffer)
+        release = PrivateCudaBufferPoolRelease(
+            lease_id=lease.lease_id,
+            buffer_name=buffer.name,
+            pool_live_buffers_after_release=len(self._live_leases),
+            pool_release_count=self._release_count,
+            released_to_pool=True,
+            freed_after_pool_close=False,
+            pool_available_buffers_after_release=len(self._available),
+            pool_free_count=self._free_count,
         )
-        return release
+        return release if compact else release.to_dict()
 
     def close(self) -> dict[str, Any]:
         if self._closed:
@@ -437,8 +623,10 @@ class PrivateCudaBufferPool:
 
 __all__ = [
     "CUDA_BUFFER_POOL_SCHEMA_VERSION",
+    "PrivateCudaBufferPoolAcquisition",
     "PrivateCudaBufferLease",
     "PrivateCudaBufferPool",
+    "PrivateCudaBufferPoolRelease",
     "set_and_verify_current_device",
     "synchronize_current_device",
     "verify_current_device",
