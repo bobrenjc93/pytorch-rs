@@ -213,6 +213,18 @@ class TopLevelSubReferenceTests(unittest.TestCase):
             fused_scalar = np.asarray([0xD5F4_4919], dtype=np.uint32).view(
                 np.float32
             )[0]
+            actual_integer_zero_left = tensor_from_bits(
+                torch, [0x8000_0000, 0x8000_0000]
+            )
+            expected_integer_zero_left = tensor_from_bits(
+                reference_torch, [0x8000_0000, 0x8000_0000]
+            )
+            actual_integer_zero_right = tensor_from_bits(
+                torch, [0x0000_0000, 0x8000_0000]
+            )
+            expected_integer_zero_right = tensor_from_bits(
+                reference_torch, [0x0000_0000, 0x8000_0000]
+            )
             alpha_nan = np.asarray([0x7F8A_BCDE], dtype=np.uint32).view(np.float32)[0]
             actual_nan_left = tensor_from_bits(
                 torch, [0x3F80_0000, 0x7FC1_2345]
@@ -308,6 +320,36 @@ class TopLevelSubReferenceTests(unittest.TestCase):
                     ),
                 ),
                 (
+                    "nan alpha right nan precedence",
+                    lambda actual_function=actual_function: actual_function(
+                        tensor_from_bits(torch, [0x3F80_0000]),
+                        actual_right_nan,
+                        alpha=alpha_nan,
+                    ),
+                    lambda expected_function=expected_function: expected_function(
+                        tensor_from_bits(reference_torch, [0x3F80_0000]),
+                        expected_right_nan,
+                        alpha=alpha_nan,
+                    ),
+                ),
+                (
+                    "nan alpha scalar right nan precedence",
+                    lambda actual_function=actual_function: actual_function(
+                        tensor_from_bits(torch, [0x3F80_0000]),
+                        np.asarray([0x7F81_2345], dtype=np.uint32).view(np.float32)[
+                            0
+                        ],
+                        alpha=alpha_nan,
+                    ),
+                    lambda expected_function=expected_function: expected_function(
+                        tensor_from_bits(reference_torch, [0x3F80_0000]),
+                        np.asarray([0x7F81_2345], dtype=np.uint32).view(np.float32)[
+                            0
+                        ],
+                        alpha=alpha_nan,
+                    ),
+                ),
+                (
                     "nonfinite alpha scalar other",
                     lambda actual_function=actual_function: actual_function(
                         tensor_from_bits(torch, [0x3F80_0000]),
@@ -326,6 +368,59 @@ class TopLevelSubReferenceTests(unittest.TestCase):
                     warnings.simplefilter("ignore", UserWarning)
                     expected = expected_call()
                 self.assert_matches(actual_call(), expected, case=(function_name, case))
+            for integer_zero_alpha in (0, np.int64(0), np.uint64(0)):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", UserWarning)
+                    expected_tensor = expected_function(
+                        expected_integer_zero_left,
+                        expected_integer_zero_right,
+                        alpha=integer_zero_alpha,
+                    )
+                    expected_tensor_scalar = expected_function(
+                        tensor_from_bits(reference_torch, [0x8000_0000]),
+                        np.float32(0.0),
+                        alpha=integer_zero_alpha,
+                    )
+                    expected_scalar_tensor = expected_function(
+                        np.float32(-0.0),
+                        tensor_from_bits(reference_torch, [0x0000_0000]),
+                        alpha=integer_zero_alpha,
+                    )
+                self.assert_matches(
+                    actual_function(
+                        actual_integer_zero_left,
+                        actual_integer_zero_right,
+                        alpha=integer_zero_alpha,
+                    ),
+                    expected_tensor,
+                    case=(function_name, "integer zero tensor", type(integer_zero_alpha).__name__),
+                )
+                self.assert_matches(
+                    actual_function(
+                        tensor_from_bits(torch, [0x8000_0000]),
+                        np.float32(0.0),
+                        alpha=integer_zero_alpha,
+                    ),
+                    expected_tensor_scalar,
+                    case=(
+                        function_name,
+                        "integer zero tensor scalar",
+                        type(integer_zero_alpha).__name__,
+                    ),
+                )
+                self.assert_matches(
+                    actual_function(
+                        np.float32(-0.0),
+                        tensor_from_bits(torch, [0x0000_0000]),
+                        alpha=integer_zero_alpha,
+                    ),
+                    expected_scalar_tensor,
+                    case=(
+                        function_name,
+                        "integer zero scalar tensor",
+                        type(integer_zero_alpha).__name__,
+                    ),
+                )
             np.testing.assert_array_equal(tensor_bits(actual_left), actual_left_before)
             np.testing.assert_array_equal(tensor_bits(actual_right), actual_right_before)
 
@@ -369,6 +464,21 @@ class TopLevelSubReferenceTests(unittest.TestCase):
             np.testing.assert_array_equal(
                 np.asarray(actual_scalar_left_grad.grad),
                 expected_scalar_left_grad.grad.numpy(),
+            )
+
+            actual_nan_grad_left = torch.tensor([1.0], requires_grad=True)
+            expected_nan_grad_left = reference_torch.tensor([1.0], requires_grad=True)
+            actual_nan_grad_right = torch.tensor([2.0], requires_grad=True)
+            expected_nan_grad_right = reference_torch.tensor([2.0], requires_grad=True)
+            actual_function(
+                actual_nan_grad_left, actual_nan_grad_right, alpha=alpha_nan
+            ).sum().backward()
+            expected_function(
+                expected_nan_grad_left, expected_nan_grad_right, alpha=alpha_nan
+            ).sum().backward()
+            np.testing.assert_array_equal(
+                tensor_bits(actual_nan_grad_right.grad),
+                expected_nan_grad_right.grad.detach().numpy().view(np.uint32),
             )
 
         with warnings.catch_warnings():

@@ -171,6 +171,29 @@ class TensorSubMethodTests(unittest.TestCase):
             np.asarray([0x5442_BB33], dtype=np.uint32),
         )
 
+        integer_zero_left = tensor_from_bits([0x8000_0000, 0x8000_0000])
+        integer_zero_right = tensor_from_bits([0x0000_0000, 0x8000_0000])
+        for integer_zero_alpha in (0, np.int64(0), np.uint64(0)):
+            with self.subTest(alpha_type=type(integer_zero_alpha).__name__):
+                np.testing.assert_array_equal(
+                    tensor_bits(
+                        integer_zero_left.sub(
+                            integer_zero_right,
+                            alpha=integer_zero_alpha,
+                        )
+                    ),
+                    np.asarray([0x0000_0000, 0x8000_0000], dtype=np.uint32),
+                )
+                np.testing.assert_array_equal(
+                    tensor_bits(
+                        tensor_from_bits([0x8000_0000]).sub(
+                            np.float32(0.0),
+                            alpha=integer_zero_alpha,
+                        )
+                    ),
+                    np.asarray([0x0000_0000], dtype=np.uint32),
+                )
+
         alpha_nan = np.asarray([0x7F8A_BCDE], dtype=np.uint32).view(np.float32)[0]
         nan_left = tensor_from_bits([0x3F80_0000, 0x7FC1_2345])
         nan_right = tensor_from_bits([0x4000_0000, 0x4000_0000])
@@ -190,11 +213,37 @@ class TensorSubMethodTests(unittest.TestCase):
         np.testing.assert_array_equal(
             tensor_bits(
                 tensor_from_bits([0x3F80_0000]).sub(
+                    tensor_from_bits([0x7F81_2345]),
+                    alpha=alpha_nan,
+                )
+            ),
+            np.asarray([0x7FC1_2345], dtype=np.uint32),
+        )
+        np.testing.assert_array_equal(
+            tensor_bits(
+                tensor_from_bits([0x3F80_0000]).sub(
+                    np.asarray([0x7F81_2345], dtype=np.uint32).view(np.float32)[0],
+                    alpha=alpha_nan,
+                )
+            ),
+            np.asarray([0x7FC1_2345], dtype=np.uint32),
+        )
+        np.testing.assert_array_equal(
+            tensor_bits(
+                tensor_from_bits([0x3F80_0000]).sub(
                     np.float32(2.0),
                     alpha=alpha_nan,
                 )
             ),
             np.asarray([0xFFCA_BCDE], dtype=np.uint32),
+        )
+
+        nan_grad_left = torch.tensor([1.0], requires_grad=True)
+        nan_grad_right = torch.tensor([2.0], requires_grad=True)
+        nan_grad_left.sub(nan_grad_right, alpha=alpha_nan).sum().backward()
+        np.testing.assert_array_equal(
+            tensor_bits(nan_grad_right.grad),
+            np.asarray([0x7FCA_BCDE], dtype=np.uint32),
         )
 
         self.assert_tensor_matches(

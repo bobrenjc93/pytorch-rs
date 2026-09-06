@@ -22,6 +22,42 @@ const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 512;
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
+#[cfg(any(feature = "python-bindings", test))]
+#[derive(Clone, Copy)]
+pub(crate) struct ScaledSubtractionAlpha {
+    value: f32,
+    forward_scale: f32,
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+impl ScaledSubtractionAlpha {
+    pub(crate) fn from_float(value: f32) -> Self {
+        Self {
+            value,
+            forward_scale: -value,
+        }
+    }
+
+    pub(crate) fn from_integer_zero() -> Self {
+        Self {
+            value: 0.0,
+            forward_scale: 0.0,
+        }
+    }
+
+    fn is_one(self) -> bool {
+        self.value.to_bits() == 1.0_f32.to_bits()
+    }
+
+    fn gradient_scale(self) -> f32 {
+        if self.value.is_nan() {
+            quiet_nan_value(self.value)
+        } else {
+            -self.value
+        }
+    }
+}
+
 #[allow(clippy::cast_precision_loss)]
 fn full_reduction_mean_divisor(elements: usize) -> f32 {
     elements as f32
@@ -3392,15 +3428,29 @@ impl Tensor {
     ///
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
-    #[cfg(any(feature = "python-bindings", test))]
+    #[cfg(test)]
     pub(crate) fn sub_alpha(&self, other: &Self, alpha: f32) -> Result<Self, TensorError> {
-        if alpha.to_bits() == 1.0_f32.to_bits() {
+        self.sub_alpha_scaled(other, ScaledSubtractionAlpha::from_float(alpha))
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn sub_alpha_scaled(
+        &self,
+        other: &Self,
+        alpha: ScaledSubtractionAlpha,
+    ) -> Result<Self, TensorError> {
+        if alpha.is_one() {
             return self.sub(other);
         }
         let output = self.zip_map(other, |left, right| {
-            subtract_scaled_value_matching_pytorch(left, right, alpha)
+            subtract_scaled_value_with_alpha(left, right, alpha)
         })?;
-        self.finish_add_subtract_vjp(other, output, AutogradNode::Subtract, -alpha)
+        self.finish_add_subtract_vjp(
+            other,
+            output,
+            AutogradNode::Subtract,
+            alpha.gradient_scale(),
+        )
     }
 
     fn sub_same_shape_matching_dense_no_grad(
@@ -4039,13 +4089,22 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error when result allocation fails.
-    #[cfg(any(feature = "python-bindings", test))]
+    #[cfg(test)]
     pub(crate) fn sub_scalar_alpha(&self, scalar: f32, alpha: f32) -> Result<Self, TensorError> {
-        if alpha.to_bits() == 1.0_f32.to_bits() {
+        self.sub_scalar_alpha_scaled(scalar, ScaledSubtractionAlpha::from_float(alpha))
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn sub_scalar_alpha_scaled(
+        &self,
+        scalar: f32,
+        alpha: ScaledSubtractionAlpha,
+    ) -> Result<Self, TensorError> {
+        if alpha.is_one() {
             return self.sub_scalar(scalar);
         }
         let output = self.map_scalar(scalar, |value, scalar| {
-            subtract_scaled_value_matching_pytorch(value, scalar, alpha)
+            subtract_scaled_value_with_alpha(value, scalar, alpha)
         })?;
         self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Subtract)
     }
@@ -4123,15 +4182,28 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error when result allocation fails.
-    #[cfg(any(feature = "python-bindings", test))]
+    #[cfg(test)]
     pub(crate) fn scalar_sub_alpha(&self, scalar: f32, alpha: f32) -> Result<Self, TensorError> {
-        if alpha.to_bits() == 1.0_f32.to_bits() {
+        self.scalar_sub_alpha_scaled(scalar, ScaledSubtractionAlpha::from_float(alpha))
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn scalar_sub_alpha_scaled(
+        &self,
+        scalar: f32,
+        alpha: ScaledSubtractionAlpha,
+    ) -> Result<Self, TensorError> {
+        if alpha.is_one() {
             return self.scalar_sub(scalar);
         }
         let output = self.map_scalar(scalar, |value, scalar| {
-            subtract_scaled_value_matching_pytorch(scalar, value, alpha)
+            subtract_scaled_value_with_alpha(scalar, value, alpha)
         })?;
-        self.finish_scaled_unary_vjp(output, -alpha, AutogradNode::ReflectedSubtract)
+        self.finish_scaled_unary_vjp(
+            output,
+            alpha.gradient_scale(),
+            AutogradNode::ReflectedSubtract,
+        )
     }
 
     /// Divides a scalar by every element using `PyTorch`'s float32 reciprocal
@@ -5969,16 +6041,31 @@ fn apply_binary_operation_scalar(
 fn subtract_value_matching_pytorch(left: f32, right: f32) -> f32 {
     let right_bits = right.to_bits();
     if right_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
-        f32::from_bits(right_bits | F32_QUIET_NAN_MASK)
+        quiet_nan_value(right)
     } else {
         left - right
     }
 }
 
 #[inline]
-#[cfg(any(feature = "python-bindings", test))]
+fn quiet_nan_value(value: f32) -> f32 {
+    f32::from_bits(value.to_bits() | F32_QUIET_NAN_MASK)
+}
+
+#[inline]
+#[cfg(test)]
 fn subtract_scaled_value_matching_pytorch(left: f32, right: f32, alpha: f32) -> f32 {
-    right.mul_add(-alpha, left)
+    subtract_scaled_value_with_alpha(left, right, ScaledSubtractionAlpha::from_float(alpha))
+}
+
+#[inline]
+#[cfg(any(feature = "python-bindings", test))]
+fn subtract_scaled_value_with_alpha(left: f32, right: f32, alpha: ScaledSubtractionAlpha) -> f32 {
+    if right.to_bits() & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        quiet_nan_value(right)
+    } else {
+        right.mul_add(alpha.forward_scale, left)
+    }
 }
 
 #[inline(never)]
@@ -7746,12 +7833,12 @@ mod tests {
     use super::{
         AutogradKind, BroadcastPlan, CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS,
         CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device, F32_SIGN_MASK, GradFn, LogicalValuesInner,
-        MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor,
-        TensorError, contiguous_values_equal, full_reduction_mean_divisor,
-        l1_loss_difference_value, log_value, logical_offset_for_linear_index,
-        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value,
-        squared_difference_value, subtract_scaled_value_matching_pytorch, try_result_vector,
-        validate_view_bounds,
+        MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, ScaledSubtractionAlpha,
+        StridedOffsetOdometer, Tensor, TensorError, contiguous_values_equal,
+        full_reduction_mean_divisor, l1_loss_difference_value, log_value,
+        logical_offset_for_linear_index, materialize_contiguous_trailing_broadcast, rsqrt_value,
+        sqrt_value, squared_difference_value, subtract_scaled_value_matching_pytorch,
+        try_result_vector, validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -12664,7 +12751,10 @@ mod tests {
             scalar_input.scalar_sub_alpha(3.0, 2.0).unwrap().as_slice(),
             [1.0, 5.0, 3.0, 3.0]
         );
+    }
 
+    #[test]
+    fn scaled_subtraction_preserves_integer_zero_alpha_bits() {
         let zeroes = Tensor::from_vec(vec![0.0, -0.0], [2]).unwrap();
         let signed_zero_output = zeroes.sub_alpha(&zeroes, -0.0).unwrap();
         assert_eq!(
@@ -12676,7 +12766,44 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![0x0000_0000, 0x8000_0000]
         );
+        let int_zero_left = Tensor::from_vec(vec![-0.0, -0.0], [2]).unwrap();
+        let int_zero_right = Tensor::from_vec(vec![0.0, -0.0], [2]).unwrap();
+        let integer_zero_alpha = ScaledSubtractionAlpha::from_integer_zero();
+        assert_eq!(
+            int_zero_left
+                .sub_alpha_scaled(&int_zero_right, integer_zero_alpha)
+                .unwrap()
+                .as_slice()
+                .iter()
+                .copied()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            vec![0x0000_0000, 0x8000_0000]
+        );
+        assert_eq!(
+            int_zero_left
+                .sub_scalar_alpha_scaled(0.0, integer_zero_alpha)
+                .unwrap()
+                .as_slice()
+                .iter()
+                .copied()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            vec![0x0000_0000, 0x0000_0000]
+        );
+        assert_eq!(
+            Tensor::from_vec(vec![0.0], [1])
+                .unwrap()
+                .scalar_sub_alpha_scaled(-0.0, integer_zero_alpha)
+                .unwrap()
+                .as_slice()[0]
+                .to_bits(),
+            0x0000_0000
+        );
+    }
 
+    #[test]
+    fn scaled_subtraction_matches_pytorch_nan_and_fused_bits() {
         let fused_left = Tensor::from_vec(vec![f32::from_bits(0xd032_7a78)], [1]).unwrap();
         let fused_right = Tensor::from_vec(vec![f32::from_bits(0xd5f4_4919)], [1]).unwrap();
         assert_eq!(
@@ -12705,6 +12832,24 @@ mod tests {
         assert_eq!(
             subtract_scaled_value_matching_pytorch(1.0, 2.0, signaling_alpha).to_bits(),
             0xffca_bcde
+        );
+        assert_eq!(
+            subtract_scaled_value_matching_pytorch(
+                1.0,
+                f32::from_bits(0x7f81_2345),
+                signaling_alpha
+            )
+            .to_bits(),
+            0x7fc1_2345
+        );
+        assert_eq!(
+            Tensor::from_vec(vec![1.0], [1])
+                .unwrap()
+                .sub_scalar_alpha(f32::from_bits(0x7f81_2345), signaling_alpha)
+                .unwrap()
+                .as_slice()[0]
+                .to_bits(),
+            0x7fc1_2345
         );
         assert_eq!(
             subtract_scaled_value_matching_pytorch(
@@ -12742,6 +12887,24 @@ mod tests {
         assert_eq!(
             right.grad().unwrap().unwrap().as_slice(),
             [-4.0, -4.0, -4.0]
+        );
+
+        let nan_alpha = f32::from_bits(0x7f8a_bcde);
+        let nan_left = Tensor::from_vec(vec![1.0], [1])
+            .unwrap()
+            .with_requires_grad(true);
+        let nan_right = Tensor::from_vec(vec![2.0], [1])
+            .unwrap()
+            .with_requires_grad(true);
+        nan_left
+            .sub_alpha(&nan_right, nan_alpha)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+        assert_eq!(
+            nan_right.grad().unwrap().unwrap().as_slice()[0].to_bits(),
+            0x7fca_bcde
         );
 
         let reflected = Tensor::from_vec(vec![2.0, -3.0], [2])

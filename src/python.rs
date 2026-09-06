@@ -35,6 +35,7 @@ use crate::{
     python_torch_function_mode as torch_function_mode_stack,
     python_torch_function_probe::{add_torch_function_probe, is_disabled_torch_function_handler},
     python_variable_functions::{add_variable_functions, variable_function},
+    tensor::ScaledSubtractionAlpha,
 };
 
 static LAYOUT_OBJECTS: PyOnceLock<PyLayoutObjects> = PyOnceLock::new();
@@ -6078,7 +6079,7 @@ fn apply_top_level_subtraction(
         return Err(PyRuntimeError::new_err(operation.out_unsupported_error()));
     }
     let alpha = match &call.alpha {
-        BoundSubAlpha::Default => 1.0,
+        BoundSubAlpha::Default => ScaledSubtractionAlpha::from_float(1.0),
         BoundSubAlpha::PythonBool => {
             return Err(PyRuntimeError::new_err(
                 "Boolean alpha only supported for Boolean results.",
@@ -6098,7 +6099,10 @@ fn apply_top_level_subtraction(
     let result = match (&call.input, &call.other) {
         (BoundSubOperand::Tensor(input), BoundSubOperand::Tensor(other)) => {
             let other = other.try_borrow()?;
-            input.try_borrow()?.inner.sub_alpha(&other.inner, alpha)
+            input
+                .try_borrow()?
+                .inner
+                .sub_alpha_scaled(&other.inner, alpha)
         }
         (BoundSubOperand::Tensor(tensor), BoundSubOperand::Scalar(scalar)) => {
             let scalar = parse_supported_arithmetic_scalar(scalar)?;
@@ -6108,7 +6112,7 @@ fn apply_top_level_subtraction(
             tensor
                 .try_borrow()?
                 .inner
-                .sub_scalar_alpha(scalar.into_f32(), alpha)
+                .sub_scalar_alpha_scaled(scalar.into_f32(), alpha)
         }
         (BoundSubOperand::Scalar(scalar), BoundSubOperand::Tensor(tensor)) => {
             let scalar = parse_supported_arithmetic_scalar(scalar)?;
@@ -6118,7 +6122,7 @@ fn apply_top_level_subtraction(
             tensor
                 .try_borrow()?
                 .inner
-                .scalar_sub_alpha(scalar.into_f32(), alpha)
+                .scalar_sub_alpha_scaled(scalar.into_f32(), alpha)
         }
         (BoundSubOperand::Scalar(_), BoundSubOperand::Scalar(_)) => {
             return Err(PyTypeError::new_err(format!(
@@ -6402,7 +6406,7 @@ fn apply_tensor_add_sub_method(
     call: &BoundTensorMethodAddSubCall<'_>,
 ) -> PyResult<Py<PyAny>> {
     let alpha = match &call.alpha {
-        BoundSubAlpha::Default => 1.0,
+        BoundSubAlpha::Default => ScaledSubtractionAlpha::from_float(1.0),
         BoundSubAlpha::PythonBool => {
             return Err(PyRuntimeError::new_err(
                 "Boolean alpha only supported for Boolean results.",
@@ -6433,9 +6437,10 @@ fn apply_tensor_add_sub_method(
                 AddSubMethodOperation::Add => {
                     BinaryOperation::Add.apply_tensors(&input.try_borrow()?.inner, &other.inner)
                 }
-                AddSubMethodOperation::Sub | AddSubMethodOperation::Subtract => {
-                    input.try_borrow()?.inner.sub_alpha(&other.inner, alpha)
-                }
+                AddSubMethodOperation::Sub | AddSubMethodOperation::Subtract => input
+                    .try_borrow()?
+                    .inner
+                    .sub_alpha_scaled(&other.inner, alpha),
             }
         }
         (BoundSubOperand::Tensor(tensor), BoundSubOperand::Scalar(scalar)) => {
@@ -6456,7 +6461,7 @@ fn apply_tensor_add_sub_method(
                 AddSubMethodOperation::Sub | AddSubMethodOperation::Subtract => tensor
                     .try_borrow()?
                     .inner
-                    .sub_scalar_alpha(scalar.into_f32(), alpha),
+                    .sub_scalar_alpha_scaled(scalar.into_f32(), alpha),
             }
         }
         (BoundSubOperand::Override(_), _) | (_, BoundSubOperand::Override(_)) => {
@@ -6511,7 +6516,7 @@ fn supported_arithmetic_scalar_into_f32(scalar: ParsedArithmeticScalar) -> PyRes
     }
 }
 
-fn parse_numeric_sub_alpha(alpha: &Bound<'_, PyAny>) -> PyResult<f32> {
+fn parse_numeric_sub_alpha(alpha: &Bound<'_, PyAny>) -> PyResult<ScaledSubtractionAlpha> {
     let scalar = match parse_arithmetic_scalar(alpha) {
         Ok(Some(scalar)) => scalar,
         Ok(None) => unreachable!("sub alpha numeric arguments were checked while binding"),
@@ -6525,7 +6530,39 @@ fn parse_numeric_sub_alpha(alpha: &Bound<'_, PyAny>) -> PyResult<f32> {
             "Boolean alpha only supported for Boolean results.",
         ));
     }
-    supported_arithmetic_scalar_into_f32(scalar)
+    let is_integer_zero = is_integer_zero_sub_alpha(alpha, &scalar)?;
+    let value = supported_arithmetic_scalar_into_f32(scalar)?;
+    if is_integer_zero {
+        Ok(ScaledSubtractionAlpha::from_integer_zero())
+    } else {
+        Ok(ScaledSubtractionAlpha::from_float(value))
+    }
+}
+
+fn is_integer_zero_sub_alpha(
+    alpha: &Bound<'_, PyAny>,
+    scalar: &ParsedArithmeticScalar,
+) -> PyResult<bool> {
+    if !matches!(
+        scalar,
+        ParsedArithmeticScalar::Number(
+            ParsedFillValue::SignedInteger(0) | ParsedFillValue::UnsignedInteger(0)
+        )
+    ) {
+        return Ok(false);
+    }
+    if alpha.is_instance_of::<PyInt>() {
+        return Ok(true);
+    }
+
+    let Ok(numpy) = PyModule::import(alpha.py(), "numpy") else {
+        return Ok(false);
+    };
+    let generic = numpy.getattr("generic")?;
+    if !alpha.is_instance(&generic)? {
+        return Ok(false);
+    }
+    alpha.is_instance(&numpy.getattr("integer")?)
 }
 
 fn parse_top_level_mul_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
