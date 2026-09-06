@@ -1,13 +1,13 @@
 {
   "aggregates": {
-    "common_success_geomean_speed_ratio": 0.9608573666162303,
-    "coverage_adjusted_overall_percent": 96.08573666162303,
-    "torch_rs_cuda_compile_score_percent": 96.08573666162303,
+    "common_success_geomean_speed_ratio": 0.953518982919739,
+    "coverage_adjusted_overall_percent": 95.3518982919739,
+    "torch_rs_cuda_compile_score_percent": 95.3518982919739,
     "zero_credit_unsupported_cell_count": 0
   },
   "candidate": {
     "cold_checksum": "72f74be90b99aea7",
-    "cold_first_call_us": 203.128,
+    "cold_first_call_us": 192.932,
     "compile_backend": "inductor",
     "compile_config": {
       "backend": "inductor",
@@ -390,7 +390,7 @@
       "rejection_reasons": [],
       "score_credit": 1.0
     },
-    "factory_us": 12210.071,
+    "factory_us": 13063.449,
     "forwarded_to_pytorch": false,
     "implementation": "torch_rs",
     "input_device_type": "cuda",
@@ -2027,23 +2027,23 @@
       "output_pool_live_buffers_after_timing": 0,
       "output_pool_release_count": 67,
       "preparation_id": "01ad652f08d9d291",
-      "prepared_steady_median_us": 43.839666666666666,
-      "prepared_vs_unprepared_steady_speedup": 313.85140550034595,
+      "prepared_steady_median_us": 53.434,
+      "prepared_vs_unprepared_steady_speedup": 197.1570098938254,
       "setup_hoisted_to_compile_wrapper": true,
       "steady_state_output_allocated_in_execute": false,
       "steady_state_reused_output_buffer": true,
       "steady_state_reused_prepared_executor": true,
-      "unprepared_compatibility_steady_median_us": 13759.141
+      "unprepared_compatibility_steady_median_us": 10534.887666666666
     },
     "score_credit": 1.0,
     "status": "ok",
     "steady": {
-      "mad_us": 1.4989999999999952,
-      "max_us": 50.336,
-      "median_us": 43.839666666666666,
-      "min_us": 41.669666666666664,
+      "mad_us": 1.0449999999999946,
+      "max_us": 63.40266666666666,
+      "median_us": 53.434,
+      "min_us": 49.97533333333334,
       "sample_count": 17,
-      "variance_us2": 5.082116921953097
+      "variance_us2": 9.187768733564006
     },
     "steady_checksums": [
       "72f74be90b99aea7"
@@ -2405,12 +2405,12 @@
       "setup_repeated_per_invocation": true,
       "status": "ok",
       "steady": {
-        "mad_us": 2166.9883333333346,
-        "max_us": 17819.821,
-        "median_us": 13759.141,
-        "min_us": 9927.862333333334,
+        "mad_us": 809.2873333333318,
+        "max_us": 13004.249,
+        "median_us": 10534.887666666666,
+        "min_us": 8952.945,
         "sample_count": 17,
-        "variance_us2": 6058040.944080901
+        "variance_us2": 960164.359734836
       },
       "steady_checksums": [
         "72f74be90b99aea7"
@@ -2424,7 +2424,7 @@
     "cuda_visible_devices": "0",
     "git": {
       "diff_stat": "",
-      "head": "a95e19fe5e7aaedd026a40bc1423ed52a868f12e",
+      "head": "aadc7ce394bd7fb85e89f0d11146d7014d3d1381",
       "status_short": ""
     },
     "gpu": {
@@ -2450,7 +2450,7 @@
       "torch_cuda_total_memory_bytes": 102085492736
     },
     "platform": "Linux-6.13.2-0_fbk12_0_g0b66b3635210-x86_64-with-glibc2.34",
-    "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+    "python": "3.12.13 (main, Jul 20 2026, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-14)]",
     "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/.venv/bin/python",
     "pytorch": {
       "cuda_available": true,
@@ -2458,7 +2458,7 @@
       "cuda_runtime": "13.0",
       "cudnn_version": 92000,
       "git_version": "cf30153c4c131c8164ee7798e5022d810682e2cb",
-      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/.venv/lib64/python3.12/site-packages/torch/__init__.py",
       "version": "2.13.0+cu130"
     },
     "reference_compile_config": {
@@ -2471,7 +2471,7 @@
     "repeats": 3,
     "samples": 17,
     "torch_rs": {
-      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py",
       "version": "0.1.0"
     },
     "warmups": 5,
@@ -2488,7 +2488,7 @@
   },
   "reference_workload": {
     "cold_checksum": "72f74be90b99aea7",
-    "cold_first_call_us": 1145319.969,
+    "cold_first_call_us": 1168503.397,
     "compile_config": {
       "backend": "inductor",
       "dynamic": false,
@@ -2500,7 +2500,7 @@
       "assert_close": true,
       "eager_reference_checksum": "0fb113da67713207"
     },
-    "factory_us": 743573.264,
+    "factory_us": 806995.969,
     "implementation": "pytorch",
     "input_metadata": [
       {
@@ -2553,12 +2553,12 @@
     },
     "status": "ok",
     "steady": {
-      "mad_us": 1.0983333333333292,
-      "max_us": 46.43,
-      "median_us": 42.123666666666665,
-      "min_us": 39.526666666666664,
+      "mad_us": 1.3686666666666696,
+      "max_us": 64.207,
+      "median_us": 50.95033333333333,
+      "min_us": 47.02433333333334,
       "sample_count": 17,
-      "variance_us2": 2.7620095547866215
+      "variance_us2": 17.442563953863885
     },
     "steady_checksums": [
       "72f74be90b99aea7"
