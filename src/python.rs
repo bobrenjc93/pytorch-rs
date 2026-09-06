@@ -1,3 +1,4 @@
+use std::cmp::Ordering as CmpOrdering;
 use std::ffi::{CStr, c_char};
 use std::os::raw::c_long;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -18577,6 +18578,12 @@ struct UnitRangeSlice {
     covers_full_dimension: bool,
 }
 
+#[derive(Clone, Copy)]
+struct PositiveStepSliceBound {
+    value: isize,
+    original_nonnegative: bool,
+}
+
 fn parse_unit_range_slice(
     index: &Bound<'_, PyAny>,
     dimension_size: usize,
@@ -18586,28 +18593,89 @@ fn parse_unit_range_slice(
     };
     let signed_dimension_size = isize::try_from(dimension_size)
         .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds the platform limit"))?;
-    let indices = slice.indices(signed_dimension_size)?;
-    if indices.step != 1 {
+    if !parse_unit_slice_step(slice)? {
         return Ok(None);
     }
 
-    let start = usize::try_from(indices.start)
+    let start = parse_positive_step_slice_start(slice, signed_dimension_size)?;
+    let stop = parse_positive_step_slice_stop(slice, signed_dimension_size)?;
+    let start_value = usize::try_from(start.value)
         .map_err(|_| PyOverflowError::new_err("slice start exceeds the platform limit"))?;
+    let length = if stop > start.value {
+        usize::try_from(stop - start.value)
+            .map_err(|_| PyOverflowError::new_err("slice length exceeds the platform limit"))?
+    } else {
+        0
+    };
     Ok(Some(UnitRangeSlice {
-        start,
-        length: indices.slicelength,
-        covers_full_dimension: start == 0 && indices.slicelength == dimension_size,
+        start: start_value,
+        length,
+        covers_full_dimension: start.original_nonnegative
+            && start_value == 0
+            && length == dimension_size,
     }))
 }
 
-fn slice_start_allows_metadata_alias(slice: &Bound<'_, PySlice>) -> PyResult<bool> {
-    let start = slice.getattr("start")?;
-    if start.is_none() {
+fn parse_unit_slice_step(slice: &Bound<'_, PySlice>) -> PyResult<bool> {
+    let step = slice.getattr("step")?;
+    if step.is_none() {
         return Ok(true);
     }
 
-    let indexed = start.call_method0("__index__")?;
-    indexed.ge(0_i32)
+    let step = python_number_index(&step)?;
+    if step.compare(0_i32)? == CmpOrdering::Equal {
+        return Err(PyValueError::new_err("slice step cannot be zero"));
+    }
+    Ok(step.compare(1_i32)? == CmpOrdering::Equal)
+}
+
+fn parse_positive_step_slice_start(
+    slice: &Bound<'_, PySlice>,
+    dimension_size: isize,
+) -> PyResult<PositiveStepSliceBound> {
+    let start = slice.getattr("start")?;
+    if start.is_none() {
+        return Ok(PositiveStepSliceBound {
+            value: 0,
+            original_nonnegative: true,
+        });
+    }
+
+    let start = python_number_index(&start)?;
+    Ok(PositiveStepSliceBound {
+        value: adjust_positive_step_slice_bound(&start, dimension_size)?,
+        original_nonnegative: start.ge(0_i32)?,
+    })
+}
+
+fn parse_positive_step_slice_stop(
+    slice: &Bound<'_, PySlice>,
+    dimension_size: isize,
+) -> PyResult<isize> {
+    let stop = slice.getattr("stop")?;
+    if stop.is_none() {
+        return Ok(dimension_size);
+    }
+
+    let stop = python_number_index(&stop)?;
+    adjust_positive_step_slice_bound(&stop, dimension_size)
+}
+
+fn adjust_positive_step_slice_bound(
+    bound: &Bound<'_, PyInt>,
+    dimension_size: isize,
+) -> PyResult<isize> {
+    if bound.lt(0_i32)? {
+        if bound.lt(-dimension_size)? {
+            Ok(0)
+        } else {
+            Ok(bound.extract::<isize>()? + dimension_size)
+        }
+    } else if bound.gt(dimension_size)? {
+        Ok(dimension_size)
+    } else {
+        bound.extract()
+    }
 }
 
 // The caller checks tuple arity against the tensor rank first so lower-rank
@@ -18653,13 +18721,9 @@ fn parse_leading_integer_range_slice(
     let Some(&dimension_size) = tensor.shape().get(integer_dimensions) else {
         return Err(too_many_indices(tensor.shape().len()));
     };
-    let Some(mut range) = parse_unit_range_slice(&slice_index, dimension_size)? else {
+    let Some(range) = parse_unit_range_slice(&slice_index, dimension_size)? else {
         return Err(invalid_index(&slice_index));
     };
-    if range.covers_full_dimension {
-        range.covers_full_dimension =
-            slice_start_allows_metadata_alias(slice_index.cast::<PySlice>()?)?;
-    }
     Ok(Some((parsed_indices, range)))
 }
 

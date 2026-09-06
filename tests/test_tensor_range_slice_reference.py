@@ -77,6 +77,16 @@ class TensorRangeSliceReferenceTests(unittest.TestCase):
         )
 
     def autograd_contract(self, module):
+        class SingleUseIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                if self.calls > 1:
+                    raise RuntimeError("slice start was converted twice")
+                return 0
+
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         leaf = module.tensor(
             values.reshape(-1).tolist(),
@@ -114,6 +124,11 @@ class TensorRangeSliceReferenceTests(unittest.TestCase):
         empty = module.zeros((3, 0, 4), dtype=module.float32, requires_grad=True)
         empty[2:3].sum().backward()
 
+        single_use_start = SingleUseIndex()
+        single_use_selected = module.tensor(
+            [2.0], dtype=module.float32, requires_grad=True
+        )[(slice(single_use_start, None, 1),)]
+
         return {
             "metadata": metadata,
             "gradient": leaf.grad.tolist(),
@@ -149,6 +164,7 @@ class TensorRangeSliceReferenceTests(unittest.TestCase):
                         (slice(np.int64(0), None, 1),)
                     ],
                 ),
+                self.dropout_probability_node(module, single_use_selected),
                 self.dropout_probability_node(
                     module,
                     module.tensor([[2.0]], dtype=module.float32, requires_grad=True)[
@@ -180,6 +196,7 @@ class TensorRangeSliceReferenceTests(unittest.TestCase):
                     ],
                 ),
             ),
+            "single_use_start_calls": single_use_start.calls,
         }
 
     def test_backward_through_sum_matches_pytorch_2_13(self):

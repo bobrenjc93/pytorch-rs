@@ -114,6 +114,16 @@ class TensorRangeSliceTests(unittest.TestCase):
         self.assert_dropout_probability_node(diagnostic_leaf[1:2], "SliceBackward0")
 
     def test_full_span_tuple_range_slices_reuse_alias_and_select_nodes(self):
+        class SingleUseIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                if self.calls > 1:
+                    raise RuntimeError("slice start was converted twice")
+                return 0
+
         self.assert_dropout_probability_node(
             torch.tensor([2.0], requires_grad=True)[(slice(None, None, 1),)],
             "AliasBackward0",
@@ -128,6 +138,12 @@ class TensorRangeSliceTests(unittest.TestCase):
             ],
             "AliasBackward0",
         )
+        start = SingleUseIndex()
+        self.assert_dropout_probability_node(
+            torch.tensor([2.0], requires_grad=True)[(slice(start, None, 1),)],
+            "AliasBackward0",
+        )
+        self.assertEqual(start.calls, 1)
         self.assert_dropout_probability_node(
             torch.tensor([[2.0]], requires_grad=True)[0, slice(None, None, 1)],
             "SelectBackward0",
