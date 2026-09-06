@@ -92,12 +92,21 @@ and generated workload matrix in its JSON output.
 ### Compilation
 
 - [`torch.compile` eager CPU release timings](docs/torch-compile-cpu-release-timings.md)
+- [`torch.compile` H100 CUDA prepared-executor timings](docs/torch-compile-cuda-h100-release-timings.md)
 
 The CUDA compile measurement boundary is a narrow, fail-closed skeleton. Run it
 on the H100 host with a single visible device:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py
+```
+
+Prepared-executor comparison evidence can be reproduced with:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py \
+  --include-unprepared-comparison \
+  --output docs/benchmark-data/torch-compile-cuda-h100-prepared-executor-v8.json
 ```
 
 To reserve a different physical GPU, mask exactly one device and pass the same

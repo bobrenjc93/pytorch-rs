@@ -400,6 +400,17 @@ def _make_compile_wrapper(
         _compile_functools.update_wrapper(compiled_model, model)
     else:
         compiled_model.__wrapped__ = model
+    if implementation is not None:
+        for attribute_name in (
+            "_torch_rs_cuda_compile_executor",
+            "_torch_rs_cuda_compile_preparation",
+        ):
+            if hasattr(implementation, attribute_name):
+                setattr(
+                    compiled_model,
+                    attribute_name,
+                    getattr(implementation, attribute_name),
+                )
     return _set_compile_wrapper_metadata(
         compiled_model,
         fullgraph=fullgraph,
@@ -575,6 +586,14 @@ def _native_h100_cuda_compile_implementation(model):
     ):
         required_cuda_visible_devices = "0"
 
+    from . import _cuda_pointwise_reduce_workload as _cuda_workload
+
+    executor = (
+        _cuda_workload.prepare_h100_float32_pointwise_reduce_compiled_executor_device0(
+            required_cuda_visible_devices=required_cuda_visible_devices,
+        )
+    )
+
     def compiled_model(*args, **kwargs):
         if kwargs:
             names = ", ".join(sorted(kwargs))
@@ -588,14 +607,10 @@ def _native_h100_cuda_compile_implementation(model):
                 "path requires exactly two positional inputs"
             )
 
-        from . import _cuda_pointwise_reduce_workload as _cuda_workload
+        return executor.execute(args[0], args[1])
 
-        return _cuda_workload.execute_h100_float32_pointwise_reduce_compiled_device0(
-            args[0],
-            args[1],
-            required_cuda_visible_devices=required_cuda_visible_devices,
-        )
-
+    compiled_model._torch_rs_cuda_compile_executor = executor
+    compiled_model._torch_rs_cuda_compile_preparation = executor.metadata()
     return compiled_model
 
 

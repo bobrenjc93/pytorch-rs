@@ -145,6 +145,57 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
 
         return reference_torch
 
+    def test_checked_in_cuda_prepared_executor_artifact_records_reuse(self):
+        artifact = (
+            REPOSITORY_ROOT
+            / "docs"
+            / "benchmark-data"
+            / "torch-compile-cuda-h100-prepared-executor-v8.json"
+        )
+        report = json.loads(artifact.read_text(encoding="utf-8"))
+        candidate = report["candidate"]
+        reuse = candidate["prepared_executor_reuse"]
+        unprepared = candidate["unprepared_compatibility_comparison"]
+
+        self.assertEqual(
+            report["environment"]["benchmark_version"],
+            benchmark_compile_cuda.BENCHMARK_VERSION,
+        )
+        self.assertEqual(candidate["status"], "ok")
+        self.assertIs(
+            candidate["eligibility"]["eligible_cuda_compile_evidence"],
+            True,
+        )
+        self.assertEqual(candidate["eligibility"]["rejection_reasons"], [])
+        self.assertEqual(reuse["before_first_call_invocation_count"], 0)
+        self.assertEqual(
+            reuse["observed_invocation_count"],
+            reuse["expected_invocation_count"],
+        )
+        self.assertEqual(
+            reuse["last_invocation_index"],
+            reuse["expected_invocation_count"],
+        )
+        self.assertIs(reuse["steady_state_reused_prepared_executor"], True)
+        self.assertIs(reuse["setup_hoisted_to_compile_wrapper"], True)
+        self.assertEqual(
+            candidate["prepared_executor"]["preparation_id"],
+            candidate["prepared_executor_after_timing"]["preparation_id"],
+        )
+        self.assertLess(
+            candidate["steady"]["median_us"],
+            unprepared["steady"]["median_us"],
+        )
+        self.assertGreater(
+            reuse["prepared_vs_unprepared_steady_speedup"],
+            2.0,
+        )
+        self.assertEqual(
+            candidate["steady_checksums"],
+            [report["reference_workload"]["cold_checksum"]],
+        )
+        self.assertEqual(unprepared["steady_checksums"], candidate["steady_checksums"])
+
     def test_torch_rs_cuda_zero_credit_row_is_explicit(self):
         row = benchmark_compile_cuda.torch_rs_zero_credit_unsupported_row(torch)
 
@@ -1074,6 +1125,223 @@ print(json.dumps({
         self.assertIs(classification["eligible_cuda_compile_evidence"], True)
         self.assertEqual(classification["score_credit"], 1.0)
         self.assertEqual(classification["rejection_reasons"], [])
+        self.assertIs(torch.cuda.is_available(), False)
+        self.assertEqual(torch.cuda.device_count(), 0)
+        self.assertIs(torch.cuda.is_initialized(), False)
+
+    def test_torch_compile_inductor_pointwise_reduce_prepares_executor_once(self):
+        class FakePreparedExecutor:
+            def __init__(self):
+                self.calls = 0
+
+            def metadata(self):
+                return {
+                    "schema_version": (
+                        _cuda_pointwise_reduce_workload
+                        .POINTWISE_REDUCE_COMPILE_EXECUTOR_SCHEMA_VERSION
+                    ),
+                    "status": "ok",
+                    "prepared": True,
+                    "setup_hoisted_to_compile_wrapper": True,
+                    "preparation_id": "fake-prepared-executor",
+                    "invocation_count": self.calls,
+                }
+
+            def execute(self, x, bias):
+                self.calls += 1
+                return {
+                    "call_count": self.calls,
+                    "x": x,
+                    "bias": bias,
+                }
+
+        prepared_executor = FakePreparedExecutor()
+        prepare_calls = []
+
+        def prepare_executor(*, required_cuda_visible_devices="0"):
+            prepare_calls.append(required_cuda_visible_devices)
+            return prepared_executor
+
+        with unittest.mock.patch.object(
+            _cuda_pointwise_reduce_workload,
+            "prepare_h100_float32_pointwise_reduce_compiled_executor_device0",
+            side_effect=prepare_executor,
+        ):
+            compiled = torch.compile(
+                benchmark_compile_cuda.h100_cuda_pointwise_reduce_float32,
+                backend="inductor",
+                fullgraph=True,
+                dynamic=False,
+            )
+
+        self.assertEqual(prepare_calls, ["0"])
+        self.assertIs(
+            compiled._torch_rs_cuda_compile_executor,
+            prepared_executor,
+        )
+        self.assertEqual(
+            compiled._torch_rs_cuda_compile_preparation["invocation_count"],
+            0,
+        )
+
+        first = compiled("x", "bias")
+        second = compiled("x", "bias")
+
+        self.assertEqual(first["call_count"], 1)
+        self.assertEqual(second["call_count"], 2)
+        self.assertEqual(prepare_calls, ["0"])
+        self.assertEqual(
+            compiled._torch_rs_cuda_compile_executor.metadata()[
+                "invocation_count"
+            ],
+            2,
+        )
+
+    def test_torch_compile_inductor_wrong_mask_rejects_before_cuda_probe(self):
+        workload = benchmark_compile_cuda.h100_cuda_pointwise_reduce_float32
+        mask_attribute = "_torch_rs_cuda_compile_required_cuda_visible_devices"
+        missing_attribute = object()
+        previous_mask = getattr(workload, mask_attribute, missing_attribute)
+        setattr(workload, mask_attribute, "0")
+        try:
+            with unittest.mock.patch.dict(
+                os.environ,
+                {"CUDA_VISIBLE_DEVICES": "1"},
+            ), unittest.mock.patch.object(
+                _cuda_driver_probe,
+                "probe_cuda_driver_device0",
+                side_effect=AssertionError("driver probe should not run"),
+            ) as driver_probe, unittest.mock.patch.object(
+                _cuda_driver_probe,
+                "_load_shared_library",
+                side_effect=AssertionError("CUDA runtime load should not run"),
+            ) as load_shared_library, unittest.mock.patch.object(
+                _cuda_pointwise_kernel,
+                "_nvcc_provenance",
+                side_effect=AssertionError("nvcc provenance should not run"),
+            ) as nvcc_provenance:
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    "CUDA_VISIBLE_DEVICES=0 is required",
+                ):
+                    torch.compile(
+                        workload,
+                        backend="inductor",
+                        fullgraph=True,
+                        dynamic=False,
+                    )
+
+                driver_probe.assert_not_called()
+                load_shared_library.assert_not_called()
+                nvcc_provenance.assert_not_called()
+        finally:
+            if previous_mask is missing_attribute:
+                try:
+                    delattr(workload, mask_attribute)
+                except AttributeError:
+                    pass
+            else:
+                setattr(workload, mask_attribute, previous_mask)
+
+    def test_torch_compile_inductor_pointwise_reduce_reuses_executor_on_h100(self):
+        self._require_h100_reference_torch()
+
+        rows, columns = benchmark_compile_cuda.WORKLOAD_SHAPE
+        x_host_bytes = b"\0" * (rows * columns * 4)
+        bias_host_bytes = b"\0" * (columns * 4)
+        expected_output_bytes = b"\0" * (rows * 4)
+        expected_output_metadata = _cuda_buffer.float32_metadata(
+            (rows,),
+            device_index=0,
+        )
+        expected_checksum = (
+            _cuda_pointwise_reduce_workload._checksum_tensor_metadata_values(
+                expected_output_bytes,
+                expected_output_metadata,
+            )
+        )
+        input_bundle, input_evidence = (
+            _cuda_pointwise_reduce_workload
+            .make_h100_float32_pointwise_reduce_inputs_device0(
+                x_host_bytes,
+                bias_host_bytes,
+            )
+        )
+        self.assertEqual(
+            input_evidence["status"],
+            "ok",
+            msg=json.dumps(input_evidence, indent=2, sort_keys=True),
+        )
+        self.assertIsNotNone(input_bundle)
+        self.addCleanup(input_bundle.close)
+
+        compiled = torch.compile(
+            benchmark_compile_cuda.h100_cuda_pointwise_reduce_float32,
+            backend="inductor",
+            fullgraph=True,
+            dynamic=False,
+        )
+        preparation = compiled._torch_rs_cuda_compile_preparation
+        benchmark_compile_cuda._require_torch_rs_cuda_compile_prepared_executor(
+            preparation,
+            expected_invocation_count=0,
+        )
+
+        outputs = [
+            compiled(*input_bundle.inputs),
+            compiled(*input_bundle.inputs),
+        ]
+        for output in outputs:
+            self.addCleanup(output._torch_rs_close_private_cuda_buffer)
+
+        executions = []
+        for output in outputs:
+            metadata, execution = benchmark_compile_cuda._compile_execution_from_output(
+                output
+            )
+            benchmark_compile_cuda._require_public_cuda_tensor_wrapper_evidence(
+                metadata
+            )
+            self.assertEqual(execution["status"], "ok")
+            self.assertEqual(execution["device_output_checksum"], expected_checksum)
+            self.assertEqual(execution["output_metadata"], expected_output_metadata)
+            comparison = benchmark_compile_cuda._compare_compiled_output_bytes(
+                output,
+                execution,
+                expected_output_bytes,
+            )
+            self.assertIs(comparison["exact_bytes_match"], True)
+            self.assertEqual(comparison["mismatched_element_count"], 0)
+            executions.append(execution)
+
+        first_executor = executions[0]["executor"]
+        second_executor = executions[1]["executor"]
+        self.assertEqual(
+            first_executor["preparation_id"],
+            preparation["preparation_id"],
+        )
+        self.assertEqual(
+            second_executor["preparation_id"],
+            preparation["preparation_id"],
+        )
+        self.assertEqual(first_executor["invocation_index"], 1)
+        self.assertIs(first_executor["reused_prepared_executor"], False)
+        self.assertEqual(second_executor["invocation_index"], 2)
+        self.assertIs(second_executor["reused_prepared_executor"], True)
+        self.assertEqual(executions[0]["build"], preparation["build"])
+        self.assertEqual(executions[1]["build"], preparation["build"])
+        self.assertEqual(
+            executions[0]["kernel_library"],
+            preparation["kernel_library"],
+        )
+        self.assertEqual(
+            executions[1]["kernel_library"],
+            preparation["kernel_library"],
+        )
+        benchmark_compile_cuda._require_torch_rs_cuda_compile_prepared_executor(
+            compiled._torch_rs_cuda_compile_executor.metadata(),
+            expected_invocation_count=2,
+        )
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertIs(torch.cuda.is_initialized(), False)

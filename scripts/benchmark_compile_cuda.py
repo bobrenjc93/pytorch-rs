@@ -31,8 +31,11 @@ PROTECTED_OUTPUT_PATHS = {
 }
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v7"
+BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v8"
 WORKLOAD_VERSION = "h100_cuda_pointwise_reduce_float32_v1"
+PREPARED_EXECUTOR_SCHEMA_VERSION = (
+    "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1"
+)
 WORKLOAD_SHAPE = (1024, 1024)
 WORKLOAD_SEED = 20260904
 
@@ -716,6 +719,73 @@ def _compile_execution_from_output(output):
     return metadata, compile_execution
 
 
+def _compiled_executor_metadata(compiled):
+    executor = getattr(compiled, "_torch_rs_cuda_compile_executor", None)
+    if executor is None or not hasattr(executor, "metadata"):
+        return None
+    metadata = executor.metadata()
+    if type(metadata) is not dict:
+        return None
+    return metadata
+
+
+def _require_torch_rs_cuda_compile_prepared_executor(
+    metadata,
+    *,
+    expected_invocation_count=None,
+):
+    if type(metadata) is not dict:
+        raise AssertionError("compiled CUDA wrapper is missing prepared executor")
+    if metadata.get("schema_version") != PREPARED_EXECUTOR_SCHEMA_VERSION:
+        raise AssertionError("compiled CUDA prepared executor schema changed")
+    if metadata.get("status") != "ok":
+        raise AssertionError(
+            "compiled CUDA prepared executor failed: "
+            f"{metadata.get('reason')}"
+        )
+    if metadata.get("prepared") is not True:
+        raise AssertionError("compiled CUDA executor was not prepared")
+    if metadata.get("setup_hoisted_to_compile_wrapper") is not True:
+        raise AssertionError("compiled CUDA setup was not hoisted to the wrapper")
+    if not metadata.get("preparation_id"):
+        raise AssertionError("compiled CUDA prepared executor id is missing")
+    if metadata.get("native_cuda_compile") is not True:
+        raise AssertionError("prepared executor did not mark native CUDA compile")
+    if metadata.get("eager_fallback") is not False:
+        raise AssertionError("prepared executor used eager fallback")
+    if metadata.get("forwarded_to_pytorch") is not False:
+        raise AssertionError("prepared executor forwarded to PyTorch")
+    if metadata.get("compile_backend") != REFERENCE_COMPILE_CONFIG["backend"]:
+        raise AssertionError("prepared executor used the wrong backend")
+    if metadata.get("compile_fullgraph") is not True:
+        raise AssertionError("prepared executor did not use fullgraph=True")
+    if metadata.get("compile_dynamic") is not False:
+        raise AssertionError("prepared executor did not use dynamic=False")
+    if metadata.get("device_type") != "cuda" or metadata.get("device_index") != 0:
+        raise AssertionError("prepared executor did not select CUDA device 0")
+    if metadata.get("workload_shape") != list(WORKLOAD_SHAPE):
+        raise AssertionError("prepared executor workload shape changed")
+    if metadata.get("output_shape") != [WORKLOAD_SHAPE[0]]:
+        raise AssertionError("prepared executor output shape changed")
+    if metadata.get("cpu_fallback") is not False:
+        raise AssertionError("prepared executor used CPU fallback")
+    if metadata.get("nvcc", {}).get("available") is not True:
+        raise AssertionError("prepared executor did not record nvcc")
+    if metadata.get("build") is None:
+        raise AssertionError("prepared executor did not record kernel build")
+    if metadata.get("kernel_library", {}).get("loaded") is not True:
+        raise AssertionError("prepared executor did not load the kernel library")
+    if (
+        expected_invocation_count is not None
+        and metadata.get("invocation_count") != expected_invocation_count
+    ):
+        raise AssertionError(
+            "prepared executor invocation count changed: "
+            f"expected {expected_invocation_count}, "
+            f"got {metadata.get('invocation_count')}"
+        )
+
+
 def _require_torch_rs_cuda_compile_output(
     output,
     *,
@@ -775,6 +845,21 @@ def _require_torch_rs_cuda_compile_output(
         raise AssertionError("compiled CUDA output readback was not synchronized")
     if compile_execution.get("launch", {}).get("sync_error", {}).get("result") != 0:
         raise AssertionError("compiled CUDA kernel did not synchronize")
+    executor = compile_execution.get("executor")
+    if type(executor) is not dict:
+        raise AssertionError("compiled CUDA execution is missing executor evidence")
+    if executor.get("schema_version") != PREPARED_EXECUTOR_SCHEMA_VERSION:
+        raise AssertionError("compiled CUDA execution executor schema changed")
+    if executor.get("prepared") is not True:
+        raise AssertionError("compiled CUDA execution did not use a prepared executor")
+    if executor.get("setup_hoisted_to_compile_wrapper") is not True:
+        raise AssertionError("compiled CUDA execution repeated wrapper setup")
+    if not executor.get("preparation_id"):
+        raise AssertionError("compiled CUDA execution executor id is missing")
+    if type(executor.get("invocation_index")) is not int:
+        raise AssertionError("compiled CUDA execution invocation index is missing")
+    if type(executor.get("reused_prepared_executor")) is not bool:
+        raise AssertionError("compiled CUDA execution reuse marker is missing")
 
     comparison = _compare_compiled_output_bytes(
         output,
@@ -855,7 +940,94 @@ def _time_torch_rs_cuda_compile_repeated(compiled, inputs, repeats):
         output = compiled(*inputs)
     elapsed_ns = time.perf_counter_ns() - started_ns
     metadata, compile_execution = _compile_execution_from_output(output)
-    return elapsed_ns, compile_execution["device_output_checksum"]
+    return (
+        elapsed_ns,
+        compile_execution["device_output_checksum"],
+        metadata,
+        compile_execution,
+    )
+
+
+def _time_torch_rs_cuda_unprepared_compatibility_repeated(
+    inputs,
+    repeats,
+    required_cuda_visible_devices,
+):
+    from torch_rs import _cuda_pointwise_reduce_workload
+
+    started_ns = time.perf_counter_ns()
+    output = None
+    for _ in range(repeats):
+        if output is not None:
+            output._torch_rs_close_private_cuda_buffer()
+        output = (
+            _cuda_pointwise_reduce_workload
+            .execute_h100_float32_pointwise_reduce_compiled_device0(
+                *inputs,
+                required_cuda_visible_devices=required_cuda_visible_devices,
+            )
+        )
+    elapsed_ns = time.perf_counter_ns() - started_ns
+    try:
+        _metadata, compile_execution = _compile_execution_from_output(output)
+        return elapsed_ns, compile_execution["device_output_checksum"], compile_execution
+    finally:
+        if output is not None:
+            output._torch_rs_close_private_cuda_buffer()
+
+
+def _run_torch_rs_cuda_unprepared_compatibility_comparison(
+    args,
+    input_bundle,
+    expected_checksum,
+):
+    sample_ns = []
+    sample_checksums = []
+    last_execution = None
+
+    for _ in range(args.warmups):
+        _elapsed_ns, _checksum, last_execution = (
+            _time_torch_rs_cuda_unprepared_compatibility_repeated(
+                input_bundle.inputs,
+                args.repeats,
+                args.required_cuda_visible_devices,
+            )
+        )
+
+    for _ in range(args.samples):
+        elapsed_ns, checksum, last_execution = (
+            _time_torch_rs_cuda_unprepared_compatibility_repeated(
+                input_bundle.inputs,
+                args.repeats,
+                args.required_cuda_visible_devices,
+            )
+        )
+        sample_ns.append(elapsed_ns)
+        sample_checksums.append(checksum)
+
+    checksums = sorted(set(sample_checksums))
+    if checksums != [expected_checksum]:
+        raise AssertionError(
+            "unprepared torch_rs CUDA workload produced unstable checksums: "
+            f"{checksums!r}"
+        )
+
+    return {
+        "implementation": "torch_rs",
+        "status": "ok",
+        "measurement": "compatibility_execute_prepares_each_call",
+        "workload_version": WORKLOAD_VERSION,
+        "compile_backend": REFERENCE_COMPILE_CONFIG["backend"],
+        "compile_fullgraph": True,
+        "compile_dynamic": False,
+        "native_cuda_compile": True,
+        "eager_fallback": False,
+        "forwarded_to_pytorch": False,
+        "steady": _summarize_samples(sample_ns, args.repeats),
+        "steady_checksums": checksums,
+        "last_compile_execution": last_execution,
+        "setup_repeated_per_invocation": True,
+    }
 
 
 def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
@@ -887,6 +1059,11 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
             dynamic=REFERENCE_COMPILE_CONFIG["dynamic"],
         )
         factory_ns = time.perf_counter_ns() - factory_started_ns
+        prepared_executor_before_first_call = _compiled_executor_metadata(compiled)
+        _require_torch_rs_cuda_compile_prepared_executor(
+            prepared_executor_before_first_call,
+            expected_invocation_count=0,
+        )
 
         (
             cold_ns,
@@ -901,22 +1078,32 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
             expected_output_bytes=workload_buffers["expected_output_bytes"],
             expected_output_metadata=workload_buffers["expected_output_metadata"],
         )
+        last_execution = cold_execution
 
         for _ in range(args.warmups):
-            _time_torch_rs_cuda_compile_repeated(
+            (
+                _warmup_ns,
+                _warmup_checksum,
+                _warmup_metadata,
+                warmup_execution,
+            ) = _time_torch_rs_cuda_compile_repeated(
                 compiled,
                 input_bundle.inputs,
                 args.repeats,
             )
+            last_execution = warmup_execution
 
         sample_ns = []
         sample_checksums = []
         for _ in range(args.samples):
-            elapsed_ns, checksum = _time_torch_rs_cuda_compile_repeated(
-                compiled,
-                input_bundle.inputs,
-                args.repeats,
+            elapsed_ns, checksum, _sample_metadata, sample_execution = (
+                _time_torch_rs_cuda_compile_repeated(
+                    compiled,
+                    input_bundle.inputs,
+                    args.repeats,
+                )
             )
+            last_execution = sample_execution
             sample_ns.append(elapsed_ns)
             sample_checksums.append(checksum)
 
@@ -926,6 +1113,72 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
                 "compiled torch_rs CUDA workload produced unstable checksums: "
                 f"{checksums!r}"
             )
+
+        expected_invocations = (
+            1 + args.warmups * args.repeats + args.samples * args.repeats
+        )
+        prepared_executor_after_timing = _compiled_executor_metadata(compiled)
+        _require_torch_rs_cuda_compile_prepared_executor(
+            prepared_executor_after_timing,
+            expected_invocation_count=expected_invocations,
+        )
+        cold_executor = cold_execution.get("executor") or {}
+        last_executor = last_execution.get("executor") or {}
+        prepared_executor_reuse = {
+            "preparation_id": prepared_executor_after_timing["preparation_id"],
+            "before_first_call_invocation_count": (
+                prepared_executor_before_first_call["invocation_count"]
+            ),
+            "expected_invocation_count": expected_invocations,
+            "observed_invocation_count": (
+                prepared_executor_after_timing["invocation_count"]
+            ),
+            "cold_invocation_index": cold_executor.get("invocation_index"),
+            "last_invocation_index": last_executor.get("invocation_index"),
+            "cold_reused_prepared_executor": cold_executor.get(
+                "reused_prepared_executor"
+            ),
+            "steady_state_reused_prepared_executor": last_executor.get(
+                "reused_prepared_executor"
+            )
+            is True,
+            "setup_hoisted_to_compile_wrapper": (
+                prepared_executor_after_timing.get(
+                    "setup_hoisted_to_compile_wrapper"
+                )
+                is True
+            ),
+        }
+        if (
+            prepared_executor_reuse["observed_invocation_count"]
+            != expected_invocations
+            or prepared_executor_reuse["last_invocation_index"]
+            != expected_invocations
+            or not prepared_executor_reuse["steady_state_reused_prepared_executor"]
+        ):
+            raise AssertionError("compiled CUDA prepared executor was not reused")
+
+        unprepared_comparison = None
+        if args.include_unprepared_comparison:
+            unprepared_comparison = (
+                _run_torch_rs_cuda_unprepared_compatibility_comparison(
+                    args,
+                    input_bundle,
+                    workload_buffers["expected_output_checksum"],
+                )
+            )
+            unprepared_median = unprepared_comparison["steady"]["median_us"]
+            prepared_median = _summarize_samples(
+                sample_ns,
+                args.repeats,
+            )["median_us"]
+            prepared_executor_reuse[
+                "unprepared_compatibility_steady_median_us"
+            ] = unprepared_median
+            prepared_executor_reuse["prepared_steady_median_us"] = prepared_median
+            prepared_executor_reuse[
+                "prepared_vs_unprepared_steady_speedup"
+            ] = (unprepared_median / prepared_median if prepared_median else None)
 
         evidence = {
             "implementation": "torch_rs",
@@ -949,7 +1202,12 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
             "input_tensor_evidence": input_evidence,
             "output_metadata": cold_execution["output_metadata"],
             "output_tensor_wrapper": cold_metadata,
+            "prepared_executor": prepared_executor_before_first_call,
+            "prepared_executor_after_timing": prepared_executor_after_timing,
+            "prepared_executor_reuse": prepared_executor_reuse,
             "compile_execution": cold_execution,
+            "last_compile_execution": last_execution,
+            "unprepared_compatibility_comparison": unprepared_comparison,
             "correctness": {
                 "pytorch_reference_checksum": workload_buffers[
                     "expected_output_checksum"
@@ -1174,6 +1432,14 @@ def parse_args():
         "--allow-non-h100",
         action="store_true",
         help="allow running the reference benchmark on a non-H100 CUDA device",
+    )
+    parser.add_argument(
+        "--include-unprepared-comparison",
+        action="store_true",
+        help=(
+            "also time the compatibility path that prepares CUDA compile setup "
+            "on each invocation; this is recorded as non-scoring evidence"
+        ),
     )
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
