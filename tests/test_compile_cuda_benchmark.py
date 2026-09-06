@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -1790,6 +1791,118 @@ print(json.dumps({
             self.assertEqual(len(runtime.copies), 1)
             self.assertEqual(len(runtime.syncs), 1)
         finally:
+            executor.close()
+            x._torch_rs_close_private_cuda_buffer()
+            bias._torch_rs_close_private_cuda_buffer()
+
+    def test_prepared_executor_uses_thread_local_launch_reports(self):
+        runtime = _FakeCudaRuntime()
+
+        class InterleavedLaunchLibrary(_FakePointwiseReduceLibrary):
+            def __init__(self, observed_runtime):
+                super().__init__(observed_runtime)
+                self._lock = threading.Lock()
+                self._calls = 0
+                self.first_report_ready = threading.Event()
+                self.second_report_reset = threading.Event()
+                self.second_can_finish = threading.Event()
+                self.report_ids = []
+
+            def torch_rs_private_h100_pointwise_reduce_float32_device0_guarded_launch_async_v1(
+                self,
+                x,
+                bias,
+                output,
+                rows,
+                columns,
+                report,
+            ):
+                del x, bias, output, rows, columns
+                report = report._obj
+                with self._lock:
+                    self._calls += 1
+                    call_index = self._calls
+                    self.report_ids.append(id(report))
+
+                if call_index == 1:
+                    report.set_device_error = 0
+                    report.get_device_error = 0
+                    report.observed_device = 0
+                    report.launch_error = 0
+                    self.first_report_ready.set()
+                    if not self.second_report_reset.wait(timeout=5):
+                        raise AssertionError("second launch did not reset report")
+                    return 0
+
+                if call_index == 2:
+                    if not self.first_report_ready.wait(timeout=5):
+                        raise AssertionError("first launch did not enter")
+                    report.set_device_error = 0
+                    report.get_device_error = 0
+                    report.observed_device = -1
+                    report.launch_error = 0
+                    self.second_report_reset.set()
+                    if not self.second_can_finish.wait(timeout=5):
+                        raise AssertionError("second launch was not released")
+                    report.observed_device = 0
+                    return 0
+
+                raise AssertionError(f"unexpected launch call {call_index}")
+
+        library = InterleavedLaunchLibrary(runtime)
+        executor, runtime = _fake_prepared_executor(
+            runtime=runtime,
+            kernel_library=library,
+        )
+        x = _fake_input_tensor(
+            runtime,
+            "x",
+            _cuda_pointwise_reduce_workload.WORKLOAD_SHAPE,
+        )
+        bias = _fake_input_tensor(
+            runtime,
+            "bias",
+            (_cuda_pointwise_reduce_workload.WORKLOAD_SHAPE[1],),
+        )
+        outputs = []
+        errors = []
+
+        def run_execute():
+            try:
+                outputs.append(executor.execute(x, bias))
+            except Exception as error:
+                errors.append(error)
+
+        first_thread = threading.Thread(target=run_execute)
+        second_thread = threading.Thread(target=run_execute)
+        first_thread_started = False
+        second_thread_started = False
+        try:
+            first_thread.start()
+            first_thread_started = True
+            self.assertTrue(library.first_report_ready.wait(timeout=5))
+            second_thread.start()
+            second_thread_started = True
+            self.assertTrue(library.second_report_reset.wait(timeout=5))
+            first_thread.join(timeout=5)
+            self.assertFalse(first_thread.is_alive())
+            library.second_can_finish.set()
+            second_thread.join(timeout=5)
+            self.assertFalse(second_thread.is_alive())
+
+            self.assertEqual(errors, [])
+            self.assertEqual(len(outputs), 2)
+            self.assertEqual(len(library.report_ids), 2)
+            self.assertEqual(len(set(library.report_ids)), 2)
+        finally:
+            library.second_report_reset.set()
+            library.second_can_finish.set()
+            if first_thread_started:
+                first_thread.join(timeout=5)
+            if second_thread_started:
+                second_thread.join(timeout=5)
+            for output in outputs:
+                output._torch_rs_close_private_cuda_buffer()
             executor.close()
             x._torch_rs_close_private_cuda_buffer()
             bias._torch_rs_close_private_cuda_buffer()

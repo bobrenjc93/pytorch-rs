@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import struct
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -1215,8 +1216,7 @@ class H100Float32PointwiseReduceCompiledExecutor:
         "_kernel_function",
         "_kernel_library",
         "_kernel_library_evidence",
-        "_launch_report",
-        "_launch_report_ref",
+        "_launch_report_tls",
         "_nvcc",
         "_output_metadata",
         "_output_pool",
@@ -1260,8 +1260,7 @@ class H100Float32PointwiseReduceCompiledExecutor:
                 "device0_guarded_launch_async_v1"
             ),
         )
-        self._launch_report = _GuardedLaunchReport()
-        self._launch_report_ref = ctypes.byref(self._launch_report)
+        self._launch_report_tls = threading.local()
         key_payload = json.dumps(
             {
                 "workload_version": POINTWISE_REDUCE_COMPILE_WORKLOAD_VERSION,
@@ -1421,6 +1420,16 @@ class H100Float32PointwiseReduceCompiledExecutor:
         release["freed_after_executor_close"] = freed_after_executor_close
         return release
 
+    def _thread_launch_report(self) -> tuple[_GuardedLaunchReport, Any]:
+        report = getattr(self._launch_report_tls, "report", None)
+        report_ref = getattr(self._launch_report_tls, "report_ref", None)
+        if report is None or report_ref is None:
+            report = _GuardedLaunchReport()
+            report_ref = ctypes.byref(report)
+            self._launch_report_tls.report = report
+            self._launch_report_tls.report_ref = report_ref
+        return report, report_ref
+
     def _runtime_error_evidence(self, result: int) -> dict[str, Any]:
         return {
             "result": result,
@@ -1567,7 +1576,7 @@ class H100Float32PointwiseReduceCompiledExecutor:
             raise RuntimeError("cudaMalloc failed for compiled output")
 
         try:
-            report = self._launch_report
+            report, report_ref = self._thread_launch_report()
             kernel_result = int(
                 self._kernel_function(
                     device_x.pointer,
@@ -1575,7 +1584,7 @@ class H100Float32PointwiseReduceCompiledExecutor:
                     device_output.pointer,
                     WORKLOAD_SHAPE[0],
                     WORKLOAD_SHAPE[1],
-                    self._launch_report_ref,
+                    report_ref,
                 )
             )
             token = _CompiledExecutionToken(
