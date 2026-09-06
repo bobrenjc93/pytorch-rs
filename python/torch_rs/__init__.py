@@ -383,8 +383,13 @@ def _supports_native_eager_compile(
     return (
         _builtins.type(resolved_backend) is _builtins.str
         and resolved_backend == "eager"
-        and (fullgraph is True or fullgraph is False)
-        and dynamic is None
+        and (
+            (
+                fullgraph is True
+                and (dynamic is None or _builtins.type(dynamic) is _builtins.bool)
+            )
+            or (fullgraph is False and dynamic is None)
+        )
         and mode is None
         and options is None
         and isolate_recompiles is False
@@ -456,7 +461,7 @@ def _execute_native_eager_compile_graph(graph, inputs, compile_trace):
     return compile_trace.execute_compile_trace_graph(graph, *inputs)
 
 
-def _native_eager_compile_implementation(model, name, recompile_limit):
+def _native_eager_compile_implementation(model, name, recompile_limit, *, dynamic):
     from . import _compiler_state as _compile_state
 
     cache = _compile_state.new_native_eager_compile_cache()
@@ -503,6 +508,7 @@ def _native_eager_compile_implementation(model, name, recompile_limit):
                 model,
                 input_metadatas,
                 program_descriptor,
+                dynamic=dynamic,
             )
             program_descriptor = compile_request.descriptor
             graph = cache.graphs.get(compile_request.key)
@@ -588,6 +594,7 @@ def _compile_bound_model(
             model,
             name,
             _validated_compile_recompile_limit(recompile_limit),
+            dynamic=dynamic is True,
         )
 
     return _make_compile_wrapper(
@@ -627,12 +634,22 @@ def compile(
     ``float32`` Tensor inputs made only from Tensor ``neg``, ``abs``,
     ``relu``, ``square``, ``detach``, ``float``, binary ``add``, and one exact
     same-module helper call over Tensor arguments for ``backend="eager"``
-    with ``fullgraph=True`` or no-break ``fullgraph=False``. Those functions
-    may read module-global exact
-    native CPU ``float32`` Tensor constants. They may also contain one
-    top-level ``if`` over an input Tensor's ``requires_grad`` metadata; the
-    native path lowers the selected branch and returns either a Tensor or a
-    tuple/list pytree with Tensor leaves.
+    with ``fullgraph=True`` and ``dynamic`` set to ``None``, ``True``, or
+    ``False``. Those functions may read module-global exact native CPU
+    ``float32`` Tensor constants. They may also contain one top-level ``if``
+    over an input Tensor's ``requires_grad`` metadata; the native path lowers
+    the selected branch and returns either a Tensor or a tuple/list pytree with
+    Tensor leaves. ``dynamic=True`` reuses a graph across same-rank shape
+    changes while keeping stride, dtype, device, and ``requires_grad``
+    specialized, matching the covered PyTorch eager-backend guards.
+    The same no-break subset is also supported with ``fullgraph=False`` and
+    default ``dynamic=None``. Those functions may read module-global exact
+    native CPU ``float32`` Tensor constants. They may also contain one top-level
+    ``if`` over an input Tensor's ``requires_grad`` metadata; the native path
+    lowers the selected branch and returns either a Tensor or a tuple/list
+    pytree with Tensor leaves. ``dynamic=True`` reuses a graph across same-rank
+    shape changes while keeping stride, dtype, device, and ``requires_grad``
+    specialized, matching the covered PyTorch eager-backend guards.
     Eager fallback, installed-PyTorch forwarding, callable backend invocation,
     CUDA compilation, and broader graph capture remain unsupported.
     """

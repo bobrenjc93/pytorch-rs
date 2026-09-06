@@ -48,6 +48,8 @@ CATEGORY_LABELS = {
     "inference": "inference",
     "training_autograd": "training-autograd",
     "python_control_flow": "python-control-flow",
+    "graph_breaks_fullgraph": "graph-breaks-fullgraph",
+    "dynamic_shapes_symbolics": "dynamic-shape",
     "containers_pytrees": "containers-pytrees",
     "decompositions": "decomposition",
     "custom_functions": "custom-functions",
@@ -61,6 +63,8 @@ CATEGORY_PHRASES = {
     "inference": "inference",
     "training_autograd": "training autograd",
     "python_control_flow": "Python control flow",
+    "graph_breaks_fullgraph": "graph breaks and fullgraph",
+    "dynamic_shapes_symbolics": "dynamic shapes",
     "containers_pytrees": "containers and pytrees",
     "decompositions": "decompositions",
     "custom_functions": "custom functions",
@@ -74,6 +78,8 @@ CATEGORY_PROGRAM_LABELS = {
     "inference": "inference",
     "training_autograd": "training-autograd",
     "python_control_flow": "Python-control-flow",
+    "graph_breaks_fullgraph": "graph-breaks/fullgraph",
+    "dynamic_shapes_symbolics": "dynamic-shape",
     "containers_pytrees": "containers-pytrees",
     "decompositions": "decomposition",
     "custom_functions": "custom-function",
@@ -382,12 +388,10 @@ def _corpus_metadata(corpus_module):
     return {
         "version": corpus_module.COMPILE_CORPUS_VERSION,
         "public_cases": [
-            case_summary(case) for case in corpus_module.compile_corpus_cases()
+            case_summary(case) for case in _benchmark_public_cases(corpus_module)
         ],
         "held_out_cases": [
-            case_summary(case)
-            for case in corpus_module.compile_corpus_cases(include_held_out=True)
-            if case not in corpus_module.compile_corpus_cases()
+            case_summary(case) for case in _benchmark_held_out_cases(corpus_module)
         ],
         "public_recompilation_guard_scenarios": [
             scenario_summary(scenario)
@@ -424,6 +428,39 @@ def _program_input_count(case):
     if code is None:
         raise AssertionError(f"{case.name} program is not an exact Python function")
     return code.co_argcount
+
+
+def _case_is_native_eager_benchmark_supported(case):
+    return (
+        (
+            (
+                case.fullgraph is True
+                and (case.dynamic is None or type(case.dynamic) is bool)
+            )
+            or (
+                case.fullgraph is False
+                and case.dynamic is None
+            )
+        )
+        and case.mode is None
+        and case.options is None
+    )
+
+
+def _benchmark_public_cases(corpus_module):
+    return tuple(
+        case
+        for case in corpus_module.COMPILE_CORPUS
+        if _case_is_native_eager_benchmark_supported(case)
+    )
+
+
+def _benchmark_held_out_cases(corpus_module):
+    return tuple(
+        case
+        for case in getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ())
+        if _case_is_native_eager_benchmark_supported(case)
+    )
 
 
 def _variant_applies_to_case(variant, case):
@@ -886,8 +923,8 @@ def _geomean(values):
 def _coverage_denominator(corpus_module, selected_cases):
     category_weights = dict(corpus_module.CATEGORY_WEIGHTS)
     selected_names = {case.name for case in selected_cases}
-    public_cases = tuple(corpus_module.COMPILE_CORPUS)
-    held_out_cases = tuple(getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ()))
+    public_cases = _benchmark_public_cases(corpus_module)
+    held_out_cases = _benchmark_held_out_cases(corpus_module)
 
     supported_categories = []
     zero_credit_categories = []
@@ -1010,6 +1047,31 @@ def _select_named(items, selected_names, *, item_kind):
     return tuple(by_name[name] for name in selected_names)
 
 
+def _select_benchmark_cases(corpus_module, selected_names):
+    supported_cases = _benchmark_public_cases(corpus_module)
+    if not selected_names:
+        return supported_cases
+
+    all_public_cases = {case.name: case for case in corpus_module.COMPILE_CORPUS}
+    supported_names = {case.name for case in supported_cases}
+    unsupported = [
+        name
+        for name in selected_names
+        if name in all_public_cases and name not in supported_names
+    ]
+    if unsupported:
+        raise SystemExit(
+            "unsupported native eager benchmark case: "
+            f"{', '.join(unsupported)}. The CPU benchmark only times public "
+            "cases supported by the current native eager/fullgraph torch_rs path."
+        )
+    return _select_named(
+        supported_cases,
+        selected_names,
+        item_kind="native eager benchmark-supported case",
+    )
+
+
 def _output_path(path):
     resolved = path.resolve()
     try:
@@ -1057,7 +1119,7 @@ def run_benchmark(args):
         )
 
     _configure_reference_threads(reference_torch, args.threads)
-    cases = _select_named(corpus_module.COMPILE_CORPUS, args.cases, item_kind="case")
+    cases = _select_benchmark_cases(corpus_module, args.cases)
     variants = _select_named(INPUT_VARIANTS, args.variants, item_kind="variant")
 
     gc_was_enabled = gc.isenabled()

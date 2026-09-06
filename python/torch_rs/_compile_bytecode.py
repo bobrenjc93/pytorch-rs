@@ -66,6 +66,7 @@ class _CompileCacheRequest:
     input_metadatas: tuple
     helper_dependencies: tuple[_HelperCacheDependency, ...]
     global_tensor_dependencies: tuple[_GlobalTensorCacheDependency, ...]
+    dynamic: bool = False
 
 
 @dataclass(slots=True)
@@ -133,7 +134,9 @@ _METHOD_TARGETS = {
     ),
 }
 _BYTECODE_METHOD_NAMES = frozenset(_METHOD_TARGETS)
-_IGNORED_OPCODE_NAMES = frozenset(("CACHE", "EXTENDED_ARG", "NOP", "RESUME"))
+_IGNORED_OPCODE_NAMES = frozenset(
+    ("CACHE", "EXTENDED_ARG", "NOP", "NOT_TAKEN", "RESUME")
+)
 _EXCEPTION_HANDLING_OPCODE_NAMES = frozenset(
     (
         "BEFORE_ASYNC_WITH",
@@ -539,8 +542,30 @@ def _validate_input_metadatas(code, input_metadatas):
             )
 
 
-def prepare_compile_cache_request(program, input_metadatas, descriptor=None):
+def _dynamic_metadata_key(input_metadatas):
+    return tuple(
+        (
+            "dynamic_rank",
+            len(input_metadata.shape),
+            input_metadata.stride,
+            input_metadata.dtype,
+            input_metadata.device,
+            input_metadata.requires_grad,
+        )
+        for input_metadata in input_metadatas
+    )
+
+
+def prepare_compile_cache_request(
+    program,
+    input_metadatas,
+    descriptor=None,
+    *,
+    dynamic=False,
+):
     """Return cache metadata and exact dependency snapshots used for lowering."""
+    if _builtins.type(dynamic) is not _builtins.bool:
+        raise TypeError("torch.compile trace cache dynamic flag must be bool")
     code = getattr(program, "__code__", None)
     if descriptor is None or descriptor.code is not code:
         descriptor = analyze_compile_program(program)
@@ -552,10 +577,13 @@ def prepare_compile_cache_request(program, input_metadatas, descriptor=None):
         descriptor,
         input_metadatas,
     )
+    metadata_key = (
+        _dynamic_metadata_key(input_metadatas) if dynamic else input_metadatas
+    )
     return _CompileCacheRequest(
         key=(
             descriptor.code,
-            input_metadatas,
+            metadata_key,
             helper_dependencies,
             global_tensor_dependencies,
         ),
@@ -563,12 +591,17 @@ def prepare_compile_cache_request(program, input_metadatas, descriptor=None):
         input_metadatas=input_metadatas,
         helper_dependencies=helper_dependencies,
         global_tensor_dependencies=global_tensor_dependencies,
+        dynamic=dynamic,
     )
 
 
-def compile_cache_key(program, input_metadatas):
+def compile_cache_key(program, input_metadatas, *, dynamic=False):
     """Return a cache key with validated helper and global tensor dependencies."""
-    return prepare_compile_cache_request(program, input_metadatas).key
+    return prepare_compile_cache_request(
+        program,
+        input_metadatas,
+        dynamic=dynamic,
+    ).key
 
 
 def _pop(stack, program, instruction):
@@ -1231,7 +1264,8 @@ def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=
     code = compile_request.descriptor.code
 
     recorder = _trace.CompileTraceRecorder(
-        name or getattr(program, "__name__", "compile_trace")
+        name or getattr(program, "__name__", "compile_trace"),
+        dynamic=compile_request.dynamic,
     )
     locals = {}
     for index, input_metadata in enumerate(input_metadatas):
