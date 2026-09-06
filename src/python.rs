@@ -9314,50 +9314,47 @@ fn bind_arange_arguments<'py>(
         requires_grad: None,
         keyword_error: None,
     };
+    bind_arange_positional_arguments(positional, &mut arguments)?;
+    if let Some(keywords) = keywords {
+        bind_arange_keyword_arguments(positional.len(), keywords, &mut arguments)?;
+    }
+    Ok(arguments)
+}
+
+fn bind_arange_positional_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    arguments: &mut ArangeCallArguments<'py>,
+) -> PyResult<()> {
     match positional.len() {
         0 => {}
         1 => {
-            arguments.end = Some(ParsedCallArgument {
-                value: positional.get_item(0)?,
-                position: Some(1),
-            });
+            arguments.end = Some(positional_call_argument(positional, 0)?);
         }
         2 => {
-            arguments.start = Some(ParsedCallArgument {
-                value: positional.get_item(0)?,
-                position: Some(1),
-            });
-            arguments.end = Some(ParsedCallArgument {
-                value: positional.get_item(1)?,
-                position: Some(2),
-            });
+            arguments.start = Some(positional_call_argument(positional, 0)?);
+            arguments.end = Some(positional_call_argument(positional, 1)?);
         }
         3 => {
-            arguments.start = Some(ParsedCallArgument {
-                value: positional.get_item(0)?,
-                position: Some(1),
-            });
-            arguments.end = Some(ParsedCallArgument {
-                value: positional.get_item(1)?,
-                position: Some(2),
-            });
-            arguments.step = Some(ParsedCallArgument {
-                value: positional.get_item(2)?,
-                position: Some(3),
-            });
+            arguments.start = Some(positional_call_argument(positional, 0)?);
+            arguments.end = Some(positional_call_argument(positional, 1)?);
+            arguments.step = Some(positional_call_argument(positional, 2)?);
         }
         _ => unreachable!("positional arange arguments were checked above"),
     }
-    let Some(keywords) = keywords else {
-        return Ok(arguments);
-    };
+    Ok(())
+}
 
+fn bind_arange_keyword_arguments<'py>(
+    positional_count: usize,
+    keywords: &Bound<'py, PyDict>,
+    arguments: &mut ArangeCallArguments<'py>,
+) -> PyResult<()> {
     for (key, value) in keywords {
         let key = key.extract::<String>()?;
         match key.as_str() {
             "end" => {
                 if arguments.end.is_some() {
-                    if positional.len() == 1 && arguments.start.is_none() {
+                    if positional_count == 1 && arguments.start.is_none() {
                         // A positional value combined with `end=` selects
                         // PyTorch's two-bound overload rather than duplicating
                         // the one-bound argument.
@@ -9377,7 +9374,7 @@ fn bind_arange_arguments<'py>(
                 }
             }
             "start" => {
-                if arguments.start.is_some() || positional.len() == 1 {
+                if arguments.start.is_some() || positional_count == 1 {
                     arguments.unsupported_overload = true;
                 } else {
                     arguments.start = Some(ParsedCallArgument {
@@ -9411,7 +9408,17 @@ fn bind_arange_arguments<'py>(
             }
         }
     }
-    Ok(arguments)
+    Ok(())
+}
+
+fn positional_call_argument<'py>(
+    positional: &Bound<'py, PyTuple>,
+    index: usize,
+) -> PyResult<ParsedCallArgument<'py>> {
+    Ok(ParsedCallArgument {
+        value: positional.get_item(index)?,
+        position: Some(index + 1),
+    })
 }
 
 fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(f64, f64, usize, bool)> {
@@ -9525,23 +9532,19 @@ fn parse_two_bound_arange_arguments(
         return Err(arange_two_bound_endpoint_type_error("end", &end)?);
     }
 
-    let step_kind = if let Some(step) = step.as_ref() {
-        classify_arange_endpoint(&step.value)?
-    } else {
-        None
+    let step_kind = match step.as_ref() {
+        Some(step_argument) => {
+            let step_kind = classify_arange_endpoint(&step_argument.value)?;
+            if !matches!(
+                step_kind,
+                Some(ArangeEndpointKind::ExactPythonInteger | ArangeEndpointKind::NumpyInteger)
+            ) {
+                return Err(arange_two_bound_endpoint_type_error("step", step_argument)?);
+            }
+            step_kind
+        }
+        None => None,
     };
-    if step.is_some()
-        && !matches!(
-            step_kind,
-            Some(ArangeEndpointKind::ExactPythonInteger | ArangeEndpointKind::NumpyInteger)
-        )
-    {
-        return Err(arange_two_bound_endpoint_type_error(
-            "step",
-            step.as_ref()
-                .expect("step kind was checked only when step is present"),
-        )?);
-    }
 
     let explicit_float32_dtype = arange_has_explicit_float32_dtype(dtype.as_ref())?;
     let dtype = parse_dtype("arange", dtype.as_ref())?;

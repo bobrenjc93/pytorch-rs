@@ -805,18 +805,21 @@ and explicit `requires_grad` mutation requests remain unsupported.
 supported numeric overloads. One-bound exact Python `float` and NumPy floating
 endpoints accept omitted, `None`, or explicit `torch.float32`/`torch.float`
 dtype metadata. One-bound exact Python or NumPy integer endpoints, and
-two-bound implicit-step exact Python or NumPy integer `start, end` endpoints,
-require an explicit `dtype=torch.float32` or `dtype=torch.float`. Supported
-two-bound integer calls produce values in `[start, end)` with step `1`,
-including negative starts and zero-length ranges when PyTorch 2.13's floating
-shape calculation does so. Supported metadata is limited to `out=None`,
+two-bound implicit-step and three-bound explicit-step exact Python or NumPy
+integer `start, end[, step]` endpoints, require an explicit
+`dtype=torch.float32` or `dtype=torch.float`. Supported two-bound integer calls
+produce values in `[start, end)` with step `1`; supported three-bound integer
+calls use an exact Python or NumPy integer `step`, including positive,
+negative, and zero-length ranges, with PyTorch 2.13-compatible zero-step and
+overflow errors. Supported metadata is limited to `out=None`,
 `layout=None` or
 `torch.strided`, `device=None` or CPU, `pin_memory=None` or `False`, and
 `requires_grad=False` or `True`; `requires_grad=True` creates a fresh leaf even
 under `torch.no_grad()`. Omitted-dtype integer inference, Python and NumPy
-boolean endpoints, float two-bound ranges, explicit `step`, concrete `out`
-tensors, non-CPU devices, non-float32 dtypes, pinned allocation, sparse or
-foreign layouts, and backend-specific allocation behavior remain unsupported.
+boolean endpoints, float two-bound ranges, float-step ranges, one-bound
+`step=` calls, concrete `out` tensors, non-CPU devices, non-float32 dtypes,
+pinned allocation, sparse or foreign layouts, and backend-specific allocation
+behavior remain unsupported.
 
 `torch.empty(*size, shape=None, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)`, `torch.zeros(*size, shape=None, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)`, and `torch.ones(*size, shape=None, out=None, dtype=None, layout=None, device=None, pin_memory=False, requires_grad=False)` create fresh CPU float32 tensors for scalar, empty, and multidimensional sizes. `torch.empty` leaves element values unspecified; `torch.zeros` and `torch.ones` fill with zeros or ones. The current memory-safe implementation zero-initializes `torch.empty` CPU float32 backing storage as an implementation detail because tensor read paths expose initialized slices; `scripts/benchmark_creation_factories.py` records that cost directly instead of treating private CUDA evidence or PyTorch-style uninitialized allocation as parity credit, and `scripts/validate_creation_factory_benchmark.py` supplies generated held-out shapes that must accompany fixed creation timings before merge-scoring use. Single positional integers, integer-protocol values, and variadic positional integer-compatible dimensions such as `torch.empty(2, 3)` are accepted. Sequence-form `torch.empty` sizes are limited to tuple, list, and `torch.Size` families following PyTorch 2.13, while `torch.zeros` and `torch.ones` retain their existing tuple/list-like compatibility path with PyTorch-compatible shape, stride, dtype, device, layout, pinning, and `requires_grad` metadata. Python bools are accepted in non-leading dimensions following PyTorch 2.13, such as `torch.zeros(2, False)` or `torch.empty((2, True))`, while a single positional bool or leading bool dimension remains outside the supported size forms. `out=None`, `layout=None`, `layout=torch.strided`, `pin_memory=None`, and `pin_memory=False` are accepted and behave like omitted defaults without reusing storage or pinning allocation. Concrete `out` tensors, non-tuple/list sequence size objects for `torch.empty`, `size=` combined with positional dimensions, NumPy boolean scalar dimensions, negative or overflowing dimensions, non-float32 dtype or non-CPU device allocation, `pin_memory=True`, sparse or foreign layouts, top-level `torch.empty` memory-format arguments, and backend-specific allocation behavior remain unsupported.
 
