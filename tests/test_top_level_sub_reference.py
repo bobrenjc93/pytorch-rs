@@ -4,6 +4,7 @@ import pickle
 import re
 import types
 import unittest
+import warnings
 
 import numpy as np
 import torch_rs as torch
@@ -184,6 +185,123 @@ class TopLevelSubReferenceTests(unittest.TestCase):
             torch.sub(torch.tensor(values), torch.zeros((5,))),
             reference_torch.sub(reference_torch.tensor(values), reference_torch.zeros((5,))),
             case="signed zero and non-finites",
+        )
+
+    def test_numeric_alpha_forms_match_pytorch_2_13(self):
+        actual_left = torch.tensor(
+            [[[1.0, -0.0], [float("inf"), -4.0], [5.0, float("nan")]]]
+        ).transpose(0, 2)
+        expected_left = reference_torch.tensor(
+            [[[1.0, -0.0], [float("inf"), -4.0], [5.0, float("nan")]]]
+        ).transpose(0, 2)
+        actual_right = torch.tensor([[2.0], [-0.0], [float("-inf")]])
+        expected_right = reference_torch.tensor([[2.0], [-0.0], [float("-inf")]])
+
+        for function_name in ("sub", "subtract"):
+            actual_function = getattr(torch, function_name)
+            expected_function = getattr(reference_torch, function_name)
+            actual_left_before = tensor_bits(actual_left)
+            actual_right_before = tensor_bits(actual_right)
+            cases = (
+                (
+                    "keyword tensor alpha",
+                    lambda actual_function=actual_function: actual_function(
+                        actual_left, actual_right, alpha=np.float32(2.0)
+                    ),
+                    lambda expected_function=expected_function: expected_function(
+                        expected_left, expected_right, alpha=np.float32(2.0)
+                    ),
+                ),
+                (
+                    "tensor scalar alpha",
+                    lambda actual_function=actual_function: actual_function(
+                        actual_left[1], np.float32(-0.0), alpha=2.0
+                    ),
+                    lambda expected_function=expected_function: expected_function(
+                        expected_left[1], np.float32(-0.0), alpha=2.0
+                    ),
+                ),
+                (
+                    "scalar tensor alpha",
+                    lambda actual_function=actual_function: actual_function(
+                        np.float32(-0.0), actual_left[1], alpha=-0.0
+                    ),
+                    lambda expected_function=expected_function: expected_function(
+                        np.float32(-0.0), expected_left[1], alpha=-0.0
+                    ),
+                ),
+                (
+                    "positional scalar alpha",
+                    lambda actual_function=actual_function: actual_function(
+                        actual_left[1], 2.0, 3.0
+                    ),
+                    lambda expected_function=expected_function: expected_function(
+                        expected_left[1], 2.0, 3.0
+                    ),
+                ),
+            )
+            for case, actual_call, expected_call in cases:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", UserWarning)
+                    expected = expected_call()
+                self.assert_matches(actual_call(), expected, case=(function_name, case))
+            np.testing.assert_array_equal(tensor_bits(actual_left), actual_left_before)
+            np.testing.assert_array_equal(tensor_bits(actual_right), actual_right_before)
+
+            actual_grad_left = torch.tensor([[1.0, 2.0]], requires_grad=True)
+            expected_grad_left = reference_torch.tensor(
+                [[1.0, 2.0]], requires_grad=True
+            )
+            actual_grad_right = torch.tensor(
+                [[3.0], [4.0], [5.0]], requires_grad=True
+            )
+            expected_grad_right = reference_torch.tensor(
+                [[3.0], [4.0], [5.0]], requires_grad=True
+            )
+            actual_function(
+                actual_grad_left.transpose(0, 1),
+                actual_grad_right.transpose(0, 1),
+                alpha=2.5,
+            ).sum().backward()
+            expected_function(
+                expected_grad_left.transpose(0, 1),
+                expected_grad_right.transpose(0, 1),
+                alpha=2.5,
+            ).sum().backward()
+            np.testing.assert_array_equal(
+                np.asarray(actual_grad_left.grad),
+                expected_grad_left.grad.numpy(),
+            )
+            np.testing.assert_array_equal(
+                np.asarray(actual_grad_right.grad),
+                expected_grad_right.grad.numpy(),
+            )
+
+            actual_scalar_left_grad = torch.tensor([2.0, -3.0], requires_grad=True)
+            expected_scalar_left_grad = reference_torch.tensor(
+                [2.0, -3.0], requires_grad=True
+            )
+            actual_function(4.0, actual_scalar_left_grad, alpha=-0.5).sum().backward()
+            expected_function(
+                4.0, expected_scalar_left_grad, alpha=-0.5
+            ).sum().backward()
+            np.testing.assert_array_equal(
+                np.asarray(actual_scalar_left_grad.grad),
+                expected_scalar_left_grad.grad.numpy(),
+            )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            expected_legacy = reference_torch.sub(expected_left, 2.0, expected_right)
+        self.assert_matches(
+            torch.sub(actual_left, 2.0, actual_right),
+            expected_legacy,
+            case="sub legacy positional tensor alpha",
+        )
+        self.assert_matches(
+            torch.sub(actual_left, 2.0, actual_right, out=None),
+            expected_legacy,
+            case="sub legacy positional tensor alpha out none",
         )
 
     def test_autograd_shared_operands_empties_and_no_grad_match_pytorch_2_13(self):

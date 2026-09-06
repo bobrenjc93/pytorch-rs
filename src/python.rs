@@ -3243,6 +3243,7 @@ enum BoundSubAlpha<'py> {
     Default,
     PythonBool,
     NonDefault,
+    Numeric(f32),
     Override(ProbedTorchFunctionOverride<'py>),
 }
 
@@ -5385,7 +5386,10 @@ fn ordered_addition_overrides<'py>(
         BoundAddOperand::Override(probed) => Some(probed),
     };
     let alpha = match &call.alpha {
-        BoundSubAlpha::Default | BoundSubAlpha::PythonBool | BoundSubAlpha::NonDefault => None,
+        BoundSubAlpha::Default
+        | BoundSubAlpha::PythonBool
+        | BoundSubAlpha::NonDefault
+        | BoundSubAlpha::Numeric(_) => None,
         BoundSubAlpha::Override(probed) => Some(probed),
     };
     let out = match &call.out {
@@ -5469,7 +5473,7 @@ fn apply_top_level_addition(
                 "Boolean alpha only supported for Boolean results.",
             ));
         }
-        BoundSubAlpha::NonDefault => {
+        BoundSubAlpha::NonDefault | BoundSubAlpha::Numeric(_) => {
             return Err(PyNotImplementedError::new_err(
                 "add(): alpha values other than 1 are not supported",
             ));
@@ -5968,7 +5972,10 @@ fn ordered_subtraction_overrides<'py>(
         BoundSubOperand::Override(probed) => Some(probed),
     };
     let alpha = match &call.alpha {
-        BoundSubAlpha::Default | BoundSubAlpha::PythonBool | BoundSubAlpha::NonDefault => None,
+        BoundSubAlpha::Default
+        | BoundSubAlpha::PythonBool
+        | BoundSubAlpha::NonDefault
+        | BoundSubAlpha::Numeric(_) => None,
         BoundSubAlpha::Override(probed) => Some(probed),
     };
     let out = match &call.out {
@@ -6060,8 +6067,8 @@ fn apply_top_level_subtraction(
     if call.out.is_some() {
         return Err(PyRuntimeError::new_err(operation.out_unsupported_error()));
     }
-    match &call.alpha {
-        BoundSubAlpha::Default => {}
+    let alpha = match &call.alpha {
+        BoundSubAlpha::Default => 1.0,
         BoundSubAlpha::PythonBool => {
             return Err(PyRuntimeError::new_err(
                 "Boolean alpha only supported for Boolean results.",
@@ -6072,37 +6079,36 @@ fn apply_top_level_subtraction(
                 operation.alpha_unsupported_error(),
             ));
         }
+        BoundSubAlpha::Numeric(alpha) => *alpha,
         BoundSubAlpha::Override(_) => {
             unreachable!("subtraction alpha overrides were dispatched before the native path")
         }
-    }
+    };
 
     let result = match (&call.input, &call.other) {
         (BoundSubOperand::Tensor(input), BoundSubOperand::Tensor(other)) => {
             let other = other.try_borrow()?;
-            BinaryOperation::Subtract.apply_tensors(&input.try_borrow()?.inner, &other.inner)
+            input.try_borrow()?.inner.sub_alpha(&other.inner, alpha)
         }
         (BoundSubOperand::Tensor(tensor), BoundSubOperand::Scalar(scalar)) => {
             let scalar = parse_supported_arithmetic_scalar(scalar)?;
             if scalar.is_python_bool() {
                 return Err(bool_subtraction_error());
             }
-            BinaryOperation::Subtract.apply_scalar(
-                &tensor.try_borrow()?.inner,
-                scalar.into_f32(),
-                false,
-            )
+            tensor
+                .try_borrow()?
+                .inner
+                .sub_scalar_alpha(scalar.into_f32(), alpha)
         }
         (BoundSubOperand::Scalar(scalar), BoundSubOperand::Tensor(tensor)) => {
             let scalar = parse_supported_arithmetic_scalar(scalar)?;
             if scalar.is_python_bool() {
                 return Err(bool_subtraction_error());
             }
-            BinaryOperation::Subtract.apply_scalar(
-                &tensor.try_borrow()?.inner,
-                scalar.into_f32(),
-                true,
-            )
+            tensor
+                .try_borrow()?
+                .inner
+                .scalar_sub_alpha(scalar.into_f32(), alpha)
         }
         (BoundSubOperand::Scalar(_), BoundSubOperand::Scalar(_)) => {
             return Err(PyTypeError::new_err(format!(
@@ -6224,26 +6230,40 @@ fn parse_tensor_add_sub_method_alpha<'py>(
     if let Some(probed) = probe_torch_function_override(&alpha.value) {
         return Ok(BoundSubAlpha::Override(probed));
     }
-    let Some(scalar) = parse_arithmetic_scalar(&alpha.value)? else {
-        if matches!(operation, AddSubMethodOperation::Subtract) {
-            return Err(tensor_subtract_binding_error(
-                SubtractionOperation::Subtract,
-                positional,
-                keywords,
-                Some(&SubtractBindingMismatch::IncorrectKeyword("alpha")),
-            )?);
+    let scalar = match parse_arithmetic_scalar(&alpha.value) {
+        Ok(Some(scalar)) => scalar,
+        Ok(None) => {
+            if matches!(operation, AddSubMethodOperation::Subtract) {
+                return Err(tensor_subtract_binding_error(
+                    SubtractionOperation::Subtract,
+                    positional,
+                    keywords,
+                    Some(&SubtractBindingMismatch::IncorrectKeyword("alpha")),
+                )?);
+            }
+            let actual = python_type_name(&alpha.value)?;
+            return Err(PyTypeError::new_err(format!(
+                "{}(): argument 'alpha' must be Number, not {actual}",
+                operation.name()
+            )));
         }
-        let actual = python_type_name(&alpha.value)?;
-        return Err(PyTypeError::new_err(format!(
-            "{}(): argument 'alpha' must be Number, not {actual}",
-            operation.name()
-        )));
+        Err(_) if alpha.value.is_instance_of::<PyInt>() => {
+            return Err(integer_arithmetic_scalar_error(&alpha.value)?);
+        }
+        Err(error) => return Err(error),
     };
     if scalar.is_python_bool() {
         return Ok(BoundSubAlpha::PythonBool);
     }
     if scalar.is_one() {
         Ok(BoundSubAlpha::Default)
+    } else if matches!(
+        operation,
+        AddSubMethodOperation::Sub | AddSubMethodOperation::Subtract
+    ) {
+        Ok(BoundSubAlpha::Numeric(
+            supported_arithmetic_scalar_into_f32(scalar)?,
+        ))
     } else {
         Ok(BoundSubAlpha::NonDefault)
     }
@@ -6263,7 +6283,10 @@ fn ordered_tensor_add_sub_method_overrides<'py>(
     };
     let alpha = match &call.alpha {
         BoundSubAlpha::Override(probed) => Some(probed),
-        BoundSubAlpha::Default | BoundSubAlpha::PythonBool | BoundSubAlpha::NonDefault => None,
+        BoundSubAlpha::Default
+        | BoundSubAlpha::PythonBool
+        | BoundSubAlpha::NonDefault
+        | BoundSubAlpha::Numeric(_) => None,
     };
 
     let mut overrides = Vec::new();
@@ -6354,8 +6377,8 @@ fn apply_tensor_add_sub_method(
     py: Python<'_>,
     call: &BoundTensorMethodAddSubCall<'_>,
 ) -> PyResult<Py<PyAny>> {
-    match &call.alpha {
-        BoundSubAlpha::Default => {}
+    let alpha = match &call.alpha {
+        BoundSubAlpha::Default => 1.0,
         BoundSubAlpha::PythonBool => {
             return Err(PyRuntimeError::new_err(
                 "Boolean alpha only supported for Boolean results.",
@@ -6366,17 +6389,30 @@ fn apply_tensor_add_sub_method(
                 operation.alpha_unsupported_error(),
             ));
         }
+        BoundSubAlpha::Numeric(alpha) => {
+            if matches!(operation, AddSubMethodOperation::Add) {
+                return Err(PyNotImplementedError::new_err(
+                    operation.alpha_unsupported_error(),
+                ));
+            }
+            *alpha
+        }
         BoundSubAlpha::Override(_) => {
             unreachable!("add/sub alpha overrides were dispatched before the native path")
         }
-    }
+    };
 
     let result = match (&call.input, &call.other) {
         (BoundSubOperand::Tensor(input), BoundSubOperand::Tensor(other)) => {
             let other = other.try_borrow()?;
-            operation
-                .binary_operation()
-                .apply_tensors(&input.try_borrow()?.inner, &other.inner)
+            match operation {
+                AddSubMethodOperation::Add => {
+                    BinaryOperation::Add.apply_tensors(&input.try_borrow()?.inner, &other.inner)
+                }
+                AddSubMethodOperation::Sub | AddSubMethodOperation::Subtract => {
+                    input.try_borrow()?.inner.sub_alpha(&other.inner, alpha)
+                }
+            }
         }
         (BoundSubOperand::Tensor(tensor), BoundSubOperand::Scalar(scalar)) => {
             let scalar = parse_supported_arithmetic_scalar(scalar)?;
@@ -6387,11 +6423,17 @@ fn apply_tensor_add_sub_method(
             {
                 return Err(bool_subtraction_error());
             }
-            operation.binary_operation().apply_scalar(
-                &tensor.try_borrow()?.inner,
-                scalar.into_f32(),
-                false,
-            )
+            match operation {
+                AddSubMethodOperation::Add => BinaryOperation::Add.apply_scalar(
+                    &tensor.try_borrow()?.inner,
+                    scalar.into_f32(),
+                    false,
+                ),
+                AddSubMethodOperation::Sub | AddSubMethodOperation::Subtract => tensor
+                    .try_borrow()?
+                    .inner
+                    .sub_scalar_alpha(scalar.into_f32(), alpha),
+            }
         }
         (BoundSubOperand::Override(_), _) | (_, BoundSubOperand::Override(_)) => {
             unreachable!("add/sub operand overrides were dispatched before the native path")
@@ -6423,6 +6465,25 @@ fn parse_supported_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<Parse
             Err(PyOverflowError::new_err(message))
         }
         Err(error) => Err(error),
+    }
+}
+
+fn integer_arithmetic_scalar_error(value: &Bound<'_, PyAny>) -> PyResult<PyErr> {
+    let message = if python_integer_is_negative(value)? {
+        "can't convert negative int to unsigned"
+    } else {
+        "int too big to convert"
+    };
+    Ok(PyOverflowError::new_err(message))
+}
+
+fn supported_arithmetic_scalar_into_f32(scalar: ParsedArithmeticScalar) -> PyResult<f32> {
+    match scalar {
+        ParsedArithmeticScalar::PythonBool(value) => Ok(f32::from(u8::from(value))),
+        ParsedArithmeticScalar::Number(value) => value.into_f32(),
+        ParsedArithmeticScalar::WideNumpyUnsigned => {
+            Err(PyTypeError::new_err("an integer is required"))
+        }
     }
 }
 
@@ -6668,13 +6729,6 @@ impl AddSubMethodOperation {
             Self::Add => "add(): alpha values other than 1 are not supported",
             Self::Sub => "sub(): alpha values other than 1 are not supported",
             Self::Subtract => "subtract(): alpha values other than 1 are not supported",
-        }
-    }
-
-    const fn binary_operation(self) -> BinaryOperation {
-        match self {
-            Self::Add => BinaryOperation::Add,
-            Self::Sub | Self::Subtract => BinaryOperation::Subtract,
         }
     }
 }
@@ -15744,7 +15798,7 @@ fn bind_top_level_subtraction_arguments<'py>(
                 positional.len()
             )));
         }
-    } else if positional.len() > 2 {
+    } else if positional.len() > 3 {
         return Err(PyTypeError::new_err(format!(
             "{function}() takes 2 positional arguments but {} were given",
             positional.len()
@@ -15752,7 +15806,11 @@ fn bind_top_level_subtraction_arguments<'py>(
     }
 
     if positional.len() == 3 {
-        return bind_top_level_subtract_positional_scalar_overload(positional, keywords);
+        return if matches!(operation, SubtractionOperation::Sub) {
+            bind_top_level_sub_positional_alpha_overload(positional, keywords)
+        } else {
+            bind_top_level_subtract_positional_scalar_overload(positional, keywords)
+        };
     }
 
     let keyword_argument = |names: &[&str]| -> PyResult<Option<Bound<'py, PyAny>>> {
@@ -15832,6 +15890,76 @@ fn bind_top_level_subtraction_arguments<'py>(
     )?;
 
     Ok(([input, other], alpha, out, keyword_error))
+}
+
+fn bind_top_level_sub_positional_alpha_overload<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundTopLevelSubtractionArguments<'py>> {
+    let input = ParsedCallArgument {
+        value: positional.get_item(0)?,
+        position: Some(1),
+    };
+    let second = ParsedCallArgument {
+        value: positional.get_item(1)?,
+        position: Some(2),
+    };
+    let third = ParsedCallArgument {
+        value: positional.get_item(2)?,
+        position: Some(3),
+    };
+    let has_override = probe_torch_function_override(&input.value).is_some()
+        || probe_torch_function_override(&second.value).is_some()
+        || probe_torch_function_override(&third.value).is_some();
+    let out = positional_alpha_out_keyword(keywords)?;
+    let keyword_error = bind_positional_alpha_keyword_error(keywords, "sub")?;
+    if has_override
+        || (input.value.is_exact_instance_of::<PyTensor>()
+            && is_real_arithmetic_scalar(&second.value)?
+            && third.value.is_instance_of::<PyTensor>())
+    {
+        return Ok(([input, third], Some(second), out, keyword_error));
+    }
+    if input.value.is_exact_instance_of::<PyTensor>()
+        && is_real_arithmetic_scalar(&second.value)?
+        && is_real_arithmetic_scalar(&third.value)?
+    {
+        return Ok(([input, second], Some(third), out, keyword_error));
+    }
+    Err(PyTypeError::new_err(format!(
+        "sub() takes 2 positional arguments but {} were given",
+        positional.len()
+    )))
+}
+
+fn positional_alpha_out_keyword<'py>(
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<Option<ParsedCallArgument<'py>>> {
+    let Some(keywords) = keywords else {
+        return Ok(None);
+    };
+    Ok(keywords.get_item("out")?.map(|value| ParsedCallArgument {
+        value,
+        position: None,
+    }))
+}
+
+fn bind_positional_alpha_keyword_error(
+    keywords: Option<&Bound<'_, PyDict>>,
+    function: &str,
+) -> PyResult<Option<PyErr>> {
+    let Some(keywords) = keywords else {
+        return Ok(None);
+    };
+    for (key, _) in keywords.iter() {
+        let key = key.extract::<String>()?;
+        if key != "out" {
+            return Ok(Some(PyTypeError::new_err(format!(
+                "{function}() takes 2 positional arguments but 3 were given"
+            ))));
+        }
+    }
+    Ok(None)
 }
 
 fn bind_top_level_subtract_positional_scalar_overload<'py>(
@@ -16521,20 +16649,27 @@ fn parse_top_level_subtraction_alpha<'py>(
     if let Some(probed) = probe_torch_function_override(&alpha.value) {
         return Ok(BoundSubAlpha::Override(probed));
     }
-    let Some(scalar) = parse_arithmetic_scalar(&alpha.value)? else {
-        if matches!(operation, SubtractionOperation::Subtract) {
-            return Err(top_level_subtract_binding_error(
-                operation,
-                positional,
-                keywords,
-                Some(&SubtractBindingMismatch::IncorrectKeyword("alpha")),
-            )?);
+    let scalar = match parse_arithmetic_scalar(&alpha.value) {
+        Ok(Some(scalar)) => scalar,
+        Ok(None) => {
+            if matches!(operation, SubtractionOperation::Subtract) {
+                return Err(top_level_subtract_binding_error(
+                    operation,
+                    positional,
+                    keywords,
+                    Some(&SubtractBindingMismatch::IncorrectKeyword("alpha")),
+                )?);
+            }
+            let actual = python_type_name(&alpha.value)?;
+            return Err(PyTypeError::new_err(format!(
+                "{}(): argument 'alpha' must be Number, not {actual}",
+                operation.name()
+            )));
         }
-        let actual = python_type_name(&alpha.value)?;
-        return Err(PyTypeError::new_err(format!(
-            "{}(): argument 'alpha' must be Number, not {actual}",
-            operation.name()
-        )));
+        Err(_) if alpha.value.is_instance_of::<PyInt>() => {
+            return Err(integer_arithmetic_scalar_error(&alpha.value)?);
+        }
+        Err(error) => return Err(error),
     };
     if scalar.is_python_bool() {
         return Ok(BoundSubAlpha::PythonBool);
@@ -16542,7 +16677,9 @@ fn parse_top_level_subtraction_alpha<'py>(
     if scalar.is_one() {
         Ok(BoundSubAlpha::Default)
     } else {
-        Ok(BoundSubAlpha::NonDefault)
+        Ok(BoundSubAlpha::Numeric(
+            supported_arithmetic_scalar_into_f32(scalar)?,
+        ))
     }
 }
 

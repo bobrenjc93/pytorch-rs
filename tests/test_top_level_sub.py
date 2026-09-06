@@ -51,6 +51,10 @@ def subtract_binding_message(summary, mismatch=None):
     return message
 
 
+def tensor_bits(tensor):
+    return np.asarray(tensor).reshape(-1).view(np.uint32).copy()
+
+
 class TopLevelSubTests(unittest.TestCase):
     def assert_tensor_matches(self, actual, expected, *, case):
         with self.subTest(case=case, metadata=True):
@@ -150,6 +154,73 @@ class TopLevelSubTests(unittest.TestCase):
         alias_output.sum().backward()
         self.assertEqual(left.grad.tolist(), [[2.0, 2.0]])
         self.assertEqual(right.grad.tolist(), [[-2.0], [-2.0]])
+
+    def test_numeric_alpha_values_nonmutation_and_gradients(self):
+        left = torch.tensor(
+            [[[1.0, -0.0], [float("inf"), -4.0], [5.0, float("nan")]]]
+        ).transpose(0, 2)
+        right = torch.tensor([[2.0], [-0.0], [float("-inf")]])
+        for function in (torch.sub, torch.subtract):
+            with self.subTest(function=function.__name__, form="keyword tensor alpha"):
+                left_before = tensor_bits(left)
+                right_before = tensor_bits(right)
+                self.assert_tensor_matches(
+                    function(left, right, alpha=np.float32(2.0)),
+                    left - right * np.float32(2.0),
+                    case=function.__name__,
+                )
+                np.testing.assert_array_equal(tensor_bits(left), left_before)
+                np.testing.assert_array_equal(tensor_bits(right), right_before)
+
+            with self.subTest(function=function.__name__, form="tensor scalar alpha"):
+                self.assert_tensor_matches(
+                    function(left[1], np.float32(-0.0), alpha=2.0),
+                    left[1] - np.float32(-0.0) * 2.0,
+                    case=function.__name__,
+                )
+
+            with self.subTest(function=function.__name__, form="scalar tensor alpha"):
+                self.assert_tensor_matches(
+                    function(np.float32(-0.0), left[1], alpha=-0.0),
+                    np.float32(-0.0) - left[1] * -0.0,
+                    case=function.__name__,
+                )
+
+            with self.subTest(function=function.__name__, form="positional scalar alpha"):
+                self.assert_tensor_matches(
+                    function(left[1], 2.0, 3.0),
+                    left[1] - 6.0,
+                    case=function.__name__,
+                )
+
+            grad_left = torch.tensor([[1.0, 2.0]], requires_grad=True)
+            grad_right = torch.tensor([[3.0], [4.0], [5.0]], requires_grad=True)
+            function(
+                grad_left.transpose(0, 1),
+                grad_right.transpose(0, 1),
+                alpha=2.5,
+            ).sum().backward()
+            self.assertEqual(grad_left.grad.tolist(), [[3.0, 3.0]])
+            self.assertEqual(grad_right.grad.tolist(), [[-5.0], [-5.0], [-5.0]])
+
+            scalar_left_grad = torch.tensor([2.0, -3.0], requires_grad=True)
+            function(4.0, scalar_left_grad, alpha=-0.5).sum().backward()
+            self.assertEqual(scalar_left_grad.grad.tolist(), [0.5, 0.5])
+
+            tensor_scalar_grad = torch.tensor([2.0, -3.0], requires_grad=True)
+            function(tensor_scalar_grad, 4.0, alpha=2.5).sum().backward()
+            self.assertEqual(tensor_scalar_grad.grad.tolist(), [1.0, 1.0])
+
+        self.assert_tensor_matches(
+            torch.sub(left, 2.0, right),
+            left - right * 2.0,
+            case="sub legacy positional tensor alpha",
+        )
+        self.assert_tensor_matches(
+            torch.sub(left, 2.0, right, out=None),
+            left - right * 2.0,
+            case="sub legacy positional tensor alpha out none",
+        )
 
     def test_autograd_no_grad_and_shared_operands_reuse_subtraction_path(self):
         function_left = torch.tensor([[2.0, 3.0]], requires_grad=True)
@@ -483,17 +554,6 @@ class TopLevelSubTests(unittest.TestCase):
                 function(tensor, tensor, out=destination)
             self.assertEqual(destination.tolist(), [17.0])
 
-            with self.assertRaisesRegex(
-                NotImplementedError,
-                rf"^{name}\(\): alpha values other than 1 are not supported$",
-            ):
-                function(tensor, tensor, alpha=2)
-            if name == "subtract":
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    "^subtract\\(\\): alpha values other than 1 are not supported$",
-                ):
-                    function(tensor, 2, 2)
             with self.assertRaisesRegex(
                 RuntimeError, "^Boolean alpha only supported for Boolean results\\.$"
             ):

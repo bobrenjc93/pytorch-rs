@@ -112,6 +112,7 @@ enum GradFn {
     },
     Negate {
         input: SavedTensor,
+        scale: f32,
         #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
         node: AutogradNode,
     },
@@ -1499,18 +1500,28 @@ impl Tensor {
         Ok(output)
     }
 
-    fn finish_negate_vjp(&self, mut output: Self, node: AutogradNode) -> Result<Self, TensorError> {
+    fn finish_scaled_unary_vjp(
+        &self,
+        mut output: Self,
+        scale: f32,
+        node: AutogradNode,
+    ) -> Result<Self, TensorError> {
         if self.records_grad() {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Negate {
                         input: SavedTensor::try_from_tensor(self, false)?,
+                        scale,
                         node,
                     })),
                 },
             }));
         }
         Ok(output)
+    }
+
+    fn finish_negate_vjp(&self, output: Self, node: AutogradNode) -> Result<Self, TensorError> {
+        self.finish_scaled_unary_vjp(output, -1.0, node)
     }
 
     fn finish_saved_input_unary_vjp(
@@ -3375,6 +3386,23 @@ impl Tensor {
         self.finish_add_subtract_vjp(other, output, AutogradNode::Subtract, -1.0)
     }
 
+    /// Subtracts `other` multiplied by `alpha` element by element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the shapes are not broadcastable or when result
+    /// shape calculation or allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn sub_alpha(&self, other: &Self, alpha: f32) -> Result<Self, TensorError> {
+        if alpha.to_bits() == 1.0_f32.to_bits() {
+            return self.sub(other);
+        }
+        let output = self.zip_map(other, |left, right| {
+            subtract_scaled_value_matching_pytorch(left, right, alpha)
+        })?;
+        self.finish_add_subtract_vjp(other, output, AutogradNode::Subtract, -alpha)
+    }
+
     fn sub_same_shape_matching_dense_no_grad(
         &self,
         other: &Self,
@@ -4006,6 +4034,21 @@ impl Tensor {
         self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Subtract)
     }
 
+    /// Subtracts `scalar` multiplied by `alpha` from every element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn sub_scalar_alpha(&self, scalar: f32, alpha: f32) -> Result<Self, TensorError> {
+        if alpha.to_bits() == 1.0_f32.to_bits() {
+            return self.sub_scalar(scalar);
+        }
+        let scaled = scalar * alpha;
+        let output = self.map_scalar(scaled, subtract_value_matching_pytorch)?;
+        self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Subtract)
+    }
+
     /// Multiplies every element by a scalar.
     ///
     /// # Errors
@@ -4072,6 +4115,22 @@ impl Tensor {
     pub fn scalar_sub(&self, scalar: f32) -> Result<Self, TensorError> {
         let output = self.map_scalar(scalar, |value, scalar| scalar - value)?;
         self.finish_negate_vjp(output, AutogradNode::ReflectedSubtract)
+    }
+
+    /// Subtracts every element multiplied by `alpha` from a scalar.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn scalar_sub_alpha(&self, scalar: f32, alpha: f32) -> Result<Self, TensorError> {
+        if alpha.to_bits() == 1.0_f32.to_bits() {
+            return self.scalar_sub(scalar);
+        }
+        let output = self.map_scalar(scalar, |value, scalar| {
+            subtract_scaled_value_matching_pytorch(scalar, value, alpha)
+        })?;
+        self.finish_scaled_unary_vjp(output, -alpha, AutogradNode::ReflectedSubtract)
     }
 
     /// Divides a scalar by every element using `PyTorch`'s float32 reciprocal
@@ -5042,11 +5101,15 @@ fn apply_grad_fn(
                 add_gradient(gradients, meta, input.output_nr, gradient);
             }
         }
-        GradFn::Negate { input, .. } => {
+        GradFn::Negate { input, scale, .. } => {
             if let Some(meta) = &input.autograd {
                 debug_assert_eq!(input.elements, upstream.len());
                 let mut gradient = try_result_vector(input.elements, input.elements)?;
-                gradient.extend(upstream.iter().copied().map(negate_value));
+                if scale.to_bits() == (-1.0_f32).to_bits() {
+                    gradient.extend(upstream.iter().copied().map(negate_value));
+                } else {
+                    gradient.extend(upstream.iter().map(|value| value * scale));
+                }
                 add_gradient(gradients, meta, input.output_nr, gradient);
             }
         }
@@ -5909,6 +5972,12 @@ fn subtract_value_matching_pytorch(left: f32, right: f32) -> f32 {
     } else {
         left - right
     }
+}
+
+#[inline]
+#[cfg(any(feature = "python-bindings", test))]
+fn subtract_scaled_value_matching_pytorch(left: f32, right: f32, alpha: f32) -> f32 {
+    subtract_value_matching_pytorch(left, right * alpha)
 }
 
 #[inline(never)]
@@ -12568,6 +12637,74 @@ mod tests {
         };
         assert!(!no_grad_output.requires_grad());
         assert!(no_grad_output.is_leaf());
+    }
+
+    #[test]
+    fn scaled_subtraction_supports_broadcast_and_scalar_forms() {
+        let left = Tensor::from_vec(vec![1.0, 2.0, 4.0, 8.0, 16.0, 32.0], [2, 1, 3]).unwrap();
+        let right = Tensor::from_vec(vec![1.0, 2.0, 4.0], [3, 1]).unwrap();
+        let output = left.sub_alpha(&right, 2.0).unwrap();
+        assert_eq!(output.shape(), [2, 3, 3]);
+        assert_eq!(
+            output.as_slice(),
+            [
+                -1.0, 0.0, 2.0, -3.0, -2.0, 0.0, -7.0, -6.0, -4.0, 6.0, 14.0, 30.0, 4.0, 12.0,
+                28.0, 0.0, 8.0, 24.0,
+            ]
+        );
+
+        let scalar_input = Tensor::from_vec(vec![1.0, -1.0, 0.0, -0.0], [4]).unwrap();
+        assert_eq!(
+            scalar_input.sub_scalar_alpha(0.25, 2.0).unwrap().as_slice(),
+            [0.5, -1.5, -0.5, -0.5]
+        );
+        assert_eq!(
+            scalar_input.scalar_sub_alpha(3.0, 2.0).unwrap().as_slice(),
+            [1.0, 5.0, 3.0, 3.0]
+        );
+
+        let zeroes = Tensor::from_vec(vec![0.0, -0.0], [2]).unwrap();
+        let signed_zero_output = zeroes.sub_alpha(&zeroes, -0.0).unwrap();
+        assert_eq!(
+            signed_zero_output
+                .as_slice()
+                .iter()
+                .copied()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            vec![0x0000_0000, 0x8000_0000]
+        );
+    }
+
+    #[test]
+    fn scaled_subtraction_records_summed_output_gradients() {
+        let left = Tensor::from_vec(vec![1.0, 2.0], [2, 1])
+            .unwrap()
+            .with_requires_grad(true);
+        let right = Tensor::from_vec(vec![3.0, 4.0, 5.0], [1, 3])
+            .unwrap()
+            .with_requires_grad(true);
+        left.sub_alpha(&right, 2.0)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+        assert_eq!(left.grad().unwrap().unwrap().as_slice(), [3.0, 3.0]);
+        assert_eq!(
+            right.grad().unwrap().unwrap().as_slice(),
+            [-4.0, -4.0, -4.0]
+        );
+
+        let reflected = Tensor::from_vec(vec![2.0, -3.0], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        reflected
+            .scalar_sub_alpha(4.0, 2.5)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+        assert_eq!(reflected.grad().unwrap().unwrap().as_slice(), [-2.5, -2.5]);
     }
 
     fn assert_l1_channels_last_fast_path_matches(left: &Tensor, right: &Tensor) {
