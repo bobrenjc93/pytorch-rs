@@ -60,6 +60,10 @@ def tensor_bits(tensor):
     return np.asarray(tensor).reshape(-1).view(np.uint32).copy()
 
 
+def tensor_from_bits(module, bits):
+    return module.tensor(memoryview(np.asarray(bits, dtype=np.uint32).view(np.float32)))
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class TensorSubMethodReferenceTests(unittest.TestCase):
     @classmethod
@@ -209,6 +213,25 @@ class TensorSubMethodReferenceTests(unittest.TestCase):
             expected_method = getattr(expected_left, name)
             actual_left_before = tensor_bits(actual_left)
             actual_right_before = tensor_bits(actual_right)
+            actual_fused_left = tensor_from_bits(torch, [0xD032_7A78])
+            expected_fused_left = tensor_from_bits(reference_torch, [0xD032_7A78])
+            actual_fused_right = tensor_from_bits(torch, [0xD5F4_4919])
+            expected_fused_right = tensor_from_bits(reference_torch, [0xD5F4_4919])
+            alpha_nan = np.asarray([0x7F8A_BCDE], dtype=np.uint32).view(np.float32)[0]
+            actual_nan_left = tensor_from_bits(
+                torch, [0x3F80_0000, 0x7FC1_2345]
+            )
+            expected_nan_left = tensor_from_bits(
+                reference_torch, [0x3F80_0000, 0x7FC1_2345]
+            )
+            actual_nan_right = tensor_from_bits(
+                torch, [0x4000_0000, 0x4000_0000]
+            )
+            expected_nan_right = tensor_from_bits(
+                reference_torch, [0x4000_0000, 0x4000_0000]
+            )
+            actual_right_nan = tensor_from_bits(torch, [0x7F81_2345])
+            expected_right_nan = tensor_from_bits(reference_torch, [0x7F81_2345])
             cases = (
                 (
                     "keyword tensor alpha",
@@ -232,6 +255,33 @@ class TensorSubMethodReferenceTests(unittest.TestCase):
                     "positional scalar alpha",
                     lambda name=name: getattr(actual_left[1], name)(2.0, 3.0),
                     lambda name=name: getattr(expected_left[1], name)(2.0, 3.0),
+                ),
+                (
+                    "fractional fused alpha",
+                    lambda name=name: getattr(actual_fused_left, name)(
+                        actual_fused_right, alpha=np.float32(0.1)
+                    ),
+                    lambda name=name: getattr(expected_fused_left, name)(
+                        expected_fused_right, alpha=np.float32(0.1)
+                    ),
+                ),
+                (
+                    "nonfinite alpha nan precedence",
+                    lambda name=name: getattr(actual_nan_left, name)(
+                        actual_nan_right, alpha=alpha_nan
+                    ),
+                    lambda name=name: getattr(expected_nan_left, name)(
+                        expected_nan_right, alpha=alpha_nan
+                    ),
+                ),
+                (
+                    "finite alpha right nan precedence",
+                    lambda name=name: getattr(
+                        tensor_from_bits(torch, [0x3F80_0000]), name
+                    )(actual_right_nan, alpha=np.float32(0.1)),
+                    lambda name=name: getattr(
+                        tensor_from_bits(reference_torch, [0x3F80_0000]), name
+                    )(expected_right_nan, alpha=np.float32(0.1)),
                 ),
             )
             for case, actual_call, expected_call in cases:

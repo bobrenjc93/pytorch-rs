@@ -2805,6 +2805,9 @@ fn subtraction_variable_function(
     let alpha_is_positional = alpha
         .as_ref()
         .is_some_and(|alpha| alpha.position == Some(3));
+    let alpha_precedes_other = alpha
+        .as_ref()
+        .is_some_and(|alpha| alpha.position == Some(2));
     let input = parse_top_level_subtraction_input(operation, &arguments[0], args, kwargs)?;
     let other = parse_top_level_subtraction_other(operation, &arguments[1], args, kwargs)?;
     let alpha = parse_top_level_subtraction_alpha(operation, alpha.as_ref(), args, kwargs)?;
@@ -2818,6 +2821,7 @@ fn subtraction_variable_function(
         alpha,
         out,
         alpha_is_positional,
+        alpha_precedes_other,
     };
     dispatch_top_level_subtraction(operation, py, &call, args, kwargs)
 }
@@ -3157,6 +3161,7 @@ struct BoundTopLevelSubtractionCall<'py> {
     alpha: BoundSubAlpha<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
     alpha_is_positional: bool,
+    alpha_precedes_other: bool,
 }
 
 struct BoundTopLevelAdditionCall<'py> {
@@ -5987,7 +5992,12 @@ fn ordered_subtraction_overrides<'py>(
     overrides
         .try_reserve_exact(4)
         .map_err(|_| PyMemoryError::new_err(operation.dispatch_allocation_error()))?;
-    for probed in [input, other, alpha, out].into_iter().flatten() {
+    let ordered_overrides = if call.alpha_precedes_other {
+        [input, alpha, other, out]
+    } else {
+        [input, other, alpha, out]
+    };
+    for probed in ordered_overrides.into_iter().flatten() {
         insert_ordered_torch_function_override(&mut overrides, probed)?;
     }
     Ok(overrides)
@@ -15913,8 +15923,10 @@ fn bind_top_level_sub_positional_alpha_overload<'py>(
         || probe_torch_function_override(&third.value).is_some();
     let out = positional_alpha_out_keyword(keywords)?;
     let keyword_error = bind_positional_alpha_keyword_error(keywords, "sub")?;
+    let input_is_supported =
+        input.value.is_exact_instance_of::<PyTensor>() || is_real_arithmetic_scalar(&input.value)?;
     if has_override
-        || (input.value.is_exact_instance_of::<PyTensor>()
+        || (input_is_supported
             && is_real_arithmetic_scalar(&second.value)?
             && third.value.is_instance_of::<PyTensor>())
     {

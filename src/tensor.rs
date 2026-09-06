@@ -5977,7 +5977,7 @@ fn subtract_value_matching_pytorch(left: f32, right: f32) -> f32 {
 #[inline]
 #[cfg(any(feature = "python-bindings", test))]
 fn subtract_scaled_value_matching_pytorch(left: f32, right: f32, alpha: f32) -> f32 {
-    subtract_value_matching_pytorch(left, right * alpha)
+    right.mul_add(-alpha, left)
 }
 
 #[inline(never)]
@@ -7749,7 +7749,8 @@ mod tests {
         TensorError, contiguous_values_equal, full_reduction_mean_divisor,
         l1_loss_difference_value, log_value, logical_offset_for_linear_index,
         materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value,
-        squared_difference_value, try_result_vector, validate_view_bounds,
+        squared_difference_value, subtract_scaled_value_matching_pytorch, try_result_vector,
+        validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -12673,6 +12674,36 @@ mod tests {
                 .map(f32::to_bits)
                 .collect::<Vec<_>>(),
             vec![0x0000_0000, 0x8000_0000]
+        );
+
+        let fused_left = Tensor::from_vec(vec![f32::from_bits(0xd032_7a78)], [1]).unwrap();
+        let fused_right = Tensor::from_vec(vec![f32::from_bits(0xd5f4_4919)], [1]).unwrap();
+        assert_eq!(
+            fused_left.sub_alpha(&fused_right, 0.1).unwrap().as_slice()[0].to_bits(),
+            0x5442_bb33
+        );
+
+        let signaling_alpha = f32::from_bits(0x7f8a_bcde);
+        assert_eq!(
+            subtract_scaled_value_matching_pytorch(1.0, 2.0, signaling_alpha).to_bits(),
+            0xffca_bcde
+        );
+        assert_eq!(
+            subtract_scaled_value_matching_pytorch(
+                f32::from_bits(0x7fc1_2345),
+                2.0,
+                signaling_alpha
+            )
+            .to_bits(),
+            0xffca_bcde
+        );
+        assert_eq!(
+            subtract_scaled_value_matching_pytorch(1.0, f32::from_bits(0x7f81_2345), 0.1).to_bits(),
+            0x7fc1_2345
+        );
+        assert_eq!(
+            subtract_scaled_value_matching_pytorch(f32::from_bits(0x7f81_2345), 2.0, 0.1).to_bits(),
+            0x7fc1_2345
         );
     }
 

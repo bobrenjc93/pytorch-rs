@@ -55,6 +55,10 @@ def tensor_bits(tensor):
     return np.asarray(tensor).reshape(-1).view(np.uint32).copy()
 
 
+def tensor_from_bits(bits):
+    return torch.tensor(memoryview(np.asarray(bits, dtype=np.uint32).view(np.float32)))
+
+
 class TopLevelSubTests(unittest.TestCase):
     def assert_tensor_matches(self, actual, expected, *, case):
         with self.subTest(case=case, metadata=True):
@@ -211,6 +215,31 @@ class TopLevelSubTests(unittest.TestCase):
             function(tensor_scalar_grad, 4.0, alpha=2.5).sum().backward()
             self.assertEqual(tensor_scalar_grad.grad.tolist(), [1.0, 1.0])
 
+        fused_left = tensor_from_bits([0xD032_7A78])
+        fused_right = tensor_from_bits([0xD5F4_4919])
+        np.testing.assert_array_equal(
+            tensor_bits(torch.sub(fused_left, fused_right, alpha=np.float32(0.1))),
+            np.asarray([0x5442_BB33], dtype=np.uint32),
+        )
+
+        alpha_nan = np.asarray([0x7F8A_BCDE], dtype=np.uint32).view(np.float32)[0]
+        nan_left = tensor_from_bits([0x3F80_0000, 0x7FC1_2345])
+        nan_right = tensor_from_bits([0x4000_0000, 0x4000_0000])
+        np.testing.assert_array_equal(
+            tensor_bits(torch.sub(nan_left, nan_right, alpha=alpha_nan)),
+            np.asarray([0xFFCA_BCDE, 0xFFCA_BCDE], dtype=np.uint32),
+        )
+        np.testing.assert_array_equal(
+            tensor_bits(
+                torch.sub(
+                    tensor_from_bits([0x3F80_0000]),
+                    tensor_from_bits([0x7F81_2345]),
+                    alpha=np.float32(0.1),
+                )
+            ),
+            np.asarray([0x7FC1_2345], dtype=np.uint32),
+        )
+
         self.assert_tensor_matches(
             torch.sub(left, 2.0, right),
             left - right * 2.0,
@@ -220,6 +249,11 @@ class TopLevelSubTests(unittest.TestCase):
             torch.sub(left, 2.0, right, out=None),
             left - right * 2.0,
             case="sub legacy positional tensor alpha out none",
+        )
+        self.assert_tensor_matches(
+            torch.sub(1.0, 2.0, left[1]),
+            1.0 - 2.0 * left[1],
+            case="sub legacy scalar input positional alpha",
         )
 
     def test_autograd_no_grad_and_shared_operands_reuse_subtraction_path(self):
@@ -384,6 +418,28 @@ class TopLevelSubTests(unittest.TestCase):
         self.assertEqual(dispatch_types, (RightOverride,))
         self.assertEqual(args, ())
         self.assertEqual(tuple(kwargs), ("input", "other", "alpha"))
+
+        events.clear()
+
+        class AlphaOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("alpha", func, types, args, kwargs))
+                return NotImplemented
+
+        class PositionalRightOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("right", func, types, args, kwargs))
+                return marker
+
+        self.assertIs(torch.sub(left, AlphaOverride(), PositionalRightOverride()), marker)
+        self.assertEqual([event[0] for event in events], ["alpha", "right"])
+        for _, function, dispatch_types, args, kwargs in events:
+            self.assertIs(function, torch.sub)
+            self.assertEqual(dispatch_types, (AlphaOverride, PositionalRightOverride))
+            self.assertEqual(len(args), 3)
+            self.assertIsNone(kwargs)
 
         class DecliningOverride:
             @classmethod

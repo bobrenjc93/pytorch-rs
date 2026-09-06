@@ -60,6 +60,10 @@ def tensor_bits(tensor):
     return np.asarray(tensor).reshape(-1).view(np.uint32).copy()
 
 
+def tensor_from_bits(module, bits):
+    return module.tensor(memoryview(np.asarray(bits, dtype=np.uint32).view(np.float32)))
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class TopLevelSubReferenceTests(unittest.TestCase):
     @classmethod
@@ -202,6 +206,25 @@ class TopLevelSubReferenceTests(unittest.TestCase):
             expected_function = getattr(reference_torch, function_name)
             actual_left_before = tensor_bits(actual_left)
             actual_right_before = tensor_bits(actual_right)
+            actual_fused_left = tensor_from_bits(torch, [0xD032_7A78])
+            expected_fused_left = tensor_from_bits(reference_torch, [0xD032_7A78])
+            actual_fused_right = tensor_from_bits(torch, [0xD5F4_4919])
+            expected_fused_right = tensor_from_bits(reference_torch, [0xD5F4_4919])
+            alpha_nan = np.asarray([0x7F8A_BCDE], dtype=np.uint32).view(np.float32)[0]
+            actual_nan_left = tensor_from_bits(
+                torch, [0x3F80_0000, 0x7FC1_2345]
+            )
+            expected_nan_left = tensor_from_bits(
+                reference_torch, [0x3F80_0000, 0x7FC1_2345]
+            )
+            actual_nan_right = tensor_from_bits(
+                torch, [0x4000_0000, 0x4000_0000]
+            )
+            expected_nan_right = tensor_from_bits(
+                reference_torch, [0x4000_0000, 0x4000_0000]
+            )
+            actual_right_nan = tensor_from_bits(torch, [0x7F81_2345])
+            expected_right_nan = tensor_from_bits(reference_torch, [0x7F81_2345])
             cases = (
                 (
                     "keyword tensor alpha",
@@ -237,6 +260,39 @@ class TopLevelSubReferenceTests(unittest.TestCase):
                     ),
                     lambda expected_function=expected_function: expected_function(
                         expected_left[1], 2.0, 3.0
+                    ),
+                ),
+                (
+                    "fractional fused alpha",
+                    lambda actual_function=actual_function: actual_function(
+                        actual_fused_left, actual_fused_right, alpha=np.float32(0.1)
+                    ),
+                    lambda expected_function=expected_function: expected_function(
+                        expected_fused_left,
+                        expected_fused_right,
+                        alpha=np.float32(0.1),
+                    ),
+                ),
+                (
+                    "nonfinite alpha nan precedence",
+                    lambda actual_function=actual_function: actual_function(
+                        actual_nan_left, actual_nan_right, alpha=alpha_nan
+                    ),
+                    lambda expected_function=expected_function: expected_function(
+                        expected_nan_left, expected_nan_right, alpha=alpha_nan
+                    ),
+                ),
+                (
+                    "finite alpha right nan precedence",
+                    lambda actual_function=actual_function: actual_function(
+                        tensor_from_bits(torch, [0x3F80_0000]),
+                        actual_right_nan,
+                        alpha=np.float32(0.1),
+                    ),
+                    lambda expected_function=expected_function: expected_function(
+                        tensor_from_bits(reference_torch, [0x3F80_0000]),
+                        expected_right_nan,
+                        alpha=np.float32(0.1),
                     ),
                 ),
             )
@@ -302,6 +358,14 @@ class TopLevelSubReferenceTests(unittest.TestCase):
             torch.sub(actual_left, 2.0, actual_right, out=None),
             expected_legacy,
             case="sub legacy positional tensor alpha out none",
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            expected_scalar_legacy = reference_torch.sub(1.0, 2.0, expected_left[1])
+        self.assert_matches(
+            torch.sub(1.0, 2.0, actual_left[1]),
+            expected_scalar_legacy,
+            case="sub legacy scalar input positional alpha",
         )
 
     def test_autograd_shared_operands_empties_and_no_grad_match_pytorch_2_13(self):
@@ -556,6 +620,25 @@ class TopLevelSubReferenceTests(unittest.TestCase):
 
         both_result = function(LeftOverride(), RightOverride())
 
+        legacy_order = None
+        if function_name == "sub":
+            legacy_order = []
+
+            class AlphaOverride:
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    legacy_order.append(("alpha", tuple(item.__name__ for item in types)))
+                    return NotImplemented
+
+            class PositionalRightOverride:
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    legacy_order.append(("right", tuple(item.__name__ for item in types)))
+                    return marker
+
+            legacy_result = function(left, AlphaOverride(), PositionalRightOverride())
+            legacy_order = (legacy_result is marker, legacy_order)
+
         subclass_order = []
 
         class BaseOverride:
@@ -606,6 +689,7 @@ class TopLevelSubReferenceTests(unittest.TestCase):
             override_observations,
             both_result is marker,
             order,
+            legacy_order,
             subclass_result is marker,
             subclass_order,
             fallback_result is marker,
