@@ -159,8 +159,15 @@ class TensorSubMethodTests(unittest.TestCase):
 
         fused_left = tensor_from_bits([0xD032_7A78])
         fused_right = tensor_from_bits([0xD5F4_4919])
+        fused_scalar = np.asarray([0xD5F4_4919], dtype=np.uint32).view(np.float32)[
+            0
+        ]
         np.testing.assert_array_equal(
             tensor_bits(fused_left.sub(fused_right, alpha=np.float32(0.1))),
+            np.asarray([0x5442_BB33], dtype=np.uint32),
+        )
+        np.testing.assert_array_equal(
+            tensor_bits(fused_left.sub(fused_scalar, alpha=np.float32(0.1))),
             np.asarray([0x5442_BB33], dtype=np.uint32),
         )
 
@@ -180,11 +187,30 @@ class TensorSubMethodTests(unittest.TestCase):
             ),
             np.asarray([0x7FC1_2345], dtype=np.uint32),
         )
+        np.testing.assert_array_equal(
+            tensor_bits(
+                tensor_from_bits([0x3F80_0000]).sub(
+                    np.float32(2.0),
+                    alpha=alpha_nan,
+                )
+            ),
+            np.asarray([0xFFCA_BCDE], dtype=np.uint32),
+        )
 
         self.assert_tensor_matches(
             left.sub(2.0, right),
             left - right * 2.0,
             case=("sub", "legacy positional tensor alpha"),
+        )
+        self.assert_tensor_matches(
+            left.sub(2.0, other=right),
+            left - right * 2.0,
+            case=("sub", "legacy keyword other positional alpha"),
+        )
+        self.assert_tensor_matches(
+            left.sub(2.0, x2=right),
+            left - right * 2.0,
+            case=("sub", "legacy keyword x2 positional alpha"),
         )
 
     def test_autograd_no_grad_and_shared_operands_reuse_native_path(self):
@@ -277,6 +303,10 @@ class TensorSubMethodTests(unittest.TestCase):
                 (lambda name=name: getattr(left, name)(other=right), ("other",)),
                 (lambda name=name: getattr(left, name)(x2=right), ("x2",)),
                 (lambda name=name: getattr(left, name)(right, alpha=2), ("alpha",)),
+                (
+                    lambda name=name: getattr(left, name)(right, alpha=1e39),
+                    ("alpha",),
+                ),
             )
             for call, expected_keywords in calls:
                 mode = RecordingMode()
@@ -329,6 +359,12 @@ class TensorSubMethodTests(unittest.TestCase):
             self.assertIs(args[0], left)
             self.assertIsInstance(args[1], Override)
             self.assertIsNone(kwargs)
+
+            events.clear()
+            self.assertIs(getattr(left, name)(Override(), alpha=1e39), marker)
+            _, dispatch_types, _, kwargs = events[0]
+            self.assertEqual(dispatch_types, (Override,))
+            self.assertEqual(tuple(kwargs), ("alpha",))
 
             events.clear()
             self.assertIs(getattr(left, name)(right, alpha=Override()), marker)

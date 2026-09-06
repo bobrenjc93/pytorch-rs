@@ -217,8 +217,15 @@ class TopLevelSubTests(unittest.TestCase):
 
         fused_left = tensor_from_bits([0xD032_7A78])
         fused_right = tensor_from_bits([0xD5F4_4919])
+        fused_scalar = np.asarray([0xD5F4_4919], dtype=np.uint32).view(np.float32)[
+            0
+        ]
         np.testing.assert_array_equal(
             tensor_bits(torch.sub(fused_left, fused_right, alpha=np.float32(0.1))),
+            np.asarray([0x5442_BB33], dtype=np.uint32),
+        )
+        np.testing.assert_array_equal(
+            tensor_bits(torch.sub(fused_left, fused_scalar, alpha=np.float32(0.1))),
             np.asarray([0x5442_BB33], dtype=np.uint32),
         )
 
@@ -239,6 +246,16 @@ class TopLevelSubTests(unittest.TestCase):
             ),
             np.asarray([0x7FC1_2345], dtype=np.uint32),
         )
+        np.testing.assert_array_equal(
+            tensor_bits(
+                torch.sub(
+                    tensor_from_bits([0x3F80_0000]),
+                    np.float32(2.0),
+                    alpha=alpha_nan,
+                )
+            ),
+            np.asarray([0xFFCA_BCDE], dtype=np.uint32),
+        )
 
         self.assert_tensor_matches(
             torch.sub(left, 2.0, right),
@@ -251,9 +268,24 @@ class TopLevelSubTests(unittest.TestCase):
             case="sub legacy positional tensor alpha out none",
         )
         self.assert_tensor_matches(
+            torch.sub(left, 2.0, other=right),
+            left - right * 2.0,
+            case="sub legacy keyword other positional alpha",
+        )
+        self.assert_tensor_matches(
+            torch.sub(left, 2.0, x2=right),
+            left - right * 2.0,
+            case="sub legacy keyword x2 positional alpha",
+        )
+        self.assert_tensor_matches(
             torch.sub(1.0, 2.0, left[1]),
             1.0 - 2.0 * left[1],
             case="sub legacy scalar input positional alpha",
+        )
+        self.assert_tensor_matches(
+            torch.sub(1.0, 2.0, other=left[1]),
+            1.0 - 2.0 * left[1],
+            case="sub legacy scalar input keyword other",
         )
 
     def test_autograd_no_grad_and_shared_operands_reuse_subtraction_path(self):
@@ -337,6 +369,12 @@ class TopLevelSubTests(unittest.TestCase):
                 ("input", "other", "alpha"),
             ),
             (
+                lambda: torch.sub(left, right, alpha=1e39),
+                torch.sub,
+                (left, right),
+                ("alpha",),
+            ),
+            (
                 lambda: torch.sub(left, right, out=destination),
                 torch.sub,
                 (left, right),
@@ -418,6 +456,15 @@ class TopLevelSubTests(unittest.TestCase):
         self.assertEqual(dispatch_types, (RightOverride,))
         self.assertEqual(args, ())
         self.assertEqual(tuple(kwargs), ("input", "other", "alpha"))
+
+        events.clear()
+        self.assertIs(torch.sub(RightOverride(), right, alpha=1e39), marker)
+        label, function, dispatch_types, args, kwargs = events[0]
+        self.assertEqual(label, "right")
+        self.assertIs(function, torch.sub)
+        self.assertEqual(dispatch_types, (RightOverride,))
+        self.assertIs(args[1], right)
+        self.assertEqual(tuple(kwargs), ("alpha",))
 
         events.clear()
 

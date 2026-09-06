@@ -217,6 +217,9 @@ class TensorSubMethodReferenceTests(unittest.TestCase):
             expected_fused_left = tensor_from_bits(reference_torch, [0xD032_7A78])
             actual_fused_right = tensor_from_bits(torch, [0xD5F4_4919])
             expected_fused_right = tensor_from_bits(reference_torch, [0xD5F4_4919])
+            fused_scalar = np.asarray([0xD5F4_4919], dtype=np.uint32).view(
+                np.float32
+            )[0]
             alpha_nan = np.asarray([0x7F8A_BCDE], dtype=np.uint32).view(np.float32)[0]
             actual_nan_left = tensor_from_bits(
                 torch, [0x3F80_0000, 0x7FC1_2345]
@@ -266,6 +269,15 @@ class TensorSubMethodReferenceTests(unittest.TestCase):
                     ),
                 ),
                 (
+                    "fractional fused scalar other",
+                    lambda name=name: getattr(actual_fused_left, name)(
+                        fused_scalar, alpha=np.float32(0.1)
+                    ),
+                    lambda name=name: getattr(expected_fused_left, name)(
+                        fused_scalar, alpha=np.float32(0.1)
+                    ),
+                ),
+                (
                     "nonfinite alpha nan precedence",
                     lambda name=name: getattr(actual_nan_left, name)(
                         actual_nan_right, alpha=alpha_nan
@@ -282,6 +294,15 @@ class TensorSubMethodReferenceTests(unittest.TestCase):
                     lambda name=name: getattr(
                         tensor_from_bits(reference_torch, [0x3F80_0000]), name
                     )(expected_right_nan, alpha=np.float32(0.1)),
+                ),
+                (
+                    "nonfinite alpha scalar other",
+                    lambda name=name: getattr(
+                        tensor_from_bits(torch, [0x3F80_0000]), name
+                    )(np.float32(2.0), alpha=alpha_nan),
+                    lambda name=name: getattr(
+                        tensor_from_bits(reference_torch, [0x3F80_0000]), name
+                    )(np.float32(2.0), alpha=alpha_nan),
                 ),
             )
             for case, actual_call, expected_call in cases:
@@ -337,6 +358,22 @@ class TensorSubMethodReferenceTests(unittest.TestCase):
             actual_left.sub(2.0, actual_right),
             expected_legacy,
             case=("sub", "legacy positional tensor alpha"),
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            expected_keyword_other = expected_left.sub(2.0, other=expected_right)
+        self.assert_matches(
+            actual_left.sub(2.0, other=actual_right),
+            expected_keyword_other,
+            case=("sub", "legacy keyword other positional alpha"),
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            expected_keyword_x2 = expected_left.sub(2.0, x2=expected_right)
+        self.assert_matches(
+            actual_left.sub(2.0, x2=actual_right),
+            expected_keyword_x2,
+            case=("sub", "legacy keyword x2 positional alpha"),
         )
 
     def test_autograd_and_no_grad_match_pytorch_2_13(self):
@@ -515,6 +552,7 @@ class TensorSubMethodReferenceTests(unittest.TestCase):
             (lambda: getattr(left, method_name)(other=right), ("other",)),
             (lambda: getattr(left, method_name)(x2=right), ("x2",)),
             (lambda: getattr(left, method_name)(right, alpha=True), ("alpha",)),
+            (lambda: getattr(left, method_name)(right, alpha=1e39), ("alpha",)),
         ):
             mode = RecordingMode()
             with mode:
@@ -544,6 +582,7 @@ class TensorSubMethodReferenceTests(unittest.TestCase):
 
         for call, keyword in (
             (lambda value: getattr(left, method_name)(value), None),
+            (lambda value: getattr(left, method_name)(value, alpha=1e39), None),
             (lambda value: getattr(left, method_name)(right, alpha=value), "alpha"),
         ):
             value = Override()

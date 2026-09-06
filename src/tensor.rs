@@ -4044,8 +4044,9 @@ impl Tensor {
         if alpha.to_bits() == 1.0_f32.to_bits() {
             return self.sub_scalar(scalar);
         }
-        let scaled = scalar * alpha;
-        let output = self.map_scalar(scaled, subtract_value_matching_pytorch)?;
+        let output = self.map_scalar(scalar, |value, scalar| {
+            subtract_scaled_value_matching_pytorch(value, scalar, alpha)
+        })?;
         self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Subtract)
     }
 
@@ -12682,8 +12683,25 @@ mod tests {
             fused_left.sub_alpha(&fused_right, 0.1).unwrap().as_slice()[0].to_bits(),
             0x5442_bb33
         );
+        assert_eq!(
+            fused_left
+                .sub_scalar_alpha(f32::from_bits(0xd5f4_4919), 0.1)
+                .unwrap()
+                .as_slice()[0]
+                .to_bits(),
+            0x5442_bb33
+        );
 
         let signaling_alpha = f32::from_bits(0x7f8a_bcde);
+        assert_eq!(
+            Tensor::from_vec(vec![1.0], [1])
+                .unwrap()
+                .sub_scalar_alpha(2.0, signaling_alpha)
+                .unwrap()
+                .as_slice()[0]
+                .to_bits(),
+            0xffca_bcde
+        );
         assert_eq!(
             subtract_scaled_value_matching_pytorch(1.0, 2.0, signaling_alpha).to_bits(),
             0xffca_bcde

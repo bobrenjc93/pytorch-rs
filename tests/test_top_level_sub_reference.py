@@ -210,6 +210,9 @@ class TopLevelSubReferenceTests(unittest.TestCase):
             expected_fused_left = tensor_from_bits(reference_torch, [0xD032_7A78])
             actual_fused_right = tensor_from_bits(torch, [0xD5F4_4919])
             expected_fused_right = tensor_from_bits(reference_torch, [0xD5F4_4919])
+            fused_scalar = np.asarray([0xD5F4_4919], dtype=np.uint32).view(
+                np.float32
+            )[0]
             alpha_nan = np.asarray([0x7F8A_BCDE], dtype=np.uint32).view(np.float32)[0]
             actual_nan_left = tensor_from_bits(
                 torch, [0x3F80_0000, 0x7FC1_2345]
@@ -274,6 +277,15 @@ class TopLevelSubReferenceTests(unittest.TestCase):
                     ),
                 ),
                 (
+                    "fractional fused scalar other",
+                    lambda actual_function=actual_function: actual_function(
+                        actual_fused_left, fused_scalar, alpha=np.float32(0.1)
+                    ),
+                    lambda expected_function=expected_function: expected_function(
+                        expected_fused_left, fused_scalar, alpha=np.float32(0.1)
+                    ),
+                ),
+                (
                     "nonfinite alpha nan precedence",
                     lambda actual_function=actual_function: actual_function(
                         actual_nan_left, actual_nan_right, alpha=alpha_nan
@@ -293,6 +305,19 @@ class TopLevelSubReferenceTests(unittest.TestCase):
                         tensor_from_bits(reference_torch, [0x3F80_0000]),
                         expected_right_nan,
                         alpha=np.float32(0.1),
+                    ),
+                ),
+                (
+                    "nonfinite alpha scalar other",
+                    lambda actual_function=actual_function: actual_function(
+                        tensor_from_bits(torch, [0x3F80_0000]),
+                        np.float32(2.0),
+                        alpha=alpha_nan,
+                    ),
+                    lambda expected_function=expected_function: expected_function(
+                        tensor_from_bits(reference_torch, [0x3F80_0000]),
+                        np.float32(2.0),
+                        alpha=alpha_nan,
                     ),
                 ),
             )
@@ -361,11 +386,41 @@ class TopLevelSubReferenceTests(unittest.TestCase):
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
+            expected_keyword_other = reference_torch.sub(
+                expected_left, 2.0, other=expected_right
+            )
+        self.assert_matches(
+            torch.sub(actual_left, 2.0, other=actual_right),
+            expected_keyword_other,
+            case="sub legacy keyword other positional alpha",
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            expected_keyword_x2 = reference_torch.sub(
+                expected_left, 2.0, x2=expected_right
+            )
+        self.assert_matches(
+            torch.sub(actual_left, 2.0, x2=actual_right),
+            expected_keyword_x2,
+            case="sub legacy keyword x2 positional alpha",
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
             expected_scalar_legacy = reference_torch.sub(1.0, 2.0, expected_left[1])
         self.assert_matches(
             torch.sub(1.0, 2.0, actual_left[1]),
             expected_scalar_legacy,
             case="sub legacy scalar input positional alpha",
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            expected_scalar_keyword = reference_torch.sub(
+                1.0, 2.0, other=expected_left[1]
+            )
+        self.assert_matches(
+            torch.sub(1.0, 2.0, other=actual_left[1]),
+            expected_scalar_keyword,
+            case="sub legacy scalar input keyword other",
         )
 
     def test_autograd_shared_operands_empties_and_no_grad_match_pytorch_2_13(self):
@@ -550,6 +605,7 @@ class TopLevelSubReferenceTests(unittest.TestCase):
             (lambda: function(4.0, left), None),
             (lambda: function(input=4.0, other=left, alpha=2), ("input", "other", "alpha")),
             (lambda: function(left, right, alpha=True), ("alpha",)),
+            (lambda: function(left, right, alpha=1e39), ("alpha",)),
             (lambda: function(left, right, out=destination), ("out",)),
         )
         for call, keyword_names in mode_calls:
@@ -581,6 +637,7 @@ class TopLevelSubReferenceTests(unittest.TestCase):
 
         for call, keyword in (
             (lambda value: function(value, right), None),
+            (lambda value: function(value, right, alpha=1e39), None),
             (lambda value: function(left, value), None),
             (lambda value: function(input=left, other=value, alpha=2), "other"),
             (lambda value: function(left, right, alpha=value), "alpha"),
