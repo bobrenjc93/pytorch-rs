@@ -2132,39 +2132,15 @@ pub(crate) fn cat_variable_function(
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     let (tensors, dim, out, keyword_error) = bind_top_level_cat_arguments(args, kwargs)?;
-    let tensors = parse_cat_tensor_sequence(&tensors)?;
-    let dim = parse_cat_dimension(dim.as_ref())?;
-    normalize_dimension(dim, 1)?;
+    let tensors = parse_cat_tensors_argument(&tensors)?;
+    let dim = parse_cat_dimension(dim)?;
+    let out = parse_cat_out(out)?;
     if let Some(keyword_error) = keyword_error {
         return Err(keyword_error);
     }
-    validate_cat_out(out.as_ref())?;
-    if !torch_function_mode_stack::is_empty() {
-        return Err(PyNotImplementedError::new_err(
-            "cat(): __torch_function__ modes are not supported",
-        ));
-    }
 
-    let mut borrowed_tensors = try_size_vector(tensors.len())?;
-    let mut any_requires_grad = false;
-    for (index, tensor) in tensors.iter().enumerate() {
-        let tensor = tensor.try_borrow()?;
-        validate_cat_tensor(&tensor, index)?;
-        any_requires_grad |= tensor.inner.requires_grad();
-        try_push_size(&mut borrowed_tensors, tensor)?;
-    }
-    if any_requires_grad && is_grad_enabled() {
-        return Err(PyRuntimeError::new_err(
-            "cat(): autograd recording is not supported",
-        ));
-    }
-
-    let mut inner_tensors = try_size_vector(borrowed_tensors.len())?;
-    for tensor in &borrowed_tensors {
-        try_push_size(&mut inner_tensors, &tensor.inner)?;
-    }
-    let result = CoreTensor::cat_1d(&inner_tensors).map_err(|error| tensor_error(&error))?;
-    Ok(Py::new(py, PyTensor::new(result))?.into_any())
+    let call = BoundTopLevelCatCall { tensors, dim, out };
+    dispatch_top_level_cat(py, &call, args, kwargs)
 }
 
 pub(crate) fn adjoint_variable_function(
@@ -2894,6 +2870,22 @@ struct BoundTopLevelNativeReshapeShape<'py> {
 enum BoundTopLevelReshapeShape<'py> {
     Native(BoundTopLevelNativeReshapeShape<'py>),
     Override(Vec<ProbedTorchFunctionOverride<'py>>),
+}
+
+enum BoundTopLevelCatTensors<'py> {
+    Sequence(Vec<BoundTensorOrTorchFunction<'py>>),
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+enum BoundTopLevelCatDimension<'py> {
+    Native(Option<ParsedCallArgument<'py>>),
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+struct BoundTopLevelCatCall<'py> {
+    tensors: BoundTopLevelCatTensors<'py>,
+    dim: BoundTopLevelCatDimension<'py>,
+    out: Option<BoundTensorOrTorchFunction<'py>>,
 }
 
 type SingleTensorNativeCallback = fn(Python<'_>, &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>>;
@@ -4184,6 +4176,148 @@ fn apply_top_level_imag(_py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResu
     // Native float32 tensors have no imaginary view. Share Tensor.imag's
     // real-dtype error path after top-level __torch_function__ dispatch.
     apply_tensor_imag(tensor)
+}
+
+fn ordered_top_level_cat_overrides<'py>(
+    call: &BoundTopLevelCatCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let tensor_capacity = match &call.tensors {
+        BoundTopLevelCatTensors::Sequence(tensors) => tensors.len(),
+        BoundTopLevelCatTensors::Override(_) => 1,
+    };
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(
+            tensor_capacity
+                + usize::from(matches!(&call.dim, BoundTopLevelCatDimension::Override(_)))
+                + usize::from(matches!(
+                    &call.out,
+                    Some(BoundTensorOrTorchFunction::Override(_))
+                )),
+        )
+        .map_err(|_| PyMemoryError::new_err("unable to allocate cat dispatch operands"))?;
+
+    match &call.tensors {
+        BoundTopLevelCatTensors::Sequence(tensors) => {
+            for tensor in tensors {
+                if let BoundTensorOrTorchFunction::Override(probed) = tensor {
+                    insert_ordered_torch_function_override(&mut overrides, probed)?;
+                }
+            }
+        }
+        BoundTopLevelCatTensors::Override(probed) => {
+            insert_ordered_torch_function_override(&mut overrides, probed)?;
+        }
+    }
+    if let BoundTopLevelCatDimension::Override(probed) = &call.dim {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(BoundTensorOrTorchFunction::Override(probed)) = &call.out {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
+fn dispatch_top_level_cat(
+    py: Python<'_>,
+    call: &BoundTopLevelCatCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_top_level_cat_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_cat(py, call);
+    }
+
+    let function = variable_function(py, "cat")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Generated variable functions validate their schema before dispatch, but
+    // leave native-only limits such as rank, dimension range, and concrete out
+    // tensors until handlers have had a chance to override or forward.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_top_level_cat(py, call);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.cat",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_cat(py: Python<'_>, call: &BoundTopLevelCatCall<'_>) -> PyResult<Py<PyAny>> {
+    let BoundTopLevelCatTensors::Sequence(tensors) = &call.tensors else {
+        unreachable!("cat tensor-sequence override was dispatched before the native path")
+    };
+    if tensors.is_empty() {
+        return Err(PyValueError::new_err(
+            "torch.cat(): expected a non-empty list of Tensors",
+        ));
+    }
+
+    let mut borrowed_tensors = try_size_vector(tensors.len())?;
+    let mut any_requires_grad = false;
+    for (index, tensor) in tensors.iter().enumerate() {
+        let BoundTensorOrTorchFunction::Tensor(tensor) = tensor else {
+            unreachable!("cat sequence element overrides were dispatched before the native path")
+        };
+        let tensor = tensor.try_borrow()?;
+        validate_cat_tensor(&tensor, index)?;
+        any_requires_grad |= tensor.inner.requires_grad();
+        try_push_size(&mut borrowed_tensors, tensor)?;
+    }
+
+    let dimension = match &call.dim {
+        BoundTopLevelCatDimension::Native(dimension) => {
+            dimension.as_ref().map_or(Ok(0), |dimension| {
+                extract_dimension_swap_dimension(&dimension.value)
+            })?
+        }
+        BoundTopLevelCatDimension::Override(_) => {
+            unreachable!("cat dim override was dispatched before the native path")
+        }
+    };
+    normalize_dimension(dimension, 1)?;
+    if call.out.is_some() {
+        return Err(PyRuntimeError::new_err(
+            "cat(): the 'out' argument is not supported",
+        ));
+    }
+    if any_requires_grad && is_grad_enabled() {
+        return Err(PyRuntimeError::new_err(
+            "cat(): autograd recording is not supported",
+        ));
+    }
+
+    let mut inner_tensors = try_size_vector(borrowed_tensors.len())?;
+    for tensor in &borrowed_tensors {
+        try_push_size(&mut inner_tensors, &tensor.inner)?;
+    }
+    let result = CoreTensor::cat_1d(&inner_tensors).map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(result))?.into_any())
 }
 
 fn ordered_unary_out_overrides<'py>(
@@ -11137,9 +11271,6 @@ fn bind_top_level_cat_arguments<'py>(
 
     let axis_conflicts_with_dim = axis.is_some() && dim.is_some();
     let dim = dim.or(axis);
-    if let Some(dim) = &dim {
-        validate_dimension_swap_dimension("cat", "dim", dim.position, &dim.value)?;
-    }
     if axis_conflicts_with_dim {
         keyword_error.get_or_insert_with(|| {
             PyTypeError::new_err("cat() got an unexpected keyword argument 'axis'")
@@ -11149,51 +11280,83 @@ fn bind_top_level_cat_arguments<'py>(
     Ok((tensors, dim, out, keyword_error))
 }
 
+fn parse_cat_tensors_argument<'py>(
+    tensors: &ParsedCallArgument<'py>,
+) -> PyResult<BoundTopLevelCatTensors<'py>> {
+    if tensors.value.is_instance_of::<PyTuple>() || tensors.value.is_instance_of::<PyList>() {
+        return Ok(BoundTopLevelCatTensors::Sequence(
+            parse_cat_tensor_sequence(tensors)?,
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&tensors.value) {
+        return Ok(BoundTopLevelCatTensors::Override(probed));
+    }
+    Err(cat_tensor_sequence_type_error(tensors)?)
+}
+
 fn parse_cat_tensor_sequence<'py>(
     tensors: &ParsedCallArgument<'py>,
-) -> PyResult<Vec<Bound<'py, PyTensor>>> {
+) -> PyResult<Vec<BoundTensorOrTorchFunction<'py>>> {
     if !tensors.value.is_instance_of::<PyTuple>() && !tensors.value.is_instance_of::<PyList>() {
         return Err(cat_tensor_sequence_type_error(tensors)?);
     }
 
     let sequence = tensors.value.cast::<PySequence>()?;
     let length = sequence.len()?;
-    if length == 0 {
-        return Err(PyValueError::new_err(
-            "torch.cat(): expected a non-empty list of Tensors",
-        ));
-    }
-
     let mut parsed = try_size_vector(length)?;
     for index in 0..length {
         let item = sequence.get_item(index)?;
-        if !item.is_exact_instance_of::<PyTensor>() {
-            if item.is_instance_of::<PyTensor>() {
-                return Err(cat_unsupported_native_input());
-            }
+        if item.is_exact_instance_of::<PyTensor>() {
+            try_push_size(
+                &mut parsed,
+                BoundTensorOrTorchFunction::Tensor(item.cast_into::<PyTensor>()?),
+            )?;
+        } else if let Some(probed) = probe_torch_function_override(&item) {
+            try_push_size(&mut parsed, BoundTensorOrTorchFunction::Override(probed))?;
+        } else if item.is_instance_of::<PyTensor>() {
+            return Err(cat_unsupported_native_input());
+        } else {
             let actual = python_type_name(&item)?;
             return Err(PyTypeError::new_err(format!(
                 "expected Tensor as element {index} in argument 0, but got {actual}"
             )));
         }
-        try_push_size(&mut parsed, item.cast_into::<PyTensor>()?)?;
     }
     Ok(parsed)
 }
 
-fn parse_cat_dimension(dimension: Option<&ParsedCallArgument<'_>>) -> PyResult<i64> {
+fn parse_cat_dimension<'py>(
+    dimension: Option<ParsedCallArgument<'py>>,
+) -> PyResult<BoundTopLevelCatDimension<'py>> {
     let Some(dimension) = dimension else {
-        return Ok(0);
+        return Ok(BoundTopLevelCatDimension::Native(None));
     };
-    extract_dimension_swap_dimension(&dimension.value)
+    if is_dimension_swap_integer(&dimension.value)? {
+        return Ok(BoundTopLevelCatDimension::Native(Some(dimension)));
+    }
+    if let Some(probed) = probe_torch_function_override(&dimension.value) {
+        return Ok(BoundTopLevelCatDimension::Override(probed));
+    }
+    validate_dimension_swap_dimension("cat", "dim", dimension.position, &dimension.value)?;
+    unreachable!("invalid cat dimension type should have returned a Python error")
 }
 
-fn validate_cat_out(out: Option<&ParsedCallArgument<'_>>) -> PyResult<()> {
+fn parse_cat_out<'py>(
+    out: Option<ParsedCallArgument<'py>>,
+) -> PyResult<Option<BoundTensorOrTorchFunction<'py>>> {
     let Some(out) = out else {
-        return Ok(());
+        return Ok(None);
     };
     if out.value.is_none() {
-        return Ok(());
+        return Ok(None);
+    }
+    if out.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(Some(BoundTensorOrTorchFunction::Tensor(
+            out.value.cast::<PyTensor>()?.clone(),
+        )));
+    }
+    if let Some(probed) = probe_torch_function_override(&out.value) {
+        return Ok(Some(BoundTensorOrTorchFunction::Override(probed)));
     }
     if !out.value.is_instance_of::<PyTensor>() {
         let actual = python_type_name(&out.value)?;
@@ -11201,9 +11364,7 @@ fn validate_cat_out(out: Option<&ParsedCallArgument<'_>>) -> PyResult<()> {
             "cat(): argument 'out' must be Tensor, not {actual}"
         )));
     }
-    Err(PyRuntimeError::new_err(
-        "cat(): the 'out' argument is not supported",
-    ))
+    Err(cat_unsupported_native_input())
 }
 
 fn validate_cat_tensor(tensor: &PyTensor, index: usize) -> PyResult<()> {

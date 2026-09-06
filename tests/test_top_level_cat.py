@@ -73,6 +73,180 @@ class TopLevelCatTests(unittest.TestCase):
         self.assertIsNone(left.grad)
         self.assertIsNone(right.grad)
 
+    def test_torch_function_modes_intercept_forward_and_decline(self):
+        left = torch.tensor([1.0])
+        right = torch.tensor([2.0])
+        inputs = [left, right]
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result=marker):
+                self.calls = []
+                self.result = result
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        accepting = RecordingMode()
+        with accepting:
+            result = torch.cat(inputs, dim=0)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(),
+                [accepting],
+            )
+        self.assertIs(result, marker)
+        self.assertEqual(accepting.calls, [(torch.cat, (), (inputs,), {"dim": 0})])
+
+        empty_accepting = RecordingMode()
+        with empty_accepting:
+            self.assertIs(torch.cat([], dim=1), marker)
+        self.assertEqual(empty_accepting.calls, [(torch.cat, (), ([],), {"dim": 1})])
+
+        calls = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                calls.append(
+                    (
+                        self.label,
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                        tuple(torch.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                forwarded = torch.cat(inputs, dim=0)
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(),
+                    [lower, upper],
+                )
+        self.assert_cat_matches(forwarded, [1.0, 2.0], case="forwarded modes")
+        self.assertEqual([call[0] for call in calls], ["upper", "lower"])
+        self.assertTrue(all(call[1] is torch.cat for call in calls))
+        self.assertTrue(all(call[2] == () for call in calls))
+        self.assertTrue(all(call[3] == (inputs,) for call in calls))
+        self.assertTrue(all(call[4] == {"dim": 0} for call in calls))
+        self.assertEqual(calls[0][5], (lower,))
+        self.assertEqual(calls[1][5], ())
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+        declining = RecordingMode(NotImplemented)
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^Multiple dispatch failed for 'torch\.cat'; all __torch_function__ handlers returned NotImplemented:",
+        ):
+            with declining:
+                torch.cat(inputs, dim=0)
+        self.assertEqual(len(declining.calls), 1)
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+        invalid_mode = RecordingMode()
+        with invalid_mode:
+            with self.assertRaisesRegex(
+                TypeError, r"^expected Tensor as element 1 in argument 0, but got int$"
+            ):
+                torch.cat([left, 1], dim=0)
+        self.assertEqual(invalid_mode.calls, [])
+
+    def test_torch_function_argument_overrides_dispatch_in_pytorch_order(self):
+        marker = object()
+        events = []
+
+        class LeftOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("left", func, types, args, kwargs))
+                return NotImplemented
+
+        class RightOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("right", func, types, args, kwargs))
+                return marker
+
+        left = LeftOverride()
+        right = RightOverride()
+        inputs = [left, torch.tensor([]), right]
+        self.assertIs(torch.cat(inputs, dim=0), marker)
+        self.assertEqual([event[0] for event in events], ["left", "right"])
+        for _, function, dispatch_types, args, kwargs in events:
+            self.assertIs(function, torch.cat)
+            self.assertEqual(dispatch_types, (LeftOverride, RightOverride))
+            self.assertEqual(args, (inputs,))
+            self.assertEqual(kwargs, {"dim": 0})
+
+        events.clear()
+
+        class DimensionOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("dim", func, types, args, kwargs))
+                return marker
+
+        dimension = DimensionOverride()
+        self.assertIs(torch.cat([torch.tensor([1.0])], dim=dimension), marker)
+        self.assertEqual(events[0][0], "dim")
+        self.assertIs(events[0][1], torch.cat)
+        self.assertEqual(events[0][2], (DimensionOverride,))
+        self.assertEqual(events[0][4], {"dim": dimension})
+
+        events.clear()
+
+        class OutOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("out", func, types, args, kwargs))
+                return marker
+
+        out = OutOverride()
+        self.assertIs(torch.cat([torch.tensor([1.0])], out=out), marker)
+        self.assertEqual(events[0][0], "out")
+        self.assertIs(events[0][1], torch.cat)
+        self.assertEqual(events[0][2], (OutOverride,))
+        self.assertIs(events[0][4]["out"], out)
+
+        events.clear()
+
+        class TensorsOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("tensors", func, types, args, kwargs))
+                return marker
+
+        tensors = TensorsOverride()
+        self.assertIs(torch.cat(tensors), marker)
+        self.assertEqual(events[0][0], "tensors")
+        self.assertIs(events[0][1], torch.cat)
+        self.assertEqual(events[0][2], (TensorsOverride,))
+        self.assertEqual(events[0][3], (tensors,))
+        self.assertIsNone(events[0][4])
+
+        class DecliningOverride:
+            calls = 0
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls += 1
+                return NotImplemented
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^Multiple dispatch failed for 'torch\.cat'; all __torch_function__ handlers returned NotImplemented:",
+        ):
+            torch.cat([DecliningOverride()], dim=0)
+        self.assertEqual(DecliningOverride.calls, 1)
+
     def test_rejects_unsupported_inputs_before_touching_out(self):
         destination = torch.tensor([9.0, 10.0])
         before = destination.tolist()

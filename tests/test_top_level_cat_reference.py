@@ -167,6 +167,185 @@ class TopLevelCatReferenceTests(unittest.TestCase):
                 ):
                     expected_call()
 
+    def dispatch_observation(self, module):
+        left = module.tensor([1.0])
+        right = module.tensor([2.0])
+        inputs = [left, right]
+        marker = object()
+
+        def stack_labels():
+            return tuple(
+                getattr(mode, "label", type(mode).__name__)
+                for mode in module.overrides._get_current_function_mode_stack()
+            )
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.calls = []
+                self.result = result
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs, stack_labels()))
+                return self.result
+
+        accepting = RecordingMode(marker)
+        with accepting:
+            accepted = module.cat(inputs, dim=0)
+        func, dispatch_types, args, kwargs, stack = accepting.calls[0]
+        mode_observation = (
+            accepted is marker,
+            func is module.cat,
+            tuple(item.__name__ for item in dispatch_types),
+            args[0] is inputs,
+            tuple(kwargs),
+            kwargs["dim"],
+            stack,
+        )
+
+        calls = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                calls.append(
+                    (
+                        self.label,
+                        func is module.cat,
+                        tuple(item.__name__ for item in types),
+                        args[0] is inputs,
+                        tuple(kwargs),
+                        kwargs["dim"],
+                        stack_labels(),
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = module.cat(inputs, dim=0)
+
+        class LeftOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("left", func, types, args, kwargs))
+                return NotImplemented
+
+        class RightOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("right", func, types, args, kwargs))
+                return marker
+
+        events = []
+        override_inputs = [LeftOverride(), module.tensor([]), RightOverride()]
+        override_result = module.cat(override_inputs, dim=0)
+        override_observation = (
+            override_result is marker,
+            tuple(event[0] for event in events),
+            tuple(
+                (
+                    event[1] is module.cat,
+                    tuple(item.__name__ for item in event[2]),
+                    event[3][0] is override_inputs,
+                    tuple(event[4]),
+                    event[4]["dim"],
+                )
+                for event in events
+            ),
+        )
+
+        class DimensionOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                argument_events.append(("dim", func, types, args, kwargs))
+                return marker
+
+        class OutOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                argument_events.append(("out", func, types, args, kwargs))
+                return marker
+
+        class TensorsOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                argument_events.append(("tensors", func, types, args, kwargs))
+                return marker
+
+        argument_events = []
+        dimension = DimensionOverride()
+        out = OutOverride()
+        tensors = TensorsOverride()
+        dim_result = module.cat([left], dim=dimension)
+        out_result = module.cat([left], out=out)
+        tensors_result = module.cat(tensors)
+        argument_observation = (
+            dim_result is marker,
+            out_result is marker,
+            tensors_result is marker,
+            tuple(
+                (
+                    event[0],
+                    event[1] is module.cat,
+                    tuple(item.__name__ for item in event[2]),
+                    len(event[3]),
+                    None if event[4] is None else tuple(event[4]),
+                )
+                for event in argument_events
+            ),
+        )
+
+        declining_mode = RecordingMode(NotImplemented)
+        try:
+            with declining_mode:
+                module.cat(inputs, dim=0)
+        except Exception as error:
+            mode_decline = (
+                type(error).__name__,
+                str(error).split("\n\n", maxsplit=1)[0],
+                len(declining_mode.calls),
+            )
+        else:
+            mode_decline = ("accepted", None, len(declining_mode.calls))
+
+        class DecliningOverride:
+            calls = 0
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls += 1
+                return NotImplemented
+
+        try:
+            module.cat([DecliningOverride()], dim=0)
+        except Exception as error:
+            override_decline = (
+                type(error).__name__,
+                str(error).split("\n\n", maxsplit=1)[0],
+                DecliningOverride.calls,
+            )
+        else:
+            override_decline = ("accepted", None, DecliningOverride.calls)
+
+        return (
+            mode_observation,
+            tuple(calls),
+            tuple(forwarded.tolist()),
+            override_observation,
+            argument_observation,
+            mode_decline,
+            override_decline,
+            stack_labels(),
+        )
+
+    def test_torch_function_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.dispatch_observation(torch),
+            self.dispatch_observation(reference_torch),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

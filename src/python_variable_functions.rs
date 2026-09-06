@@ -1129,8 +1129,8 @@ The current native implementation supports non-empty tuple/list inputs of
 exact native CPU ``float32`` 1-D tensors for ``dim=0`` and ``dim=-1``, including
 the PyTorch ``axis`` keyword alias. Concrete ``out`` tensors, empty input
 sequences, scalar and non-1-D tensors,
-mixed dtype/device metadata, tensor subclasses, active autograd recording, and
-other dimensions remain unsupported.
+mixed dtype/device metadata, unhandled tensor subclasses, active autograd
+recording, and other dimensions remain unsupported.
 ";
 
 const IS_CONJ_DOC: &std::ffi::CStr = c"\nis_conj(input) -> (bool)\n\nReturns True if the :attr:`input` is a conjugated tensor, i.e. its conjugate bit is set to `True`.\n\nArgs:\n    input (Tensor): the input tensor.\n";
