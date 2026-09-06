@@ -19,7 +19,7 @@ use crate::python::{
     adjoint_variable_function, arange_variable_function, as_tensor_variable_function,
     asarray_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
     atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
-    ceil_variable_function, conj_variable_function, cos_variable_function,
+    cat_variable_function, ceil_variable_function, conj_variable_function, cos_variable_function,
     detach_variable_function, div_variable_function, divide_variable_function,
     empty_like_variable_function, exp_variable_function, fix_variable_function,
     floor_variable_function, full_like_variable_function, get_device_variable_function,
@@ -40,7 +40,7 @@ use crate::python::{
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 63] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 64] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -54,6 +54,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 63] = [
     "atleast_2d",
     "atleast_3d",
     "broadcast_tensors",
+    "cat",
     "abs",
     "absolute",
     "adjoint",
@@ -1119,6 +1120,19 @@ Example::
     torch.long
 ";
 
+const CAT_DOC: &std::ffi::CStr = c"
+cat(tensors, dim=0, *, out=None) -> Tensor
+
+Concatenates the given sequence of tensors in :attr:`tensors` in the given dimension.
+
+The current native implementation supports non-empty tuple/list inputs of
+exact native CPU ``float32`` 1-D tensors for ``dim=0`` and ``dim=-1``, including
+the PyTorch ``axis`` keyword alias. Concrete ``out`` tensors, empty input
+sequences, scalar and non-1-D tensors,
+mixed dtype/device metadata, unhandled tensor subclasses, active autograd
+recording, and other dimensions remain unsupported.
+";
+
 const IS_CONJ_DOC: &std::ffi::CStr = c"\nis_conj(input) -> (bool)\n\nReturns True if the :attr:`input` is a conjugated tensor, i.e. its conjugate bit is set to `True`.\n\nArgs:\n    input (Tensor): the input tensor.\n";
 
 const IS_INFERENCE_DOC: &std::ffi::CStr = c"\nis_inference(input) -> (bool)\n\nReturns True if :attr:`input` is an inference tensor.\n\nA non-view tensor is an inference tensor if and only if it was\nallocated during inference mode. A view tensor is an inference\ntensor if and only if the tensor it is a view of is an inference tensor.\n\nFor details on inference mode please see\n`Inference Mode <https://pytorch.org/cppdocs/notes/inference_mode.html>`_.\n\nArgs:\n    input (Tensor): the input tensor.\n";
@@ -1405,6 +1419,7 @@ variable_function_callback!(
     broadcast_tensors_callback,
     broadcast_tensors_variable_function
 );
+variable_function_callback!(cat_callback, cat_variable_function);
 variable_function_callback!(abs_callback, abs_variable_function);
 variable_function_callback!(absolute_callback, absolute_variable_function);
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
@@ -1496,6 +1511,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"atleast_2d", atleast_2d_callback, c""),
         variable_function_method!(c"atleast_3d", atleast_3d_callback, c""),
         variable_function_method!(c"broadcast_tensors", broadcast_tensors_callback, c""),
+        variable_function_method!(c"cat", cat_callback, CAT_DOC),
         variable_function_method!(c"abs", abs_callback, ABS_DOC),
         variable_function_method!(c"absolute", absolute_callback, ABSOLUTE_DOC),
         variable_function_method!(c"adjoint", adjoint_callback, ADJOINT_DOC),

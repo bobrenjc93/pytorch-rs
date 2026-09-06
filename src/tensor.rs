@@ -2494,6 +2494,34 @@ impl Tensor {
         Ok(values)
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn cat_1d(inputs: &[&Self]) -> Result<Self, TensorError> {
+        let mut elements = 0_usize;
+        for input in inputs {
+            elements = elements
+                .checked_add(input.elements)
+                .ok_or(TensorError::ElementCountOverflow)?;
+        }
+        validate_storage_capacity(elements)?;
+
+        let mut data = try_result_vector(elements, elements)?;
+        for input in inputs {
+            data.extend(input.logical_values());
+        }
+        debug_assert_eq!(data.len(), elements);
+
+        let mut shape = try_result_vector(1, elements)?;
+        shape.push(elements);
+        let (_, strides) = validated_layout(&shape)?;
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            DType::Float32,
+            Device::Cpu,
+        ))
+    }
+
     fn contiguous_slice(&self) -> Option<&[f32]> {
         if self.elements == 0 {
             return Some(&[]);
