@@ -32,15 +32,15 @@ use crate::python::{
     reciprocal_variable_function, reshape_variable_function, resolve_conj_variable_function,
     resolve_neg_variable_function, rsqrt_variable_function, scalar_tensor_variable_function,
     select_variable_function, sigmoid_variable_function, sin_variable_function,
-    sqrt_variable_function, square_variable_function, sub_variable_function,
-    subtract_variable_function, sum_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function, unsqueeze_variable_function,
-    zeros_like_variable_function,
+    sqrt_variable_function, square_variable_function, stack_variable_function,
+    sub_variable_function, subtract_variable_function, sum_variable_function,
+    tanh_variable_function, trunc_variable_function, unbind_variable_function,
+    unsqueeze_variable_function, zeros_like_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 64] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 65] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -55,6 +55,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 64] = [
     "atleast_3d",
     "broadcast_tensors",
     "cat",
+    "stack",
     "abs",
     "absolute",
     "adjoint",
@@ -1133,6 +1134,18 @@ mixed dtype/device metadata, unhandled tensor subclasses, active autograd
 recording, and other dimensions remain unsupported.
 ";
 
+const STACK_DOC: &std::ffi::CStr = c"
+stack(tensors, dim=0, *, out=None) -> Tensor
+
+Concatenates a sequence of tensors along a new dimension.
+
+The current native implementation supports non-empty tuple/list inputs of
+same-shaped exact native CPU ``float32`` tensors for every valid insertion
+dimension, including the PyTorch ``axis`` keyword alias and first-order
+autograd. Concrete ``out`` tensors, empty input sequences, mixed dtype/device
+metadata, and unhandled tensor subclasses remain unsupported.
+";
+
 const IS_CONJ_DOC: &std::ffi::CStr = c"\nis_conj(input) -> (bool)\n\nReturns True if the :attr:`input` is a conjugated tensor, i.e. its conjugate bit is set to `True`.\n\nArgs:\n    input (Tensor): the input tensor.\n";
 
 const IS_INFERENCE_DOC: &std::ffi::CStr = c"\nis_inference(input) -> (bool)\n\nReturns True if :attr:`input` is an inference tensor.\n\nA non-view tensor is an inference tensor if and only if it was\nallocated during inference mode. A view tensor is an inference\ntensor if and only if the tensor it is a view of is an inference tensor.\n\nFor details on inference mode please see\n`Inference Mode <https://pytorch.org/cppdocs/notes/inference_mode.html>`_.\n\nArgs:\n    input (Tensor): the input tensor.\n";
@@ -1420,6 +1433,7 @@ variable_function_callback!(
     broadcast_tensors_variable_function
 );
 variable_function_callback!(cat_callback, cat_variable_function);
+variable_function_callback!(stack_callback, stack_variable_function);
 variable_function_callback!(abs_callback, abs_variable_function);
 variable_function_callback!(absolute_callback, absolute_variable_function);
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
@@ -1512,6 +1526,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"atleast_3d", atleast_3d_callback, c""),
         variable_function_method!(c"broadcast_tensors", broadcast_tensors_callback, c""),
         variable_function_method!(c"cat", cat_callback, CAT_DOC),
+        variable_function_method!(c"stack", stack_callback, STACK_DOC),
         variable_function_method!(c"abs", abs_callback, ABS_DOC),
         variable_function_method!(c"absolute", absolute_callback, ABSOLUTE_DOC),
         variable_function_method!(c"adjoint", adjoint_callback, ADJOINT_DOC),
