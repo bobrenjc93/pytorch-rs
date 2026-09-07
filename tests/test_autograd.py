@@ -174,6 +174,169 @@ class AutogradApiTests(unittest.TestCase):
         self.assertEqual(worker_states, [True, False, True, False, True])
         self.assertIs(torch.is_grad_enabled(), True)
 
+    def test_set_grad_enabled_sets_recording_immediately_and_restores_state(self):
+        value = torch.tensor([2.0], requires_grad=True)
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        context = torch.set_grad_enabled(False)
+        try:
+            self.assertIs(torch.is_grad_enabled(), False)
+            self.assertFalse((value * value).requires_grad)
+            self.assertIsNone(context.__enter__())
+            self.assertFalse((value * value).requires_grad)
+        finally:
+            context.__exit__(None, None, None)
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertTrue((value * value).requires_grad)
+
+        with torch.set_grad_enabled(False) as entered:
+            self.assertIsNone(entered)
+            self.assertIs(torch.is_grad_enabled(), False)
+            self.assertFalse((value * value).requires_grad)
+            with torch.set_grad_enabled(True):
+                self.assertIs(torch.is_grad_enabled(), True)
+                self.assertTrue((value * value).requires_grad)
+                with torch.no_grad():
+                    self.assertIs(torch.is_grad_enabled(), False)
+                    self.assertFalse((value * value).requires_grad)
+                self.assertIs(torch.is_grad_enabled(), True)
+            self.assertIs(torch.is_grad_enabled(), False)
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        outer = torch.set_grad_enabled(False)
+        try:
+            self.assertIs(torch.is_grad_enabled(), False)
+            with torch.enable_grad():
+                self.assertIs(torch.is_grad_enabled(), True)
+                with outer:
+                    self.assertIs(torch.is_grad_enabled(), False)
+                self.assertIs(torch.is_grad_enabled(), True)
+            self.assertIs(torch.is_grad_enabled(), False)
+        finally:
+            outer.__exit__(None, None, None)
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        with torch.no_grad():
+            context = torch.set_grad_enabled(True)
+            try:
+                self.assertIs(torch.is_grad_enabled(), True)
+                self.assertTrue((value * value).requires_grad)
+            finally:
+                context.__exit__(None, None, None)
+            self.assertIs(torch.is_grad_enabled(), False)
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        with self.assertRaisesRegex(RuntimeError, "restore grad mode"):
+            with torch.set_grad_enabled(False):
+                self.assertIs(torch.is_grad_enabled(), False)
+                raise RuntimeError("restore grad mode")
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        @torch.set_grad_enabled(False)
+        def disabled(input_value: object, scale: float = 1.0) -> object:
+            """A metadata-bearing set-grad callable."""
+            return input_value * scale
+
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertFalse(disabled(value, scale=3.0).requires_grad)
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertEqual(disabled.__name__, "disabled")
+        self.assertEqual(disabled.__doc__, "A metadata-bearing set-grad callable.")
+        self.assertEqual(
+            disabled.__annotations__,
+            {"input_value": object, "scale": float, "return": object},
+        )
+        self.assertEqual(
+            inspect.signature(disabled), inspect.signature(disabled.__wrapped__)
+        )
+
+        with torch.no_grad():
+            @torch.set_grad_enabled(True)
+            def enabled_decorated(input_value):
+                return input_value * input_value
+
+            self.assertIs(torch.is_grad_enabled(), False)
+            self.assertTrue(enabled_decorated(value).requires_grad)
+            self.assertIs(torch.is_grad_enabled(), False)
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        events = []
+
+        @torch.set_grad_enabled(False)
+        def generate():
+            events.append(("next", torch.is_grad_enabled()))
+            request = yield value * value
+            events.append(("send", request, torch.is_grad_enabled()))
+            try:
+                yield value * value
+            except ValueError as error:
+                events.append(("throw", str(error), torch.is_grad_enabled()))
+                yield value * value
+            finally:
+                events.append(("close", torch.is_grad_enabled()))
+
+        generator = generate()
+        self.assertFalse(next(generator).requires_grad)
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertFalse(generator.send("request").requires_grad)
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertFalse(generator.throw(ValueError("injected")).requires_grad)
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertIsNone(generator.close())
+        self.assertEqual(
+            events,
+            [
+                ("next", False),
+                ("send", "request", False),
+                ("throw", "injected", False),
+                ("close", False),
+            ],
+        )
+
+        shared_context = torch.set_grad_enabled(False)
+        worker_states = []
+        failures = []
+
+        def worker():
+            try:
+                worker_states.append(torch.is_grad_enabled())
+                with shared_context:
+                    worker_states.append(torch.is_grad_enabled())
+                worker_states.append(torch.is_grad_enabled())
+            except BaseException as error:
+                failures.append(error)
+
+        try:
+            self.assertIs(torch.is_grad_enabled(), False)
+            thread = threading.Thread(target=worker)
+            thread.start()
+            thread.join()
+            self.assertIs(torch.is_grad_enabled(), False)
+        finally:
+            shared_context.__exit__(None, None, None)
+        self.assertEqual(failures, [])
+        self.assertEqual(worker_states, [True, False, True])
+        self.assertIs(torch.is_grad_enabled(), True)
+
+    def test_set_grad_enabled_rejects_non_bool_modes_without_changing_state(self):
+        class Truthy:
+            def __bool__(self):
+                return True
+
+        for grad_context, expected_state in (
+            (torch.enable_grad, True),
+            (torch.no_grad, False),
+        ):
+            with grad_context():
+                for mode in (1, 0, None, "true", np.bool_(True), Truthy()):
+                    with self.subTest(
+                        context=grad_context.__name__, mode=repr(mode)
+                    ):
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
+                        with self.assertRaisesRegex(TypeError, "must be bool"):
+                            torch.set_grad_enabled(mode)
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
+
     def test_is_grad_enabled_public_contract_and_argument_errors(self):
         function = torch.is_grad_enabled
         self.assertIs(type(function), types.BuiltinFunctionType)
@@ -1301,6 +1464,191 @@ class AutogradReferenceTests(unittest.TestCase):
                     generator_results,
                     events,
                     worker_states,
+                )
+            )
+
+        self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_set_grad_enabled_contexts_match_pytorch_2_13(self):
+        class Truthy:
+            def __bool__(self):
+                return True
+
+        outcomes = []
+        for module in (torch, reference_torch):
+            value = module.tensor([2.0], requires_grad=True)
+            states = [module.is_grad_enabled(), (value * value).requires_grad]
+
+            context = module.set_grad_enabled(False)
+            try:
+                states.append(module.is_grad_enabled())
+                states.append((value * value).requires_grad)
+                states.append(context.__enter__())
+                states.append(module.is_grad_enabled())
+            finally:
+                context.__exit__(None, None, None)
+            states.append(module.is_grad_enabled())
+            states.append((value * value).requires_grad)
+
+            with module.set_grad_enabled(False) as entered:
+                states.append(entered)
+                states.append(module.is_grad_enabled())
+                states.append((value * value).requires_grad)
+                with module.set_grad_enabled(True):
+                    states.append(module.is_grad_enabled())
+                    states.append((value * value).requires_grad)
+                    with module.no_grad():
+                        states.append(module.is_grad_enabled())
+                        states.append((value * value).requires_grad)
+                    states.append(module.is_grad_enabled())
+                states.append(module.is_grad_enabled())
+            states.append(module.is_grad_enabled())
+
+            outer = module.set_grad_enabled(False)
+            try:
+                states.append(module.is_grad_enabled())
+                with module.enable_grad():
+                    states.append(module.is_grad_enabled())
+                    with outer:
+                        states.append(module.is_grad_enabled())
+                    states.append(module.is_grad_enabled())
+                states.append(module.is_grad_enabled())
+            finally:
+                outer.__exit__(None, None, None)
+            states.append(module.is_grad_enabled())
+
+            with module.no_grad():
+                context = module.set_grad_enabled(True)
+                try:
+                    states.append(module.is_grad_enabled())
+                    states.append((value * value).requires_grad)
+                finally:
+                    context.__exit__(None, None, None)
+                states.append(module.is_grad_enabled())
+            states.append(module.is_grad_enabled())
+
+            try:
+                with module.set_grad_enabled(False):
+                    states.append(module.is_grad_enabled())
+                    raise RuntimeError("restore grad mode")
+            except RuntimeError:
+                states.append(module.is_grad_enabled())
+
+            @module.set_grad_enabled(False)
+            def disabled(input_value: object, scale: float = 1.0) -> object:
+                """decorated docs"""
+                return input_value * scale
+
+            states.append(module.is_grad_enabled())
+
+            with module.no_grad():
+                @module.set_grad_enabled(True)
+                def enabled_decorated(input_value):
+                    return input_value * input_value
+
+                enabled_decorator_state = (
+                    module.is_grad_enabled(),
+                    enabled_decorated(value).requires_grad,
+                    module.is_grad_enabled(),
+                )
+
+            disabled_decorator_state = (
+                disabled(value, scale=3.0).requires_grad,
+                module.is_grad_enabled(),
+                disabled.__name__,
+                disabled.__doc__,
+                disabled.__annotations__,
+                str(inspect.signature(disabled)),
+                disabled.__wrapped__.__name__,
+            )
+
+            events = []
+
+            @module.set_grad_enabled(False)
+            def generate():
+                events.append(("next", module.is_grad_enabled()))
+                request = yield value * value
+                events.append(("send", request, module.is_grad_enabled()))
+                try:
+                    yield value * value
+                except ValueError as error:
+                    events.append(("throw", str(error), module.is_grad_enabled()))
+                    yield value * value
+                finally:
+                    events.append(("close", module.is_grad_enabled()))
+
+            generator = generate()
+            generator_results = [
+                inspect.isgeneratorfunction(generate),
+                next(generator).requires_grad,
+                module.is_grad_enabled(),
+                generator.send("request").requires_grad,
+                module.is_grad_enabled(),
+                generator.throw(ValueError("injected")).requires_grad,
+                module.is_grad_enabled(),
+                generator.close(),
+                module.is_grad_enabled(),
+            ]
+
+            shared_context = module.set_grad_enabled(False)
+            worker_states = []
+
+            def worker():
+                worker_states.append(module.is_grad_enabled())
+                with shared_context:
+                    worker_states.append(module.is_grad_enabled())
+                worker_states.append(module.is_grad_enabled())
+
+            try:
+                thread = threading.Thread(target=worker)
+                thread.start()
+                thread.join()
+                states.append(module.is_grad_enabled())
+            finally:
+                shared_context.__exit__(None, None, None)
+            states.append(module.is_grad_enabled())
+
+            errors = []
+            for mode in (1, 0, None, "true", np.bool_(True), Truthy()):
+                before = module.is_grad_enabled()
+                try:
+                    module.set_grad_enabled(mode)
+                except TypeError as error:
+                    errors.append(
+                        (
+                            before,
+                            module.is_grad_enabled(),
+                            type(error).__name__,
+                            str(error),
+                        )
+                    )
+                else:
+                    self.fail(
+                        f"{module.__name__}.set_grad_enabled accepted {mode!r}"
+                    )
+
+            namespace = (
+                module.autograd.set_grad_enabled is module.set_grad_enabled,
+                module.autograd.grad_mode.set_grad_enabled is module.set_grad_enabled,
+                module.set_grad_enabled.__name__,
+                module.set_grad_enabled.__qualname__,
+                module.set_grad_enabled.__module__.removeprefix(module.__name__),
+                str(inspect.signature(module.set_grad_enabled)),
+                "set_grad_enabled" in module.__all__,
+                "set_grad_enabled" in module.autograd.__all__,
+                "set_grad_enabled" in module.autograd.grad_mode.__all__,
+            )
+
+            outcomes.append(
+                (
+                    states,
+                    disabled_decorator_state,
+                    enabled_decorator_state,
+                    generator_results,
+                    events,
+                    worker_states,
+                    errors,
+                    namespace,
                 )
             )
 

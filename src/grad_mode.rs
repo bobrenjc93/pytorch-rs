@@ -81,6 +81,11 @@ pub(crate) fn enter_enable_grad() -> GradModeToken {
     enter_grad_mode(true)
 }
 
+#[cfg(feature = "python-bindings")]
+pub(crate) fn enter_set_grad_enabled(enabled: bool) -> GradModeToken {
+    enter_grad_mode(enabled)
+}
+
 pub(crate) fn exit_grad_mode(token: GradModeToken) {
     GRAD_MODE_STACK.with_borrow_mut(|stack| {
         let position = stack
@@ -89,6 +94,11 @@ pub(crate) fn exit_grad_mode(token: GradModeToken) {
             .expect("grad-mode guard exited without a matching entry");
         stack.remove(position);
     });
+}
+
+#[cfg(feature = "python-bindings")]
+pub(crate) fn is_current_grad_mode_token(token: GradModeToken) -> bool {
+    GRAD_MODE_STACK.with_borrow(|stack| stack.last().is_some_and(|entry| entry.token.0 == token.0))
 }
 
 fn enter_grad_mode(enabled: bool) -> GradModeToken {
