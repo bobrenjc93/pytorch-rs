@@ -60,9 +60,7 @@ class TopLevelSumTests(unittest.TestCase):
 
     @staticmethod
     def value_cases():
-        dense = torch.tensor(
-            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
-        )
+        dense = torch.tensor(np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist())
         noncontiguous = dense.transpose(0, 2)
         return (
             ("scalar", torch.tensor(-3.5)),
@@ -140,7 +138,96 @@ class TopLevelSumTests(unittest.TestCase):
         source = torch.tensor(
             matrix.tolist(), dtype=torch.float32, requires_grad=requires_grad
         )
-        return source, source.transpose(0, 1)[selected_column], matrix[:, selected_column]
+        return (
+            source,
+            source.transpose(0, 1)[selected_column],
+            matrix[:, selected_column],
+        )
+
+    @staticmethod
+    def rank_one_dim_cases():
+        contiguous_base = torch.tensor([-5.0, 1.0, -2.0, 3.0, 4.0], dtype=torch.float32)
+        noncontiguous_base, noncontiguous, selected = (
+            TopLevelSumTests.rank_one_strided_vector([1.0, -2.0, 3.0, -4.0])
+        )
+        return (
+            (
+                "empty",
+                torch.zeros((0, 5), dtype=torch.float32).transpose(0, 1)[2],
+                np.float32(0.0),
+            ),
+            ("offset", contiguous_base[1:], np.float32(6.0)),
+            (
+                "noncontiguous",
+                noncontiguous,
+                TopLevelSumTests.sequential_float32_sum(selected),
+            ),
+            (
+                "noncontiguous base",
+                noncontiguous_base.transpose(0, 1)[0],
+                np.float32(2.0),
+            ),
+        )
+
+    @staticmethod
+    def supported_rank_one_dim_calls(source):
+        class IntSubclass(int):
+            pass
+
+        class IndexOnly:
+            def __index__(self):
+                return 0
+
+        return (
+            ("positional dim zero", False, lambda: torch.sum(source, 0)),
+            ("positional dim negative", False, lambda: torch.sum(source, -1)),
+            (
+                "keyword dim zero dtype none",
+                False,
+                lambda: torch.sum(input=source, dim=0, keepdim=False, dtype=None),
+            ),
+            (
+                "keyword dim negative dtype none",
+                False,
+                lambda: torch.sum(input=source, dim=-1, keepdim=False, dtype=None),
+            ),
+            (
+                "keyword dim zero keepdim dtype none",
+                True,
+                lambda: torch.sum(input=source, dim=0, keepdim=True, dtype=None),
+            ),
+            (
+                "keyword dim negative keepdim",
+                True,
+                lambda: torch.sum(source, dim=-1, keepdim=True, dtype=None),
+            ),
+            (
+                "dim out none",
+                False,
+                lambda: torch.sum(source, dim=0, keepdim=False, dtype=None, out=None),
+            ),
+            (
+                "dim keepdim out none",
+                True,
+                lambda: torch.sum(source, dim=-1, keepdim=True, dtype=None, out=None),
+            ),
+            ("integer subclass dim", False, lambda: torch.sum(source, IntSubclass(0))),
+            (
+                "numpy integer dim keepdim",
+                True,
+                lambda: torch.sum(input=source, dim=np.int64(-1), keepdim=True),
+            ),
+            (
+                "tuple integer protocol dim",
+                False,
+                lambda: torch.sum(source, (IndexOnly(),)),
+            ),
+            (
+                "list numpy integer dim keepdim",
+                True,
+                lambda: torch.sum(source, [np.int64(-1)], keepdim=True),
+            ),
+        )
 
     @staticmethod
     def sequential_float32_sum(values):
@@ -307,6 +394,89 @@ class TopLevelSumTests(unittest.TestCase):
         )
         self.assertFalse(untracked.requires_grad)
         self.assertTrue(untracked.is_leaf)
+
+    def test_rank_one_dim_reductions_delegate_to_full_sum_values_and_metadata(self):
+        for case, source, expected in self.rank_one_dim_cases():
+            full_sum = source.sum()
+            for form, keepdim, call in self.supported_rank_one_dim_calls(source):
+                if keepdim:
+                    self.assert_keepdim_matches(
+                        call(), full_sum, source, case=(case, form)
+                    )
+                else:
+                    self.assert_scalar_matches(
+                        call(), full_sum, source, case=(case, form)
+                    )
+                self.assertEqual(
+                    np.float32(full_sum.item()).view(np.uint32).item(),
+                    np.float32(expected).view(np.uint32).item(),
+                )
+
+    def test_rank_one_dim_reductions_reuse_full_sum_vjp(self):
+        empty = torch.zeros((0, 5), dtype=torch.float32, requires_grad=True)
+        empty_view = empty.transpose(0, 1)[2]
+        torch.sum(empty_view, dim=0).backward()
+        self.assertEqual(empty.grad.shape, empty.shape)
+        self.assertEqual(empty.grad.tolist(), [])
+
+        leaf, view, _ = self.rank_one_strided_vector(
+            np.arange(1, 21, dtype=np.float32).reshape(4, 5)[:, 2],
+            requires_grad=True,
+        )
+        loss = torch.sum(view, dim=-1)
+        self.assertTrue(loss.requires_grad)
+        self.assertFalse(loss.is_leaf)
+        loss.backward()
+        loss.backward()
+        expected_gradient = np.zeros((4, 5), dtype=np.float32)
+        expected_gradient[:, 2] = 2.0
+        np.testing.assert_array_equal(np.asarray(leaf.grad), expected_gradient)
+
+        kept_leaf, kept_view, _ = self.rank_one_strided_vector(
+            [1.0, -2.0, 3.0], requires_grad=True
+        )
+        kept = torch.sum(kept_view, dim=0, keepdim=True)
+        self.assert_keepdim_matches(kept, kept_view.sum(), kept_view, case="kept")
+        kept.sum().backward()
+        expected_kept_gradient = np.zeros((3, 5), dtype=np.float32)
+        expected_kept_gradient[:, 2] = 1.0
+        np.testing.assert_array_equal(
+            np.asarray(kept_leaf.grad), expected_kept_gradient
+        )
+
+    def test_rank_one_dim_error_ordering(self):
+        tensor = torch.ones((2,), dtype=torch.float32)
+        cases = (
+            (
+                lambda: torch.sum(tensor, 2**100, "bad"),
+                TypeError,
+                "sum(): argument 'keepdim' (position 3) must be bool, not str",
+            ),
+            (
+                lambda: torch.sum(tensor, 2**100, dtype=1),
+                TypeError,
+                "sum(): argument 'dtype' must be torch.dtype, not int",
+            ),
+            (
+                lambda: torch.sum(tensor, 2**100, out=[]),
+                TypeError,
+                "sum(): argument 'out' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.sum(tensor, 2**100),
+                ValueError,
+                "Overflow when unpacking long long",
+            ),
+            (
+                lambda: torch.sum(tensor, "bad", "bad"),
+                TypeError,
+                "sum(): argument 'dim' (position 2) must be tuple of ints, not str",
+            ),
+        )
+        for call, error_type, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(error_type, f"^{re.escape(message)}"):
+                    call()
 
     def test_modes_and_overrides_observe_calls_before_native_limits(self):
         tensor = torch.tensor([[1.0, -2.0], [3.0, 4.0]], requires_grad=True)
@@ -576,7 +746,7 @@ class TopLevelSumTests(unittest.TestCase):
             with self.subTest(case=case):
                 with self.assertRaisesRegex(
                     NotImplementedError,
-                    r"^sum\(\): only full reductions with dim=None support keepdim; dim and out reductions are not supported$",
+                    r"^sum\(\): only full reductions with dim=None and rank-1 dim=0/-1 reductions are supported; broader dim reductions and concrete out are not supported$",
                 ):
                     call()
         self.assertEqual(destination.tolist(), [17.0, 19.0, 23.0])
