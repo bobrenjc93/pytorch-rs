@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 thread_local! {
+    static BASE_GRAD_MODE_ENABLED: Cell<bool> = const { Cell::new(true) };
     static GRAD_MODE_STACK: RefCell<Vec<GradModeEntry>> = const { RefCell::new(Vec::new()) };
     static NEXT_GRAD_MODE_TOKEN: Cell<usize> = const { Cell::new(0) };
 }
@@ -70,7 +71,11 @@ pub fn enable_grad() -> EnableGradGuard {
 /// Returns whether eager graph recording is enabled on the current thread.
 #[must_use]
 pub fn is_grad_enabled() -> bool {
-    GRAD_MODE_STACK.with_borrow(|stack| stack.last().is_none_or(|entry| entry.enabled))
+    GRAD_MODE_STACK.with_borrow(|stack| {
+        stack
+            .last()
+            .map_or_else(|| BASE_GRAD_MODE_ENABLED.get(), |entry| entry.enabled)
+    })
 }
 
 pub(crate) fn enter_no_grad() -> GradModeToken {
@@ -81,9 +86,17 @@ pub(crate) fn enter_enable_grad() -> GradModeToken {
     enter_grad_mode(true)
 }
 
-#[cfg(feature = "python-bindings")]
-pub(crate) fn enter_set_grad_enabled(enabled: bool) -> GradModeToken {
-    enter_grad_mode(enabled)
+#[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+pub(crate) fn set_grad_enabled(enabled: bool) -> bool {
+    let previous_enabled = is_grad_enabled();
+    GRAD_MODE_STACK.with_borrow_mut(|stack| {
+        if let Some(entry) = stack.last_mut() {
+            entry.enabled = enabled;
+        } else {
+            BASE_GRAD_MODE_ENABLED.set(enabled);
+        }
+    });
+    previous_enabled
 }
 
 pub(crate) fn exit_grad_mode(token: GradModeToken) {
@@ -94,11 +107,6 @@ pub(crate) fn exit_grad_mode(token: GradModeToken) {
             .expect("grad-mode guard exited without a matching entry");
         stack.remove(position);
     });
-}
-
-#[cfg(feature = "python-bindings")]
-pub(crate) fn is_current_grad_mode_token(token: GradModeToken) -> bool {
-    GRAD_MODE_STACK.with_borrow(|stack| stack.last().is_some_and(|entry| entry.token.0 == token.0))
 }
 
 fn enter_grad_mode(enabled: bool) -> GradModeToken {
@@ -113,4 +121,56 @@ fn enter_grad_mode(enabled: bool) -> GradModeToken {
     });
     GRAD_MODE_STACK.with_borrow_mut(|stack| stack.push(GradModeEntry { token, enabled }));
     token
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        BASE_GRAD_MODE_ENABLED, GRAD_MODE_STACK, enable_grad, is_grad_enabled, no_grad,
+        set_grad_enabled,
+    };
+
+    #[test]
+    fn set_grad_enabled_updates_current_state_without_pushing_context_entries() {
+        BASE_GRAD_MODE_ENABLED.set(true);
+        GRAD_MODE_STACK.with_borrow_mut(Vec::clear);
+        assert!(is_grad_enabled());
+
+        assert!(set_grad_enabled(false));
+        assert!(!is_grad_enabled());
+        GRAD_MODE_STACK.with_borrow(|stack| assert!(stack.is_empty()));
+
+        assert!(!set_grad_enabled(true));
+        assert!(is_grad_enabled());
+        GRAD_MODE_STACK.with_borrow(|stack| assert!(stack.is_empty()));
+
+        {
+            let _guard = no_grad();
+            assert!(!is_grad_enabled());
+            assert!(!set_grad_enabled(true));
+            assert!(is_grad_enabled());
+            GRAD_MODE_STACK.with_borrow(|stack| assert_eq!(stack.len(), 1));
+        }
+        assert!(is_grad_enabled());
+
+        set_grad_enabled(false);
+        {
+            let _guard = enable_grad();
+            assert!(is_grad_enabled());
+            assert!(set_grad_enabled(false));
+            assert!(!is_grad_enabled());
+            GRAD_MODE_STACK.with_borrow(|stack| assert_eq!(stack.len(), 1));
+        }
+        assert!(!is_grad_enabled());
+
+        let outer = no_grad();
+        let inner = no_grad();
+        drop(outer);
+        assert!(!is_grad_enabled());
+        drop(inner);
+        assert!(!is_grad_enabled());
+
+        BASE_GRAD_MODE_ENABLED.set(true);
+        GRAD_MODE_STACK.with_borrow_mut(Vec::clear);
+    }
 }

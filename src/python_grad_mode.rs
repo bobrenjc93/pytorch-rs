@@ -10,8 +10,8 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBool, PyModule};
 
 use crate::{
-    enter_enable_grad, enter_no_grad, enter_set_grad_enabled, exit_grad_mode,
-    grad_mode::GradModeToken, is_current_grad_mode_token, python::python_type_name,
+    enter_enable_grad, enter_no_grad, exit_grad_mode, grad_mode::GradModeToken,
+    python::python_type_name, set_grad_enabled as core_set_grad_enabled,
 };
 
 const GRAD_MODE_WRAPPER_SOURCE: &CStr = cr#"
@@ -105,54 +105,24 @@ def _make_enable_grad(context_base):
     return enable_grad
 
 
-def _make_set_grad_enabled(context_base):
+def _make_set_grad_enabled(set_grad_enabled_native):
     def _set_grad_enabled_signature(mode: bool) -> None:
         pass
 
-    class set_grad_enabled(context_base):
-        def __new__(cls, *args, **kwargs):
-            if cls is set_grad_enabled:
-                if len(args) > 1:
-                    given = len(args) + 1
-                    raise TypeError(
-                        "set_grad_enabled.__init__() takes 2 positional "
-                        f"arguments but {given} were given"
-                    )
-                for key in kwargs:
-                    if key != "mode":
-                        raise TypeError(
-                            "set_grad_enabled.__init__() got an unexpected "
-                            f"keyword argument '{key}'"
-                        )
-                if args and "mode" in kwargs:
-                    raise TypeError(
-                        "set_grad_enabled.__init__() got multiple values "
-                        "for argument 'mode'"
-                    )
-
-            elif not args and "mode" not in kwargs:
-                raise TypeError(
-                    "set_grad_enabled.__init__() missing 1 required "
-                    "positional argument: 'mode'"
-                )
-
-            if args:
-                mode = args[0]
-            elif "mode" in kwargs:
-                mode = kwargs["mode"]
-            else:
-                raise TypeError(
-                    "set_grad_enabled.__init__() missing 1 required "
-                    "positional argument: 'mode'"
-                )
-            return super().__new__(cls, mode)
-
+    class set_grad_enabled:
         def __init__(self, mode: bool) -> None:
-            pass
+            self.prev = set_grad_enabled_native(mode)
+            self.mode = mode
 
         def __call__(self, function):
-            self.__exit__(None, None, None)
+            set_grad_enabled_native(self.prev)
             return _decorate_grad_mode(lambda: type(self)(self.mode), function)
+
+        def __enter__(self) -> None:
+            set_grad_enabled_native(self.mode)
+
+        def __exit__(self, exc_type, exc_value, traceback) -> None:
+            set_grad_enabled_native(self.prev)
 
         def __reduce__(self):
             from torch_rs.autograd.grad_mode import _reduce_set_grad_enabled
@@ -204,16 +174,6 @@ fn pop_context_token(
         tokens_by_thread.remove(&thread_id);
     }
     token
-}
-
-fn current_thread_context_token(
-    tokens_by_thread: &Mutex<HashMap<ThreadId, Vec<GradModeToken>>>,
-) -> Option<GradModeToken> {
-    tokens_by_thread
-        .lock()
-        .expect("grad-mode context token mutex is poisoned")
-        .get(&thread::current().id())
-        .and_then(|tokens| tokens.last().copied())
 }
 
 /// Thread-local autograd recording guard underlying the Python `torch.no_grad` class.
@@ -294,71 +254,22 @@ impl PyEnableGrad {
     }
 }
 
-/// Thread-local autograd recording guard underlying the Python `torch.set_grad_enabled` class.
-#[pyclass(
-    name = "_SetGradEnabledContext",
-    module = "torch_rs",
-    subclass,
-    skip_from_py_object
-)]
-struct PySetGradEnabled {
-    mode: bool,
-    tokens_by_thread: Mutex<HashMap<ThreadId, Vec<GradModeToken>>>,
-}
-
-#[pymethods]
-impl PySetGradEnabled {
-    #[new]
-    #[pyo3(signature = (mode))]
-    fn new(mode: &Bound<'_, PyAny>) -> PyResult<Self> {
-        if !mode.is_exact_instance_of::<PyBool>() {
-            let type_name = python_type_name(mode)?;
-            return Err(PyTypeError::new_err(format!(
-                "set_grad_enabled(): argument 'enabled' (position 1) must be bool, not {type_name}"
-            )));
-        }
-        let mode = mode.is_truthy()?;
-        let token = enter_set_grad_enabled(mode);
-        let mut tokens_by_thread = HashMap::new();
-        tokens_by_thread.insert(thread::current().id(), vec![token]);
-        Ok(Self {
-            mode,
-            tokens_by_thread: Mutex::new(tokens_by_thread),
-        })
+#[pyfunction(name = "_set_grad_enabled", signature = (enabled, /), text_signature = None)]
+fn set_grad_enabled_native(enabled: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if !enabled.is_exact_instance_of::<PyBool>() {
+        let type_name = python_type_name(enabled)?;
+        return Err(PyTypeError::new_err(format!(
+            "set_grad_enabled(): argument 'enabled' (position 1) must be bool, not {type_name}"
+        )));
     }
-
-    #[getter]
-    fn mode(&self) -> bool {
-        self.mode
-    }
-
-    fn __enter__(&self) {
-        let token_is_current = current_thread_context_token(&self.tokens_by_thread)
-            .is_some_and(is_current_grad_mode_token);
-        if !token_is_current {
-            let token = enter_set_grad_enabled(self.mode);
-            push_context_token(&self.tokens_by_thread, token);
-        }
-    }
-
-    #[allow(clippy::unused_self)] // Python's context-manager protocol requires an instance method.
-    fn __exit__(
-        &self,
-        _exception_type: &Bound<'_, PyAny>,
-        _exception_value: &Bound<'_, PyAny>,
-        _traceback: &Bound<'_, PyAny>,
-    ) {
-        if let Some(token) = pop_context_token(&self.tokens_by_thread) {
-            exit_grad_mode(token);
-        }
-    }
+    Ok(core_set_grad_enabled(enabled.is_truthy()?))
 }
 
 pub(crate) fn add_grad_mode_contexts(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     module.add_class::<PyNoGrad>()?;
     module.add_class::<PyEnableGrad>()?;
-    module.add_class::<PySetGradEnabled>()?;
+    module.add_function(wrap_pyfunction!(set_grad_enabled_native, module)?)?;
     let grad_mode_helpers = PyModule::from_code(
         py,
         GRAD_MODE_WRAPPER_SOURCE,
@@ -373,18 +284,14 @@ pub(crate) fn add_grad_mode_contexts(module: &Bound<'_, PyModule>) -> PyResult<(
         .call1((module.getattr("_EnableGradContext")?,))?;
     let set_grad_enabled_class = grad_mode_helpers
         .getattr("_make_set_grad_enabled")?
-        .call1((module.getattr("_SetGradEnabledContext")?,))?;
+        .call1((module.getattr("_set_grad_enabled")?,))?;
     let exports = module.getattr("__all__")?;
-    for name in [
-        "_NoGradContext",
-        "_EnableGradContext",
-        "_SetGradEnabledContext",
-    ] {
+    for name in ["_NoGradContext", "_EnableGradContext", "_set_grad_enabled"] {
         exports.call_method1("remove", (name,))?;
     }
     module.delattr("_NoGradContext")?;
     module.delattr("_EnableGradContext")?;
-    module.delattr("_SetGradEnabledContext")?;
+    module.delattr("_set_grad_enabled")?;
     module.add("no_grad", no_grad_class)?;
     module.add("enable_grad", enable_grad_class)?;
     module.add("set_grad_enabled", set_grad_enabled_class)?;

@@ -1,5 +1,7 @@
+import copy
 import gc
 import inspect
+import pickle
 import statistics
 import threading
 import time
@@ -178,6 +180,13 @@ class AutogradApiTests(unittest.TestCase):
         value = torch.tensor([2.0], requires_grad=True)
         self.assertIs(torch.is_grad_enabled(), True)
 
+        torch.set_grad_enabled(False)
+        self.assertIs(torch.is_grad_enabled(), False)
+        self.assertFalse((value * value).requires_grad)
+        torch.set_grad_enabled(True)
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertTrue((value * value).requires_grad)
+
         context = torch.set_grad_enabled(False)
         try:
             self.assertIs(torch.is_grad_enabled(), False)
@@ -317,6 +326,82 @@ class AutogradApiTests(unittest.TestCase):
         self.assertEqual(failures, [])
         self.assertEqual(worker_states, [True, False, True])
         self.assertIs(torch.is_grad_enabled(), True)
+
+    def test_set_grad_enabled_copy_and_pickle_do_not_mutate_grad_mode(self):
+        for context_factory, expected_state, requested_mode in (
+            (torch.enable_grad, True, False),
+            (torch.no_grad, False, True),
+        ):
+            with context_factory():
+                context = torch.set_grad_enabled(requested_mode)
+                self.assertIs(torch.is_grad_enabled(), requested_mode)
+
+                for operation in (copy.copy, copy.deepcopy):
+                    with self.subTest(
+                        context=context_factory.__name__,
+                        operation=operation.__name__,
+                        active=True,
+                    ):
+                        restored = operation(context)
+                        self.assertIs(torch.is_grad_enabled(), requested_mode)
+                        self.assertIs(type(restored), torch.set_grad_enabled)
+                        self.assertIs(restored.mode, requested_mode)
+                        self.assertIs(restored.prev, expected_state)
+                        restored.__exit__(None, None, None)
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
+                        torch.set_grad_enabled(requested_mode)
+
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                    with self.subTest(
+                        context=context_factory.__name__,
+                        protocol=protocol,
+                        active=True,
+                    ):
+                        restored = pickle.loads(
+                            pickle.dumps(context, protocol=protocol)
+                        )
+                        self.assertIs(torch.is_grad_enabled(), requested_mode)
+                        self.assertIs(type(restored), torch.set_grad_enabled)
+                        self.assertIs(restored.mode, requested_mode)
+                        self.assertIs(restored.prev, expected_state)
+                        restored.__exit__(None, None, None)
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
+                        torch.set_grad_enabled(requested_mode)
+
+                context.__exit__(None, None, None)
+                self.assertIs(torch.is_grad_enabled(), expected_state)
+
+                for operation in (copy.copy, copy.deepcopy):
+                    with self.subTest(
+                        context=context_factory.__name__,
+                        operation=operation.__name__,
+                        active=False,
+                    ):
+                        restored = operation(context)
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
+                        self.assertIs(type(restored), torch.set_grad_enabled)
+                        self.assertIs(restored.mode, requested_mode)
+                        self.assertIs(restored.prev, expected_state)
+                        with restored:
+                            self.assertIs(torch.is_grad_enabled(), requested_mode)
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
+
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                    with self.subTest(
+                        context=context_factory.__name__,
+                        protocol=protocol,
+                        active=False,
+                    ):
+                        restored = pickle.loads(
+                            pickle.dumps(context, protocol=protocol)
+                        )
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
+                        self.assertIs(type(restored), torch.set_grad_enabled)
+                        self.assertIs(restored.mode, requested_mode)
+                        self.assertIs(restored.prev, expected_state)
+                        with restored:
+                            self.assertIs(torch.is_grad_enabled(), requested_mode)
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
 
     def test_set_grad_enabled_rejects_non_bool_modes_without_changing_state(self):
         class Truthy:
@@ -1479,6 +1564,13 @@ class AutogradReferenceTests(unittest.TestCase):
             value = module.tensor([2.0], requires_grad=True)
             states = [module.is_grad_enabled(), (value * value).requires_grad]
 
+            module.set_grad_enabled(False)
+            states.append(module.is_grad_enabled())
+            states.append((value * value).requires_grad)
+            module.set_grad_enabled(True)
+            states.append(module.is_grad_enabled())
+            states.append((value * value).requires_grad)
+
             context = module.set_grad_enabled(False)
             try:
                 states.append(module.is_grad_enabled())
@@ -1608,6 +1700,96 @@ class AutogradReferenceTests(unittest.TestCase):
                 shared_context.__exit__(None, None, None)
             states.append(module.is_grad_enabled())
 
+            copy_results = []
+            for context_factory, expected_state, requested_mode in (
+                (module.enable_grad, True, False),
+                (module.no_grad, False, True),
+            ):
+                with context_factory():
+                    context = module.set_grad_enabled(requested_mode)
+                    copy_results.append(module.is_grad_enabled())
+
+                    for operation in (copy.copy, copy.deepcopy):
+                        restored = operation(context)
+                        copy_results.append(
+                            (
+                                module.is_grad_enabled(),
+                                type(restored) is module.set_grad_enabled,
+                                restored.mode,
+                                restored.prev,
+                            )
+                        )
+                        restored.__exit__(None, None, None)
+                        copy_results.append(module.is_grad_enabled())
+                        module.set_grad_enabled(requested_mode)
+                        copy_results.append(module.is_grad_enabled())
+
+                    protocol_results = []
+                    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                        restored = pickle.loads(
+                            pickle.dumps(context, protocol=protocol)
+                        )
+                        protocol_results.append(
+                            (
+                                module.is_grad_enabled(),
+                                type(restored) is module.set_grad_enabled,
+                                restored.mode,
+                                restored.prev,
+                            )
+                        )
+                        restored.__exit__(None, None, None)
+                        protocol_results.append(module.is_grad_enabled())
+                        module.set_grad_enabled(requested_mode)
+                        protocol_results.append(module.is_grad_enabled())
+                    copy_results.append(tuple(protocol_results))
+
+                    context.__exit__(None, None, None)
+                    copy_results.append(module.is_grad_enabled())
+
+                    shallow = copy.copy(context)
+                    copy_results.append(
+                        (
+                            module.is_grad_enabled(),
+                            type(shallow) is module.set_grad_enabled,
+                            shallow.mode,
+                            shallow.prev,
+                        )
+                    )
+                    with shallow:
+                        copy_results.append(module.is_grad_enabled())
+                    copy_results.append(module.is_grad_enabled())
+
+                    deep = copy.deepcopy(context)
+                    copy_results.append(
+                        (
+                            module.is_grad_enabled(),
+                            type(deep) is module.set_grad_enabled,
+                            deep.mode,
+                            deep.prev,
+                        )
+                    )
+                    with deep:
+                        copy_results.append(module.is_grad_enabled())
+                    copy_results.append(module.is_grad_enabled())
+
+                    protocol_results = []
+                    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                        restored = pickle.loads(
+                            pickle.dumps(context, protocol=protocol)
+                        )
+                        protocol_results.append(
+                            (
+                                module.is_grad_enabled(),
+                                type(restored) is module.set_grad_enabled,
+                                restored.mode,
+                                restored.prev,
+                            )
+                        )
+                        with restored:
+                            protocol_results.append(module.is_grad_enabled())
+                        protocol_results.append(module.is_grad_enabled())
+                    copy_results.append(tuple(protocol_results))
+
             errors = []
             for mode in (1, 0, None, "true", np.bool_(True), Truthy()):
                 before = module.is_grad_enabled()
@@ -1647,6 +1829,7 @@ class AutogradReferenceTests(unittest.TestCase):
                     generator_results,
                     events,
                     worker_states,
+                    copy_results,
                     errors,
                     namespace,
                 )
