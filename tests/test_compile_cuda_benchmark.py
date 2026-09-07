@@ -28,6 +28,12 @@ from torch_rs import (
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 BENCHMARK_SCRIPT = REPOSITORY_ROOT / "scripts" / "benchmark_compile_cuda.py"
+CUDA_BENCHMARK_ARTIFACT = (
+    REPOSITORY_ROOT
+    / "docs"
+    / "benchmark-data"
+    / "torch-compile-cuda-h100-shape-matrix-v11.json"
+)
 
 spec = importlib.util.spec_from_file_location(
     "_torch_rs_compile_cuda_benchmark_for_tests",
@@ -416,124 +422,167 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
         return reference_torch
 
     def test_checked_in_cuda_prepared_executor_artifact_records_reuse(self):
-        artifact = (
-            REPOSITORY_ROOT
-            / "docs"
-            / "benchmark-data"
-            / "torch-compile-cuda-h100-runtime-ownership-v10.json"
-        )
-        report = json.loads(artifact.read_text(encoding="utf-8"))
-        candidate = report["candidate"]
-        reference = report["reference_workload"]
-        reuse = candidate["prepared_executor_reuse"]
-        unprepared = candidate["unprepared_compatibility_comparison"]
+        report = json.loads(CUDA_BENCHMARK_ARTIFACT.read_text(encoding="utf-8"))
+        results = report["workload_results"]
+        expected_shapes = {
+            tuple(cell["shape"]) for cell in benchmark_compile_cuda.WORKLOAD_MATRIX
+        }
 
+        self.assertEqual(
+            report["schema_version"],
+            benchmark_compile_cuda.BENCHMARK_SCHEMA_VERSION,
+        )
         self.assertEqual(
             report["environment"]["benchmark_version"],
             benchmark_compile_cuda.BENCHMARK_VERSION,
         )
-        self.assertEqual(candidate["status"], "ok")
-        self.assertIs(
-            candidate["eligibility"]["eligible_cuda_compile_evidence"],
-            True,
-        )
-        self.assertEqual(candidate["eligibility"]["rejection_reasons"], [])
-        self.assertEqual(reuse["before_first_call_invocation_count"], 0)
         self.assertEqual(
-            reuse["observed_invocation_count"],
-            reuse["expected_invocation_count"],
+            report["environment"]["workload_matrix_version"],
+            benchmark_compile_cuda.WORKLOAD_MATRIX_VERSION,
+        )
+        self.assertEqual(len(results), len(benchmark_compile_cuda.WORKLOAD_MATRIX))
+        self.assertEqual(
+            {tuple(result["workload"]["shape"]) for result in results},
+            expected_shapes,
         )
         self.assertEqual(
-            reuse["last_invocation_index"],
-            reuse["expected_invocation_count"],
+            [result["workload"]["weight"] for result in results],
+            [0.25, 0.25, 0.25, 0.25],
         )
-        self.assertIs(reuse["steady_state_reused_prepared_executor"], True)
-        self.assertIs(reuse["setup_hoisted_to_compile_wrapper"], True)
         self.assertEqual(
-            candidate["prepared_executor"]["preparation_id"],
-            candidate["prepared_executor_after_timing"]["preparation_id"],
-        )
-        self.assertLess(
-            candidate["steady"]["median_us"],
-            unprepared["steady"]["median_us"],
+            report["aggregates"]["workload_count"],
+            len(benchmark_compile_cuda.WORKLOAD_MATRIX),
         )
         self.assertGreater(
             report["aggregates"]["torch_rs_cuda_compile_score_percent"],
-            21.3,
-        )
-        self.assertGreater(
-            reuse["prepared_vs_unprepared_steady_speedup"],
-            2.0,
-        )
-        self.assertIs(reuse["output_pool_enabled"], True)
-        self.assertGreaterEqual(reuse["output_pool_initial_capacity"], 2)
-        self.assertEqual(reuse["output_pool_live_buffers_after_timing"], 0)
-        self.assertIs(reuse["steady_state_reused_output_buffer"], True)
-        self.assertIs(reuse["steady_state_output_allocated_in_execute"], False)
-        self.assertIs(candidate["timing_boundary"]["compiled_calls_only"], True)
-        self.assertIs(
-            candidate["timing_boundary"]["materialization_outside_timed_region"],
-            True,
-        )
-        self.assertIs(reference["timing_boundary"]["compiled_calls_only"], True)
-        self.assertIs(
-            reference["timing_boundary"]["materialization_outside_timed_region"],
-            True,
+            0.0,
         )
         self.assertEqual(
-            reference["timing_boundary"][
-                "explicit_cuda_synchronize_before_timed_region"
-            ],
-            candidate["timing_boundary"][
-                "explicit_cuda_synchronize_before_timed_region"
-            ],
-        )
-        self.assertEqual(
-            reference["timing_boundary"][
-                "explicit_cuda_synchronize_after_timed_region"
-            ],
-            candidate["timing_boundary"][
-                "explicit_cuda_synchronize_after_timed_region"
-            ],
-        )
-        self.assertIs(candidate["compile_execution"]["readback_deferred"], True)
-        self.assertIs(candidate["compile_execution"]["output_materialized"], True)
-        self.assertIs(
-            candidate["compile_execution"]["kernel_synchronized_in_call"],
-            False,
-        )
-        self.assertIsNone(
-            candidate["compile_execution"]["launch"]["sync_error"]["result"]
-        )
-        self.assertEqual(
-            candidate["compile_execution"]["calls"][
-                "cudaSetDevice_before_launch"
-            ]["result"],
+            report["aggregates"]["zero_credit_unsupported_cell_count"],
             0,
         )
-        self.assertEqual(
-            candidate["compile_execution"]["calls"][
-                "cudaGetDevice_before_launch"
-            ]["value"],
-            0,
-        )
-        self.assertIs(
-            candidate["last_compile_execution"]["output_buffer_pool"][
-                "reused_released_allocation"
-            ],
-            True,
-        )
-        self.assertEqual(
-            candidate["steady_checksums"],
-            [report["reference_workload"]["cold_checksum"]],
-        )
-        self.assertEqual(unprepared["steady_checksums"], candidate["steady_checksums"])
+
+        for result in results:
+            workload = result["workload"]
+            candidate = result["candidate"]
+            reference = result["reference_workload"]
+            reuse = candidate["prepared_executor_reuse"]
+            unprepared = candidate["unprepared_compatibility_comparison"]
+            rows, _columns = workload["shape"]
+
+            self.assertEqual(candidate["status"], "ok")
+            self.assertEqual(candidate["workload"], workload)
+            self.assertEqual(reference["workload"], workload)
+            self.assertIs(
+                candidate["eligibility"]["eligible_cuda_compile_evidence"],
+                True,
+            )
+            self.assertEqual(candidate["eligibility"]["rejection_reasons"], [])
+            self.assertEqual(reuse["before_first_call_invocation_count"], 0)
+            self.assertEqual(
+                reuse["observed_invocation_count"],
+                reuse["expected_invocation_count"],
+            )
+            self.assertEqual(
+                reuse["last_invocation_index"],
+                reuse["expected_invocation_count"],
+            )
+            self.assertIs(reuse["steady_state_reused_prepared_executor"], True)
+            self.assertIs(reuse["setup_hoisted_to_compile_wrapper"], True)
+            self.assertEqual(
+                candidate["prepared_executor"]["preparation_id"],
+                candidate["prepared_executor_after_timing"]["preparation_id"],
+            )
+            self.assertLess(
+                candidate["steady"]["median_us"],
+                unprepared["steady"]["median_us"],
+            )
+            self.assertGreater(
+                reuse["prepared_vs_unprepared_steady_speedup"],
+                2.0,
+            )
+            self.assertIs(reuse["output_pool_enabled"], True)
+            self.assertGreaterEqual(reuse["output_pool_initial_capacity"], 2)
+            self.assertEqual(reuse["output_pool_live_buffers_after_timing"], 0)
+            self.assertIs(reuse["steady_state_reused_output_buffer"], True)
+            self.assertIs(reuse["steady_state_output_allocated_in_execute"], False)
+            self.assertIs(candidate["timing_boundary"]["compiled_calls_only"], True)
+            self.assertIs(
+                candidate["timing_boundary"]["materialization_outside_timed_region"],
+                True,
+            )
+            self.assertIs(reference["timing_boundary"]["compiled_calls_only"], True)
+            self.assertIs(
+                reference["timing_boundary"]["materialization_outside_timed_region"],
+                True,
+            )
+            self.assertEqual(
+                reference["timing_boundary"][
+                    "explicit_cuda_synchronize_before_timed_region"
+                ],
+                candidate["timing_boundary"][
+                    "explicit_cuda_synchronize_before_timed_region"
+                ],
+            )
+            self.assertEqual(
+                reference["timing_boundary"][
+                    "explicit_cuda_synchronize_after_timed_region"
+                ],
+                candidate["timing_boundary"][
+                    "explicit_cuda_synchronize_after_timed_region"
+                ],
+            )
+            self.assertEqual(reference["output_metadata"]["shape"], [rows])
+            self.assertIs(candidate["compile_execution"]["readback_deferred"], True)
+            self.assertIs(candidate["compile_execution"]["output_materialized"], True)
+            self.assertIs(
+                candidate["compile_execution"]["kernel_synchronized_in_call"],
+                False,
+            )
+            self.assertEqual(
+                candidate["compile_execution"]["workload_shape"],
+                workload["shape"],
+            )
+            self.assertEqual(candidate["compile_execution"]["output_shape"], [rows])
+            self.assertIsNone(
+                candidate["compile_execution"]["launch"]["sync_error"]["result"]
+            )
+            self.assertEqual(
+                candidate["compile_execution"]["calls"][
+                    "cudaSetDevice_before_launch"
+                ]["result"],
+                0,
+            )
+            self.assertEqual(
+                candidate["compile_execution"]["calls"][
+                    "cudaGetDevice_before_launch"
+                ]["value"],
+                0,
+            )
+            self.assertIs(
+                candidate["last_compile_execution"]["output_buffer_pool"][
+                    "reused_released_allocation"
+                ],
+                True,
+            )
+            self.assertEqual(
+                candidate["steady_checksums"],
+                [reference["cold_checksum"]],
+            )
+            self.assertEqual(
+                unprepared["steady_checksums"],
+                candidate["steady_checksums"],
+            )
 
     def test_torch_rs_cuda_zero_credit_row_is_explicit(self):
         row = benchmark_compile_cuda.torch_rs_zero_credit_unsupported_row(torch)
 
         self.assertEqual(row["implementation"], "torch_rs")
         self.assertEqual(row["status"], "zero_credit_unsupported")
+        self.assertEqual(
+            row["workload_shape"],
+            list(benchmark_compile_cuda.WORKLOAD_SHAPE),
+        )
         self.assertEqual(row["score_credit"], 0.0)
         self.assertFalse(row["eligibility"]["eligible_cuda_compile_evidence"])
         self.assertEqual(row["eligibility"]["score_credit"], 0.0)
@@ -549,6 +598,71 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
         self.assertEqual(probes["accelerator_device_count"], 0)
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
+
+    def test_cuda_compile_shape_matrix_is_fixed_and_weighted(self):
+        cells = benchmark_compile_cuda.WORKLOAD_MATRIX
+        self.assertEqual(
+            [tuple(cell["shape"]) for cell in cells],
+            [
+                (256, 256),
+                (1024, 1024),
+                (4096, 256),
+                (256, 4096),
+            ],
+        )
+        self.assertEqual([cell["weight"] for cell in cells], [0.25] * 4)
+        self.assertAlmostEqual(
+            benchmark_compile_cuda._workload_matrix_weight_total(cells),
+            1.0,
+        )
+
+        quick_args = SimpleNamespace(quick=True)
+        quick_cells = benchmark_compile_cuda._selected_workload_cells(quick_args)
+        self.assertLess(len(quick_cells), len(cells))
+        self.assertTrue(
+            {
+                tuple(cell["shape"]) for cell in quick_cells
+            }.issubset({tuple(cell["shape"]) for cell in cells})
+        )
+
+    def test_cuda_compile_aggregate_keeps_zero_credit_cells_in_denominator(self):
+        results = []
+        for cell, candidate_median, eligible in (
+            (benchmark_compile_cuda.WORKLOAD_MATRIX[0], 2.0, True),
+            (benchmark_compile_cuda.WORKLOAD_MATRIX[1], 1.0, False),
+        ):
+            workload = benchmark_compile_cuda._workload_cell_metadata(cell)
+            candidate = {
+                "status": "ok" if eligible else "zero_credit_unsupported",
+                "steady": {"median_us": candidate_median},
+                "eligibility": {
+                    "eligible_cuda_compile_evidence": eligible,
+                },
+            }
+            results.append(
+                {
+                    "workload": workload,
+                    "reference_workload": {
+                        "status": "ok",
+                        "steady": {"median_us": 1.0},
+                    },
+                    "candidate": candidate,
+                }
+            )
+
+        aggregates = benchmark_compile_cuda._aggregate_workload_results(results)
+
+        self.assertEqual(aggregates["workload_count"], 2)
+        self.assertEqual(aggregates["zero_credit_unsupported_cell_count"], 1)
+        self.assertAlmostEqual(aggregates["zero_credit_weight"], 0.25)
+        self.assertAlmostEqual(
+            aggregates["coverage_adjusted_overall_percent"],
+            25.0,
+        )
+        self.assertAlmostEqual(
+            aggregates["common_success_geomean_speed_ratio"],
+            0.5,
+        )
 
     def test_public_cuda_benchmark_tensor_wrapper_is_narrow(self):
         self.assertIn("CudaBenchmarkTensor", torch.__all__)
@@ -1464,6 +1578,7 @@ print(json.dumps({
                 "implementation": "torch_rs",
                 "status": "ok",
                 "workload_version": benchmark_compile_cuda.WORKLOAD_VERSION,
+                "workload_shape": list(benchmark_compile_cuda.WORKLOAD_SHAPE),
                 "compile_backend": "inductor",
                 "compile_fullgraph": True,
                 "compile_dynamic": False,
@@ -3861,6 +3976,7 @@ print(json.dumps({{
                 "implementation": "torch_rs",
                 "status": "ok",
                 "workload_version": benchmark_compile_cuda.WORKLOAD_VERSION,
+                "workload_shape": list(benchmark_compile_cuda.WORKLOAD_SHAPE),
                 "compile_backend": "eager",
                 "input_device_type": "cpu",
                 "output_device_type": "cpu",
@@ -3895,6 +4011,7 @@ print(json.dumps({{
                 "implementation": "torch_rs",
                 "status": "ok",
                 "workload_version": benchmark_compile_cuda.WORKLOAD_VERSION,
+                "workload_shape": list(benchmark_compile_cuda.WORKLOAD_SHAPE),
                 "compile_backend": "inductor",
                 "compile_fullgraph": False,
                 "compile_dynamic": True,
@@ -3957,6 +4074,7 @@ print(json.dumps({{
                 "1",
                 "--required-cuda-visible-devices",
                 "",
+                "--quick",
             ],
             check=False,
             capture_output=True,
@@ -3971,35 +4089,35 @@ print(json.dumps({{
         )
 
         report = json.loads(completed.stdout)
+        result = report["workload_results"][0]
+        candidate = result["candidate"]
+        reference = result["reference_workload"]
         self.assertEqual(report["environment"]["cuda_visible_devices"], "1")
-        self.assertEqual(report["candidate"]["status"], "ok")
+        self.assertEqual(report["environment"]["run_mode"], "quick")
+        self.assertEqual(candidate["status"], "ok")
         self.assertIs(
-            report["candidate"]["eligibility"]["eligible_cuda_compile_evidence"],
+            candidate["eligibility"]["eligible_cuda_compile_evidence"],
             True,
         )
         self.assertIs(
-            report["candidate"]["input_tensor_evidence"][
-                "required_cuda_visible_devices"
-            ],
+            candidate["input_tensor_evidence"]["required_cuda_visible_devices"],
             None,
         )
         self.assertIs(
-            report["candidate"]["compile_execution"][
-                "required_cuda_visible_devices"
-            ],
+            candidate["compile_execution"]["required_cuda_visible_devices"],
             None,
         )
         self.assertIs(
-            report["candidate"]["compile_execution"]["cuda_visible_devices_match"],
+            candidate["compile_execution"]["cuda_visible_devices_match"],
             True,
         )
         self.assertEqual(
-            report["candidate"]["compile_execution"]["cuda_visible_devices"],
+            candidate["compile_execution"]["cuda_visible_devices"],
             "1",
         )
         self.assertEqual(
-            report["candidate"]["compile_execution"]["device_output_checksum"],
-            report["reference_workload"]["cold_checksum"],
+            candidate["compile_execution"]["device_output_checksum"],
+            reference["cold_checksum"],
         )
 
     def test_cuda_reference_benchmark_smoke(self):
@@ -4031,6 +4149,7 @@ print(json.dumps({{
                 "2",
                 "--repeats",
                 "1",
+                "--quick",
             ],
             check=False,
             capture_output=True,
@@ -4045,6 +4164,21 @@ print(json.dumps({{
         )
 
         report = json.loads(completed.stdout)
+        result = report["workload_results"][0]
+        workload = result["workload"]
+        reference = result["reference_workload"]
+        candidate = result["candidate"]
+        pointwise_reduce = result["torch_rs_cuda_pointwise_reduce_workload"]
+        prerequisite_tensor_wrapper = result[
+            "torch_rs_cuda_prerequisite_tensor_wrapper"
+        ]
+        tensor_wrapper = result["torch_rs_cuda_tensor_wrapper"]
+        rows, _columns = workload["shape"]
+
+        self.assertEqual(
+            report["schema_version"],
+            benchmark_compile_cuda.BENCHMARK_SCHEMA_VERSION,
+        )
         self.assertEqual(
             report["environment"]["benchmark_version"],
             benchmark_compile_cuda.BENCHMARK_VERSION,
@@ -4053,15 +4187,24 @@ print(json.dumps({{
             report["environment"]["cuda_visible_devices"],
             "0",
         )
+        self.assertEqual(report["environment"]["run_mode"], "quick")
+        self.assertTrue(
+            report["environment"]["workload_matrix"]["quick_subset_is_strict"]
+        )
+        self.assertEqual(len(report["workload_results"]), 1)
+        self.assertIn(
+            tuple(workload["shape"]),
+            {tuple(cell["shape"]) for cell in benchmark_compile_cuda.WORKLOAD_MATRIX},
+        )
         self.assertIn("H100", report["environment"]["gpu"]["torch_cuda_device_name"])
-        self.assertEqual(report["reference_workload"]["implementation"], "pytorch")
-        self.assertEqual(report["reference_workload"]["status"], "ok")
+        self.assertEqual(reference["implementation"], "pytorch")
+        self.assertEqual(reference["status"], "ok")
         self.assertEqual(
-            report["reference_workload"]["compile_config"]["backend"],
+            reference["compile_config"]["backend"],
             "inductor",
         )
         self.assertEqual(
-            report["reference_workload"]["output_metadata"]["device_type"],
+            reference["output_metadata"]["device_type"],
             "cuda",
         )
         driver_probe = report["torch_rs_cuda_driver_probe"]
@@ -4129,7 +4272,6 @@ print(json.dumps({{
         self.assertEqual(pointwise["gpu"]["compute_capability"], [9, 0])
         self.assertEqual(pointwise["launch"]["sync_error"]["result"], 0)
         self.assertIs(pointwise["kernel_library"]["loaded"], True)
-        pointwise_reduce = report["torch_rs_cuda_pointwise_reduce_workload"]
         self.assertEqual(
             pointwise_reduce["schema_version"],
             _cuda_pointwise_reduce_workload.POINTWISE_REDUCE_SCHEMA_VERSION,
@@ -4143,26 +4285,22 @@ print(json.dumps({{
         self.assertEqual(pointwise_reduce["device_type"], "cuda")
         self.assertEqual(pointwise_reduce["device_index"], 0)
         self.assertEqual(pointwise_reduce["cuda_visible_devices"], "0")
-        self.assertEqual(pointwise_reduce["workload_shape"], [1024, 1024])
-        self.assertEqual(pointwise_reduce["output_shape"], [1024])
+        self.assertEqual(pointwise_reduce["workload_shape"], workload["shape"])
+        self.assertEqual(pointwise_reduce["output_shape"], [rows])
         self.assertEqual(
             pointwise_reduce["output_metadata"],
-            report["reference_workload"]["output_metadata"],
+            reference["output_metadata"],
         )
-        prerequisite_tensor_wrapper = report[
-            "torch_rs_cuda_prerequisite_tensor_wrapper"
-        ]
         self.assertEqual(
             prerequisite_tensor_wrapper,
             pointwise_reduce["public_cuda_tensor_wrapper"],
         )
-        tensor_wrapper = report["torch_rs_cuda_tensor_wrapper"]
         self.assertEqual(
             tensor_wrapper["schema_version"],
             _cuda_benchmark_tensor.CUDA_BENCHMARK_TENSOR_SCHEMA_VERSION,
         )
         self.assertEqual(tensor_wrapper["status"], "ok")
-        self.assertEqual(tensor_wrapper["shape"], [1024])
+        self.assertEqual(tensor_wrapper["shape"], [rows])
         self.assertEqual(tensor_wrapper["stride"], [1])
         self.assertEqual(tensor_wrapper["dtype"], "torch.float32")
         self.assertEqual(tensor_wrapper["device"], "cuda:0")
@@ -4179,11 +4317,11 @@ print(json.dumps({{
         self.assertIs(pointwise_reduce["output_metadata_match"], True)
         self.assertEqual(
             pointwise_reduce["device_output_checksum"],
-            report["reference_workload"]["cold_checksum"],
+            reference["cold_checksum"],
         )
         self.assertEqual(
             pointwise_reduce["pytorch_reference_output_checksum"],
-            report["reference_workload"]["cold_checksum"],
+            reference["cold_checksum"],
         )
         self.assertIs(pointwise_reduce["checksum_match"], True)
         self.assertEqual(pointwise_reduce["launch"]["sync_error"]["result"], 0)
@@ -4195,85 +4333,66 @@ print(json.dumps({{
             "Cuda compilation tools",
             pointwise_reduce["nvcc"]["version"]["stdout"],
         )
-        self.assertGreater(report["reference_workload"]["cold_first_call_us"], 0.0)
-        self.assertGreater(
-            report["reference_workload"]["steady"]["median_us"],
-            0.0,
-        )
-        self.assertEqual(report["candidate"]["implementation"], "torch_rs")
-        self.assertEqual(report["candidate"]["status"], "ok")
-        self.assertEqual(report["candidate"]["compile_backend"], "inductor")
+        self.assertGreater(reference["cold_first_call_us"], 0.0)
+        self.assertGreater(reference["steady"]["median_us"], 0.0)
+        self.assertEqual(candidate["implementation"], "torch_rs")
+        self.assertEqual(candidate["status"], "ok")
+        self.assertEqual(candidate["compile_backend"], "inductor")
         self.assertEqual(
-            report["candidate"]["compile_config"],
+            candidate["compile_config"],
             benchmark_compile_cuda.REFERENCE_COMPILE_CONFIG,
         )
-        self.assertIs(report["candidate"]["native_cuda_compile"], True)
-        self.assertIs(report["candidate"]["eager_fallback"], False)
-        self.assertIs(report["candidate"]["forwarded_to_pytorch"], False)
-        self.assertEqual(report["candidate"]["input_device_type"], "cuda")
-        self.assertEqual(report["candidate"]["output_device_type"], "cuda")
-        self.assertGreater(report["candidate"]["cold_first_call_us"], 0.0)
-        self.assertGreater(report["candidate"]["steady"]["median_us"], 0.0)
-        self.assertEqual(
-            report["candidate"]["output_tensor_wrapper"],
-            report["torch_rs_cuda_tensor_wrapper"],
-        )
+        self.assertIs(candidate["native_cuda_compile"], True)
+        self.assertIs(candidate["eager_fallback"], False)
+        self.assertIs(candidate["forwarded_to_pytorch"], False)
+        self.assertEqual(candidate["input_device_type"], "cuda")
+        self.assertEqual(candidate["output_device_type"], "cuda")
+        self.assertGreater(candidate["cold_first_call_us"], 0.0)
+        self.assertGreater(candidate["steady"]["median_us"], 0.0)
+        self.assertEqual(candidate["output_tensor_wrapper"], tensor_wrapper)
         self.assertIs(
-            report["candidate"]["eligibility"]["eligible_cuda_compile_evidence"],
+            candidate["eligibility"]["eligible_cuda_compile_evidence"],
             True,
         )
-        self.assertEqual(report["candidate"]["eligibility"]["score_credit"], 1.0)
-        self.assertEqual(report["candidate"]["eligibility"]["rejection_reasons"], [])
+        self.assertEqual(candidate["eligibility"]["score_credit"], 1.0)
+        self.assertEqual(candidate["eligibility"]["rejection_reasons"], [])
         self.assertEqual(
-            report["candidate"]["compile_execution"]["device_output_checksum"],
-            report["reference_workload"]["cold_checksum"],
+            candidate["compile_execution"]["device_output_checksum"],
+            reference["cold_checksum"],
         )
         self.assertIs(
-            report["candidate"]["compile_execution"]["output_comparison"][
-                "exact_bytes_match"
-            ],
+            candidate["compile_execution"]["output_comparison"]["exact_bytes_match"],
             True,
         )
         self.assertIsNone(
-            report["candidate"]["compile_execution"]["launch"]["sync_error"][
-                "result"
-            ],
+            candidate["compile_execution"]["launch"]["sync_error"]["result"],
         )
         self.assertIs(
-            report["candidate"]["compile_execution"]["launch"]["sync_error"][
+            candidate["compile_execution"]["launch"]["sync_error"][
                 "deferred_to_explicit_timing_boundary"
             ],
             True,
         )
+        self.assertIs(candidate["compile_execution"]["readback_deferred"], True)
         self.assertIs(
-            report["candidate"]["compile_execution"]["readback_deferred"],
+            candidate["prepared_executor_reuse"]["output_pool_enabled"],
             True,
         )
         self.assertIs(
-            report["candidate"]["prepared_executor_reuse"]["output_pool_enabled"],
+            candidate["prepared_executor_reuse"]["steady_state_reused_output_buffer"],
             True,
         )
+        self.assertIs(candidate["timing_boundary"]["compiled_calls_only"], True)
+        self.assertIs(reference["timing_boundary"]["compiled_calls_only"], True)
         self.assertIs(
-            report["candidate"]["prepared_executor_reuse"][
-                "steady_state_reused_output_buffer"
-            ],
-            True,
-        )
-        self.assertIs(
-            report["candidate"]["timing_boundary"]["compiled_calls_only"],
-            True,
-        )
-        self.assertIs(
-            report["reference_workload"]["timing_boundary"]["compiled_calls_only"],
+            result["score"]["eligible_cuda_compile_evidence"],
             True,
         )
         self.assertEqual(
-            report["reference_workload"]["timing_boundary"][
+            reference["timing_boundary"][
                 "materialization_outside_timed_region"
             ],
-            report["candidate"]["timing_boundary"][
-                "materialization_outside_timed_region"
-            ],
+            candidate["timing_boundary"]["materialization_outside_timed_region"],
         )
         self.assertGreater(
             report["aggregates"]["torch_rs_cuda_compile_score_percent"],
