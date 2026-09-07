@@ -4,6 +4,9 @@ import numpy as np
 import torch_rs as torch
 
 
+CAT_ALIASES = ("concat", "concatenate")
+
+
 class TopLevelCatTests(unittest.TestCase):
     def assert_cat_matches(self, actual, expected_values, *, case):
         expected = np.asarray(expected_values, dtype=np.float32)
@@ -55,6 +58,35 @@ class TopLevelCatTests(unittest.TestCase):
         self.assert_cat_matches(single_result, [11.0, 13.0], case="single tensor")
         self.assertFalse(single_result.is_set_to(single))
         self.assertNotEqual(single_result.data_ptr(), single.data_ptr())
+
+    def test_concat_aliases_share_supported_1d_cat_path(self):
+        for name in CAT_ALIASES:
+            function = getattr(torch, name)
+            with self.subTest(alias=name, case="list"):
+                base = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+                offset_noncontiguous = base.transpose(0, 1)[1]
+                tail = torch.tensor([-0.0, 7.5])
+                result = function([offset_noncontiguous, torch.tensor([]), tail], dim=0)
+                self.assert_cat_matches(result, [2.0, 5.0, -0.0, 7.5], case=name)
+                self.assertFalse(result.is_set_to(offset_noncontiguous))
+                self.assertFalse(result.is_set_to(tail))
+                self.assertNotEqual(result.data_ptr(), offset_noncontiguous.data_ptr())
+                self.assertNotEqual(result.data_ptr(), tail.data_ptr())
+
+            with self.subTest(alias=name, case="tuple dim -1"):
+                result = function((torch.tensor([]), torch.tensor([3.25])), dim=-1)
+                self.assert_cat_matches(result, [3.25], case=name)
+
+            with self.subTest(alias=name, case="keywords"):
+                result = function(
+                    tensors=[torch.tensor([8.0]), torch.tensor([]), torch.tensor([9.0])],
+                    out=None,
+                )
+                self.assert_cat_matches(result, [8.0, 9.0], case=name)
+
+            with self.subTest(alias=name, case="axis"):
+                result = function([torch.tensor([14.0]), torch.tensor([15.0])], axis=0)
+                self.assert_cat_matches(result, [14.0, 15.0], case=name)
 
     def test_no_grad_allows_grad_requiring_operands_without_recording(self):
         left = torch.tensor([1.0, 2.0], requires_grad=True)
@@ -247,6 +279,121 @@ class TopLevelCatTests(unittest.TestCase):
             torch.cat([DecliningOverride()], dim=0)
         self.assertEqual(DecliningOverride.calls, 1)
 
+    def test_concat_alias_torch_function_dispatch_uses_alias_callable(self):
+        for name in CAT_ALIASES:
+            function = getattr(torch, name)
+            left = torch.tensor([1.0])
+            right = torch.tensor([2.0])
+            inputs = [left, right]
+            marker = object()
+
+            class RecordingMode(torch.overrides.TorchFunctionMode):
+                def __init__(self, result=marker):
+                    self.calls = []
+                    self.result = result
+
+                def __torch_function__(self, func, types, args=(), kwargs=None):
+                    self.calls.append((func, types, args, kwargs))
+                    return self.result
+
+            with self.subTest(alias=name, case="mode accepts"):
+                accepting = RecordingMode()
+                with accepting:
+                    self.assertIs(function(inputs, dim=0), marker)
+                self.assertEqual(accepting.calls, [(function, (), (inputs,), {"dim": 0})])
+
+            with self.subTest(alias=name, case="mode sees empty before native failure"):
+                empty_accepting = RecordingMode()
+                with empty_accepting:
+                    self.assertIs(function([], dim=1), marker)
+                self.assertEqual(
+                    empty_accepting.calls, [(function, (), ([],), {"dim": 1})]
+                )
+
+            calls = []
+
+            class ForwardingMode(torch.overrides.TorchFunctionMode):
+                def __init__(self, label):
+                    self.label = label
+
+                def __torch_function__(self, func, types, args=(), kwargs=None):
+                    calls.append((self.label, func, types, args, kwargs))
+                    return func(*args, **(kwargs or {}))
+
+            with self.subTest(alias=name, case="mode forwards"):
+                with ForwardingMode("lower"):
+                    with ForwardingMode("upper"):
+                        forwarded = function(inputs, dim=0)
+                self.assert_cat_matches(forwarded, [1.0, 2.0], case=name)
+                self.assertEqual([call[0] for call in calls], ["upper", "lower"])
+                self.assertTrue(all(call[1] is function for call in calls))
+                self.assertTrue(all(call[2] == () for call in calls))
+                self.assertTrue(all(call[3] == (inputs,) for call in calls))
+                self.assertTrue(all(call[4] == {"dim": 0} for call in calls))
+
+            events = []
+
+            class Override:
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    events.append((func, types, args, kwargs))
+                    return marker
+
+            with self.subTest(alias=name, case="sequence element override"):
+                override_inputs = [Override()]
+                self.assertIs(function(override_inputs, axis=0), marker)
+                func, dispatch_types, args, kwargs = events.pop()
+                self.assertIs(func, function)
+                self.assertEqual(dispatch_types, (Override,))
+                self.assertEqual(args, (override_inputs,))
+                self.assertEqual(kwargs, {"axis": 0})
+
+            class DimensionOverride:
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    events.append((func, types, args, kwargs))
+                    return marker
+
+            with self.subTest(alias=name, case="dimension override"):
+                dimension = DimensionOverride()
+                self.assertIs(function([left], dim=dimension), marker)
+                func, dispatch_types, args, kwargs = events.pop()
+                self.assertIs(func, function)
+                self.assertEqual(dispatch_types, (DimensionOverride,))
+                self.assertEqual(args, ([left],))
+                self.assertEqual(kwargs, {"dim": dimension})
+
+            class OutOverride:
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    events.append((func, types, args, kwargs))
+                    return marker
+
+            with self.subTest(alias=name, case="out override"):
+                out = OutOverride()
+                self.assertIs(function([left], out=out), marker)
+                func, dispatch_types, args, kwargs = events.pop()
+                self.assertIs(func, function)
+                self.assertEqual(dispatch_types, (OutOverride,))
+                self.assertEqual(args, ([left],))
+                self.assertEqual(kwargs, {"out": out})
+
+            class DecliningOverride:
+                calls = 0
+
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    cls.calls += 1
+                    return NotImplemented
+
+            with self.subTest(alias=name, case="declining override"):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    rf"^Multiple dispatch failed for 'torch\.{name}'; all __torch_function__ handlers returned NotImplemented:",
+                ):
+                    function([DecliningOverride()], dim=0)
+                self.assertEqual(DecliningOverride.calls, 1)
+
     def test_rejects_unsupported_inputs_before_touching_out(self):
         destination = torch.tensor([9.0, 10.0])
         before = destination.tolist()
@@ -335,6 +482,86 @@ class TopLevelCatTests(unittest.TestCase):
         self.assertEqual(torch.cat.__name__, "cat")
         self.assertEqual(torch.cat.__qualname__, "_VariableFunctionsClass.cat")
         self.assertIs(torch._C._VariableFunctionsClass.cat, torch.cat)
+        for name in CAT_ALIASES:
+            with self.subTest(alias=name):
+                function = getattr(torch, name)
+                self.assertTrue(hasattr(torch, name))
+                self.assertIn(name, torch.__all__)
+                self.assertEqual(torch.__all__.count(name), 1)
+                self.assertEqual(function.__name__, name)
+                self.assertEqual(function.__qualname__, f"_VariableFunctionsClass.{name}")
+                self.assertIs(getattr(torch._C._VariableFunctionsClass, name), function)
+                self.assertIsNot(function, torch.cat)
+        self.assertIsNot(torch.concat, torch.concatenate)
+
+    def test_concat_aliases_preserve_cat_fail_closed_boundaries(self):
+        for name in CAT_ALIASES:
+            function = getattr(torch, name)
+            with self.subTest(alias=name, boundary="concrete out"):
+                destination = torch.tensor([9.0, 10.0])
+                before = destination.tolist()
+                with self.assertRaisesRegex(
+                    RuntimeError, r"^cat\(\): the 'out' argument is not supported$"
+                ):
+                    function([torch.tensor([1.0]), torch.tensor([2.0])], out=destination)
+                self.assertEqual(destination.tolist(), before)
+
+            for sequence in ([], ()):
+                with self.subTest(alias=name, boundary=f"empty {type(sequence).__name__}"):
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        r"^torch\.cat\(\): expected a non-empty list of Tensors$",
+                    ):
+                        function(sequence)
+
+            with self.subTest(alias=name, boundary="scalar"):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^zero-dimensional tensor \(at position 0\) cannot be concatenated$",
+                ):
+                    function([torch.tensor(1.0)])
+
+            with self.subTest(alias=name, boundary="non-1d"):
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    r"^cat\(\): only exact native CPU float32 1-D Tensor inputs are supported$",
+                ):
+                    function([torch.tensor([[1.0]])])
+
+            with self.subTest(alias=name, boundary="non-tensor element"):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^expected Tensor as element 1 in argument 0, but got int$",
+                ):
+                    function([torch.tensor([1.0]), 1])
+
+            with self.subTest(alias=name, boundary="non-sequence tensors"):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    rf"^{name}\(\): argument 'tensors' \(position 1\) must be tuple of Tensors, not Tensor$",
+                ):
+                    function(torch.tensor([1.0]))
+
+            with self.subTest(alias=name, boundary="unsupported dim"):
+                with self.assertRaisesRegex(
+                    IndexError,
+                    r"^Dimension out of range \(expected to be in range of \[-1, 0\], but got 1\)$",
+                ):
+                    function([torch.tensor([1.0])], dim=1)
+
+            with self.subTest(alias=name, boundary="bad dim type"):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    rf"^{name}\(\): argument 'dim' must be int, not str$",
+                ):
+                    function([torch.tensor([1.0])], axis="0")
+
+            with self.subTest(alias=name, boundary="axis dim conflict"):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    rf"^{name}\(\) got an unexpected keyword argument 'axis'$",
+                ):
+                    function([torch.tensor([1.0])], dim=0, axis=0)
 
 
 if __name__ == "__main__":

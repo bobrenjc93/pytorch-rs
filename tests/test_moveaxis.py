@@ -154,7 +154,7 @@ class MoveaxisTests(unittest.TestCase):
         self.assertTrue(untracked.is_leaf)
         self.assertTrue(torch.moveaxis(actual_leaf, 0, 1).requires_grad)
 
-    def test_integer_binding_errors_and_deliberate_unsupported_surface(self):
+    def test_integer_binding_errors(self):
         class IntegerSubclass(int):
             pass
 
@@ -225,10 +225,6 @@ class MoveaxisTests(unittest.TestCase):
                 lambda: torch.movedim(tensor, 0, -4),
             ),
             (
-                lambda: torch.moveaxis(tensor, (0, 1), (1, 2)),
-                lambda: torch.movedim(tensor, (0, 1), (1, 2)),
-            ),
-            (
                 lambda: torch.moveaxis(tensor, 0, **{"bad\0tail": 1}),
                 lambda: torch.movedim(tensor, 0, **{"bad\0tail": 1}),
             ),
@@ -239,6 +235,59 @@ class MoveaxisTests(unittest.TestCase):
 
         self.assertTrue(hasattr(torch.Tensor, "moveaxis"))
         self.assertTrue(hasattr(torch.Tensor, "movedim"))
+
+    def test_sequence_axes_reuse_movedim_views_and_errors(self):
+        tensor = torch.zeros((2, 3, 4))
+        for source, destination in (
+            ((0, 2), (2, 0)),
+            ([0, 2], [2, 0]),
+            ((), ()),
+            ((0, True), (2, 1)),
+        ):
+            with self.subTest(source=source, destination=destination):
+                self.assert_view_matches(
+                    torch.moveaxis(tensor, source, destination),
+                    torch.movedim(tensor, source, destination),
+                    tensor,
+                    case=("top-level-sequence", source, destination),
+                )
+
+        for moveaxis_call, movedim_call in (
+            (
+                lambda: torch.moveaxis(tensor, (True, 0), (1, 2)),
+                lambda: torch.movedim(tensor, (True, 0), (1, 2)),
+            ),
+            (
+                lambda: torch.moveaxis(tensor, (0, 1), (False, 2)),
+                lambda: torch.movedim(tensor, (0, 1), (False, 2)),
+            ),
+            (
+                lambda: torch.moveaxis(tensor, (0, 1.5), (1, 2)),
+                lambda: torch.movedim(tensor, (0, 1.5), (1, 2)),
+            ),
+            (
+                lambda: torch.moveaxis(tensor, (0, 1), (1, "2")),
+                lambda: torch.movedim(tensor, (0, 1), (1, "2")),
+            ),
+        ):
+            self.assert_error_matches_movedim(moveaxis_call, movedim_call)
+
+        for moveaxis_call, movedim_call in (
+            (
+                lambda: torch.moveaxis(tensor, (0, -3), (1, 2)),
+                lambda: torch.movedim(tensor, (0, -3), (1, 2)),
+            ),
+            (
+                lambda: torch.moveaxis(tensor, (0, 1), (2,)),
+                lambda: torch.movedim(tensor, (0, 1), (2,)),
+            ),
+        ):
+            with self.assertRaises(Exception) as moveaxis_error:
+                moveaxis_call()
+            with self.assertRaises(Exception) as movedim_error:
+                movedim_call()
+            self.assertEqual(type(moveaxis_error.exception), type(movedim_error.exception))
+            self.assertEqual(str(moveaxis_error.exception), str(movedim_error.exception))
 
     def test_torch_function_modes_and_overrides_receive_moveaxis(self):
         tensor = torch.zeros((2, 3, 4))
@@ -461,7 +510,7 @@ class TensorMoveaxisTests(unittest.TestCase):
         self.assertTrue(untracked.is_leaf)
         self.assertEqual(untracked.data_ptr(), actual_leaf.data_ptr())
 
-    def test_integer_binding_errors_and_sequence_axes(self):
+    def test_integer_binding_errors(self):
         class IntegerSubclass(int):
             pass
 
@@ -512,10 +561,6 @@ class TensorMoveaxisTests(unittest.TestCase):
             (lambda: tensor.moveaxis(3, 0), lambda: tensor.movedim(3, 0)),
             (lambda: tensor.moveaxis(0, -4), lambda: tensor.movedim(0, -4)),
             (
-                lambda: tensor.moveaxis((0, 1), (1, 2)),
-                lambda: tensor.movedim((0, 1), (1, 2)),
-            ),
-            (
                 lambda: tensor.moveaxis(0, **{"bad\0tail": 1}),
                 lambda: tensor.movedim(0, **{"bad\0tail": 1}),
             ),
@@ -524,14 +569,60 @@ class TensorMoveaxisTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches_movedim(moveaxis_call, movedim_call)
 
+    def test_sequence_axes_reuse_movedim_views_and_errors(self):
+        tensor = torch.zeros((2, 3, 4))
         for source, destination in (
             ((0, 2), (2, 0)),
             ([0, 2], [2, 0]),
             ((), ()),
+            ((0, True), (2, 1)),
         ):
             with self.subTest(source=source, destination=destination):
-                with self.assertRaises(TypeError):
-                    tensor.moveaxis(source, destination)
+                self.assert_view_matches(
+                    tensor.moveaxis(source, destination),
+                    tensor.movedim(source, destination),
+                    tensor,
+                    case=("tensor-sequence", source, destination),
+                )
+
+        for moveaxis_call, movedim_call in (
+            (
+                lambda: tensor.moveaxis((True, 0), (1, 2)),
+                lambda: tensor.movedim((True, 0), (1, 2)),
+            ),
+            (
+                lambda: tensor.moveaxis((0, 1), (False, 2)),
+                lambda: tensor.movedim((0, 1), (False, 2)),
+            ),
+            (
+                lambda: tensor.moveaxis((0, 1.5), (1, 2)),
+                lambda: tensor.movedim((0, 1.5), (1, 2)),
+            ),
+            (
+                lambda: tensor.moveaxis((0, 1), (1, "2")),
+                lambda: tensor.movedim((0, 1), (1, "2")),
+            ),
+        ):
+            self.assert_error_matches_movedim(moveaxis_call, movedim_call)
+
+        for moveaxis_call, movedim_call in (
+            (
+                lambda: tensor.moveaxis((0, -3), (1, 2)),
+                lambda: tensor.movedim((0, -3), (1, 2)),
+            ),
+            (
+                lambda: tensor.moveaxis((0, 1), (2,)),
+                lambda: tensor.movedim((0, 1), (2,)),
+            ),
+        ):
+            with self.assertRaises(Exception) as moveaxis_error:
+                moveaxis_call()
+            with self.assertRaises(Exception) as movedim_error:
+                movedim_call()
+            self.assertEqual(
+                type(moveaxis_error.exception), type(movedim_error.exception)
+            )
+            self.assertEqual(str(moveaxis_error.exception), str(movedim_error.exception))
 
     def test_torch_function_modes_receive_the_moveaxis_descriptor(self):
         tensor = torch.zeros((2, 3, 4))
