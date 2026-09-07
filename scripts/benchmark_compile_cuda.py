@@ -480,6 +480,20 @@ def _run_pytorch_reference(reference_torch, args, workload_cell=None):
             "compile_config": dict(REFERENCE_COMPILE_CONFIG),
             "factory_us": factory_ns / 1000.0,
             "cold_first_call_us": cold_ns / 1000.0,
+            "cold_first_call_accounting": {
+                "factory_region": "torch.compile wrapper construction",
+                "cold_first_call_region": (
+                    "first compiled invocation after wrapper construction"
+                ),
+                "factory_us": factory_ns / 1000.0,
+                "cold_first_call_us": cold_ns / 1000.0,
+                "factory_plus_cold_first_call_us": (
+                    factory_ns + cold_ns
+                )
+                / 1000.0,
+                "includes_deferred_backend_compile_in_cold_call": True,
+                "setup_hoisted_to_factory": False,
+            },
             "cold_checksum": cold_checksum,
             "timing_boundary": {
                 "explicit_cuda_synchronize_before_timed_region": True,
@@ -920,6 +934,18 @@ def _require_torch_rs_cuda_compile_prepared_executor(
         raise AssertionError("compiled CUDA executor was not prepared")
     if metadata.get("setup_hoisted_to_compile_wrapper") is not True:
         raise AssertionError("compiled CUDA setup was not hoisted to the wrapper")
+    if metadata.get("device_selection_hoisted_to_compile_wrapper") is not True:
+        raise AssertionError(
+            "compiled CUDA device selection was not hoisted to preparation"
+        )
+    device_selection = metadata.get("device_selection") or {}
+    if (
+        device_selection.get("per_launch_cudaSetDevice") is not False
+        or device_selection.get("per_launch_cudaGetDevice") is not False
+    ):
+        raise AssertionError(
+            "compiled CUDA prepared executor repeats device selection per launch"
+        )
     if not metadata.get("preparation_id"):
         raise AssertionError("compiled CUDA prepared executor id is missing")
     if metadata.get("native_cuda_compile") is not True:
@@ -1033,6 +1059,22 @@ def _require_torch_rs_cuda_compile_output(
         raise AssertionError("compiled CUDA kernel synchronized inside the call")
     if compile_execution.get("readback_deferred") is not True:
         raise AssertionError("compiled CUDA output readback was not deferred")
+    if compile_execution.get("device_selection_hoisted_to_preparation") is not True:
+        raise AssertionError(
+            "compiled CUDA execution did not hoist device selection to preparation"
+        )
+    device_selection = compile_execution.get("device_selection") or {}
+    if (
+        device_selection.get("per_launch_cudaSetDevice") is not False
+        or device_selection.get("per_launch_cudaGetDevice") is not False
+    ):
+        raise AssertionError(
+            "compiled CUDA execution repeated device selection in the hot path"
+        )
+    if "cudaSetDevice_before_launch" in compile_execution.get("calls", {}):
+        raise AssertionError("compiled CUDA execution called cudaSetDevice in launch")
+    if "cudaGetDevice_before_launch" in compile_execution.get("calls", {}):
+        raise AssertionError("compiled CUDA execution called cudaGetDevice in launch")
     if compile_execution.get("output_materialized") is not True:
         raise AssertionError("compiled CUDA output was not materialized")
     executor = compile_execution.get("executor")
@@ -1145,7 +1187,8 @@ def _time_torch_rs_cuda_compile_once(compiled, inputs):
 
 
 def _time_torch_rs_cuda_compile_repeated(compiled, inputs, repeats):
-    output = None
+    outputs = []
+    returned_output = None
     before_sync = _synchronize_torch_rs_cuda_compile(
         compiled,
         label="before_repeated_compiled_calls",
@@ -1153,24 +1196,26 @@ def _time_torch_rs_cuda_compile_repeated(compiled, inputs, repeats):
     started_ns = time.perf_counter_ns()
     try:
         for _ in range(repeats):
-            if output is not None:
-                output._torch_rs_close_private_cuda_buffer()
-            output = compiled(*inputs)
+            outputs.append(compiled(*inputs))
         after_sync = _synchronize_torch_rs_cuda_compile(
             compiled,
             label="after_repeated_compiled_calls",
         )
         elapsed_ns = time.perf_counter_ns() - started_ns
-        assert output is not None
-        return output, elapsed_ns, {
+        assert outputs
+        returned_output = outputs.pop()
+        return returned_output, elapsed_ns, {
             "before_timed_region": before_sync,
             "after_timed_region": after_sync,
             "materialization_outside_timed_region": True,
+            "intermediate_output_release_outside_timed_region": True,
             "timed_call_count": repeats,
         }
     finally:
-        if sys.exc_info()[0] is not None and output is not None:
+        for output in outputs:
             output._torch_rs_close_private_cuda_buffer()
+        if sys.exc_info()[0] is not None and returned_output is not None:
+            returned_output._torch_rs_close_private_cuda_buffer()
 
 
 def _time_torch_rs_cuda_unprepared_compatibility_repeated(
@@ -1544,6 +1589,24 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers, workload_cell=N
             "forwarded_to_pytorch": False,
             "factory_us": factory_ns / 1000.0,
             "cold_first_call_us": cold_ns / 1000.0,
+            "cold_first_call_accounting": {
+                "factory_region": (
+                    "torch_rs.compile wrapper construction and prepared "
+                    "CUDA executor setup"
+                ),
+                "cold_first_call_region": (
+                    "first invocation after the CUDA executor is prepared"
+                ),
+                "factory_us": factory_ns / 1000.0,
+                "cold_first_call_us": cold_ns / 1000.0,
+                "factory_plus_cold_first_call_us": (
+                    factory_ns + cold_ns
+                )
+                / 1000.0,
+                "includes_deferred_backend_compile_in_cold_call": False,
+                "setup_hoisted_to_factory": True,
+                "prepared_executor_ready_before_cold_call": True,
+            },
             "cold_checksum": cold_checksum,
             "timing_boundary": {
                 "explicit_cuda_synchronize_before_timed_region": True,

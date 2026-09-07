@@ -465,7 +465,7 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "captured-global identity/metadata recompilation",
     "`Tensor.float()` identity graphlets that preserve values, shape, stride, "
     "storage offset, device, dtype, and `requires_grad`",
-    "private benchmark-only H100 CUDA pointwise-reduce path",
+    "private benchmark-only H100 CUDA pointwise-reduce forward-output path",
     "storage-aliasing detach graphlets with `requires_grad=False` outputs",
     "square decomposition graphlets",
     "Tensor broadcasting",

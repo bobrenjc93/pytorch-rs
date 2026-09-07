@@ -334,8 +334,18 @@ def _fake_prepared_executor(
         },
         "prepared": True,
         "setup_hoisted_to_compile_wrapper": True,
+        "device_selection_hoisted_to_compile_wrapper": True,
+        "device_selection": {
+            "cudaSetDevice": "preparation",
+            "cudaGetDevice": "preparation",
+            "per_launch_cudaSetDevice": False,
+            "per_launch_cudaGetDevice": False,
+        },
         "invocation_count": 0,
-        "calls": {},
+        "calls": {
+            "cudaSetDevice": {"result": 0, "error_name": None},
+            "cudaGetDevice": {"result": 0, "error_name": None, "value": 0},
+        },
     }
     executor_class = (
         _cuda_pointwise_reduce_workload
@@ -547,17 +557,45 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
             self.assertIsNone(
                 candidate["compile_execution"]["launch"]["sync_error"]["result"]
             )
+            self.assertIs(
+                candidate["prepared_executor"][
+                    "device_selection_hoisted_to_compile_wrapper"
+                ],
+                True,
+            )
             self.assertEqual(
-                candidate["compile_execution"]["calls"][
-                    "cudaSetDevice_before_launch"
-                ]["result"],
+                candidate["prepared_executor"]["calls"]["cudaSetDevice"]["result"],
                 0,
             )
             self.assertEqual(
-                candidate["compile_execution"]["calls"][
-                    "cudaGetDevice_before_launch"
-                ]["value"],
+                candidate["prepared_executor"]["calls"]["cudaGetDevice"]["value"],
                 0,
+            )
+            self.assertIs(
+                candidate["compile_execution"][
+                    "device_selection_hoisted_to_preparation"
+                ],
+                True,
+            )
+            self.assertIs(
+                candidate["compile_execution"]["device_selection"][
+                    "per_launch_cudaSetDevice"
+                ],
+                False,
+            )
+            self.assertIs(
+                candidate["compile_execution"]["device_selection"][
+                    "per_launch_cudaGetDevice"
+                ],
+                False,
+            )
+            self.assertNotIn(
+                "cudaSetDevice_before_launch",
+                candidate["compile_execution"]["calls"],
+            )
+            self.assertNotIn(
+                "cudaGetDevice_before_launch",
+                candidate["compile_execution"]["calls"],
             )
             self.assertIs(
                 candidate["last_compile_execution"]["output_buffer_pool"][
@@ -2135,18 +2173,33 @@ print(json.dumps({
                 second._torch_rs_close_private_cuda_buffer()
 
             pool = executor.metadata()["output_pool"]
-            self.assertEqual(pool["initial_capacity"], 2)
-            self.assertEqual(pool["allocation_count"], 2)
+            self.assertEqual(
+                pool["initial_capacity"],
+                _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY,
+            )
+            self.assertEqual(
+                pool["allocation_count"],
+                _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY,
+            )
             self.assertGreaterEqual(pool["reuse_count"], 1)
             self.assertEqual(pool["live_buffers"], 0)
-            self.assertEqual(pool["available_buffers"], 2)
+            self.assertEqual(
+                pool["available_buffers"],
+                _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY,
+            )
         finally:
             close = executor.close()
             x._torch_rs_close_private_cuda_buffer()
             bias._torch_rs_close_private_cuda_buffer()
 
-        self.assertEqual(close["free_count"], 2)
-        self.assertEqual(len(close["calls"]), 2)
+        self.assertEqual(
+            close["free_count"],
+            _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY,
+        )
+        self.assertEqual(
+            len(close["calls"]),
+            _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY,
+        )
 
     def test_prepared_executor_materializes_full_evidence_lazily(self):
         executor, runtime = _fake_prepared_executor()
@@ -2196,14 +2249,20 @@ print(json.dumps({
             )
             self.assertEqual(execution["executor"]["invocation_index"], 1)
             self.assertIs(execution["executor"]["reused_prepared_executor"], False)
-            self.assertEqual(
-                execution["calls"]["cudaSetDevice_before_launch"]["result"],
-                0,
+            self.assertIs(
+                execution["device_selection_hoisted_to_preparation"],
+                True,
             )
-            self.assertEqual(
-                execution["calls"]["cudaGetDevice_before_launch"]["value"],
-                0,
+            self.assertIs(
+                execution["device_selection"]["per_launch_cudaSetDevice"],
+                False,
             )
+            self.assertIs(
+                execution["device_selection"]["per_launch_cudaGetDevice"],
+                False,
+            )
+            self.assertNotIn("cudaSetDevice_before_launch", execution["calls"])
+            self.assertNotIn("cudaGetDevice_before_launch", execution["calls"])
             self.assertEqual(execution["launch"]["blocks"], 1024)
             self.assertEqual(execution["launch"]["threads_per_block"], 32)
             self.assertIsNone(execution["launch"]["sync_error"]["result"])
@@ -2214,7 +2273,7 @@ print(json.dumps({
             x._torch_rs_close_private_cuda_buffer()
             bias._torch_rs_close_private_cuda_buffer()
 
-    def test_prepared_executor_uses_thread_local_launch_reports(self):
+    def test_prepared_executor_uses_thread_local_launch_parameters(self):
         runtime = _FakeCudaRuntime()
 
         class InterleavedLaunchLibrary(_FakePointwiseReduceLibrary):
@@ -2222,19 +2281,21 @@ print(json.dumps({
                 super().__init__(observed_runtime)
                 self._lock = threading.Lock()
                 self._calls = 0
-                self.first_report_ready = threading.Event()
-                self.second_report_reset = threading.Event()
+                self.first_parameters_ready = threading.Event()
+                self.second_parameters_reset = threading.Event()
                 self.second_can_finish = threading.Event()
-                self.report_ids = []
+                self.parameter_ids = []
 
-            def torch_rs_private_h100_pointwise_reduce_float32_device0_guarded_launch_async_v1(
+            def torch_rs_private_h100_pointwise_reduce_float32_launch_async_v1(
                 self,
                 x,
                 bias,
                 output,
                 rows,
                 columns,
-                report,
+                blocks_out,
+                threads_out,
+                launch_error_out,
             ):
                 del x, bias, output
                 launch_blocks, launch_threads = (
@@ -2242,37 +2303,39 @@ print(json.dumps({
                         (int(rows), int(columns))
                     )
                 )
-                report = report._obj
                 with self._lock:
                     self._calls += 1
                     call_index = self._calls
-                    self.report_ids.append(id(report))
+                    self.parameter_ids.append(id(blocks_out._obj))
 
                 if call_index == 1:
-                    report.set_device_error = 0
-                    report.get_device_error = 0
-                    report.observed_device = 0
-                    report.launch_error = 0
-                    report.blocks = launch_blocks
-                    report.threads_per_block = launch_threads
-                    self.first_report_ready.set()
-                    if not self.second_report_reset.wait(timeout=5):
-                        raise AssertionError("second launch did not reset report")
+                    blocks_out._obj.value = launch_blocks
+                    threads_out._obj.value = launch_threads
+                    launch_error_out._obj.value = 0
+                    self.first_parameters_ready.set()
+                    if not self.second_parameters_reset.wait(timeout=5):
+                        raise AssertionError(
+                            "second launch did not reset parameters"
+                        )
                     return 0
 
                 if call_index == 2:
-                    if not self.first_report_ready.wait(timeout=5):
+                    if not self.first_parameters_ready.wait(timeout=5):
                         raise AssertionError("first launch did not enter")
-                    report.set_device_error = 0
-                    report.get_device_error = 0
-                    report.observed_device = -1
-                    report.launch_error = 0
-                    report.blocks = launch_blocks
-                    report.threads_per_block = launch_threads
-                    self.second_report_reset.set()
+                    if (
+                        blocks_out._obj.value != 0
+                        or threads_out._obj.value != 0
+                        or launch_error_out._obj.value != 0
+                    ):
+                        raise AssertionError(
+                            "launch parameters were not reset before reuse"
+                        )
+                    blocks_out._obj.value = launch_blocks
+                    threads_out._obj.value = launch_threads
+                    launch_error_out._obj.value = 0
+                    self.second_parameters_reset.set()
                     if not self.second_can_finish.wait(timeout=5):
                         raise AssertionError("second launch was not released")
-                    report.observed_device = 0
                     return 0
 
                 raise AssertionError(f"unexpected launch call {call_index}")
@@ -2308,10 +2371,10 @@ print(json.dumps({
         try:
             first_thread.start()
             first_thread_started = True
-            self.assertTrue(library.first_report_ready.wait(timeout=5))
+            self.assertTrue(library.first_parameters_ready.wait(timeout=5))
             second_thread.start()
             second_thread_started = True
-            self.assertTrue(library.second_report_reset.wait(timeout=5))
+            self.assertTrue(library.second_parameters_reset.wait(timeout=5))
             first_thread.join(timeout=5)
             self.assertFalse(first_thread.is_alive())
             library.second_can_finish.set()
@@ -2320,10 +2383,10 @@ print(json.dumps({
 
             self.assertEqual(errors, [])
             self.assertEqual(len(outputs), 2)
-            self.assertEqual(len(library.report_ids), 2)
-            self.assertEqual(len(set(library.report_ids)), 2)
+            self.assertEqual(len(library.parameter_ids), 2)
+            self.assertEqual(len(set(library.parameter_ids)), 2)
         finally:
-            library.second_report_reset.set()
+            library.second_parameters_reset.set()
             library.second_can_finish.set()
             if first_thread_started:
                 first_thread.join(timeout=5)
@@ -2350,7 +2413,10 @@ print(json.dumps({
         outputs = []
         try:
             initial_malloc_count = len(runtime.mallocs)
-            for _ in range(3):
+            for _ in range(
+                _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY
+                + 1
+            ):
                 outputs.append(executor.execute(x, bias))
 
             executions = [
@@ -2360,17 +2426,23 @@ print(json.dumps({
                 execution["output_buffer_pool"]["buffer_name"]
                 for execution in executions
             ]
-            self.assertEqual(len(set(pool_names)), 3)
             self.assertEqual(
-                executions[2]["output_buffer_pool"]["source"],
+                len(set(pool_names)),
+                _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY + 1,
+            )
+            self.assertEqual(
+                executions[-1]["output_buffer_pool"]["source"],
                 "allocated_during_execute",
             )
             self.assertIs(
-                executions[2]["output_buffer_pool"]["allocated_in_execute"],
+                executions[-1]["output_buffer_pool"]["allocated_in_execute"],
                 True,
             )
             self.assertEqual(len(runtime.mallocs), initial_malloc_count + 1)
-            self.assertEqual(executor.metadata()["output_pool"]["live_buffers"], 3)
+            self.assertEqual(
+                executor.metadata()["output_pool"]["live_buffers"],
+                _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY + 1,
+            )
         finally:
             for output in outputs:
                 output._torch_rs_close_private_cuda_buffer()
@@ -2378,8 +2450,14 @@ print(json.dumps({
             x._torch_rs_close_private_cuda_buffer()
             bias._torch_rs_close_private_cuda_buffer()
 
-        self.assertEqual(close["free_count"], 3)
-        self.assertEqual(len(close["calls"]), 3)
+        self.assertEqual(
+            close["free_count"],
+            _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY + 1,
+        )
+        self.assertEqual(
+            len(close["calls"]),
+            _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY + 1,
+        )
         self.assertEqual(len(set(runtime.frees)), len(runtime.frees))
 
     def test_prepared_executor_close_defers_live_output_free(self):
@@ -2398,9 +2476,15 @@ print(json.dumps({
             output = executor.execute(x, bias)
             close = executor.close()
 
-            self.assertEqual(close["free_count"], 1)
+            self.assertEqual(
+                close["free_count"],
+                _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY - 1,
+            )
             self.assertEqual(close["deferred_live_buffers"], 1)
-            self.assertEqual(len(close["calls"]), 1)
+            self.assertEqual(
+                len(close["calls"]),
+                _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY - 1,
+            )
             self.assertIs(executor.metadata()["closed"], True)
             self.assertEqual(executor.metadata()["output_pool"]["live_buffers"], 1)
             with self.assertRaisesRegex(RuntimeError, "executor is closed"):
@@ -2412,14 +2496,20 @@ print(json.dumps({
             release = output._torch_rs_close_private_cuda_buffer()
             self.assertEqual(release["released_to_pool"], False)
             self.assertIs(release["freed_after_executor_close"], True)
-            self.assertEqual(release["pool_free_count"], 2)
+            self.assertEqual(
+                release["pool_free_count"],
+                _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY,
+            )
             self.assertEqual(executor.metadata()["output_pool"]["live_buffers"], 0)
             self.assertIs(executor.close()["already_closed"], True)
         finally:
             x._torch_rs_close_private_cuda_buffer()
             bias._torch_rs_close_private_cuda_buffer()
 
-        self.assertEqual(len(runtime.frees), 4)
+        self.assertEqual(
+            len(runtime.frees),
+            _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY + 2,
+        )
         self.assertEqual(len(set(runtime.frees)), len(runtime.frees))
 
     def test_one_shot_executor_release_records_executor_close_free(self):
@@ -2448,7 +2538,10 @@ print(json.dumps({
             self.assertEqual(release["released_to_pool"], True)
             self.assertIs(release["freed_after_pool_close"], False)
             self.assertIs(release["freed_after_executor_close"], True)
-            self.assertEqual(release["executor_close"]["free_count"], 2)
+            self.assertEqual(
+                release["executor_close"]["free_count"],
+                _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY,
+            )
             self.assertEqual(
                 release["executor_close"]["deferred_live_buffers"],
                 0,
@@ -2461,7 +2554,10 @@ print(json.dumps({
             x._torch_rs_close_private_cuda_buffer()
             bias._torch_rs_close_private_cuda_buffer()
 
-        self.assertEqual(len(runtime.frees), 4)
+        self.assertEqual(
+            len(runtime.frees),
+            _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY + 2,
+        )
         self.assertEqual(len(set(runtime.frees)), len(runtime.frees))
 
     def test_prepared_executor_derives_metadata_pool_and_launch_from_shape(self):
@@ -2525,7 +2621,10 @@ print(json.dumps({
                     "threads_per_block": expected_threads,
                 },
             )
-            self.assertEqual(preparation["output_pool"]["initial_capacity"], 2)
+            self.assertEqual(
+                preparation["output_pool"]["initial_capacity"],
+                _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY,
+            )
             self.assertEqual(
                 {
                     tuple(buffer["shape"])
@@ -2753,7 +2852,7 @@ print(json.dumps({
             x._torch_rs_close_private_cuda_buffer()
             bias._torch_rs_close_private_cuda_buffer()
 
-    def test_prepared_executor_restores_device0_before_launch(self):
+    def test_prepared_executor_hoists_device_selection_out_of_launch(self):
         runtime = _FakeCudaRuntime()
 
         class RecordingLibrary(_FakePointwiseReduceLibrary):
@@ -2787,26 +2886,30 @@ print(json.dumps({
         )
         output = None
         try:
-            runtime.current_device = 1
+            set_device_call_count = len(runtime.set_devices)
+            get_device_call_count = len(runtime.get_devices)
 
             output = executor.execute(x, bias)
             execution = output.metadata()["compile_execution"]
 
             self.assertEqual(library.launch_devices, [0])
-            self.assertEqual(runtime.set_devices[-1], 0)
             self.assertEqual(runtime.current_device, 0)
+            self.assertEqual(len(runtime.set_devices), set_device_call_count)
+            self.assertEqual(len(runtime.get_devices), get_device_call_count + 1)
             self.assertEqual(
-                execution["calls"]["cudaSetDevice_before_launch"]["result"],
+                executor.metadata()["calls"]["cudaSetDevice"]["result"],
                 0,
             )
             self.assertEqual(
-                execution["calls"]["cudaGetDevice_before_launch"]["result"],
+                executor.metadata()["calls"]["cudaGetDevice"]["value"],
                 0,
             )
-            self.assertEqual(
-                execution["calls"]["cudaGetDevice_before_launch"]["value"],
-                0,
+            self.assertIs(
+                execution["device_selection_hoisted_to_preparation"],
+                True,
             )
+            self.assertNotIn("cudaSetDevice_before_launch", execution["calls"])
+            self.assertNotIn("cudaGetDevice_before_launch", execution["calls"])
         finally:
             runtime.current_device = 0
             if output is not None:
@@ -2842,14 +2945,20 @@ print(json.dumps({
             release = output._torch_rs_close_private_cuda_buffer()
             self.assertEqual(release["released_to_pool"], False)
             self.assertIs(release["freed_after_executor_close"], True)
-            self.assertEqual(release["pool_free_count"], 2)
+            self.assertEqual(
+                release["pool_free_count"],
+                _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY,
+            )
             self.assertEqual(executor.metadata()["output_pool"]["live_buffers"], 0)
         finally:
             executor.close()
             x._torch_rs_close_private_cuda_buffer()
             bias._torch_rs_close_private_cuda_buffer()
 
-        self.assertEqual(len(runtime.frees), 4)
+        self.assertEqual(
+            len(runtime.frees),
+            _cuda_pointwise_reduce_workload._OUTPUT_POOL_INITIAL_CAPACITY + 2,
+        )
         self.assertEqual(len(set(runtime.frees)), len(runtime.frees))
 
     def test_pytorch_reference_timing_excludes_checksum_materialization(self):
@@ -3293,20 +3402,18 @@ print(json.dumps({
             if input_bundle is not None:
                 input_bundle.close()
 
-    def test_torch_compile_inductor_pointwise_reduce_restores_device0_before_launch_on_h100(
+    def test_torch_compile_inductor_pointwise_reduce_hoists_device_selection_on_h100(
         self,
     ):
-        cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
-        if not cuda_visible_devices or "," not in cuda_visible_devices:
-            self.skipTest("requires at least two visible CUDA devices")
+        cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
 
         probe = _reference_cuda_probe(cuda_visible_devices=cuda_visible_devices)
         if not probe.get("imported"):
             self.skipTest("requires reference PyTorch")
-        if not probe.get("available") or probe.get("device_count", 0) < 2:
+        if not probe.get("available") or probe.get("device_count", 0) < 1:
             self.skipTest(
                 f"requires CUDA_VISIBLE_DEVICES={cuda_visible_devices!r} "
-                "to expose at least two GPUs"
+                "to expose at least one GPU"
             )
         if "H100" not in probe.get("device_name", ""):
             self.skipTest(
@@ -3356,12 +3463,7 @@ print(json.dumps({
                 dynamic=False,
             )
             runtime = compiled._torch_rs_cuda_compile_executor._runtime
-            set_device_1 = _cuda_pointwise_reduce_workload._runtime_call(
-                runtime,
-                "cudaSetDevice",
-                1,
-            )
-            self.assertEqual(set_device_1["result"], 0)
+            prepared = compiled._torch_rs_cuda_compile_executor.metadata()
 
             output = compiled(*input_bundle.inputs)
             metadata, execution = benchmark_compile_cuda._compile_execution_from_output(
@@ -3375,17 +3477,23 @@ print(json.dumps({
             self.assertEqual(execution["device_output_checksum"], expected_checksum)
             self.assertEqual(execution["output_metadata"], expected_output_metadata)
             self.assertEqual(
-                execution["calls"]["cudaSetDevice_before_launch"]["result"],
+                prepared["calls"]["cudaSetDevice"]["result"],
                 0,
             )
             self.assertEqual(
-                execution["calls"]["cudaGetDevice_before_launch"]["result"],
+                prepared["calls"]["cudaGetDevice"]["result"],
                 0,
             )
             self.assertEqual(
-                execution["calls"]["cudaGetDevice_before_launch"]["value"],
+                prepared["calls"]["cudaGetDevice"]["value"],
                 0,
             )
+            self.assertIs(
+                execution["device_selection_hoisted_to_preparation"],
+                True,
+            )
+            self.assertNotIn("cudaSetDevice_before_launch", execution["calls"])
+            self.assertNotIn("cudaGetDevice_before_launch", execution["calls"])
             comparison = benchmark_compile_cuda._compare_compiled_output_bytes(
                 output,
                 execution,

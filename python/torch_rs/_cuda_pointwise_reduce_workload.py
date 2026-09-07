@@ -43,7 +43,7 @@ POINTWISE_REDUCE_OUTPUT_POOL_SCHEMA_VERSION = (
 )
 POINTWISE_REDUCE_COMPILE_WORKLOAD_VERSION = "h100_cuda_pointwise_reduce_float32_v1"
 POINTWISE_REDUCE_KERNEL_VERSION = (
-    "h100_cuda_pointwise_plus_row_reduce_float32_v2"
+    "h100_cuda_pointwise_plus_row_reduce_float32_v3"
 )
 WORKLOAD_SHAPE = (1024, 1024)
 OUTPUT_SHAPE = (1024,)
@@ -65,7 +65,7 @@ _WORKLOAD_OUTPUT_METADATA = _cuda_buffer.float32_metadata(
 
 _FLOAT32_SIZE = 4
 _COMPILE_DEFAULT_THREADS_PER_BLOCK = 32
-_OUTPUT_POOL_INITIAL_CAPACITY = 2
+_OUTPUT_POOL_INITIAL_CAPACITY = 4
 _CUDA_UNAVAILABLE_ERRORS = _cuda_buffer.CUDA_UNAVAILABLE_ERRORS
 _CUDA_SOURCE = r"""
 #include <cuda_runtime.h>
@@ -413,9 +413,6 @@ class _CompiledExecutionToken:
     )
     device_output_pointer_nonzero: bool
     result: int
-    set_device_error: int
-    get_device_error: int
-    observed_device: int
     launch_error: int
     blocks: int
     threads_per_block: int
@@ -1430,7 +1427,7 @@ class H100Float32PointwiseReduceCompiledExecutor:
             self._kernel_library,
             (
                 "torch_rs_private_h100_pointwise_reduce_float32_"
-                "device0_guarded_launch_async_v1"
+                "launch_async_v1"
             ),
         )
         self._launch_report_tls = threading.local()
@@ -1475,6 +1472,13 @@ class H100Float32PointwiseReduceCompiledExecutor:
         self._preparation["launch_dimensions"] = {
             "blocks": self._launch_blocks,
             "threads_per_block": self._threads_per_block,
+        }
+        self._preparation["device_selection_hoisted_to_compile_wrapper"] = True
+        self._preparation["device_selection"] = {
+            "cudaSetDevice": "preparation",
+            "cudaGetDevice": "preparation",
+            "per_launch_cudaSetDevice": False,
+            "per_launch_cudaGetDevice": False,
         }
         self._executor_static_evidence = {
             "schema_version": POINTWISE_REDUCE_COMPILE_EXECUTOR_SCHEMA_VERSION,
@@ -1531,6 +1535,13 @@ class H100Float32PointwiseReduceCompiledExecutor:
             "kernel_synchronized_in_call": False,
             "output_materialized": False,
             "readback_deferred": True,
+            "device_selection_hoisted_to_preparation": True,
+            "device_selection": {
+                "cudaSetDevice": "preparation",
+                "cudaGetDevice": "preparation",
+                "per_launch_cudaSetDevice": False,
+                "per_launch_cudaGetDevice": False,
+            },
         }
 
     def metadata(self) -> dict[str, Any]:
@@ -1608,15 +1619,28 @@ class H100Float32PointwiseReduceCompiledExecutor:
             release["freed_after_executor_close"] = freed_after_executor_close
             return release
 
-    def _thread_launch_report(self) -> tuple[_GuardedLaunchReport, Any]:
-        report = getattr(self._launch_report_tls, "report", None)
-        report_ref = getattr(self._launch_report_tls, "report_ref", None)
-        if report is None or report_ref is None:
-            report = _GuardedLaunchReport()
-            report_ref = ctypes.byref(report)
-            self._launch_report_tls.report = report
-            self._launch_report_tls.report_ref = report_ref
-        return report, report_ref
+    def _thread_launch_parameters(
+        self,
+    ) -> tuple[ctypes.c_int, ctypes.c_int, ctypes.c_int, Any, Any, Any]:
+        parameters = getattr(self._launch_report_tls, "parameters", None)
+        if parameters is None:
+            blocks = ctypes.c_int()
+            threads_per_block = ctypes.c_int()
+            launch_error = ctypes.c_int()
+            parameters = (
+                blocks,
+                threads_per_block,
+                launch_error,
+                ctypes.byref(blocks),
+                ctypes.byref(threads_per_block),
+                ctypes.byref(launch_error),
+            )
+            self._launch_report_tls.parameters = parameters
+        blocks, threads_per_block, launch_error, *_refs = parameters
+        blocks.value = 0
+        threads_per_block.value = 0
+        launch_error.value = 0
+        return parameters
 
     def _runtime_error_evidence(self, result: int) -> dict[str, Any]:
         return {
@@ -1664,15 +1688,6 @@ class H100Float32PointwiseReduceCompiledExecutor:
         launch = self._launch_evidence(token)
         output_pool_evidence = self._output_pool_evidence(token)
         calls = {
-            "cudaSetDevice_before_launch": self._runtime_error_evidence(
-                token.set_device_error
-            ),
-            "cudaGetDevice_before_launch": {
-                **self._runtime_error_evidence(token.get_device_error),
-                "value": (
-                    token.observed_device if token.get_device_error == 0 else None
-                ),
-            },
             "torchRsPrivateH100PointwiseReduceFloat32": launch,
             "cudaMemcpyDeviceToHost_output": readback.copy_call,
             "cudaDeviceSynchronize_after_device_to_host": readback.sync_call,
@@ -1765,7 +1780,14 @@ class H100Float32PointwiseReduceCompiledExecutor:
             raise RuntimeError("cudaMalloc failed for compiled output")
 
         try:
-            report, report_ref = self._thread_launch_report()
+            (
+                blocks,
+                threads_per_block,
+                launch_error,
+                blocks_ref,
+                threads_per_block_ref,
+                launch_error_ref,
+            ) = self._thread_launch_parameters()
             kernel_result = int(
                 self._kernel_function(
                     device_x.pointer,
@@ -1773,7 +1795,9 @@ class H100Float32PointwiseReduceCompiledExecutor:
                     device_output.pointer,
                     self._rows,
                     self._columns,
-                    report_ref,
+                    blocks_ref,
+                    threads_per_block_ref,
+                    launch_error_ref,
                 )
             )
             token = _CompiledExecutionToken(
@@ -1782,22 +1806,10 @@ class H100Float32PointwiseReduceCompiledExecutor:
                 output_pool_acquisition=output_lease.acquisition_token,
                 device_output_pointer_nonzero=device_output.pointer_nonzero,
                 result=kernel_result,
-                set_device_error=int(report.set_device_error),
-                get_device_error=int(report.get_device_error),
-                observed_device=int(report.observed_device),
-                launch_error=int(report.launch_error),
-                blocks=int(report.blocks),
-                threads_per_block=int(report.threads_per_block),
+                launch_error=int(launch_error.value),
+                blocks=int(blocks.value),
+                threads_per_block=int(threads_per_block.value),
             )
-            if token.set_device_error != 0:
-                raise RuntimeError("cudaSetDevice(0) failed for compiled workload")
-            if token.get_device_error != 0:
-                raise RuntimeError("cudaGetDevice failed for compiled workload")
-            if token.observed_device != 0:
-                raise RuntimeError(
-                    "compiled workload CUDA device changed: expected 0, "
-                    f"got {token.observed_device}"
-                )
             if kernel_result != 0:
                 raise RuntimeError(
                     "private CUDA pointwise-reduce kernel launch failed"
@@ -1936,6 +1948,13 @@ def prepare_h100_float32_pointwise_reduce_compiled_executor_device0(
         "kernel_library": None,
         "prepared": False,
         "setup_hoisted_to_compile_wrapper": True,
+        "device_selection_hoisted_to_compile_wrapper": True,
+        "device_selection": {
+            "cudaSetDevice": "preparation",
+            "cudaGetDevice": "preparation",
+            "per_launch_cudaSetDevice": False,
+            "per_launch_cudaGetDevice": False,
+        },
         "invocation_count": 0,
         "calls": {},
     }

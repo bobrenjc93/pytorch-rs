@@ -1,44 +1,44 @@
 {
   "aggregates": {
-    "common_success_geomean_speed_ratio": 0.9975518830829672,
+    "common_success_geomean_speed_ratio": 1.0485157108494194,
     "common_success_shape_count": 4,
     "common_success_weight": 1.0,
-    "coverage_adjusted_capped_speed_ratio": 0.9788207240589899,
-    "coverage_adjusted_overall_percent": 97.882072405899,
+    "coverage_adjusted_capped_speed_ratio": 1.0,
+    "coverage_adjusted_overall_percent": 100.0,
     "denominator_weight": 1.0,
     "full_matrix_weight": 1.0,
     "per_workload": [
       {
         "candidate_status": "ok",
-        "capped_steady_speed_ratio": 0.9400337776088085,
+        "capped_steady_speed_ratio": 1.0,
         "eligible_cuda_compile_evidence": true,
         "name": "square_256x256",
-        "pytorch_cold_first_call_us": 1089447.866,
-        "pytorch_steady_median_us": 42.858333333333334,
+        "pytorch_cold_first_call_us": 1151833.245,
+        "pytorch_steady_median_us": 40.882,
         "shape": [
           256,
           256
         ],
-        "steady_speed_ratio": 0.9400337776088085,
-        "torch_rs_cold_first_call_us": 221.415,
-        "torch_rs_steady_median_us": 45.592333333333336,
+        "steady_speed_ratio": 1.0539676537820326,
+        "torch_rs_cold_first_call_us": 205.211,
+        "torch_rs_steady_median_us": 38.788666666666664,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 23.500844440220213
+        "weighted_score_contribution_percent": 25.0
       },
       {
         "candidate_status": "ok",
         "capped_steady_speed_ratio": 1.0,
         "eligible_cuda_compile_evidence": true,
         "name": "square_1024x1024",
-        "pytorch_cold_first_call_us": 41340.246,
-        "pytorch_steady_median_us": 43.76266666666666,
+        "pytorch_cold_first_call_us": 40486.93,
+        "pytorch_steady_median_us": 42.98833333333334,
         "shape": [
           1024,
           1024
         ],
-        "steady_speed_ratio": 1.0263851211370227,
-        "torch_rs_cold_first_call_us": 164.178,
-        "torch_rs_steady_median_us": 42.63766666666666,
+        "steady_speed_ratio": 1.055057880312513,
+        "torch_rs_cold_first_call_us": 145.33,
+        "torch_rs_steady_median_us": 40.745,
         "weight": 0.25,
         "weighted_score_contribution_percent": 25.0
       },
@@ -47,37 +47,37 @@
         "capped_steady_speed_ratio": 1.0,
         "eligible_cuda_compile_evidence": true,
         "name": "tall_4096x256",
-        "pytorch_cold_first_call_us": 37456.461,
-        "pytorch_steady_median_us": 50.64333333333334,
+        "pytorch_cold_first_call_us": 37881.288,
+        "pytorch_steady_median_us": 45.629,
         "shape": [
           4096,
           256
         ],
-        "steady_speed_ratio": 1.05238002881525,
-        "torch_rs_cold_first_call_us": 170.197,
-        "torch_rs_steady_median_us": 48.12266666666667,
+        "steady_speed_ratio": 1.071069763074708,
+        "torch_rs_cold_first_call_us": 137.277,
+        "torch_rs_steady_median_us": 42.601333333333336,
         "weight": 0.25,
         "weighted_score_contribution_percent": 25.0
       },
       {
         "candidate_status": "ok",
-        "capped_steady_speed_ratio": 0.975249118627151,
+        "capped_steady_speed_ratio": 1.0,
         "eligible_cuda_compile_evidence": true,
         "name": "wide_256x4096",
-        "pytorch_cold_first_call_us": 39983.343,
-        "pytorch_steady_median_us": 40.38766666666666,
+        "pytorch_cold_first_call_us": 36779.031,
+        "pytorch_steady_median_us": 39.393,
         "shape": [
           256,
           4096
         ],
-        "steady_speed_ratio": 0.975249118627151,
-        "torch_rs_cold_first_call_us": 143.307,
-        "torch_rs_steady_median_us": 41.41266666666667,
+        "steady_speed_ratio": 1.0147952874905544,
+        "torch_rs_cold_first_call_us": 137.628,
+        "torch_rs_steady_median_us": 38.818666666666665,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 24.381227965678775
+        "weighted_score_contribution_percent": 25.0
       }
     ],
-    "torch_rs_cuda_compile_score_percent": 97.882072405899,
+    "torch_rs_cuda_compile_score_percent": 100.0,
     "workload_count": 4,
     "zero_credit_cell_count": 0,
     "zero_credit_unsupported_cell_count": 0,
@@ -87,9 +87,9 @@
     "benchmark_version": "torch_compile_cuda_h100_reference_benchmark_v11",
     "cuda_visible_devices": "0",
     "git": {
-      "diff_stat": "",
-      "head": "250dd318d53cc4a51d6902be0e1f62d0468d6932",
-      "status_short": ""
+      "diff_stat": "python/torch_rs/_cuda_pointwise_reduce_workload.py | 101 +++++---\n scripts/benchmark_compile_cuda.py                  |  77 +++++-\n tests/test_compile_cuda_benchmark.py               | 284 ++++++++++++++-------\n 3 files changed, 326 insertions(+), 136 deletions(-)",
+      "head": "8c4933a5a8fb151b4b41a1ac5b50ad43db4f7947",
+      "status_short": "M python/torch_rs/_cuda_pointwise_reduce_workload.py\n M scripts/benchmark_compile_cuda.py\n M tests/test_compile_cuda_benchmark.py"
     },
     "gpu": {
       "nvcc_version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
@@ -775,7 +775,17 @@
     {
       "candidate": {
         "cold_checksum": "1a19b0b517ca4f23",
-        "cold_first_call_us": 221.415,
+        "cold_first_call_accounting": {
+          "cold_first_call_region": "first invocation after the CUDA executor is prepared",
+          "cold_first_call_us": 205.211,
+          "factory_plus_cold_first_call_us": 13328.441,
+          "factory_region": "torch_rs.compile wrapper construction and prepared CUDA executor setup",
+          "factory_us": 13123.23,
+          "includes_deferred_backend_compile_in_cold_call": false,
+          "prepared_executor_ready_before_cold_call": true,
+          "setup_hoisted_to_factory": true
+        },
+        "cold_first_call_us": 205.211,
         "compile_backend": "inductor",
         "compile_config": {
           "backend": "inductor",
@@ -797,26 +807,17 @@
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
             },
-            "cudaGetDevice_before_launch": {
-              "error_name": null,
-              "result": 0,
-              "value": 0
-            },
             "cudaMemcpyDeviceToHost_output": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
               "kind": "cudaMemcpyDeviceToHost",
-              "result": 0
-            },
-            "cudaSetDevice_before_launch": {
-              "error_name": null,
               "result": 0
             },
             "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -878,6 +879,13 @@
           "device_output_bytes_checksum": "68db7c58ba0121f470cf2b3624dca705",
           "device_output_checksum": "1a19b0b517ca4f23",
           "device_output_pointer_nonzero": true,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_preparation": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -904,7 +912,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "5938e9ea4cd91e78",
+            "preparation_id": "7761d4a341da6196",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -1002,18 +1010,18 @@
           "output_buffer_pool": {
             "allocated_in_acquire": false,
             "allocated_in_execute": false,
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "enabled": true,
-            "lease_id": "5938e9ea4cd91e78:1",
-            "pool_allocation_count": 2,
-            "pool_available_buffers_after_acquire": 1,
-            "pool_initial_capacity": 2,
+            "lease_id": "7761d4a341da6196:1",
+            "pool_allocation_count": 4,
+            "pool_available_buffers_after_acquire": 3,
+            "pool_initial_capacity": 4,
             "pool_live_buffers_after_acquire": 1,
             "pool_release_count": 0,
             "pool_reuse_count": 0,
             "pool_snapshot_after_materialization": {
-              "allocation_count": 2,
-              "available_buffers": 1,
+              "allocation_count": 4,
+              "available_buffers": 3,
               "buffers": [
                 {
                   "available": true,
@@ -1027,11 +1035,33 @@
                   ]
                 },
                 {
+                  "available": true,
+                  "byte_count": 1024,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_1",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    256
+                  ]
+                },
+                {
+                  "available": true,
+                  "byte_count": 1024,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_2",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    256
+                  ]
+                },
+                {
                   "available": false,
                   "byte_count": 1024,
                   "lease_count": 1,
                   "live": true,
-                  "name": "compiled_output_pool_1",
+                  "name": "compiled_output_pool_3",
                   "pointer_nonzero": true,
                   "shape": [
                     256
@@ -1041,13 +1071,13 @@
               "closed": false,
               "enabled": true,
               "free_count": 0,
-              "initial_capacity": 2,
+              "initial_capacity": 4,
               "live_buffers": 1,
               "max_live_buffers": 1,
               "release_count": 0,
               "reuse_count": 0,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-              "total_buffers": 2
+              "total_buffers": 4
             },
             "reused_released_allocation": false,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -1055,7 +1085,7 @@
           },
           "output_comparison": {
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
@@ -1071,7 +1101,7 @@
             "private_output_bytes_checksum": "68db7c58ba0121f470cf2b3624dca705",
             "recorded_private_output_bytes_checksum": "68db7c58ba0121f470cf2b3624dca705",
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -1158,7 +1188,7 @@
           "rejection_reasons": [],
           "score_credit": 1.0
         },
-        "factory_us": 14243.316,
+        "factory_us": 13123.23,
         "forwarded_to_pytorch": false,
         "implementation": "torch_rs",
         "input_device_type": "cuda",
@@ -1554,26 +1584,17 @@
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
             },
-            "cudaGetDevice_before_launch": {
-              "error_name": null,
-              "result": 0,
-              "value": 0
-            },
             "cudaMemcpyDeviceToHost_output": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
               "kind": "cudaMemcpyDeviceToHost",
-              "result": 0
-            },
-            "cudaSetDevice_before_launch": {
-              "error_name": null,
               "result": 0
             },
             "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -1635,6 +1656,13 @@
           "device_output_bytes_checksum": "68db7c58ba0121f470cf2b3624dca705",
           "device_output_checksum": "1a19b0b517ca4f23",
           "device_output_pointer_nonzero": true,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_preparation": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -1661,7 +1689,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 67,
-            "preparation_id": "5938e9ea4cd91e78",
+            "preparation_id": "7761d4a341da6196",
             "prepared": true,
             "reused_prepared_executor": true,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -1759,18 +1787,18 @@
           "output_buffer_pool": {
             "allocated_in_acquire": false,
             "allocated_in_execute": false,
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "enabled": true,
-            "lease_id": "5938e9ea4cd91e78:67",
-            "pool_allocation_count": 2,
+            "lease_id": "7761d4a341da6196:67",
+            "pool_allocation_count": 4,
             "pool_available_buffers_after_acquire": 1,
-            "pool_initial_capacity": 2,
-            "pool_live_buffers_after_acquire": 1,
-            "pool_release_count": 66,
-            "pool_reuse_count": 66,
+            "pool_initial_capacity": 4,
+            "pool_live_buffers_after_acquire": 3,
+            "pool_release_count": 64,
+            "pool_reuse_count": 64,
             "pool_snapshot_after_materialization": {
-              "allocation_count": 2,
-              "available_buffers": 1,
+              "allocation_count": 4,
+              "available_buffers": 3,
               "buffers": [
                 {
                   "available": true,
@@ -1784,11 +1812,33 @@
                   ]
                 },
                 {
+                  "available": true,
+                  "byte_count": 1024,
+                  "lease_count": 22,
+                  "live": false,
+                  "name": "compiled_output_pool_1",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    256
+                  ]
+                },
+                {
+                  "available": true,
+                  "byte_count": 1024,
+                  "lease_count": 22,
+                  "live": false,
+                  "name": "compiled_output_pool_2",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    256
+                  ]
+                },
+                {
                   "available": false,
                   "byte_count": 1024,
-                  "lease_count": 67,
+                  "lease_count": 23,
                   "live": true,
-                  "name": "compiled_output_pool_1",
+                  "name": "compiled_output_pool_3",
                   "pointer_nonzero": true,
                   "shape": [
                     256
@@ -1798,13 +1848,13 @@
               "closed": false,
               "enabled": true,
               "free_count": 0,
-              "initial_capacity": 2,
+              "initial_capacity": 4,
               "live_buffers": 1,
-              "max_live_buffers": 1,
+              "max_live_buffers": 3,
               "release_count": 66,
-              "reuse_count": 66,
+              "reuse_count": 64,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-              "total_buffers": 2
+              "total_buffers": 4
             },
             "reused_released_allocation": true,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -1812,7 +1862,7 @@
           },
           "output_comparison": {
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
@@ -1828,7 +1878,7 @@
             "private_output_bytes_checksum": "68db7c58ba0121f470cf2b3624dca705",
             "recorded_private_output_bytes_checksum": "68db7c58ba0121f470cf2b3624dca705",
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -1895,6 +1945,7 @@
               "error_name": null,
               "result": 0
             },
+            "intermediate_output_release_outside_timed_region": true,
             "materialization_outside_timed_region": true,
             "timed_call_count": 3
           },
@@ -1939,26 +1990,17 @@
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
               },
-              "cudaGetDevice_before_launch": {
-                "error_name": null,
-                "result": 0,
-                "value": 0
-              },
               "cudaMemcpyDeviceToHost_output": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "byte_count": 1024,
                 "device_index": 0,
                 "error_name": null,
                 "kind": "cudaMemcpyDeviceToHost",
-                "result": 0
-              },
-              "cudaSetDevice_before_launch": {
-                "error_name": null,
                 "result": 0
               },
               "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -2020,6 +2062,13 @@
             "device_output_bytes_checksum": "68db7c58ba0121f470cf2b3624dca705",
             "device_output_checksum": "1a19b0b517ca4f23",
             "device_output_pointer_nonzero": true,
+            "device_selection": {
+              "cudaGetDevice": "preparation",
+              "cudaSetDevice": "preparation",
+              "per_launch_cudaGetDevice": false,
+              "per_launch_cudaSetDevice": false
+            },
+            "device_selection_hoisted_to_preparation": true,
             "device_type": "cuda",
             "driver": {
               "cuInit": {
@@ -2046,7 +2095,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "5938e9ea4cd91e78",
+              "preparation_id": "7761d4a341da6196",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -2144,18 +2193,18 @@
             "output_buffer_pool": {
               "allocated_in_acquire": false,
               "allocated_in_execute": false,
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "enabled": true,
-              "lease_id": "5938e9ea4cd91e78:1",
-              "pool_allocation_count": 2,
-              "pool_available_buffers_after_acquire": 1,
-              "pool_initial_capacity": 2,
+              "lease_id": "7761d4a341da6196:1",
+              "pool_allocation_count": 4,
+              "pool_available_buffers_after_acquire": 3,
+              "pool_initial_capacity": 4,
               "pool_live_buffers_after_acquire": 1,
               "pool_release_count": 0,
               "pool_reuse_count": 0,
               "pool_snapshot_after_materialization": {
-                "allocation_count": 2,
-                "available_buffers": 1,
+                "allocation_count": 4,
+                "available_buffers": 3,
                 "buffers": [
                   {
                     "available": true,
@@ -2169,11 +2218,33 @@
                     ]
                   },
                   {
+                    "available": true,
+                    "byte_count": 1024,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_1",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      256
+                    ]
+                  },
+                  {
+                    "available": true,
+                    "byte_count": 1024,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_2",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      256
+                    ]
+                  },
+                  {
                     "available": false,
                     "byte_count": 1024,
                     "lease_count": 1,
                     "live": true,
-                    "name": "compiled_output_pool_1",
+                    "name": "compiled_output_pool_3",
                     "pointer_nonzero": true,
                     "shape": [
                       256
@@ -2183,13 +2254,13 @@
                 "closed": false,
                 "enabled": true,
                 "free_count": 0,
-                "initial_capacity": 2,
+                "initial_capacity": 4,
                 "live_buffers": 1,
                 "max_live_buffers": 1,
                 "release_count": 0,
                 "reuse_count": 0,
                 "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-                "total_buffers": 2
+                "total_buffers": 4
               },
               "reused_released_allocation": false,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -2197,7 +2268,7 @@
             },
             "output_comparison": {
               "copy_call": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "byte_count": 1024,
                 "device_index": 0,
                 "error_name": null,
@@ -2213,7 +2284,7 @@
               "private_output_bytes_checksum": "68db7c58ba0121f470cf2b3624dca705",
               "recorded_private_output_bytes_checksum": "68db7c58ba0121f470cf2b3624dca705",
               "sync_call": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
@@ -2302,7 +2373,7 @@
           "is_cuda": true,
           "native_cuda_compile": true,
           "operations_supported": [],
-          "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v2",
+          "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v3",
           "public_cuda_tensor_wrapper": true,
           "public_torch_cuda_api": false,
           "readback": {
@@ -2310,7 +2381,7 @@
             "checksum": "68db7c58ba0121f470cf2b3624dca705",
             "checksum_name": "torch_rs_private_cuda_pointwise_reduce_output_v1",
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
@@ -2319,7 +2390,7 @@
             },
             "payload_exposed": false,
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -2332,7 +2403,7 @@
           "shape": [
             256
           ],
-          "source_buffer_name": "compiled_output_pool_1",
+          "source_buffer_name": "compiled_output_pool_3",
           "source_buffer_schema_version": "torch_rs_private_cuda_float32_buffer_v1",
           "status": "ok",
           "storage_offset": 0,
@@ -2371,6 +2442,20 @@
             },
             "cudaMalloc_output_pool_1": {
               "buffer_name": "compiled_output_pool_1",
+              "byte_count": 1024,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
+            "cudaMalloc_output_pool_2": {
+              "buffer_name": "compiled_output_pool_2",
+              "byte_count": 1024,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
+            "cudaMalloc_output_pool_3": {
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
@@ -2423,6 +2508,13 @@
             "total_memory_bytes": 102085492736
           },
           "device_index": 0,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_compile_wrapper": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -2487,8 +2579,8 @@
             }
           },
           "output_pool": {
-            "allocation_count": 2,
-            "available_buffers": 2,
+            "allocation_count": 4,
+            "available_buffers": 4,
             "buffers": [
               {
                 "available": true,
@@ -2511,23 +2603,45 @@
                 "shape": [
                   256
                 ]
+              },
+              {
+                "available": true,
+                "byte_count": 1024,
+                "lease_count": 0,
+                "live": false,
+                "name": "compiled_output_pool_2",
+                "pointer_nonzero": true,
+                "shape": [
+                  256
+                ]
+              },
+              {
+                "available": true,
+                "byte_count": 1024,
+                "lease_count": 0,
+                "live": false,
+                "name": "compiled_output_pool_3",
+                "pointer_nonzero": true,
+                "shape": [
+                  256
+                ]
               }
             ],
             "closed": false,
             "enabled": true,
             "free_count": 0,
-            "initial_capacity": 2,
+            "initial_capacity": 4,
             "live_buffers": 0,
             "max_live_buffers": 0,
             "release_count": 0,
             "reuse_count": 0,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-            "total_buffers": 2
+            "total_buffers": 4
           },
           "output_shape": [
             256
           ],
-          "preparation_id": "5938e9ea4cd91e78",
+          "preparation_id": "7761d4a341da6196",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -2596,6 +2710,20 @@
               "error_name": null,
               "result": 0
             },
+            "cudaMalloc_output_pool_2": {
+              "buffer_name": "compiled_output_pool_2",
+              "byte_count": 1024,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
+            "cudaMalloc_output_pool_3": {
+              "buffer_name": "compiled_output_pool_3",
+              "byte_count": 1024,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
             "cudaSetDevice": {
               "error_name": null,
               "result": 0
@@ -2643,6 +2771,13 @@
             "total_memory_bytes": 102085492736
           },
           "device_index": 0,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_compile_wrapper": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -2707,8 +2842,8 @@
             }
           },
           "output_pool": {
-            "allocation_count": 2,
-            "available_buffers": 2,
+            "allocation_count": 4,
+            "available_buffers": 4,
             "buffers": [
               {
                 "available": true,
@@ -2724,9 +2859,31 @@
               {
                 "available": true,
                 "byte_count": 1024,
-                "lease_count": 67,
+                "lease_count": 22,
                 "live": false,
                 "name": "compiled_output_pool_1",
+                "pointer_nonzero": true,
+                "shape": [
+                  256
+                ]
+              },
+              {
+                "available": true,
+                "byte_count": 1024,
+                "lease_count": 22,
+                "live": false,
+                "name": "compiled_output_pool_2",
+                "pointer_nonzero": true,
+                "shape": [
+                  256
+                ]
+              },
+              {
+                "available": true,
+                "byte_count": 1024,
+                "lease_count": 23,
+                "live": false,
+                "name": "compiled_output_pool_3",
                 "pointer_nonzero": true,
                 "shape": [
                   256
@@ -2736,18 +2893,18 @@
             "closed": false,
             "enabled": true,
             "free_count": 0,
-            "initial_capacity": 2,
+            "initial_capacity": 4,
             "live_buffers": 0,
-            "max_live_buffers": 1,
+            "max_live_buffers": 3,
             "release_count": 67,
-            "reuse_count": 66,
+            "reuse_count": 64,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-            "total_buffers": 2
+            "total_buffers": 4
           },
           "output_shape": [
             256
           ],
-          "preparation_id": "5938e9ea4cd91e78",
+          "preparation_id": "7761d4a341da6196",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -2788,39 +2945,39 @@
           "expected_invocation_count": 67,
           "last_invocation_index": 67,
           "observed_invocation_count": 67,
-          "output_pool_allocation_count": 2,
-          "output_pool_available_buffers_after_timing": 2,
+          "output_pool_allocation_count": 4,
+          "output_pool_available_buffers_after_timing": 4,
           "output_pool_enabled": true,
-          "output_pool_initial_capacity": 2,
+          "output_pool_initial_capacity": 4,
           "output_pool_live_buffers_after_timing": 0,
           "output_pool_release_count": 67,
-          "preparation_id": "5938e9ea4cd91e78",
-          "prepared_steady_median_us": 45.592333333333336,
-          "prepared_vs_unprepared_steady_speedup": 226.6050286232334,
+          "preparation_id": "7761d4a341da6196",
+          "prepared_steady_median_us": 38.788666666666664,
+          "prepared_vs_unprepared_steady_speedup": 259.2691593764502,
           "setup_hoisted_to_compile_wrapper": true,
           "steady_state_output_allocated_in_execute": false,
           "steady_state_reused_output_buffer": true,
           "steady_state_reused_prepared_executor": true,
-          "unprepared_compatibility_steady_median_us": 10331.452
+          "unprepared_compatibility_steady_median_us": 10056.705
         },
         "score": {
-          "capped_steady_speed_ratio": 0.9400337776088085,
+          "capped_steady_speed_ratio": 1.0,
           "denominator_weight": 1.0,
           "eligible_cuda_compile_evidence": true,
-          "steady_speed_ratio": 0.9400337776088085,
+          "steady_speed_ratio": 1.0539676537820326,
           "weight": 0.25,
-          "weighted_score_contribution_percent": 23.500844440220213,
+          "weighted_score_contribution_percent": 25.0,
           "zero_credit_in_denominator": false
         },
         "score_credit": 1.0,
         "status": "ok",
         "steady": {
-          "mad_us": 2.3203333333333376,
-          "max_us": 53.668,
-          "median_us": 45.592333333333336,
-          "min_us": 42.778,
+          "mad_us": 0.8513333333333293,
+          "max_us": 42.41433333333334,
+          "median_us": 38.788666666666664,
+          "min_us": 37.45,
           "sample_count": 17,
-          "variance_us2": 8.95861185774702
+          "variance_us2": 2.1614755094194535
         },
         "steady_checksums": [
           "1a19b0b517ca4f23"
@@ -2851,26 +3008,17 @@
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
               },
-              "cudaGetDevice_before_launch": {
-                "error_name": null,
-                "result": 0,
-                "value": 0
-              },
               "cudaMemcpyDeviceToHost_output": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "byte_count": 1024,
                 "device_index": 0,
                 "error_name": null,
                 "kind": "cudaMemcpyDeviceToHost",
-                "result": 0
-              },
-              "cudaSetDevice_before_launch": {
-                "error_name": null,
                 "result": 0
               },
               "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -2932,6 +3080,13 @@
             "device_output_bytes_checksum": "68db7c58ba0121f470cf2b3624dca705",
             "device_output_checksum": "1a19b0b517ca4f23",
             "device_output_pointer_nonzero": true,
+            "device_selection": {
+              "cudaGetDevice": "preparation",
+              "cudaSetDevice": "preparation",
+              "per_launch_cudaGetDevice": false,
+              "per_launch_cudaSetDevice": false
+            },
+            "device_selection_hoisted_to_preparation": true,
             "device_type": "cuda",
             "driver": {
               "cuInit": {
@@ -2958,7 +3113,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "5938e9ea4cd91e78",
+              "preparation_id": "7761d4a341da6196",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -3055,18 +3210,18 @@
             "output_buffer_pool": {
               "allocated_in_acquire": false,
               "allocated_in_execute": false,
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "enabled": true,
-              "lease_id": "5938e9ea4cd91e78:1",
-              "pool_allocation_count": 2,
-              "pool_available_buffers_after_acquire": 1,
-              "pool_initial_capacity": 2,
+              "lease_id": "7761d4a341da6196:1",
+              "pool_allocation_count": 4,
+              "pool_available_buffers_after_acquire": 3,
+              "pool_initial_capacity": 4,
               "pool_live_buffers_after_acquire": 1,
               "pool_release_count": 0,
               "pool_reuse_count": 0,
               "pool_snapshot_after_materialization": {
-                "allocation_count": 2,
-                "available_buffers": 1,
+                "allocation_count": 4,
+                "available_buffers": 3,
                 "buffers": [
                   {
                     "available": true,
@@ -3080,11 +3235,33 @@
                     ]
                   },
                   {
+                    "available": true,
+                    "byte_count": 1024,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_1",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      256
+                    ]
+                  },
+                  {
+                    "available": true,
+                    "byte_count": 1024,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_2",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      256
+                    ]
+                  },
+                  {
                     "available": false,
                     "byte_count": 1024,
                     "lease_count": 1,
                     "live": true,
-                    "name": "compiled_output_pool_1",
+                    "name": "compiled_output_pool_3",
                     "pointer_nonzero": true,
                     "shape": [
                       256
@@ -3094,13 +3271,13 @@
                 "closed": false,
                 "enabled": true,
                 "free_count": 0,
-                "initial_capacity": 2,
+                "initial_capacity": 4,
                 "live_buffers": 1,
                 "max_live_buffers": 1,
                 "release_count": 0,
                 "reuse_count": 0,
                 "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-                "total_buffers": 2
+                "total_buffers": 4
               },
               "reused_released_allocation": false,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -3156,7 +3333,7 @@
             "timing_boundary": {
               "after_timed_region": {
                 "boundary": "after_unprepared_repeated_calls",
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
@@ -3182,12 +3359,12 @@
           "setup_repeated_per_invocation": true,
           "status": "ok",
           "steady": {
-            "mad_us": 344.0106666666652,
-            "max_us": 12149.325333333334,
-            "median_us": 10331.452,
-            "min_us": 9362.446,
+            "mad_us": 683.3573333333334,
+            "max_us": 11027.052666666666,
+            "median_us": 10056.705,
+            "min_us": 8417.882666666666,
             "sample_count": 17,
-            "variance_us2": 633165.6305305522
+            "variance_us2": 655784.3093761114
           },
           "steady_checksums": [
             "1a19b0b517ca4f23"
@@ -3234,7 +3411,16 @@
       },
       "reference_workload": {
         "cold_checksum": "1a19b0b517ca4f23",
-        "cold_first_call_us": 1089447.866,
+        "cold_first_call_accounting": {
+          "cold_first_call_region": "first compiled invocation after wrapper construction",
+          "cold_first_call_us": 1151833.245,
+          "factory_plus_cold_first_call_us": 1886100.02,
+          "factory_region": "torch.compile wrapper construction",
+          "factory_us": 734266.775,
+          "includes_deferred_backend_compile_in_cold_call": true,
+          "setup_hoisted_to_factory": false
+        },
+        "cold_first_call_us": 1151833.245,
         "compile_config": {
           "backend": "inductor",
           "dynamic": false,
@@ -3246,7 +3432,7 @@
           "assert_close": true,
           "eager_reference_checksum": "902068e57afa882c"
         },
-        "factory_us": 768969.974,
+        "factory_us": 734266.775,
         "implementation": "pytorch",
         "input_metadata": [
           {
@@ -3299,12 +3485,12 @@
         },
         "status": "ok",
         "steady": {
-          "mad_us": 1.7629999999999981,
-          "max_us": 51.434666666666665,
-          "median_us": 42.858333333333334,
-          "min_us": 39.36966666666667,
+          "mad_us": 1.097999999999999,
+          "max_us": 47.458666666666666,
+          "median_us": 40.882,
+          "min_us": 38.86866666666666,
           "sample_count": 17,
-          "variance_us2": 10.012133889273358
+          "variance_us2": 5.8470971733948485
         },
         "steady_checksums": [
           "1a19b0b517ca4f23"
@@ -3337,12 +3523,12 @@
         "workload_weight": 0.25
       },
       "score": {
-        "capped_steady_speed_ratio": 0.9400337776088085,
+        "capped_steady_speed_ratio": 1.0,
         "denominator_weight": 1.0,
         "eligible_cuda_compile_evidence": true,
-        "steady_speed_ratio": 0.9400337776088085,
+        "steady_speed_ratio": 1.0539676537820326,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 23.500844440220213,
+        "weighted_score_contribution_percent": 25.0,
         "zero_credit_in_denominator": false
       },
       "torch_rs_cuda_compile_inputs": {
@@ -4000,7 +4186,7 @@
         "output_shape": [
           256
         ],
-        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v2",
+        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v3",
         "primitive": "torch_rs_private_cuda_h100_pointwise_reduce_float32_device0",
         "public_cuda_tensor_wrapper": {
           "byte_count": 1024,
@@ -4152,26 +4338,17 @@
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
             },
-            "cudaGetDevice_before_launch": {
-              "error_name": null,
-              "result": 0,
-              "value": 0
-            },
             "cudaMemcpyDeviceToHost_output": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
               "kind": "cudaMemcpyDeviceToHost",
-              "result": 0
-            },
-            "cudaSetDevice_before_launch": {
-              "error_name": null,
               "result": 0
             },
             "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -4233,6 +4410,13 @@
           "device_output_bytes_checksum": "68db7c58ba0121f470cf2b3624dca705",
           "device_output_checksum": "1a19b0b517ca4f23",
           "device_output_pointer_nonzero": true,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_preparation": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -4259,7 +4443,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "5938e9ea4cd91e78",
+            "preparation_id": "7761d4a341da6196",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -4357,18 +4541,18 @@
           "output_buffer_pool": {
             "allocated_in_acquire": false,
             "allocated_in_execute": false,
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "enabled": true,
-            "lease_id": "5938e9ea4cd91e78:1",
-            "pool_allocation_count": 2,
-            "pool_available_buffers_after_acquire": 1,
-            "pool_initial_capacity": 2,
+            "lease_id": "7761d4a341da6196:1",
+            "pool_allocation_count": 4,
+            "pool_available_buffers_after_acquire": 3,
+            "pool_initial_capacity": 4,
             "pool_live_buffers_after_acquire": 1,
             "pool_release_count": 0,
             "pool_reuse_count": 0,
             "pool_snapshot_after_materialization": {
-              "allocation_count": 2,
-              "available_buffers": 1,
+              "allocation_count": 4,
+              "available_buffers": 3,
               "buffers": [
                 {
                   "available": true,
@@ -4382,11 +4566,33 @@
                   ]
                 },
                 {
+                  "available": true,
+                  "byte_count": 1024,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_1",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    256
+                  ]
+                },
+                {
+                  "available": true,
+                  "byte_count": 1024,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_2",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    256
+                  ]
+                },
+                {
                   "available": false,
                   "byte_count": 1024,
                   "lease_count": 1,
                   "live": true,
-                  "name": "compiled_output_pool_1",
+                  "name": "compiled_output_pool_3",
                   "pointer_nonzero": true,
                   "shape": [
                     256
@@ -4396,13 +4602,13 @@
               "closed": false,
               "enabled": true,
               "free_count": 0,
-              "initial_capacity": 2,
+              "initial_capacity": 4,
               "live_buffers": 1,
               "max_live_buffers": 1,
               "release_count": 0,
               "reuse_count": 0,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-              "total_buffers": 2
+              "total_buffers": 4
             },
             "reused_released_allocation": false,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -4410,7 +4616,7 @@
           },
           "output_comparison": {
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
@@ -4426,7 +4632,7 @@
             "private_output_bytes_checksum": "68db7c58ba0121f470cf2b3624dca705",
             "recorded_private_output_bytes_checksum": "68db7c58ba0121f470cf2b3624dca705",
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -4515,7 +4721,7 @@
         "is_cuda": true,
         "native_cuda_compile": true,
         "operations_supported": [],
-        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v2",
+        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v3",
         "public_cuda_tensor_wrapper": true,
         "public_torch_cuda_api": false,
         "readback": {
@@ -4523,7 +4729,7 @@
           "checksum": "68db7c58ba0121f470cf2b3624dca705",
           "checksum_name": "torch_rs_private_cuda_pointwise_reduce_output_v1",
           "copy_call": {
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "byte_count": 1024,
             "device_index": 0,
             "error_name": null,
@@ -4532,7 +4738,7 @@
           },
           "payload_exposed": false,
           "sync_call": {
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "device_index": 0,
             "error_name": null,
             "result": 0
@@ -4545,7 +4751,7 @@
         "shape": [
           256
         ],
-        "source_buffer_name": "compiled_output_pool_1",
+        "source_buffer_name": "compiled_output_pool_3",
         "source_buffer_schema_version": "torch_rs_private_cuda_float32_buffer_v1",
         "status": "ok",
         "storage_offset": 0,
@@ -4569,7 +4775,17 @@
     {
       "candidate": {
         "cold_checksum": "fc2d121c2337fd34",
-        "cold_first_call_us": 164.178,
+        "cold_first_call_accounting": {
+          "cold_first_call_region": "first invocation after the CUDA executor is prepared",
+          "cold_first_call_us": 145.33,
+          "factory_plus_cold_first_call_us": 10703.99,
+          "factory_region": "torch_rs.compile wrapper construction and prepared CUDA executor setup",
+          "factory_us": 10558.66,
+          "includes_deferred_backend_compile_in_cold_call": false,
+          "prepared_executor_ready_before_cold_call": true,
+          "setup_hoisted_to_factory": true
+        },
+        "cold_first_call_us": 145.33,
         "compile_backend": "inductor",
         "compile_config": {
           "backend": "inductor",
@@ -4591,26 +4807,17 @@
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
             },
-            "cudaGetDevice_before_launch": {
-              "error_name": null,
-              "result": 0,
-              "value": 0
-            },
             "cudaMemcpyDeviceToHost_output": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 4096,
               "device_index": 0,
               "error_name": null,
               "kind": "cudaMemcpyDeviceToHost",
-              "result": 0
-            },
-            "cudaSetDevice_before_launch": {
-              "error_name": null,
               "result": 0
             },
             "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -4672,6 +4879,13 @@
           "device_output_bytes_checksum": "152b3839d58147dd7e0f752b9f1f379a",
           "device_output_checksum": "fc2d121c2337fd34",
           "device_output_pointer_nonzero": true,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_preparation": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -4698,7 +4912,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "01ad652f08d9d291",
+            "preparation_id": "bd59bcbee75b4ed9",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -4796,18 +5010,18 @@
           "output_buffer_pool": {
             "allocated_in_acquire": false,
             "allocated_in_execute": false,
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "enabled": true,
-            "lease_id": "01ad652f08d9d291:1",
-            "pool_allocation_count": 2,
-            "pool_available_buffers_after_acquire": 1,
-            "pool_initial_capacity": 2,
+            "lease_id": "bd59bcbee75b4ed9:1",
+            "pool_allocation_count": 4,
+            "pool_available_buffers_after_acquire": 3,
+            "pool_initial_capacity": 4,
             "pool_live_buffers_after_acquire": 1,
             "pool_release_count": 0,
             "pool_reuse_count": 0,
             "pool_snapshot_after_materialization": {
-              "allocation_count": 2,
-              "available_buffers": 1,
+              "allocation_count": 4,
+              "available_buffers": 3,
               "buffers": [
                 {
                   "available": true,
@@ -4821,11 +5035,33 @@
                   ]
                 },
                 {
+                  "available": true,
+                  "byte_count": 4096,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_1",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    1024
+                  ]
+                },
+                {
+                  "available": true,
+                  "byte_count": 4096,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_2",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    1024
+                  ]
+                },
+                {
                   "available": false,
                   "byte_count": 4096,
                   "lease_count": 1,
                   "live": true,
-                  "name": "compiled_output_pool_1",
+                  "name": "compiled_output_pool_3",
                   "pointer_nonzero": true,
                   "shape": [
                     1024
@@ -4835,13 +5071,13 @@
               "closed": false,
               "enabled": true,
               "free_count": 0,
-              "initial_capacity": 2,
+              "initial_capacity": 4,
               "live_buffers": 1,
               "max_live_buffers": 1,
               "release_count": 0,
               "reuse_count": 0,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-              "total_buffers": 2
+              "total_buffers": 4
             },
             "reused_released_allocation": false,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -4849,7 +5085,7 @@
           },
           "output_comparison": {
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 4096,
               "device_index": 0,
               "error_name": null,
@@ -4865,7 +5101,7 @@
             "private_output_bytes_checksum": "152b3839d58147dd7e0f752b9f1f379a",
             "recorded_private_output_bytes_checksum": "152b3839d58147dd7e0f752b9f1f379a",
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -4952,7 +5188,7 @@
           "rejection_reasons": [],
           "score_credit": 1.0
         },
-        "factory_us": 10312.089,
+        "factory_us": 10558.66,
         "forwarded_to_pytorch": false,
         "implementation": "torch_rs",
         "input_device_type": "cuda",
@@ -5348,26 +5584,17 @@
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
             },
-            "cudaGetDevice_before_launch": {
-              "error_name": null,
-              "result": 0,
-              "value": 0
-            },
             "cudaMemcpyDeviceToHost_output": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 4096,
               "device_index": 0,
               "error_name": null,
               "kind": "cudaMemcpyDeviceToHost",
-              "result": 0
-            },
-            "cudaSetDevice_before_launch": {
-              "error_name": null,
               "result": 0
             },
             "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -5429,6 +5656,13 @@
           "device_output_bytes_checksum": "152b3839d58147dd7e0f752b9f1f379a",
           "device_output_checksum": "fc2d121c2337fd34",
           "device_output_pointer_nonzero": true,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_preparation": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -5455,7 +5689,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 67,
-            "preparation_id": "01ad652f08d9d291",
+            "preparation_id": "bd59bcbee75b4ed9",
             "prepared": true,
             "reused_prepared_executor": true,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -5553,18 +5787,18 @@
           "output_buffer_pool": {
             "allocated_in_acquire": false,
             "allocated_in_execute": false,
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "enabled": true,
-            "lease_id": "01ad652f08d9d291:67",
-            "pool_allocation_count": 2,
+            "lease_id": "bd59bcbee75b4ed9:67",
+            "pool_allocation_count": 4,
             "pool_available_buffers_after_acquire": 1,
-            "pool_initial_capacity": 2,
-            "pool_live_buffers_after_acquire": 1,
-            "pool_release_count": 66,
-            "pool_reuse_count": 66,
+            "pool_initial_capacity": 4,
+            "pool_live_buffers_after_acquire": 3,
+            "pool_release_count": 64,
+            "pool_reuse_count": 64,
             "pool_snapshot_after_materialization": {
-              "allocation_count": 2,
-              "available_buffers": 1,
+              "allocation_count": 4,
+              "available_buffers": 3,
               "buffers": [
                 {
                   "available": true,
@@ -5578,11 +5812,33 @@
                   ]
                 },
                 {
+                  "available": true,
+                  "byte_count": 4096,
+                  "lease_count": 22,
+                  "live": false,
+                  "name": "compiled_output_pool_1",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    1024
+                  ]
+                },
+                {
+                  "available": true,
+                  "byte_count": 4096,
+                  "lease_count": 22,
+                  "live": false,
+                  "name": "compiled_output_pool_2",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    1024
+                  ]
+                },
+                {
                   "available": false,
                   "byte_count": 4096,
-                  "lease_count": 67,
+                  "lease_count": 23,
                   "live": true,
-                  "name": "compiled_output_pool_1",
+                  "name": "compiled_output_pool_3",
                   "pointer_nonzero": true,
                   "shape": [
                     1024
@@ -5592,13 +5848,13 @@
               "closed": false,
               "enabled": true,
               "free_count": 0,
-              "initial_capacity": 2,
+              "initial_capacity": 4,
               "live_buffers": 1,
-              "max_live_buffers": 1,
+              "max_live_buffers": 3,
               "release_count": 66,
-              "reuse_count": 66,
+              "reuse_count": 64,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-              "total_buffers": 2
+              "total_buffers": 4
             },
             "reused_released_allocation": true,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -5606,7 +5862,7 @@
           },
           "output_comparison": {
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 4096,
               "device_index": 0,
               "error_name": null,
@@ -5622,7 +5878,7 @@
             "private_output_bytes_checksum": "152b3839d58147dd7e0f752b9f1f379a",
             "recorded_private_output_bytes_checksum": "152b3839d58147dd7e0f752b9f1f379a",
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -5689,6 +5945,7 @@
               "error_name": null,
               "result": 0
             },
+            "intermediate_output_release_outside_timed_region": true,
             "materialization_outside_timed_region": true,
             "timed_call_count": 3
           },
@@ -5733,26 +5990,17 @@
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
               },
-              "cudaGetDevice_before_launch": {
-                "error_name": null,
-                "result": 0,
-                "value": 0
-              },
               "cudaMemcpyDeviceToHost_output": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "byte_count": 4096,
                 "device_index": 0,
                 "error_name": null,
                 "kind": "cudaMemcpyDeviceToHost",
-                "result": 0
-              },
-              "cudaSetDevice_before_launch": {
-                "error_name": null,
                 "result": 0
               },
               "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -5814,6 +6062,13 @@
             "device_output_bytes_checksum": "152b3839d58147dd7e0f752b9f1f379a",
             "device_output_checksum": "fc2d121c2337fd34",
             "device_output_pointer_nonzero": true,
+            "device_selection": {
+              "cudaGetDevice": "preparation",
+              "cudaSetDevice": "preparation",
+              "per_launch_cudaGetDevice": false,
+              "per_launch_cudaSetDevice": false
+            },
+            "device_selection_hoisted_to_preparation": true,
             "device_type": "cuda",
             "driver": {
               "cuInit": {
@@ -5840,7 +6095,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "01ad652f08d9d291",
+              "preparation_id": "bd59bcbee75b4ed9",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -5938,18 +6193,18 @@
             "output_buffer_pool": {
               "allocated_in_acquire": false,
               "allocated_in_execute": false,
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "enabled": true,
-              "lease_id": "01ad652f08d9d291:1",
-              "pool_allocation_count": 2,
-              "pool_available_buffers_after_acquire": 1,
-              "pool_initial_capacity": 2,
+              "lease_id": "bd59bcbee75b4ed9:1",
+              "pool_allocation_count": 4,
+              "pool_available_buffers_after_acquire": 3,
+              "pool_initial_capacity": 4,
               "pool_live_buffers_after_acquire": 1,
               "pool_release_count": 0,
               "pool_reuse_count": 0,
               "pool_snapshot_after_materialization": {
-                "allocation_count": 2,
-                "available_buffers": 1,
+                "allocation_count": 4,
+                "available_buffers": 3,
                 "buffers": [
                   {
                     "available": true,
@@ -5963,11 +6218,33 @@
                     ]
                   },
                   {
+                    "available": true,
+                    "byte_count": 4096,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_1",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      1024
+                    ]
+                  },
+                  {
+                    "available": true,
+                    "byte_count": 4096,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_2",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      1024
+                    ]
+                  },
+                  {
                     "available": false,
                     "byte_count": 4096,
                     "lease_count": 1,
                     "live": true,
-                    "name": "compiled_output_pool_1",
+                    "name": "compiled_output_pool_3",
                     "pointer_nonzero": true,
                     "shape": [
                       1024
@@ -5977,13 +6254,13 @@
                 "closed": false,
                 "enabled": true,
                 "free_count": 0,
-                "initial_capacity": 2,
+                "initial_capacity": 4,
                 "live_buffers": 1,
                 "max_live_buffers": 1,
                 "release_count": 0,
                 "reuse_count": 0,
                 "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-                "total_buffers": 2
+                "total_buffers": 4
               },
               "reused_released_allocation": false,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -5991,7 +6268,7 @@
             },
             "output_comparison": {
               "copy_call": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "byte_count": 4096,
                 "device_index": 0,
                 "error_name": null,
@@ -6007,7 +6284,7 @@
               "private_output_bytes_checksum": "152b3839d58147dd7e0f752b9f1f379a",
               "recorded_private_output_bytes_checksum": "152b3839d58147dd7e0f752b9f1f379a",
               "sync_call": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
@@ -6096,7 +6373,7 @@
           "is_cuda": true,
           "native_cuda_compile": true,
           "operations_supported": [],
-          "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v2",
+          "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v3",
           "public_cuda_tensor_wrapper": true,
           "public_torch_cuda_api": false,
           "readback": {
@@ -6104,7 +6381,7 @@
             "checksum": "152b3839d58147dd7e0f752b9f1f379a",
             "checksum_name": "torch_rs_private_cuda_pointwise_reduce_output_v1",
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 4096,
               "device_index": 0,
               "error_name": null,
@@ -6113,7 +6390,7 @@
             },
             "payload_exposed": false,
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -6126,7 +6403,7 @@
           "shape": [
             1024
           ],
-          "source_buffer_name": "compiled_output_pool_1",
+          "source_buffer_name": "compiled_output_pool_3",
           "source_buffer_schema_version": "torch_rs_private_cuda_float32_buffer_v1",
           "status": "ok",
           "storage_offset": 0,
@@ -6165,6 +6442,20 @@
             },
             "cudaMalloc_output_pool_1": {
               "buffer_name": "compiled_output_pool_1",
+              "byte_count": 4096,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
+            "cudaMalloc_output_pool_2": {
+              "buffer_name": "compiled_output_pool_2",
+              "byte_count": 4096,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
+            "cudaMalloc_output_pool_3": {
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 4096,
               "device_index": 0,
               "error_name": null,
@@ -6217,6 +6508,13 @@
             "total_memory_bytes": 102085492736
           },
           "device_index": 0,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_compile_wrapper": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -6281,8 +6579,8 @@
             }
           },
           "output_pool": {
-            "allocation_count": 2,
-            "available_buffers": 2,
+            "allocation_count": 4,
+            "available_buffers": 4,
             "buffers": [
               {
                 "available": true,
@@ -6305,23 +6603,45 @@
                 "shape": [
                   1024
                 ]
+              },
+              {
+                "available": true,
+                "byte_count": 4096,
+                "lease_count": 0,
+                "live": false,
+                "name": "compiled_output_pool_2",
+                "pointer_nonzero": true,
+                "shape": [
+                  1024
+                ]
+              },
+              {
+                "available": true,
+                "byte_count": 4096,
+                "lease_count": 0,
+                "live": false,
+                "name": "compiled_output_pool_3",
+                "pointer_nonzero": true,
+                "shape": [
+                  1024
+                ]
               }
             ],
             "closed": false,
             "enabled": true,
             "free_count": 0,
-            "initial_capacity": 2,
+            "initial_capacity": 4,
             "live_buffers": 0,
             "max_live_buffers": 0,
             "release_count": 0,
             "reuse_count": 0,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-            "total_buffers": 2
+            "total_buffers": 4
           },
           "output_shape": [
             1024
           ],
-          "preparation_id": "01ad652f08d9d291",
+          "preparation_id": "bd59bcbee75b4ed9",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -6390,6 +6710,20 @@
               "error_name": null,
               "result": 0
             },
+            "cudaMalloc_output_pool_2": {
+              "buffer_name": "compiled_output_pool_2",
+              "byte_count": 4096,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
+            "cudaMalloc_output_pool_3": {
+              "buffer_name": "compiled_output_pool_3",
+              "byte_count": 4096,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
             "cudaSetDevice": {
               "error_name": null,
               "result": 0
@@ -6437,6 +6771,13 @@
             "total_memory_bytes": 102085492736
           },
           "device_index": 0,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_compile_wrapper": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -6501,8 +6842,8 @@
             }
           },
           "output_pool": {
-            "allocation_count": 2,
-            "available_buffers": 2,
+            "allocation_count": 4,
+            "available_buffers": 4,
             "buffers": [
               {
                 "available": true,
@@ -6518,9 +6859,31 @@
               {
                 "available": true,
                 "byte_count": 4096,
-                "lease_count": 67,
+                "lease_count": 22,
                 "live": false,
                 "name": "compiled_output_pool_1",
+                "pointer_nonzero": true,
+                "shape": [
+                  1024
+                ]
+              },
+              {
+                "available": true,
+                "byte_count": 4096,
+                "lease_count": 22,
+                "live": false,
+                "name": "compiled_output_pool_2",
+                "pointer_nonzero": true,
+                "shape": [
+                  1024
+                ]
+              },
+              {
+                "available": true,
+                "byte_count": 4096,
+                "lease_count": 23,
+                "live": false,
+                "name": "compiled_output_pool_3",
                 "pointer_nonzero": true,
                 "shape": [
                   1024
@@ -6530,18 +6893,18 @@
             "closed": false,
             "enabled": true,
             "free_count": 0,
-            "initial_capacity": 2,
+            "initial_capacity": 4,
             "live_buffers": 0,
-            "max_live_buffers": 1,
+            "max_live_buffers": 3,
             "release_count": 67,
-            "reuse_count": 66,
+            "reuse_count": 64,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-            "total_buffers": 2
+            "total_buffers": 4
           },
           "output_shape": [
             1024
           ],
-          "preparation_id": "01ad652f08d9d291",
+          "preparation_id": "bd59bcbee75b4ed9",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -6582,26 +6945,26 @@
           "expected_invocation_count": 67,
           "last_invocation_index": 67,
           "observed_invocation_count": 67,
-          "output_pool_allocation_count": 2,
-          "output_pool_available_buffers_after_timing": 2,
+          "output_pool_allocation_count": 4,
+          "output_pool_available_buffers_after_timing": 4,
           "output_pool_enabled": true,
-          "output_pool_initial_capacity": 2,
+          "output_pool_initial_capacity": 4,
           "output_pool_live_buffers_after_timing": 0,
           "output_pool_release_count": 67,
-          "preparation_id": "01ad652f08d9d291",
-          "prepared_steady_median_us": 42.63766666666666,
-          "prepared_vs_unprepared_steady_speedup": 259.8304003502381,
+          "preparation_id": "bd59bcbee75b4ed9",
+          "prepared_steady_median_us": 40.745,
+          "prepared_vs_unprepared_steady_speedup": 247.1561009530822,
           "setup_hoisted_to_compile_wrapper": true,
           "steady_state_output_allocated_in_execute": false,
           "steady_state_reused_output_buffer": true,
           "steady_state_reused_prepared_executor": true,
-          "unprepared_compatibility_steady_median_us": 11078.562
+          "unprepared_compatibility_steady_median_us": 10070.375333333333
         },
         "score": {
           "capped_steady_speed_ratio": 1.0,
           "denominator_weight": 1.0,
           "eligible_cuda_compile_evidence": true,
-          "steady_speed_ratio": 1.0263851211370227,
+          "steady_speed_ratio": 1.055057880312513,
           "weight": 0.25,
           "weighted_score_contribution_percent": 25.0,
           "zero_credit_in_denominator": false
@@ -6609,12 +6972,12 @@
         "score_credit": 1.0,
         "status": "ok",
         "steady": {
-          "mad_us": 1.8396666666666732,
-          "max_us": 51.76833333333334,
-          "median_us": 42.63766666666666,
-          "min_us": 39.82366666666666,
+          "mad_us": 0.8313333333333333,
+          "max_us": 45.045,
+          "median_us": 40.745,
+          "min_us": 39.062333333333335,
           "sample_count": 17,
-          "variance_us2": 9.547809164167633
+          "variance_us2": 2.62256840676663
         },
         "steady_checksums": [
           "fc2d121c2337fd34"
@@ -6645,26 +7008,17 @@
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
               },
-              "cudaGetDevice_before_launch": {
-                "error_name": null,
-                "result": 0,
-                "value": 0
-              },
               "cudaMemcpyDeviceToHost_output": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "byte_count": 4096,
                 "device_index": 0,
                 "error_name": null,
                 "kind": "cudaMemcpyDeviceToHost",
-                "result": 0
-              },
-              "cudaSetDevice_before_launch": {
-                "error_name": null,
                 "result": 0
               },
               "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -6726,6 +7080,13 @@
             "device_output_bytes_checksum": "152b3839d58147dd7e0f752b9f1f379a",
             "device_output_checksum": "fc2d121c2337fd34",
             "device_output_pointer_nonzero": true,
+            "device_selection": {
+              "cudaGetDevice": "preparation",
+              "cudaSetDevice": "preparation",
+              "per_launch_cudaGetDevice": false,
+              "per_launch_cudaSetDevice": false
+            },
+            "device_selection_hoisted_to_preparation": true,
             "device_type": "cuda",
             "driver": {
               "cuInit": {
@@ -6752,7 +7113,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "01ad652f08d9d291",
+              "preparation_id": "bd59bcbee75b4ed9",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -6849,18 +7210,18 @@
             "output_buffer_pool": {
               "allocated_in_acquire": false,
               "allocated_in_execute": false,
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "enabled": true,
-              "lease_id": "01ad652f08d9d291:1",
-              "pool_allocation_count": 2,
-              "pool_available_buffers_after_acquire": 1,
-              "pool_initial_capacity": 2,
+              "lease_id": "bd59bcbee75b4ed9:1",
+              "pool_allocation_count": 4,
+              "pool_available_buffers_after_acquire": 3,
+              "pool_initial_capacity": 4,
               "pool_live_buffers_after_acquire": 1,
               "pool_release_count": 0,
               "pool_reuse_count": 0,
               "pool_snapshot_after_materialization": {
-                "allocation_count": 2,
-                "available_buffers": 1,
+                "allocation_count": 4,
+                "available_buffers": 3,
                 "buffers": [
                   {
                     "available": true,
@@ -6874,11 +7235,33 @@
                     ]
                   },
                   {
+                    "available": true,
+                    "byte_count": 4096,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_1",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      1024
+                    ]
+                  },
+                  {
+                    "available": true,
+                    "byte_count": 4096,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_2",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      1024
+                    ]
+                  },
+                  {
                     "available": false,
                     "byte_count": 4096,
                     "lease_count": 1,
                     "live": true,
-                    "name": "compiled_output_pool_1",
+                    "name": "compiled_output_pool_3",
                     "pointer_nonzero": true,
                     "shape": [
                       1024
@@ -6888,13 +7271,13 @@
                 "closed": false,
                 "enabled": true,
                 "free_count": 0,
-                "initial_capacity": 2,
+                "initial_capacity": 4,
                 "live_buffers": 1,
                 "max_live_buffers": 1,
                 "release_count": 0,
                 "reuse_count": 0,
                 "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-                "total_buffers": 2
+                "total_buffers": 4
               },
               "reused_released_allocation": false,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -6950,7 +7333,7 @@
             "timing_boundary": {
               "after_timed_region": {
                 "boundary": "after_unprepared_repeated_calls",
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
@@ -6976,12 +7359,12 @@
           "setup_repeated_per_invocation": true,
           "status": "ok",
           "steady": {
-            "mad_us": 855.7943333333333,
-            "max_us": 12456.366333333333,
-            "median_us": 11078.562,
-            "min_us": 9012.002666666665,
+            "mad_us": 1059.7963333333337,
+            "max_us": 13559.142666666667,
+            "median_us": 10070.375333333333,
+            "min_us": 8581.767333333333,
             "sample_count": 17,
-            "variance_us2": 1005596.8145617902
+            "variance_us2": 2075659.6534018314
           },
           "steady_checksums": [
             "fc2d121c2337fd34"
@@ -7028,7 +7411,16 @@
       },
       "reference_workload": {
         "cold_checksum": "fc2d121c2337fd34",
-        "cold_first_call_us": 41340.246,
+        "cold_first_call_accounting": {
+          "cold_first_call_region": "first compiled invocation after wrapper construction",
+          "cold_first_call_us": 40486.93,
+          "factory_plus_cold_first_call_us": 40930.722,
+          "factory_region": "torch.compile wrapper construction",
+          "factory_us": 443.792,
+          "includes_deferred_backend_compile_in_cold_call": true,
+          "setup_hoisted_to_factory": false
+        },
+        "cold_first_call_us": 40486.93,
         "compile_config": {
           "backend": "inductor",
           "dynamic": false,
@@ -7040,7 +7432,7 @@
           "assert_close": true,
           "eager_reference_checksum": "9a77f782667089ee"
         },
-        "factory_us": 586.036,
+        "factory_us": 443.792,
         "implementation": "pytorch",
         "input_metadata": [
           {
@@ -7093,12 +7485,12 @@
         },
         "status": "ok",
         "steady": {
-          "mad_us": 1.5393333333333388,
-          "max_us": 59.379666666666665,
-          "median_us": 43.76266666666666,
-          "min_us": 40.48133333333334,
+          "mad_us": 1.8326666666666753,
+          "max_us": 47.031333333333336,
+          "median_us": 42.98833333333334,
+          "min_us": 40.448,
           "sample_count": 17,
-          "variance_us2": 17.17186355555555
+          "variance_us2": 4.185823687043446
         },
         "steady_checksums": [
           "fc2d121c2337fd34"
@@ -7134,7 +7526,7 @@
         "capped_steady_speed_ratio": 1.0,
         "denominator_weight": 1.0,
         "eligible_cuda_compile_evidence": true,
-        "steady_speed_ratio": 1.0263851211370227,
+        "steady_speed_ratio": 1.055057880312513,
         "weight": 0.25,
         "weighted_score_contribution_percent": 25.0,
         "zero_credit_in_denominator": false
@@ -7794,7 +8186,7 @@
         "output_shape": [
           1024
         ],
-        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v2",
+        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v3",
         "primitive": "torch_rs_private_cuda_h100_pointwise_reduce_float32_device0",
         "public_cuda_tensor_wrapper": {
           "byte_count": 4096,
@@ -7946,26 +8338,17 @@
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
             },
-            "cudaGetDevice_before_launch": {
-              "error_name": null,
-              "result": 0,
-              "value": 0
-            },
             "cudaMemcpyDeviceToHost_output": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 4096,
               "device_index": 0,
               "error_name": null,
               "kind": "cudaMemcpyDeviceToHost",
-              "result": 0
-            },
-            "cudaSetDevice_before_launch": {
-              "error_name": null,
               "result": 0
             },
             "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -8027,6 +8410,13 @@
           "device_output_bytes_checksum": "152b3839d58147dd7e0f752b9f1f379a",
           "device_output_checksum": "fc2d121c2337fd34",
           "device_output_pointer_nonzero": true,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_preparation": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -8053,7 +8443,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "01ad652f08d9d291",
+            "preparation_id": "bd59bcbee75b4ed9",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -8151,18 +8541,18 @@
           "output_buffer_pool": {
             "allocated_in_acquire": false,
             "allocated_in_execute": false,
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "enabled": true,
-            "lease_id": "01ad652f08d9d291:1",
-            "pool_allocation_count": 2,
-            "pool_available_buffers_after_acquire": 1,
-            "pool_initial_capacity": 2,
+            "lease_id": "bd59bcbee75b4ed9:1",
+            "pool_allocation_count": 4,
+            "pool_available_buffers_after_acquire": 3,
+            "pool_initial_capacity": 4,
             "pool_live_buffers_after_acquire": 1,
             "pool_release_count": 0,
             "pool_reuse_count": 0,
             "pool_snapshot_after_materialization": {
-              "allocation_count": 2,
-              "available_buffers": 1,
+              "allocation_count": 4,
+              "available_buffers": 3,
               "buffers": [
                 {
                   "available": true,
@@ -8176,11 +8566,33 @@
                   ]
                 },
                 {
+                  "available": true,
+                  "byte_count": 4096,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_1",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    1024
+                  ]
+                },
+                {
+                  "available": true,
+                  "byte_count": 4096,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_2",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    1024
+                  ]
+                },
+                {
                   "available": false,
                   "byte_count": 4096,
                   "lease_count": 1,
                   "live": true,
-                  "name": "compiled_output_pool_1",
+                  "name": "compiled_output_pool_3",
                   "pointer_nonzero": true,
                   "shape": [
                     1024
@@ -8190,13 +8602,13 @@
               "closed": false,
               "enabled": true,
               "free_count": 0,
-              "initial_capacity": 2,
+              "initial_capacity": 4,
               "live_buffers": 1,
               "max_live_buffers": 1,
               "release_count": 0,
               "reuse_count": 0,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-              "total_buffers": 2
+              "total_buffers": 4
             },
             "reused_released_allocation": false,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -8204,7 +8616,7 @@
           },
           "output_comparison": {
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 4096,
               "device_index": 0,
               "error_name": null,
@@ -8220,7 +8632,7 @@
             "private_output_bytes_checksum": "152b3839d58147dd7e0f752b9f1f379a",
             "recorded_private_output_bytes_checksum": "152b3839d58147dd7e0f752b9f1f379a",
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -8309,7 +8721,7 @@
         "is_cuda": true,
         "native_cuda_compile": true,
         "operations_supported": [],
-        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v2",
+        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v3",
         "public_cuda_tensor_wrapper": true,
         "public_torch_cuda_api": false,
         "readback": {
@@ -8317,7 +8729,7 @@
           "checksum": "152b3839d58147dd7e0f752b9f1f379a",
           "checksum_name": "torch_rs_private_cuda_pointwise_reduce_output_v1",
           "copy_call": {
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "byte_count": 4096,
             "device_index": 0,
             "error_name": null,
@@ -8326,7 +8738,7 @@
           },
           "payload_exposed": false,
           "sync_call": {
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "device_index": 0,
             "error_name": null,
             "result": 0
@@ -8339,7 +8751,7 @@
         "shape": [
           1024
         ],
-        "source_buffer_name": "compiled_output_pool_1",
+        "source_buffer_name": "compiled_output_pool_3",
         "source_buffer_schema_version": "torch_rs_private_cuda_float32_buffer_v1",
         "status": "ok",
         "storage_offset": 0,
@@ -8363,7 +8775,17 @@
     {
       "candidate": {
         "cold_checksum": "e825140789de3374",
-        "cold_first_call_us": 170.197,
+        "cold_first_call_accounting": {
+          "cold_first_call_region": "first invocation after the CUDA executor is prepared",
+          "cold_first_call_us": 137.277,
+          "factory_plus_cold_first_call_us": 12345.233,
+          "factory_region": "torch_rs.compile wrapper construction and prepared CUDA executor setup",
+          "factory_us": 12207.956,
+          "includes_deferred_backend_compile_in_cold_call": false,
+          "prepared_executor_ready_before_cold_call": true,
+          "setup_hoisted_to_factory": true
+        },
+        "cold_first_call_us": 137.277,
         "compile_backend": "inductor",
         "compile_config": {
           "backend": "inductor",
@@ -8385,26 +8807,17 @@
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
             },
-            "cudaGetDevice_before_launch": {
-              "error_name": null,
-              "result": 0,
-              "value": 0
-            },
             "cudaMemcpyDeviceToHost_output": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 16384,
               "device_index": 0,
               "error_name": null,
               "kind": "cudaMemcpyDeviceToHost",
-              "result": 0
-            },
-            "cudaSetDevice_before_launch": {
-              "error_name": null,
               "result": 0
             },
             "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -8466,6 +8879,13 @@
           "device_output_bytes_checksum": "87b853e908c5cd9d7674ce73a924d68f",
           "device_output_checksum": "e825140789de3374",
           "device_output_pointer_nonzero": true,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_preparation": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -8492,7 +8912,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "c09ec49268cfc203",
+            "preparation_id": "3b9bd9c90d19f604",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -8590,18 +9010,18 @@
           "output_buffer_pool": {
             "allocated_in_acquire": false,
             "allocated_in_execute": false,
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "enabled": true,
-            "lease_id": "c09ec49268cfc203:1",
-            "pool_allocation_count": 2,
-            "pool_available_buffers_after_acquire": 1,
-            "pool_initial_capacity": 2,
+            "lease_id": "3b9bd9c90d19f604:1",
+            "pool_allocation_count": 4,
+            "pool_available_buffers_after_acquire": 3,
+            "pool_initial_capacity": 4,
             "pool_live_buffers_after_acquire": 1,
             "pool_release_count": 0,
             "pool_reuse_count": 0,
             "pool_snapshot_after_materialization": {
-              "allocation_count": 2,
-              "available_buffers": 1,
+              "allocation_count": 4,
+              "available_buffers": 3,
               "buffers": [
                 {
                   "available": true,
@@ -8615,11 +9035,33 @@
                   ]
                 },
                 {
+                  "available": true,
+                  "byte_count": 16384,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_1",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    4096
+                  ]
+                },
+                {
+                  "available": true,
+                  "byte_count": 16384,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_2",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    4096
+                  ]
+                },
+                {
                   "available": false,
                   "byte_count": 16384,
                   "lease_count": 1,
                   "live": true,
-                  "name": "compiled_output_pool_1",
+                  "name": "compiled_output_pool_3",
                   "pointer_nonzero": true,
                   "shape": [
                     4096
@@ -8629,13 +9071,13 @@
               "closed": false,
               "enabled": true,
               "free_count": 0,
-              "initial_capacity": 2,
+              "initial_capacity": 4,
               "live_buffers": 1,
               "max_live_buffers": 1,
               "release_count": 0,
               "reuse_count": 0,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-              "total_buffers": 2
+              "total_buffers": 4
             },
             "reused_released_allocation": false,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -8643,7 +9085,7 @@
           },
           "output_comparison": {
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 16384,
               "device_index": 0,
               "error_name": null,
@@ -8659,7 +9101,7 @@
             "private_output_bytes_checksum": "87b853e908c5cd9d7674ce73a924d68f",
             "recorded_private_output_bytes_checksum": "87b853e908c5cd9d7674ce73a924d68f",
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -8746,7 +9188,7 @@
           "rejection_reasons": [],
           "score_credit": 1.0
         },
-        "factory_us": 11761.923,
+        "factory_us": 12207.956,
         "forwarded_to_pytorch": false,
         "implementation": "torch_rs",
         "input_device_type": "cuda",
@@ -9142,26 +9584,17 @@
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
             },
-            "cudaGetDevice_before_launch": {
-              "error_name": null,
-              "result": 0,
-              "value": 0
-            },
             "cudaMemcpyDeviceToHost_output": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 16384,
               "device_index": 0,
               "error_name": null,
               "kind": "cudaMemcpyDeviceToHost",
-              "result": 0
-            },
-            "cudaSetDevice_before_launch": {
-              "error_name": null,
               "result": 0
             },
             "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -9223,6 +9656,13 @@
           "device_output_bytes_checksum": "87b853e908c5cd9d7674ce73a924d68f",
           "device_output_checksum": "e825140789de3374",
           "device_output_pointer_nonzero": true,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_preparation": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -9249,7 +9689,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 67,
-            "preparation_id": "c09ec49268cfc203",
+            "preparation_id": "3b9bd9c90d19f604",
             "prepared": true,
             "reused_prepared_executor": true,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -9347,18 +9787,18 @@
           "output_buffer_pool": {
             "allocated_in_acquire": false,
             "allocated_in_execute": false,
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "enabled": true,
-            "lease_id": "c09ec49268cfc203:67",
-            "pool_allocation_count": 2,
+            "lease_id": "3b9bd9c90d19f604:67",
+            "pool_allocation_count": 4,
             "pool_available_buffers_after_acquire": 1,
-            "pool_initial_capacity": 2,
-            "pool_live_buffers_after_acquire": 1,
-            "pool_release_count": 66,
-            "pool_reuse_count": 66,
+            "pool_initial_capacity": 4,
+            "pool_live_buffers_after_acquire": 3,
+            "pool_release_count": 64,
+            "pool_reuse_count": 64,
             "pool_snapshot_after_materialization": {
-              "allocation_count": 2,
-              "available_buffers": 1,
+              "allocation_count": 4,
+              "available_buffers": 3,
               "buffers": [
                 {
                   "available": true,
@@ -9372,11 +9812,33 @@
                   ]
                 },
                 {
+                  "available": true,
+                  "byte_count": 16384,
+                  "lease_count": 22,
+                  "live": false,
+                  "name": "compiled_output_pool_1",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    4096
+                  ]
+                },
+                {
+                  "available": true,
+                  "byte_count": 16384,
+                  "lease_count": 22,
+                  "live": false,
+                  "name": "compiled_output_pool_2",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    4096
+                  ]
+                },
+                {
                   "available": false,
                   "byte_count": 16384,
-                  "lease_count": 67,
+                  "lease_count": 23,
                   "live": true,
-                  "name": "compiled_output_pool_1",
+                  "name": "compiled_output_pool_3",
                   "pointer_nonzero": true,
                   "shape": [
                     4096
@@ -9386,13 +9848,13 @@
               "closed": false,
               "enabled": true,
               "free_count": 0,
-              "initial_capacity": 2,
+              "initial_capacity": 4,
               "live_buffers": 1,
-              "max_live_buffers": 1,
+              "max_live_buffers": 3,
               "release_count": 66,
-              "reuse_count": 66,
+              "reuse_count": 64,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-              "total_buffers": 2
+              "total_buffers": 4
             },
             "reused_released_allocation": true,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -9400,7 +9862,7 @@
           },
           "output_comparison": {
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 16384,
               "device_index": 0,
               "error_name": null,
@@ -9416,7 +9878,7 @@
             "private_output_bytes_checksum": "87b853e908c5cd9d7674ce73a924d68f",
             "recorded_private_output_bytes_checksum": "87b853e908c5cd9d7674ce73a924d68f",
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -9483,6 +9945,7 @@
               "error_name": null,
               "result": 0
             },
+            "intermediate_output_release_outside_timed_region": true,
             "materialization_outside_timed_region": true,
             "timed_call_count": 3
           },
@@ -9527,26 +9990,17 @@
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
               },
-              "cudaGetDevice_before_launch": {
-                "error_name": null,
-                "result": 0,
-                "value": 0
-              },
               "cudaMemcpyDeviceToHost_output": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "byte_count": 16384,
                 "device_index": 0,
                 "error_name": null,
                 "kind": "cudaMemcpyDeviceToHost",
-                "result": 0
-              },
-              "cudaSetDevice_before_launch": {
-                "error_name": null,
                 "result": 0
               },
               "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -9608,6 +10062,13 @@
             "device_output_bytes_checksum": "87b853e908c5cd9d7674ce73a924d68f",
             "device_output_checksum": "e825140789de3374",
             "device_output_pointer_nonzero": true,
+            "device_selection": {
+              "cudaGetDevice": "preparation",
+              "cudaSetDevice": "preparation",
+              "per_launch_cudaGetDevice": false,
+              "per_launch_cudaSetDevice": false
+            },
+            "device_selection_hoisted_to_preparation": true,
             "device_type": "cuda",
             "driver": {
               "cuInit": {
@@ -9634,7 +10095,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "c09ec49268cfc203",
+              "preparation_id": "3b9bd9c90d19f604",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -9732,18 +10193,18 @@
             "output_buffer_pool": {
               "allocated_in_acquire": false,
               "allocated_in_execute": false,
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "enabled": true,
-              "lease_id": "c09ec49268cfc203:1",
-              "pool_allocation_count": 2,
-              "pool_available_buffers_after_acquire": 1,
-              "pool_initial_capacity": 2,
+              "lease_id": "3b9bd9c90d19f604:1",
+              "pool_allocation_count": 4,
+              "pool_available_buffers_after_acquire": 3,
+              "pool_initial_capacity": 4,
               "pool_live_buffers_after_acquire": 1,
               "pool_release_count": 0,
               "pool_reuse_count": 0,
               "pool_snapshot_after_materialization": {
-                "allocation_count": 2,
-                "available_buffers": 1,
+                "allocation_count": 4,
+                "available_buffers": 3,
                 "buffers": [
                   {
                     "available": true,
@@ -9757,11 +10218,33 @@
                     ]
                   },
                   {
+                    "available": true,
+                    "byte_count": 16384,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_1",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      4096
+                    ]
+                  },
+                  {
+                    "available": true,
+                    "byte_count": 16384,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_2",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      4096
+                    ]
+                  },
+                  {
                     "available": false,
                     "byte_count": 16384,
                     "lease_count": 1,
                     "live": true,
-                    "name": "compiled_output_pool_1",
+                    "name": "compiled_output_pool_3",
                     "pointer_nonzero": true,
                     "shape": [
                       4096
@@ -9771,13 +10254,13 @@
                 "closed": false,
                 "enabled": true,
                 "free_count": 0,
-                "initial_capacity": 2,
+                "initial_capacity": 4,
                 "live_buffers": 1,
                 "max_live_buffers": 1,
                 "release_count": 0,
                 "reuse_count": 0,
                 "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-                "total_buffers": 2
+                "total_buffers": 4
               },
               "reused_released_allocation": false,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -9785,7 +10268,7 @@
             },
             "output_comparison": {
               "copy_call": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "byte_count": 16384,
                 "device_index": 0,
                 "error_name": null,
@@ -9801,7 +10284,7 @@
               "private_output_bytes_checksum": "87b853e908c5cd9d7674ce73a924d68f",
               "recorded_private_output_bytes_checksum": "87b853e908c5cd9d7674ce73a924d68f",
               "sync_call": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
@@ -9890,7 +10373,7 @@
           "is_cuda": true,
           "native_cuda_compile": true,
           "operations_supported": [],
-          "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v2",
+          "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v3",
           "public_cuda_tensor_wrapper": true,
           "public_torch_cuda_api": false,
           "readback": {
@@ -9898,7 +10381,7 @@
             "checksum": "87b853e908c5cd9d7674ce73a924d68f",
             "checksum_name": "torch_rs_private_cuda_pointwise_reduce_output_v1",
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 16384,
               "device_index": 0,
               "error_name": null,
@@ -9907,7 +10390,7 @@
             },
             "payload_exposed": false,
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -9920,7 +10403,7 @@
           "shape": [
             4096
           ],
-          "source_buffer_name": "compiled_output_pool_1",
+          "source_buffer_name": "compiled_output_pool_3",
           "source_buffer_schema_version": "torch_rs_private_cuda_float32_buffer_v1",
           "status": "ok",
           "storage_offset": 0,
@@ -9959,6 +10442,20 @@
             },
             "cudaMalloc_output_pool_1": {
               "buffer_name": "compiled_output_pool_1",
+              "byte_count": 16384,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
+            "cudaMalloc_output_pool_2": {
+              "buffer_name": "compiled_output_pool_2",
+              "byte_count": 16384,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
+            "cudaMalloc_output_pool_3": {
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 16384,
               "device_index": 0,
               "error_name": null,
@@ -10011,6 +10508,13 @@
             "total_memory_bytes": 102085492736
           },
           "device_index": 0,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_compile_wrapper": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -10075,8 +10579,8 @@
             }
           },
           "output_pool": {
-            "allocation_count": 2,
-            "available_buffers": 2,
+            "allocation_count": 4,
+            "available_buffers": 4,
             "buffers": [
               {
                 "available": true,
@@ -10099,23 +10603,45 @@
                 "shape": [
                   4096
                 ]
+              },
+              {
+                "available": true,
+                "byte_count": 16384,
+                "lease_count": 0,
+                "live": false,
+                "name": "compiled_output_pool_2",
+                "pointer_nonzero": true,
+                "shape": [
+                  4096
+                ]
+              },
+              {
+                "available": true,
+                "byte_count": 16384,
+                "lease_count": 0,
+                "live": false,
+                "name": "compiled_output_pool_3",
+                "pointer_nonzero": true,
+                "shape": [
+                  4096
+                ]
               }
             ],
             "closed": false,
             "enabled": true,
             "free_count": 0,
-            "initial_capacity": 2,
+            "initial_capacity": 4,
             "live_buffers": 0,
             "max_live_buffers": 0,
             "release_count": 0,
             "reuse_count": 0,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-            "total_buffers": 2
+            "total_buffers": 4
           },
           "output_shape": [
             4096
           ],
-          "preparation_id": "c09ec49268cfc203",
+          "preparation_id": "3b9bd9c90d19f604",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -10184,6 +10710,20 @@
               "error_name": null,
               "result": 0
             },
+            "cudaMalloc_output_pool_2": {
+              "buffer_name": "compiled_output_pool_2",
+              "byte_count": 16384,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
+            "cudaMalloc_output_pool_3": {
+              "buffer_name": "compiled_output_pool_3",
+              "byte_count": 16384,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
             "cudaSetDevice": {
               "error_name": null,
               "result": 0
@@ -10231,6 +10771,13 @@
             "total_memory_bytes": 102085492736
           },
           "device_index": 0,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_compile_wrapper": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -10295,8 +10842,8 @@
             }
           },
           "output_pool": {
-            "allocation_count": 2,
-            "available_buffers": 2,
+            "allocation_count": 4,
+            "available_buffers": 4,
             "buffers": [
               {
                 "available": true,
@@ -10312,9 +10859,31 @@
               {
                 "available": true,
                 "byte_count": 16384,
-                "lease_count": 67,
+                "lease_count": 22,
                 "live": false,
                 "name": "compiled_output_pool_1",
+                "pointer_nonzero": true,
+                "shape": [
+                  4096
+                ]
+              },
+              {
+                "available": true,
+                "byte_count": 16384,
+                "lease_count": 22,
+                "live": false,
+                "name": "compiled_output_pool_2",
+                "pointer_nonzero": true,
+                "shape": [
+                  4096
+                ]
+              },
+              {
+                "available": true,
+                "byte_count": 16384,
+                "lease_count": 23,
+                "live": false,
+                "name": "compiled_output_pool_3",
                 "pointer_nonzero": true,
                 "shape": [
                   4096
@@ -10324,18 +10893,18 @@
             "closed": false,
             "enabled": true,
             "free_count": 0,
-            "initial_capacity": 2,
+            "initial_capacity": 4,
             "live_buffers": 0,
-            "max_live_buffers": 1,
+            "max_live_buffers": 3,
             "release_count": 67,
-            "reuse_count": 66,
+            "reuse_count": 64,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-            "total_buffers": 2
+            "total_buffers": 4
           },
           "output_shape": [
             4096
           ],
-          "preparation_id": "c09ec49268cfc203",
+          "preparation_id": "3b9bd9c90d19f604",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -10376,26 +10945,26 @@
           "expected_invocation_count": 67,
           "last_invocation_index": 67,
           "observed_invocation_count": 67,
-          "output_pool_allocation_count": 2,
-          "output_pool_available_buffers_after_timing": 2,
+          "output_pool_allocation_count": 4,
+          "output_pool_available_buffers_after_timing": 4,
           "output_pool_enabled": true,
-          "output_pool_initial_capacity": 2,
+          "output_pool_initial_capacity": 4,
           "output_pool_live_buffers_after_timing": 0,
           "output_pool_release_count": 67,
-          "preparation_id": "c09ec49268cfc203",
-          "prepared_steady_median_us": 48.12266666666667,
-          "prepared_vs_unprepared_steady_speedup": 235.95956860246037,
+          "preparation_id": "3b9bd9c90d19f604",
+          "prepared_steady_median_us": 42.601333333333336,
+          "prepared_vs_unprepared_steady_speedup": 216.94130856624204,
           "setup_hoisted_to_compile_wrapper": true,
           "steady_state_output_allocated_in_execute": false,
           "steady_state_reused_output_buffer": true,
           "steady_state_reused_prepared_executor": true,
-          "unprepared_compatibility_steady_median_us": 11355.003666666666
+          "unprepared_compatibility_steady_median_us": 9241.989
         },
         "score": {
           "capped_steady_speed_ratio": 1.0,
           "denominator_weight": 1.0,
           "eligible_cuda_compile_evidence": true,
-          "steady_speed_ratio": 1.05238002881525,
+          "steady_speed_ratio": 1.071069763074708,
           "weight": 0.25,
           "weighted_score_contribution_percent": 25.0,
           "zero_credit_in_denominator": false
@@ -10403,12 +10972,12 @@
         "score_credit": 1.0,
         "status": "ok",
         "steady": {
-          "mad_us": 1.8729999999999976,
-          "max_us": 55.03333333333334,
-          "median_us": 48.12266666666667,
-          "min_us": 44.864333333333335,
+          "mad_us": 1.30833333333333,
+          "max_us": 53.60433333333334,
+          "median_us": 42.601333333333336,
+          "min_us": 38.76866666666666,
           "sample_count": 17,
-          "variance_us2": 7.24885967474049
+          "variance_us2": 11.908826706651299
         },
         "steady_checksums": [
           "e825140789de3374"
@@ -10439,26 +11008,17 @@
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
               },
-              "cudaGetDevice_before_launch": {
-                "error_name": null,
-                "result": 0,
-                "value": 0
-              },
               "cudaMemcpyDeviceToHost_output": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "byte_count": 16384,
                 "device_index": 0,
                 "error_name": null,
                 "kind": "cudaMemcpyDeviceToHost",
-                "result": 0
-              },
-              "cudaSetDevice_before_launch": {
-                "error_name": null,
                 "result": 0
               },
               "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -10520,6 +11080,13 @@
             "device_output_bytes_checksum": "87b853e908c5cd9d7674ce73a924d68f",
             "device_output_checksum": "e825140789de3374",
             "device_output_pointer_nonzero": true,
+            "device_selection": {
+              "cudaGetDevice": "preparation",
+              "cudaSetDevice": "preparation",
+              "per_launch_cudaGetDevice": false,
+              "per_launch_cudaSetDevice": false
+            },
+            "device_selection_hoisted_to_preparation": true,
             "device_type": "cuda",
             "driver": {
               "cuInit": {
@@ -10546,7 +11113,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "c09ec49268cfc203",
+              "preparation_id": "3b9bd9c90d19f604",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -10643,18 +11210,18 @@
             "output_buffer_pool": {
               "allocated_in_acquire": false,
               "allocated_in_execute": false,
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "enabled": true,
-              "lease_id": "c09ec49268cfc203:1",
-              "pool_allocation_count": 2,
-              "pool_available_buffers_after_acquire": 1,
-              "pool_initial_capacity": 2,
+              "lease_id": "3b9bd9c90d19f604:1",
+              "pool_allocation_count": 4,
+              "pool_available_buffers_after_acquire": 3,
+              "pool_initial_capacity": 4,
               "pool_live_buffers_after_acquire": 1,
               "pool_release_count": 0,
               "pool_reuse_count": 0,
               "pool_snapshot_after_materialization": {
-                "allocation_count": 2,
-                "available_buffers": 1,
+                "allocation_count": 4,
+                "available_buffers": 3,
                 "buffers": [
                   {
                     "available": true,
@@ -10668,11 +11235,33 @@
                     ]
                   },
                   {
+                    "available": true,
+                    "byte_count": 16384,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_1",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      4096
+                    ]
+                  },
+                  {
+                    "available": true,
+                    "byte_count": 16384,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_2",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      4096
+                    ]
+                  },
+                  {
                     "available": false,
                     "byte_count": 16384,
                     "lease_count": 1,
                     "live": true,
-                    "name": "compiled_output_pool_1",
+                    "name": "compiled_output_pool_3",
                     "pointer_nonzero": true,
                     "shape": [
                       4096
@@ -10682,13 +11271,13 @@
                 "closed": false,
                 "enabled": true,
                 "free_count": 0,
-                "initial_capacity": 2,
+                "initial_capacity": 4,
                 "live_buffers": 1,
                 "max_live_buffers": 1,
                 "release_count": 0,
                 "reuse_count": 0,
                 "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-                "total_buffers": 2
+                "total_buffers": 4
               },
               "reused_released_allocation": false,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -10744,7 +11333,7 @@
             "timing_boundary": {
               "after_timed_region": {
                 "boundary": "after_unprepared_repeated_calls",
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
@@ -10770,12 +11359,12 @@
           "setup_repeated_per_invocation": true,
           "status": "ok",
           "steady": {
-            "mad_us": 1354.3556666666664,
-            "max_us": 14145.004,
-            "median_us": 11355.003666666666,
-            "min_us": 9017.651,
+            "mad_us": 582.2240000000002,
+            "max_us": 10793.259,
+            "median_us": 9241.989,
+            "min_us": 8274.883,
             "sample_count": 17,
-            "variance_us2": 2613169.276821171
+            "variance_us2": 575060.3648320847
           },
           "steady_checksums": [
             "e825140789de3374"
@@ -10822,7 +11411,16 @@
       },
       "reference_workload": {
         "cold_checksum": "e825140789de3374",
-        "cold_first_call_us": 37456.461,
+        "cold_first_call_accounting": {
+          "cold_first_call_region": "first compiled invocation after wrapper construction",
+          "cold_first_call_us": 37881.288,
+          "factory_plus_cold_first_call_us": 38325.379,
+          "factory_region": "torch.compile wrapper construction",
+          "factory_us": 444.091,
+          "includes_deferred_backend_compile_in_cold_call": true,
+          "setup_hoisted_to_factory": false
+        },
+        "cold_first_call_us": 37881.288,
         "compile_config": {
           "backend": "inductor",
           "dynamic": false,
@@ -10834,7 +11432,7 @@
           "assert_close": true,
           "eager_reference_checksum": "093851ee4eb6268b"
         },
-        "factory_us": 397.932,
+        "factory_us": 444.091,
         "implementation": "pytorch",
         "input_metadata": [
           {
@@ -10887,12 +11485,12 @@
         },
         "status": "ok",
         "steady": {
-          "mad_us": 2.560666666666677,
-          "max_us": 78.94933333333333,
-          "median_us": 50.64333333333334,
-          "min_us": 46.31666666666666,
+          "mad_us": 0.7243333333333339,
+          "max_us": 50.28933333333334,
+          "median_us": 45.629,
+          "min_us": 44.377,
           "sample_count": 17,
-          "variance_us2": 73.93878768319874
+          "variance_us2": 2.3669799361783954
         },
         "steady_checksums": [
           "e825140789de3374"
@@ -10928,7 +11526,7 @@
         "capped_steady_speed_ratio": 1.0,
         "denominator_weight": 1.0,
         "eligible_cuda_compile_evidence": true,
-        "steady_speed_ratio": 1.05238002881525,
+        "steady_speed_ratio": 1.071069763074708,
         "weight": 0.25,
         "weighted_score_contribution_percent": 25.0,
         "zero_credit_in_denominator": false
@@ -11588,7 +12186,7 @@
         "output_shape": [
           4096
         ],
-        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v2",
+        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v3",
         "primitive": "torch_rs_private_cuda_h100_pointwise_reduce_float32_device0",
         "public_cuda_tensor_wrapper": {
           "byte_count": 16384,
@@ -11740,26 +12338,17 @@
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
             },
-            "cudaGetDevice_before_launch": {
-              "error_name": null,
-              "result": 0,
-              "value": 0
-            },
             "cudaMemcpyDeviceToHost_output": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 16384,
               "device_index": 0,
               "error_name": null,
               "kind": "cudaMemcpyDeviceToHost",
-              "result": 0
-            },
-            "cudaSetDevice_before_launch": {
-              "error_name": null,
               "result": 0
             },
             "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -11821,6 +12410,13 @@
           "device_output_bytes_checksum": "87b853e908c5cd9d7674ce73a924d68f",
           "device_output_checksum": "e825140789de3374",
           "device_output_pointer_nonzero": true,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_preparation": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -11847,7 +12443,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "c09ec49268cfc203",
+            "preparation_id": "3b9bd9c90d19f604",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -11945,18 +12541,18 @@
           "output_buffer_pool": {
             "allocated_in_acquire": false,
             "allocated_in_execute": false,
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "enabled": true,
-            "lease_id": "c09ec49268cfc203:1",
-            "pool_allocation_count": 2,
-            "pool_available_buffers_after_acquire": 1,
-            "pool_initial_capacity": 2,
+            "lease_id": "3b9bd9c90d19f604:1",
+            "pool_allocation_count": 4,
+            "pool_available_buffers_after_acquire": 3,
+            "pool_initial_capacity": 4,
             "pool_live_buffers_after_acquire": 1,
             "pool_release_count": 0,
             "pool_reuse_count": 0,
             "pool_snapshot_after_materialization": {
-              "allocation_count": 2,
-              "available_buffers": 1,
+              "allocation_count": 4,
+              "available_buffers": 3,
               "buffers": [
                 {
                   "available": true,
@@ -11970,11 +12566,33 @@
                   ]
                 },
                 {
+                  "available": true,
+                  "byte_count": 16384,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_1",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    4096
+                  ]
+                },
+                {
+                  "available": true,
+                  "byte_count": 16384,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_2",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    4096
+                  ]
+                },
+                {
                   "available": false,
                   "byte_count": 16384,
                   "lease_count": 1,
                   "live": true,
-                  "name": "compiled_output_pool_1",
+                  "name": "compiled_output_pool_3",
                   "pointer_nonzero": true,
                   "shape": [
                     4096
@@ -11984,13 +12602,13 @@
               "closed": false,
               "enabled": true,
               "free_count": 0,
-              "initial_capacity": 2,
+              "initial_capacity": 4,
               "live_buffers": 1,
               "max_live_buffers": 1,
               "release_count": 0,
               "reuse_count": 0,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-              "total_buffers": 2
+              "total_buffers": 4
             },
             "reused_released_allocation": false,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -11998,7 +12616,7 @@
           },
           "output_comparison": {
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 16384,
               "device_index": 0,
               "error_name": null,
@@ -12014,7 +12632,7 @@
             "private_output_bytes_checksum": "87b853e908c5cd9d7674ce73a924d68f",
             "recorded_private_output_bytes_checksum": "87b853e908c5cd9d7674ce73a924d68f",
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -12103,7 +12721,7 @@
         "is_cuda": true,
         "native_cuda_compile": true,
         "operations_supported": [],
-        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v2",
+        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v3",
         "public_cuda_tensor_wrapper": true,
         "public_torch_cuda_api": false,
         "readback": {
@@ -12111,7 +12729,7 @@
           "checksum": "87b853e908c5cd9d7674ce73a924d68f",
           "checksum_name": "torch_rs_private_cuda_pointwise_reduce_output_v1",
           "copy_call": {
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "byte_count": 16384,
             "device_index": 0,
             "error_name": null,
@@ -12120,7 +12738,7 @@
           },
           "payload_exposed": false,
           "sync_call": {
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "device_index": 0,
             "error_name": null,
             "result": 0
@@ -12133,7 +12751,7 @@
         "shape": [
           4096
         ],
-        "source_buffer_name": "compiled_output_pool_1",
+        "source_buffer_name": "compiled_output_pool_3",
         "source_buffer_schema_version": "torch_rs_private_cuda_float32_buffer_v1",
         "status": "ok",
         "storage_offset": 0,
@@ -12157,7 +12775,17 @@
     {
       "candidate": {
         "cold_checksum": "d611fc1244abdf90",
-        "cold_first_call_us": 143.307,
+        "cold_first_call_accounting": {
+          "cold_first_call_region": "first invocation after the CUDA executor is prepared",
+          "cold_first_call_us": 137.628,
+          "factory_plus_cold_first_call_us": 9736.998,
+          "factory_region": "torch_rs.compile wrapper construction and prepared CUDA executor setup",
+          "factory_us": 9599.37,
+          "includes_deferred_backend_compile_in_cold_call": false,
+          "prepared_executor_ready_before_cold_call": true,
+          "setup_hoisted_to_factory": true
+        },
+        "cold_first_call_us": 137.628,
         "compile_backend": "inductor",
         "compile_config": {
           "backend": "inductor",
@@ -12179,26 +12807,17 @@
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
             },
-            "cudaGetDevice_before_launch": {
-              "error_name": null,
-              "result": 0,
-              "value": 0
-            },
             "cudaMemcpyDeviceToHost_output": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
               "kind": "cudaMemcpyDeviceToHost",
-              "result": 0
-            },
-            "cudaSetDevice_before_launch": {
-              "error_name": null,
               "result": 0
             },
             "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -12260,6 +12879,13 @@
           "device_output_bytes_checksum": "3f7195ff37ae2f44d7006420cbc7f47c",
           "device_output_checksum": "d611fc1244abdf90",
           "device_output_pointer_nonzero": true,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_preparation": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -12286,7 +12912,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "7e266fc41ac8c545",
+            "preparation_id": "e5641c5d30ac893f",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -12384,18 +13010,18 @@
           "output_buffer_pool": {
             "allocated_in_acquire": false,
             "allocated_in_execute": false,
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "enabled": true,
-            "lease_id": "7e266fc41ac8c545:1",
-            "pool_allocation_count": 2,
-            "pool_available_buffers_after_acquire": 1,
-            "pool_initial_capacity": 2,
+            "lease_id": "e5641c5d30ac893f:1",
+            "pool_allocation_count": 4,
+            "pool_available_buffers_after_acquire": 3,
+            "pool_initial_capacity": 4,
             "pool_live_buffers_after_acquire": 1,
             "pool_release_count": 0,
             "pool_reuse_count": 0,
             "pool_snapshot_after_materialization": {
-              "allocation_count": 2,
-              "available_buffers": 1,
+              "allocation_count": 4,
+              "available_buffers": 3,
               "buffers": [
                 {
                   "available": true,
@@ -12409,11 +13035,33 @@
                   ]
                 },
                 {
+                  "available": true,
+                  "byte_count": 1024,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_1",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    256
+                  ]
+                },
+                {
+                  "available": true,
+                  "byte_count": 1024,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_2",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    256
+                  ]
+                },
+                {
                   "available": false,
                   "byte_count": 1024,
                   "lease_count": 1,
                   "live": true,
-                  "name": "compiled_output_pool_1",
+                  "name": "compiled_output_pool_3",
                   "pointer_nonzero": true,
                   "shape": [
                     256
@@ -12423,13 +13071,13 @@
               "closed": false,
               "enabled": true,
               "free_count": 0,
-              "initial_capacity": 2,
+              "initial_capacity": 4,
               "live_buffers": 1,
               "max_live_buffers": 1,
               "release_count": 0,
               "reuse_count": 0,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-              "total_buffers": 2
+              "total_buffers": 4
             },
             "reused_released_allocation": false,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -12437,7 +13085,7 @@
           },
           "output_comparison": {
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
@@ -12453,7 +13101,7 @@
             "private_output_bytes_checksum": "3f7195ff37ae2f44d7006420cbc7f47c",
             "recorded_private_output_bytes_checksum": "3f7195ff37ae2f44d7006420cbc7f47c",
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -12540,7 +13188,7 @@
           "rejection_reasons": [],
           "score_credit": 1.0
         },
-        "factory_us": 13551.64,
+        "factory_us": 9599.37,
         "forwarded_to_pytorch": false,
         "implementation": "torch_rs",
         "input_device_type": "cuda",
@@ -12936,26 +13584,17 @@
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
             },
-            "cudaGetDevice_before_launch": {
-              "error_name": null,
-              "result": 0,
-              "value": 0
-            },
             "cudaMemcpyDeviceToHost_output": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
               "kind": "cudaMemcpyDeviceToHost",
-              "result": 0
-            },
-            "cudaSetDevice_before_launch": {
-              "error_name": null,
               "result": 0
             },
             "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -13017,6 +13656,13 @@
           "device_output_bytes_checksum": "3f7195ff37ae2f44d7006420cbc7f47c",
           "device_output_checksum": "d611fc1244abdf90",
           "device_output_pointer_nonzero": true,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_preparation": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -13043,7 +13689,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 67,
-            "preparation_id": "7e266fc41ac8c545",
+            "preparation_id": "e5641c5d30ac893f",
             "prepared": true,
             "reused_prepared_executor": true,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -13141,18 +13787,18 @@
           "output_buffer_pool": {
             "allocated_in_acquire": false,
             "allocated_in_execute": false,
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "enabled": true,
-            "lease_id": "7e266fc41ac8c545:67",
-            "pool_allocation_count": 2,
+            "lease_id": "e5641c5d30ac893f:67",
+            "pool_allocation_count": 4,
             "pool_available_buffers_after_acquire": 1,
-            "pool_initial_capacity": 2,
-            "pool_live_buffers_after_acquire": 1,
-            "pool_release_count": 66,
-            "pool_reuse_count": 66,
+            "pool_initial_capacity": 4,
+            "pool_live_buffers_after_acquire": 3,
+            "pool_release_count": 64,
+            "pool_reuse_count": 64,
             "pool_snapshot_after_materialization": {
-              "allocation_count": 2,
-              "available_buffers": 1,
+              "allocation_count": 4,
+              "available_buffers": 3,
               "buffers": [
                 {
                   "available": true,
@@ -13166,11 +13812,33 @@
                   ]
                 },
                 {
+                  "available": true,
+                  "byte_count": 1024,
+                  "lease_count": 22,
+                  "live": false,
+                  "name": "compiled_output_pool_1",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    256
+                  ]
+                },
+                {
+                  "available": true,
+                  "byte_count": 1024,
+                  "lease_count": 22,
+                  "live": false,
+                  "name": "compiled_output_pool_2",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    256
+                  ]
+                },
+                {
                   "available": false,
                   "byte_count": 1024,
-                  "lease_count": 67,
+                  "lease_count": 23,
                   "live": true,
-                  "name": "compiled_output_pool_1",
+                  "name": "compiled_output_pool_3",
                   "pointer_nonzero": true,
                   "shape": [
                     256
@@ -13180,13 +13848,13 @@
               "closed": false,
               "enabled": true,
               "free_count": 0,
-              "initial_capacity": 2,
+              "initial_capacity": 4,
               "live_buffers": 1,
-              "max_live_buffers": 1,
+              "max_live_buffers": 3,
               "release_count": 66,
-              "reuse_count": 66,
+              "reuse_count": 64,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-              "total_buffers": 2
+              "total_buffers": 4
             },
             "reused_released_allocation": true,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -13194,7 +13862,7 @@
           },
           "output_comparison": {
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
@@ -13210,7 +13878,7 @@
             "private_output_bytes_checksum": "3f7195ff37ae2f44d7006420cbc7f47c",
             "recorded_private_output_bytes_checksum": "3f7195ff37ae2f44d7006420cbc7f47c",
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -13277,6 +13945,7 @@
               "error_name": null,
               "result": 0
             },
+            "intermediate_output_release_outside_timed_region": true,
             "materialization_outside_timed_region": true,
             "timed_call_count": 3
           },
@@ -13321,26 +13990,17 @@
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
               },
-              "cudaGetDevice_before_launch": {
-                "error_name": null,
-                "result": 0,
-                "value": 0
-              },
               "cudaMemcpyDeviceToHost_output": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "byte_count": 1024,
                 "device_index": 0,
                 "error_name": null,
                 "kind": "cudaMemcpyDeviceToHost",
-                "result": 0
-              },
-              "cudaSetDevice_before_launch": {
-                "error_name": null,
                 "result": 0
               },
               "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -13402,6 +14062,13 @@
             "device_output_bytes_checksum": "3f7195ff37ae2f44d7006420cbc7f47c",
             "device_output_checksum": "d611fc1244abdf90",
             "device_output_pointer_nonzero": true,
+            "device_selection": {
+              "cudaGetDevice": "preparation",
+              "cudaSetDevice": "preparation",
+              "per_launch_cudaGetDevice": false,
+              "per_launch_cudaSetDevice": false
+            },
+            "device_selection_hoisted_to_preparation": true,
             "device_type": "cuda",
             "driver": {
               "cuInit": {
@@ -13428,7 +14095,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "7e266fc41ac8c545",
+              "preparation_id": "e5641c5d30ac893f",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -13526,18 +14193,18 @@
             "output_buffer_pool": {
               "allocated_in_acquire": false,
               "allocated_in_execute": false,
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "enabled": true,
-              "lease_id": "7e266fc41ac8c545:1",
-              "pool_allocation_count": 2,
-              "pool_available_buffers_after_acquire": 1,
-              "pool_initial_capacity": 2,
+              "lease_id": "e5641c5d30ac893f:1",
+              "pool_allocation_count": 4,
+              "pool_available_buffers_after_acquire": 3,
+              "pool_initial_capacity": 4,
               "pool_live_buffers_after_acquire": 1,
               "pool_release_count": 0,
               "pool_reuse_count": 0,
               "pool_snapshot_after_materialization": {
-                "allocation_count": 2,
-                "available_buffers": 1,
+                "allocation_count": 4,
+                "available_buffers": 3,
                 "buffers": [
                   {
                     "available": true,
@@ -13551,11 +14218,33 @@
                     ]
                   },
                   {
+                    "available": true,
+                    "byte_count": 1024,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_1",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      256
+                    ]
+                  },
+                  {
+                    "available": true,
+                    "byte_count": 1024,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_2",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      256
+                    ]
+                  },
+                  {
                     "available": false,
                     "byte_count": 1024,
                     "lease_count": 1,
                     "live": true,
-                    "name": "compiled_output_pool_1",
+                    "name": "compiled_output_pool_3",
                     "pointer_nonzero": true,
                     "shape": [
                       256
@@ -13565,13 +14254,13 @@
                 "closed": false,
                 "enabled": true,
                 "free_count": 0,
-                "initial_capacity": 2,
+                "initial_capacity": 4,
                 "live_buffers": 1,
                 "max_live_buffers": 1,
                 "release_count": 0,
                 "reuse_count": 0,
                 "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-                "total_buffers": 2
+                "total_buffers": 4
               },
               "reused_released_allocation": false,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -13579,7 +14268,7 @@
             },
             "output_comparison": {
               "copy_call": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "byte_count": 1024,
                 "device_index": 0,
                 "error_name": null,
@@ -13595,7 +14284,7 @@
               "private_output_bytes_checksum": "3f7195ff37ae2f44d7006420cbc7f47c",
               "recorded_private_output_bytes_checksum": "3f7195ff37ae2f44d7006420cbc7f47c",
               "sync_call": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
@@ -13684,7 +14373,7 @@
           "is_cuda": true,
           "native_cuda_compile": true,
           "operations_supported": [],
-          "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v2",
+          "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v3",
           "public_cuda_tensor_wrapper": true,
           "public_torch_cuda_api": false,
           "readback": {
@@ -13692,7 +14381,7 @@
             "checksum": "3f7195ff37ae2f44d7006420cbc7f47c",
             "checksum_name": "torch_rs_private_cuda_pointwise_reduce_output_v1",
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
@@ -13701,7 +14390,7 @@
             },
             "payload_exposed": false,
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -13714,7 +14403,7 @@
           "shape": [
             256
           ],
-          "source_buffer_name": "compiled_output_pool_1",
+          "source_buffer_name": "compiled_output_pool_3",
           "source_buffer_schema_version": "torch_rs_private_cuda_float32_buffer_v1",
           "status": "ok",
           "storage_offset": 0,
@@ -13753,6 +14442,20 @@
             },
             "cudaMalloc_output_pool_1": {
               "buffer_name": "compiled_output_pool_1",
+              "byte_count": 1024,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
+            "cudaMalloc_output_pool_2": {
+              "buffer_name": "compiled_output_pool_2",
+              "byte_count": 1024,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
+            "cudaMalloc_output_pool_3": {
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
@@ -13805,6 +14508,13 @@
             "total_memory_bytes": 102085492736
           },
           "device_index": 0,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_compile_wrapper": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -13869,8 +14579,8 @@
             }
           },
           "output_pool": {
-            "allocation_count": 2,
-            "available_buffers": 2,
+            "allocation_count": 4,
+            "available_buffers": 4,
             "buffers": [
               {
                 "available": true,
@@ -13893,23 +14603,45 @@
                 "shape": [
                   256
                 ]
+              },
+              {
+                "available": true,
+                "byte_count": 1024,
+                "lease_count": 0,
+                "live": false,
+                "name": "compiled_output_pool_2",
+                "pointer_nonzero": true,
+                "shape": [
+                  256
+                ]
+              },
+              {
+                "available": true,
+                "byte_count": 1024,
+                "lease_count": 0,
+                "live": false,
+                "name": "compiled_output_pool_3",
+                "pointer_nonzero": true,
+                "shape": [
+                  256
+                ]
               }
             ],
             "closed": false,
             "enabled": true,
             "free_count": 0,
-            "initial_capacity": 2,
+            "initial_capacity": 4,
             "live_buffers": 0,
             "max_live_buffers": 0,
             "release_count": 0,
             "reuse_count": 0,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-            "total_buffers": 2
+            "total_buffers": 4
           },
           "output_shape": [
             256
           ],
-          "preparation_id": "7e266fc41ac8c545",
+          "preparation_id": "e5641c5d30ac893f",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -13978,6 +14710,20 @@
               "error_name": null,
               "result": 0
             },
+            "cudaMalloc_output_pool_2": {
+              "buffer_name": "compiled_output_pool_2",
+              "byte_count": 1024,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
+            "cudaMalloc_output_pool_3": {
+              "buffer_name": "compiled_output_pool_3",
+              "byte_count": 1024,
+              "device_index": 0,
+              "error_name": null,
+              "result": 0
+            },
             "cudaSetDevice": {
               "error_name": null,
               "result": 0
@@ -14025,6 +14771,13 @@
             "total_memory_bytes": 102085492736
           },
           "device_index": 0,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_compile_wrapper": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -14089,8 +14842,8 @@
             }
           },
           "output_pool": {
-            "allocation_count": 2,
-            "available_buffers": 2,
+            "allocation_count": 4,
+            "available_buffers": 4,
             "buffers": [
               {
                 "available": true,
@@ -14106,9 +14859,31 @@
               {
                 "available": true,
                 "byte_count": 1024,
-                "lease_count": 67,
+                "lease_count": 22,
                 "live": false,
                 "name": "compiled_output_pool_1",
+                "pointer_nonzero": true,
+                "shape": [
+                  256
+                ]
+              },
+              {
+                "available": true,
+                "byte_count": 1024,
+                "lease_count": 22,
+                "live": false,
+                "name": "compiled_output_pool_2",
+                "pointer_nonzero": true,
+                "shape": [
+                  256
+                ]
+              },
+              {
+                "available": true,
+                "byte_count": 1024,
+                "lease_count": 23,
+                "live": false,
+                "name": "compiled_output_pool_3",
                 "pointer_nonzero": true,
                 "shape": [
                   256
@@ -14118,18 +14893,18 @@
             "closed": false,
             "enabled": true,
             "free_count": 0,
-            "initial_capacity": 2,
+            "initial_capacity": 4,
             "live_buffers": 0,
-            "max_live_buffers": 1,
+            "max_live_buffers": 3,
             "release_count": 67,
-            "reuse_count": 66,
+            "reuse_count": 64,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-            "total_buffers": 2
+            "total_buffers": 4
           },
           "output_shape": [
             256
           ],
-          "preparation_id": "7e266fc41ac8c545",
+          "preparation_id": "e5641c5d30ac893f",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -14170,39 +14945,39 @@
           "expected_invocation_count": 67,
           "last_invocation_index": 67,
           "observed_invocation_count": 67,
-          "output_pool_allocation_count": 2,
-          "output_pool_available_buffers_after_timing": 2,
+          "output_pool_allocation_count": 4,
+          "output_pool_available_buffers_after_timing": 4,
           "output_pool_enabled": true,
-          "output_pool_initial_capacity": 2,
+          "output_pool_initial_capacity": 4,
           "output_pool_live_buffers_after_timing": 0,
           "output_pool_release_count": 67,
-          "preparation_id": "7e266fc41ac8c545",
-          "prepared_steady_median_us": 41.41266666666667,
-          "prepared_vs_unprepared_steady_speedup": 296.0755404948566,
+          "preparation_id": "e5641c5d30ac893f",
+          "prepared_steady_median_us": 38.818666666666665,
+          "prepared_vs_unprepared_steady_speedup": 258.80339355636465,
           "setup_hoisted_to_compile_wrapper": true,
           "steady_state_output_allocated_in_execute": false,
           "steady_state_reused_output_buffer": true,
           "steady_state_reused_prepared_executor": true,
-          "unprepared_compatibility_steady_median_us": 12261.277666666667
+          "unprepared_compatibility_steady_median_us": 10046.402666666667
         },
         "score": {
-          "capped_steady_speed_ratio": 0.975249118627151,
+          "capped_steady_speed_ratio": 1.0,
           "denominator_weight": 1.0,
           "eligible_cuda_compile_evidence": true,
-          "steady_speed_ratio": 0.975249118627151,
+          "steady_speed_ratio": 1.0147952874905544,
           "weight": 0.25,
-          "weighted_score_contribution_percent": 24.381227965678775,
+          "weighted_score_contribution_percent": 25.0,
           "zero_credit_in_denominator": false
         },
         "score_credit": 1.0,
         "status": "ok",
         "steady": {
-          "mad_us": 2.230000000000004,
-          "max_us": 69.39833333333333,
-          "median_us": 41.41266666666667,
-          "min_us": 39.149,
+          "mad_us": 0.8076666666666625,
+          "max_us": 43.883,
+          "median_us": 38.818666666666665,
+          "min_us": 37.64,
           "sample_count": 17,
-          "variance_us2": 66.62447923567856
+          "variance_us2": 2.409289292579778
         },
         "steady_checksums": [
           "d611fc1244abdf90"
@@ -14233,26 +15008,17 @@
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
               },
-              "cudaGetDevice_before_launch": {
-                "error_name": null,
-                "result": 0,
-                "value": 0
-              },
               "cudaMemcpyDeviceToHost_output": {
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "byte_count": 1024,
                 "device_index": 0,
                 "error_name": null,
                 "kind": "cudaMemcpyDeviceToHost",
-                "result": 0
-              },
-              "cudaSetDevice_before_launch": {
-                "error_name": null,
                 "result": 0
               },
               "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -14314,6 +15080,13 @@
             "device_output_bytes_checksum": "3f7195ff37ae2f44d7006420cbc7f47c",
             "device_output_checksum": "d611fc1244abdf90",
             "device_output_pointer_nonzero": true,
+            "device_selection": {
+              "cudaGetDevice": "preparation",
+              "cudaSetDevice": "preparation",
+              "per_launch_cudaGetDevice": false,
+              "per_launch_cudaSetDevice": false
+            },
+            "device_selection_hoisted_to_preparation": true,
             "device_type": "cuda",
             "driver": {
               "cuInit": {
@@ -14340,7 +15113,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "7e266fc41ac8c545",
+              "preparation_id": "e5641c5d30ac893f",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -14437,18 +15210,18 @@
             "output_buffer_pool": {
               "allocated_in_acquire": false,
               "allocated_in_execute": false,
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "enabled": true,
-              "lease_id": "7e266fc41ac8c545:1",
-              "pool_allocation_count": 2,
-              "pool_available_buffers_after_acquire": 1,
-              "pool_initial_capacity": 2,
+              "lease_id": "e5641c5d30ac893f:1",
+              "pool_allocation_count": 4,
+              "pool_available_buffers_after_acquire": 3,
+              "pool_initial_capacity": 4,
               "pool_live_buffers_after_acquire": 1,
               "pool_release_count": 0,
               "pool_reuse_count": 0,
               "pool_snapshot_after_materialization": {
-                "allocation_count": 2,
-                "available_buffers": 1,
+                "allocation_count": 4,
+                "available_buffers": 3,
                 "buffers": [
                   {
                     "available": true,
@@ -14462,11 +15235,33 @@
                     ]
                   },
                   {
+                    "available": true,
+                    "byte_count": 1024,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_1",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      256
+                    ]
+                  },
+                  {
+                    "available": true,
+                    "byte_count": 1024,
+                    "lease_count": 0,
+                    "live": false,
+                    "name": "compiled_output_pool_2",
+                    "pointer_nonzero": true,
+                    "shape": [
+                      256
+                    ]
+                  },
+                  {
                     "available": false,
                     "byte_count": 1024,
                     "lease_count": 1,
                     "live": true,
-                    "name": "compiled_output_pool_1",
+                    "name": "compiled_output_pool_3",
                     "pointer_nonzero": true,
                     "shape": [
                       256
@@ -14476,13 +15271,13 @@
                 "closed": false,
                 "enabled": true,
                 "free_count": 0,
-                "initial_capacity": 2,
+                "initial_capacity": 4,
                 "live_buffers": 1,
                 "max_live_buffers": 1,
                 "release_count": 0,
                 "reuse_count": 0,
                 "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-                "total_buffers": 2
+                "total_buffers": 4
               },
               "reused_released_allocation": false,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -14538,7 +15333,7 @@
             "timing_boundary": {
               "after_timed_region": {
                 "boundary": "after_unprepared_repeated_calls",
-                "buffer_name": "compiled_output_pool_1",
+                "buffer_name": "compiled_output_pool_3",
                 "device_index": 0,
                 "error_name": null,
                 "result": 0
@@ -14564,12 +15359,12 @@
           "setup_repeated_per_invocation": true,
           "status": "ok",
           "steady": {
-            "mad_us": 1452.9916666666668,
-            "max_us": 14616.307,
-            "median_us": 12261.277666666667,
-            "min_us": 10056.419,
+            "mad_us": 559.9936666666672,
+            "max_us": 11525.049333333334,
+            "median_us": 10046.402666666667,
+            "min_us": 8417.498666666666,
             "sample_count": 17,
-            "variance_us2": 2000075.7925416508
+            "variance_us2": 626456.8685544515
           },
           "steady_checksums": [
             "d611fc1244abdf90"
@@ -14616,7 +15411,16 @@
       },
       "reference_workload": {
         "cold_checksum": "d611fc1244abdf90",
-        "cold_first_call_us": 39983.343,
+        "cold_first_call_accounting": {
+          "cold_first_call_region": "first compiled invocation after wrapper construction",
+          "cold_first_call_us": 36779.031,
+          "factory_plus_cold_first_call_us": 37205.967,
+          "factory_region": "torch.compile wrapper construction",
+          "factory_us": 426.936,
+          "includes_deferred_backend_compile_in_cold_call": true,
+          "setup_hoisted_to_factory": false
+        },
+        "cold_first_call_us": 36779.031,
         "compile_config": {
           "backend": "inductor",
           "dynamic": false,
@@ -14628,7 +15432,7 @@
           "assert_close": true,
           "eager_reference_checksum": "25e55d26d098f46d"
         },
-        "factory_us": 423.591,
+        "factory_us": 426.936,
         "implementation": "pytorch",
         "input_metadata": [
           {
@@ -14681,12 +15485,12 @@
         },
         "status": "ok",
         "steady": {
-          "mad_us": 0.5006666666666604,
-          "max_us": 51.70466666666666,
-          "median_us": 40.38766666666666,
-          "min_us": 38.361333333333334,
+          "mad_us": 0.7210000000000036,
+          "max_us": 41.906666666666666,
+          "median_us": 39.393,
+          "min_us": 38.03766666666667,
           "sample_count": 17,
-          "variance_us2": 9.302150301422522
+          "variance_us2": 1.0756002368319886
         },
         "steady_checksums": [
           "d611fc1244abdf90"
@@ -14719,12 +15523,12 @@
         "workload_weight": 0.25
       },
       "score": {
-        "capped_steady_speed_ratio": 0.975249118627151,
+        "capped_steady_speed_ratio": 1.0,
         "denominator_weight": 1.0,
         "eligible_cuda_compile_evidence": true,
-        "steady_speed_ratio": 0.975249118627151,
+        "steady_speed_ratio": 1.0147952874905544,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 24.381227965678775,
+        "weighted_score_contribution_percent": 25.0,
         "zero_credit_in_denominator": false
       },
       "torch_rs_cuda_compile_inputs": {
@@ -15382,7 +16186,7 @@
         "output_shape": [
           256
         ],
-        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v2",
+        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v3",
         "primitive": "torch_rs_private_cuda_h100_pointwise_reduce_float32_device0",
         "public_cuda_tensor_wrapper": {
           "byte_count": 1024,
@@ -15534,26 +16338,17 @@
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
             },
-            "cudaGetDevice_before_launch": {
-              "error_name": null,
-              "result": 0,
-              "value": 0
-            },
             "cudaMemcpyDeviceToHost_output": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
               "kind": "cudaMemcpyDeviceToHost",
-              "result": 0
-            },
-            "cudaSetDevice_before_launch": {
-              "error_name": null,
               "result": 0
             },
             "torchRsPrivateH100PointwiseReduceFloat32": {
@@ -15615,6 +16410,13 @@
           "device_output_bytes_checksum": "3f7195ff37ae2f44d7006420cbc7f47c",
           "device_output_checksum": "d611fc1244abdf90",
           "device_output_pointer_nonzero": true,
+          "device_selection": {
+            "cudaGetDevice": "preparation",
+            "cudaSetDevice": "preparation",
+            "per_launch_cudaGetDevice": false,
+            "per_launch_cudaSetDevice": false
+          },
+          "device_selection_hoisted_to_preparation": true,
           "device_type": "cuda",
           "driver": {
             "cuInit": {
@@ -15641,7 +16443,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "7e266fc41ac8c545",
+            "preparation_id": "e5641c5d30ac893f",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -15739,18 +16541,18 @@
           "output_buffer_pool": {
             "allocated_in_acquire": false,
             "allocated_in_execute": false,
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "enabled": true,
-            "lease_id": "7e266fc41ac8c545:1",
-            "pool_allocation_count": 2,
-            "pool_available_buffers_after_acquire": 1,
-            "pool_initial_capacity": 2,
+            "lease_id": "e5641c5d30ac893f:1",
+            "pool_allocation_count": 4,
+            "pool_available_buffers_after_acquire": 3,
+            "pool_initial_capacity": 4,
             "pool_live_buffers_after_acquire": 1,
             "pool_release_count": 0,
             "pool_reuse_count": 0,
             "pool_snapshot_after_materialization": {
-              "allocation_count": 2,
-              "available_buffers": 1,
+              "allocation_count": 4,
+              "available_buffers": 3,
               "buffers": [
                 {
                   "available": true,
@@ -15764,11 +16566,33 @@
                   ]
                 },
                 {
+                  "available": true,
+                  "byte_count": 1024,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_1",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    256
+                  ]
+                },
+                {
+                  "available": true,
+                  "byte_count": 1024,
+                  "lease_count": 0,
+                  "live": false,
+                  "name": "compiled_output_pool_2",
+                  "pointer_nonzero": true,
+                  "shape": [
+                    256
+                  ]
+                },
+                {
                   "available": false,
                   "byte_count": 1024,
                   "lease_count": 1,
                   "live": true,
-                  "name": "compiled_output_pool_1",
+                  "name": "compiled_output_pool_3",
                   "pointer_nonzero": true,
                   "shape": [
                     256
@@ -15778,13 +16602,13 @@
               "closed": false,
               "enabled": true,
               "free_count": 0,
-              "initial_capacity": 2,
+              "initial_capacity": 4,
               "live_buffers": 1,
               "max_live_buffers": 1,
               "release_count": 0,
               "reuse_count": 0,
               "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
-              "total_buffers": 2
+              "total_buffers": 4
             },
             "reused_released_allocation": false,
             "schema_version": "torch_rs_private_cuda_buffer_pool_v1",
@@ -15792,7 +16616,7 @@
           },
           "output_comparison": {
             "copy_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "byte_count": 1024,
               "device_index": 0,
               "error_name": null,
@@ -15808,7 +16632,7 @@
             "private_output_bytes_checksum": "3f7195ff37ae2f44d7006420cbc7f47c",
             "recorded_private_output_bytes_checksum": "3f7195ff37ae2f44d7006420cbc7f47c",
             "sync_call": {
-              "buffer_name": "compiled_output_pool_1",
+              "buffer_name": "compiled_output_pool_3",
               "device_index": 0,
               "error_name": null,
               "result": 0
@@ -15897,7 +16721,7 @@
         "is_cuda": true,
         "native_cuda_compile": true,
         "operations_supported": [],
-        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v2",
+        "pointwise_reduce_kernel_version": "h100_cuda_pointwise_plus_row_reduce_float32_v3",
         "public_cuda_tensor_wrapper": true,
         "public_torch_cuda_api": false,
         "readback": {
@@ -15905,7 +16729,7 @@
           "checksum": "3f7195ff37ae2f44d7006420cbc7f47c",
           "checksum_name": "torch_rs_private_cuda_pointwise_reduce_output_v1",
           "copy_call": {
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "byte_count": 1024,
             "device_index": 0,
             "error_name": null,
@@ -15914,7 +16738,7 @@
           },
           "payload_exposed": false,
           "sync_call": {
-            "buffer_name": "compiled_output_pool_1",
+            "buffer_name": "compiled_output_pool_3",
             "device_index": 0,
             "error_name": null,
             "result": 0
@@ -15927,7 +16751,7 @@
         "shape": [
           256
         ],
-        "source_buffer_name": "compiled_output_pool_1",
+        "source_buffer_name": "compiled_output_pool_3",
         "source_buffer_schema_version": "torch_rs_private_cuda_float32_buffer_v1",
         "status": "ok",
         "storage_offset": 0,

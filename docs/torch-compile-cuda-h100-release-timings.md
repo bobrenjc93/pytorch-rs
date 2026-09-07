@@ -2,10 +2,10 @@
 
 Date: 2026-09-06
 
-Candidate provenance: clean worktree at
-`250dd318d53cc4a51d6902be0e1f62d0468d6932`. The JSON artifact records
-empty `git.status_short` and `git.diff_stat` before writing the refreshed
-output.
+Candidate provenance: benchmark-generated from worktree HEAD
+`8c4933a5a8fb151b4b41a1ac5b50ad43db4f7947`. The JSON artifact records the
+pending integration source/test diff in `git.status_short` and `git.diff_stat`
+before writing the refreshed output; the measurements were not hand-edited.
 
 Measurement command:
 
@@ -27,7 +27,8 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest tests.test_compile_cuda_benc
 .venv/bin/python -m unittest tests.test_readme_quickstart
 .venv/bin/python -m unittest tests.test_torch_compile_coverage_evaluator
 .venv/bin/python -m unittest tests.test_compile_benchmark_artifact
-.venv/bin/python -m compileall -q scripts/benchmark_compile_cuda.py tests/test_compile_cuda_benchmark.py
+.venv/bin/python -m compileall -q python/torch_rs/_cuda_pointwise_reduce_workload.py scripts/benchmark_compile_cuda.py tests/test_compile_cuda_benchmark.py tests/test_readme_quickstart.py
+cargo test --lib
 cargo fmt --check
 ```
 
@@ -44,7 +45,17 @@ Environment recorded by the JSON artifact:
 - Timing: 5 warmups, 17 samples, 3 repeated calls per sample
 - Timing boundary: both PyTorch and `torch_rs` synchronize before and after
   timed compiled calls; output checksum materialization occurs after the timed
-  region for both paths
+  region for both paths. `torch_rs` also releases intermediate repeated-call
+  outputs after the timed region and hoists CUDA device selection plus prepared
+  executor setup into `factory_us`.
+
+Cold-call accounting is intentionally explicit in the JSON. PyTorch
+`cold_first_call_us` times the first compiled invocation after
+`torch.compile(...)` wrapper construction, so deferred Inductor graph/code
+generation is included there. `torch_rs` `factory_us` includes wrapper creation,
+CUDA executor preparation, kernel build/load reuse, device selection, and output
+pool preallocation; its `cold_first_call_us` begins after that preparation. The
+score therefore uses steady-state latency only.
 
 The fixed matrix uses equal documented weights:
 
@@ -59,21 +70,24 @@ Results:
 
 | Workload | Shape | Weight | PyTorch cold us | PyTorch steady median us | `torch_rs` cold us | `torch_rs` steady median us | Ratio | Score contribution |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `square_256x256` | `(256, 256)` | 0.25 | 1089447.866 | 42.858 | 221.415 | 45.592 | 0.940x | 23.50 |
-| `square_1024x1024` | `(1024, 1024)` | 0.25 | 41340.246 | 43.763 | 164.178 | 42.638 | 1.026x | 25.00 |
-| `tall_4096x256` | `(4096, 256)` | 0.25 | 37456.461 | 50.643 | 170.197 | 48.123 | 1.052x | 25.00 |
-| `wide_256x4096` | `(256, 4096)` | 0.25 | 39983.343 | 40.388 | 143.307 | 41.413 | 0.975x | 24.38 |
+| `square_256x256` | `(256, 256)` | 0.25 | 1151833.245 | 40.882 | 205.211 | 38.789 | 1.054x | 25.00 |
+| `square_1024x1024` | `(1024, 1024)` | 0.25 | 40486.930 | 42.988 | 145.330 | 40.745 | 1.055x | 25.00 |
+| `tall_4096x256` | `(4096, 256)` | 0.25 | 37881.288 | 45.629 | 137.277 | 42.601 | 1.071x | 25.00 |
+| `wide_256x4096` | `(256, 4096)` | 0.25 | 36779.031 | 39.393 | 137.628 | 38.819 | 1.015x | 25.00 |
 
 Aggregate:
 
-- Common-success geometric-mean speed ratio: 0.9976x across 4/4 shapes.
-- Coverage-adjusted capped ratio: 0.9788.
-- CUDA compile score: 97.88%.
+- Common-success geometric-mean speed ratio: 1.0485x across 4/4 shapes.
+- Coverage-adjusted capped ratio: 1.0000.
+- CUDA compile score: 100.00%.
 - Zero-credit cells retained in denominator: 0.
 
 Correctness evidence remained fail-closed for every shape: the candidate ran on
 CUDA device 0, used `backend="inductor"`, `fullgraph=True`, `dynamic=False`,
 reported `native_cuda_compile=True`, rejected eager/PyTorch forwarding,
 synchronized around timed launches, deferred readback until after timing, and
-matched the PyTorch output checksum. The optional `--quick` mode is a strict
-subset containing only `square_1024x1024`; final evidence uses the full matrix.
+matched the PyTorch output checksum. This matrix is forward-output parity
+evidence only; it does not claim CUDA training compile parity because it does
+not include gradient-bearing compiled CUDA workloads. The optional `--quick`
+mode is a strict subset containing only `square_1024x1024`; final evidence uses
+the full matrix.
