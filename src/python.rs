@@ -4400,14 +4400,12 @@ fn apply_top_level_cat(py: Python<'_>, call: &BoundTopLevelCatCall<'_>) -> PyRes
     }
 
     let mut borrowed_tensors = try_size_vector(tensors.len())?;
-    let mut any_requires_grad = false;
     for (index, tensor) in tensors.iter().enumerate() {
         let BoundTensorOrTorchFunction::Tensor(tensor) = tensor else {
             unreachable!("cat sequence element overrides were dispatched before the native path")
         };
         let tensor = tensor.try_borrow()?;
         validate_cat_tensor(&tensor, index)?;
-        any_requires_grad |= tensor.inner.requires_grad();
         try_push_size(&mut borrowed_tensors, tensor)?;
     }
 
@@ -4421,15 +4419,11 @@ fn apply_top_level_cat(py: Python<'_>, call: &BoundTopLevelCatCall<'_>) -> PyRes
             unreachable!("cat dim override was dispatched before the native path")
         }
     };
-    normalize_dimension(dimension, 1)?;
+    let dimension = normalize_dimension(dimension, borrowed_tensors[0].inner.shape().len())?;
+    validate_cat_tensor_shapes(&borrowed_tensors, dimension)?;
     if call.out.is_some() {
         return Err(PyRuntimeError::new_err(
             "cat(): the 'out' argument is not supported",
-        ));
-    }
-    if any_requires_grad && is_grad_enabled() {
-        return Err(PyRuntimeError::new_err(
-            "cat(): autograd recording is not supported",
         ));
     }
 
@@ -4437,7 +4431,8 @@ fn apply_top_level_cat(py: Python<'_>, call: &BoundTopLevelCatCall<'_>) -> PyRes
     for tensor in &borrowed_tensors {
         try_push_size(&mut inner_tensors, &tensor.inner)?;
     }
-    let result = CoreTensor::cat_1d(&inner_tensors).map_err(|error| tensor_error(&error))?;
+    let result =
+        CoreTensor::cat(&inner_tensors, dimension).map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(result))?.into_any())
 }
 
@@ -11871,12 +11866,35 @@ fn validate_cat_tensor(tensor: &PyTensor, index: usize) -> PyResult<()> {
     }
     if tensor.inner.dtype() == DType::Float32
         && tensor.inner.device() == Device::Cpu
-        && tensor.inner.shape().len() == 1
+        && matches!(tensor.inner.shape().len(), 1 | 2)
     {
         Ok(())
     } else {
         Err(cat_unsupported_native_input())
     }
+}
+
+fn validate_cat_tensor_shapes(tensors: &[PyRef<'_, PyTensor>], dimension: usize) -> PyResult<()> {
+    let first_shape = tensors[0].inner.shape();
+    for (index, tensor) in tensors.iter().enumerate().skip(1) {
+        let shape = tensor.inner.shape();
+        if shape.len() != first_shape.len() {
+            return Err(PyRuntimeError::new_err(format!(
+                "Tensors must have same number of dimensions: got {} and {}",
+                first_shape.len(),
+                shape.len()
+            )));
+        }
+        for axis in 0..first_shape.len() {
+            if axis != dimension && first_shape[axis] != shape[axis] {
+                return Err(PyRuntimeError::new_err(format!(
+                    "Sizes of tensors must match except in dimension {dimension}. Expected size {} but got size {} for tensor number {index} in the list.",
+                    first_shape[axis], shape[axis],
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn cat_tensor_sequence_type_error(
@@ -11895,7 +11913,7 @@ fn cat_tensor_sequence_type_error(
 
 fn cat_unsupported_native_input() -> PyErr {
     PyNotImplementedError::new_err(
-        "cat(): only exact native CPU float32 1-D Tensor inputs are supported",
+        "cat(): only exact native CPU float32 rank-1 or rank-2 Tensor inputs are supported",
     )
 }
 

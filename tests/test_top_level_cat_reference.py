@@ -41,6 +41,14 @@ class TopLevelCatReferenceTests(unittest.TestCase):
             if input.numel()
         )
 
+    @staticmethod
+    def error(call):
+        try:
+            call()
+        except Exception as error:
+            return type(error).__name__, str(error)
+        raise AssertionError("call unexpectedly succeeded")
+
     def test_list_tuple_empty_operands_order_metadata_and_storage_match_pytorch_2_13(
         self,
     ):
@@ -107,6 +115,115 @@ class TopLevelCatReferenceTests(unittest.TestCase):
                         tensors=expected_inputs, dim=dimension, out=None
                     )
                 elif case == "axis alias":
+                    actual = torch.cat(actual_inputs, axis=dimension)
+                    expected = reference_torch.cat(expected_inputs, axis=dimension)
+                else:
+                    actual = torch.cat(actual_inputs, dim=dimension)
+                    expected = reference_torch.cat(expected_inputs, dim=dimension)
+                self.assert_matches(actual, expected, case=case)
+                self.assertEqual(
+                    self.fresh_storage_observation(actual, actual_inputs),
+                    self.fresh_storage_observation(expected, expected_inputs),
+                )
+
+    def test_rank_two_row_column_empty_and_noncontiguous_inputs_match_pytorch_2_13(
+        self,
+    ):
+        actual_base = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
+        )
+        expected_base = reference_torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            dtype=reference_torch.float32,
+        )
+        actual_offset = actual_base[1].transpose(0, 1)
+        expected_offset = expected_base[1].transpose(0, 1)
+        cases = (
+            (
+                "rows dim 0",
+                [actual_offset, torch.zeros((0, 3)), torch.tensor([[-0.0, 100.0, 101.0]])],
+                [
+                    expected_offset,
+                    reference_torch.zeros((0, 3), dtype=reference_torch.float32),
+                    reference_torch.tensor(
+                        [[-0.0, 100.0, 101.0]],
+                        dtype=reference_torch.float32,
+                    ),
+                ],
+                0,
+            ),
+            (
+                "rows dim -2",
+                (torch.zeros((0, 3)), actual_offset),
+                (
+                    reference_torch.zeros((0, 3), dtype=reference_torch.float32),
+                    expected_offset,
+                ),
+                -2,
+            ),
+            (
+                "columns dim 1",
+                [
+                    actual_offset,
+                    torch.zeros((4, 0)),
+                    torch.tensor([[-0.0], [200.0], [201.0], [202.0]]),
+                ],
+                [
+                    expected_offset,
+                    reference_torch.zeros((4, 0), dtype=reference_torch.float32),
+                    reference_torch.tensor(
+                        [[-0.0], [200.0], [201.0], [202.0]],
+                        dtype=reference_torch.float32,
+                    ),
+                ],
+                1,
+            ),
+            (
+                "columns dim -1",
+                (torch.zeros((4, 0)), actual_offset),
+                (
+                    reference_torch.zeros((4, 0), dtype=reference_torch.float32),
+                    expected_offset,
+                ),
+                -1,
+            ),
+            (
+                "empty columns",
+                [torch.zeros((2, 0)), torch.zeros((2, 0))],
+                [
+                    reference_torch.zeros((2, 0), dtype=reference_torch.float32),
+                    reference_torch.zeros((2, 0), dtype=reference_torch.float32),
+                ],
+                1,
+            ),
+            (
+                "single rank 2",
+                [torch.tensor([[1.0, 2.0], [3.0, 4.0]])],
+                [
+                    reference_torch.tensor(
+                        [[1.0, 2.0], [3.0, 4.0]],
+                        dtype=reference_torch.float32,
+                    )
+                ],
+                -1,
+            ),
+            (
+                "axis alias",
+                [torch.tensor([[1.0], [2.0]]), torch.tensor([[3.0], [4.0]])],
+                [
+                    reference_torch.tensor(
+                        [[1.0], [2.0]], dtype=reference_torch.float32
+                    ),
+                    reference_torch.tensor(
+                        [[3.0], [4.0]], dtype=reference_torch.float32
+                    ),
+                ],
+                1,
+            ),
+        )
+        for case, actual_inputs, expected_inputs, dimension in cases:
+            with self.subTest(case=case):
+                if case == "axis alias":
                     actual = torch.cat(actual_inputs, axis=dimension)
                     expected = reference_torch.cat(expected_inputs, axis=dimension)
                 else:
@@ -198,6 +315,27 @@ class TopLevelCatReferenceTests(unittest.TestCase):
                         self.fresh_storage_observation(expected, expected_inputs),
                     )
 
+            with self.subTest(alias=name, case="rank-2 axis 1"):
+                actual_inputs = [
+                    torch.tensor([[1.0], [2.0]]),
+                    torch.tensor([[3.0], [4.0]]),
+                ]
+                expected_inputs = [
+                    reference_torch.tensor(
+                        [[1.0], [2.0]], dtype=reference_torch.float32
+                    ),
+                    reference_torch.tensor(
+                        [[3.0], [4.0]], dtype=reference_torch.float32
+                    ),
+                ]
+                actual = actual_function(actual_inputs, axis=1)
+                expected = expected_function(expected_inputs, axis=1)
+                self.assert_matches(actual, expected, case=f"{name} rank-2")
+                self.assertEqual(
+                    self.fresh_storage_observation(actual, actual_inputs),
+                    self.fresh_storage_observation(expected, expected_inputs),
+                )
+
         def public_surface(module):
             return (
                 tuple(
@@ -220,7 +358,7 @@ class TopLevelCatReferenceTests(unittest.TestCase):
 
         self.assertEqual(public_surface(torch), public_surface(reference_torch))
 
-    def test_no_grad_grad_requiring_operands_match_pytorch_2_13(self):
+    def test_autograd_repeated_inputs_and_no_grad_match_pytorch_2_13(self):
         actual_left = torch.tensor([1.0, 2.0], requires_grad=True)
         actual_right = torch.tensor([3.0], requires_grad=True)
         expected_left = reference_torch.tensor(
@@ -230,6 +368,104 @@ class TopLevelCatReferenceTests(unittest.TestCase):
             [3.0], dtype=reference_torch.float32, requires_grad=True
         )
 
+        actual_tracked = torch.cat([actual_left, actual_right, actual_left], dim=0)
+        expected_tracked = reference_torch.cat(
+            [expected_left, expected_right, expected_left], dim=0
+        )
+        self.assert_matches(actual_tracked, expected_tracked, case="rank-1 autograd")
+        weights = [1.0, 2.0, 3.0, 4.0, 5.0]
+        (actual_tracked * torch.tensor(weights)).sum().backward()
+        (
+            expected_tracked
+            * reference_torch.tensor(weights, dtype=reference_torch.float32)
+        ).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_left.grad), expected_left.grad.detach().numpy()
+        )
+        np.testing.assert_array_equal(
+            np.asarray(actual_right.grad), expected_right.grad.detach().numpy()
+        )
+
+        actual_matrix_left = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
+        )
+        actual_matrix_right = torch.tensor([[5.0], [6.0]], requires_grad=True)
+        expected_matrix_left = reference_torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]],
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        expected_matrix_right = reference_torch.tensor(
+            [[5.0], [6.0]], dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_matrix = torch.cat(
+            [actual_matrix_left, actual_matrix_right, actual_matrix_left],
+            dim=1,
+        )
+        expected_matrix = reference_torch.cat(
+            [expected_matrix_left, expected_matrix_right, expected_matrix_left],
+            dim=1,
+        )
+        self.assert_matches(actual_matrix, expected_matrix, case="rank-2 autograd")
+        matrix_weights = [[1.0, 2.0, 3.0, 4.0, 5.0], [6.0, 7.0, 8.0, 9.0, 10.0]]
+        (actual_matrix * torch.tensor(matrix_weights)).sum().backward()
+        (
+            expected_matrix
+            * reference_torch.tensor(matrix_weights, dtype=reference_torch.float32)
+        ).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_matrix_left.grad),
+            expected_matrix_left.grad.detach().numpy(),
+        )
+        np.testing.assert_array_equal(
+            np.asarray(actual_matrix_right.grad),
+            expected_matrix_right.grad.detach().numpy(),
+        )
+
+        actual_row_top = torch.tensor([[7.0, 8.0]], requires_grad=True)
+        actual_row_bottom = torch.tensor(
+            [[9.0, 10.0], [11.0, 12.0]], requires_grad=True
+        )
+        expected_row_top = reference_torch.tensor(
+            [[7.0, 8.0]], dtype=reference_torch.float32, requires_grad=True
+        )
+        expected_row_bottom = reference_torch.tensor(
+            [[9.0, 10.0], [11.0, 12.0]],
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        actual_rows = torch.cat(
+            [actual_row_top, actual_row_bottom, actual_row_top],
+            dim=0,
+        )
+        expected_rows = reference_torch.cat(
+            [expected_row_top, expected_row_bottom, expected_row_top],
+            dim=0,
+        )
+        self.assert_matches(actual_rows, expected_rows, case="rank-2 row autograd")
+        row_weights = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]]
+        (actual_rows * torch.tensor(row_weights)).sum().backward()
+        (
+            expected_rows
+            * reference_torch.tensor(row_weights, dtype=reference_torch.float32)
+        ).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_row_top.grad),
+            expected_row_top.grad.detach().numpy(),
+        )
+        np.testing.assert_array_equal(
+            np.asarray(actual_row_bottom.grad),
+            expected_row_bottom.grad.detach().numpy(),
+        )
+
+        actual_left = torch.tensor([1.0, 2.0], requires_grad=True)
+        actual_right = torch.tensor([3.0], requires_grad=True)
+        expected_left = reference_torch.tensor(
+            [1.0, 2.0], dtype=reference_torch.float32, requires_grad=True
+        )
+        expected_right = reference_torch.tensor(
+            [3.0], dtype=reference_torch.float32, requires_grad=True
+        )
         with torch.no_grad():
             actual = torch.cat([actual_left, actual_right], dim=-1)
         with reference_torch.no_grad():
@@ -240,6 +476,84 @@ class TopLevelCatReferenceTests(unittest.TestCase):
         self.assertIsNone(actual_right.grad)
         self.assertIsNone(expected_left.grad)
         self.assertIsNone(expected_right.grad)
+
+    def test_representative_errors_match_pytorch_2_13(self):
+        actual_vector = torch.tensor([1.0])
+        expected_vector = reference_torch.tensor([1.0], dtype=reference_torch.float32)
+        cases = (
+            ("empty", lambda: torch.cat([]), lambda: reference_torch.cat([])),
+            (
+                "scalar",
+                lambda: torch.cat([torch.tensor(1.0)]),
+                lambda: reference_torch.cat(
+                    [reference_torch.tensor(1.0, dtype=reference_torch.float32)]
+                ),
+            ),
+            (
+                "non sequence",
+                lambda: torch.cat(actual_vector),
+                lambda: reference_torch.cat(expected_vector),
+            ),
+            (
+                "bad element",
+                lambda: torch.cat([actual_vector, 1]),
+                lambda: reference_torch.cat([expected_vector, 1]),
+            ),
+            (
+                "rank mismatch",
+                lambda: torch.cat([torch.tensor([[1.0]]), actual_vector], dim=0),
+                lambda: reference_torch.cat(
+                    [
+                        reference_torch.tensor(
+                            [[1.0]], dtype=reference_torch.float32
+                        ),
+                        expected_vector,
+                    ],
+                    dim=0,
+                ),
+            ),
+            (
+                "shape mismatch dim 0",
+                lambda: torch.cat([torch.ones((2, 2)), torch.ones((3, 3))], dim=0),
+                lambda: reference_torch.cat(
+                    [
+                        reference_torch.ones((2, 2), dtype=reference_torch.float32),
+                        reference_torch.ones((3, 3), dtype=reference_torch.float32),
+                    ],
+                    dim=0,
+                ),
+            ),
+            (
+                "shape mismatch dim 1",
+                lambda: torch.cat([torch.ones((2, 2)), torch.ones((3, 3))], dim=1),
+                lambda: reference_torch.cat(
+                    [
+                        reference_torch.ones((2, 2), dtype=reference_torch.float32),
+                        reference_torch.ones((3, 3), dtype=reference_torch.float32),
+                    ],
+                    dim=1,
+                ),
+            ),
+            (
+                "high dim",
+                lambda: torch.cat([torch.tensor([[1.0]])], dim=2),
+                lambda: reference_torch.cat(
+                    [reference_torch.tensor([[1.0]], dtype=reference_torch.float32)],
+                    dim=2,
+                ),
+            ),
+            (
+                "low dim",
+                lambda: torch.cat([torch.tensor([[1.0]])], dim=-3),
+                lambda: reference_torch.cat(
+                    [reference_torch.tensor([[1.0]], dtype=reference_torch.float32)],
+                    dim=-3,
+                ),
+            ),
+        )
+        for case, actual_call, expected_call in cases:
+            with self.subTest(case=case):
+                self.assertEqual(self.error(actual_call), self.error(expected_call))
 
     def test_axis_dim_conflicts_match_pytorch_2_13(self):
         actual = [torch.tensor([1.0])]

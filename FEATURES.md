@@ -18,7 +18,7 @@ the source of truth.
 | --- | ---: | --- | --- |
 | tensor storage, shapes, strides, views, indexing | 15% | CPU `f32` tensor metadata, query helpers, shared-storage views, reshape/transpose, direct, integer-prefix, and full-slice/ellipsis tuple range slicing, contiguous materialization | Range slicing with non-unit or negative steps; multi-range slices, advanced indexing, dtype/device expansion, storage-object APIs |
 | dtypes, promotion, devices, dispatch | 10% | CPU/default-device metadata, CPU-build CUDA probes, float32 dtype helpers, selected dispatch probes | Actual CUDA tensors/runtime, mutable device routing, mixed precision, broader promotion |
-| creation, elementwise, reductions | 15% | `as_tensor`/`asarray`, `empty`/scalar/list factories, arithmetic and unary ops, exact/tolerance comparisons, 1-D `cat`/`concat`/`concatenate`, same-shape `stack`, full-tensor `sum`/`mean`, rank-1 dim `sum` | Non-float32 or accelerator creation, concrete `out`, general dimension reductions beyond rank-1 `sum`, general-dimensional concatenation, in-place ops |
+| creation, elementwise, reductions | 15% | `as_tensor`/`asarray`, `empty`/scalar/list factories, arithmetic and unary ops, exact/tolerance comparisons, rank-1/rank-2 `cat`/`concat`/`concatenate`, same-shape `stack`, full-tensor `sum`/`mean`, rank-1 dim `sum` | Non-float32 or accelerator creation, concrete `out`, general dimension reductions beyond rank-1 `sum`, higher-rank concatenation, in-place ops |
 | linear algebra and signal operations | 10% | Rank-2 `matmul`/`mm`, float32 matmul precision preference state | `bmm`, `addmm`, rank-1 or batched `matmul` under `mm`, spectral ops |
 | autograd and higher-order differentiation | 15% | `Tensor.backward`, sequence `torch.autograd.backward`, grad-mode helpers, VJPs for supported views/unaries/reductions | Concrete or higher-order gradients, `autograd.grad`, inference/anomaly contexts |
 | neural-network functional API and modules | 15% | Functional activations, `l1_loss`/`mse_loss`, `linear`, dropout paths, module future flags | Modules/parameters, active-autograd L1/softsign, loss weights and legacy reductions |
@@ -60,15 +60,16 @@ The creation row includes CPU float32 `torch.empty(*size, shape=None, out=None, 
 The creation, elementwise, and reductions row also includes top-level
 `torch.cat(tensors, dim=0, *, out=None)` and its distinct
 `torch.concat`/`torch.concatenate` aliases for non-empty exact tuple/list inputs
-of exact native CPU float32 1-D tensors, including empty operands,
-non-contiguous input views, `dim=0`, `dim=-1`, PyTorch 2.13's `axis=0` alias,
-fresh contiguous output storage, no-grad grad-requiring operands, and
+of exact native CPU float32 rank-1 or rank-2 tensors, including empty operands,
+non-contiguous input views, valid rank-local dimensions, PyTorch 2.13's `axis`
+alias, fresh contiguous output storage, first-order autograd/backward
+accumulation, no-grad grad-requiring operands, and
 `TorchFunctionMode`/`__torch_function__` dispatch for modes and
 override-capable arguments. Concrete output tensors, empty input sequences,
-scalar or non-1-D native tensors, mixed dtype/device metadata, active-autograd
-recording, unsupported dimensions, non-list/tuple native inputs, tensor
-subclasses without handling overrides, and general-dimensional concatenation
-remain unsupported. It also includes top-level
+scalar or rank-greater-than-2 native tensors, mixed dtype/device metadata,
+mismatched non-concat dimensions, unsupported dimensions, non-list/tuple native
+inputs, tensor subclasses without handling overrides, and higher-rank
+concatenation remain unsupported. It also includes top-level
 `torch.stack(tensors, dim=0, *, out=None)` for non-empty exact tuple/list
 inputs of same-shaped exact native CPU float32 tensors, including scalars,
 empty tensors, non-contiguous input views, every valid insertion dimension

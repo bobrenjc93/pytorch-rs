@@ -1130,11 +1130,11 @@ cat(tensors, dim=0, *, out=None) -> Tensor
 Concatenates the given sequence of tensors in :attr:`tensors` in the given dimension.
 
 The current native implementation supports non-empty tuple/list inputs of
-exact native CPU ``float32`` 1-D tensors for ``dim=0`` and ``dim=-1``, including
-the PyTorch ``axis`` keyword alias. Concrete ``out`` tensors, empty input
-sequences, scalar and non-1-D tensors,
-mixed dtype/device metadata, unhandled tensor subclasses, active autograd
-recording, and other dimensions remain unsupported.
+exact native CPU ``float32`` rank-1 or rank-2 tensors for the valid rank-local
+dimensions, including the PyTorch ``axis`` keyword alias. Concrete ``out``
+tensors, empty input sequences, scalar and rank-greater-than-2 tensors, mixed
+dtype/device metadata, unhandled tensor subclasses, and other dimensions
+remain unsupported.
 ";
 
 const CONCAT_DOC: &std::ffi::CStr = c"
@@ -1142,8 +1142,9 @@ concat(tensors, dim=0, *, out=None) -> Tensor
 
 Alias of :func:`torch.cat`.
 
-The current native implementation supports the same 1-D CPU ``float32``
-boundary as ``torch.cat``, including the PyTorch ``axis`` keyword alias.
+The current native implementation supports the same rank-1/rank-2 CPU
+``float32`` boundary as ``torch.cat``, including the PyTorch ``axis`` keyword
+alias.
 ";
 
 const CONCATENATE_DOC: &std::ffi::CStr = c"
@@ -1151,8 +1152,9 @@ concatenate(tensors, dim=0, *, out=None) -> Tensor
 
 Alias of :func:`torch.cat`.
 
-The current native implementation supports the same 1-D CPU ``float32``
-boundary as ``torch.cat``, including the PyTorch ``axis`` keyword alias.
+The current native implementation supports the same rank-1/rank-2 CPU
+``float32`` boundary as ``torch.cat``, including the PyTorch ``axis`` keyword
+alias.
 ";
 
 const STACK_DOC: &std::ffi::CStr = c"
