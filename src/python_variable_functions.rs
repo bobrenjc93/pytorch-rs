@@ -19,7 +19,8 @@ use crate::python::{
     adjoint_variable_function, arange_variable_function, as_tensor_variable_function,
     asarray_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
     atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
-    cat_variable_function, ceil_variable_function, conj_variable_function, cos_variable_function,
+    cat_variable_function, ceil_variable_function, concat_variable_function,
+    concatenate_variable_function, conj_variable_function, cos_variable_function,
     detach_variable_function, div_variable_function, divide_variable_function,
     empty_like_variable_function, exp_variable_function, fix_variable_function,
     floor_variable_function, full_like_variable_function, get_device_variable_function,
@@ -40,7 +41,7 @@ use crate::python::{
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 65] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 67] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -55,6 +56,8 @@ const VARIABLE_FUNCTION_NAMES: [&str; 65] = [
     "atleast_3d",
     "broadcast_tensors",
     "cat",
+    "concat",
+    "concatenate",
     "stack",
     "abs",
     "absolute",
@@ -1134,6 +1137,24 @@ mixed dtype/device metadata, unhandled tensor subclasses, active autograd
 recording, and other dimensions remain unsupported.
 ";
 
+const CONCAT_DOC: &std::ffi::CStr = c"
+concat(tensors, dim=0, *, out=None) -> Tensor
+
+Alias of :func:`torch.cat`.
+
+The current native implementation supports the same 1-D CPU ``float32``
+boundary as ``torch.cat``, including the PyTorch ``axis`` keyword alias.
+";
+
+const CONCATENATE_DOC: &std::ffi::CStr = c"
+concatenate(tensors, dim=0, *, out=None) -> Tensor
+
+Alias of :func:`torch.cat`.
+
+The current native implementation supports the same 1-D CPU ``float32``
+boundary as ``torch.cat``, including the PyTorch ``axis`` keyword alias.
+";
+
 const STACK_DOC: &std::ffi::CStr = c"
 stack(tensors, dim=0, *, out=None) -> Tensor
 
@@ -1433,6 +1454,8 @@ variable_function_callback!(
     broadcast_tensors_variable_function
 );
 variable_function_callback!(cat_callback, cat_variable_function);
+variable_function_callback!(concat_callback, concat_variable_function);
+variable_function_callback!(concatenate_callback, concatenate_variable_function);
 variable_function_callback!(stack_callback, stack_variable_function);
 variable_function_callback!(abs_callback, abs_variable_function);
 variable_function_callback!(absolute_callback, absolute_variable_function);
@@ -1526,6 +1549,8 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"atleast_3d", atleast_3d_callback, c""),
         variable_function_method!(c"broadcast_tensors", broadcast_tensors_callback, c""),
         variable_function_method!(c"cat", cat_callback, CAT_DOC),
+        variable_function_method!(c"concat", concat_callback, CONCAT_DOC),
+        variable_function_method!(c"concatenate", concatenate_callback, CONCATENATE_DOC),
         variable_function_method!(c"stack", stack_callback, STACK_DOC),
         variable_function_method!(c"abs", abs_callback, ABS_DOC),
         variable_function_method!(c"absolute", absolute_callback, ABSOLUTE_DOC),

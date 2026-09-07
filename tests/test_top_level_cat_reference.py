@@ -118,6 +118,108 @@ class TopLevelCatReferenceTests(unittest.TestCase):
                     self.fresh_storage_observation(expected, expected_inputs),
                 )
 
+    def test_concat_alias_values_metadata_storage_and_exports_match_pytorch_2_13(
+        self,
+    ):
+        for name in ("concat", "concatenate"):
+            actual_function = getattr(torch, name)
+            expected_function = getattr(reference_torch, name)
+            actual_base = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+            expected_base = reference_torch.tensor(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                dtype=reference_torch.float32,
+            )
+            actual_offset = actual_base.transpose(0, 1)[1]
+            expected_offset = expected_base.transpose(0, 1)[1]
+
+            cases = (
+                (
+                    "list dim 0",
+                    [actual_offset, torch.tensor([]), torch.tensor([-0.0, 7.5])],
+                    [
+                        expected_offset,
+                        reference_torch.tensor([], dtype=reference_torch.float32),
+                        reference_torch.tensor([-0.0, 7.5], dtype=reference_torch.float32),
+                    ],
+                    0,
+                ),
+                (
+                    "tuple dim -1",
+                    (torch.tensor([]), torch.tensor([3.25]), torch.tensor([])),
+                    (
+                        reference_torch.tensor([], dtype=reference_torch.float32),
+                        reference_torch.tensor([3.25], dtype=reference_torch.float32),
+                        reference_torch.tensor([], dtype=reference_torch.float32),
+                    ),
+                    -1,
+                ),
+                (
+                    "keywords",
+                    [torch.tensor([8.0]), torch.tensor([]), torch.tensor([9.0])],
+                    [
+                        reference_torch.tensor([8.0], dtype=reference_torch.float32),
+                        reference_torch.tensor([], dtype=reference_torch.float32),
+                        reference_torch.tensor([9.0], dtype=reference_torch.float32),
+                    ],
+                    0,
+                ),
+                (
+                    "axis alias",
+                    [torch.tensor([14.0]), torch.tensor([15.0])],
+                    [
+                        reference_torch.tensor([14.0], dtype=reference_torch.float32),
+                        reference_torch.tensor([15.0], dtype=reference_torch.float32),
+                    ],
+                    0,
+                ),
+            )
+            for case, actual_inputs, expected_inputs, dimension in cases:
+                with self.subTest(alias=name, case=case):
+                    if case == "keywords":
+                        actual = actual_function(
+                            tensors=actual_inputs,
+                            dim=dimension,
+                            out=None,
+                        )
+                        expected = expected_function(
+                            tensors=expected_inputs,
+                            dim=dimension,
+                            out=None,
+                        )
+                    elif case == "axis alias":
+                        actual = actual_function(actual_inputs, axis=dimension)
+                        expected = expected_function(expected_inputs, axis=dimension)
+                    else:
+                        actual = actual_function(actual_inputs, dim=dimension)
+                        expected = expected_function(expected_inputs, dim=dimension)
+                    self.assert_matches(actual, expected, case=f"{name} {case}")
+                    self.assertEqual(
+                        self.fresh_storage_observation(actual, actual_inputs),
+                        self.fresh_storage_observation(expected, expected_inputs),
+                    )
+
+        def public_surface(module):
+            return (
+                tuple(
+                    (
+                        name,
+                        hasattr(module, name),
+                        getattr(module, name).__name__,
+                        getattr(module, name).__qualname__,
+                        getattr(module, name).__module__,
+                        getattr(module._C._VariableFunctionsClass, name)
+                        is getattr(module, name),
+                        module.__all__.count(name),
+                    )
+                    for name in ("cat", "concat", "concatenate")
+                ),
+                module.cat is module.concat,
+                module.cat is module.concatenate,
+                module.concat is module.concatenate,
+            )
+
+        self.assertEqual(public_surface(torch), public_surface(reference_torch))
+
     def test_no_grad_grad_requiring_operands_match_pytorch_2_13(self):
         actual_left = torch.tensor([1.0, 2.0], requires_grad=True)
         actual_right = torch.tensor([3.0], requires_grad=True)
@@ -167,7 +269,8 @@ class TopLevelCatReferenceTests(unittest.TestCase):
                 ):
                     expected_call()
 
-    def dispatch_observation(self, module):
+    def dispatch_observation(self, module, function_name):
+        function = getattr(module, function_name)
         left = module.tensor([1.0])
         right = module.tensor([2.0])
         inputs = [left, right]
@@ -190,11 +293,11 @@ class TopLevelCatReferenceTests(unittest.TestCase):
 
         accepting = RecordingMode(marker)
         with accepting:
-            accepted = module.cat(inputs, dim=0)
+            accepted = function(inputs, dim=0)
         func, dispatch_types, args, kwargs, stack = accepting.calls[0]
         mode_observation = (
             accepted is marker,
-            func is module.cat,
+            func is function,
             tuple(item.__name__ for item in dispatch_types),
             args[0] is inputs,
             tuple(kwargs),
@@ -212,7 +315,7 @@ class TopLevelCatReferenceTests(unittest.TestCase):
                 calls.append(
                     (
                         self.label,
-                        func is module.cat,
+                        func is function,
                         tuple(item.__name__ for item in types),
                         args[0] is inputs,
                         tuple(kwargs),
@@ -224,7 +327,7 @@ class TopLevelCatReferenceTests(unittest.TestCase):
 
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
-                forwarded = module.cat(inputs, dim=0)
+                forwarded = function(inputs, dim=0)
 
         class LeftOverride:
             @classmethod
@@ -240,13 +343,13 @@ class TopLevelCatReferenceTests(unittest.TestCase):
 
         events = []
         override_inputs = [LeftOverride(), module.tensor([]), RightOverride()]
-        override_result = module.cat(override_inputs, dim=0)
+        override_result = function(override_inputs, dim=0)
         override_observation = (
             override_result is marker,
             tuple(event[0] for event in events),
             tuple(
                 (
-                    event[1] is module.cat,
+                    event[1] is function,
                     tuple(item.__name__ for item in event[2]),
                     event[3][0] is override_inputs,
                     tuple(event[4]),
@@ -278,9 +381,9 @@ class TopLevelCatReferenceTests(unittest.TestCase):
         dimension = DimensionOverride()
         out = OutOverride()
         tensors = TensorsOverride()
-        dim_result = module.cat([left], dim=dimension)
-        out_result = module.cat([left], out=out)
-        tensors_result = module.cat(tensors)
+        dim_result = function([left], dim=dimension)
+        out_result = function([left], out=out)
+        tensors_result = function(tensors)
         argument_observation = (
             dim_result is marker,
             out_result is marker,
@@ -288,7 +391,7 @@ class TopLevelCatReferenceTests(unittest.TestCase):
             tuple(
                 (
                     event[0],
-                    event[1] is module.cat,
+                    event[1] is function,
                     tuple(item.__name__ for item in event[2]),
                     len(event[3]),
                     None if event[4] is None else tuple(event[4]),
@@ -300,7 +403,7 @@ class TopLevelCatReferenceTests(unittest.TestCase):
         declining_mode = RecordingMode(NotImplemented)
         try:
             with declining_mode:
-                module.cat(inputs, dim=0)
+                function(inputs, dim=0)
         except Exception as error:
             mode_decline = (
                 type(error).__name__,
@@ -319,7 +422,7 @@ class TopLevelCatReferenceTests(unittest.TestCase):
                 return NotImplemented
 
         try:
-            module.cat([DecliningOverride()], dim=0)
+            function([DecliningOverride()], dim=0)
         except Exception as error:
             override_decline = (
                 type(error).__name__,
@@ -341,10 +444,12 @@ class TopLevelCatReferenceTests(unittest.TestCase):
         )
 
     def test_torch_function_dispatch_matches_pytorch_2_13(self):
-        self.assertEqual(
-            self.dispatch_observation(torch),
-            self.dispatch_observation(reference_torch),
-        )
+        for name in ("cat", "concat", "concatenate"):
+            with self.subTest(function=name):
+                self.assertEqual(
+                    self.dispatch_observation(torch, name),
+                    self.dispatch_observation(reference_torch, name),
+                )
 
 
 if __name__ == "__main__":

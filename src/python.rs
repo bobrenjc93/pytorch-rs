@@ -2173,21 +2173,46 @@ pub(crate) fn cat_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
+    cat_alias_variable_function(CatAlias::Cat, py, args, kwargs)
+}
+
+pub(crate) fn concat_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    cat_alias_variable_function(CatAlias::Concat, py, args, kwargs)
+}
+
+pub(crate) fn concatenate_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    cat_alias_variable_function(CatAlias::Concatenate, py, args, kwargs)
+}
+
+fn cat_alias_variable_function(
+    alias: CatAlias,
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
     let TopLevelCatArguments {
         tensors,
         dim,
         out,
         keyword_error,
-    } = bind_top_level_cat_arguments(args, kwargs)?;
-    let tensors = parse_cat_tensors_argument(&tensors)?;
-    let dim = parse_cat_dimension(dim)?;
-    let out = parse_cat_out(out)?;
+    } = bind_top_level_cat_arguments(alias, args, kwargs)?;
+    let tensors = parse_cat_tensors_argument(alias, &tensors)?;
+    let dim = parse_cat_dimension(alias, dim)?;
+    let out = parse_cat_out(alias, out)?;
     if let Some(keyword_error) = keyword_error {
         return Err(keyword_error);
     }
 
     let call = BoundTopLevelCatCall { tensors, dim, out };
-    dispatch_top_level_cat(py, &call, args, kwargs)
+    dispatch_top_level_cat(alias, py, &call, args, kwargs)
 }
 
 pub(crate) fn stack_variable_function(
@@ -2949,6 +2974,31 @@ enum BoundTopLevelCatTensors<'py> {
 enum BoundTopLevelCatDimension<'py> {
     Native(Option<ParsedCallArgument<'py>>),
     Override(ProbedTorchFunctionOverride<'py>),
+}
+
+#[derive(Clone, Copy)]
+enum CatAlias {
+    Cat,
+    Concat,
+    Concatenate,
+}
+
+impl CatAlias {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Cat => "cat",
+            Self::Concat => "concat",
+            Self::Concatenate => "concatenate",
+        }
+    }
+
+    const fn qualified_name(self) -> &'static str {
+        match self {
+            Self::Cat => "torch.cat",
+            Self::Concat => "torch.concat",
+            Self::Concatenate => "torch.concatenate",
+        }
+    }
 }
 
 struct TopLevelCatArguments<'py> {
@@ -4308,6 +4358,7 @@ fn ordered_top_level_cat_overrides<'py>(
 }
 
 fn dispatch_top_level_cat(
+    alias: CatAlias,
     py: Python<'_>,
     call: &BoundTopLevelCatCall<'_>,
     args: &Bound<'_, PyTuple>,
@@ -4318,7 +4369,7 @@ fn dispatch_top_level_cat(
         return apply_top_level_cat(py, call);
     }
 
-    let function = variable_function(py, "cat")?;
+    let function = variable_function(py, alias.name())?;
     let types = PyTuple::new(
         py,
         overrides.iter().map(|probed| probed.dispatch_type.clone()),
@@ -4351,7 +4402,7 @@ fn dispatch_top_level_cat(
 
     Err(torch_function_dispatch_error_for_overrides(
         py,
-        "torch.cat",
+        alias.qualified_name(),
         active_mode.get(),
         &overrides,
     )?)
@@ -11584,13 +11635,19 @@ fn validate_device_argument_type(
     Err(error)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "PyTorch-compatible call binding keeps delayed positional, alias, and keyword diagnostics together"
+)]
 fn bind_top_level_cat_arguments<'py>(
+    alias: CatAlias,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<TopLevelCatArguments<'py>> {
+    let function_name = alias.name();
     if positional.len() > 2 {
         return Err(PyTypeError::new_err(format!(
-            "cat() takes from 1 to 2 positional arguments but {} were given",
+            "{function_name}() takes from 1 to 2 positional arguments but {} were given",
             positional.len()
         )));
     }
@@ -11622,7 +11679,9 @@ fn bind_top_level_cat_arguments<'py>(
                 "tensors" => {
                     if tensors.is_some() {
                         keyword_error.get_or_insert_with(|| {
-                            PyTypeError::new_err("cat() got multiple values for argument 'tensors'")
+                            PyTypeError::new_err(format!(
+                                "{function_name}() got multiple values for argument 'tensors'"
+                            ))
                         });
                     } else {
                         tensors = Some(ParsedCallArgument {
@@ -11634,7 +11693,9 @@ fn bind_top_level_cat_arguments<'py>(
                 "dim" => {
                     if dim.is_some() {
                         keyword_error.get_or_insert_with(|| {
-                            PyTypeError::new_err("cat() got multiple values for argument 'dim'")
+                            PyTypeError::new_err(format!(
+                                "{function_name}() got multiple values for argument 'dim'"
+                            ))
                         });
                     } else {
                         dim = Some(ParsedCallArgument {
@@ -11652,7 +11713,9 @@ fn bind_top_level_cat_arguments<'py>(
                 "out" => {
                     if out.is_some() {
                         keyword_error.get_or_insert_with(|| {
-                            PyTypeError::new_err("cat() got multiple values for argument 'out'")
+                            PyTypeError::new_err(format!(
+                                "{function_name}() got multiple values for argument 'out'"
+                            ))
                         });
                     } else {
                         out = Some(ParsedCallArgument {
@@ -11664,7 +11727,7 @@ fn bind_top_level_cat_arguments<'py>(
                 _ => {
                     keyword_error.get_or_insert_with(|| {
                         PyTypeError::new_err(format!(
-                            "cat() got an unexpected keyword argument '{key}'"
+                            "{function_name}() got an unexpected keyword argument '{key}'"
                         ))
                     });
                 }
@@ -11673,16 +11736,18 @@ fn bind_top_level_cat_arguments<'py>(
     }
 
     let Some(tensors) = tensors else {
-        return Err(PyTypeError::new_err(
-            "cat() missing 1 required positional arguments: \"tensors\"",
-        ));
+        return Err(PyTypeError::new_err(format!(
+            "{function_name}() missing 1 required positional arguments: \"tensors\""
+        )));
     };
 
     let axis_conflicts_with_dim = axis.is_some() && dim.is_some();
     let dim = dim.or(axis);
     if axis_conflicts_with_dim {
         keyword_error.get_or_insert_with(|| {
-            PyTypeError::new_err("cat() got an unexpected keyword argument 'axis'")
+            PyTypeError::new_err(format!(
+                "{function_name}() got an unexpected keyword argument 'axis'"
+            ))
         });
     }
 
@@ -11695,24 +11760,26 @@ fn bind_top_level_cat_arguments<'py>(
 }
 
 fn parse_cat_tensors_argument<'py>(
+    alias: CatAlias,
     tensors: &ParsedCallArgument<'py>,
 ) -> PyResult<BoundTopLevelCatTensors<'py>> {
     if tensors.value.is_instance_of::<PyTuple>() || tensors.value.is_instance_of::<PyList>() {
         return Ok(BoundTopLevelCatTensors::Sequence(
-            parse_cat_tensor_sequence(tensors)?,
+            parse_cat_tensor_sequence(alias, tensors)?,
         ));
     }
     if let Some(probed) = probe_torch_function_override(&tensors.value) {
         return Ok(BoundTopLevelCatTensors::Override(probed));
     }
-    Err(cat_tensor_sequence_type_error(tensors)?)
+    Err(cat_tensor_sequence_type_error(alias, tensors)?)
 }
 
 fn parse_cat_tensor_sequence<'py>(
+    alias: CatAlias,
     tensors: &ParsedCallArgument<'py>,
 ) -> PyResult<Vec<BoundTensorOrTorchFunction<'py>>> {
     if !tensors.value.is_instance_of::<PyTuple>() && !tensors.value.is_instance_of::<PyList>() {
-        return Err(cat_tensor_sequence_type_error(tensors)?);
+        return Err(cat_tensor_sequence_type_error(alias, tensors)?);
     }
 
     let sequence = tensors.value.cast::<PySequence>()?;
@@ -11740,6 +11807,7 @@ fn parse_cat_tensor_sequence<'py>(
 }
 
 fn parse_cat_dimension(
+    alias: CatAlias,
     dimension: Option<ParsedCallArgument<'_>>,
 ) -> PyResult<BoundTopLevelCatDimension<'_>> {
     let Some(dimension) = dimension else {
@@ -11751,11 +11819,12 @@ fn parse_cat_dimension(
     if let Some(probed) = probe_torch_function_override(&dimension.value) {
         return Ok(BoundTopLevelCatDimension::Override(probed));
     }
-    validate_dimension_swap_dimension("cat", "dim", dimension.position, &dimension.value)?;
+    validate_dimension_swap_dimension(alias.name(), "dim", dimension.position, &dimension.value)?;
     unreachable!("invalid cat dimension type should have returned a Python error")
 }
 
 fn parse_cat_out(
+    alias: CatAlias,
     out: Option<ParsedCallArgument<'_>>,
 ) -> PyResult<Option<BoundTensorOrTorchFunction<'_>>> {
     let Some(out) = out else {
@@ -11775,7 +11844,8 @@ fn parse_cat_out(
     if !out.value.is_instance_of::<PyTensor>() {
         let actual = python_type_name(&out.value)?;
         return Err(PyTypeError::new_err(format!(
-            "cat(): argument 'out' must be Tensor, not {actual}"
+            "{}(): argument 'out' must be Tensor, not {actual}",
+            alias.name()
         )));
     }
     Err(cat_unsupported_native_input())
@@ -11797,13 +11867,17 @@ fn validate_cat_tensor(tensor: &PyTensor, index: usize) -> PyResult<()> {
     }
 }
 
-fn cat_tensor_sequence_type_error(tensors: &ParsedCallArgument<'_>) -> PyResult<PyErr> {
+fn cat_tensor_sequence_type_error(
+    alias: CatAlias,
+    tensors: &ParsedCallArgument<'_>,
+) -> PyResult<PyErr> {
     let position = tensors
         .position
         .map_or_else(String::new, |position| format!(" (position {position})"));
     let actual = python_type_name(&tensors.value)?;
     Ok(PyTypeError::new_err(format!(
-        "cat(): argument 'tensors'{position} must be tuple of Tensors, not {actual}"
+        "{}(): argument 'tensors'{position} must be tuple of Tensors, not {actual}",
+        alias.name()
     )))
 }
 
