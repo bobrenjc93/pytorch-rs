@@ -890,8 +890,9 @@ unsupported.
 Top-level `torch.cat(tensors, dim=0, *, out=None)` and its distinct
 `torch.concat`/`torch.concatenate` aliases accept non-empty exact tuple/list
 inputs containing exact native CPU float32 rank-1 or rank-2 tensors, including
-empty tensors inside the sequence, for valid rank-local dimensions and PyTorch
-2.13's `axis` keyword alias when `dim` is otherwise omitted. They read
+same-rank empty tensors and PyTorch-compatible 1-D `(0,)` neutral empty tensors
+inside rank-2 sequences, for valid rank-local dimensions and PyTorch 2.13's
+`axis` keyword alias when `dim` is otherwise omitted. They read
 non-contiguous views in logical order and return fresh row-major contiguous
 storage with PyTorch-compatible shape, stride, storage offset, dtype,
 CPU-device metadata, leaf metadata, signed-zero preservation, first-order

@@ -60,10 +60,11 @@ The creation row includes CPU float32 `torch.empty(*size, shape=None, out=None, 
 The creation, elementwise, and reductions row also includes top-level
 `torch.cat(tensors, dim=0, *, out=None)` and its distinct
 `torch.concat`/`torch.concatenate` aliases for non-empty exact tuple/list inputs
-of exact native CPU float32 rank-1 or rank-2 tensors, including empty operands,
-non-contiguous input views, valid rank-local dimensions, PyTorch 2.13's `axis`
-alias, fresh contiguous output storage, first-order autograd/backward
-accumulation, no-grad grad-requiring operands, and
+of exact native CPU float32 rank-1 or rank-2 tensors, including same-rank empty
+operands and PyTorch-compatible 1-D `(0,)` neutral empty operands in rank-2
+concatenations, non-contiguous input views, valid rank-local dimensions,
+PyTorch 2.13's `axis` alias, fresh contiguous output storage, first-order
+autograd/backward accumulation, no-grad grad-requiring operands, and
 `TorchFunctionMode`/`__torch_function__` dispatch for modes and
 override-capable arguments. Concrete output tensors, empty input sequences,
 scalar or rank-greater-than-2 native tensors, mixed dtype/device metadata,

@@ -197,6 +197,44 @@ class TopLevelCatReferenceTests(unittest.TestCase):
                 1,
             ),
             (
+                "neutral empty first dim 0",
+                [torch.tensor([]), actual_offset],
+                [
+                    reference_torch.tensor([], dtype=reference_torch.float32),
+                    expected_offset,
+                ],
+                0,
+            ),
+            (
+                "neutral empty middle dim 0",
+                [
+                    torch.tensor([[300.0, 301.0, 302.0]]),
+                    torch.tensor([]),
+                    torch.tensor([[-0.0, 100.0, 101.0]]),
+                ],
+                [
+                    reference_torch.tensor(
+                        [[300.0, 301.0, 302.0]],
+                        dtype=reference_torch.float32,
+                    ),
+                    reference_torch.tensor([], dtype=reference_torch.float32),
+                    reference_torch.tensor(
+                        [[-0.0, 100.0, 101.0]],
+                        dtype=reference_torch.float32,
+                    ),
+                ],
+                0,
+            ),
+            (
+                "neutral empty last dim 1",
+                [actual_offset, torch.tensor([])],
+                [
+                    expected_offset,
+                    reference_torch.tensor([], dtype=reference_torch.float32),
+                ],
+                1,
+            ),
+            (
                 "single rank 2",
                 [torch.tensor([[1.0, 2.0], [3.0, 4.0]])],
                 [
@@ -318,12 +356,14 @@ class TopLevelCatReferenceTests(unittest.TestCase):
             with self.subTest(alias=name, case="rank-2 axis 1"):
                 actual_inputs = [
                     torch.tensor([[1.0], [2.0]]),
+                    torch.tensor([]),
                     torch.tensor([[3.0], [4.0]]),
                 ]
                 expected_inputs = [
                     reference_torch.tensor(
                         [[1.0], [2.0]], dtype=reference_torch.float32
                     ),
+                    reference_torch.tensor([], dtype=reference_torch.float32),
                     reference_torch.tensor(
                         [[3.0], [4.0]], dtype=reference_torch.float32
                     ),
@@ -456,6 +496,46 @@ class TopLevelCatReferenceTests(unittest.TestCase):
         np.testing.assert_array_equal(
             np.asarray(actual_row_bottom.grad),
             expected_row_bottom.grad.detach().numpy(),
+        )
+
+        actual_neutral_empty = torch.tensor([], requires_grad=True)
+        actual_neutral_matrix = torch.tensor(
+            [[13.0, 14.0], [15.0, 16.0]], requires_grad=True
+        )
+        expected_neutral_empty = reference_torch.tensor(
+            [], dtype=reference_torch.float32, requires_grad=True
+        )
+        expected_neutral_matrix = reference_torch.tensor(
+            [[13.0, 14.0], [15.0, 16.0]],
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        actual_neutral = torch.cat(
+            [actual_neutral_empty, actual_neutral_matrix, actual_neutral_empty],
+            dim=1,
+        )
+        expected_neutral = reference_torch.cat(
+            [
+                expected_neutral_empty,
+                expected_neutral_matrix,
+                expected_neutral_empty,
+            ],
+            dim=1,
+        )
+        self.assert_matches(
+            actual_neutral,
+            expected_neutral,
+            case="rank-2 neutral empty autograd",
+        )
+        actual_neutral.sum().backward()
+        expected_neutral.sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_neutral_empty.grad),
+            expected_neutral_empty.grad.detach().numpy(),
+        )
+        np.testing.assert_array_equal(
+            np.asarray(actual_neutral_matrix.grad),
+            expected_neutral_matrix.grad.detach().numpy(),
         )
 
         actual_left = torch.tensor([1.0, 2.0], requires_grad=True)

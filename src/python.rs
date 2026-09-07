@@ -4419,17 +4419,44 @@ fn apply_top_level_cat(py: Python<'_>, call: &BoundTopLevelCatCall<'_>) -> PyRes
             unreachable!("cat dim override was dispatched before the native path")
         }
     };
-    let dimension = normalize_dimension(dimension, borrowed_tensors[0].inner.shape().len())?;
-    validate_cat_tensor_shapes(&borrowed_tensors, dimension)?;
+    let effective_shape = cat_effective_shape(&borrowed_tensors);
+    let dimension = normalize_dimension(dimension, effective_shape.len())?;
+    validate_cat_tensor_shapes(&borrowed_tensors, dimension, effective_shape)?;
     if call.out.is_some() {
         return Err(PyRuntimeError::new_err(
             "cat(): the 'out' argument is not supported",
         ));
     }
 
+    let neutral_shape = cat_neutral_empty_shape(effective_shape, dimension)?;
+    let mut neutral_views = try_size_vector(borrowed_tensors.len())?;
+    if effective_shape.len() > 1 {
+        for tensor in &borrowed_tensors {
+            if is_cat_neutral_empty(&tensor.inner) {
+                try_push_size(
+                    &mut neutral_views,
+                    tensor
+                        .inner
+                        .view(&neutral_shape)
+                        .map_err(|error| tensor_error(&error))?,
+                )?;
+            }
+        }
+    }
+
     let mut inner_tensors = try_size_vector(borrowed_tensors.len())?;
+    let mut neutral_views = neutral_views.iter();
     for tensor in &borrowed_tensors {
-        try_push_size(&mut inner_tensors, &tensor.inner)?;
+        if effective_shape.len() > 1 && is_cat_neutral_empty(&tensor.inner) {
+            try_push_size(
+                &mut inner_tensors,
+                neutral_views
+                    .next()
+                    .expect("neutral view count must match neutral tensor count"),
+            )?;
+        } else {
+            try_push_size(&mut inner_tensors, &tensor.inner)?;
+        }
     }
     let result =
         CoreTensor::cat(&inner_tensors, dimension).map_err(|error| tensor_error(&error))?;
@@ -11874,10 +11901,40 @@ fn validate_cat_tensor(tensor: &PyTensor, index: usize) -> PyResult<()> {
     }
 }
 
-fn validate_cat_tensor_shapes(tensors: &[PyRef<'_, PyTensor>], dimension: usize) -> PyResult<()> {
-    let first_shape = tensors[0].inner.shape();
+fn cat_effective_shape<'a>(tensors: &'a [PyRef<'_, PyTensor>]) -> &'a [usize] {
+    tensors
+        .iter()
+        .find(|tensor| !is_cat_neutral_empty(&tensor.inner))
+        .unwrap_or(&tensors[0])
+        .inner
+        .shape()
+}
+
+fn is_cat_neutral_empty(tensor: &CoreTensor) -> bool {
+    tensor.shape() == [0]
+}
+
+fn cat_neutral_empty_shape(effective_shape: &[usize], dimension: usize) -> PyResult<Vec<i64>> {
+    let mut shape = try_size_vector(effective_shape.len())?;
+    for (axis, size) in effective_shape.iter().copied().enumerate() {
+        let size = if axis == dimension { 0 } else { size };
+        let size =
+            i64::try_from(size).map_err(|_| tensor_error(&TensorError::ElementCountOverflow))?;
+        try_push_size(&mut shape, size)?;
+    }
+    Ok(shape)
+}
+
+fn validate_cat_tensor_shapes(
+    tensors: &[PyRef<'_, PyTensor>],
+    dimension: usize,
+    first_shape: &[usize],
+) -> PyResult<()> {
     for (index, tensor) in tensors.iter().enumerate().skip(1) {
         let shape = tensor.inner.shape();
+        if is_cat_neutral_empty(&tensor.inner) && shape.len() != first_shape.len() {
+            continue;
+        }
         if shape.len() != first_shape.len() {
             return Err(PyRuntimeError::new_err(format!(
                 "Tensors must have same number of dimensions: got {} and {}",

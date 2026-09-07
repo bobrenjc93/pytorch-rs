@@ -163,6 +163,41 @@ class TopLevelCatTests(unittest.TestCase):
             case="rank-2 empty columns",
         )
 
+        neutral_empty = torch.tensor([])
+        empty_first_rows = torch.cat([neutral_empty, offset_noncontiguous], dim=0)
+        self.assert_cat_matches(
+            empty_first_rows,
+            expected_view,
+            shape=(4, 3),
+            stride=(3, 1),
+            case="rank-2 neutral empty first dim 0",
+        )
+
+        empty_middle_rows = torch.cat(
+            [
+                torch.tensor([[300.0, 301.0, 302.0]]),
+                neutral_empty,
+                row_tail,
+            ],
+            dim=0,
+        )
+        self.assert_cat_matches(
+            empty_middle_rows,
+            [[300.0, 301.0, 302.0], [-0.0, 100.0, 101.0]],
+            shape=(2, 3),
+            stride=(3, 1),
+            case="rank-2 neutral empty middle dim 0",
+        )
+
+        empty_last_columns = torch.cat([offset_noncontiguous, neutral_empty], dim=1)
+        self.assert_cat_matches(
+            empty_last_columns,
+            expected_view,
+            shape=(4, 3),
+            stride=(3, 1),
+            case="rank-2 neutral empty last dim 1",
+        )
+
         single = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
         single_result = torch.cat([single], dim=-1)
         self.assert_cat_matches(
@@ -193,7 +228,11 @@ class TopLevelCatTests(unittest.TestCase):
 
             with self.subTest(alias=name, axis="axis 1"):
                 result = function(
-                    [torch.tensor([[1.0], [2.0]]), torch.tensor([[3.0], [4.0]])],
+                    [
+                        torch.tensor([[1.0], [2.0]]),
+                        torch.tensor([]),
+                        torch.tensor([[3.0], [4.0]]),
+                    ],
                     axis=1,
                 )
                 self.assert_cat_matches(
@@ -302,6 +341,28 @@ class TopLevelCatTests(unittest.TestCase):
         np.testing.assert_array_equal(
             np.asarray(row_bottom.grad),
             np.asarray([[3.0, 4.0], [5.0, 6.0]], dtype=np.float32),
+        )
+
+        neutral_empty = torch.tensor([], requires_grad=True)
+        neutral_matrix = torch.tensor([[13.0, 14.0], [15.0, 16.0]], requires_grad=True)
+        neutral_result = torch.cat([neutral_empty, neutral_matrix, neutral_empty], dim=1)
+        self.assert_cat_matches(
+            neutral_result,
+            [[13.0, 14.0], [15.0, 16.0]],
+            shape=(2, 2),
+            stride=(2, 1),
+            case="rank-2 neutral empty autograd output",
+            requires_grad=True,
+            is_leaf=False,
+        )
+        neutral_result.sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(neutral_empty.grad),
+            np.asarray([], dtype=np.float32),
+        )
+        np.testing.assert_array_equal(
+            np.asarray(neutral_matrix.grad),
+            np.asarray([[1.0, 1.0], [1.0, 1.0]], dtype=np.float32),
         )
 
         no_grad_left = torch.tensor([1.0, 2.0], requires_grad=True)
