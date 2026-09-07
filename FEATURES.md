@@ -18,7 +18,7 @@ the source of truth.
 | --- | ---: | --- | --- |
 | tensor storage, shapes, strides, views, indexing | 15% | CPU `f32` tensor metadata, query helpers, shared-storage views, reshape/transpose, direct and integer-prefix range slicing, contiguous materialization | Range slicing with non-unit, negative-step, or full-slice/ellipsis-combined range indexing; advanced indexing, dtype/device expansion, storage-object APIs |
 | dtypes, promotion, devices, dispatch | 10% | CPU/default-device metadata, CPU-build CUDA probes, float32 dtype helpers, selected dispatch probes | Actual CUDA tensors/runtime, mutable device routing, mixed precision, broader promotion |
-| creation, elementwise, reductions | 15% | `as_tensor`/`asarray`, `empty`/scalar/list factories, arithmetic and unary ops, 1-D `cat`, same-shape `stack`, full-tensor `sum`/`mean` | Non-float32 or accelerator creation, concrete `out`, dimension reductions, general-dimensional `cat`, in-place ops |
+| creation, elementwise, reductions | 15% | `as_tensor`/`asarray`, `empty`/scalar/list factories, arithmetic and unary ops, exact/tolerance comparisons, 1-D `cat`, same-shape `stack`, full-tensor `sum`/`mean` | Non-float32 or accelerator creation, concrete `out`, dimension reductions, general-dimensional `cat`, in-place ops |
 | linear algebra and signal operations | 10% | Rank-2 `matmul`/`mm`, float32 matmul precision preference state | `bmm`, `addmm`, rank-1 or batched `matmul` under `mm`, spectral ops |
 | autograd and higher-order differentiation | 15% | `Tensor.backward`, sequence `torch.autograd.backward`, grad-mode helpers, VJPs for supported views/unaries/reductions | Concrete or higher-order gradients, `autograd.grad`, inference/anomaly contexts |
 | neural-network functional API and modules | 15% | Functional activations, `l1_loss`/`mse_loss`, `linear`, dropout paths, module future flags | Modules/parameters, active-autograd L1/softsign, loss weights and legacy reductions |
@@ -72,6 +72,14 @@ for modes and override-capable arguments. Concrete `torch.stack` output
 tensors, empty input sequences, mixed dtype/device metadata, non-list/tuple
 native inputs, tensor subclasses without handling overrides, and concat aliases
 remain unsupported.
+
+The same row includes CPU float32 `Tensor.allclose(other, rtol=1e-05,
+atol=1e-08, equal_nan=False)` and `torch.allclose(input, other, rtol=1e-05,
+atol=1e-08, equal_nan=False)` for identical shapes and rank-0 scalar
+broadcasting. The boolean result follows PyTorch 2.13 for tolerances, NaNs,
+infinities, signed zero, empty tensors, offset views, and non-contiguous views.
+`torch.isclose`, bool tensor outputs, dtype promotion, CUDA tensors, tensor
+subclasses, active modes, and shape-expanding broadcasting remain unsupported.
 
 The query helpers listed above are count, rank, byte-width, scalar-truth, and
 existing-dtype predicates. They do not expand the supported dtype, device,
