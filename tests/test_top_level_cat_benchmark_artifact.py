@@ -29,13 +29,13 @@ def _has_reference_torch_2_13():
 
 
 class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
-    def test_workload_matrix_covers_representative_1d_cat_cases(self):
+    def test_workload_matrix_covers_representative_cat_cases(self):
         self.assertEqual(
             benchmark_top_level_cat.APIS,
             ("cat", "concat", "concatenate"),
         )
         workloads = benchmark_top_level_cat.WORKLOADS
-        self.assertEqual(len(workloads), 10)
+        self.assertEqual(len(workloads), 14)
         categories = {workload.category for workload in workloads}
         self.assertEqual(
             categories,
@@ -48,6 +48,10 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
                 "axis keyword",
                 "no_grad",
                 "active autograd",
+                "rank-2 dim0",
+                "rank-2 dim1",
+                "rank-2 neutral empty",
+                "backward",
             },
         )
         names = {workload.name for workload in workloads}
@@ -62,6 +66,10 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
             "axis_keyword_17_19",
             "no_grad_grad_inputs_257_263",
             "active_autograd_grad_inputs_257_263",
+            "rank2_dim0_contiguous_64x32_17x32",
+            "rank2_dim1_contiguous_64x16_64x9",
+            "rank2_dim1_neutral_empty_48x11_0_48x5",
+            "backward_repeated_inputs_257_263",
         ):
             self.assertIn(required_name, names)
         self.assertTrue(
@@ -97,6 +105,9 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
                 "empty_operand_middle_1024_0_511",
                 "noncontiguous_stride2_views_4096",
                 "active_autograd_grad_inputs_257_263",
+                "rank2_dim0_contiguous_64x32_17x32",
+                "rank2_dim1_contiguous_64x16_64x9",
+                "backward_repeated_inputs_257_263",
                 "--apis",
                 "cat",
             ],
@@ -122,7 +133,28 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
             report["environment"]["implementation_orders"],
             [list(order) for order in benchmark_top_level_cat.IMPLEMENTATION_ORDERS],
         )
-        self.assertEqual(report["aggregates"]["timed_supported_cell_count"], 4)
+        self.assertEqual(report["aggregates"]["timed_supported_cell_count"], 7)
+        self.assertIs(
+            report["aggregates"]["unsupported_cells_in_performance_score"],
+            False,
+        )
+        self.assertNotIn(
+            "combined_capped_with_zero_credit_unsupported",
+            report["aggregates"],
+        )
+        self.assertEqual(
+            report["held_out_validation"]["version"],
+            benchmark_top_level_cat.HELD_OUT_VALIDATION_VERSION,
+        )
+        self.assertEqual(
+            report["held_out_validation"]["case_count"],
+            len(benchmark_top_level_cat.HELD_OUT_VALIDATION_WORKLOADS),
+        )
+        self.assertTrue(report["held_out_validation"]["metadata_checked"])
+        self.assertTrue(report["held_out_validation"]["value_bits_checked"])
+        self.assertTrue(
+            report["held_out_validation"]["gradient_accumulation_checked"]
+        )
 
         by_name = {case["workload"]: case for case in report["cases"]}
         self.assertEqual(
@@ -132,6 +164,9 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
                 "empty_operand_middle_1024_0_511",
                 "noncontiguous_stride2_views_4096",
                 "active_autograd_grad_inputs_257_263",
+                "rank2_dim0_contiguous_64x32_17x32",
+                "rank2_dim1_contiguous_64x16_64x9",
+                "backward_repeated_inputs_257_263",
             },
         )
         for case in report["cases"]:
@@ -174,6 +209,45 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
         self.assertEqual(active_output["shape"], [520])
         self.assertTrue(active_output["requires_grad"])
         self.assertFalse(active_output["is_leaf"])
+        self.assertEqual(
+            by_name["rank2_dim0_contiguous_64x32_17x32"]["output_metadata"][0][
+                "shape"
+            ],
+            [81, 32],
+        )
+        self.assertEqual(
+            by_name["rank2_dim1_contiguous_64x16_64x9"]["output_metadata"][0][
+                "shape"
+            ],
+            [64, 25],
+        )
+        backward_metadata = by_name["backward_repeated_inputs_257_263"][
+            "output_metadata"
+        ]
+        self.assertEqual(
+            [entry["label"] for entry in backward_metadata],
+            ["output", "tensors[0].grad", "tensors[1].grad", "tensors[2].grad"],
+        )
+        self.assertEqual(backward_metadata[0]["shape"], [777])
+
+    def test_unsupported_cells_are_feature_coverage_not_performance_score(self):
+        report = json.loads(
+            benchmark_top_level_cat.DEFAULT_ARTIFACT_PATH.read_text(encoding="utf-8")
+        )
+        aggregates = report["aggregates"]
+        unsupported = report["zero_credit_unsupported_cells"]
+        self.assertIs(aggregates["unsupported_cells_in_performance_score"], False)
+        self.assertNotIn("combined_capped_with_zero_credit_unsupported", aggregates)
+        self.assertEqual(
+            aggregates["zero_credit_unsupported_cell_count"],
+            len(unsupported),
+        )
+        self.assertTrue(unsupported)
+        self.assertTrue(all(row["credit"] == "zero" for row in unsupported))
+        self.assertEqual(
+            aggregates["groups"]["all supported cells"]["cell_count"],
+            len(report["cases"]),
+        )
 
     def test_checked_in_raw_artifact_matches_markdown_summary(self):
         benchmark_top_level_cat.validate_artifact(

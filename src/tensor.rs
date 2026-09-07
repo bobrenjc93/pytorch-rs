@@ -5421,6 +5421,12 @@ fn materialize_concat(
     output_shape: &[usize],
     output_elements: usize,
 ) -> Result<Vec<f32>, TensorError> {
+    if let Some(data) =
+        materialize_concat_tail_contiguous_blocks(inputs, dimension, output_shape, output_elements)?
+    {
+        return Ok(data);
+    }
+
     let inner = element_count(&output_shape[dimension + 1..])?;
     let outer = element_count(&output_shape[..dimension])?;
     let output_axis = output_shape[dimension];
@@ -5446,6 +5452,67 @@ fn materialize_concat(
     debug_assert_eq!(output_block.checked_mul(outer), Some(output_elements));
     debug_assert_eq!(data.len(), output_elements);
     Ok(data)
+}
+
+fn materialize_concat_tail_contiguous_blocks(
+    inputs: &[&Tensor],
+    dimension: usize,
+    output_shape: &[usize],
+    output_elements: usize,
+) -> Result<Option<Vec<f32>>, TensorError> {
+    let mut block_inputs = try_result_vector(inputs.len(), output_elements)?;
+    for input in inputs {
+        let input_block = element_count(&input.shape[dimension..])?;
+        let values = if input_block == 0 {
+            None
+        } else {
+            let Some(values) = input.storage.owned_values() else {
+                return Ok(None);
+            };
+            if !layout_is_contiguous(
+                &input.shape[dimension..],
+                &input.strides[dimension..],
+                input_block,
+            ) {
+                return Ok(None);
+            }
+            Some(values)
+        };
+        block_inputs.push((
+            values,
+            input_block,
+            &input.shape[..dimension],
+            &input.strides[..dimension],
+            input.offset,
+        ));
+    }
+
+    let outer = element_count(&output_shape[..dimension])?;
+    let mut data = try_result_vector(output_elements, output_elements)?;
+    for outer_index in 0..outer {
+        for (values, input_block, prefix_shape, prefix_strides, input_offset) in &block_inputs {
+            if *input_block == 0 {
+                continue;
+            }
+            let start = logical_offset_for_linear_index(
+                prefix_shape,
+                prefix_strides,
+                *input_offset,
+                outer_index,
+            )?;
+            let end = start
+                .checked_add(*input_block)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            data.extend_from_slice(
+                values
+                    .expect("validated non-empty block-copy input must expose owned values")
+                    .get(start..end)
+                    .ok_or(TensorError::IndexCalculationOverflow)?,
+            );
+        }
+    }
+    debug_assert_eq!(data.len(), output_elements);
+    Ok(Some(data))
 }
 
 fn apply_concat_grad_fn(
@@ -12055,6 +12122,89 @@ mod tests {
             scalar.slice_dimension(0, 0, 0),
             Err(TensorError::SliceCannotApplyToScalar)
         );
+    }
+
+    #[test]
+    fn cat_materializes_tail_contiguous_blocks_for_vectors_rows_and_columns() {
+        let selected_left =
+            offset_contiguous_tensor(&[1.0_f32.to_bits(), (-0.0_f32).to_bits()], &[2]);
+        let selected_right =
+            offset_contiguous_tensor(&[2.0_f32.to_bits(), 3.0_f32.to_bits()], &[2]);
+        assert_ne!(selected_left.storage_offset(), 0);
+        assert!(selected_left.is_contiguous());
+        let vector = Tensor::cat(&[&selected_left, &selected_right], 0).unwrap();
+        assert_eq!(vector.shape(), [4]);
+        assert_eq!(vector.stride(), [1]);
+        assert_eq!(
+            vector
+                .as_slice()
+                .iter()
+                .copied()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            [
+                1.0_f32.to_bits(),
+                (-0.0_f32).to_bits(),
+                2.0_f32.to_bits(),
+                3.0_f32.to_bits()
+            ]
+        );
+        assert!(!vector.shares_storage_with(&selected_left));
+        assert!(!vector.shares_storage_with(&selected_right));
+
+        let rows_left = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap();
+        let rows_right = Tensor::from_vec(vec![5.0, 6.0], [1, 2]).unwrap();
+        let rows = Tensor::cat(&[&rows_left, &rows_right], 0).unwrap();
+        assert_eq!(rows.shape(), [3, 2]);
+        assert_eq!(rows.stride(), [2, 1]);
+        assert_eq!(rows.as_slice(), [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+        let columns_left = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap();
+        let columns_right = Tensor::from_vec(vec![5.0, 6.0], [2, 1]).unwrap();
+        let columns = Tensor::cat(&[&columns_left, &columns_right], 1).unwrap();
+        assert_eq!(columns.shape(), [2, 3]);
+        assert_eq!(columns.stride(), [3, 1]);
+        assert_eq!(columns.as_slice(), [1.0, 2.0, 5.0, 3.0, 4.0, 6.0]);
+
+        let column_slice_base =
+            Tensor::from_vec((0_u8..12).map(f32::from).collect::<Vec<_>>(), [3, 4]).unwrap();
+        let column_slice = column_slice_base.slice_dimension(1, 1, 2).unwrap();
+        let dense_slice_tail = Tensor::from_vec(vec![100.0, 101.0, 102.0], [3, 1]).unwrap();
+        assert!(!column_slice.is_contiguous());
+        let dense_slice_columns = Tensor::cat(&[&column_slice, &dense_slice_tail], 1).unwrap();
+        assert_eq!(dense_slice_columns.shape(), [3, 3]);
+        assert_eq!(dense_slice_columns.stride(), [3, 1]);
+        assert_eq!(
+            dense_slice_columns.as_slice(),
+            [1.0, 2.0, 100.0, 5.0, 6.0, 101.0, 9.0, 10.0, 102.0]
+        );
+    }
+
+    #[test]
+    fn cat_backpropagates_rank_two_repeated_inputs() {
+        let left = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let right = Tensor::from_vec(vec![5.0, 6.0], [2, 1])
+            .unwrap()
+            .with_requires_grad(true);
+        let output = Tensor::cat(&[&left, &right, &left], 1).unwrap();
+        let weights = Tensor::from_vec(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+            [2, 5],
+        )
+        .unwrap();
+
+        assert_eq!(output.shape(), [2, 5]);
+        assert!(output.requires_grad());
+        assert!(!output.is_leaf());
+        output.mul(&weights).unwrap().sum().backward().unwrap();
+
+        assert_eq!(
+            left.grad().unwrap().unwrap().as_slice(),
+            [5.0, 7.0, 15.0, 17.0]
+        );
+        assert_eq!(right.grad().unwrap().unwrap().as_slice(), [3.0, 8.0]);
     }
 
     #[test]

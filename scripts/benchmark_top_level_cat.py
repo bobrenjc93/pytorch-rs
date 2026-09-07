@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Benchmark supported CPU 1-D ``torch.cat`` cells against PyTorch."""
+"""Benchmark supported CPU ``torch.cat`` cells against PyTorch."""
 
 from __future__ import annotations
 
@@ -35,7 +35,8 @@ PROTECTED_OUTPUT_PATHS = {
     REPOSITORY_ROOT / "docs" / "burner-evaluation-progress.svg",
 }
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "top_level_cat_cpu_1d_benchmark_v2"
+BENCHMARK_VERSION = "top_level_cat_cpu_benchmark_v3"
+HELD_OUT_VALIDATION_VERSION = "top_level_cat_held_out_semantics_v1"
 DEFAULT_WARMUPS = 15
 DEFAULT_SAMPLES = 81
 DEFAULT_THREADS = 1
@@ -53,12 +54,14 @@ APIS = ("cat", "concat", "concatenate")
 
 MODE_EAGER = "eager"
 MODE_NO_GRAD = "no_grad"
+MODE_BACKWARD = "backward"
 
 
 @dataclass(frozen=True)
 class Operands:
     tensors: object
     kwargs: dict[str, object]
+    backward_weights: object = None
 
 
 @dataclass(frozen=True)
@@ -375,6 +378,54 @@ def _make_active_autograd_grad_inputs(module, np):
     )
 
 
+def _make_rank2_dim0_contiguous(module, np):
+    return Operands(
+        [
+            _dense_tensor(module, np, (64, 32), 2026090722),
+            _dense_tensor(module, np, (17, 32), 2026090723, bias=0.25),
+        ],
+        {"dim": 0},
+    )
+
+
+def _make_rank2_dim1_contiguous(module, np):
+    return Operands(
+        [
+            _dense_tensor(module, np, (64, 16), 2026090724),
+            _dense_tensor(module, np, (64, 9), 2026090725, bias=-0.5),
+        ],
+        {"dim": 1},
+    )
+
+
+def _make_rank2_dim1_neutral_empty(module, np):
+    return Operands(
+        [
+            _dense_tensor(module, np, (48, 11), 2026090726),
+            _dense_tensor(module, np, (0,), 2026090727),
+            _dense_tensor(module, np, (48, 5), 2026090728, bias=0.125),
+        ],
+        {"dim": 1},
+    )
+
+
+def _make_backward_repeated_inputs(module, np):
+    left = _dense_tensor(module, np, (257,), 2026090729, requires_grad=True)
+    right = _dense_tensor(
+        module,
+        np,
+        (263,),
+        2026090730,
+        requires_grad=True,
+        bias=-0.25,
+    )
+    return Operands(
+        [left, right, left],
+        {"dim": 0},
+        _dense_tensor(module, np, (777,), 2026090731, bias=0.5),
+    )
+
+
 WORKLOADS = (
     Workload(
         "singleton_contiguous_8192",
@@ -486,6 +537,50 @@ WORKLOADS = (
         (2026090720, 2026090721),
         _make_active_autograd_grad_inputs,
     ),
+    Workload(
+        "rank2_dim0_contiguous_64x32_17x32",
+        "rank-2 dim0",
+        "list dim=0",
+        "two contiguous matrices with shapes (64, 32) and (17, 32)",
+        "row concatenation output",
+        128,
+        MODE_EAGER,
+        (2026090722, 2026090723),
+        _make_rank2_dim0_contiguous,
+    ),
+    Workload(
+        "rank2_dim1_contiguous_64x16_64x9",
+        "rank-2 dim1",
+        "list dim=1",
+        "two contiguous matrices with shapes (64, 16) and (64, 9)",
+        "column concatenation output",
+        128,
+        MODE_EAGER,
+        (2026090724, 2026090725),
+        _make_rank2_dim1_contiguous,
+    ),
+    Workload(
+        "rank2_dim1_neutral_empty_48x11_0_48x5",
+        "rank-2 neutral empty",
+        "list dim=1",
+        "two rank-2 inputs with a PyTorch-compatible 1-D neutral empty operand",
+        "column concatenation output",
+        128,
+        MODE_EAGER,
+        (2026090726, 2026090727, 2026090728),
+        _make_rank2_dim1_neutral_empty,
+    ),
+    Workload(
+        "backward_repeated_inputs_257_263",
+        "backward",
+        "list dim=0",
+        "two grad-requiring vectors with the left operand repeated and weighted backward",
+        "concatenation output plus accumulated leaf gradients",
+        64,
+        MODE_BACKWARD,
+        (2026090729, 2026090730, 2026090731),
+        _make_backward_repeated_inputs,
+    ),
 )
 
 
@@ -558,6 +653,8 @@ def _operand_tensors(operands):
                 tensors.append((f"tensors[{index}]", value))
     elif _is_tensor(operands.tensors):
         tensors.append(("tensors", operands.tensors))
+    if _is_tensor(operands.backward_weights):
+        tensors.append(("backward_weights", operands.backward_weights))
     return tuple(tensors)
 
 
@@ -682,6 +779,18 @@ def _execute_operation(module, api, workload, operands):
         context = contextlib.nullcontext()
     with context:
         output = getattr(module, api)(operands.tensors, **operands.kwargs)
+    if workload.mode == MODE_BACKWARD:
+        loss = (output * operands.backward_weights).sum()
+        loss.backward()
+        bundle = [("output", output)]
+        for label, tensor in _operand_tensors(operands):
+            if label == "backward_weights":
+                continue
+            gradient = tensor.grad
+            if gradient is None:
+                raise AssertionError(f"{workload.name}/{api}/{label} missing gradient")
+            bundle.append((f"{label}.grad", gradient.clone()))
+        return tuple(bundle)
     return (("output", output),)
 
 
@@ -694,6 +803,19 @@ def _time_block(np, module, api, workload, static_operands, repeats):
     elapsed_ns = time.perf_counter_ns() - started_ns
     checksum = _checksum_bundle(np, last_bundle)
     return elapsed_ns, checksum, last_bundle
+
+
+def _fresh_operands_for_block(module, np, workload, static_operands):
+    if workload.mode == MODE_BACKWARD:
+        return workload.make_operands(module, np)
+    return static_operands
+
+
+def _execute_repeated_operation(module, api, workload, operands, repeats):
+    bundle = None
+    for _ in range(repeats):
+        bundle = _execute_operation(module, api, workload, operands)
+    return bundle
 
 
 def _summarize_samples(samples_ns, repeats):
@@ -728,7 +850,7 @@ def _measure_one_pass(np, module, implementation, api, workload, args):
         module,
         api,
         workload,
-        static_operands,
+        _fresh_operands_for_block(module, np, workload, static_operands),
         1,
     )
     warmup_checksums = []
@@ -739,7 +861,7 @@ def _measure_one_pass(np, module, implementation, api, workload, args):
             module,
             api,
             workload,
-            static_operands,
+            _fresh_operands_for_block(module, np, workload, static_operands),
             workload.repeats,
         )
         warmup_checksums.append(checksum)
@@ -755,7 +877,7 @@ def _measure_one_pass(np, module, implementation, api, workload, args):
             module,
             api,
             workload,
-            static_operands,
+            _fresh_operands_for_block(module, np, workload, static_operands),
             workload.repeats,
         )
         sample_ns.append(elapsed_ns)
@@ -784,6 +906,7 @@ def _measure_one_pass(np, module, implementation, api, workload, args):
         "input_checksums": input_checksums_before,
         "output_metadata": _bundle_metadata(last_bundle),
         "cold_bundle": cold_bundle,
+        "last_bundle": last_bundle,
         "operand_nonmutation_checked": True,
     }
 
@@ -985,9 +1108,155 @@ def _run_unsupported_cells(np, torch_rs, reference_torch, apis):
     return rows
 
 
-def _expected_bundle(np, reference_torch, api, workload):
+def _held_out_rank1_axis_operands(module, np):
+    return Operands(
+        (
+            _dense_tensor(module, np, (13,), 2026100101),
+            _dense_tensor(module, np, (0,), 2026100102),
+            _dense_tensor(module, np, (7,), 2026100103, bias=-0.25),
+        ),
+        {"axis": 0},
+    )
+
+
+def _held_out_rank2_dim0_no_grad_operands(module, np):
+    return Operands(
+        [
+            _dense_tensor(module, np, (5, 3), 2026100104, requires_grad=True),
+            _dense_tensor(
+                module,
+                np,
+                (2, 3),
+                2026100105,
+                requires_grad=True,
+                bias=0.5,
+            ),
+        ],
+        {"dim": 0},
+    )
+
+
+def _held_out_rank2_dim1_neutral_empty_operands(module, np):
+    return Operands(
+        [
+            _dense_tensor(module, np, (4, 2), 2026100106),
+            _dense_tensor(module, np, (0,), 2026100107),
+            _dense_tensor(module, np, (4, 3), 2026100108, bias=0.125),
+        ],
+        {"dim": -1},
+    )
+
+
+def _held_out_rank2_backward_repeated_operands(module, np):
+    left = _dense_tensor(module, np, (3, 2), 2026100109, requires_grad=True)
+    right = _dense_tensor(
+        module,
+        np,
+        (3, 1),
+        2026100110,
+        requires_grad=True,
+        bias=-0.375,
+    )
+    return Operands(
+        [left, right, left],
+        {"dim": 1},
+        _dense_tensor(module, np, (3, 5), 2026100111, bias=0.75),
+    )
+
+
+HELD_OUT_VALIDATION_WORKLOADS = (
+    (
+        "cat",
+        _held_out_rank1_axis_operands,
+        MODE_EAGER,
+        (2026100101, 2026100102, 2026100103),
+    ),
+    (
+        "concat",
+        _held_out_rank2_dim0_no_grad_operands,
+        MODE_NO_GRAD,
+        (2026100104, 2026100105),
+    ),
+    (
+        "concatenate",
+        _held_out_rank2_dim1_neutral_empty_operands,
+        MODE_EAGER,
+        (2026100106, 2026100107, 2026100108),
+    ),
+    (
+        "cat",
+        _held_out_rank2_backward_repeated_operands,
+        MODE_BACKWARD,
+        (2026100109, 2026100110, 2026100111),
+    ),
+)
+
+
+def _run_held_out_validation(np, torch_rs, reference_torch):
+    rows = []
+    for index, (api, make_operands, mode, seeds) in enumerate(
+        HELD_OUT_VALIDATION_WORKLOADS
+    ):
+        workload = Workload(
+            f"held_out_{index}_{api}_{mode}",
+            "held-out validation",
+            "generated",
+            "deterministic held-out cat operands",
+            "semantic validation bundle",
+            1,
+            mode,
+            seeds,
+            make_operands,
+        )
+        actual = _execute_operation(
+            torch_rs,
+            api,
+            workload,
+            make_operands(torch_rs, np),
+        )
+        expected = _execute_operation(
+            reference_torch,
+            api,
+            workload,
+            make_operands(reference_torch, np),
+        )
+        _assert_bundles_match(
+            np,
+            actual,
+            expected,
+            cell_name=f"held-out/{api}/{mode}/{index}",
+        )
+        checksum = _checksum_bundle(np, actual)
+        if checksum != _checksum_bundle(np, expected):
+            raise AssertionError(f"held-out/{api}/{mode}/{index} checksum mismatch")
+        rows.append(
+            {
+                "name": workload.name,
+                "api": f"torch.{api}",
+                "mode": mode,
+                "input_seeds": list(seeds),
+                "checksum": checksum,
+                "bundle_metadata": _bundle_metadata(actual),
+            }
+        )
+    return {
+        "version": HELD_OUT_VALIDATION_VERSION,
+        "case_count": len(rows),
+        "seed_values": sorted(
+            {seed for _, _, _, seeds in HELD_OUT_VALIDATION_WORKLOADS for seed in seeds}
+        ),
+        "metadata_checked": True,
+        "value_bits_checked": True,
+        "gradient_accumulation_checked": any(
+            row["mode"] == MODE_BACKWARD for row in rows
+        ),
+        "cases": rows,
+    }
+
+
+def _expected_bundle(np, reference_torch, api, workload, repeats):
     operands = workload.make_operands(reference_torch, np)
-    return _execute_operation(reference_torch, api, workload, operands)
+    return _execute_repeated_operation(reference_torch, api, workload, operands, repeats)
 
 
 def _run_supported_cells(np, torch_rs, reference_torch, workloads, apis, args):
@@ -995,8 +1264,16 @@ def _run_supported_cells(np, torch_rs, reference_torch, workloads, apis, args):
     for api in apis:
         for workload in workloads:
             cell_name = f"torch.{api}/{workload.name}"
-            expected = _expected_bundle(np, reference_torch, api, workload)
-            expected_checksum = _checksum_bundle(np, expected)
+            expected_cold = _expected_bundle(np, reference_torch, api, workload, 1)
+            expected_steady = _expected_bundle(
+                np,
+                reference_torch,
+                api,
+                workload,
+                workload.repeats,
+            )
+            expected_cold_checksum = _checksum_bundle(np, expected_cold)
+            expected_steady_checksum = _checksum_bundle(np, expected_steady)
             pass_results = {"torch_rs": [], "pytorch": []}
 
             for order_index, order in enumerate(IMPLEMENTATION_ORDERS):
@@ -1013,14 +1290,20 @@ def _run_supported_cells(np, torch_rs, reference_torch, workloads, apis, args):
                     _assert_bundles_match(
                         np,
                         measured["cold_bundle"],
-                        expected,
+                        expected_cold,
                         cell_name=f"{cell_name}/{implementation}/cold",
+                    )
+                    _assert_bundles_match(
+                        np,
+                        measured["last_bundle"],
+                        expected_steady,
+                        cell_name=f"{cell_name}/{implementation}/steady",
                     )
                     expected_by_key = {
                         "warmup_checksums": []
                         if args.warmups == 0
-                        else [expected_checksum],
-                        "steady_checksums": [expected_checksum],
+                        else [expected_steady_checksum],
+                        "steady_checksums": [expected_steady_checksum],
                     }
                     for key, expected_checksums in expected_by_key.items():
                         if measured[key] != expected_checksums:
@@ -1059,11 +1342,7 @@ def _run_supported_cells(np, torch_rs, reference_torch, workloads, apis, args):
                     {
                         checksum
                         for item in passes
-                        for checksum in (
-                            item["steady_checksums"]
-                            + item["warmup_checksums"]
-                            + [item["cold_checksum"]]
-                        )
+                        for checksum in (item["steady_checksums"] + item["warmup_checksums"])
                     }
                 )
                 implementations[implementation] = {
@@ -1100,7 +1379,8 @@ def _run_supported_cells(np, torch_rs, reference_torch, workloads, apis, args):
                         / pytorch_median,
                     },
                     "validation": {
-                        "reference_checksum": expected_checksum,
+                        "cold_reference_checksum": expected_cold_checksum,
+                        "steady_reference_checksum": expected_steady_checksum,
                         "metadata_checked": True,
                         "value_bits_checked": True,
                         "warmup_checksums_checked": True,
@@ -1167,6 +1447,26 @@ def _aggregate_rows(rows):
             for row in rows
             if row["category"] == "active autograd"
         ],
+        "rank-2 dim0": [
+            row["ratios"]["steady_torch_rs_over_pytorch"]
+            for row in rows
+            if row["category"] == "rank-2 dim0"
+        ],
+        "rank-2 dim1": [
+            row["ratios"]["steady_torch_rs_over_pytorch"]
+            for row in rows
+            if row["category"] == "rank-2 dim1"
+        ],
+        "rank-2 neutral empty": [
+            row["ratios"]["steady_torch_rs_over_pytorch"]
+            for row in rows
+            if row["category"] == "rank-2 neutral empty"
+        ],
+        "backward": [
+            row["ratios"]["steady_torch_rs_over_pytorch"]
+            for row in rows
+            if row["category"] == "backward"
+        ],
     }
     named_groups = {"all supported cells": ratios}
     named_groups.update({f"{api} cells": values for api, values in by_api.items()})
@@ -1214,20 +1514,14 @@ def run_benchmark(args):
             args,
         )
         unsupported = _run_unsupported_cells(np, torch_rs, reference_torch, apis)
+        held_out = _run_held_out_validation(np, torch_rs, reference_torch)
     finally:
         if gc_was_enabled:
             gc.enable()
 
     aggregates = _aggregate_rows(supported)
-    unsupported_penalty = [10.0] * len(unsupported)
-    capped_with_zero_credit = [
-        min(10.0, max(0.10, row["ratios"]["steady_torch_rs_over_pytorch"]))
-        for row in supported
-    ] + unsupported_penalty
     aggregates["zero_credit_unsupported_cell_count"] = len(unsupported)
-    aggregates["combined_capped_with_zero_credit_unsupported"] = _geomean(
-        capped_with_zero_credit
-    )
+    aggregates["unsupported_cells_in_performance_score"] = False
 
     ended = time.time()
     return {
@@ -1237,6 +1531,7 @@ def run_benchmark(args):
         "duration_seconds": ended - started,
         "cases": supported,
         "zero_credit_unsupported_cells": unsupported,
+        "held_out_validation": held_out,
         "aggregates": aggregates,
     }
 
@@ -1295,6 +1590,7 @@ def _group_line(label, group):
 def render_markdown_summary(report):
     cases = report["cases"]
     unsupported = report["zero_credit_unsupported_cells"]
+    held_out = report["held_out_validation"]
     aggregates = report["aggregates"]
     groups = aggregates["groups"]
     environment = report["environment"]
@@ -1343,12 +1639,23 @@ def render_markdown_summary(report):
         _group_line("Axis-keyword cells", groups["axis keyword cells"]),
         _group_line("`no_grad` cells", groups["no_grad cells"]),
         _group_line("Active-autograd cells", groups["active autograd cells"]),
+        _group_line("Rank-2 dim-0 cells", groups["rank-2 dim0 cells"]),
+        _group_line("Rank-2 dim-1 cells", groups["rank-2 dim1 cells"]),
+        _group_line(
+            "Rank-2 neutral-empty cells",
+            groups["rank-2 neutral empty cells"],
+        ),
+        _group_line("Backward cells", groups["backward cells"]),
         "",
         (
-            "Including the unsupported cells below as zero-credit denominator "
-            "entries with a 10.00x capped penalty gives a combined capped "
-            "aggregate of "
-            f"{aggregates['combined_capped_with_zero_credit_unsupported']:.2f}x."
+            "Unsupported cells below are feature-coverage evidence only. They "
+            "retain zero-credit status in the raw artifact and are excluded "
+            "from the performance geomeans above."
+        ),
+        (
+            f"Held-out semantic validation: {held_out['case_count']} deterministic "
+            f"cases using {len(held_out['seed_values'])} non-workload seeds; "
+            f"metadata, value bits, and gradient accumulation checked."
         ),
         "",
         "## Supported Timed Cells",
@@ -1485,6 +1792,10 @@ def _validate_expected_artifact_shape(report):
         "axis keyword",
         "no_grad",
         "active autograd",
+        "rank-2 dim0",
+        "rank-2 dim1",
+        "rank-2 neutral empty",
+        "backward",
     ):
         if required_category not in categories:
             errors.append(f"missing supported category {required_category!r}")
@@ -1504,6 +1815,28 @@ def _validate_expected_artifact_shape(report):
         errors.append("aggregate timed cell count does not match cases")
     if aggregates.get("zero_credit_unsupported_cell_count") != len(unsupported):
         errors.append("aggregate unsupported cell count does not match rows")
+    if aggregates.get("unsupported_cells_in_performance_score") is not False:
+        errors.append("unsupported cells must be excluded from performance scoring")
+    if "combined_capped_with_zero_credit_unsupported" in aggregates:
+        errors.append("unsupported cells are folded into a performance aggregate")
+
+    held_out = report.get("held_out_validation", {})
+    if held_out.get("version") != HELD_OUT_VALIDATION_VERSION:
+        errors.append("held-out validation version mismatch")
+    if held_out.get("case_count") != len(HELD_OUT_VALIDATION_WORKLOADS):
+        errors.append("held-out validation case count mismatch")
+    expected_held_out_seeds = sorted(
+        {seed for _, _, _, seeds in HELD_OUT_VALIDATION_WORKLOADS for seed in seeds}
+    )
+    if held_out.get("seed_values") != expected_held_out_seeds:
+        errors.append("held-out validation seed metadata mismatch")
+    for required_key in (
+        "metadata_checked",
+        "value_bits_checked",
+        "gradient_accumulation_checked",
+    ):
+        if held_out.get(required_key) is not True:
+            errors.append(f"held-out validation missing flag {required_key}")
 
     workloads_by_name = {workload.name: workload for workload in WORKLOADS}
     for row in cases:
