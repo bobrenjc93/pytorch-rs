@@ -190,6 +190,11 @@ class TensorNarrowTests(unittest.TestCase):
                 "narrow() cannot be applied to a 0-dim tensor.",
             ),
             (
+                lambda: tensor.narrow(0, torch.tensor(0.0), 1),
+                NotImplementedError,
+                "narrow(): tensor-valued start is not supported",
+            ),
+            (
                 lambda: torch.narrow(tensor, 0, torch.tensor(0.0), 1),
                 NotImplementedError,
                 "narrow(): tensor-valued start is not supported",
@@ -273,6 +278,16 @@ class TensorNarrowTests(unittest.TestCase):
         self.assertEqual(args, (tensor, 0, 0, 1))
         self.assertIsNone(kwargs)
 
+        tensor_start = torch.tensor(0.0)
+        tensor_start_mode = RecordingMode(marker)
+        with tensor_start_mode:
+            self.assertIs(tensor.narrow(0, tensor_start, 1), marker)
+        function, dispatch_types, args, kwargs = tensor_start_mode.calls[0]
+        self.assertIs(function, descriptor)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(args, (tensor, 0, tensor_start, 1))
+        self.assertIsNone(kwargs)
+
         top_level_mode = RecordingMode(marker)
         with top_level_mode:
             self.assertIs(torch.narrow(tensor, 0, 0, 1), marker)
@@ -280,6 +295,15 @@ class TensorNarrowTests(unittest.TestCase):
         self.assertIs(function, torch.narrow)
         self.assertEqual(dispatch_types, ())
         self.assertEqual(args, (tensor, 0, 0, 1))
+        self.assertIsNone(kwargs)
+
+        top_level_tensor_start_mode = RecordingMode(marker)
+        with top_level_tensor_start_mode:
+            self.assertIs(torch.narrow(tensor, 0, tensor_start, 1), marker)
+        function, dispatch_types, args, kwargs = top_level_tensor_start_mode.calls[0]
+        self.assertIs(function, torch.narrow)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(args, (tensor, 0, tensor_start, 1))
         self.assertIsNone(kwargs)
 
 

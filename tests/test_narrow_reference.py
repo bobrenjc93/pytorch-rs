@@ -254,6 +254,62 @@ class TensorNarrowReferenceTests(unittest.TestCase):
         expected["repr"] = re.sub(r"0x[0-9a-f]+", "0xADDR", expected["repr"])
         self.assertEqual(actual, expected)
 
+    def mode_dispatch_contract(self, module):
+        tensor = module.zeros((2, 3, 4), dtype=module.float32)
+        start = module.tensor(0.0, dtype=module.float32)
+        marker = object()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        def describe_call(call):
+            func, dispatch_types, args, kwargs = call
+            described_args = []
+            for argument in args:
+                if argument is tensor:
+                    described_args.append("input")
+                elif argument is start:
+                    described_args.append("start")
+                else:
+                    described_args.append(argument)
+            return {
+                "function_name": func.__name__,
+                "function_qualname": func.__qualname__,
+                "dispatch_types": tuple(
+                    dispatch_type.__name__ for dispatch_type in dispatch_types
+                ),
+                "args": tuple(described_args),
+                "kwargs": kwargs,
+            }
+
+        method_mode = RecordingMode()
+        with method_mode:
+            method_result = tensor.narrow(0, start, 1)
+
+        top_level_mode = RecordingMode()
+        with top_level_mode:
+            top_level_result = module.narrow(tensor, 0, start, 1)
+
+        return {
+            "method_result_is_marker": method_result is marker,
+            "method_calls": tuple(describe_call(call) for call in method_mode.calls),
+            "top_level_result_is_marker": top_level_result is marker,
+            "top_level_calls": tuple(
+                describe_call(call) for call in top_level_mode.calls
+            ),
+        }
+
+    def test_tensor_start_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_dispatch_contract(torch),
+            self.mode_dispatch_contract(reference_torch),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

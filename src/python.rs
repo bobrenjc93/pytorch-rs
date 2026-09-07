@@ -482,8 +482,10 @@ impl PyTensorBase {
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
-        let [dimension, start, length] =
-            bind_narrow_arguments(args, kwargs, NarrowCallKind::Method)?;
+        let BoundNarrowArguments {
+            arguments: [dimension, start, length],
+            tensor_start_unsupported,
+        } = bind_narrow_arguments(args, kwargs, NarrowCallKind::Method)?;
 
         let tensor = slf.as_any().cast::<PyTensor>()?;
         if let Some(result) = dispatch_tensorbase_method_mode(
@@ -498,6 +500,9 @@ impl PyTensorBase {
         }
         if !slf.as_any().is_exact_instance_of::<PyTensor>() {
             return Err(narrow_unsupported_native_input());
+        }
+        if tensor_start_unsupported {
+            return Err(narrow_tensor_start_unsupported());
         }
 
         let length = extract_select_index(&length.value)?;
@@ -2613,8 +2618,8 @@ pub(crate) fn narrow_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let (input, [dimension, start, length]) = bind_top_level_narrow_arguments(args, kwargs)?;
-    dispatch_top_level_narrow(py, &input, &dimension, &start, &length, args, kwargs)
+    let (input, narrow) = bind_top_level_narrow_arguments(args, kwargs)?;
+    dispatch_top_level_narrow(py, &input, &narrow, args, kwargs)
 }
 
 pub(crate) fn permute_variable_function(
@@ -4055,15 +4060,17 @@ fn dispatch_top_level_select(
 fn dispatch_top_level_narrow(
     py: Python<'_>,
     input: &BoundTensorOrTorchFunction<'_>,
-    dimension: &ParsedCallArgument<'_>,
-    start: &ParsedCallArgument<'_>,
-    length: &ParsedCallArgument<'_>,
+    narrow: &BoundNarrowArguments<'_>,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
+    let [dimension, start, length] = &narrow.arguments;
     if torch_function_mode_stack::is_empty()
         && let BoundTensorOrTorchFunction::Tensor(tensor) = input
     {
+        if narrow.tensor_start_unsupported {
+            return Err(narrow_tensor_start_unsupported());
+        }
         let length = extract_select_index(&length.value)?;
         let start = extract_select_index(&start.value)?;
         let dimension = extract_dimension_swap_dimension(&dimension.value)?;
@@ -4114,6 +4121,9 @@ fn dispatch_top_level_narrow(
                     active_mode.get(),
                     None,
                 )?);
+            }
+            if narrow.tensor_start_unsupported {
+                return Err(narrow_tensor_start_unsupported());
             }
             let length = extract_select_index(&length.value)?;
             let start = extract_select_index(&start.value)?;
@@ -12953,6 +12963,11 @@ struct NarrowTypeValidity<const N: usize> {
     tensor_start_unsupported: bool,
 }
 
+struct BoundNarrowArguments<'py> {
+    arguments: [ParsedCallArgument<'py>; 3],
+    tensor_start_unsupported: bool,
+}
+
 type NarrowArgumentMismatches<'a, 'py, const N: usize> = (
     &'a [&'a str; N],
     &'a [Option<ParsedCallArgument<'py>>; N],
@@ -12977,7 +12992,7 @@ fn bind_narrow_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
     kind: NarrowCallKind,
-) -> PyResult<[ParsedCallArgument<'py>; 3]> {
+) -> PyResult<BoundNarrowArguments<'py>> {
     const NAMES: [&str; 3] = ["dim", "start", "length"];
 
     if positional.len() > NAMES.len() {
@@ -13006,10 +13021,9 @@ fn bind_narrow_arguments<'py>(
             positional, keywords, kind, None,
         )?);
     }
-    if validity.tensor_start_unsupported && validity.tensor_start_overload_matches() {
-        return Err(narrow_tensor_start_unsupported());
-    }
-    if !validity.integer_start_overload_matches() {
+    let tensor_start_unsupported =
+        validity.tensor_start_unsupported && validity.tensor_start_overload_matches();
+    if !validity.integer_start_overload_matches() && !tensor_start_unsupported {
         return Err(narrow_invalid_combination_error(
             positional,
             keywords,
@@ -13018,16 +13032,17 @@ fn bind_narrow_arguments<'py>(
         )?);
     }
 
-    Ok(arguments.map(|argument| argument.expect("all required narrow arguments were bound")))
+    Ok(BoundNarrowArguments {
+        arguments: arguments
+            .map(|argument| argument.expect("all required narrow arguments were bound")),
+        tensor_start_unsupported,
+    })
 }
 
 fn bind_top_level_narrow_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-) -> PyResult<(
-    BoundTensorOrTorchFunction<'py>,
-    [ParsedCallArgument<'py>; 3],
-)> {
+) -> PyResult<(BoundTensorOrTorchFunction<'py>, BoundNarrowArguments<'py>)> {
     const NAMES: [&str; 4] = ["input", "dim", "start", "length"];
     const INPUT_ALIASES: [&str; 4] = ["input", "x", "a", "x1"];
 
@@ -13086,10 +13101,9 @@ fn bind_top_level_narrow_arguments<'py>(
             None,
         )?);
     }
-    if validity.tensor_start_unsupported && validity.tensor_start_overload_matches() {
-        return Err(narrow_tensor_start_unsupported());
-    }
-    if !validity.integer_start_overload_matches() {
+    let tensor_start_unsupported =
+        validity.tensor_start_unsupported && validity.tensor_start_overload_matches();
+    if !validity.integer_start_overload_matches() && !tensor_start_unsupported {
         return Err(narrow_invalid_combination_error(
             positional,
             keywords,
@@ -13101,7 +13115,13 @@ fn bind_top_level_narrow_arguments<'py>(
     let [input, dimension, start, length] =
         arguments.map(|argument| argument.expect("all required narrow arguments were bound"));
     let input = bind_exact_native_narrow_input(&input)?;
-    Ok((input, [dimension, start, length]))
+    Ok((
+        input,
+        BoundNarrowArguments {
+            arguments: [dimension, start, length],
+            tensor_start_unsupported,
+        },
+    ))
 }
 
 fn bind_narrow_keywords<'py, const N: usize>(
