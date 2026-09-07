@@ -1,83 +1,83 @@
 {
   "aggregates": {
-    "common_success_geomean_speed_ratio": 0.980462157401357,
+    "common_success_geomean_speed_ratio": 0.9975518830829672,
     "common_success_shape_count": 4,
     "common_success_weight": 1.0,
-    "coverage_adjusted_capped_speed_ratio": 0.9536290001664736,
-    "coverage_adjusted_overall_percent": 95.36290001664736,
+    "coverage_adjusted_capped_speed_ratio": 0.9788207240589899,
+    "coverage_adjusted_overall_percent": 97.882072405899,
     "denominator_weight": 1.0,
     "full_matrix_weight": 1.0,
     "per_workload": [
       {
         "candidate_status": "ok",
-        "capped_steady_speed_ratio": 0.9817610407073559,
+        "capped_steady_speed_ratio": 0.9400337776088085,
         "eligible_cuda_compile_evidence": true,
         "name": "square_256x256",
-        "pytorch_cold_first_call_us": 2189473.309,
-        "pytorch_steady_median_us": 41.86,
+        "pytorch_cold_first_call_us": 1089447.866,
+        "pytorch_steady_median_us": 42.858333333333334,
         "shape": [
           256,
           256
         ],
-        "steady_speed_ratio": 0.9817610407073559,
-        "torch_rs_cold_first_call_us": 162.335,
-        "torch_rs_steady_median_us": 42.63766666666666,
+        "steady_speed_ratio": 0.9400337776088085,
+        "torch_rs_cold_first_call_us": 221.415,
+        "torch_rs_steady_median_us": 45.592333333333336,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 24.544026017683898
+        "weighted_score_contribution_percent": 23.500844440220213
       },
       {
         "candidate_status": "ok",
-        "capped_steady_speed_ratio": 0.9169761020660763,
+        "capped_steady_speed_ratio": 1.0,
         "eligible_cuda_compile_evidence": true,
         "name": "square_1024x1024",
-        "pytorch_cold_first_call_us": 832679.145,
-        "pytorch_steady_median_us": 44.94466666666666,
+        "pytorch_cold_first_call_us": 41340.246,
+        "pytorch_steady_median_us": 43.76266666666666,
         "shape": [
           1024,
           1024
         ],
-        "steady_speed_ratio": 0.9169761020660763,
-        "torch_rs_cold_first_call_us": 159.141,
-        "torch_rs_steady_median_us": 49.014,
+        "steady_speed_ratio": 1.0263851211370227,
+        "torch_rs_cold_first_call_us": 164.178,
+        "torch_rs_steady_median_us": 42.63766666666666,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 22.924402551651905
+        "weighted_score_contribution_percent": 25.0
       },
       {
         "candidate_status": "ok",
         "capped_steady_speed_ratio": 1.0,
         "eligible_cuda_compile_evidence": true,
         "name": "tall_4096x256",
-        "pytorch_cold_first_call_us": 914320.703,
-        "pytorch_steady_median_us": 52.39933333333334,
+        "pytorch_cold_first_call_us": 37456.461,
+        "pytorch_steady_median_us": 50.64333333333334,
         "shape": [
           4096,
           256
         ],
-        "steady_speed_ratio": 1.1209052922804865,
-        "torch_rs_cold_first_call_us": 162.255,
-        "torch_rs_steady_median_us": 46.74733333333334,
+        "steady_speed_ratio": 1.05238002881525,
+        "torch_rs_cold_first_call_us": 170.197,
+        "torch_rs_steady_median_us": 48.12266666666667,
         "weight": 0.25,
         "weighted_score_contribution_percent": 25.0
       },
       {
         "candidate_status": "ok",
-        "capped_steady_speed_ratio": 0.9157788578924622,
+        "capped_steady_speed_ratio": 0.975249118627151,
         "eligible_cuda_compile_evidence": true,
         "name": "wide_256x4096",
-        "pytorch_cold_first_call_us": 339306.093,
-        "pytorch_steady_median_us": 40.257333333333335,
+        "pytorch_cold_first_call_us": 39983.343,
+        "pytorch_steady_median_us": 40.38766666666666,
         "shape": [
           256,
           4096
         ],
-        "steady_speed_ratio": 0.9157788578924622,
-        "torch_rs_cold_first_call_us": 140.402,
-        "torch_rs_steady_median_us": 43.959666666666664,
+        "steady_speed_ratio": 0.975249118627151,
+        "torch_rs_cold_first_call_us": 143.307,
+        "torch_rs_steady_median_us": 41.41266666666667,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 22.894471447311552
+        "weighted_score_contribution_percent": 24.381227965678775
       }
     ],
-    "torch_rs_cuda_compile_score_percent": 95.36290001664736,
+    "torch_rs_cuda_compile_score_percent": 97.882072405899,
     "workload_count": 4,
     "zero_credit_cell_count": 0,
     "zero_credit_unsupported_cell_count": 0,
@@ -88,7 +88,7 @@
     "cuda_visible_devices": "0",
     "git": {
       "diff_stat": "",
-      "head": "cfba70e9e4c7773aa9c38ffd9dd28ee26c6d993e",
+      "head": "250dd318d53cc4a51d6902be0e1f62d0468d6932",
       "status_short": ""
     },
     "gpu": {
@@ -115,14 +115,14 @@
     },
     "platform": "Linux-6.13.2-0_fbk12_0_g0b66b3635210-x86_64-with-glibc2.34",
     "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-    "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/.venv/bin/python",
+    "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/.venv/bin/python",
     "pytorch": {
       "cuda_available": true,
       "cuda_device_count": 1,
       "cuda_runtime": "13.0",
       "cudnn_version": 92000,
       "git_version": "cf30153c4c131c8164ee7798e5022d810682e2cb",
-      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/.venv/lib/python3.12/site-packages/torch/__init__.py",
       "version": "2.13.0+cu130"
     },
     "reference_compile_config": {
@@ -137,7 +137,7 @@
     "samples": 17,
     "schema_version": "torch_compile_cuda_h100_shape_matrix_report_v1",
     "torch_rs": {
-      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/python/torch_rs/__init__.py",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/python/torch_rs/__init__.py",
       "version": "0.1.0"
     },
     "warmups": 5,
@@ -341,10 +341,10 @@
       "architecture": "sm_90",
       "build_key": "abc1ef92dd5c211d",
       "compile": null,
-      "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise/abc1ef92dd5c211d/libtorch_rs_private_pointwise.so",
+      "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise/abc1ef92dd5c211d/libtorch_rs_private_pointwise.so",
       "reused": true,
       "source_checksum": "7d665c4f0664c63dbe67b9fdd4c0d58a",
-      "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise/abc1ef92dd5c211d/torch_rs_private_pointwise.cu"
+      "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise/abc1ef92dd5c211d/torch_rs_private_pointwise.cu"
     },
     "byte_count": 16384,
     "calls": {
@@ -775,7 +775,7 @@
     {
       "candidate": {
         "cold_checksum": "1a19b0b517ca4f23",
-        "cold_first_call_us": 162.335,
+        "cold_first_call_us": 221.415,
         "compile_backend": "inductor",
         "compile_config": {
           "backend": "inductor",
@@ -790,10 +790,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
@@ -904,7 +904,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "fa536b09566834a0",
+            "preparation_id": "5938e9ea4cd91e78",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -1004,7 +1004,7 @@
             "allocated_in_execute": false,
             "buffer_name": "compiled_output_pool_1",
             "enabled": true,
-            "lease_id": "fa536b09566834a0:1",
+            "lease_id": "5938e9ea4cd91e78:1",
             "pool_allocation_count": 2,
             "pool_available_buffers_after_acquire": 1,
             "pool_initial_capacity": 2,
@@ -1158,7 +1158,7 @@
           "rejection_reasons": [],
           "score_credit": 1.0
         },
-        "factory_us": 12189.017,
+        "factory_us": 14243.316,
         "forwarded_to_pytorch": false,
         "implementation": "torch_rs",
         "input_device_type": "cuda",
@@ -1547,10 +1547,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
@@ -1661,7 +1661,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 67,
-            "preparation_id": "fa536b09566834a0",
+            "preparation_id": "5938e9ea4cd91e78",
             "prepared": true,
             "reused_prepared_executor": true,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -1761,7 +1761,7 @@
             "allocated_in_execute": false,
             "buffer_name": "compiled_output_pool_1",
             "enabled": true,
-            "lease_id": "fa536b09566834a0:67",
+            "lease_id": "5938e9ea4cd91e78:67",
             "pool_allocation_count": 2,
             "pool_available_buffers_after_acquire": 1,
             "pool_initial_capacity": 2,
@@ -1932,10 +1932,10 @@
               "architecture": "sm_90",
               "build_key": "008df4c027d70965",
               "compile": null,
-              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
               "reused": true,
               "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
@@ -2046,7 +2046,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "fa536b09566834a0",
+              "preparation_id": "5938e9ea4cd91e78",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -2146,7 +2146,7 @@
               "allocated_in_execute": false,
               "buffer_name": "compiled_output_pool_1",
               "enabled": true,
-              "lease_id": "fa536b09566834a0:1",
+              "lease_id": "5938e9ea4cd91e78:1",
               "pool_allocation_count": 2,
               "pool_available_buffers_after_acquire": 1,
               "pool_initial_capacity": 2,
@@ -2346,10 +2346,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaGetDevice": {
@@ -2527,7 +2527,7 @@
           "output_shape": [
             256
           ],
-          "preparation_id": "fa536b09566834a0",
+          "preparation_id": "5938e9ea4cd91e78",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -2566,10 +2566,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaGetDevice": {
@@ -2747,7 +2747,7 @@
           "output_shape": [
             256
           ],
-          "preparation_id": "fa536b09566834a0",
+          "preparation_id": "5938e9ea4cd91e78",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -2794,33 +2794,33 @@
           "output_pool_initial_capacity": 2,
           "output_pool_live_buffers_after_timing": 0,
           "output_pool_release_count": 67,
-          "preparation_id": "fa536b09566834a0",
-          "prepared_steady_median_us": 42.63766666666666,
-          "prepared_vs_unprepared_steady_speedup": 269.59402093610504,
+          "preparation_id": "5938e9ea4cd91e78",
+          "prepared_steady_median_us": 45.592333333333336,
+          "prepared_vs_unprepared_steady_speedup": 226.6050286232334,
           "setup_hoisted_to_compile_wrapper": true,
           "steady_state_output_allocated_in_execute": false,
           "steady_state_reused_output_buffer": true,
           "steady_state_reused_prepared_executor": true,
-          "unprepared_compatibility_steady_median_us": 11494.86
+          "unprepared_compatibility_steady_median_us": 10331.452
         },
         "score": {
-          "capped_steady_speed_ratio": 0.9817610407073559,
+          "capped_steady_speed_ratio": 0.9400337776088085,
           "denominator_weight": 1.0,
           "eligible_cuda_compile_evidence": true,
-          "steady_speed_ratio": 0.9817610407073559,
+          "steady_speed_ratio": 0.9400337776088085,
           "weight": 0.25,
-          "weighted_score_contribution_percent": 24.544026017683898,
+          "weighted_score_contribution_percent": 23.500844440220213,
           "zero_credit_in_denominator": false
         },
         "score_credit": 1.0,
         "status": "ok",
         "steady": {
-          "mad_us": 0.964666666666659,
-          "max_us": 47.845666666666666,
-          "median_us": 42.63766666666666,
-          "min_us": 40.361,
+          "mad_us": 2.3203333333333376,
+          "max_us": 53.668,
+          "median_us": 45.592333333333336,
+          "min_us": 42.778,
           "sample_count": 17,
-          "variance_us2": 3.645557031141868
+          "variance_us2": 8.95861185774702
         },
         "steady_checksums": [
           "1a19b0b517ca4f23"
@@ -2844,10 +2844,10 @@
               "architecture": "sm_90",
               "build_key": "008df4c027d70965",
               "compile": null,
-              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
               "reused": true,
               "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
@@ -2958,7 +2958,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "fa536b09566834a0",
+              "preparation_id": "5938e9ea4cd91e78",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -3057,7 +3057,7 @@
               "allocated_in_execute": false,
               "buffer_name": "compiled_output_pool_1",
               "enabled": true,
-              "lease_id": "fa536b09566834a0:1",
+              "lease_id": "5938e9ea4cd91e78:1",
               "pool_allocation_count": 2,
               "pool_available_buffers_after_acquire": 1,
               "pool_initial_capacity": 2,
@@ -3182,12 +3182,12 @@
           "setup_repeated_per_invocation": true,
           "status": "ok",
           "steady": {
-            "mad_us": 386.6980000000003,
-            "max_us": 12008.654,
-            "median_us": 11494.86,
-            "min_us": 10317.576,
+            "mad_us": 344.0106666666652,
+            "max_us": 12149.325333333334,
+            "median_us": 10331.452,
+            "min_us": 9362.446,
             "sample_count": 17,
-            "variance_us2": 295212.3337472483
+            "variance_us2": 633165.6305305522
           },
           "steady_checksums": [
             "1a19b0b517ca4f23"
@@ -3234,7 +3234,7 @@
       },
       "reference_workload": {
         "cold_checksum": "1a19b0b517ca4f23",
-        "cold_first_call_us": 2189473.309,
+        "cold_first_call_us": 1089447.866,
         "compile_config": {
           "backend": "inductor",
           "dynamic": false,
@@ -3246,7 +3246,7 @@
           "assert_close": true,
           "eager_reference_checksum": "902068e57afa882c"
         },
-        "factory_us": 776660.964,
+        "factory_us": 768969.974,
         "implementation": "pytorch",
         "input_metadata": [
           {
@@ -3299,12 +3299,12 @@
         },
         "status": "ok",
         "steady": {
-          "mad_us": 1.2950000000000017,
-          "max_us": 45.195,
-          "median_us": 41.86,
-          "min_us": 39.586333333333336,
+          "mad_us": 1.7629999999999981,
+          "max_us": 51.434666666666665,
+          "median_us": 42.858333333333334,
+          "min_us": 39.36966666666667,
           "sample_count": 17,
-          "variance_us2": 2.0746682545174933
+          "variance_us2": 10.012133889273358
         },
         "steady_checksums": [
           "1a19b0b517ca4f23"
@@ -3337,12 +3337,12 @@
         "workload_weight": 0.25
       },
       "score": {
-        "capped_steady_speed_ratio": 0.9817610407073559,
+        "capped_steady_speed_ratio": 0.9400337776088085,
         "denominator_weight": 1.0,
         "eligible_cuda_compile_evidence": true,
-        "steady_speed_ratio": 0.9817610407073559,
+        "steady_speed_ratio": 0.9400337776088085,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 24.544026017683898,
+        "weighted_score_contribution_percent": 23.500844440220213,
         "zero_credit_in_denominator": false
       },
       "torch_rs_cuda_compile_inputs": {
@@ -3698,10 +3698,10 @@
           "architecture": "sm_90",
           "build_key": "008df4c027d70965",
           "compile": null,
-          "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+          "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
           "reused": true,
           "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-          "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+          "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
         },
         "calls": {
           "cudaDeviceSynchronize_after_device_to_host": {
@@ -4145,10 +4145,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
@@ -4259,7 +4259,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "fa536b09566834a0",
+            "preparation_id": "5938e9ea4cd91e78",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -4359,7 +4359,7 @@
             "allocated_in_execute": false,
             "buffer_name": "compiled_output_pool_1",
             "enabled": true,
-            "lease_id": "fa536b09566834a0:1",
+            "lease_id": "5938e9ea4cd91e78:1",
             "pool_allocation_count": 2,
             "pool_available_buffers_after_acquire": 1,
             "pool_initial_capacity": 2,
@@ -4569,7 +4569,7 @@
     {
       "candidate": {
         "cold_checksum": "fc2d121c2337fd34",
-        "cold_first_call_us": 159.141,
+        "cold_first_call_us": 164.178,
         "compile_backend": "inductor",
         "compile_config": {
           "backend": "inductor",
@@ -4584,10 +4584,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
@@ -4698,7 +4698,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "77157cce5d96bc91",
+            "preparation_id": "01ad652f08d9d291",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -4798,7 +4798,7 @@
             "allocated_in_execute": false,
             "buffer_name": "compiled_output_pool_1",
             "enabled": true,
-            "lease_id": "77157cce5d96bc91:1",
+            "lease_id": "01ad652f08d9d291:1",
             "pool_allocation_count": 2,
             "pool_available_buffers_after_acquire": 1,
             "pool_initial_capacity": 2,
@@ -4952,7 +4952,7 @@
           "rejection_reasons": [],
           "score_credit": 1.0
         },
-        "factory_us": 14325.318,
+        "factory_us": 10312.089,
         "forwarded_to_pytorch": false,
         "implementation": "torch_rs",
         "input_device_type": "cuda",
@@ -5341,10 +5341,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
@@ -5455,7 +5455,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 67,
-            "preparation_id": "77157cce5d96bc91",
+            "preparation_id": "01ad652f08d9d291",
             "prepared": true,
             "reused_prepared_executor": true,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -5555,7 +5555,7 @@
             "allocated_in_execute": false,
             "buffer_name": "compiled_output_pool_1",
             "enabled": true,
-            "lease_id": "77157cce5d96bc91:67",
+            "lease_id": "01ad652f08d9d291:67",
             "pool_allocation_count": 2,
             "pool_available_buffers_after_acquire": 1,
             "pool_initial_capacity": 2,
@@ -5726,10 +5726,10 @@
               "architecture": "sm_90",
               "build_key": "008df4c027d70965",
               "compile": null,
-              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
               "reused": true,
               "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
@@ -5840,7 +5840,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "77157cce5d96bc91",
+              "preparation_id": "01ad652f08d9d291",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -5940,7 +5940,7 @@
               "allocated_in_execute": false,
               "buffer_name": "compiled_output_pool_1",
               "enabled": true,
-              "lease_id": "77157cce5d96bc91:1",
+              "lease_id": "01ad652f08d9d291:1",
               "pool_allocation_count": 2,
               "pool_available_buffers_after_acquire": 1,
               "pool_initial_capacity": 2,
@@ -6140,10 +6140,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaGetDevice": {
@@ -6321,7 +6321,7 @@
           "output_shape": [
             1024
           ],
-          "preparation_id": "77157cce5d96bc91",
+          "preparation_id": "01ad652f08d9d291",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -6360,10 +6360,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaGetDevice": {
@@ -6541,7 +6541,7 @@
           "output_shape": [
             1024
           ],
-          "preparation_id": "77157cce5d96bc91",
+          "preparation_id": "01ad652f08d9d291",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -6588,33 +6588,33 @@
           "output_pool_initial_capacity": 2,
           "output_pool_live_buffers_after_timing": 0,
           "output_pool_release_count": 67,
-          "preparation_id": "77157cce5d96bc91",
-          "prepared_steady_median_us": 49.014,
-          "prepared_vs_unprepared_steady_speedup": 220.87059479604466,
+          "preparation_id": "01ad652f08d9d291",
+          "prepared_steady_median_us": 42.63766666666666,
+          "prepared_vs_unprepared_steady_speedup": 259.8304003502381,
           "setup_hoisted_to_compile_wrapper": true,
           "steady_state_output_allocated_in_execute": false,
           "steady_state_reused_output_buffer": true,
           "steady_state_reused_prepared_executor": true,
-          "unprepared_compatibility_steady_median_us": 10825.751333333334
+          "unprepared_compatibility_steady_median_us": 11078.562
         },
         "score": {
-          "capped_steady_speed_ratio": 0.9169761020660763,
+          "capped_steady_speed_ratio": 1.0,
           "denominator_weight": 1.0,
           "eligible_cuda_compile_evidence": true,
-          "steady_speed_ratio": 0.9169761020660763,
+          "steady_speed_ratio": 1.0263851211370227,
           "weight": 0.25,
-          "weighted_score_contribution_percent": 22.924402551651905,
+          "weighted_score_contribution_percent": 25.0,
           "zero_credit_in_denominator": false
         },
         "score_credit": 1.0,
         "status": "ok",
         "steady": {
-          "mad_us": 1.9996666666666627,
-          "max_us": 55.631,
-          "median_us": 49.014,
-          "min_us": 43.742666666666665,
+          "mad_us": 1.8396666666666732,
+          "max_us": 51.76833333333334,
+          "median_us": 42.63766666666666,
+          "min_us": 39.82366666666666,
           "sample_count": 17,
-          "variance_us2": 9.833244572087663
+          "variance_us2": 9.547809164167633
         },
         "steady_checksums": [
           "fc2d121c2337fd34"
@@ -6638,10 +6638,10 @@
               "architecture": "sm_90",
               "build_key": "008df4c027d70965",
               "compile": null,
-              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
               "reused": true,
               "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
@@ -6752,7 +6752,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "77157cce5d96bc91",
+              "preparation_id": "01ad652f08d9d291",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -6851,7 +6851,7 @@
               "allocated_in_execute": false,
               "buffer_name": "compiled_output_pool_1",
               "enabled": true,
-              "lease_id": "77157cce5d96bc91:1",
+              "lease_id": "01ad652f08d9d291:1",
               "pool_allocation_count": 2,
               "pool_available_buffers_after_acquire": 1,
               "pool_initial_capacity": 2,
@@ -6976,12 +6976,12 @@
           "setup_repeated_per_invocation": true,
           "status": "ok",
           "steady": {
-            "mad_us": 660.5756666666657,
-            "max_us": 13059.780333333334,
-            "median_us": 10825.751333333334,
-            "min_us": 9429.816666666666,
+            "mad_us": 855.7943333333333,
+            "max_us": 12456.366333333333,
+            "median_us": 11078.562,
+            "min_us": 9012.002666666665,
             "sample_count": 17,
-            "variance_us2": 897763.5642120591
+            "variance_us2": 1005596.8145617902
           },
           "steady_checksums": [
             "fc2d121c2337fd34"
@@ -7028,7 +7028,7 @@
       },
       "reference_workload": {
         "cold_checksum": "fc2d121c2337fd34",
-        "cold_first_call_us": 832679.145,
+        "cold_first_call_us": 41340.246,
         "compile_config": {
           "backend": "inductor",
           "dynamic": false,
@@ -7040,7 +7040,7 @@
           "assert_close": true,
           "eager_reference_checksum": "9a77f782667089ee"
         },
-        "factory_us": 482.89,
+        "factory_us": 586.036,
         "implementation": "pytorch",
         "input_metadata": [
           {
@@ -7093,12 +7093,12 @@
         },
         "status": "ok",
         "steady": {
-          "mad_us": 2.1129999999999995,
-          "max_us": 68.961,
-          "median_us": 44.94466666666666,
-          "min_us": 41.259,
+          "mad_us": 1.5393333333333388,
+          "max_us": 59.379666666666665,
+          "median_us": 43.76266666666666,
+          "min_us": 40.48133333333334,
           "sample_count": 17,
-          "variance_us2": 97.85089358477511
+          "variance_us2": 17.17186355555555
         },
         "steady_checksums": [
           "fc2d121c2337fd34"
@@ -7131,12 +7131,12 @@
         "workload_weight": 0.25
       },
       "score": {
-        "capped_steady_speed_ratio": 0.9169761020660763,
+        "capped_steady_speed_ratio": 1.0,
         "denominator_weight": 1.0,
         "eligible_cuda_compile_evidence": true,
-        "steady_speed_ratio": 0.9169761020660763,
+        "steady_speed_ratio": 1.0263851211370227,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 22.924402551651905,
+        "weighted_score_contribution_percent": 25.0,
         "zero_credit_in_denominator": false
       },
       "torch_rs_cuda_compile_inputs": {
@@ -7492,10 +7492,10 @@
           "architecture": "sm_90",
           "build_key": "008df4c027d70965",
           "compile": null,
-          "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+          "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
           "reused": true,
           "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-          "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+          "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
         },
         "calls": {
           "cudaDeviceSynchronize_after_device_to_host": {
@@ -7939,10 +7939,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
@@ -8053,7 +8053,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "77157cce5d96bc91",
+            "preparation_id": "01ad652f08d9d291",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -8153,7 +8153,7 @@
             "allocated_in_execute": false,
             "buffer_name": "compiled_output_pool_1",
             "enabled": true,
-            "lease_id": "77157cce5d96bc91:1",
+            "lease_id": "01ad652f08d9d291:1",
             "pool_allocation_count": 2,
             "pool_available_buffers_after_acquire": 1,
             "pool_initial_capacity": 2,
@@ -8363,7 +8363,7 @@
     {
       "candidate": {
         "cold_checksum": "e825140789de3374",
-        "cold_first_call_us": 162.255,
+        "cold_first_call_us": 170.197,
         "compile_backend": "inductor",
         "compile_config": {
           "backend": "inductor",
@@ -8378,10 +8378,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
@@ -8492,7 +8492,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "8c114012284d2163",
+            "preparation_id": "c09ec49268cfc203",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -8592,7 +8592,7 @@
             "allocated_in_execute": false,
             "buffer_name": "compiled_output_pool_1",
             "enabled": true,
-            "lease_id": "8c114012284d2163:1",
+            "lease_id": "c09ec49268cfc203:1",
             "pool_allocation_count": 2,
             "pool_available_buffers_after_acquire": 1,
             "pool_initial_capacity": 2,
@@ -8746,7 +8746,7 @@
           "rejection_reasons": [],
           "score_credit": 1.0
         },
-        "factory_us": 13475.473,
+        "factory_us": 11761.923,
         "forwarded_to_pytorch": false,
         "implementation": "torch_rs",
         "input_device_type": "cuda",
@@ -9135,10 +9135,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
@@ -9249,7 +9249,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 67,
-            "preparation_id": "8c114012284d2163",
+            "preparation_id": "c09ec49268cfc203",
             "prepared": true,
             "reused_prepared_executor": true,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -9349,7 +9349,7 @@
             "allocated_in_execute": false,
             "buffer_name": "compiled_output_pool_1",
             "enabled": true,
-            "lease_id": "8c114012284d2163:67",
+            "lease_id": "c09ec49268cfc203:67",
             "pool_allocation_count": 2,
             "pool_available_buffers_after_acquire": 1,
             "pool_initial_capacity": 2,
@@ -9520,10 +9520,10 @@
               "architecture": "sm_90",
               "build_key": "008df4c027d70965",
               "compile": null,
-              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
               "reused": true,
               "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
@@ -9634,7 +9634,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "8c114012284d2163",
+              "preparation_id": "c09ec49268cfc203",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -9734,7 +9734,7 @@
               "allocated_in_execute": false,
               "buffer_name": "compiled_output_pool_1",
               "enabled": true,
-              "lease_id": "8c114012284d2163:1",
+              "lease_id": "c09ec49268cfc203:1",
               "pool_allocation_count": 2,
               "pool_available_buffers_after_acquire": 1,
               "pool_initial_capacity": 2,
@@ -9934,10 +9934,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaGetDevice": {
@@ -10115,7 +10115,7 @@
           "output_shape": [
             4096
           ],
-          "preparation_id": "8c114012284d2163",
+          "preparation_id": "c09ec49268cfc203",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -10154,10 +10154,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaGetDevice": {
@@ -10335,7 +10335,7 @@
           "output_shape": [
             4096
           ],
-          "preparation_id": "8c114012284d2163",
+          "preparation_id": "c09ec49268cfc203",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -10382,20 +10382,20 @@
           "output_pool_initial_capacity": 2,
           "output_pool_live_buffers_after_timing": 0,
           "output_pool_release_count": 67,
-          "preparation_id": "8c114012284d2163",
-          "prepared_steady_median_us": 46.74733333333334,
-          "prepared_vs_unprepared_steady_speedup": 268.7776415053978,
+          "preparation_id": "c09ec49268cfc203",
+          "prepared_steady_median_us": 48.12266666666667,
+          "prepared_vs_unprepared_steady_speedup": 235.95956860246037,
           "setup_hoisted_to_compile_wrapper": true,
           "steady_state_output_allocated_in_execute": false,
           "steady_state_reused_output_buffer": true,
           "steady_state_reused_prepared_executor": true,
-          "unprepared_compatibility_steady_median_us": 12564.638
+          "unprepared_compatibility_steady_median_us": 11355.003666666666
         },
         "score": {
           "capped_steady_speed_ratio": 1.0,
           "denominator_weight": 1.0,
           "eligible_cuda_compile_evidence": true,
-          "steady_speed_ratio": 1.1209052922804865,
+          "steady_speed_ratio": 1.05238002881525,
           "weight": 0.25,
           "weighted_score_contribution_percent": 25.0,
           "zero_credit_in_denominator": false
@@ -10403,12 +10403,12 @@
         "score_credit": 1.0,
         "status": "ok",
         "steady": {
-          "mad_us": 1.8696666666666744,
-          "max_us": 52.102,
-          "median_us": 46.74733333333334,
-          "min_us": 44.27033333333333,
+          "mad_us": 1.8729999999999976,
+          "max_us": 55.03333333333334,
+          "median_us": 48.12266666666667,
+          "min_us": 44.864333333333335,
           "sample_count": 17,
-          "variance_us2": 5.924898011534021
+          "variance_us2": 7.24885967474049
         },
         "steady_checksums": [
           "e825140789de3374"
@@ -10432,10 +10432,10 @@
               "architecture": "sm_90",
               "build_key": "008df4c027d70965",
               "compile": null,
-              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
               "reused": true,
               "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
@@ -10546,7 +10546,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "8c114012284d2163",
+              "preparation_id": "c09ec49268cfc203",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -10645,7 +10645,7 @@
               "allocated_in_execute": false,
               "buffer_name": "compiled_output_pool_1",
               "enabled": true,
-              "lease_id": "8c114012284d2163:1",
+              "lease_id": "c09ec49268cfc203:1",
               "pool_allocation_count": 2,
               "pool_available_buffers_after_acquire": 1,
               "pool_initial_capacity": 2,
@@ -10770,12 +10770,12 @@
           "setup_repeated_per_invocation": true,
           "status": "ok",
           "steady": {
-            "mad_us": 669.1550000000007,
-            "max_us": 14514.644333333334,
-            "median_us": 12564.638,
-            "min_us": 11672.832666666665,
+            "mad_us": 1354.3556666666664,
+            "max_us": 14145.004,
+            "median_us": 11355.003666666666,
+            "min_us": 9017.651,
             "sample_count": 17,
-            "variance_us2": 606706.5999998595
+            "variance_us2": 2613169.276821171
           },
           "steady_checksums": [
             "e825140789de3374"
@@ -10822,7 +10822,7 @@
       },
       "reference_workload": {
         "cold_checksum": "e825140789de3374",
-        "cold_first_call_us": 914320.703,
+        "cold_first_call_us": 37456.461,
         "compile_config": {
           "backend": "inductor",
           "dynamic": false,
@@ -10834,7 +10834,7 @@
           "assert_close": true,
           "eager_reference_checksum": "093851ee4eb6268b"
         },
-        "factory_us": 436.13,
+        "factory_us": 397.932,
         "implementation": "pytorch",
         "input_metadata": [
           {
@@ -10887,12 +10887,12 @@
         },
         "status": "ok",
         "steady": {
-          "mad_us": 2.3970000000000056,
-          "max_us": 70.89033333333333,
-          "median_us": 52.39933333333334,
-          "min_us": 46.56366666666666,
+          "mad_us": 2.560666666666677,
+          "max_us": 78.94933333333333,
+          "median_us": 50.64333333333334,
+          "min_us": 46.31666666666666,
           "sample_count": 17,
-          "variance_us2": 37.213431410226825
+          "variance_us2": 73.93878768319874
         },
         "steady_checksums": [
           "e825140789de3374"
@@ -10928,7 +10928,7 @@
         "capped_steady_speed_ratio": 1.0,
         "denominator_weight": 1.0,
         "eligible_cuda_compile_evidence": true,
-        "steady_speed_ratio": 1.1209052922804865,
+        "steady_speed_ratio": 1.05238002881525,
         "weight": 0.25,
         "weighted_score_contribution_percent": 25.0,
         "zero_credit_in_denominator": false
@@ -11286,10 +11286,10 @@
           "architecture": "sm_90",
           "build_key": "008df4c027d70965",
           "compile": null,
-          "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+          "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
           "reused": true,
           "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-          "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+          "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
         },
         "calls": {
           "cudaDeviceSynchronize_after_device_to_host": {
@@ -11733,10 +11733,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
@@ -11847,7 +11847,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "8c114012284d2163",
+            "preparation_id": "c09ec49268cfc203",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -11947,7 +11947,7 @@
             "allocated_in_execute": false,
             "buffer_name": "compiled_output_pool_1",
             "enabled": true,
-            "lease_id": "8c114012284d2163:1",
+            "lease_id": "c09ec49268cfc203:1",
             "pool_allocation_count": 2,
             "pool_available_buffers_after_acquire": 1,
             "pool_initial_capacity": 2,
@@ -12157,7 +12157,7 @@
     {
       "candidate": {
         "cold_checksum": "d611fc1244abdf90",
-        "cold_first_call_us": 140.402,
+        "cold_first_call_us": 143.307,
         "compile_backend": "inductor",
         "compile_config": {
           "backend": "inductor",
@@ -12172,10 +12172,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
@@ -12286,7 +12286,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "728b99b910f85417",
+            "preparation_id": "7e266fc41ac8c545",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -12386,7 +12386,7 @@
             "allocated_in_execute": false,
             "buffer_name": "compiled_output_pool_1",
             "enabled": true,
-            "lease_id": "728b99b910f85417:1",
+            "lease_id": "7e266fc41ac8c545:1",
             "pool_allocation_count": 2,
             "pool_available_buffers_after_acquire": 1,
             "pool_initial_capacity": 2,
@@ -12540,7 +12540,7 @@
           "rejection_reasons": [],
           "score_credit": 1.0
         },
-        "factory_us": 13994.077,
+        "factory_us": 13551.64,
         "forwarded_to_pytorch": false,
         "implementation": "torch_rs",
         "input_device_type": "cuda",
@@ -12929,10 +12929,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
@@ -13043,7 +13043,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 67,
-            "preparation_id": "728b99b910f85417",
+            "preparation_id": "7e266fc41ac8c545",
             "prepared": true,
             "reused_prepared_executor": true,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -13143,7 +13143,7 @@
             "allocated_in_execute": false,
             "buffer_name": "compiled_output_pool_1",
             "enabled": true,
-            "lease_id": "728b99b910f85417:67",
+            "lease_id": "7e266fc41ac8c545:67",
             "pool_allocation_count": 2,
             "pool_available_buffers_after_acquire": 1,
             "pool_initial_capacity": 2,
@@ -13314,10 +13314,10 @@
               "architecture": "sm_90",
               "build_key": "008df4c027d70965",
               "compile": null,
-              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
               "reused": true,
               "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
@@ -13428,7 +13428,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "728b99b910f85417",
+              "preparation_id": "7e266fc41ac8c545",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -13528,7 +13528,7 @@
               "allocated_in_execute": false,
               "buffer_name": "compiled_output_pool_1",
               "enabled": true,
-              "lease_id": "728b99b910f85417:1",
+              "lease_id": "7e266fc41ac8c545:1",
               "pool_allocation_count": 2,
               "pool_available_buffers_after_acquire": 1,
               "pool_initial_capacity": 2,
@@ -13728,10 +13728,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaGetDevice": {
@@ -13909,7 +13909,7 @@
           "output_shape": [
             256
           ],
-          "preparation_id": "728b99b910f85417",
+          "preparation_id": "7e266fc41ac8c545",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -13948,10 +13948,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaGetDevice": {
@@ -14129,7 +14129,7 @@
           "output_shape": [
             256
           ],
-          "preparation_id": "728b99b910f85417",
+          "preparation_id": "7e266fc41ac8c545",
           "prepared": true,
           "public_torch_cuda_api": false,
           "reason": "compiled pointwise-reduce executor prepared",
@@ -14176,33 +14176,33 @@
           "output_pool_initial_capacity": 2,
           "output_pool_live_buffers_after_timing": 0,
           "output_pool_release_count": 67,
-          "preparation_id": "728b99b910f85417",
-          "prepared_steady_median_us": 43.959666666666664,
-          "prepared_vs_unprepared_steady_speedup": 260.9748936525148,
+          "preparation_id": "7e266fc41ac8c545",
+          "prepared_steady_median_us": 41.41266666666667,
+          "prepared_vs_unprepared_steady_speedup": 296.0755404948566,
           "setup_hoisted_to_compile_wrapper": true,
           "steady_state_output_allocated_in_execute": false,
           "steady_state_reused_output_buffer": true,
           "steady_state_reused_prepared_executor": true,
-          "unprepared_compatibility_steady_median_us": 11472.369333333334
+          "unprepared_compatibility_steady_median_us": 12261.277666666667
         },
         "score": {
-          "capped_steady_speed_ratio": 0.9157788578924622,
+          "capped_steady_speed_ratio": 0.975249118627151,
           "denominator_weight": 1.0,
           "eligible_cuda_compile_evidence": true,
-          "steady_speed_ratio": 0.9157788578924622,
+          "steady_speed_ratio": 0.975249118627151,
           "weight": 0.25,
-          "weighted_score_contribution_percent": 22.894471447311552,
+          "weighted_score_contribution_percent": 24.381227965678775,
           "zero_credit_in_denominator": false
         },
         "score_credit": 1.0,
         "status": "ok",
         "steady": {
-          "mad_us": 1.30533333333333,
-          "max_us": 47.05766666666666,
-          "median_us": 43.959666666666664,
-          "min_us": 41.48266666666667,
+          "mad_us": 2.230000000000004,
+          "max_us": 69.39833333333333,
+          "median_us": 41.41266666666667,
+          "min_us": 39.149,
           "sample_count": 17,
-          "variance_us2": 2.486635657054977
+          "variance_us2": 66.62447923567856
         },
         "steady_checksums": [
           "d611fc1244abdf90"
@@ -14226,10 +14226,10 @@
               "architecture": "sm_90",
               "build_key": "008df4c027d70965",
               "compile": null,
-              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+              "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
               "reused": true,
               "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+              "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
             },
             "calls": {
               "cudaDeviceSynchronize_after_device_to_host": {
@@ -14340,7 +14340,7 @@
             "eager_fallback": false,
             "executor": {
               "invocation_index": 1,
-              "preparation_id": "728b99b910f85417",
+              "preparation_id": "7e266fc41ac8c545",
               "prepared": true,
               "reused_prepared_executor": false,
               "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -14439,7 +14439,7 @@
               "allocated_in_execute": false,
               "buffer_name": "compiled_output_pool_1",
               "enabled": true,
-              "lease_id": "728b99b910f85417:1",
+              "lease_id": "7e266fc41ac8c545:1",
               "pool_allocation_count": 2,
               "pool_available_buffers_after_acquire": 1,
               "pool_initial_capacity": 2,
@@ -14564,12 +14564,12 @@
           "setup_repeated_per_invocation": true,
           "status": "ok",
           "steady": {
-            "mad_us": 1154.7966666666653,
-            "max_us": 13535.510333333334,
-            "median_us": 11472.369333333334,
-            "min_us": 9183.086666666666,
+            "mad_us": 1452.9916666666668,
+            "max_us": 14616.307,
+            "median_us": 12261.277666666667,
+            "min_us": 10056.419,
             "sample_count": 17,
-            "variance_us2": 1635043.3735105982
+            "variance_us2": 2000075.7925416508
           },
           "steady_checksums": [
             "d611fc1244abdf90"
@@ -14616,7 +14616,7 @@
       },
       "reference_workload": {
         "cold_checksum": "d611fc1244abdf90",
-        "cold_first_call_us": 339306.093,
+        "cold_first_call_us": 39983.343,
         "compile_config": {
           "backend": "inductor",
           "dynamic": false,
@@ -14628,7 +14628,7 @@
           "assert_close": true,
           "eager_reference_checksum": "25e55d26d098f46d"
         },
-        "factory_us": 523.352,
+        "factory_us": 423.591,
         "implementation": "pytorch",
         "input_metadata": [
           {
@@ -14681,12 +14681,12 @@
         },
         "status": "ok",
         "steady": {
-          "mad_us": 0.5276666666666614,
-          "max_us": 41.315666666666665,
-          "median_us": 40.257333333333335,
-          "min_us": 38.65533333333334,
+          "mad_us": 0.5006666666666604,
+          "max_us": 51.70466666666666,
+          "median_us": 40.38766666666666,
+          "min_us": 38.361333333333334,
           "sample_count": 17,
-          "variance_us2": 0.5794863721645502
+          "variance_us2": 9.302150301422522
         },
         "steady_checksums": [
           "d611fc1244abdf90"
@@ -14719,12 +14719,12 @@
         "workload_weight": 0.25
       },
       "score": {
-        "capped_steady_speed_ratio": 0.9157788578924622,
+        "capped_steady_speed_ratio": 0.975249118627151,
         "denominator_weight": 1.0,
         "eligible_cuda_compile_evidence": true,
-        "steady_speed_ratio": 0.9157788578924622,
+        "steady_speed_ratio": 0.975249118627151,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 22.894471447311552,
+        "weighted_score_contribution_percent": 24.381227965678775,
         "zero_credit_in_denominator": false
       },
       "torch_rs_cuda_compile_inputs": {
@@ -15080,10 +15080,10 @@
           "architecture": "sm_90",
           "build_key": "008df4c027d70965",
           "compile": null,
-          "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+          "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
           "reused": true,
           "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-          "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+          "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
         },
         "calls": {
           "cudaDeviceSynchronize_after_device_to_host": {
@@ -15527,10 +15527,10 @@
             "architecture": "sm_90",
             "build_key": "008df4c027d70965",
             "compile": null,
-            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+            "library_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
             "reused": true,
             "source_checksum": "db19ead9f1bddd35e91e1de643e0b810",
-            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_35e6f8de/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
+            "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_3fb574b9/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu"
           },
           "calls": {
             "cudaDeviceSynchronize_after_device_to_host": {
@@ -15641,7 +15641,7 @@
           "eager_fallback": false,
           "executor": {
             "invocation_index": 1,
-            "preparation_id": "728b99b910f85417",
+            "preparation_id": "7e266fc41ac8c545",
             "prepared": true,
             "reused_prepared_executor": false,
             "schema_version": "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1",
@@ -15741,7 +15741,7 @@
             "allocated_in_execute": false,
             "buffer_name": "compiled_output_pool_1",
             "enabled": true,
-            "lease_id": "728b99b910f85417:1",
+            "lease_id": "7e266fc41ac8c545:1",
             "pool_allocation_count": 2,
             "pool_available_buffers_after_acquire": 1,
             "pool_initial_capacity": 2,
