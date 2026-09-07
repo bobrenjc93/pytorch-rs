@@ -2,9 +2,13 @@
 
 Date: 2026-09-07
 
-Candidate provenance: clean current worktree
-`07a6ae03b088b4db7f4b69e82137b60a164c937b`; the raw JSON records empty
+Benchmark provenance: historical measured evidence from clean implementation
+commit `07a6ae03b088b4db7f4b69e82137b60a164c937b`; the raw JSON records empty
 `git.status_short` and `git.diff_stat` before writing the refreshed artifact.
+This report is intentionally not labeled as exact current-worktree evidence:
+later candidate commits may contain only the checked-in benchmark JSON and
+release-timing reports needed to carry the measurement forward, with no
+implementation or benchmark-harness changes after the measured commit.
 
 Measurement command:
 
