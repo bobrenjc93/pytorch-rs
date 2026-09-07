@@ -44,26 +44,47 @@ IMPLEMENTATION_ORDERS = (
 CATEGORY_LABELS = {
     "tensor_arithmetic": "tensor-arithmetic",
     "broadcasting": "broadcasting",
+    "modules_parameters_buffers": "modules-parameters-buffers",
     "inference": "inference",
     "training_autograd": "training-autograd",
+    "python_control_flow": "python-control-flow",
+    "graph_breaks_fullgraph": "graph-breaks-fullgraph",
+    "dynamic_shapes_symbolics": "dynamic-shape",
+    "containers_pytrees": "containers-pytrees",
     "decompositions": "decomposition",
+    "custom_functions": "custom-functions",
     "recompilation_guards": "recompilation-guard",
+    "dtype_device_transitions": "dtype-device-transitions",
 }
 CATEGORY_PHRASES = {
     "tensor_arithmetic": "tensor arithmetic",
     "broadcasting": "broadcasting",
+    "modules_parameters_buffers": "modules, parameters, and buffers",
     "inference": "inference",
     "training_autograd": "training autograd",
+    "python_control_flow": "Python control flow",
+    "graph_breaks_fullgraph": "graph breaks and fullgraph",
+    "dynamic_shapes_symbolics": "dynamic shapes",
+    "containers_pytrees": "containers and pytrees",
     "decompositions": "decompositions",
+    "custom_functions": "custom functions",
     "recompilation_guards": "recompilation guards",
+    "dtype_device_transitions": "dtype/device transitions",
 }
 CATEGORY_PROGRAM_LABELS = {
     "tensor_arithmetic": "tensor-arithmetic",
     "broadcasting": "broadcasting",
+    "modules_parameters_buffers": "modules/parameters/buffers",
     "inference": "inference",
     "training_autograd": "training-autograd",
+    "python_control_flow": "Python-control-flow",
+    "graph_breaks_fullgraph": "graph-breaks/fullgraph",
+    "dynamic_shapes_symbolics": "dynamic-shape",
+    "containers_pytrees": "containers-pytrees",
     "decompositions": "decomposition",
+    "custom_functions": "custom-function",
     "recompilation_guards": "recompilation-guard",
+    "dtype_device_transitions": "dtype/device-transition",
 }
 
 
@@ -367,12 +388,10 @@ def _corpus_metadata(corpus_module):
     return {
         "version": corpus_module.COMPILE_CORPUS_VERSION,
         "public_cases": [
-            case_summary(case) for case in corpus_module.compile_corpus_cases()
+            case_summary(case) for case in _benchmark_public_cases(corpus_module)
         ],
         "held_out_cases": [
-            case_summary(case)
-            for case in corpus_module.compile_corpus_cases(include_held_out=True)
-            if case not in corpus_module.compile_corpus_cases()
+            case_summary(case) for case in _benchmark_held_out_cases(corpus_module)
         ],
         "public_recompilation_guard_scenarios": [
             scenario_summary(scenario)
@@ -411,6 +430,39 @@ def _program_input_count(case):
     return code.co_argcount
 
 
+def _case_is_native_eager_benchmark_supported(case):
+    return (
+        (
+            (
+                case.fullgraph is True
+                and (case.dynamic is None or type(case.dynamic) is bool)
+            )
+            or (
+                case.fullgraph is False
+                and case.dynamic is None
+            )
+        )
+        and case.mode is None
+        and case.options is None
+    )
+
+
+def _benchmark_public_cases(corpus_module):
+    return tuple(
+        case
+        for case in corpus_module.COMPILE_CORPUS
+        if _case_is_native_eager_benchmark_supported(case)
+    )
+
+
+def _benchmark_held_out_cases(corpus_module):
+    return tuple(
+        case
+        for case in getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ())
+        if _case_is_native_eager_benchmark_supported(case)
+    )
+
+
 def _variant_applies_to_case(variant, case):
     return (
         variant.input_count is None
@@ -420,6 +472,12 @@ def _variant_applies_to_case(variant, case):
 
 def _cell_input_factory(case, variant):
     return case.make_inputs if variant.make_inputs is None else variant.make_inputs
+
+
+def _make_cell_inputs(module, case, variant):
+    if variant.make_inputs is not None:
+        case.make_inputs(module)
+    return _cell_input_factory(case, variant)(module)
 
 
 def _case_execution_context(module, case):
@@ -466,6 +524,63 @@ def _materialized_payload(tensor):
     }
 
 
+def _is_output_container(output):
+    return type(output) in (tuple, list)
+
+
+def _output_tensor_leaves(output):
+    if _is_output_container(output):
+        for element in output:
+            yield from _output_tensor_leaves(element)
+        return
+    yield output
+
+
+def _output_requires_grad(output):
+    return any(tensor.requires_grad for tensor in _output_tensor_leaves(output))
+
+
+def _output_sum(output):
+    leaves = tuple(_output_tensor_leaves(output))
+    if not leaves:
+        raise AssertionError("compile benchmark output must contain a Tensor leaf")
+    total = leaves[0].sum()
+    for leaf in leaves[1:]:
+        total = total + leaf.sum()
+    return total
+
+
+def _output_metadata(output):
+    if _is_output_container(output):
+        return {
+            "container": type(output).__name__,
+            "elements": [_output_metadata(element) for element in output],
+        }
+    return _tensor_metadata(output)
+
+
+def _metadata_requires_grad(metadata):
+    if not isinstance(metadata, dict):
+        return False
+    if "container" in metadata:
+        return any(
+            _metadata_requires_grad(element)
+            for element in metadata.get("elements", ())
+        )
+    return metadata.get("requires_grad") is True
+
+
+def _materialized_output_payload(output):
+    if _is_output_container(output):
+        return {
+            "container": type(output).__name__,
+            "elements": [
+                _materialized_output_payload(element) for element in output
+            ],
+        }
+    return _materialized_payload(output)
+
+
 def _input_payloads(inputs):
     return [_materialized_payload(input) for input in inputs]
 
@@ -497,7 +612,7 @@ def _assert_payload_match(actual, expected, *, cell_name, label):
 
 def _checksum_tensor(tensor):
     payload = json.dumps(
-        _materialized_payload(tensor),
+        _materialized_output_payload(tensor),
         allow_nan=True,
         separators=(",", ":"),
         sort_keys=True,
@@ -507,8 +622,8 @@ def _checksum_tensor(tensor):
 
 def _assert_outputs_match(actual, expected, *, cell_name):
     _assert_payload_match(
-        _materialized_payload(actual),
-        _materialized_payload(expected),
+        _materialized_output_payload(actual),
+        _materialized_output_payload(expected),
         cell_name=cell_name,
         label="output",
     )
@@ -522,9 +637,9 @@ def _assert_backward_through_sum_matches(
     *,
     cell_name,
 ):
-    if not getattr(actual_output, "requires_grad", False):
+    if not _output_requires_grad(actual_output):
         raise AssertionError(f"{cell_name} output does not require grad")
-    if not getattr(expected_output, "requires_grad", False):
+    if not _output_requires_grad(expected_output):
         raise AssertionError(f"{cell_name} reference output does not require grad")
 
     _retain_grad_for_backward(actual_inputs)
@@ -538,8 +653,8 @@ def _assert_backward_through_sum_matches(
         label="input gradients before backward",
     )
 
-    expected_output.sum().backward()
-    actual_output.sum().backward()
+    _output_sum(expected_output).backward()
+    _output_sum(actual_output).backward()
 
     _assert_payload_match(
         _input_grad_payloads(actual_inputs),
@@ -564,7 +679,7 @@ def _assert_backward_through_sum_matches(
 def _should_validate_backward_through_sum(case, measured):
     return (
         getattr(case, "backward_through_sum", False)
-        and measured["output_metadata"]["requires_grad"]
+        and _metadata_requires_grad(measured["output_metadata"])
     )
 
 
@@ -628,8 +743,7 @@ def _run_cell(
     warmups,
     samples,
 ):
-    make_inputs = _cell_input_factory(case, variant)
-    inputs = make_inputs(module)
+    inputs = _make_cell_inputs(module, case, variant)
     expected_input_count = _program_input_count(case)
     if len(inputs) != expected_input_count:
         raise AssertionError(
@@ -672,7 +786,7 @@ def _run_cell(
         "cold_output": cold_output,
         "inputs": inputs,
         "input_metadata": [_tensor_metadata(input) for input in inputs],
-        "output_metadata": _tensor_metadata(cold_output),
+        "output_metadata": _output_metadata(cold_output),
     }
 
 
@@ -764,7 +878,7 @@ def _run_guard_sequence_pass(
                 "status": "ok",
                 "elapsed_us": elapsed_us,
                 "input_metadata": [_tensor_metadata(input) for input in inputs],
-                "output_metadata": _tensor_metadata(output),
+                "output_metadata": _output_metadata(output),
                 "checksum": checksum,
             }
         )
@@ -809,8 +923,8 @@ def _geomean(values):
 def _coverage_denominator(corpus_module, selected_cases):
     category_weights = dict(corpus_module.CATEGORY_WEIGHTS)
     selected_names = {case.name for case in selected_cases}
-    public_cases = tuple(corpus_module.COMPILE_CORPUS)
-    held_out_cases = tuple(getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ()))
+    public_cases = _benchmark_public_cases(corpus_module)
+    held_out_cases = _benchmark_held_out_cases(corpus_module)
 
     supported_categories = []
     zero_credit_categories = []
@@ -861,6 +975,65 @@ def _coverage_denominator(corpus_module, selected_cases):
     }
 
 
+def _coverage_denominator_from_corpus_metadata(
+    corpus_metadata,
+    selected_case_names,
+    category_weights,
+):
+    public_cases = tuple(corpus_metadata.get("public_cases", ()))
+    held_out_cases = tuple(corpus_metadata.get("held_out_cases", ()))
+
+    supported_categories = []
+    zero_credit_categories = []
+    supported_weight = 0
+    for category, weight in category_weights.items():
+        category_cases = [
+            case.get("name")
+            for case in public_cases
+            if case.get("category") == category
+        ]
+        if category_cases:
+            supported_weight += weight
+            supported_categories.append(
+                {
+                    "category": category,
+                    "weight": weight,
+                    "public_cases": category_cases,
+                    "timed_public_cases": [
+                        name for name in category_cases if name in selected_case_names
+                    ],
+                }
+            )
+        else:
+            zero_credit_categories.append(
+                {
+                    "category": category,
+                    "weight": weight,
+                    "reason": (
+                        "no native torch_rs eager/fullgraph compile cases are "
+                        "implemented for this category in the checked-in corpus"
+                    ),
+                }
+            )
+
+    total_weight = sum(category_weights.values())
+    zero_credit_weight = total_weight - supported_weight
+    return {
+        "category_weights": category_weights,
+        "total_weight": total_weight,
+        "supported_weight": supported_weight,
+        "zero_credit_weight": zero_credit_weight,
+        "weighted_supported_percent": (supported_weight / total_weight * 100.0)
+        if total_weight
+        else None,
+        "public_supported_case_count": len(public_cases),
+        "held_out_case_count": len(held_out_cases),
+        "selected_public_case_count": len(selected_case_names),
+        "supported_categories": supported_categories,
+        "zero_credit_categories": zero_credit_categories,
+    }
+
+
 def _select_named(items, selected_names, *, item_kind):
     if not selected_names:
         return tuple(items)
@@ -872,6 +1045,31 @@ def _select_named(items, selected_names, *, item_kind):
             f"unknown {item_kind}: {', '.join(missing)}. Available: {available}"
         )
     return tuple(by_name[name] for name in selected_names)
+
+
+def _select_benchmark_cases(corpus_module, selected_names):
+    supported_cases = _benchmark_public_cases(corpus_module)
+    if not selected_names:
+        return supported_cases
+
+    all_public_cases = {case.name: case for case in corpus_module.COMPILE_CORPUS}
+    supported_names = {case.name for case in supported_cases}
+    unsupported = [
+        name
+        for name in selected_names
+        if name in all_public_cases and name not in supported_names
+    ]
+    if unsupported:
+        raise SystemExit(
+            "unsupported native eager benchmark case: "
+            f"{', '.join(unsupported)}. The CPU benchmark only times public "
+            "cases supported by the current native eager/fullgraph torch_rs path."
+        )
+    return _select_named(
+        supported_cases,
+        selected_names,
+        item_kind="native eager benchmark-supported case",
+    )
 
 
 def _output_path(path):
@@ -921,7 +1119,7 @@ def run_benchmark(args):
         )
 
     _configure_reference_threads(reference_torch, args.threads)
-    cases = _select_named(corpus_module.COMPILE_CORPUS, args.cases, item_kind="case")
+    cases = _select_benchmark_cases(corpus_module, args.cases)
     variants = _select_named(INPUT_VARIANTS, args.variants, item_kind="variant")
 
     gc_was_enabled = gc.isenabled()
@@ -1030,7 +1228,7 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                         implementation,
                         [],
                     ).append(measured)
-                    expected_inputs = _cell_input_factory(case, variant)(module)
+                    expected_inputs = _make_cell_inputs(module, case, variant)
                     expected = _run_case_program(module, case, expected_inputs)
                     _assert_outputs_match(
                         measured["cold_output"],
@@ -1045,10 +1243,11 @@ def _run_benchmark_flat(corpus_module, torch_rs, reference_torch, cases, variant
                     backward_expected = expected
                     backward_expected_inputs = expected_inputs
                     if implementation == "torch_rs":
-                        reference_inputs = _cell_input_factory(
+                        reference_inputs = _make_cell_inputs(
+                            reference_torch,
                             case,
                             variant,
-                        )(reference_torch)
+                        )
                         reference_expected = _run_case_program(
                             reference_torch,
                             case,
@@ -1162,6 +1361,16 @@ def _format_metadata(metadata):
     )
 
 
+def _format_output_metadata(metadata):
+    if "container" not in metadata:
+        return _format_metadata(metadata)
+    rendered = ", ".join(
+        _format_output_metadata(element)
+        for element in metadata.get("elements", ())
+    )
+    return f"{metadata['container']}[{rendered}]"
+
+
 def _single_checksum(row):
     torch_rs_checksums = row["implementations"]["torch_rs"]["checksums"]
     pytorch_checksums = row["implementations"]["pytorch"]["checksums"]
@@ -1183,7 +1392,7 @@ def _format_timed_cell(row):
     pytorch = row["implementations"]["pytorch"]
     return (
         f"| `{row['case']}` | `{row['variant']}` | {row['input_count']} | "
-        f"{row['repeats']} | {_format_metadata(row['output_metadata'])} | "
+        f"{row['repeats']} | {_format_output_metadata(row['output_metadata'])} | "
         f"{torch_rs['cold_first_call_median_us']:.3f} | "
         f"{pytorch['cold_first_call_median_us']:.3f} | "
         f"{row['ratios']['cold_torch_rs_over_pytorch']:.3f}x | "
@@ -1443,27 +1652,41 @@ def _markdown_summary(markdown_path):
 def _validate_expected_artifact_shape(report):
     errors = []
     corpus_module = _load_compile_corpus_module()
-    expected_corpus = _corpus_metadata(corpus_module)
-    expected_public_cases = tuple(corpus_module.COMPILE_CORPUS)
-    expected_coverage = _coverage_denominator(corpus_module, expected_public_cases)
+    current_corpus = _corpus_metadata(corpus_module)
+    current_corpus_version = getattr(corpus_module, "COMPILE_CORPUS_VERSION", None)
+    category_weights = dict(corpus_module.CATEGORY_WEIGHTS)
+
+    environment = report.get("environment", {})
+    corpus = report.get("corpus", {})
+    if corpus.get("version") != environment.get("corpus_version"):
+        errors.append("corpus metadata version does not match environment")
+
+    if environment.get("corpus_version") != current_corpus_version:
+        errors.append(
+            "environment corpus version mismatch: "
+            f"{environment.get('corpus_version')!r} != {current_corpus_version!r}"
+        )
+    expected_corpus = current_corpus
+    if corpus != expected_corpus:
+        errors.append(
+            "corpus metadata mismatch: "
+            f"actual={corpus!r} expected={expected_corpus!r}"
+        )
+    expected_public_cases = tuple(expected_corpus.get("public_cases", ()))
     expected_category_counts = Counter()
     for case in expected_public_cases:
         for variant in INPUT_VARIANTS:
-            if _variant_applies_to_case(variant, case):
-                expected_category_counts[case.category] += 1
+            if (
+                variant.input_count is None
+                or variant.input_count == case.get("input_count")
+            ):
+                expected_category_counts[case.get("category")] += 1
     expected_timed_cell_count = sum(expected_category_counts.values())
 
-    environment = report.get("environment", {})
     if environment.get("benchmark_version") != BENCHMARK_VERSION:
         errors.append(
             "benchmark version mismatch: "
             f"{environment.get('benchmark_version')!r} != {BENCHMARK_VERSION!r}"
-        )
-    expected_corpus_version = getattr(corpus_module, "COMPILE_CORPUS_VERSION", None)
-    if environment.get("corpus_version") != expected_corpus_version:
-        errors.append(
-            "corpus version mismatch: "
-            f"{environment.get('corpus_version')!r} != {expected_corpus_version!r}"
         )
 
     cases = report.get("cases", [])
@@ -1481,15 +1704,15 @@ def _validate_expected_artifact_shape(report):
     if report.get("aggregates", {}).get("timed_supported_cell_count") != len(cases):
         errors.append("aggregate timed cell count does not match cases")
     expected_training_backward_cases = {
-        case.name
+        case.get("name")
         for case in expected_public_cases
-        if getattr(case, "backward_through_sum", False)
+        if case.get("backward_through_sum") is True
     }
     grad_enabled_training_cases = {
         row.get("case")
         for row in cases
         if row.get("case") in expected_training_backward_cases
-        and row.get("output_metadata", {}).get("requires_grad") is True
+        and _metadata_requires_grad(row.get("output_metadata", {}))
     }
     missing_training_backward_cases = (
         expected_training_backward_cases - grad_enabled_training_cases
@@ -1502,7 +1725,7 @@ def _validate_expected_artifact_shape(report):
 
     guard_sequences = report.get("recompilation_guard_sequences", [])
     guard_step_count = sum(len(row.get("steps", ())) for row in guard_sequences)
-    if len(guard_sequences) != 12 or guard_step_count != 60:
+    if len(guard_sequences) != 16 or guard_step_count != 72:
         errors.append(
             "guard sequence coverage mismatch: "
             f"rows={len(guard_sequences)} steps={guard_step_count}"
@@ -1514,20 +1737,17 @@ def _validate_expected_artifact_shape(report):
         errors.append("aggregate guard step count does not match rows")
 
     coverage = report.get("coverage_denominator", {})
+    selected_case_names = {row.get("case") for row in cases}
+    expected_coverage = _coverage_denominator_from_corpus_metadata(
+        expected_corpus,
+        selected_case_names,
+        category_weights,
+    )
     if coverage != expected_coverage:
         errors.append(
             "coverage denominator mismatch: "
             f"actual={coverage!r} expected={expected_coverage!r}"
         )
-
-    corpus = report.get("corpus", {})
-    if corpus != expected_corpus:
-        errors.append(
-            "corpus metadata mismatch: "
-            f"actual={corpus!r} expected={expected_corpus!r}"
-        )
-    elif corpus.get("version") != environment.get("corpus_version"):
-        errors.append("corpus metadata version does not match environment")
 
     for row in cases:
         try:

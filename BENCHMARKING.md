@@ -92,6 +92,7 @@ and generated workload matrix in its JSON output.
 ### Compilation
 
 - [`torch.compile` eager CPU release timings](docs/torch-compile-cpu-release-timings.md)
+- [`torch.compile` H100 CUDA prepared-executor timings](docs/torch-compile-cuda-h100-release-timings.md)
 
 The CUDA compile measurement boundary is a narrow, fail-closed skeleton. Run it
 on the H100 host with a single visible device:
@@ -100,16 +101,63 @@ on the H100 host with a single visible device:
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py
 ```
 
+Prepared-executor comparison evidence can be reproduced with:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py \
+  --include-unprepared-comparison \
+  --output docs/benchmark-data/torch-compile-cuda-h100-shape-matrix-v11.json
+```
+
+To reserve a different physical GPU, mask exactly one device and pass the same
+literal value to `--required-cuda-visible-devices`; benchmark-private CUDA work
+still uses logical CUDA device 0 after masking.
+Passing an empty `--required-cuda-visible-devices` preserves the local
+experimentation escape hatch by skipping the literal environment check; CUDA
+work still runs on logical device 0 and records the visible-device count.
+
+This is fixed-matrix pointwise-plus-row-reduction release evidence, not broad
+CUDA compile coverage. The versioned matrix
+`h100_cuda_pointwise_reduce_float32_shape_matrix_v1` contains four fixed
+`torch.float32` H100 shapes with equal explicit weights:
+
+| Workload | Shape | Weight |
+| --- | ---: | ---: |
+| `square_256x256` | `(256, 256)` | 0.25 |
+| `square_1024x1024` | `(1024, 1024)` | 0.25 |
+| `tall_4096x256` | `(4096, 256)` | 0.25 |
+| `wide_256x4096` | `(256, 4096)` | 0.25 |
+
+The optional `--quick` mode runs the strict subset `square_1024x1024` for smoke
+testing only; final evidence must use the full matrix. Held-out shapes,
+operators, dynamic/fullgraph modes, backward cases where applicable, and
+explicit unsupported zero-credit categories remain required before CUDA compile
+results should be treated as general benchmark coverage.
+
 The script requires PyTorch 2.13, records GPU, driver, CUDA runtime, `nvcc`,
-compile configuration, cold first-call timing, synchronized steady-state
-timings, and checksum/correctness evidence for one versioned PyTorch CUDA
-reference workload. It also records private benchmark-only `torch_rs` CUDA
+compile configuration, per-shape cold first-call timing, synchronized
+steady-state timings, and checksum/correctness evidence for every selected
+matrix workload. It also records private benchmark-only `torch_rs` CUDA
 driver/runtime evidence, separate from the public `torch.cuda` compatibility
 API: device 0 metadata plus a float32 runtime allocation, host-to-device copy,
-device-to-host copy, synchronization, and checksum roundtrip. The current
-`torch_rs` CUDA compile cell is emitted as explicit `zero_credit_unsupported`:
-CPU tensors, `backend="eager"`, eager fallback, skipped execution, or
-forwarding to installed PyTorch are rejected as eligible CUDA compile evidence.
+device-to-host copy, synchronization, checksum roundtrip, and one compiled
+torch_rs-owned float32 pointwise kernel launch with synchronized output
+checksum verification. For each matrix shape it runs the private fused float32
+pointwise-plus-row-reduction kernel using torch_rs-owned device buffers, then
+compares synchronized output metadata and checksums against the PyTorch CUDA
+compiled reference. The current `torch_rs` CUDA compile cells route that exact
+versioned workload through
+`torch.compile(..., backend="inductor", fullgraph=True, dynamic=False)` and
+execute the torch_rs-owned pointwise-plus-row-reduction CUDA kernel from the
+compiled wrapper. Each row is eligible only when the inputs and output are CUDA
+benchmark tensor wrappers with matching fixed shapes, float32 metadata,
+synchronized checksum/readback evidence, `native_cuda_compile=True`, no eager
+fallback, and no forwarding to installed PyTorch. CPU tensors, `backend="eager"`,
+wrong shapes, skipped execution, eager fallback, incorrect outputs, or
+installed-PyTorch forwarding are retained as zero-credit rows in the weighted
+denominator. The report includes each row's raw steady-state speed ratio,
+capped ratio, weighted score contribution, the common-success geometric-mean
+speed ratio, and the coverage-adjusted aggregate percentage used as the score.
 The public CPU-build `torch.cuda` probe behavior remains unchanged.
 
 ### Layout/view ops

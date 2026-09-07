@@ -13,6 +13,8 @@ registered_backends = {}
 registered_backend_fns = {}
 native_eager_compile_caches = weakref.WeakSet()
 native_eager_compile_caches_lock = threading.Lock()
+native_cuda_compile_executors = weakref.WeakSet()
+native_cuda_compile_executors_lock = threading.Lock()
 
 
 class NativeEagerCompileCache:
@@ -34,8 +36,20 @@ def new_native_eager_compile_cache():
     return cache
 
 
+def register_native_cuda_compile_executor(executor):
+    with native_cuda_compile_executors_lock:
+        native_cuda_compile_executors.add(executor)
+    return executor
+
+
 def reset_compile_caches():
     with native_eager_compile_caches_lock:
         caches = tuple(native_eager_compile_caches)
     for cache in caches:
         cache.clear()
+    with native_cuda_compile_executors_lock:
+        executors = tuple(native_cuda_compile_executors)
+    for executor in executors:
+        close = getattr(executor, "close", None)
+        if close is not None:
+            close()

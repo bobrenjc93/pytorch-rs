@@ -84,6 +84,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/torch-compile-cpu-release-timings.md",
     ),
     (
+        "`torch.compile` H100 CUDA prepared-executor timings",
+        "docs/torch-compile-cuda-h100-release-timings.md",
+    ),
+    (
         "`Tensor.view`, reshape, flatten, ravel, unbind, and edge-unsqueeze release timings",
         "docs/tensor-view-release-timings.md",
     ),
@@ -131,7 +135,10 @@ HISTORICAL_TIMING_GROUPS = (
     ),
     (
         "Compilation",
-        ("docs/torch-compile-cpu-release-timings.md",),
+        (
+            "docs/torch-compile-cpu-release-timings.md",
+            "docs/torch-compile-cuda-h100-release-timings.md",
+        ),
     ),
     (
         "Layout/view ops",
@@ -436,7 +443,7 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "`torch.nn.functional.scaled_dot_product_attention`",
     "CUDA tensors",
     "actual attention-kernel dispatch",
-    "CUDA `torch.compile` execution",
+    "general CUDA `torch.compile` execution outside the private H100 benchmark path",
     "Device selection",
     "mutable default-device routing",
     "streams",
@@ -449,9 +456,16 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "PyTorch 2.13-shaped argument binding",
     "`disable=True` pass-through",
     "backend default/name resolution through the `torch.compiler` registry",
-    "native `backend=\"eager\", fullgraph=True` execution",
+    "native `backend=\"eager\"` execution for `fullgraph=True` "
+    "or no-break `fullgraph=False`",
     "straight-line one- or two-input CPU `float32` Tensor functions",
-    "Tensor `neg`, `abs`, `relu`, `square`, `detach`, and binary `add`",
+    "Tensor `neg`, `abs`, `relu`, `square`, `detach`, "
+    "zero-argument `float`, and binary `add`",
+    "module-global exact native CPU `float32` Tensor constants",
+    "captured-global identity/metadata recompilation",
+    "`Tensor.float()` identity graphlets that preserve values, shape, stride, "
+    "storage offset, device, dtype, and `requires_grad`",
+    "private benchmark-only H100 CUDA pointwise-reduce forward-output path",
     "storage-aliasing detach graphlets with `requires_grad=False` outputs",
     "square decomposition graphlets",
     "Tensor broadcasting",
@@ -460,7 +474,7 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "eager fallback",
     "installed-PyTorch forwarding",
     "callable backend invocation",
-    "inductor/CUDA compilation",
+    "general inductor/CUDA compilation",
     "Full module",
     "optimizer",
     "model-serialization",

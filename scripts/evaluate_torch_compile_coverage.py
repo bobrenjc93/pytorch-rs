@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import dis
 import hashlib
 import inspect
 from collections import defaultdict
@@ -18,14 +19,15 @@ import platform
 import subprocess
 import sys
 import traceback
+import types
 import warnings
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CORPUS_PATH = REPOSITORY_ROOT / "tests" / "test_compile_corpus.py"
 EVALUATION_ID = "eval_a61c0e71"
-EVALUATOR_VERSION = "torch_compile_program_coverage_evaluator_v3"
-EXPECTED_CORPUS_VERSION = "torch_compile_corpus_v8"
+EVALUATOR_VERSION = "torch_compile_program_coverage_evaluator_v9"
+EXPECTED_CORPUS_VERSION = "torch_compile_corpus_v13"
 REFERENCE_PYTORCH_VERSION = "2.13.0"
 EXPECTED_CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
@@ -47,13 +49,15 @@ REQUIRED_CATEGORIES = tuple(EXPECTED_CATEGORY_WEIGHTS)
 EXPECTED_PUBLIC_GUARD_SCENARIOS = (
     "unary_shape_stride_requires_grad_guards",
     "binary_argument_metadata_guards",
+    "requires_grad_branch_unary_cache",
     "bounded_limit_then_reset",
 )
 EXPECTED_HELD_OUT_GUARD_SCENARIOS = (
+    "heldout_requires_grad_branch_binary_cache",
     "heldout_unary_rank3_metadata_mix",
     "heldout_binary_broadcast_metadata_mix",
 )
-EXPECTED_V8_CASE_MANIFEST = (
+EXPECTED_V13_CASE_MANIFEST = (
     {
         "name": "cpu_float32_unary_abs_neg",
         "held_out": False,
@@ -171,6 +175,24 @@ EXPECTED_V8_CASE_MANIFEST = (
         "run_under_no_grad": False,
     },
     {
+        "name": "cpu_float32_float_identity_view",
+        "held_out": False,
+        "category": "dtype_device_transitions",
+        "program": "cpu_float32_float_identity_view",
+        "program_sha256": "8ba3f0f1ac4bb7d96a2509a397daddb511b83f15a7b252eb1504fc20d0f34895",
+        "make_inputs": "cpu_float32_float_identity_view_inputs",
+        "make_inputs_sha256": "bdd401b4335ce587640c7409f5fee7802733415eb3c5220025fa2ee2bf648bd6",
+        "inputs_sha256": "924af58460b92ff3526e16d8cdbf6cd6862e3850c206e4d1dcbfb086df93e661",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
         "name": "cpu_float32_training_unary_neg_abs_add",
         "held_out": False,
         "category": "training_autograd",
@@ -202,6 +224,96 @@ EXPECTED_V8_CASE_MANIFEST = (
         "mode": None,
         "options": None,
         "recompile_limit": None,
+    },
+    {
+        "name": "cpu_float32_custom_function_unary",
+        "held_out": False,
+        "category": "custom_functions",
+        "program": "cpu_float32_custom_function_unary",
+        "program_sha256": "96792748da19fd7caece093cc0637aa52381ffb1530bdbba8242674a955498c7",
+        "helper_sha256s": (
+            {
+                "name": "cpu_float32_custom_helper_unary",
+                "source_sha256": "367af78a9f85d31f7b3ec1049c1b87f760fbe16cc2464859ae722e9d7bbbc1c8",
+            },
+        ),
+        "make_inputs": "cpu_float32_unary_inputs",
+        "make_inputs_sha256": "78d76dd56238040acfb24345f6352613a13241d7e3987242e99e714ddc9a2941",
+        "inputs_sha256": "f71a81f2dd2217a12f7e7c8f0ead4762503a322baabc68e565aae6142e56c973",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+    },
+    {
+        "name": "cpu_float32_requires_grad_branch_unary",
+        "held_out": False,
+        "category": "python_control_flow",
+        "program": "cpu_float32_requires_grad_branch_unary",
+        "program_sha256": "d32515c11079b8b24c3d043162eed47422828c3f77f5afcb848f51ca1f593ac5",
+        "make_inputs": "cpu_float32_control_flow_requires_grad_false_inputs",
+        "make_inputs_sha256": "fc6e0b56689ee7e83d8762fa86e52a3362e9456416818403c85799d45320f170",
+        "inputs_sha256": "45bc0581ad4e4b64a4752682357d741919fd0a4a7bc62b1ddb4b74761fb98b64",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
+        "name": "cpu_float32_dynamic_true_shape_stride_unary",
+        "held_out": False,
+        "category": "dynamic_shapes_symbolics",
+        "program": "cpu_float32_dynamic_true_shape_stride_unary",
+        "program_sha256": "f137e6cda518e19a5930969afa8619c4811ce95fe3220e287497c1474d35e0c5",
+        "helper_sha256s": (),
+        "make_inputs": "cpu_float32_dynamic_unary_inputs",
+        "make_inputs_sha256": "92650062d02912e7b1d5bf7a2ed5e0f6aeb6af0fec19e1570cccd2c634378112",
+        "inputs_sha256": "82b41d55019065d727680b04be27245d7a9addb226b9485f0bbe4a74d50ab2ed",
+        "dynamic_input_factories": (
+            {
+                "name": "cpu_float32_dynamic_unary_shape_inputs",
+                "make_inputs_sha256": "8dcc412441dc404c9d9bf5c976eb7d102d1cdaa6b452c9f23aa5e2c0cdaabf85",
+                "inputs_sha256": "0e326386f2acce704e19157257900f5690617ff17c5c71667f3b23daa1536ad6",
+            },
+            {
+                "name": "cpu_float32_dynamic_unary_stride_inputs",
+                "make_inputs_sha256": "d1ecd6be4f4edb2a92b9fbe41993a10e4392a2e6b0b91a7a53d3c45815850173",
+                "inputs_sha256": "58edd97ea8408af86412a78f1fbc375ad32369c774e13631ed12aa026378e922",
+            },
+        ),
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": True,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
+        "name": "cpu_float32_fullgraph_false_no_break_unary",
+        "held_out": False,
+        "category": "graph_breaks_fullgraph",
+        "program": "cpu_float32_fullgraph_false_no_break_unary",
+        "program_sha256": "85fefe7872bfcbf641b387a48347695f73faad2f9f7dfe2e05b644611d7b8af1",
+        "helper_sha256s": (),
+        "make_inputs": "cpu_float32_unary_inputs",
+        "make_inputs_sha256": "78d76dd56238040acfb24345f6352613a13241d7e3987242e99e714ddc9a2941",
+        "inputs_sha256": "f71a81f2dd2217a12f7e7c8f0ead4762503a322baabc68e565aae6142e56c973",
+        "arity": 1,
+        "fullgraph": False,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
     },
     {
         "name": "cpu_float32_matrix_vector_add",
@@ -266,6 +378,42 @@ EXPECTED_V8_CASE_MANIFEST = (
         "mode": None,
         "options": None,
         "recompile_limit": None,
+    },
+    {
+        "name": "cpu_float32_global_buffer_add",
+        "held_out": False,
+        "category": "modules_parameters_buffers",
+        "program": "cpu_float32_global_buffer_add",
+        "program_sha256": "c8d340ebd547ab4d06655ab823bbfbad1c28820fa09585506edab6b915677879",
+        "make_inputs": "cpu_float32_global_buffer_add_inputs",
+        "make_inputs_sha256": "91f8d2e1ccf96f3720f46f6c2d06830384ccf262130a47ac4aecf36b814920f1",
+        "inputs_sha256": "537513ca52a53b9a87859027e1aa0b82d11fbd62d732cd56503a16045e3add20",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
+        "name": "cpu_float32_tuple_list_output_pytree",
+        "held_out": False,
+        "category": "containers_pytrees",
+        "program": "cpu_float32_tuple_list_output_pytree",
+        "program_sha256": "6c3834c354197af76f9c39cfbe67fc249b06293498a2210507357f7c4bcbbb3c",
+        "make_inputs": "cpu_float32_matrix_vector_requires_grad_inputs",
+        "make_inputs_sha256": "b26daf5a5a8139b4088b90b730acfe49a8b6ad17586f3b62a0ac08a5a67d15bd",
+        "inputs_sha256": "f00763fcf40a4156959ed9feeb4c8c167308c72ef946d8c9243fa3571ea17cad",
+        "arity": 2,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
     },
     {
         "name": "cpu_float32_recompile_guard_unary_metadata",
@@ -348,6 +496,24 @@ EXPECTED_V8_CASE_MANIFEST = (
         "recompile_limit": None,
     },
     {
+        "name": "cpu_float32_heldout_global_weight_unary_add",
+        "held_out": True,
+        "category": "modules_parameters_buffers",
+        "program": "cpu_float32_heldout_global_weight_unary_add",
+        "program_sha256": "c564334680e4ff91cd13c4f6e357b023f0c1ff3a557b2787fe23c975389794cf",
+        "make_inputs": "cpu_float32_heldout_global_weight_unary_add_inputs",
+        "make_inputs_sha256": "acd670aa69fcb9029b0d97c869541dd2f5158cd9e1832f8e95c0c0224a614a2f",
+        "inputs_sha256": "3309d6bd5a238d115949a526c1b45db0a2a736d84a88de584b9ead464649a750",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
         "name": "cpu_float32_heldout_training_broadcast_neg_abs_add",
         "held_out": True,
         "category": "training_autograd",
@@ -401,6 +567,42 @@ EXPECTED_V8_CASE_MANIFEST = (
         "run_under_no_grad": False,
     },
     {
+        "name": "cpu_float32_heldout_float_identity_rank3_view",
+        "held_out": True,
+        "category": "dtype_device_transitions",
+        "program": "cpu_float32_heldout_float_identity_rank3_view",
+        "program_sha256": "2045e4af858790176580ef8c1af7e6497473ad15e5a837497cb09bb73edd8894",
+        "make_inputs": "cpu_float32_heldout_float_identity_rank3_view_inputs",
+        "make_inputs_sha256": "51d4c762c92f169dfc952544cdd0d68a7eb92c7fbdf1a0a3b4ca0d3366c4d948",
+        "inputs_sha256": "34435fe0d3c5b6aa7673bc0ad4e6f21ddac24806ed7a9d0479afd8456298067f",
+        "arity": 1,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
+        "name": "cpu_float32_heldout_list_tuple_output_pytree",
+        "held_out": True,
+        "category": "containers_pytrees",
+        "program": "cpu_float32_heldout_list_tuple_output_pytree",
+        "program_sha256": "9ab6081406c70b563bc73d7618ce8520c79076fb7180c5ea2d4145a5921cbd42",
+        "make_inputs": "cpu_float32_scalar_tensor_inputs",
+        "make_inputs_sha256": "c97640885d694619d8c2340c608f248037c130b005f1bb45870372ed780f0710",
+        "inputs_sha256": "b5e285646fc9ea682ce87d90ab4723e40fe3243462c8e90919686fe09ad9b162",
+        "arity": 2,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
         "name": "cpu_float32_heldout_decomposition_square_noncontiguous",
         "held_out": True,
         "category": "decompositions",
@@ -415,6 +617,96 @@ EXPECTED_V8_CASE_MANIFEST = (
         "mode": None,
         "options": None,
         "recompile_limit": None,
+    },
+    {
+        "name": "cpu_float32_heldout_custom_function_binary",
+        "held_out": True,
+        "category": "custom_functions",
+        "program": "cpu_float32_heldout_custom_function_binary",
+        "program_sha256": "c08684ddd98deea174e30da02934b38e8bcfe674628a53b8ba567b84e104ad7b",
+        "helper_sha256s": (
+            {
+                "name": "cpu_float32_heldout_custom_helper_binary",
+                "source_sha256": "4eb7bd75d1edb201809e884e0104f8848b2cf72d8e17e73484e9674abc8ed6bd",
+            },
+        ),
+        "make_inputs": "cpu_float32_matrix_vector_inputs",
+        "make_inputs_sha256": "9eeb639db07e0bcd5e5cb6eb28a5c860fdce8c8413ef63134434beac71c5f54c",
+        "inputs_sha256": "efde735c565edf1b5d5a841bca907124c22358cdcb27c7face8bed09dc4e78e7",
+        "arity": 2,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+    },
+    {
+        "name": "cpu_float32_heldout_requires_grad_branch_binary",
+        "held_out": True,
+        "category": "python_control_flow",
+        "program": "cpu_float32_heldout_requires_grad_branch_binary",
+        "program_sha256": "a6c8fd10376c28928b2a6f341edc2f6b7590a17257a8068a4dd66168dd7e12ce",
+        "make_inputs": "cpu_float32_heldout_control_flow_requires_grad_false_inputs",
+        "make_inputs_sha256": "c4d0607c9d4758aea3e21110756b869a4f4276cb65c30c1cfd885b06410c18da",
+        "inputs_sha256": "d10f538dcc605a7a97347eb7e0ab4fe39997ca36b6ae09612ed2494fcbaf736f",
+        "arity": 2,
+        "fullgraph": True,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
+        "name": "cpu_float32_heldout_dynamic_false_binary",
+        "held_out": True,
+        "category": "dynamic_shapes_symbolics",
+        "program": "cpu_float32_heldout_dynamic_false_binary",
+        "program_sha256": "3b7c912f2a939b8030cd59333ea9f4558969fbed34ceb33ebdd205424164b43c",
+        "helper_sha256s": (),
+        "make_inputs": "cpu_float32_heldout_dynamic_binary_inputs",
+        "make_inputs_sha256": "f9914ef44bf0d28e60f4c66a2c751bc1843268a3d368beb1028ba870eb1ca3c1",
+        "inputs_sha256": "b579ead3fb4d0a6ff86a28695aed233adfb10919b601c70d292caf97acfb3446",
+        "dynamic_input_factories": (
+            {
+                "name": "cpu_float32_heldout_dynamic_binary_shape_inputs",
+                "make_inputs_sha256": "56a34e5f36f3d7349e1cf4dbc509929a39013cab11b23b92c31b105baecf49f5",
+                "inputs_sha256": "7bed9745fe77e5b037cf1a068f6623b6b90601e6fcc75405dc1a513744f82360",
+            },
+            {
+                "name": "cpu_float32_heldout_dynamic_binary_stride_inputs",
+                "make_inputs_sha256": "8de57bd7b09be145d3517a53dd926df6579ffdd8e52b3c2054f464d9ae4ed917",
+                "inputs_sha256": "f053a43a21a78343dabd7993de52964346e28efc9830d4c3ae62eb57a1adb54d",
+            },
+        ),
+        "arity": 2,
+        "fullgraph": True,
+        "dynamic": False,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
+    },
+    {
+        "name": "cpu_float32_heldout_fullgraph_false_no_break_binary",
+        "held_out": True,
+        "category": "graph_breaks_fullgraph",
+        "program": "cpu_float32_heldout_fullgraph_false_no_break_binary",
+        "program_sha256": "b1932d7264db048f98daa6564b9bee506f0daac81315adf6ffe2d4d617a95569",
+        "helper_sha256s": (),
+        "make_inputs": "cpu_float32_matrix_vector_inputs",
+        "make_inputs_sha256": "9eeb639db07e0bcd5e5cb6eb28a5c860fdce8c8413ef63134434beac71c5f54c",
+        "inputs_sha256": "efde735c565edf1b5d5a841bca907124c22358cdcb27c7face8bed09dc4e78e7",
+        "arity": 2,
+        "fullgraph": False,
+        "dynamic": None,
+        "mode": None,
+        "options": None,
+        "recompile_limit": None,
+        "backward_through_sum": False,
+        "run_under_no_grad": False,
     },
     {
         "name": "cpu_float32_heldout_guard_unary_metadata",
@@ -449,7 +741,7 @@ EXPECTED_V8_CASE_MANIFEST = (
         "recompile_limit": 4,
     },
 )
-EXPECTED_V8_GUARD_SCENARIO_MANIFEST = (
+EXPECTED_V13_GUARD_SCENARIO_MANIFEST = (
     {
         "name": "unary_shape_stride_requires_grad_guards",
         "held_out": False,
@@ -565,6 +857,43 @@ EXPECTED_V8_GUARD_SCENARIO_MANIFEST = (
         ),
     },
     {
+        "name": "requires_grad_branch_unary_cache",
+        "held_out": False,
+        "case_name": "cpu_float32_requires_grad_branch_unary",
+        "steps": (
+            {
+                "name": "false_branch",
+                "make_inputs": "cpu_float32_control_flow_requires_grad_false_inputs",
+                "make_inputs_sha256": "fc6e0b56689ee7e83d8762fa86e52a3362e9456416818403c85799d45320f170",
+                "inputs_sha256": "45bc0581ad4e4b64a4752682357d741919fd0a4a7bc62b1ddb4b74761fb98b64",
+                "guard_change": "initial",
+                "expected_compile_count": 1,
+                "reset_before": False,
+                "expect_limit_error": False,
+            },
+            {
+                "name": "same_false_metadata",
+                "make_inputs": "cpu_float32_control_flow_requires_grad_false_inputs",
+                "make_inputs_sha256": "fc6e0b56689ee7e83d8762fa86e52a3362e9456416818403c85799d45320f170",
+                "inputs_sha256": "45bc0581ad4e4b64a4752682357d741919fd0a4a7bc62b1ddb4b74761fb98b64",
+                "guard_change": "same_metadata",
+                "expected_compile_count": 1,
+                "reset_before": False,
+                "expect_limit_error": False,
+            },
+            {
+                "name": "true_branch",
+                "make_inputs": "cpu_float32_control_flow_requires_grad_true_inputs",
+                "make_inputs_sha256": "5958cb3be400344b74dc3f8e50761aa3fc8207a8fd0ce698397df9d135ab0ae8",
+                "inputs_sha256": "d28d2c7fba11ed6ce0f83af22ed44979aca58ccdc62900ba1099827577af7169",
+                "guard_change": "requires_grad",
+                "expected_compile_count": 2,
+                "reset_before": False,
+                "expect_limit_error": False,
+            },
+        ),
+    },
+    {
         "name": "bounded_limit_then_reset",
         "held_out": False,
         "case_name": "cpu_float32_recompile_limit_reset",
@@ -617,6 +946,43 @@ EXPECTED_V8_GUARD_SCENARIO_MANIFEST = (
                 "guard_change": "reset",
                 "expected_compile_count": 3,
                 "reset_before": True,
+                "expect_limit_error": False,
+            },
+        ),
+    },
+    {
+        "name": "heldout_requires_grad_branch_binary_cache",
+        "held_out": True,
+        "case_name": "cpu_float32_heldout_requires_grad_branch_binary",
+        "steps": (
+            {
+                "name": "false_branch",
+                "make_inputs": "cpu_float32_heldout_control_flow_requires_grad_false_inputs",
+                "make_inputs_sha256": "c4d0607c9d4758aea3e21110756b869a4f4276cb65c30c1cfd885b06410c18da",
+                "inputs_sha256": "d10f538dcc605a7a97347eb7e0ab4fe39997ca36b6ae09612ed2494fcbaf736f",
+                "guard_change": "initial",
+                "expected_compile_count": 1,
+                "reset_before": False,
+                "expect_limit_error": False,
+            },
+            {
+                "name": "true_branch",
+                "make_inputs": "cpu_float32_heldout_control_flow_requires_grad_true_inputs",
+                "make_inputs_sha256": "be9f33ab1287cf4093e391c1bfe0e6ffd47305d98aa069f49629386bd3a295b0",
+                "inputs_sha256": "12a9408be1920daf3d18e8002cea1cab121022b34f10b9222a67570ff608e6a0",
+                "guard_change": "requires_grad",
+                "expected_compile_count": 2,
+                "reset_before": False,
+                "expect_limit_error": False,
+            },
+            {
+                "name": "same_true_metadata",
+                "make_inputs": "cpu_float32_heldout_control_flow_requires_grad_true_inputs",
+                "make_inputs_sha256": "be9f33ab1287cf4093e391c1bfe0e6ffd47305d98aa069f49629386bd3a295b0",
+                "inputs_sha256": "12a9408be1920daf3d18e8002cea1cab121022b34f10b9222a67570ff608e6a0",
+                "guard_change": "same_metadata",
+                "expected_compile_count": 2,
+                "reset_before": False,
                 "expect_limit_error": False,
             },
         ),
@@ -818,6 +1184,74 @@ def _callable_name(callable_object):
     return getattr(callable_object, "__name__", None)
 
 
+def _instruction_global_name(instruction):
+    name = instruction.argval
+    if type(name) is str and name:
+        return name
+    argrepr = str(instruction.argrepr).strip()
+    if argrepr.startswith("NULL + "):
+        argrepr = argrepr[7:].strip()
+    return argrepr or None
+
+
+def _same_module_helper_functions(program):
+    globals_dict = getattr(program, "__globals__", None)
+    if type(globals_dict) is not dict:
+        return ()
+    module_name = getattr(program, "__module__", None)
+    helpers = []
+    seen = set()
+    for instruction in dis.get_instructions(program):
+        if instruction.opname != "LOAD_GLOBAL":
+            continue
+        name = _instruction_global_name(instruction)
+        if name is None:
+            continue
+        helper = globals_dict.get(name)
+        if type(helper) is not types.FunctionType:
+            continue
+        if helper.__globals__ is not globals_dict or helper.__module__ != module_name:
+            continue
+        if globals_dict.get(helper.__name__) is not helper:
+            continue
+        if helper in seen:
+            continue
+        seen.add(helper)
+        helpers.append(helper)
+    return tuple(helpers)
+
+
+def _helper_manifest_entries(program, *, errors, context):
+    return tuple(
+        {
+            "name": helper.__name__,
+            "source_sha256": _source_sha256(
+                helper,
+                errors=errors,
+                context=f"{context} helper {helper.__name__}",
+            ),
+        }
+        for helper in _same_module_helper_functions(program)
+    )
+
+
+def _input_factory_manifest_entry(make_inputs, tensor_module, *, errors, context):
+    return {
+        "name": _callable_name(make_inputs),
+        "make_inputs_sha256": _source_sha256(
+            make_inputs,
+            errors=errors,
+            context=context,
+        ),
+        "inputs_sha256": _inputs_sha256(
+            make_inputs,
+            tensor_module,
+            errors=errors,
+            context=context,
+        ),
+    }
+
+
 def _validate_module_level_callable(corpus_module, callable_object, *, context, errors):
     callable_name = _callable_name(callable_object)
     if type(callable_name) is not str or not callable_name:
@@ -851,6 +1285,75 @@ def _inputs_sha256(make_inputs, tensor_module, *, errors, context):
         return None
 
 
+def _input_metadata_signature(make_inputs, tensor_module, *, errors, context):
+    if tensor_module is None or not callable(make_inputs):
+        return None
+    try:
+        payloads = _inputs_payload(make_inputs(tensor_module))
+    except Exception as error:
+        errors.append(f"{context} input metadata failed: {_exception_line(error)}")
+        return None
+    return tuple(
+        (
+            tuple(payload["metadata"]["shape"]),
+            tuple(payload["metadata"]["stride"]),
+            payload["metadata"]["dtype"],
+            payload["metadata"]["device"],
+            payload["metadata"]["requires_grad"],
+        )
+        for payload in payloads
+    )
+
+
+def _validate_dynamic_input_metadata(
+    name,
+    make_inputs,
+    dynamic_input_factories,
+    *,
+    tensor_module,
+    dynamic,
+    errors,
+):
+    metadatas = []
+    for index, input_factory in enumerate((make_inputs, *dynamic_input_factories)):
+        metadata = _input_metadata_signature(
+            input_factory,
+            tensor_module,
+            errors=errors,
+            context=f"{name} dynamic input factory {index}",
+        )
+        if metadata is not None:
+            metadatas.append(metadata)
+
+    if len(metadatas) != 1 + len(dynamic_input_factories):
+        return
+    if len(set(metadatas)) != len(metadatas):
+        errors.append(f"{name} dynamic input factories must use unique metadata")
+
+    shape_signatures = {
+        tuple(tensor_metadata[0] for tensor_metadata in metadata)
+        for metadata in metadatas
+    }
+    stride_signatures = {
+        tuple(tensor_metadata[1] for tensor_metadata in metadata)
+        for metadata in metadatas
+    }
+    if len(shape_signatures) < 2:
+        errors.append(f"{name} dynamic input factories must vary shape metadata")
+    if len(stride_signatures) < 2:
+        errors.append(f"{name} dynamic input factories must vary stride metadata")
+
+    if dynamic is True:
+        rank_signatures = {
+            tuple(len(tensor_metadata[0]) for tensor_metadata in metadata)
+            for metadata in metadatas
+        }
+        if len(rank_signatures) != 1:
+            errors.append(
+                f"{name} dynamic=True input factories must keep input ranks stable"
+            )
+
+
 def _case_manifest_entry(corpus_module, case, *, held_out, tensor_module, errors):
     program = getattr(case, "program", None)
     make_inputs = getattr(case, "make_inputs", None)
@@ -866,6 +1369,29 @@ def _case_manifest_entry(corpus_module, case, *, held_out, tensor_module, errors
         context=f"{getattr(case, 'name', '<unnamed>')} input factory",
         errors=errors,
     )
+    dynamic_input_factories = tuple(getattr(case, "dynamic_input_factories", ()))
+    dynamic_input_factory_entries = []
+    for index, dynamic_make_inputs in enumerate(dynamic_input_factories):
+        _validate_module_level_callable(
+            corpus_module,
+            dynamic_make_inputs,
+            context=(
+                f"{getattr(case, 'name', '<unnamed>')} dynamic input factory "
+                f"{index}"
+            ),
+            errors=errors,
+        )
+        dynamic_input_factory_entries.append(
+            _input_factory_manifest_entry(
+                dynamic_make_inputs,
+                tensor_module,
+                errors=errors,
+                context=(
+                    f"{getattr(case, 'name', '<unnamed>')} dynamic input "
+                    f"factory {index}"
+                ),
+            )
+        )
     code = getattr(program, "__code__", None)
     return {
         "name": getattr(case, "name", None),
@@ -873,6 +1399,11 @@ def _case_manifest_entry(corpus_module, case, *, held_out, tensor_module, errors
         "category": getattr(case, "category", None),
         "program": program_name,
         "program_sha256": _source_sha256(
+            program,
+            errors=errors,
+            context=f"{getattr(case, 'name', '<unnamed>')} program",
+        ),
+        "helper_sha256s": _helper_manifest_entries(
             program,
             errors=errors,
             context=f"{getattr(case, 'name', '<unnamed>')} program",
@@ -889,6 +1420,7 @@ def _case_manifest_entry(corpus_module, case, *, held_out, tensor_module, errors
             errors=errors,
             context=f"{getattr(case, 'name', '<unnamed>')} input factory",
         ),
+        "dynamic_input_factories": tuple(dynamic_input_factory_entries),
         "arity": code.co_argcount if code is not None else None,
         "fullgraph": getattr(case, "fullgraph", None),
         "dynamic": getattr(case, "dynamic", None),
@@ -983,19 +1515,19 @@ def _compare_manifest_entry(actual, expected, *, context, errors):
 
 def _expected_case_manifest(held_out):
     return tuple(
-        entry for entry in EXPECTED_V8_CASE_MANIFEST if entry["held_out"] is held_out
+        entry for entry in EXPECTED_V13_CASE_MANIFEST if entry["held_out"] is held_out
     )
 
 
 def _expected_guard_scenario_manifest(held_out):
     return tuple(
         entry
-        for entry in EXPECTED_V8_GUARD_SCENARIO_MANIFEST
+        for entry in EXPECTED_V13_GUARD_SCENARIO_MANIFEST
         if entry["held_out"] is held_out
     )
 
 
-def _validate_v8_case_manifest(
+def _validate_v13_case_manifest(
     corpus_module,
     cases,
     *,
@@ -1009,7 +1541,7 @@ def _validate_v8_case_manifest(
     actual_names = [getattr(case, "name", None) for case in cases]
     if actual_names != expected_names:
         errors.append(
-            f"{label} v8 case names/order changed: {actual_names!r} != {expected_names!r}"
+            f"{label} v13 case names/order changed: {actual_names!r} != {expected_names!r}"
         )
 
     expected_by_name = {entry["name"]: entry for entry in expected_entries}
@@ -1027,12 +1559,12 @@ def _validate_v8_case_manifest(
         _compare_manifest_entry(
             actual_entry,
             expected_entry,
-            context=f"{label} v8 case {case.name}",
+            context=f"{label} v13 case {case.name}",
             errors=errors,
         )
 
 
-def _validate_v8_guard_scenario_manifest(
+def _validate_v13_guard_scenario_manifest(
     corpus_module,
     scenarios,
     *,
@@ -1046,7 +1578,7 @@ def _validate_v8_guard_scenario_manifest(
     actual_names = [getattr(scenario, "name", None) for scenario in scenarios]
     if actual_names != expected_names:
         errors.append(
-            f"{label} v8 guard scenarios changed: {actual_names!r} != {expected_names!r}"
+            f"{label} v13 guard scenarios changed: {actual_names!r} != {expected_names!r}"
         )
 
     expected_by_name = {entry["name"]: entry for entry in expected_entries}
@@ -1064,7 +1596,7 @@ def _validate_v8_guard_scenario_manifest(
         _compare_manifest_entry(
             actual_entry,
             expected_entry,
-            context=f"{label} v8 guard scenario {scenario.name}",
+            context=f"{label} v13 guard scenario {scenario.name}",
             errors=errors,
         )
 
@@ -1104,10 +1636,11 @@ def _validate_corpus_metadata(corpus_module):
 
     public_cases = tuple(getattr(corpus_module, "COMPILE_CORPUS", ()))
     held_out_cases = tuple(getattr(corpus_module, "COMPILE_HELD_OUT_CORPUS", ()))
-    if len(public_cases) != 16:
-        errors.append(f"expected 16 public v8 cases, found {len(public_cases)}")
-    if len(held_out_cases) != 8:
-        errors.append(f"expected 8 held-out v8 cases, found {len(held_out_cases)}")
+    tensor_module = _manifest_tensor_module(corpus_module, errors)
+    if len(public_cases) != 23:
+        errors.append(f"expected 23 public v13 cases, found {len(public_cases)}")
+    if len(held_out_cases) != 15:
+        errors.append(f"expected 15 held-out v13 cases, found {len(held_out_cases)}")
 
     seen_names = set()
     for case in (*public_cases, *held_out_cases):
@@ -1130,9 +1663,41 @@ def _validate_corpus_metadata(corpus_module):
             errors.append(f"{name} program is not an exact Python function")
         elif code.co_argcount not in (1, 2):
             errors.append(f"{name} has unsupported arity {code.co_argcount}")
-        if getattr(case, "fullgraph", None) is not True:
+        fullgraph = getattr(case, "fullgraph", None)
+        if category == "graph_breaks_fullgraph":
+            if fullgraph is not False:
+                errors.append(f"{name} must use fullgraph=False")
+        elif fullgraph is not True:
             errors.append(f"{name} must use fullgraph=True")
-        for option_name in ("dynamic", "mode", "options"):
+        dynamic = getattr(case, "dynamic", None)
+        dynamic_input_factories = tuple(
+            getattr(case, "dynamic_input_factories", ())
+        )
+        if category == "dynamic_shapes_symbolics":
+            if type(dynamic) is not bool:
+                errors.append(f"{name} must set dynamic=True or dynamic=False")
+            if len(dynamic_input_factories) < 2:
+                errors.append(
+                    f"{name} must define at least two dynamic input factories"
+                )
+        else:
+            if dynamic is not None:
+                errors.append(f"{name} has unsupported dynamic metadata")
+            if dynamic_input_factories:
+                errors.append(f"{name} has unexpected dynamic input factories")
+        for input_factory in dynamic_input_factories:
+            if not callable(input_factory):
+                errors.append(f"{name} has non-callable dynamic input factory")
+        if category == "dynamic_shapes_symbolics":
+            _validate_dynamic_input_metadata(
+                name,
+                make_inputs,
+                dynamic_input_factories,
+                tensor_module=tensor_module,
+                dynamic=dynamic,
+                errors=errors,
+            )
+        for option_name in ("mode", "options"):
             if getattr(case, option_name, None) is not None:
                 errors.append(f"{name} has unsupported {option_name!s} metadata")
         recompile_limit = getattr(case, "recompile_limit", None)
@@ -1165,11 +1730,11 @@ def _validate_corpus_metadata(corpus_module):
         getattr(corpus_module, "COMPILE_HELD_OUT_RECOMPILATION_GUARD_SCENARIOS", ())
     )
     if _guard_scenario_names(public_scenarios) != list(EXPECTED_PUBLIC_GUARD_SCENARIOS):
-        errors.append("public recompilation guard scenarios do not match v8")
+        errors.append("public recompilation guard scenarios do not match v13")
     if _guard_scenario_names(held_out_scenarios) != list(
         EXPECTED_HELD_OUT_GUARD_SCENARIOS
     ):
-        errors.append("held-out recompilation guard scenarios do not match v8")
+        errors.append("held-out recompilation guard scenarios do not match v13")
     for scenario in (*public_scenarios, *held_out_scenarios):
         scenario_name = getattr(scenario, "name", None)
         case_name = getattr(scenario, "case_name", None)
@@ -1193,29 +1758,28 @@ def _validate_corpus_metadata(corpus_module):
                 )
             last_compile_count = expected_count if type(expected_count) is int else 0
 
-    tensor_module = _manifest_tensor_module(corpus_module, errors)
-    _validate_v8_case_manifest(
+    _validate_v13_case_manifest(
         corpus_module,
         public_cases,
         held_out=False,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v8_case_manifest(
+    _validate_v13_case_manifest(
         corpus_module,
         held_out_cases,
         held_out=True,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v8_guard_scenario_manifest(
+    _validate_v13_guard_scenario_manifest(
         corpus_module,
         public_scenarios,
         held_out=False,
         tensor_module=tensor_module,
         errors=errors,
     )
-    _validate_v8_guard_scenario_manifest(
+    _validate_v13_guard_scenario_manifest(
         corpus_module,
         held_out_scenarios,
         held_out=True,
@@ -1242,6 +1806,41 @@ def _tensor_payload(tensor):
         },
         "values": tensor.tolist(),
     }
+
+
+def _is_output_container(value):
+    return type(value) in (tuple, list)
+
+
+def _output_payload(output):
+    if _is_output_container(output):
+        return {
+            "container": type(output).__name__,
+            "elements": [_output_payload(element) for element in output],
+        }
+    return _tensor_payload(output)
+
+
+def _output_tensor_leaves(output):
+    if _is_output_container(output):
+        for element in output:
+            yield from _output_tensor_leaves(element)
+        return
+    yield output
+
+
+def _output_requires_grad(output):
+    return any(tensor.requires_grad for tensor in _output_tensor_leaves(output))
+
+
+def _output_sum(output):
+    leaves = tuple(_output_tensor_leaves(output))
+    if not leaves:
+        raise AssertionError("compile corpus output must contain a Tensor leaf")
+    total = leaves[0].sum()
+    for leaf in leaves[1:]:
+        total = total + leaf.sum()
+    return total
 
 
 def _inputs_payload(inputs):
@@ -1311,6 +1910,27 @@ def _compile_kwargs_from_case(case, backend):
     return kwargs
 
 
+def _case_input_factories(case):
+    return (case.make_inputs, *tuple(getattr(case, "dynamic_input_factories", ())))
+
+
+def _compile_cache_signature(inputs, *, dynamic):
+    signature = []
+    for input in inputs:
+        shape = tuple(input.shape)
+        shape_guard = len(shape) if dynamic is True else shape
+        signature.append(
+            (
+                shape_guard,
+                tuple(input.stride()),
+                str(input.dtype),
+                str(input.device),
+                bool(input.requires_grad),
+            )
+        )
+    return tuple(signature)
+
+
 def _make_recording_backend(calls):
     def backend(graph_module, example_inputs):
         calls.append((graph_module, example_inputs))
@@ -1342,7 +1962,7 @@ def _reference_case_result(reference_torch, case):
     expected = _run_case_program(reference_torch, case, expected_inputs)
     expected_gradients = None
     if backward_through_sum:
-        expected.sum().backward()
+        _output_sum(expected).backward()
         expected_gradients = _leaf_gradients_payload(expected_inputs)
     if check_input_gradients:
         _assert_payload_match(
@@ -1358,8 +1978,8 @@ def _reference_case_result(reference_torch, case):
     after_forward_inputs = _inputs_payload(inputs)
 
     _assert_payload_match(
-        _tensor_payload(actual),
-        _tensor_payload(expected),
+        _output_payload(actual),
+        _output_payload(expected),
         label=f"{case.name}/reference",
     )
     _assert_payload_match(
@@ -1384,11 +2004,11 @@ def _reference_case_result(reference_torch, case):
         if actual.requires_grad:
             raise AssertionError(f"{case.name} detach reference output requires grad")
     if run_under_no_grad:
-        if actual.requires_grad:
+        if _output_requires_grad(actual):
             raise AssertionError(f"{case.name} no-grad reference output requires grad")
     actual_gradients = None
     if backward_through_sum:
-        actual.sum().backward()
+        _output_sum(actual).backward()
         actual_gradients = _leaf_gradients_payload(inputs)
         _assert_payload_match(
             actual_gradients,
@@ -1400,12 +2020,41 @@ def _reference_case_result(reference_torch, case):
             before_inputs,
             label=f"{case.name}/inputs_after_backward",
         )
+    variant_outputs = []
+    for variant_index, make_inputs in enumerate(
+        _case_input_factories(case)[1:],
+        start=1,
+    ):
+        variant_inputs = make_inputs(reference_torch)
+        before_variant_inputs = _inputs_payload(variant_inputs)
+        variant_expected = _run_case_program(
+            reference_torch,
+            case,
+            make_inputs(reference_torch),
+        )
+        variant_actual = _run_case_callable(
+            reference_torch,
+            case,
+            compiled,
+            variant_inputs,
+        )
+        _assert_payload_match(
+            _output_payload(variant_actual),
+            _output_payload(variant_expected),
+            label=f"{case.name}/dynamic_variant_{variant_index}/reference",
+        )
+        _assert_payload_match(
+            _inputs_payload(variant_inputs),
+            before_variant_inputs,
+            label=f"{case.name}/dynamic_variant_{variant_index}/inputs",
+        )
+        variant_outputs.append(_output_payload(variant_actual))
     if len(backend_calls) < 1:
         raise AssertionError(f"{case.name} did not invoke the reference backend")
     result = {
         "name": case.name,
         "category": case.category,
-        "output": _tensor_payload(actual),
+        "output": _output_payload(actual),
         "input_count": len(inputs),
         "backend_call_count": len(backend_calls),
     }
@@ -1415,6 +2064,8 @@ def _reference_case_result(reference_torch, case):
         result["input_gradients"] = input_gradients
     if check_aliasing:
         result["output_aliases_inputs"] = _storage_alias_payload(actual, inputs)
+    if variant_outputs:
+        result["variant_outputs"] = variant_outputs
     return result
 
 
@@ -1460,8 +2111,8 @@ def _reference_guard_scenario_result(corpus_module, reference_torch, scenario):
         actual = _run_case_callable(reference_torch, case, compiled, inputs)
         after_inputs = _inputs_payload(inputs)
         _assert_payload_match(
-            _tensor_payload(actual),
-            _tensor_payload(expected),
+            _output_payload(actual),
+            _output_payload(expected),
             label=f"{scenario.name}/{step.name}/reference",
         )
         _assert_payload_match(
@@ -1474,7 +2125,7 @@ def _reference_guard_scenario_result(corpus_module, reference_torch, scenario):
                 "name": step.name,
                 "status": "ok",
                 "guard_change": step.guard_change,
-                "output": _tensor_payload(actual),
+                "output": _output_payload(actual),
             }
         )
 
@@ -1580,9 +2231,20 @@ def _candidate_compile_counters():
         "execute_compile_trace_graph": 0,
     }
 
-    def counting_lower_compile_graph(program, input_metadatas, *, name=None):
+    def counting_lower_compile_graph(
+        program,
+        input_metadatas,
+        *,
+        name=None,
+        compile_request=None,
+    ):
         counters["lower_compile_graph"] += 1
-        return original_lower_compile_graph(program, input_metadatas, name=name)
+        return original_lower_compile_graph(
+            program,
+            input_metadatas,
+            name=name,
+            compile_request=compile_request,
+        )
 
     def counting_execute_compile_trace_graph(graph, *inputs):
         counters["execute_compile_trace_graph"] += 1
@@ -1598,13 +2260,17 @@ def _candidate_compile_counters():
 
 
 @contextmanager
-def _program_call_counter(program):
+def _program_call_counter(*programs):
     old_profile = sys.getprofile()
-    code = program.__code__
+    codes = {
+        program.__code__
+        for program in programs
+        if getattr(program, "__code__", None) is not None
+    }
     calls = {"count": 0}
 
     def profile(frame, event, arg):
-        if event == "call" and frame.f_code is code:
+        if event == "call" and frame.f_code in codes:
             calls["count"] += 1
         if old_profile is not None:
             old_profile(frame, event, arg)
@@ -1629,7 +2295,7 @@ def _candidate_case_result(corpus_module, case):
     expected = _run_case_program(torch_rs, case, expected_inputs)
     expected_gradients = None
     if backward_through_sum:
-        expected.sum().backward()
+        _output_sum(expected).backward()
         expected_gradients = _leaf_gradients_payload(expected_inputs)
     if check_input_gradients:
         _assert_payload_match(
@@ -1640,6 +2306,11 @@ def _candidate_case_result(corpus_module, case):
     inputs = case.make_inputs(torch_rs)
     before_inputs = _inputs_payload(inputs)
     before_gradients = _leaf_gradients_payload(inputs)
+    user_callables = (case.program, *_same_module_helper_functions(case.program))
+    variant_outputs = []
+    compile_cache_signatures = {
+        _compile_cache_signature(inputs, dynamic=case.dynamic)
+    }
     with _candidate_compile_counters() as counters:
         compiled = torch_rs.compile(
             case.program,
@@ -1647,11 +2318,11 @@ def _candidate_case_result(corpus_module, case):
         )
         if getattr(compiled, "_torch_rs_compile_backend", None) != "eager":
             raise AssertionError(f"{case.name} did not resolve backend='eager'")
-        with _program_call_counter(case.program) as program_calls:
+        with _program_call_counter(*user_callables) as program_calls:
             actual = _run_case_callable(torch_rs, case, compiled, inputs)
         if program_calls["count"] != 0:
             raise AssertionError(
-                f"{case.name} executed the original Python program during compiled call"
+                f"{case.name} executed original Python user code during compiled call"
             )
         if counters["lower_compile_graph"] != 1:
             raise AssertionError(
@@ -1668,7 +2339,7 @@ def _candidate_case_result(corpus_module, case):
         second_inputs = case.make_inputs(torch_rs)
         before_second_inputs = _inputs_payload(second_inputs)
         before_second_gradients = _leaf_gradients_payload(second_inputs)
-        with _program_call_counter(case.program) as second_program_calls:
+        with _program_call_counter(*user_callables) as second_program_calls:
             second_actual = _run_case_callable(
                 torch_rs,
                 case,
@@ -1677,7 +2348,7 @@ def _candidate_case_result(corpus_module, case):
             )
         if second_program_calls["count"] != 0:
             raise AssertionError(
-                f"{case.name} executed the original Python program on cache hit"
+                f"{case.name} executed original Python user code on cache hit"
             )
         if counters["lower_compile_graph"] != 1:
             raise AssertionError(f"{case.name} did not reuse the compiled cache")
@@ -1686,15 +2357,67 @@ def _candidate_case_result(corpus_module, case):
                 f"{case.name} cache hit did not execute the native trace graph"
             )
 
-    output = _tensor_payload(actual)
+        for variant_index, make_inputs in enumerate(
+            _case_input_factories(case)[1:],
+            start=1,
+        ):
+            variant_inputs = make_inputs(torch_rs)
+            before_variant_inputs = _inputs_payload(variant_inputs)
+            variant_expected = _run_case_program(
+                torch_rs,
+                case,
+                make_inputs(torch_rs),
+            )
+            with _program_call_counter(*user_callables) as variant_program_calls:
+                variant_actual = _run_case_callable(
+                    torch_rs,
+                    case,
+                    compiled,
+                    variant_inputs,
+                )
+            if variant_program_calls["count"] != 0:
+                raise AssertionError(
+                    f"{case.name} dynamic variant {variant_index} executed "
+                    "original Python user code"
+                )
+            compile_cache_signatures.add(
+                _compile_cache_signature(variant_inputs, dynamic=case.dynamic)
+            )
+            expected_lower_count = len(compile_cache_signatures)
+            if counters["lower_compile_graph"] != expected_lower_count:
+                raise AssertionError(
+                    f"{case.name} dynamic variant {variant_index} lowered "
+                    f"{counters['lower_compile_graph']} graphs, expected "
+                    f"{expected_lower_count}"
+                )
+            expected_execute_count = variant_index + 2
+            if counters["execute_compile_trace_graph"] != expected_execute_count:
+                raise AssertionError(
+                    f"{case.name} dynamic variant {variant_index} executed "
+                    f"{counters['execute_compile_trace_graph']} native trace "
+                    f"graphs, expected {expected_execute_count}"
+                )
+            _assert_payload_match(
+                _output_payload(variant_actual),
+                _output_payload(variant_expected),
+                label=f"{case.name}/torch_rs/dynamic_variant_{variant_index}",
+            )
+            _assert_payload_match(
+                _inputs_payload(variant_inputs),
+                before_variant_inputs,
+                label=f"{case.name}/dynamic_variant_{variant_index}_inputs",
+            )
+            variant_outputs.append(_output_payload(variant_actual))
+
+    output = _output_payload(actual)
     _assert_payload_match(
         output,
-        _tensor_payload(expected),
+        _output_payload(expected),
         label=f"{case.name}/torch_rs",
     )
     _assert_payload_match(
-        _tensor_payload(second_actual),
-        _tensor_payload(expected),
+        _output_payload(second_actual),
+        _output_payload(expected),
         label=f"{case.name}/torch_rs/cache_hit",
     )
     _assert_payload_match(
@@ -1708,7 +2431,9 @@ def _candidate_case_result(corpus_module, case):
         label=f"{case.name}/cache_hit_inputs",
     )
     input_gradients = None
-    if run_under_no_grad and (actual.requires_grad or second_actual.requires_grad):
+    if run_under_no_grad and (
+        _output_requires_grad(actual) or _output_requires_grad(second_actual)
+    ):
         raise AssertionError(f"{case.name} no-grad candidate output requires grad")
     if check_input_gradients:
         input_gradients = _leaf_gradients_payload(inputs)
@@ -1735,7 +2460,7 @@ def _candidate_case_result(corpus_module, case):
         )
     actual_gradients = None
     if backward_through_sum:
-        actual.sum().backward()
+        _output_sum(actual).backward()
         actual_gradients = _leaf_gradients_payload(inputs)
         _assert_payload_match(
             actual_gradients,
@@ -1748,7 +2473,7 @@ def _candidate_case_result(corpus_module, case):
             label=f"{case.name}/inputs_after_backward",
         )
 
-        second_actual.sum().backward()
+        _output_sum(second_actual).backward()
         _assert_payload_match(
             _leaf_gradients_payload(second_inputs),
             expected_gradients,
@@ -1774,6 +2499,8 @@ def _candidate_case_result(corpus_module, case):
         result["input_gradients"] = input_gradients
     if check_aliasing:
         result["output_aliases_inputs"] = _storage_alias_payload(actual, inputs)
+    if variant_outputs:
+        result["variant_outputs"] = variant_outputs
     return result
 
 
@@ -1789,6 +2516,7 @@ def _candidate_guard_scenario_result(corpus_module, scenario):
         )
         if getattr(compiled, "_torch_rs_compile_backend", None) != "eager":
             raise AssertionError(f"{scenario.name} did not resolve backend='eager'")
+        user_callables = (case.program, *_same_module_helper_functions(case.program))
         for step in scenario.steps:
             if step.reset_before:
                 torch_rs.compiler.reset()
@@ -1797,7 +2525,7 @@ def _candidate_guard_scenario_result(corpus_module, scenario):
             previous_execute_count = counters["execute_compile_trace_graph"]
 
             if step.expect_limit_error:
-                with _program_call_counter(case.program) as program_calls:
+                with _program_call_counter(*user_callables) as program_calls:
                     try:
                         _run_case_callable(torch_rs, case, compiled, inputs)
                     except Exception as error:
@@ -1814,7 +2542,7 @@ def _candidate_guard_scenario_result(corpus_module, scenario):
                 if program_calls["count"] != 0:
                     raise AssertionError(
                         f"{scenario.name}/{step.name} executed the original "
-                        "Python program while rejecting a metadata miss"
+                        "Python user code while rejecting a metadata miss"
                     )
                 if counters["lower_compile_graph"] != step.expected_compile_count:
                     raise AssertionError(
@@ -1840,17 +2568,17 @@ def _candidate_guard_scenario_result(corpus_module, scenario):
                 continue
 
             expected = _run_case_program(torch_rs, case, step.make_inputs(torch_rs))
-            with _program_call_counter(case.program) as program_calls:
+            with _program_call_counter(*user_callables) as program_calls:
                 actual = _run_case_callable(torch_rs, case, compiled, inputs)
             if program_calls["count"] != 0:
                 raise AssertionError(
                     f"{scenario.name}/{step.name} executed the original Python "
-                    "program during compiled call"
+                    "user code during compiled call"
                 )
             after_inputs = _inputs_payload(inputs)
             _assert_payload_match(
-                _tensor_payload(actual),
-                _tensor_payload(expected),
+                _output_payload(actual),
+                _output_payload(expected),
                 label=f"{scenario.name}/{step.name}/torch_rs",
             )
             _assert_payload_match(
@@ -1875,7 +2603,7 @@ def _candidate_guard_scenario_result(corpus_module, scenario):
                     "name": step.name,
                     "status": "ok",
                     "guard_change": step.guard_change,
-                    "output": _tensor_payload(actual),
+                    "output": _output_payload(actual),
                     "lower_compile_graph_count": counters["lower_compile_graph"],
                     "execute_compile_trace_graph_count": counters[
                         "execute_compile_trace_graph"
@@ -2155,6 +2883,25 @@ def _compare_worker_to_reference(
                 )
             )
             continue
+        if "variant_outputs" in reference_case:
+            try:
+                _assert_payload_match(
+                    candidate_case.get("variant_outputs"),
+                    reference_case.get("variant_outputs"),
+                    label=f"{case.name}/variant_outputs",
+                )
+            except AssertionError as error:
+                verdicts.append(
+                    CaseVerdict(
+                        case.name,
+                        case.category,
+                        held_out,
+                        False,
+                        "reference_mismatch",
+                        str(error),
+                    )
+                )
+                continue
         if getattr(case, "backward_through_sum", False):
             try:
                 _assert_payload_match(

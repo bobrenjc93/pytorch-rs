@@ -1,3 +1,4 @@
+use std::cmp::Ordering as CmpOrdering;
 use std::ffi::{CStr, c_char};
 use std::os::raw::c_long;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -369,12 +370,38 @@ impl PyTensorBase {
             } else if let Some(indices) = parse_leading_integer_full_slice(&tensor.inner, indices)?
             {
                 tensor.inner.index(indices)
+            } else if let Some((indices, range)) =
+                parse_leading_integer_range_slice(&tensor.inner, indices)?
+            {
+                if range.covers_full_dimension {
+                    if indices.is_empty() {
+                        tensor.inner.metadata_alias()
+                    } else {
+                        tensor.inner.index(indices)
+                    }
+                } else if indices.is_empty() {
+                    tensor.inner.slice_dimension(0, range.start, range.length)
+                } else {
+                    match tensor.inner.index(indices) {
+                        Ok(indexed) => indexed.slice_dimension(0, range.start, range.length),
+                        Err(error) => Err(error),
+                    }
+                }
             } else {
                 let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
                 tensor.inner.index(indices)
             }
         } else if is_exact_full_slice(index)? {
             tensor.inner.index_full_slice()
+        } else if index.cast::<PySlice>().is_ok() {
+            if tensor.inner.shape().is_empty() {
+                parse_unit_range_slice(index, 0)?;
+                tensor.inner.slice_dimension(0, 0, 0)
+            } else if let Some(range) = parse_unit_range_slice(index, tensor.inner.shape()[0])? {
+                tensor.inner.slice_dimension(0, range.start, range.length)
+            } else {
+                return Err(invalid_index(index));
+            }
         } else if is_fast_integer_index(index)? {
             let index = parse_integer_index(index)?;
             tensor.inner.index_integer(index)
@@ -1604,6 +1631,7 @@ pub(crate) fn as_tensor_variable_function(
         ));
     };
 
+    let explicit_float32_dtype = has_explicit_float32_dtype(arguments.dtype.as_ref())?;
     let dtype = parse_as_tensor_dtype(arguments.dtype.as_ref())?;
     validate_as_tensor_device_type("as_tensor", arguments.device.as_ref())?;
     if let Some(keyword_error) = arguments.keyword_error {
@@ -1630,7 +1658,16 @@ pub(crate) fn as_tensor_variable_function(
                 Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
             );
         }
-        if let Some((flattened, shape)) = as_tensor_float_sequence(&data.value)? {
+        if explicit_float32_dtype
+            && let Some(value) = extract_integer_as_float32_scalar(&data.value)?
+        {
+            return Ok(
+                Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
+            );
+        }
+        if let Some((flattened, shape)) =
+            as_tensor_float_sequence(&data.value, explicit_float32_dtype)?
+        {
             return Ok(Py::new(
                 py,
                 CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
@@ -1640,7 +1677,7 @@ pub(crate) fn as_tensor_variable_function(
             .into_any());
         }
         return Err(PyNotImplementedError::new_err(
-            "as_tensor(): only exact native CPU float32 Tensor inputs, Python float scalars, exact numpy.float32 scalars, or exact list/tuple sequences of Python floats are supported; NumPy arrays/non-float32 scalars, integer and boolean inference, and other conversions are not implemented",
+            "as_tensor(): only exact native CPU float32 Tensor inputs, Python float scalars, exact numpy.float32 scalars, exact list/tuple sequences of Python floats, or Python/NumPy integer scalars and exact list/tuple integer sequences with explicit dtype=torch.float32 are supported; NumPy arrays, other NumPy scalars, integer and boolean inference, and other conversions are not implemented",
         ));
     }
     Ok(data.value.unbind())
@@ -1669,6 +1706,7 @@ pub(crate) fn asarray_variable_function(
         return Ok(result);
     }
 
+    let explicit_float32_dtype = has_explicit_float32_dtype(arguments.dtype.as_ref())?;
     let dtype = parse_identity_dtype("asarray", arguments.dtype.as_ref())?;
     validate_asarray_device_string_syntax(arguments.device.as_ref())?;
     if is_exact_list_or_tuple(&obj.value) {
@@ -1680,7 +1718,12 @@ pub(crate) fn asarray_variable_function(
     let literal_sequence = if is_exact_native_tensor {
         None
     } else {
-        asarray_sequence_for_copy_request(&obj.value, copy_requested, arguments.copy.as_ref())?
+        asarray_sequence_for_copy_request(
+            &obj.value,
+            copy_requested,
+            arguments.copy.as_ref(),
+            explicit_float32_dtype,
+        )?
     };
     validate_asarray_requires_grad(arguments.requires_grad.as_ref())?;
 
@@ -1690,31 +1733,15 @@ pub(crate) fn asarray_variable_function(
         ));
     }
     if !is_exact_native_tensor {
-        if let Some(value) = extract_exact_python_float_scalar(&obj.value)? {
-            validate_asarray_scalar_copy(arguments.copy.as_ref())?;
-            return Ok(
-                Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
-            );
-        }
-        if let Some((flattened, shape)) = literal_sequence {
-            return asarray_float_sequence_tensor(py, flattened, shape, dtype, device);
-        }
-        match as_tensor_float_sequence(&obj.value) {
-            Ok(Some((flattened, shape))) => {
-                return asarray_float_sequence_tensor(py, flattened, shape, dtype, device);
-            }
-            Ok(None) => {}
-            Err(error) => {
-                if asarray_copy_requested(arguments.copy.as_ref())? {
-                    validate_asarray_copy(arguments.copy.as_ref())?;
-                }
-                return Err(error);
-            }
-        }
-        validate_asarray_copy(arguments.copy.as_ref())?;
-        return Err(PyNotImplementedError::new_err(
-            "asarray(): only exact native CPU float32 Tensor inputs, Python float scalars, or exact list/tuple sequences of Python floats are supported; NumPy arrays/scalars, integer and boolean inference, and other conversions are not implemented",
-        ));
+        return asarray_non_tensor_object(
+            py,
+            &obj.value,
+            literal_sequence,
+            explicit_float32_dtype,
+            dtype,
+            device,
+            arguments.copy.as_ref(),
+        );
     }
     let source_requires_grad = {
         let tensor = obj.value.cast::<PyTensor>()?.try_borrow()?;
@@ -1747,19 +1774,61 @@ pub(crate) fn asarray_variable_function(
     Ok(obj.value.unbind())
 }
 
+fn asarray_non_tensor_object(
+    py: Python<'_>,
+    obj: &Bound<'_, PyAny>,
+    literal_sequence: Option<(Vec<f32>, Vec<usize>)>,
+    explicit_float32_dtype: bool,
+    dtype: DType,
+    device: Device,
+    copy: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Py<PyAny>> {
+    if let Some(value) = extract_exact_python_float_scalar(obj)? {
+        validate_asarray_scalar_copy(copy)?;
+        return Ok(Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any());
+    }
+    if explicit_float32_dtype && let Some(value) = extract_integer_as_float32_scalar(obj)? {
+        validate_asarray_integer_scalar_copy(obj, copy)?;
+        return Ok(Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any());
+    }
+    if let Some((flattened, shape)) = literal_sequence {
+        return asarray_float_sequence_tensor(py, flattened, shape, dtype, device);
+    }
+    match as_tensor_float_sequence(obj, explicit_float32_dtype) {
+        Ok(Some((flattened, shape))) => {
+            return asarray_float_sequence_tensor(py, flattened, shape, dtype, device);
+        }
+        Ok(None) => {}
+        Err(error) => {
+            if asarray_copy_requested(copy)? {
+                validate_asarray_copy(copy)?;
+            }
+            return Err(error);
+        }
+    }
+    validate_asarray_copy(copy)?;
+    Err(PyNotImplementedError::new_err(
+        "asarray(): only exact native CPU float32 Tensor inputs, Python float scalars, exact list/tuple sequences of Python floats, or Python/NumPy integer scalars and exact list/tuple integer sequences with explicit dtype=torch.float32 are supported; NumPy arrays, NumPy non-integer scalars, integer and boolean inference, and other conversions are not implemented",
+    ))
+}
+
 fn asarray_sequence_for_copy_request(
     obj: &Bound<'_, PyAny>,
     copy_requested: bool,
     copy: Option<&Bound<'_, PyAny>>,
+    explicit_float32_dtype: bool,
 ) -> PyResult<Option<(Vec<f32>, Vec<usize>)>> {
-    if !copy_requested || extract_exact_python_float_scalar(obj)?.is_some() {
+    if !copy_requested
+        || extract_exact_python_float_scalar(obj)?.is_some()
+        || (explicit_float32_dtype && extract_integer_as_float32_scalar(obj)?.is_some())
+    {
         return Ok(None);
     }
     if !is_exact_list_or_tuple(obj) {
         validate_asarray_copy(copy)?;
         return Ok(None);
     }
-    match as_tensor_float_sequence(obj) {
+    match as_tensor_float_sequence(obj, explicit_float32_dtype) {
         Ok(Some(sequence)) => Ok(Some(sequence)),
         Ok(None) => {
             validate_asarray_copy(copy)?;
@@ -2097,6 +2166,50 @@ pub(crate) fn broadcast_tensors_variable_function(
     }
 
     Ok(inputs.clone().into_any().unbind())
+}
+
+pub(crate) fn cat_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let TopLevelCatArguments {
+        tensors,
+        dim,
+        out,
+        keyword_error,
+    } = bind_top_level_cat_arguments(args, kwargs)?;
+    let tensors = parse_cat_tensors_argument(&tensors)?;
+    let dim = parse_cat_dimension(dim)?;
+    let out = parse_cat_out(out)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+
+    let call = BoundTopLevelCatCall { tensors, dim, out };
+    dispatch_top_level_cat(py, &call, args, kwargs)
+}
+
+pub(crate) fn stack_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let TopLevelStackArguments {
+        tensors,
+        dim,
+        out,
+        keyword_error,
+    } = bind_top_level_stack_arguments(args, kwargs)?;
+    let tensors = parse_stack_tensors_argument(&tensors)?;
+    let dim = parse_stack_dimension(dim)?;
+    let out = parse_stack_out(out)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+
+    let call = BoundTopLevelStackCall { tensors, dim, out };
+    dispatch_top_level_stack(py, &call, args, kwargs)
 }
 
 pub(crate) fn adjoint_variable_function(
@@ -2826,6 +2939,42 @@ struct BoundTopLevelNativeReshapeShape<'py> {
 enum BoundTopLevelReshapeShape<'py> {
     Native(BoundTopLevelNativeReshapeShape<'py>),
     Override(Vec<ProbedTorchFunctionOverride<'py>>),
+}
+
+enum BoundTopLevelCatTensors<'py> {
+    Sequence(Vec<BoundTensorOrTorchFunction<'py>>),
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+enum BoundTopLevelCatDimension<'py> {
+    Native(Option<ParsedCallArgument<'py>>),
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+struct TopLevelCatArguments<'py> {
+    tensors: ParsedCallArgument<'py>,
+    dim: Option<ParsedCallArgument<'py>>,
+    out: Option<ParsedCallArgument<'py>>,
+    keyword_error: Option<PyErr>,
+}
+
+struct BoundTopLevelCatCall<'py> {
+    tensors: BoundTopLevelCatTensors<'py>,
+    dim: BoundTopLevelCatDimension<'py>,
+    out: Option<BoundTensorOrTorchFunction<'py>>,
+}
+
+struct TopLevelStackArguments<'py> {
+    tensors: ParsedCallArgument<'py>,
+    dim: Option<ParsedCallArgument<'py>>,
+    out: Option<ParsedCallArgument<'py>>,
+    keyword_error: Option<PyErr>,
+}
+
+struct BoundTopLevelStackCall<'py> {
+    tensors: BoundTopLevelCatTensors<'py>,
+    dim: BoundTopLevelCatDimension<'py>,
+    out: Option<BoundTensorOrTorchFunction<'py>>,
 }
 
 type SingleTensorNativeCallback = fn(Python<'_>, &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>>;
@@ -4116,6 +4265,288 @@ fn apply_top_level_imag(_py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResu
     // Native float32 tensors have no imaginary view. Share Tensor.imag's
     // real-dtype error path after top-level __torch_function__ dispatch.
     apply_tensor_imag(tensor)
+}
+
+fn ordered_top_level_cat_overrides<'py>(
+    call: &BoundTopLevelCatCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let tensor_capacity = match &call.tensors {
+        BoundTopLevelCatTensors::Sequence(tensors) => tensors.len(),
+        BoundTopLevelCatTensors::Override(_) => 1,
+    };
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(
+            tensor_capacity
+                + usize::from(matches!(&call.dim, BoundTopLevelCatDimension::Override(_)))
+                + usize::from(matches!(
+                    &call.out,
+                    Some(BoundTensorOrTorchFunction::Override(_))
+                )),
+        )
+        .map_err(|_| PyMemoryError::new_err("unable to allocate cat dispatch operands"))?;
+
+    match &call.tensors {
+        BoundTopLevelCatTensors::Sequence(tensors) => {
+            for tensor in tensors {
+                if let BoundTensorOrTorchFunction::Override(probed) = tensor {
+                    insert_ordered_torch_function_override(&mut overrides, probed)?;
+                }
+            }
+        }
+        BoundTopLevelCatTensors::Override(probed) => {
+            insert_ordered_torch_function_override(&mut overrides, probed)?;
+        }
+    }
+    if let BoundTopLevelCatDimension::Override(probed) = &call.dim {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(BoundTensorOrTorchFunction::Override(probed)) = &call.out {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
+fn dispatch_top_level_cat(
+    py: Python<'_>,
+    call: &BoundTopLevelCatCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_top_level_cat_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_cat(py, call);
+    }
+
+    let function = variable_function(py, "cat")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Generated variable functions validate their schema before dispatch, but
+    // leave native-only limits such as rank, dimension range, and concrete out
+    // tensors until handlers have had a chance to override or forward.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_top_level_cat(py, call);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.cat",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_cat(py: Python<'_>, call: &BoundTopLevelCatCall<'_>) -> PyResult<Py<PyAny>> {
+    let BoundTopLevelCatTensors::Sequence(tensors) = &call.tensors else {
+        unreachable!("cat tensor-sequence override was dispatched before the native path")
+    };
+    if tensors.is_empty() {
+        return Err(PyValueError::new_err(
+            "torch.cat(): expected a non-empty list of Tensors",
+        ));
+    }
+
+    let mut borrowed_tensors = try_size_vector(tensors.len())?;
+    let mut any_requires_grad = false;
+    for (index, tensor) in tensors.iter().enumerate() {
+        let BoundTensorOrTorchFunction::Tensor(tensor) = tensor else {
+            unreachable!("cat sequence element overrides were dispatched before the native path")
+        };
+        let tensor = tensor.try_borrow()?;
+        validate_cat_tensor(&tensor, index)?;
+        any_requires_grad |= tensor.inner.requires_grad();
+        try_push_size(&mut borrowed_tensors, tensor)?;
+    }
+
+    let dimension = match &call.dim {
+        BoundTopLevelCatDimension::Native(dimension) => {
+            dimension.as_ref().map_or(Ok(0), |dimension| {
+                extract_dimension_swap_dimension(&dimension.value)
+            })?
+        }
+        BoundTopLevelCatDimension::Override(_) => {
+            unreachable!("cat dim override was dispatched before the native path")
+        }
+    };
+    normalize_dimension(dimension, 1)?;
+    if call.out.is_some() {
+        return Err(PyRuntimeError::new_err(
+            "cat(): the 'out' argument is not supported",
+        ));
+    }
+    if any_requires_grad && is_grad_enabled() {
+        return Err(PyRuntimeError::new_err(
+            "cat(): autograd recording is not supported",
+        ));
+    }
+
+    let mut inner_tensors = try_size_vector(borrowed_tensors.len())?;
+    for tensor in &borrowed_tensors {
+        try_push_size(&mut inner_tensors, &tensor.inner)?;
+    }
+    let result = CoreTensor::cat_1d(&inner_tensors).map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(result))?.into_any())
+}
+
+fn ordered_top_level_stack_overrides<'py>(
+    call: &BoundTopLevelStackCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let tensor_capacity = match &call.tensors {
+        BoundTopLevelCatTensors::Sequence(tensors) => tensors.len(),
+        BoundTopLevelCatTensors::Override(_) => 1,
+    };
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(
+            tensor_capacity
+                + usize::from(matches!(&call.dim, BoundTopLevelCatDimension::Override(_)))
+                + usize::from(matches!(
+                    &call.out,
+                    Some(BoundTensorOrTorchFunction::Override(_))
+                )),
+        )
+        .map_err(|_| PyMemoryError::new_err("unable to allocate stack dispatch operands"))?;
+
+    match &call.tensors {
+        BoundTopLevelCatTensors::Sequence(tensors) => {
+            for tensor in tensors {
+                if let BoundTensorOrTorchFunction::Override(probed) = tensor {
+                    insert_ordered_torch_function_override(&mut overrides, probed)?;
+                }
+            }
+        }
+        BoundTopLevelCatTensors::Override(probed) => {
+            insert_ordered_torch_function_override(&mut overrides, probed)?;
+        }
+    }
+    if let BoundTopLevelCatDimension::Override(probed) = &call.dim {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(BoundTensorOrTorchFunction::Override(probed)) = &call.out {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
+fn dispatch_top_level_stack(
+    py: Python<'_>,
+    call: &BoundTopLevelStackCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_top_level_stack_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_stack(py, call);
+    }
+
+    let function = variable_function(py, "stack")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_top_level_stack(py, call);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.stack",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_stack(py: Python<'_>, call: &BoundTopLevelStackCall<'_>) -> PyResult<Py<PyAny>> {
+    let BoundTopLevelCatTensors::Sequence(tensors) = &call.tensors else {
+        unreachable!("stack tensor-sequence override was dispatched before the native path")
+    };
+    if tensors.is_empty() {
+        return Err(PyRuntimeError::new_err(
+            "stack expects a non-empty TensorList",
+        ));
+    }
+
+    let mut borrowed_tensors = try_size_vector(tensors.len())?;
+    for tensor in tensors {
+        let BoundTensorOrTorchFunction::Tensor(tensor) = tensor else {
+            unreachable!("stack sequence element overrides were dispatched before the native path")
+        };
+        let tensor = tensor.try_borrow()?;
+        validate_stack_tensor(&tensor)?;
+        try_push_size(&mut borrowed_tensors, tensor)?;
+    }
+
+    let dimension = match &call.dim {
+        BoundTopLevelCatDimension::Native(dimension) => {
+            dimension.as_ref().map_or(Ok(0), |dimension| {
+                extract_dimension_swap_dimension(&dimension.value)
+            })?
+        }
+        BoundTopLevelCatDimension::Override(_) => {
+            unreachable!("stack dim override was dispatched before the native path")
+        }
+    };
+    let output_rank = borrowed_tensors[0]
+        .inner
+        .shape()
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| tensor_error(&TensorError::ElementCountOverflow))?;
+    let dimension = normalize_dimension(dimension, output_rank)?;
+    validate_stack_tensor_shapes(&borrowed_tensors)?;
+    if call.out.is_some() {
+        return Err(PyRuntimeError::new_err(
+            "stack(): the 'out' argument is not supported",
+        ));
+    }
+
+    let mut inner_tensors = try_size_vector(borrowed_tensors.len())?;
+    for tensor in &borrowed_tensors {
+        try_push_size(&mut inner_tensors, &tensor.inner)?;
+    }
+    let result =
+        CoreTensor::stack(&inner_tensors, dimension).map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(result))?.into_any())
 }
 
 fn ordered_unary_out_overrides<'py>(
@@ -6391,6 +6822,30 @@ enum ParsedSqueezeDimensions {
     Multiple(Vec<i64>),
 }
 
+struct BoundAllCloseArguments<'py> {
+    input: ParsedCallArgument<'py>,
+    other: ParsedCallArgument<'py>,
+    rtol: Option<ParsedCallArgument<'py>>,
+    atol: Option<ParsedCallArgument<'py>>,
+    equal_nan: Option<ParsedCallArgument<'py>>,
+    keyword_error: Option<PyErr>,
+}
+
+struct BoundAllCloseMethodArguments<'py> {
+    other: ParsedCallArgument<'py>,
+    rtol: Option<ParsedCallArgument<'py>>,
+    atol: Option<ParsedCallArgument<'py>>,
+    equal_nan: Option<ParsedCallArgument<'py>>,
+    keyword_error: Option<PyErr>,
+}
+
+#[derive(Clone, Copy)]
+struct ParsedAllCloseTolerances {
+    rtol: f64,
+    atol: f64,
+    equal_nan: bool,
+}
+
 #[derive(Clone, Copy)]
 enum BinaryOperation {
     Add,
@@ -6942,6 +7397,29 @@ impl PyTensor {
         Ok(self.inner == other.inner)
     }
 
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nallclose(other, rtol=1e-05, atol=1e-08, equal_nan=False) -> Tensor\n\nSee :func:`torch.allclose`.\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn allclose(
+        &self,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<bool> {
+        let call = bind_allclose_method_arguments(args, kwargs)?;
+        let other = parse_exact_native_allclose_tensor_argument("other", &call.other)?;
+        let tolerances = parse_allclose_tolerances(
+            call.rtol.as_ref(),
+            call.atol.as_ref(),
+            call.equal_nan.as_ref(),
+        )?;
+        if let Some(keyword_error) = call.keyword_error {
+            return Err(keyword_error);
+        }
+        let other = other.try_borrow()?;
+        apply_allclose(args.py(), &self.inner, &other.inner, tolerances)
+    }
+
     #[pyo3(signature = (*, memory_format=None))]
     fn clone(&self, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let memory_format = parse_clone_memory_format(memory_format)?;
@@ -7373,7 +7851,7 @@ fn compile_trace_grad_enabled() -> bool {
     signature = (input, target, /),
     text_signature = None
 )]
-fn compile_trace_unary(input: &Bound<'_, PyAny>, target: &str) -> PyResult<PyTensor> {
+fn compile_trace_unary(input: &Bound<'_, PyAny>, target: &str) -> PyResult<Py<PyTensor>> {
     if !input.is_exact_instance_of::<PyTensor>() {
         let type_name = python_type_name(input)?;
         return Err(PyTypeError::new_err(format!(
@@ -7381,22 +7859,28 @@ fn compile_trace_unary(input: &Bound<'_, PyAny>, target: &str) -> PyResult<PyTen
         )));
     }
 
-    let tensor = input.cast::<PyTensor>()?.try_borrow()?;
-    let output = match target {
-        "neg" => tensor.inner.negate(),
-        "abs" => tensor.inner.abs(),
-        "relu" => tensor.inner.relu(),
-        "square" => tensor.inner.square(),
-        "detach" => tensor.inner.detach(),
-        _ => {
-            return Err(PyNotImplementedError::new_err(format!(
-                "_compile_trace_unary(): unsupported target {target:?}"
-            )));
+    let tensor = input.cast::<PyTensor>()?;
+    if target == "float" {
+        return Ok(tensor.clone().unbind());
+    }
+
+    let output = {
+        let tensor = tensor.try_borrow()?;
+        match target {
+            "neg" => tensor.inner.negate(),
+            "abs" => tensor.inner.abs(),
+            "relu" => tensor.inner.relu(),
+            "square" => tensor.inner.square(),
+            "detach" => tensor.inner.detach(),
+            _ => {
+                return Err(PyNotImplementedError::new_err(format!(
+                    "_compile_trace_unary(): unsupported target {target:?}"
+                )));
+            }
         }
     };
-    output
-        .map(PyTensor::new)
-        .map_err(|error| tensor_error(&error))
+    let output = output.map_err(|error| tensor_error(&error))?;
+    Py::new(input.py(), PyTensor::new(output))
 }
 
 #[pyfunction(
@@ -7487,6 +7971,26 @@ fn extract_exact_numpy_float32_scalar(value: &Bound<'_, PyAny>) -> PyResult<Opti
     value.extract::<f32>().map(Some)
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn extract_integer_as_float32_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<f32>> {
+    if value.is_exact_instance_of::<PyBool>() {
+        return Ok(None);
+    }
+    if value.is_exact_instance_of::<PyInt>() {
+        return value.extract::<f64>().map(|value| Some(value as f32));
+    }
+    if !is_numpy_scalar_of_types(value, &["integer"])? {
+        return Ok(None);
+    }
+    if let Ok(value) = value.extract::<i64>() {
+        return Ok(Some(value as f32));
+    }
+    if let Ok(value) = value.extract::<u64>() {
+        return Ok(Some(value as f32));
+    }
+    value.extract::<f64>().map(|value| Some(value as f32))
+}
+
 fn canonical_numpy_float32_type(py: Python<'_>) -> Option<Bound<'_, PyAny>> {
     let multiarray = match PyModule::import(py, "numpy._core.multiarray") {
         Ok(module) => module,
@@ -7507,15 +8011,23 @@ fn canonical_numpy_float32_type(py: Python<'_>) -> Option<Bound<'_, PyAny>> {
     Some(scalar_type)
 }
 
-fn as_tensor_float_sequence(value: &Bound<'_, PyAny>) -> PyResult<Option<(Vec<f32>, Vec<usize>)>> {
+fn as_tensor_float_sequence(
+    value: &Bound<'_, PyAny>,
+    accept_integers: bool,
+) -> PyResult<Option<(Vec<f32>, Vec<usize>)>> {
     if !is_exact_list_or_tuple(value) {
         return Ok(None);
     }
 
     let mut flattened = Vec::new();
     let mut active_containers = Vec::new();
-    let Some(shape) =
-        flatten_as_tensor_float_sequence(value, &mut flattened, &mut active_containers, 0)?
+    let Some(shape) = flatten_as_tensor_float_sequence(
+        value,
+        &mut flattened,
+        &mut active_containers,
+        0,
+        accept_integers,
+    )?
     else {
         return Ok(None);
     };
@@ -7527,8 +8039,13 @@ fn flatten_as_tensor_float_sequence(
     output: &mut Vec<f32>,
     active_containers: &mut Vec<*mut ffi::PyObject>,
     depth: usize,
+    accept_integers: bool,
 ) -> PyResult<Option<Vec<usize>>> {
     if let Some(scalar) = extract_exact_python_float_scalar(value)? {
+        output.push(scalar);
+        return Ok(Some(Vec::new()));
+    }
+    if accept_integers && let Some(scalar) = extract_integer_as_float32_scalar(value)? {
         output.push(scalar);
         return Ok(Some(Vec::new()));
     }
@@ -7559,17 +8076,27 @@ fn flatten_as_tensor_float_sequence(
         output,
         active_containers,
         depth + 1,
+        accept_integers,
     )?
     else {
         active_containers.pop();
         return Ok(None);
     };
+    if first_shape.contains(&0) {
+        let mut shape = Vec::with_capacity(first_shape.len() + 1);
+        shape.push(length);
+        shape.extend(first_shape);
+        active_containers.pop();
+        return Ok(Some(shape));
+    }
     for index in 1..length {
+        let item = value.get_item(index)?;
         let Some(shape) = flatten_as_tensor_float_sequence(
-            &value.get_item(index)?,
+            &item,
             output,
             active_containers,
             depth + 1,
+            accept_integers,
         )?
         else {
             active_containers.pop();
@@ -7577,9 +8104,12 @@ fn flatten_as_tensor_float_sequence(
         };
         if shape != first_shape {
             active_containers.pop();
-            return Err(PyValueError::new_err(
-                "expected a rectangular sequence, but nested shapes differ",
-            ));
+            return Err(as_tensor_sequence_shape_error(
+                &item,
+                &first_shape,
+                &shape,
+                depth + 1,
+            )?);
         }
     }
 
@@ -7601,6 +8131,46 @@ fn as_tensor_too_many_dimensions_error(value: &Bound<'_, PyAny>) -> PyErr {
         "tuple"
     };
     PyValueError::new_err(format!("too many dimensions '{container}'"))
+}
+
+fn as_tensor_sequence_shape_error(
+    actual_value: &Bound<'_, PyAny>,
+    expected_shape: &[usize],
+    actual_shape: &[usize],
+    dimension: usize,
+) -> PyResult<PyErr> {
+    if expected_shape.is_empty() {
+        let actual = python_type_name(actual_value)?;
+        return Ok(PyTypeError::new_err(format!(
+            "must be real number, not {actual}"
+        )));
+    }
+    if actual_shape.is_empty() {
+        return Ok(PyTypeError::new_err("not a sequence"));
+    }
+    for (offset, (expected, actual)) in expected_shape.iter().zip(actual_shape).enumerate() {
+        if expected != actual {
+            return Ok(as_tensor_ragged_sequence_error(
+                *expected,
+                *actual,
+                dimension + offset,
+            ));
+        }
+    }
+    if expected_shape.len() > actual_shape.len() {
+        Ok(PyTypeError::new_err("not a sequence"))
+    } else {
+        let actual = python_type_name(actual_value)?;
+        Ok(PyTypeError::new_err(format!(
+            "must be real number, not {actual}"
+        )))
+    }
+}
+
+fn as_tensor_ragged_sequence_error(expected: usize, actual: usize, dimension: usize) -> PyErr {
+    PyValueError::new_err(format!(
+        "expected sequence of length {expected} at dim {dimension} (got {actual})"
+    ))
 }
 
 fn rank_zero_scalar_tensor(
@@ -7701,6 +8271,26 @@ fn equal(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
     let input = input.try_borrow()?;
     let other = other.try_borrow()?;
     Ok(input.inner == other.inner)
+}
+
+#[allow(clippy::doc_markdown)]
+#[doc = "\nallclose(input: Tensor, other: Tensor, rtol: float = 1e-05, atol: float = 1e-08, equal_nan: bool = False) -> bool\n\nReturns ``True`` if all elements in :attr:`input` are close to :attr:`other`, within the tolerance used by PyTorch for float32 tensors.\n"]
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn allclose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
+    let call = bind_allclose_top_level_arguments(args, kwargs)?;
+    let input = parse_exact_native_allclose_tensor_argument("input", &call.input)?;
+    let other = parse_exact_native_allclose_tensor_argument("other", &call.other)?;
+    let tolerances = parse_allclose_tolerances(
+        call.rtol.as_ref(),
+        call.atol.as_ref(),
+        call.equal_nan.as_ref(),
+    )?;
+    if let Some(keyword_error) = call.keyword_error {
+        return Err(keyword_error);
+    }
+    let input = input.try_borrow()?;
+    let other = other.try_borrow()?;
+    apply_allclose(args.py(), &input.inner, &other.inner, tolerances)
 }
 
 // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -9210,7 +9800,7 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(f64, 
     let integer_with_explicit_float32 = matches!(
         end_kind,
         Some(ArangeEndpointKind::ExactPythonInteger | ArangeEndpointKind::NumpyInteger)
-    ) && arange_has_explicit_float32_dtype(dtype.as_ref())?;
+    ) && has_explicit_float32_dtype(dtype.as_ref())?;
     if !matches!(
         end_kind,
         Some(ArangeEndpointKind::ExactPythonFloat | ArangeEndpointKind::NumpyFloating)
@@ -9283,7 +9873,7 @@ fn parse_two_bound_arange_arguments(
         return Err(arange_two_bound_endpoint_type_error("end", &end)?);
     }
 
-    let explicit_float32_dtype = arange_has_explicit_float32_dtype(dtype.as_ref())?;
+    let explicit_float32_dtype = has_explicit_float32_dtype(dtype.as_ref())?;
     let dtype = parse_dtype("arange", dtype.as_ref())?;
     parse_factory_layout("arange", layout.as_ref())?;
     validate_device_argument_type("arange", device.as_ref())?;
@@ -9341,16 +9931,6 @@ fn classify_arange_endpoint(value: &Bound<'_, PyAny>) -> PyResult<Option<ArangeE
         return Ok(Some(ArangeEndpointKind::NumpyInteger));
     }
     Ok(None)
-}
-
-fn arange_has_explicit_float32_dtype(dtype: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
-    let Some(dtype) = dtype else {
-        return Ok(false);
-    };
-    let Ok(dtype) = dtype.cast::<PyDType>() else {
-        return Ok(false);
-    };
-    Ok(dtype.try_borrow()?.inner() == DType::Float32)
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -9594,6 +10174,16 @@ fn parse_as_tensor_dtype(dtype: Option<&Bound<'_, PyAny>>) -> PyResult<DType> {
     parse_identity_dtype("as_tensor", dtype)
 }
 
+fn has_explicit_float32_dtype(dtype: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+    let Some(dtype) = dtype else {
+        return Ok(false);
+    };
+    let Ok(dtype) = dtype.cast::<PyDType>() else {
+        return Ok(false);
+    };
+    Ok(dtype.try_borrow()?.inner() == DType::Float32)
+}
+
 fn validate_identity_dtype_type(function: &str, dtype: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
     let Some(dtype) = dtype else {
         return Ok(());
@@ -9763,6 +10353,38 @@ fn validate_asarray_scalar_copy(copy: Option<&Bound<'_, PyAny>>) -> PyResult<()>
     Err(PyNotImplementedError::new_err(
         "asarray(): copy=False for Python float scalar inputs is not supported because scalar conversion requires fresh storage",
     ))
+}
+
+fn validate_asarray_integer_scalar_copy(
+    value: &Bound<'_, PyAny>,
+    copy: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    if asarray_copy_requested(copy)? && is_numpy_scalar_of_types(value, &["integer"])? {
+        return Err(PyValueError::new_err(format!(
+            "can't alias tensor with dtype '{}' into dtype 'Float'.",
+            numpy_integer_scalar_torch_dtype_name(value)?
+        )));
+    }
+    validate_asarray_scalar_copy(copy)
+}
+
+fn numpy_integer_scalar_torch_dtype_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    let dtype_name = value
+        .getattr("dtype")?
+        .getattr("name")?
+        .extract::<String>()?;
+    let name = match dtype_name.as_str() {
+        "int8" => "Char",
+        "uint8" => "Byte",
+        "int16" => "Short",
+        "uint16" => "UInt16",
+        "int32" => "Int",
+        "uint32" => "UInt32",
+        "int64" => "Long",
+        "uint64" => "UInt64",
+        other => other,
+    };
+    Ok(name.to_owned())
 }
 
 fn validate_asarray_sequence_copy(copy: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
@@ -10960,6 +11582,479 @@ fn validate_device_argument_type(
     }
     let error = device_argument_type_error(function, device)?;
     Err(error)
+}
+
+fn bind_top_level_cat_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<TopLevelCatArguments<'py>> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "cat() takes from 1 to 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut tensors = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut dim = if positional.len() > 1 {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    } else {
+        None
+    };
+    let mut axis = None;
+    let mut out = None;
+    let mut keyword_error = None;
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "tensors" => {
+                    if tensors.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("cat() got multiple values for argument 'tensors'")
+                        });
+                    } else {
+                        tensors = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                "dim" => {
+                    if dim.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("cat() got multiple values for argument 'dim'")
+                        });
+                    } else {
+                        dim = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                "axis" => {
+                    axis = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "out" => {
+                    if out.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("cat() got multiple values for argument 'out'")
+                        });
+                    } else {
+                        out = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "cat() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let Some(tensors) = tensors else {
+        return Err(PyTypeError::new_err(
+            "cat() missing 1 required positional arguments: \"tensors\"",
+        ));
+    };
+
+    let axis_conflicts_with_dim = axis.is_some() && dim.is_some();
+    let dim = dim.or(axis);
+    if axis_conflicts_with_dim {
+        keyword_error.get_or_insert_with(|| {
+            PyTypeError::new_err("cat() got an unexpected keyword argument 'axis'")
+        });
+    }
+
+    Ok(TopLevelCatArguments {
+        tensors,
+        dim,
+        out,
+        keyword_error,
+    })
+}
+
+fn parse_cat_tensors_argument<'py>(
+    tensors: &ParsedCallArgument<'py>,
+) -> PyResult<BoundTopLevelCatTensors<'py>> {
+    if tensors.value.is_instance_of::<PyTuple>() || tensors.value.is_instance_of::<PyList>() {
+        return Ok(BoundTopLevelCatTensors::Sequence(
+            parse_cat_tensor_sequence(tensors)?,
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&tensors.value) {
+        return Ok(BoundTopLevelCatTensors::Override(probed));
+    }
+    Err(cat_tensor_sequence_type_error(tensors)?)
+}
+
+fn parse_cat_tensor_sequence<'py>(
+    tensors: &ParsedCallArgument<'py>,
+) -> PyResult<Vec<BoundTensorOrTorchFunction<'py>>> {
+    if !tensors.value.is_instance_of::<PyTuple>() && !tensors.value.is_instance_of::<PyList>() {
+        return Err(cat_tensor_sequence_type_error(tensors)?);
+    }
+
+    let sequence = tensors.value.cast::<PySequence>()?;
+    let length = sequence.len()?;
+    let mut parsed = try_size_vector(length)?;
+    for index in 0..length {
+        let item = sequence.get_item(index)?;
+        if item.is_exact_instance_of::<PyTensor>() {
+            try_push_size(
+                &mut parsed,
+                BoundTensorOrTorchFunction::Tensor(item.cast_into::<PyTensor>()?),
+            )?;
+        } else if let Some(probed) = probe_torch_function_override(&item) {
+            try_push_size(&mut parsed, BoundTensorOrTorchFunction::Override(probed))?;
+        } else if item.is_instance_of::<PyTensor>() {
+            return Err(cat_unsupported_native_input());
+        } else {
+            let actual = python_type_name(&item)?;
+            return Err(PyTypeError::new_err(format!(
+                "expected Tensor as element {index} in argument 0, but got {actual}"
+            )));
+        }
+    }
+    Ok(parsed)
+}
+
+fn parse_cat_dimension(
+    dimension: Option<ParsedCallArgument<'_>>,
+) -> PyResult<BoundTopLevelCatDimension<'_>> {
+    let Some(dimension) = dimension else {
+        return Ok(BoundTopLevelCatDimension::Native(None));
+    };
+    if is_dimension_swap_integer(&dimension.value)? {
+        return Ok(BoundTopLevelCatDimension::Native(Some(dimension)));
+    }
+    if let Some(probed) = probe_torch_function_override(&dimension.value) {
+        return Ok(BoundTopLevelCatDimension::Override(probed));
+    }
+    validate_dimension_swap_dimension("cat", "dim", dimension.position, &dimension.value)?;
+    unreachable!("invalid cat dimension type should have returned a Python error")
+}
+
+fn parse_cat_out(
+    out: Option<ParsedCallArgument<'_>>,
+) -> PyResult<Option<BoundTensorOrTorchFunction<'_>>> {
+    let Some(out) = out else {
+        return Ok(None);
+    };
+    if out.value.is_none() {
+        return Ok(None);
+    }
+    if out.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(Some(BoundTensorOrTorchFunction::Tensor(
+            out.value.cast::<PyTensor>()?.clone(),
+        )));
+    }
+    if let Some(probed) = probe_torch_function_override(&out.value) {
+        return Ok(Some(BoundTensorOrTorchFunction::Override(probed)));
+    }
+    if !out.value.is_instance_of::<PyTensor>() {
+        let actual = python_type_name(&out.value)?;
+        return Err(PyTypeError::new_err(format!(
+            "cat(): argument 'out' must be Tensor, not {actual}"
+        )));
+    }
+    Err(cat_unsupported_native_input())
+}
+
+fn validate_cat_tensor(tensor: &PyTensor, index: usize) -> PyResult<()> {
+    if tensor.inner.shape().is_empty() {
+        return Err(PyRuntimeError::new_err(format!(
+            "zero-dimensional tensor (at position {index}) cannot be concatenated"
+        )));
+    }
+    if tensor.inner.dtype() == DType::Float32
+        && tensor.inner.device() == Device::Cpu
+        && tensor.inner.shape().len() == 1
+    {
+        Ok(())
+    } else {
+        Err(cat_unsupported_native_input())
+    }
+}
+
+fn cat_tensor_sequence_type_error(tensors: &ParsedCallArgument<'_>) -> PyResult<PyErr> {
+    let position = tensors
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(&tensors.value)?;
+    Ok(PyTypeError::new_err(format!(
+        "cat(): argument 'tensors'{position} must be tuple of Tensors, not {actual}"
+    )))
+}
+
+fn cat_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "cat(): only exact native CPU float32 1-D Tensor inputs are supported",
+    )
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "PyTorch-compatible call binding keeps delayed positional, alias, and keyword diagnostics together"
+)]
+fn bind_top_level_stack_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<TopLevelStackArguments<'py>> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "stack() takes from 1 to 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut tensors = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut dim = if positional.len() > 1 {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    } else {
+        None
+    };
+    let mut axis = None;
+    let mut out = None;
+    let mut keyword_error = None;
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "tensors" => {
+                    if tensors.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err(
+                                "stack() got multiple values for argument 'tensors'",
+                            )
+                        });
+                    } else {
+                        tensors = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                "dim" => {
+                    if dim.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("stack() got multiple values for argument 'dim'")
+                        });
+                    } else {
+                        dim = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                "axis" => {
+                    axis = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "out" => {
+                    if out.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("stack() got multiple values for argument 'out'")
+                        });
+                    } else {
+                        out = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "stack() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let Some(tensors) = tensors else {
+        return Err(PyTypeError::new_err(
+            "stack() missing 1 required positional arguments: \"tensors\"",
+        ));
+    };
+
+    let axis_conflicts_with_dim = axis.is_some() && dim.is_some();
+    let dim = dim.or(axis);
+    if axis_conflicts_with_dim {
+        keyword_error.get_or_insert_with(|| {
+            PyTypeError::new_err("stack() got an unexpected keyword argument 'axis'")
+        });
+    }
+
+    Ok(TopLevelStackArguments {
+        tensors,
+        dim,
+        out,
+        keyword_error,
+    })
+}
+
+fn parse_stack_tensors_argument<'py>(
+    tensors: &ParsedCallArgument<'py>,
+) -> PyResult<BoundTopLevelCatTensors<'py>> {
+    if tensors.value.is_instance_of::<PyTuple>() || tensors.value.is_instance_of::<PyList>() {
+        return Ok(BoundTopLevelCatTensors::Sequence(
+            parse_stack_tensor_sequence(tensors)?,
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&tensors.value) {
+        return Ok(BoundTopLevelCatTensors::Override(probed));
+    }
+    Err(stack_tensor_sequence_type_error(tensors)?)
+}
+
+fn parse_stack_tensor_sequence<'py>(
+    tensors: &ParsedCallArgument<'py>,
+) -> PyResult<Vec<BoundTensorOrTorchFunction<'py>>> {
+    if !tensors.value.is_instance_of::<PyTuple>() && !tensors.value.is_instance_of::<PyList>() {
+        return Err(stack_tensor_sequence_type_error(tensors)?);
+    }
+
+    let sequence = tensors.value.cast::<PySequence>()?;
+    let length = sequence.len()?;
+    let mut parsed = try_size_vector(length)?;
+    for index in 0..length {
+        let item = sequence.get_item(index)?;
+        if item.is_exact_instance_of::<PyTensor>() {
+            try_push_size(
+                &mut parsed,
+                BoundTensorOrTorchFunction::Tensor(item.cast_into::<PyTensor>()?),
+            )?;
+        } else if let Some(probed) = probe_torch_function_override(&item) {
+            try_push_size(&mut parsed, BoundTensorOrTorchFunction::Override(probed))?;
+        } else if item.is_instance_of::<PyTensor>() {
+            return Err(stack_unsupported_native_input());
+        } else {
+            let actual = python_type_name(&item)?;
+            return Err(PyTypeError::new_err(format!(
+                "expected Tensor as element {index} in argument 0, but got {actual}"
+            )));
+        }
+    }
+    Ok(parsed)
+}
+
+fn parse_stack_dimension(
+    dimension: Option<ParsedCallArgument<'_>>,
+) -> PyResult<BoundTopLevelCatDimension<'_>> {
+    let Some(dimension) = dimension else {
+        return Ok(BoundTopLevelCatDimension::Native(None));
+    };
+    if is_dimension_swap_integer(&dimension.value)? {
+        return Ok(BoundTopLevelCatDimension::Native(Some(dimension)));
+    }
+    if let Some(probed) = probe_torch_function_override(&dimension.value) {
+        return Ok(BoundTopLevelCatDimension::Override(probed));
+    }
+    validate_dimension_swap_dimension("stack", "dim", dimension.position, &dimension.value)?;
+    unreachable!("invalid stack dimension type should have returned a Python error")
+}
+
+fn parse_stack_out(
+    out: Option<ParsedCallArgument<'_>>,
+) -> PyResult<Option<BoundTensorOrTorchFunction<'_>>> {
+    let Some(out) = out else {
+        return Ok(None);
+    };
+    if out.value.is_none() {
+        return Ok(None);
+    }
+    if out.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(Some(BoundTensorOrTorchFunction::Tensor(
+            out.value.cast::<PyTensor>()?.clone(),
+        )));
+    }
+    if let Some(probed) = probe_torch_function_override(&out.value) {
+        return Ok(Some(BoundTensorOrTorchFunction::Override(probed)));
+    }
+    if !out.value.is_instance_of::<PyTensor>() {
+        let actual = python_type_name(&out.value)?;
+        return Err(PyTypeError::new_err(format!(
+            "stack(): argument 'out' must be Tensor, not {actual}"
+        )));
+    }
+    Err(stack_unsupported_native_input())
+}
+
+fn validate_stack_tensor(tensor: &PyTensor) -> PyResult<()> {
+    if tensor.inner.dtype() != DType::Float32 || tensor.inner.device() != Device::Cpu {
+        return Err(stack_unsupported_native_input());
+    }
+    Ok(())
+}
+
+fn validate_stack_tensor_shapes(tensors: &[PyRef<'_, PyTensor>]) -> PyResult<()> {
+    let first_shape = tensors[0].inner.shape();
+    for (index, tensor) in tensors.iter().enumerate().skip(1) {
+        if tensor.inner.shape() != first_shape {
+            return Err(PyRuntimeError::new_err(format!(
+                "stack expects each tensor to be equal size, but got {} at entry 0 and {} at entry {index}",
+                stack_shape_description(first_shape),
+                stack_shape_description(tensor.inner.shape()),
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn stack_tensor_sequence_type_error(tensors: &ParsedCallArgument<'_>) -> PyResult<PyErr> {
+    let position = tensors
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(&tensors.value)?;
+    Ok(PyTypeError::new_err(format!(
+        "stack(): argument 'tensors'{position} must be tuple of Tensors, not {actual}"
+    )))
+}
+
+fn stack_shape_description(shape: &[usize]) -> String {
+    format!("{shape:?}")
+}
+
+fn stack_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "stack(): only exact native CPU float32 Tensor inputs are supported",
+    )
 }
 
 fn parse_eye_dimension(argument: &str, dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
@@ -14297,6 +15392,390 @@ fn bind_tensor_arguments<'py, const N: usize>(
         arguments.map(|argument| argument.expect("all required tensor arguments were checked")),
         keyword_error,
     ))
+}
+
+fn bind_allclose_top_level_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundAllCloseArguments<'py>> {
+    if positional.len() > 5 {
+        return Err(PyTypeError::new_err(format!(
+            "allclose() takes from 2 to 5 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut input = None;
+    let mut other = None;
+    let mut rtol = None;
+    let mut atol = None;
+    let mut equal_nan = None;
+    let mut input_alias = None;
+    let mut other_alias = None;
+    for (index, value) in positional.iter().enumerate() {
+        let argument = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+        match index {
+            0 => input = argument,
+            1 => other = argument,
+            2 => rtol = argument,
+            3 => atol = argument,
+            4 => equal_nan = argument,
+            _ => unreachable!("positional count was checked above"),
+        }
+    }
+
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "input" | "x" | "a" | "x1" => bind_allclose_aliased_keyword_argument(
+                    &mut input,
+                    &mut input_alias,
+                    "input",
+                    &key,
+                    value,
+                    &mut keyword_error,
+                ),
+                "other" | "x2" => bind_allclose_aliased_keyword_argument(
+                    &mut other,
+                    &mut other_alias,
+                    "other",
+                    &key,
+                    value,
+                    &mut keyword_error,
+                ),
+                "rtol" => {
+                    bind_allclose_keyword_argument(&mut rtol, "rtol", value, &mut keyword_error);
+                }
+                "atol" => {
+                    bind_allclose_keyword_argument(&mut atol, "atol", value, &mut keyword_error);
+                }
+                "equal_nan" => {
+                    bind_allclose_keyword_argument(
+                        &mut equal_nan,
+                        "equal_nan",
+                        value,
+                        &mut keyword_error,
+                    );
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "allclose() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let Some(input) = input else {
+        return Err(PyTypeError::new_err(
+            "allclose() missing 2 required positional argument: \"input\", \"other\"",
+        ));
+    };
+    let Some(other) = other else {
+        parse_exact_native_allclose_tensor_argument("input", &input)?;
+        return Err(PyTypeError::new_err(
+            "allclose() missing 1 required positional arguments: \"other\"",
+        ));
+    };
+
+    Ok(BoundAllCloseArguments {
+        input,
+        other,
+        rtol,
+        atol,
+        equal_nan,
+        keyword_error,
+    })
+}
+
+fn bind_allclose_method_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundAllCloseMethodArguments<'py>> {
+    if positional.len() > 4 {
+        return Err(PyTypeError::new_err(format!(
+            "allclose() takes from 1 to 4 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut other = None;
+    let mut rtol = None;
+    let mut atol = None;
+    let mut equal_nan = None;
+    let mut other_alias = None;
+    for (index, value) in positional.iter().enumerate() {
+        let argument = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+        match index {
+            0 => other = argument,
+            1 => rtol = argument,
+            2 => atol = argument,
+            3 => equal_nan = argument,
+            _ => unreachable!("positional count was checked above"),
+        }
+    }
+
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "other" | "x2" => bind_allclose_aliased_keyword_argument(
+                    &mut other,
+                    &mut other_alias,
+                    "other",
+                    &key,
+                    value,
+                    &mut keyword_error,
+                ),
+                "rtol" => {
+                    bind_allclose_keyword_argument(&mut rtol, "rtol", value, &mut keyword_error);
+                }
+                "atol" => {
+                    bind_allclose_keyword_argument(&mut atol, "atol", value, &mut keyword_error);
+                }
+                "equal_nan" => {
+                    bind_allclose_keyword_argument(
+                        &mut equal_nan,
+                        "equal_nan",
+                        value,
+                        &mut keyword_error,
+                    );
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "allclose() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let Some(other) = other else {
+        return Err(PyTypeError::new_err(
+            "allclose() missing 1 required positional arguments: \"other\"",
+        ));
+    };
+
+    Ok(BoundAllCloseMethodArguments {
+        other,
+        rtol,
+        atol,
+        equal_nan,
+        keyword_error,
+    })
+}
+
+fn bind_allclose_keyword_argument<'py>(
+    argument: &mut Option<ParsedCallArgument<'py>>,
+    canonical_name: &str,
+    value: Bound<'py, PyAny>,
+    keyword_error: &mut Option<PyErr>,
+) {
+    if argument.is_some() {
+        keyword_error.get_or_insert_with(|| {
+            PyTypeError::new_err(format!(
+                "allclose() got multiple values for argument '{canonical_name}'"
+            ))
+        });
+    } else {
+        *argument = Some(ParsedCallArgument {
+            value,
+            position: None,
+        });
+    }
+}
+
+fn bind_allclose_aliased_keyword_argument<'py>(
+    argument: &mut Option<ParsedCallArgument<'py>>,
+    alias_name: &mut Option<String>,
+    canonical_name: &str,
+    keyword_name: &str,
+    value: Bound<'py, PyAny>,
+    keyword_error: &mut Option<PyErr>,
+) {
+    if argument.is_some() {
+        let unexpected_alias = alias_name
+            .as_deref()
+            .or_else(|| (keyword_name != canonical_name).then_some(keyword_name));
+        if let Some(unexpected_alias) = unexpected_alias {
+            keyword_error.get_or_insert_with(|| {
+                PyTypeError::new_err(format!(
+                    "allclose() got an unexpected keyword argument '{unexpected_alias}'"
+                ))
+            });
+        } else {
+            keyword_error.get_or_insert_with(|| {
+                PyTypeError::new_err(format!(
+                    "allclose() got multiple values for argument '{canonical_name}'"
+                ))
+            });
+        }
+    } else {
+        *argument = Some(ParsedCallArgument {
+            value,
+            position: None,
+        });
+        if keyword_name != canonical_name {
+            *alias_name = Some(keyword_name.to_owned());
+        }
+    }
+}
+
+fn parse_allclose_tolerances(
+    rtol: Option<&ParsedCallArgument<'_>>,
+    atol: Option<&ParsedCallArgument<'_>>,
+    equal_nan: Option<&ParsedCallArgument<'_>>,
+) -> PyResult<ParsedAllCloseTolerances> {
+    let rtol = parse_allclose_tolerance("rtol", rtol, 1.0e-5)?;
+    let atol = parse_allclose_tolerance("atol", atol, 1.0e-8)?;
+    let equal_nan = parse_allclose_equal_nan(equal_nan)?;
+    Ok(ParsedAllCloseTolerances {
+        rtol,
+        atol,
+        equal_nan,
+    })
+}
+
+fn parse_allclose_tolerance(
+    argument_name: &str,
+    argument: Option<&ParsedCallArgument<'_>>,
+    default: f64,
+) -> PyResult<f64> {
+    let Some(argument) = argument else {
+        return Ok(default);
+    };
+    if argument.value.is_instance_of::<PyInt>()
+        || argument.value.is_instance_of::<PyFloat>()
+        || is_numpy_scalar_of_types(
+            &argument.value,
+            &["bool_", "integer", "floating", "complexfloating"],
+        )?
+    {
+        return argument.value.extract::<f64>();
+    }
+    Err(allclose_argument_type_error(
+        argument_name,
+        argument,
+        "float",
+    )?)
+}
+
+fn parse_allclose_equal_nan(argument: Option<&ParsedCallArgument<'_>>) -> PyResult<bool> {
+    let Some(argument) = argument else {
+        return Ok(false);
+    };
+    if argument.value.is_exact_instance_of::<PyBool>() {
+        return argument.value.is_truthy();
+    }
+    Err(allclose_argument_type_error("equal_nan", argument, "bool")?)
+}
+
+fn validate_allclose_tolerance(py: Python<'_>, name: &str, value: f64) -> PyResult<()> {
+    if value.is_nan() || value < 0.0 {
+        let formatted = format_python_float_g(py, value)?;
+        return Err(PyRuntimeError::new_err(format!(
+            "{name} must be greater than or equal to zero, but got {formatted}"
+        )));
+    }
+    Ok(())
+}
+
+fn format_python_float_g(py: Python<'_>, value: f64) -> PyResult<String> {
+    PyModule::import(py, "builtins")?
+        .getattr("format")?
+        .call1((value, "g"))?
+        .extract()
+}
+
+fn allclose_argument_type_error(
+    argument_name: &str,
+    argument: &ParsedCallArgument<'_>,
+    expected_type: &str,
+) -> PyResult<PyErr> {
+    let position = argument
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual_type = python_type_name(&argument.value)?;
+    Ok(PyTypeError::new_err(format!(
+        "allclose(): argument '{argument_name}'{position} must be {expected_type}, not {actual_type}"
+    )))
+}
+
+fn parse_exact_native_allclose_tensor_argument<'a, 'py>(
+    argument: &str,
+    value: &'a ParsedCallArgument<'py>,
+) -> PyResult<&'a Bound<'py, PyTensor>> {
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(value.value.cast::<PyTensor>()?);
+    }
+    if value.value.is_instance_of::<PyTensor>()
+        || probe_torch_function_override(&value.value).is_some()
+    {
+        return Err(allclose_unsupported_native_input());
+    }
+    parse_tensor_argument("allclose", argument, value)
+}
+
+fn apply_allclose(
+    py: Python<'_>,
+    input: &CoreTensor,
+    other: &CoreTensor,
+    tolerances: ParsedAllCloseTolerances,
+) -> PyResult<bool> {
+    validate_allclose_native_input(input)?;
+    validate_allclose_native_input(other)?;
+    if !torch_function_mode_stack::is_empty() {
+        return Err(allclose_torch_function_mode_error());
+    }
+    validate_allclose_tolerance(py, "rtol", tolerances.rtol)?;
+    validate_allclose_tolerance(py, "atol", tolerances.atol)?;
+    #[allow(clippy::cast_possible_truncation)]
+    let rtol = tolerances.rtol as f32;
+    #[allow(clippy::cast_possible_truncation)]
+    let atol = tolerances.atol as f32;
+    if let Some(result) =
+        input.allclose_same_shape_or_rank_zero(other, rtol, atol, tolerances.equal_nan)
+    {
+        return Ok(result);
+    }
+    if input.is_broadcastable_with(other) {
+        return Err(allclose_unsupported_native_input());
+    }
+    Err(tensor_error(&TensorError::ShapeMismatch {
+        left: input.shape().to_vec(),
+        right: other.shape().to_vec(),
+    }))
+}
+
+fn validate_allclose_native_input(input: &CoreTensor) -> PyResult<()> {
+    if input.dtype() == DType::Float32 && input.device() == Device::Cpu {
+        Ok(())
+    } else {
+        Err(allclose_unsupported_native_input())
+    }
+}
+
+fn allclose_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "allclose(): only exact native CPU float32 Tensor inputs with identical shapes or rank-0 scalar broadcasting are supported",
+    )
+}
+
+fn allclose_torch_function_mode_error() -> PyErr {
+    PyNotImplementedError::new_err("allclose(): __torch_function__ modes are not supported")
 }
 
 fn bind_dtype_binary_arguments<'py>(
@@ -18539,6 +20018,113 @@ fn is_exact_full_slice(index: &Bound<'_, PyAny>) -> PyResult<bool> {
         && slice.getattr("step")?.is_none())
 }
 
+#[derive(Clone, Copy)]
+struct UnitRangeSlice {
+    start: usize,
+    length: usize,
+    covers_full_dimension: bool,
+}
+
+#[derive(Clone, Copy)]
+struct PositiveStepSliceBound {
+    value: isize,
+    original_nonnegative: bool,
+}
+
+fn parse_unit_range_slice(
+    index: &Bound<'_, PyAny>,
+    dimension_size: usize,
+) -> PyResult<Option<UnitRangeSlice>> {
+    let Ok(slice) = index.cast::<PySlice>() else {
+        return Ok(None);
+    };
+    let signed_dimension_size = isize::try_from(dimension_size)
+        .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds the platform limit"))?;
+    if !parse_unit_slice_step(slice)? {
+        return Ok(None);
+    }
+
+    let start = parse_positive_step_slice_start(slice, signed_dimension_size)?;
+    let stop = parse_positive_step_slice_stop(slice, signed_dimension_size)?;
+    let start_value = usize::try_from(start.value)
+        .map_err(|_| PyOverflowError::new_err("slice start exceeds the platform limit"))?;
+    let length = if stop > start.value {
+        usize::try_from(stop - start.value)
+            .map_err(|_| PyOverflowError::new_err("slice length exceeds the platform limit"))?
+    } else {
+        0
+    };
+    Ok(Some(UnitRangeSlice {
+        start: start_value,
+        length,
+        covers_full_dimension: start.original_nonnegative
+            && start_value == 0
+            && length == dimension_size,
+    }))
+}
+
+fn parse_unit_slice_step(slice: &Bound<'_, PySlice>) -> PyResult<bool> {
+    let step = slice.getattr("step")?;
+    if step.is_none() {
+        return Ok(true);
+    }
+
+    let step = python_number_index(&step)?;
+    if step.compare(0_i32)? == CmpOrdering::Equal {
+        return Err(PyValueError::new_err("slice step cannot be zero"));
+    }
+    Ok(step.compare(1_i32)? == CmpOrdering::Equal)
+}
+
+fn parse_positive_step_slice_start(
+    slice: &Bound<'_, PySlice>,
+    dimension_size: isize,
+) -> PyResult<PositiveStepSliceBound> {
+    let start = slice.getattr("start")?;
+    if start.is_none() {
+        return Ok(PositiveStepSliceBound {
+            value: 0,
+            original_nonnegative: true,
+        });
+    }
+
+    let start = python_number_index(&start)?;
+    Ok(PositiveStepSliceBound {
+        value: adjust_positive_step_slice_bound(&start, dimension_size)?,
+        original_nonnegative: start.ge(0_i32)?,
+    })
+}
+
+fn parse_positive_step_slice_stop(
+    slice: &Bound<'_, PySlice>,
+    dimension_size: isize,
+) -> PyResult<isize> {
+    let stop = slice.getattr("stop")?;
+    if stop.is_none() {
+        return Ok(dimension_size);
+    }
+
+    let stop = python_number_index(&stop)?;
+    adjust_positive_step_slice_bound(&stop, dimension_size)
+}
+
+fn adjust_positive_step_slice_bound(
+    bound: &Bound<'_, PyInt>,
+    dimension_size: isize,
+) -> PyResult<isize> {
+    if bound.lt(0_i32)? {
+        if bound.lt(-dimension_size)? {
+            Ok(0)
+        } else {
+            Ok(bound.extract::<isize>()? + dimension_size)
+        }
+    } else if bound.gt(dimension_size)? {
+        Ok(dimension_size)
+    } else {
+        bound.extract()
+    }
+}
+
 // The caller checks tuple arity against the tensor rank first so lower-rank
 // integer-prefix/full-slice forms retain PyTorch's "too many indices" error
 // without converting their integer-like objects.
@@ -18561,6 +20147,31 @@ fn parse_leading_integer_full_slice(
         indices.iter().take(integer_dimensions),
     )
     .map(Some)
+}
+
+fn parse_leading_integer_range_slice(
+    tensor: &CoreTensor,
+    indices: &Bound<'_, PyTuple>,
+) -> PyResult<Option<(Vec<i64>, UnitRangeSlice)>> {
+    let Some(integer_dimensions) = indices.len().checked_sub(1) else {
+        return Ok(None);
+    };
+    let slice_index = indices.get_item(integer_dimensions)?;
+    if !slice_index.is_instance_of::<PySlice>() {
+        return Ok(None);
+    }
+    let parsed_indices = parse_integer_indices(
+        tensor,
+        integer_dimensions,
+        indices.iter().take(integer_dimensions),
+    )?;
+    let Some(&dimension_size) = tensor.shape().get(integer_dimensions) else {
+        return Err(too_many_indices(tensor.shape().len()));
+    };
+    let Some(range) = parse_unit_range_slice(&slice_index, dimension_size)? else {
+        return Err(invalid_index(&slice_index));
+    };
+    Ok(Some((parsed_indices, range)))
 }
 
 // Return how many tensor dimensions an alias-only tuple consumes. A single
@@ -19686,6 +21297,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     add_nn_functional_bridges(module)?;
     module.add_function(wrap_pyfunction!(is_same_size, module)?)?;
     module.add_function(wrap_pyfunction!(equal, module)?)?;
+    module.add_function(wrap_pyfunction!(allclose, module)?)?;
     module.add_function(wrap_pyfunction!(t, module)?)?;
     module.add_function(wrap_pyfunction!(transpose, module)?)?;
     module.add_function(wrap_pyfunction!(swapdims, module)?)?;

@@ -54,7 +54,8 @@ gates.
 
 ### Compilation
 
-- [Compile CPU timings](torch-compile-cpu-release-timings.md): `torch.compile(..., backend="eager", fullgraph=True)` CPU release evidence with retained raw JSON in [benchmark-data/torch-compile-cpu-v4.json](benchmark-data/torch-compile-cpu-v4.json).
+- [Compile CPU timings](torch-compile-cpu-release-timings.md): `torch.compile(..., backend="eager")` fullgraph and no-break `fullgraph=False` CPU release evidence with retained raw JSON in [benchmark-data/torch-compile-cpu-v4.json](benchmark-data/torch-compile-cpu-v4.json).
+- [Compile H100 CUDA prepared-executor timings](torch-compile-cuda-h100-release-timings.md): `torch.compile(..., backend="inductor")` H100 CUDA four-shape forward-output prepared-executor release evidence with retained raw JSON in [benchmark-data/torch-compile-cuda-h100-shape-matrix-v11.json](benchmark-data/torch-compile-cuda-h100-shape-matrix-v11.json).
 
 ### Layout/view ops
 
