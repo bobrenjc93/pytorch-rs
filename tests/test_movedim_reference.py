@@ -196,6 +196,167 @@ class TensorMovedimReferenceTests(unittest.TestCase):
             case="no-grad-view",
         )
 
+    def test_sequence_axes_views_match_pytorch_2_13(self):
+        values = np.arange(120, dtype=np.float32).reshape(2, 3, 4, 5)
+        actual_base = torch.tensor(values.tolist())
+        expected_base = reference_torch.tensor(values)
+        cases = (
+            ("contiguous", actual_base, expected_base, (0, 3), [2, 1]),
+            (
+                "transposed",
+                actual_base.transpose(0, 3),
+                expected_base.transpose(0, 3),
+                [0, 2],
+                (2, 0),
+            ),
+            (
+                "offset",
+                actual_base.transpose(0, 3)[1],
+                expected_base.transpose(0, 3)[1],
+                (-1, 0),
+                (0, -1),
+            ),
+            (
+                "empty",
+                torch.zeros((2, 0, 3, 4)),
+                reference_torch.zeros((2, 0, 3, 4)),
+                [0, 3],
+                [2, 1],
+            ),
+            ("negative", actual_base, expected_base, (-1, -4), (0, -1)),
+        )
+        for case, actual_source, expected_source, source, destination in cases:
+            for operation in ("movedim", "moveaxis"):
+                actual_method = getattr(actual_source, operation)
+                expected_method = getattr(expected_source, operation)
+                self.assert_matches(
+                    actual_method(source, destination),
+                    expected_method(source, destination),
+                    actual_source=actual_source,
+                    expected_source=expected_source,
+                    case=f"{case}-{operation}-method",
+                )
+                self.assert_matches(
+                    getattr(torch, operation)(actual_source, source, destination),
+                    getattr(reference_torch, operation)(
+                        expected_source, source, destination
+                    ),
+                    actual_source=actual_source,
+                    expected_source=expected_source,
+                    case=f"{case}-{operation}-function",
+                )
+
+        actual_scalar = torch.tensor(2.5)
+        expected_scalar = reference_torch.tensor(2.5)
+        for source, destination in (((), ()), ([], []), ((), [])):
+            for operation in ("movedim", "moveaxis"):
+                self.assert_matches(
+                    getattr(actual_scalar, operation)(source, destination),
+                    getattr(expected_scalar, operation)(source, destination),
+                    actual_source=actual_scalar,
+                    expected_source=expected_scalar,
+                    case=f"scalar-empty-axis-{operation}-{type(source).__name__}",
+                )
+                self.assert_matches(
+                    getattr(torch, operation)(actual_scalar, source, destination),
+                    getattr(reference_torch, operation)(
+                        expected_scalar, source, destination
+                    ),
+                    actual_source=actual_scalar,
+                    expected_source=expected_scalar,
+                    case=f"top-level-scalar-empty-axis-{operation}",
+                )
+
+    def test_sequence_axis_errors_match_pytorch_2_13(self):
+        actual = torch.zeros((2, 3, 4))
+        expected = reference_torch.zeros((2, 3, 4))
+        cases = (
+            (
+                "length-mismatch",
+                lambda tensor, operation: getattr(tensor, operation)((0, 1), (2,)),
+                lambda module, tensor, operation: getattr(module, operation)(
+                    tensor, (0, 1), (2,)
+                ),
+            ),
+            (
+                "duplicate-source",
+                lambda tensor, operation: getattr(tensor, operation)((0, -3), (1, 2)),
+                lambda module, tensor, operation: getattr(module, operation)(
+                    tensor, (0, -3), (1, 2)
+                ),
+            ),
+            (
+                "duplicate-destination",
+                lambda tensor, operation: getattr(tensor, operation)((0, 1), (2, -1)),
+                lambda module, tensor, operation: getattr(module, operation)(
+                    tensor, (0, 1), (2, -1)
+                ),
+            ),
+            (
+                "out-of-range",
+                lambda tensor, operation: getattr(tensor, operation)((0, 3), (1, 2)),
+                lambda module, tensor, operation: getattr(module, operation)(
+                    tensor, (0, 3), (1, 2)
+                ),
+            ),
+            (
+                "bad-first-element",
+                lambda tensor, operation: getattr(tensor, operation)(
+                    (object(), 1), (1, 2)
+                ),
+                lambda module, tensor, operation: getattr(module, operation)(
+                    tensor, (object(), 1), (1, 2)
+                ),
+            ),
+            (
+                "bad-first-source-bool",
+                lambda tensor, operation: getattr(tensor, operation)((True, 0), (1, 2)),
+                lambda module, tensor, operation: getattr(module, operation)(
+                    tensor, (True, 0), (1, 2)
+                ),
+            ),
+            (
+                "bad-first-destination-bool",
+                lambda tensor, operation: getattr(tensor, operation)((0, 1), (False, 2)),
+                lambda module, tensor, operation: getattr(module, operation)(
+                    tensor, (0, 1), (False, 2)
+                ),
+            ),
+            (
+                "bad-later-source-element",
+                lambda tensor, operation: getattr(tensor, operation)((0, 1.5), (1, 2)),
+                lambda module, tensor, operation: getattr(module, operation)(
+                    tensor, (0, 1.5), (1, 2)
+                ),
+            ),
+            (
+                "bad-later-destination-element",
+                lambda tensor, operation: getattr(tensor, operation)((0, 1), (1, "2")),
+                lambda module, tensor, operation: getattr(module, operation)(
+                    tensor, (0, 1), (1, "2")
+                ),
+            ),
+            (
+                "mixed-scalar-sequence",
+                lambda tensor, operation: getattr(tensor, operation)((0, 1), 2),
+                lambda module, tensor, operation: getattr(module, operation)(
+                    tensor, (0, 1), 2
+                ),
+            ),
+        )
+        for operation in ("movedim", "moveaxis"):
+            for case, method_call, function_call in cases:
+                with self.subTest(operation=operation, case=case, form="method"):
+                    self.assert_error_matches(
+                        lambda: method_call(actual, operation),
+                        lambda: method_call(expected, operation),
+                    )
+                with self.subTest(operation=operation, case=case, form="function"):
+                    self.assert_error_matches(
+                        lambda: function_call(torch, actual, operation),
+                        lambda: function_call(reference_torch, expected, operation),
+                    )
+
     def test_integer_binding_conversion_and_errors_match_pytorch_2_13(self):
         class IntegerSubclass(int):
             pass

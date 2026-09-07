@@ -355,42 +355,7 @@ impl PyTensorBase {
                     .cast_into::<PyTuple>()?;
                 &normalized_indices
             };
-            if let Some(indexed_dimensions) = metadata_alias_tuple_dimensions(indices)? {
-                if indexed_dimensions > tensor.inner.shape().len() {
-                    return Err(too_many_indices(tensor.inner.shape().len()));
-                }
-                tensor.inner.metadata_alias()
-            } else if indices.len() == 2
-                && indices.get_item(0)?.is_instance_of::<PyEllipsis>()
-                && indices.get_item(1)?.is_none()
-            {
-                tensor.inner.unsqueeze_back()
-            } else if indices.len() > tensor.inner.shape().len() {
-                return Err(too_many_indices(tensor.inner.shape().len()));
-            } else if let Some(indices) = parse_leading_integer_full_slice(&tensor.inner, indices)?
-            {
-                tensor.inner.index(indices)
-            } else if let Some((indices, range)) =
-                parse_leading_integer_range_slice(&tensor.inner, indices)?
-            {
-                if range.covers_full_dimension {
-                    if indices.is_empty() {
-                        tensor.inner.metadata_alias()
-                    } else {
-                        tensor.inner.index(indices)
-                    }
-                } else if indices.is_empty() {
-                    tensor.inner.slice_dimension(0, range.start, range.length)
-                } else {
-                    match tensor.inner.index(indices) {
-                        Ok(indexed) => indexed.slice_dimension(0, range.start, range.length),
-                        Err(error) => Err(error),
-                    }
-                }
-            } else {
-                let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
-                tensor.inner.index(indices)
-            }
+            getitem_tuple(&tensor.inner, indices)?
         } else if is_exact_full_slice(index)? {
             tensor.inner.index_full_slice()
         } else if index.cast::<PySlice>().is_ok() {
@@ -2173,21 +2138,46 @@ pub(crate) fn cat_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
+    cat_alias_variable_function(CatAlias::Cat, py, args, kwargs)
+}
+
+pub(crate) fn concat_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    cat_alias_variable_function(CatAlias::Concat, py, args, kwargs)
+}
+
+pub(crate) fn concatenate_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    cat_alias_variable_function(CatAlias::Concatenate, py, args, kwargs)
+}
+
+fn cat_alias_variable_function(
+    alias: CatAlias,
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
     let TopLevelCatArguments {
         tensors,
         dim,
         out,
         keyword_error,
-    } = bind_top_level_cat_arguments(args, kwargs)?;
-    let tensors = parse_cat_tensors_argument(&tensors)?;
-    let dim = parse_cat_dimension(dim)?;
-    let out = parse_cat_out(out)?;
+    } = bind_top_level_cat_arguments(alias, args, kwargs)?;
+    let tensors = parse_cat_tensors_argument(alias, &tensors)?;
+    let dim = parse_cat_dimension(alias, dim)?;
+    let out = parse_cat_out(alias, out)?;
     if let Some(keyword_error) = keyword_error {
         return Err(keyword_error);
     }
 
     let call = BoundTopLevelCatCall { tensors, dim, out };
-    dispatch_top_level_cat(py, &call, args, kwargs)
+    dispatch_top_level_cat(alias, py, &call, args, kwargs)
 }
 
 pub(crate) fn stack_variable_function(
@@ -2646,7 +2636,7 @@ fn dimension_move_tensor_method(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let [source, destination] = bind_movedim_arguments(operation, args, kwargs)?;
+    let arguments = bind_movedim_arguments(operation, args, kwargs)?;
     let tensor = slf.as_any().cast::<PyTensor>()?;
     if let Some(result) = dispatch_tensorbase_method_mode(
         slf.py(),
@@ -2659,13 +2649,7 @@ fn dimension_move_tensor_method(
         return Ok(result);
     }
 
-    let [source, destination] = parse_dimension_swap_dimensions(
-        operation.name(),
-        ["source", "destination"],
-        &source,
-        &destination,
-    )?;
-    let inner = movedim_tensor(&tensor.try_borrow()?.inner, source, destination)?;
+    let inner = movedim_tensor_from_arguments(operation, &tensor.try_borrow()?.inner, &arguments)?;
     Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
 }
 
@@ -2675,8 +2659,8 @@ fn dimension_move_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let (input, [source, destination]) = bind_top_level_movedim_arguments(operation, args, kwargs)?;
-    dispatch_top_level_movedim(operation, py, &input, &source, &destination, args, kwargs)
+    let (input, arguments) = bind_top_level_movedim_arguments(operation, args, kwargs)?;
+    dispatch_top_level_movedim(operation, py, &input, &arguments, args, kwargs)
 }
 
 pub(crate) fn matmul_variable_function(
@@ -2949,6 +2933,31 @@ enum BoundTopLevelCatTensors<'py> {
 enum BoundTopLevelCatDimension<'py> {
     Native(Option<ParsedCallArgument<'py>>),
     Override(ProbedTorchFunctionOverride<'py>),
+}
+
+#[derive(Clone, Copy)]
+enum CatAlias {
+    Cat,
+    Concat,
+    Concatenate,
+}
+
+impl CatAlias {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Cat => "cat",
+            Self::Concat => "concat",
+            Self::Concatenate => "concatenate",
+        }
+    }
+
+    const fn qualified_name(self) -> &'static str {
+        match self {
+            Self::Cat => "torch.cat",
+            Self::Concat => "torch.concat",
+            Self::Concatenate => "torch.concatenate",
+        }
+    }
 }
 
 struct TopLevelCatArguments<'py> {
@@ -4330,6 +4339,7 @@ fn ordered_top_level_cat_overrides<'py>(
 }
 
 fn dispatch_top_level_cat(
+    alias: CatAlias,
     py: Python<'_>,
     call: &BoundTopLevelCatCall<'_>,
     args: &Bound<'_, PyTuple>,
@@ -4340,7 +4350,7 @@ fn dispatch_top_level_cat(
         return apply_top_level_cat(py, call);
     }
 
-    let function = variable_function(py, "cat")?;
+    let function = variable_function(py, alias.name())?;
     let types = PyTuple::new(
         py,
         overrides.iter().map(|probed| probed.dispatch_type.clone()),
@@ -4373,7 +4383,7 @@ fn dispatch_top_level_cat(
 
     Err(torch_function_dispatch_error_for_overrides(
         py,
-        "torch.cat",
+        alias.qualified_name(),
         active_mode.get(),
         &overrides,
     )?)
@@ -5056,15 +5066,14 @@ fn dispatch_top_level_movedim(
     operation: DimensionMoveOperation,
     py: Python<'_>,
     input: &BoundTensorOrTorchFunction<'_>,
-    source: &ParsedCallArgument<'_>,
-    destination: &ParsedCallArgument<'_>,
+    arguments: &BoundMovedimArguments<'_>,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     if torch_function_mode_stack::is_empty()
         && let BoundTensorOrTorchFunction::Tensor(tensor) = input
     {
-        return apply_top_level_movedim(operation, py, tensor, source, destination);
+        return apply_top_level_movedim(operation, py, tensor, arguments);
     }
 
     let function = variable_function(py, operation.name())?;
@@ -5075,7 +5084,7 @@ fn dispatch_top_level_movedim(
         }
     };
 
-    // Integer type matching is complete, but conversion and dimension range
+    // Overload-form matching is complete, but conversion and dimension range
     // checks remain deferred until every active override has had its chance.
     let active_mode = torch_function_mode_stack::pop();
     if let Some(mode) = active_mode.get() {
@@ -5111,7 +5120,7 @@ fn dispatch_top_level_movedim(
                     None,
                 )?);
             }
-            apply_top_level_movedim(operation, py, tensor, source, destination)
+            apply_top_level_movedim(operation, py, tensor, arguments)
         }
     }
 }
@@ -5120,16 +5129,9 @@ fn apply_top_level_movedim(
     operation: DimensionMoveOperation,
     py: Python<'_>,
     input: &Bound<'_, PyTensor>,
-    source: &ParsedCallArgument<'_>,
-    destination: &ParsedCallArgument<'_>,
+    arguments: &BoundMovedimArguments<'_>,
 ) -> PyResult<Py<PyAny>> {
-    let [source, destination] = parse_dimension_swap_dimensions(
-        operation.name(),
-        ["source", "destination"],
-        source,
-        destination,
-    )?;
-    let inner = movedim_tensor(&input.try_borrow()?.inner, source, destination)?;
+    let inner = movedim_tensor_from_arguments(operation, &input.try_borrow()?.inner, arguments)?;
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
 }
 
@@ -11645,13 +11647,19 @@ fn validate_device_argument_type(
     Err(error)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "PyTorch-compatible call binding keeps delayed positional, alias, and keyword diagnostics together"
+)]
 fn bind_top_level_cat_arguments<'py>(
+    alias: CatAlias,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<TopLevelCatArguments<'py>> {
+    let function_name = alias.name();
     if positional.len() > 2 {
         return Err(PyTypeError::new_err(format!(
-            "cat() takes from 1 to 2 positional arguments but {} were given",
+            "{function_name}() takes from 1 to 2 positional arguments but {} were given",
             positional.len()
         )));
     }
@@ -11683,7 +11691,9 @@ fn bind_top_level_cat_arguments<'py>(
                 "tensors" => {
                     if tensors.is_some() {
                         keyword_error.get_or_insert_with(|| {
-                            PyTypeError::new_err("cat() got multiple values for argument 'tensors'")
+                            PyTypeError::new_err(format!(
+                                "{function_name}() got multiple values for argument 'tensors'"
+                            ))
                         });
                     } else {
                         tensors = Some(ParsedCallArgument {
@@ -11695,7 +11705,9 @@ fn bind_top_level_cat_arguments<'py>(
                 "dim" => {
                     if dim.is_some() {
                         keyword_error.get_or_insert_with(|| {
-                            PyTypeError::new_err("cat() got multiple values for argument 'dim'")
+                            PyTypeError::new_err(format!(
+                                "{function_name}() got multiple values for argument 'dim'"
+                            ))
                         });
                     } else {
                         dim = Some(ParsedCallArgument {
@@ -11713,7 +11725,9 @@ fn bind_top_level_cat_arguments<'py>(
                 "out" => {
                     if out.is_some() {
                         keyword_error.get_or_insert_with(|| {
-                            PyTypeError::new_err("cat() got multiple values for argument 'out'")
+                            PyTypeError::new_err(format!(
+                                "{function_name}() got multiple values for argument 'out'"
+                            ))
                         });
                     } else {
                         out = Some(ParsedCallArgument {
@@ -11725,7 +11739,7 @@ fn bind_top_level_cat_arguments<'py>(
                 _ => {
                     keyword_error.get_or_insert_with(|| {
                         PyTypeError::new_err(format!(
-                            "cat() got an unexpected keyword argument '{key}'"
+                            "{function_name}() got an unexpected keyword argument '{key}'"
                         ))
                     });
                 }
@@ -11734,16 +11748,18 @@ fn bind_top_level_cat_arguments<'py>(
     }
 
     let Some(tensors) = tensors else {
-        return Err(PyTypeError::new_err(
-            "cat() missing 1 required positional arguments: \"tensors\"",
-        ));
+        return Err(PyTypeError::new_err(format!(
+            "{function_name}() missing 1 required positional arguments: \"tensors\""
+        )));
     };
 
     let axis_conflicts_with_dim = axis.is_some() && dim.is_some();
     let dim = dim.or(axis);
     if axis_conflicts_with_dim {
         keyword_error.get_or_insert_with(|| {
-            PyTypeError::new_err("cat() got an unexpected keyword argument 'axis'")
+            PyTypeError::new_err(format!(
+                "{function_name}() got an unexpected keyword argument 'axis'"
+            ))
         });
     }
 
@@ -11756,24 +11772,26 @@ fn bind_top_level_cat_arguments<'py>(
 }
 
 fn parse_cat_tensors_argument<'py>(
+    alias: CatAlias,
     tensors: &ParsedCallArgument<'py>,
 ) -> PyResult<BoundTopLevelCatTensors<'py>> {
     if tensors.value.is_instance_of::<PyTuple>() || tensors.value.is_instance_of::<PyList>() {
         return Ok(BoundTopLevelCatTensors::Sequence(
-            parse_cat_tensor_sequence(tensors)?,
+            parse_cat_tensor_sequence(alias, tensors)?,
         ));
     }
     if let Some(probed) = probe_torch_function_override(&tensors.value) {
         return Ok(BoundTopLevelCatTensors::Override(probed));
     }
-    Err(cat_tensor_sequence_type_error(tensors)?)
+    Err(cat_tensor_sequence_type_error(alias, tensors)?)
 }
 
 fn parse_cat_tensor_sequence<'py>(
+    alias: CatAlias,
     tensors: &ParsedCallArgument<'py>,
 ) -> PyResult<Vec<BoundTensorOrTorchFunction<'py>>> {
     if !tensors.value.is_instance_of::<PyTuple>() && !tensors.value.is_instance_of::<PyList>() {
-        return Err(cat_tensor_sequence_type_error(tensors)?);
+        return Err(cat_tensor_sequence_type_error(alias, tensors)?);
     }
 
     let sequence = tensors.value.cast::<PySequence>()?;
@@ -11801,6 +11819,7 @@ fn parse_cat_tensor_sequence<'py>(
 }
 
 fn parse_cat_dimension(
+    alias: CatAlias,
     dimension: Option<ParsedCallArgument<'_>>,
 ) -> PyResult<BoundTopLevelCatDimension<'_>> {
     let Some(dimension) = dimension else {
@@ -11812,11 +11831,12 @@ fn parse_cat_dimension(
     if let Some(probed) = probe_torch_function_override(&dimension.value) {
         return Ok(BoundTopLevelCatDimension::Override(probed));
     }
-    validate_dimension_swap_dimension("cat", "dim", dimension.position, &dimension.value)?;
+    validate_dimension_swap_dimension(alias.name(), "dim", dimension.position, &dimension.value)?;
     unreachable!("invalid cat dimension type should have returned a Python error")
 }
 
 fn parse_cat_out(
+    alias: CatAlias,
     out: Option<ParsedCallArgument<'_>>,
 ) -> PyResult<Option<BoundTensorOrTorchFunction<'_>>> {
     let Some(out) = out else {
@@ -11836,7 +11856,8 @@ fn parse_cat_out(
     if !out.value.is_instance_of::<PyTensor>() {
         let actual = python_type_name(&out.value)?;
         return Err(PyTypeError::new_err(format!(
-            "cat(): argument 'out' must be Tensor, not {actual}"
+            "{}(): argument 'out' must be Tensor, not {actual}",
+            alias.name()
         )));
     }
     Err(cat_unsupported_native_input())
@@ -11858,13 +11879,17 @@ fn validate_cat_tensor(tensor: &PyTensor, index: usize) -> PyResult<()> {
     }
 }
 
-fn cat_tensor_sequence_type_error(tensors: &ParsedCallArgument<'_>) -> PyResult<PyErr> {
+fn cat_tensor_sequence_type_error(
+    alias: CatAlias,
+    tensors: &ParsedCallArgument<'_>,
+) -> PyResult<PyErr> {
     let position = tensors
         .position
         .map_or_else(String::new, |position| format!(" (position {position})"));
     let actual = python_type_name(&tensors.value)?;
     Ok(PyTypeError::new_err(format!(
-        "cat(): argument 'tensors'{position} must be tuple of Tensors, not {actual}"
+        "{}(): argument 'tensors'{position} must be tuple of Tensors, not {actual}",
+        alias.name()
     )))
 }
 
@@ -18898,6 +18923,17 @@ enum MovedimCallKind {
     VariableFunction(DimensionMoveOperation),
 }
 
+#[derive(Clone, Copy)]
+enum MovedimArgumentForm {
+    Integers,
+    Sequences,
+}
+
+struct BoundMovedimArguments<'py> {
+    arguments: [ParsedCallArgument<'py>; 2],
+    form: MovedimArgumentForm,
+}
+
 impl MovedimCallKind {
     const fn operation(self) -> DimensionMoveOperation {
         match self {
@@ -18926,7 +18962,7 @@ fn bind_movedim_arguments<'py>(
     operation: DimensionMoveOperation,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-) -> PyResult<[ParsedCallArgument<'py>; 2]> {
+) -> PyResult<BoundMovedimArguments<'py>> {
     let kind = MovedimCallKind::TensorMethod(operation);
     let names = ["source", "destination"];
     let arguments = bind_movedim_call_arguments(
@@ -18936,22 +18972,15 @@ fn bind_movedim_arguments<'py>(
         [c"source", c"destination"],
         false,
     )?;
-    if !is_dimension_swap_integer(&arguments[0].value)?
-        || !is_dimension_swap_integer(&arguments[1].value)?
-    {
-        return Err(movedim_binding_error(positional, keywords, kind, &names)?);
-    }
-    Ok(arguments)
+    let form = movedim_argument_form(&arguments, positional, keywords, kind, &names)?;
+    Ok(BoundMovedimArguments { arguments, form })
 }
 
 fn bind_top_level_movedim_arguments<'py>(
     operation: DimensionMoveOperation,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-) -> PyResult<(
-    BoundTensorOrTorchFunction<'py>,
-    [ParsedCallArgument<'py>; 2],
-)> {
+) -> PyResult<(BoundTensorOrTorchFunction<'py>, BoundMovedimArguments<'py>)> {
     let kind = MovedimCallKind::VariableFunction(operation);
     let names = ["input", "source", "destination"];
     let [input, source, destination] = bind_movedim_call_arguments(
@@ -18968,11 +18997,9 @@ fn bind_top_level_movedim_arguments<'py>(
     } else {
         return Err(movedim_binding_error(positional, keywords, kind, &names)?);
     };
-    if !is_dimension_swap_integer(&source.value)? || !is_dimension_swap_integer(&destination.value)?
-    {
-        return Err(movedim_binding_error(positional, keywords, kind, &names)?);
-    }
-    Ok((input, [source, destination]))
+    let arguments = [source, destination];
+    let form = movedim_argument_form(&arguments, positional, keywords, kind, &names)?;
+    Ok((input, BoundMovedimArguments { arguments, form }))
 }
 
 fn bind_movedim_call_arguments<'py, const N: usize>(
@@ -19050,6 +19077,48 @@ fn bind_movedim_call_arguments<'py, const N: usize>(
         )?);
     }
     Ok(arguments.map(|argument| argument.expect("all movedim arguments were bound above")))
+}
+
+fn movedim_argument_form(
+    arguments: &[ParsedCallArgument<'_>; 2],
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    kind: MovedimCallKind,
+    names: &[&str],
+) -> PyResult<MovedimArgumentForm> {
+    if is_dimension_swap_integer(&arguments[0].value)? {
+        if is_dimension_swap_integer(&arguments[1].value)? {
+            return Ok(MovedimArgumentForm::Integers);
+        }
+        return Err(movedim_binding_error(positional, keywords, kind, names)?);
+    }
+
+    if movedim_sequence_argument_matches_overload(&arguments[0].value)?
+        && movedim_sequence_argument_matches_overload(&arguments[1].value)?
+    {
+        return Ok(MovedimArgumentForm::Sequences);
+    }
+
+    Err(movedim_binding_error(positional, keywords, kind, names)?)
+}
+
+fn movedim_sequence_argument_matches_overload(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if !value.is_instance_of::<PyTuple>() && !value.is_instance_of::<PyList>() {
+        return Ok(false);
+    }
+
+    let sequence = value.cast::<PySequence>()?;
+    if sequence.len()? == 0 {
+        return Ok(true);
+    }
+    let first = sequence.get_item(0)?;
+    if first.is_instance_of::<PyBool>() {
+        return Ok(false);
+    }
+    Ok(PyModule::import(first.py(), "operator")?
+        .getattr("index")?
+        .call1((&first,))
+        .is_ok())
 }
 
 #[allow(
@@ -19916,6 +19985,154 @@ fn movedim_tensor(input: &CoreTensor, source: i64, destination: i64) -> PyResult
     permute_tensor(input, dimensions)
 }
 
+fn movedim_tensor_from_arguments(
+    operation: DimensionMoveOperation,
+    input: &CoreTensor,
+    arguments: &BoundMovedimArguments<'_>,
+) -> PyResult<CoreTensor> {
+    match arguments.form {
+        MovedimArgumentForm::Integers => {
+            let [source, destination] = parse_dimension_swap_dimensions(
+                operation.name(),
+                ["source", "destination"],
+                &arguments.arguments[0],
+                &arguments.arguments[1],
+            )?;
+            movedim_tensor(input, source, destination)
+        }
+        MovedimArgumentForm::Sequences => {
+            let destination = parse_movedim_sequence_dimensions(
+                operation.name(),
+                "destination",
+                &arguments.arguments[1],
+            )?;
+            let source = parse_movedim_sequence_dimensions(
+                operation.name(),
+                "source",
+                &arguments.arguments[0],
+            )?;
+            movedim_tensor_sequence(input, &source, &destination)
+        }
+    }
+}
+
+fn parse_movedim_sequence_dimensions(
+    operation: &str,
+    argument: &str,
+    dimensions: &ParsedCallArgument<'_>,
+) -> PyResult<Vec<i64>> {
+    let sequence = dimensions.value.cast::<PySequence>()?;
+    let length = sequence.len()?;
+    let mut parsed = try_size_vector(length)?;
+    let index = PyModule::import(dimensions.value.py(), "operator")?.getattr("index")?;
+    for position in 0..length {
+        let dimension = sequence.get_item(position)?;
+        let indexed = index.call1((&dimension,));
+        let Ok(indexed) = indexed else {
+            return Err(movedim_dimension_unpack_error(
+                operation,
+                argument,
+                position + 1,
+                &dimension,
+            )?);
+        };
+        let dimension = indexed.extract::<i64>().map_err(|_| {
+            PyTypeError::new_err(format!(
+                "{operation}(): argument '{argument}' failed to unpack the object at pos {} with error \"Overflow when unpacking long long\"",
+                position + 1
+            ))
+        })?;
+        try_push_size(&mut parsed, dimension)?;
+    }
+    Ok(parsed)
+}
+
+fn movedim_dimension_unpack_error(
+    operation: &str,
+    argument: &str,
+    position: usize,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    let actual = python_type_name(dimension)?;
+    Ok(PyTypeError::new_err(format!(
+        "{operation}(): argument '{argument}' failed to unpack the object at pos {position} with error \"type must be tuple of ints,but got {actual}\""
+    )))
+}
+
+fn movedim_tensor_sequence(
+    input: &CoreTensor,
+    source: &[i64],
+    destination: &[i64],
+) -> PyResult<CoreTensor> {
+    if source.len() != destination.len() {
+        return Err(PyRuntimeError::new_err(format!(
+            "movedim: Invalid source or destination dims: source ({source:?} dims) should contain the same number of dims as destination ({destination:?} dims)"
+        )));
+    }
+
+    let rank = input.shape().len();
+    let normalized_source = normalize_movedim_dimensions(source, rank)?;
+    let normalized_destination = normalize_movedim_dimensions(destination, rank)?;
+    validate_unique_movedim_dimensions("source", source, &normalized_source, rank)?;
+    validate_unique_movedim_dimensions("destination", destination, &normalized_destination, rank)?;
+
+    if rank == 0 {
+        return permute_tensor(input, Vec::new());
+    }
+
+    let mut dimensions = try_size_vector(rank)?;
+    for axis in 0..rank {
+        if !normalized_source.contains(&axis) {
+            let axis = i64::try_from(axis)
+                .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+            try_push_size(&mut dimensions, axis)?;
+        }
+    }
+
+    let mut moved = try_size_vector(normalized_source.len())?;
+    for (&destination, &source) in normalized_destination.iter().zip(normalized_source.iter()) {
+        try_push_size(&mut moved, (destination, source))?;
+    }
+    moved.sort_by_key(|&(destination, _)| destination);
+    for (destination, source) in moved {
+        let source = i64::try_from(source)
+            .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+        dimensions.insert(destination, source);
+    }
+
+    permute_tensor(input, dimensions)
+}
+
+fn normalize_movedim_dimensions(dimensions: &[i64], rank: usize) -> PyResult<Vec<usize>> {
+    let mut normalized = try_size_vector(dimensions.len())?;
+    for &dimension in dimensions {
+        try_push_size(
+            &mut normalized,
+            normalize_movedim_dimension(dimension, rank)?,
+        )?;
+    }
+    Ok(normalized)
+}
+
+fn validate_unique_movedim_dimensions(
+    argument: &str,
+    original: &[i64],
+    normalized: &[usize],
+    rank: usize,
+) -> PyResult<()> {
+    let mut seen = try_size_vector(rank.max(1))?;
+    seen.resize(rank.max(1), false);
+    for &dimension in normalized {
+        if seen[dimension] {
+            return Err(PyRuntimeError::new_err(format!(
+                "movedim: repeated dim in `{argument}` ({original:?})"
+            )));
+        }
+        seen[dimension] = true;
+    }
+    Ok(())
+}
+
 fn normalize_movedim_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
     let effective_rank = rank.max(1);
     let signed_rank = i64::try_from(effective_rank)
@@ -20134,6 +20351,63 @@ fn dimension_swap_argument_type_error(
     ))
 }
 
+fn getitem_tuple(
+    tensor: &CoreTensor,
+    indices: &Bound<'_, PyTuple>,
+) -> PyResult<Result<CoreTensor, TensorError>> {
+    if let Some(indexed_dimensions) = metadata_alias_tuple_dimensions(indices)? {
+        if indexed_dimensions > tensor.shape().len() {
+            return Err(too_many_indices(tensor.shape().len()));
+        }
+        Ok(tensor.metadata_alias())
+    } else if indices.len() == 2
+        && indices.get_item(0)?.is_instance_of::<PyEllipsis>()
+        && indices.get_item(1)?.is_none()
+    {
+        Ok(tensor.unsqueeze_back())
+    } else if let Some(tuple_range) = parse_full_slice_tuple_range_slice(tensor, indices)? {
+        if tuple_range.range.covers_full_dimension {
+            Ok(tensor.metadata_alias())
+        } else {
+            Ok(tensor.slice_dimension(
+                tuple_range.dimension,
+                tuple_range.range.start,
+                tuple_range.range.length,
+            ))
+        }
+    } else if indices.len() > tensor.shape().len() {
+        Err(too_many_indices(tensor.shape().len()))
+    } else if let Some(indices) = parse_leading_integer_full_slice(tensor, indices)? {
+        Ok(tensor.index(indices))
+    } else if let Some((indices, range)) = parse_leading_integer_range_slice(tensor, indices)? {
+        Ok(apply_leading_integer_range_slice(tensor, indices, range))
+    } else {
+        let indices = parse_integer_indices(tensor, indices.len(), indices.iter())?;
+        Ok(tensor.index(indices))
+    }
+}
+
+fn apply_leading_integer_range_slice(
+    tensor: &CoreTensor,
+    indices: Vec<i64>,
+    range: UnitRangeSlice,
+) -> Result<CoreTensor, TensorError> {
+    if range.covers_full_dimension {
+        if indices.is_empty() {
+            tensor.metadata_alias()
+        } else {
+            tensor.index(indices)
+        }
+    } else if indices.is_empty() {
+        tensor.slice_dimension(0, range.start, range.length)
+    } else {
+        match tensor.index(indices) {
+            Ok(indexed) => indexed.slice_dimension(0, range.start, range.length),
+            Err(error) => Err(error),
+        }
+    }
+}
+
 fn parse_integer_indices<'py>(
     tensor: &CoreTensor,
     length: usize,
@@ -20178,6 +20452,12 @@ struct UnitRangeSlice {
     start: usize,
     length: usize,
     covers_full_dimension: bool,
+}
+
+#[derive(Clone, Copy)]
+struct TupleUnitRangeSlice {
+    dimension: usize,
+    range: UnitRangeSlice,
 }
 
 #[derive(Clone, Copy)]
@@ -20327,6 +20607,68 @@ fn parse_leading_integer_range_slice(
         return Err(invalid_index(&slice_index));
     };
     Ok(Some((parsed_indices, range)))
+}
+
+fn parse_full_slice_tuple_range_slice(
+    tensor: &CoreTensor,
+    indices: &Bound<'_, PyTuple>,
+) -> PyResult<Option<TupleUnitRangeSlice>> {
+    let mut explicit_dimensions = 0_usize;
+    let mut contains_ellipsis = false;
+    let mut range_tuple_position = None;
+    let mut range_explicit_dimension = 0_usize;
+    let mut ellipsis_before_range = false;
+
+    for (tuple_position, index) in indices.iter().enumerate() {
+        if index.is_instance_of::<PyEllipsis>() {
+            if contains_ellipsis {
+                return Ok(None);
+            }
+            contains_ellipsis = true;
+        } else if is_exact_full_slice(&index)? {
+            explicit_dimensions += 1;
+        } else if index.is_instance_of::<PySlice>() {
+            if range_tuple_position.is_some() {
+                return Ok(None);
+            }
+            range_tuple_position = Some(tuple_position);
+            range_explicit_dimension = explicit_dimensions;
+            ellipsis_before_range = contains_ellipsis;
+            explicit_dimensions += 1;
+        } else {
+            return Ok(None);
+        }
+    }
+
+    let Some(range_tuple_position) = range_tuple_position else {
+        return Ok(None);
+    };
+    let rank = tensor.shape().len();
+    if explicit_dimensions > rank {
+        return Err(too_many_indices(rank));
+    }
+    let omitted_dimensions = if contains_ellipsis {
+        rank - explicit_dimensions
+    } else {
+        0
+    };
+    let dimension = if ellipsis_before_range {
+        range_explicit_dimension
+            .checked_add(omitted_dimensions)
+            .ok_or_else(|| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?
+    } else {
+        range_explicit_dimension
+    };
+    let range_index = indices.get_item(range_tuple_position)?;
+    let dimension_size = tensor
+        .shape()
+        .get(dimension)
+        .copied()
+        .ok_or_else(|| too_many_indices(rank))?;
+    let Some(range) = parse_unit_range_slice(&range_index, dimension_size)? else {
+        return Err(invalid_index(&range_index));
+    };
+    Ok(Some(TupleUnitRangeSlice { dimension, range }))
 }
 
 // Return how many tensor dimensions an alias-only tuple consumes. A single
