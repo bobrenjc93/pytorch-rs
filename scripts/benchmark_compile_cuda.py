@@ -1151,6 +1151,27 @@ def _synchronize_torch_rs_cuda_compile(compiled, *, label):
     return executor.synchronize(label=label)
 
 
+def _synchronize_torch_rs_cuda_compile_for_timing(compiled, *, label):
+    executor = getattr(compiled, "_torch_rs_cuda_compile_executor", None)
+    if executor is None or not hasattr(executor, "synchronize_for_timing"):
+        return None, _synchronize_torch_rs_cuda_compile(
+            compiled,
+            label=label,
+        )
+    result = executor.synchronize_for_timing()
+    return executor, result
+
+
+def _torch_rs_cuda_compile_timing_sync_evidence(sync_result, *, label):
+    executor, result = sync_result
+    if executor is None:
+        evidence = dict(result)
+        evidence["buffer_name"] = label
+        return evidence
+    elapsed_evidence = getattr(executor, "synchronization_evidence")
+    return elapsed_evidence(result, label=label)
+
+
 def _synchronize_torch_rs_cuda_tensor(tensor, *, label):
     output_buffer = tensor._torch_rs_private_cuda_buffer()
     call = output_buffer.synchronize()
@@ -1169,11 +1190,15 @@ def _time_torch_rs_cuda_compile_once(compiled, inputs):
     try:
         started_ns = time.perf_counter_ns()
         output = compiled(*inputs)
-        after_sync = _synchronize_torch_rs_cuda_compile(
+        after_sync_result = _synchronize_torch_rs_cuda_compile_for_timing(
             compiled,
             label="after_cold_compiled_call",
         )
         elapsed_ns = time.perf_counter_ns() - started_ns
+        after_sync = _torch_rs_cuda_compile_timing_sync_evidence(
+            after_sync_result,
+            label="after_cold_compiled_call",
+        )
         return elapsed_ns, output, {
             "before_timed_region": before_sync,
             "after_timed_region": after_sync,
@@ -1197,11 +1222,15 @@ def _time_torch_rs_cuda_compile_repeated(compiled, inputs, repeats):
     try:
         for _ in range(repeats):
             outputs.append(compiled(*inputs))
-        after_sync = _synchronize_torch_rs_cuda_compile(
+        after_sync_result = _synchronize_torch_rs_cuda_compile_for_timing(
             compiled,
             label="after_repeated_compiled_calls",
         )
         elapsed_ns = time.perf_counter_ns() - started_ns
+        after_sync = _torch_rs_cuda_compile_timing_sync_evidence(
+            after_sync_result,
+            label="after_repeated_compiled_calls",
+        )
         assert outputs
         returned_output = outputs.pop()
         return returned_output, elapsed_ns, {

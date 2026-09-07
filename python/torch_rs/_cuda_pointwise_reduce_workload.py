@@ -1371,6 +1371,7 @@ class H100Float32PointwiseReduceCompiledExecutor:
         "_output_pool",
         "_rows",
         "_columns",
+        "_sync_function",
         "_workload_shape",
         "_bias_shape",
         "_output_shape",
@@ -1382,6 +1383,8 @@ class H100Float32PointwiseReduceCompiledExecutor:
         "_runtime",
         "_runtime_library",
         "_runtime_load_error",
+        "_validated_bias_buffer",
+        "_validated_x_buffer",
         "__weakref__",
     )
 
@@ -1430,6 +1433,7 @@ class H100Float32PointwiseReduceCompiledExecutor:
                 "launch_async_v1"
             ),
         )
+        self._sync_function = self._runtime.cudaDeviceSynchronize
         self._launch_report_tls = threading.local()
         key_payload = json.dumps(
             {
@@ -1457,6 +1461,8 @@ class H100Float32PointwiseReduceCompiledExecutor:
             device_index=0,
             owner_id=self._executor_key,
         )
+        self._validated_x_buffer = None
+        self._validated_bias_buffer = None
         output_pool_allocations = self._output_pool.preallocate(
             _OUTPUT_POOL_INITIAL_CAPACITY,
         )
@@ -1740,6 +1746,65 @@ class H100Float32PointwiseReduceCompiledExecutor:
             label=label,
         )
 
+    def synchronize_for_timing(self) -> int:
+        with self._lifecycle_lock:
+            self._require_open()
+            self._require_visible_mask()
+        result = int(self._sync_function())
+        if result != 0:
+            raise RuntimeError("cudaDeviceSynchronize failed for compiled workload")
+        return result
+
+    def synchronization_evidence(
+        self,
+        result: int,
+        *,
+        label: str,
+    ) -> dict[str, Any]:
+        return {
+            **self._runtime_error_evidence(result),
+            "buffer_name": label,
+            "device_index": 0,
+            "device_selection_verified_at_preparation": True,
+            "per_boundary_cudaGetDevice": False,
+        }
+
+    def _validated_input_buffer(
+        self,
+        value: CudaBenchmarkTensor,
+        *,
+        name: str,
+    ) -> _cuda_buffer.PrivateCudaFloat32Buffer:
+        if name == "x":
+            expected_shape = self._workload_shape
+            cached_buffer = self._validated_x_buffer
+        elif name == "bias":
+            expected_shape = self._bias_shape
+            cached_buffer = self._validated_bias_buffer
+        else:
+            raise AssertionError(f"unexpected CUDA input name: {name}")
+
+        if type(value) is CudaBenchmarkTensor:
+            try:
+                buffer = value._torch_rs_private_cuda_buffer()
+            except ValueError as error:
+                raise _cuda_compile_unsupported(
+                    f"{name} private buffer is not live"
+                ) from error
+            if cached_buffer is buffer and buffer.allocation_ok:
+                return buffer
+
+        buffer = _require_compiled_cuda_benchmark_input_buffer(
+            value,
+            name=name,
+            expected_shape=expected_shape,
+        )
+        if name == "x":
+            self._validated_x_buffer = buffer
+        else:
+            self._validated_bias_buffer = buffer
+        return buffer
+
     def __del__(self) -> None:
         try:
             self.close()
@@ -1753,15 +1818,13 @@ class H100Float32PointwiseReduceCompiledExecutor:
         *,
         close_executor_on_output_release: bool = False,
     ) -> CudaBenchmarkTensor:
-        device_x = _require_compiled_cuda_benchmark_input_buffer(
+        device_x = self._validated_input_buffer(
             x,
             name="x",
-            expected_shape=self._workload_shape,
         )
-        device_bias = _require_compiled_cuda_benchmark_input_buffer(
+        device_bias = self._validated_input_buffer(
             bias,
             name="bias",
-            expected_shape=self._bias_shape,
         )
         if device_x.runtime is not device_bias.runtime:
             raise _cuda_compile_unsupported(

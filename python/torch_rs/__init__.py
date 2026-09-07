@@ -393,6 +393,32 @@ def _make_compile_wrapper(
     shapes_spec,
     implementation,
 ):
+    metadata_attribute_names = (
+        "_torch_rs_cuda_compile_executor",
+        "_torch_rs_cuda_compile_preparation",
+    )
+    metadata_version_attribute = "_torch_rs_compile_metadata_version"
+    metadata_sync_version = (
+        getattr(implementation, metadata_version_attribute, None)
+        if implementation is not None
+        else None
+    )
+
+    def sync_implementation_metadata():
+        for attribute_name in metadata_attribute_names:
+            if hasattr(implementation, attribute_name):
+                setattr(
+                    compiled_model,
+                    attribute_name,
+                    getattr(implementation, attribute_name),
+                )
+        if hasattr(implementation, metadata_version_attribute):
+            setattr(
+                compiled_model,
+                metadata_version_attribute,
+                getattr(implementation, metadata_version_attribute),
+            )
+
     if implementation is None:
 
         def compiled_model(*args, **kwargs):
@@ -401,17 +427,16 @@ def _make_compile_wrapper(
     else:
 
         def compiled_model(*args, **kwargs):
+            nonlocal metadata_sync_version
             result = implementation(*args, **kwargs)
-            for attribute_name in (
-                "_torch_rs_cuda_compile_executor",
-                "_torch_rs_cuda_compile_preparation",
-            ):
-                if hasattr(implementation, attribute_name):
-                    setattr(
-                        compiled_model,
-                        attribute_name,
-                        getattr(implementation, attribute_name),
-                    )
+            new_metadata_version = getattr(
+                implementation,
+                metadata_version_attribute,
+                None,
+            )
+            if new_metadata_version != metadata_sync_version:
+                sync_implementation_metadata()
+                metadata_sync_version = new_metadata_version
             return result
 
     import functools as _compile_functools
@@ -421,16 +446,7 @@ def _make_compile_wrapper(
     else:
         compiled_model.__wrapped__ = model
     if implementation is not None:
-        for attribute_name in (
-            "_torch_rs_cuda_compile_executor",
-            "_torch_rs_cuda_compile_preparation",
-        ):
-            if hasattr(implementation, attribute_name):
-                setattr(
-                    compiled_model,
-                    attribute_name,
-                    getattr(implementation, attribute_name),
-                )
+        sync_implementation_metadata()
     return _set_compile_wrapper_metadata(
         compiled_model,
         fullgraph=fullgraph,
@@ -658,6 +674,7 @@ def _native_h100_cuda_compile_implementation(model):
             executor_state["executor"] = executor
             compiled_model._torch_rs_cuda_compile_executor = executor
             compiled_model._torch_rs_cuda_compile_preparation = executor.metadata()
+            compiled_model._torch_rs_compile_metadata_version += 1
         return executor
 
     def compiled_model(*args, **kwargs):
@@ -680,6 +697,7 @@ def _native_h100_cuda_compile_implementation(model):
     compiled_model._torch_rs_cuda_compile_preparation = (
         executor_state["executor"].metadata()
     )
+    compiled_model._torch_rs_compile_metadata_version = 0
     return compiled_model
 
 
