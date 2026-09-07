@@ -28,7 +28,7 @@ boundaries in [Current baseline](#current-baseline) remain authoritative.
 | --- | --- | --- |
 | Creation and dtype metadata | `torch.tensor`, `torch.as_tensor`, `torch.asarray`, `torch.empty`, `torch.zeros`, `torch.ones`, `torch.empty_like`, `torch.zeros_like`, `torch.ones_like`, `torch.full_like`, `torch.full`, `torch.eye`, `torch.float32`/`torch.float`, `torch.finfo`, `torch.can_cast`, `torch.promote_types`, `torch.Size` | [Tensors](#tensors), [Creation](#creation), [Metadata and views](#metadata-and-views) |
 | Views and layout helpers | `torch.select`, `torch.reshape`, `torch.unsqueeze`, `torch.permute`, `torch.movedim`, `torch.moveaxis`, `torch.transpose`, `torch.swapdims`, `torch.swapaxes`, `torch.squeeze`, `torch.flatten`, `torch.ravel`, `torch.adjoint`, `torch.t`, `torch.real`, `torch.imag`, `torch.conj`, `torch.positive` | [Metadata and views](#metadata-and-views) |
-| Math, reductions, and predicates | `torch.add`, `torch.div`, `torch.divide`, `torch.sub`, `torch.subtract`, `torch.mul`, `torch.multiply`, `torch.cat`, `torch.stack`, `torch.matmul`, `torch.mm`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.absolute`, `torch.neg`, `torch.negative`, `torch.cos`, `torch.exp`, `torch.log`, `torch.reciprocal`, `torch.rsqrt`, `torch.sin`, `torch.sqrt`, `torch.square`, `torch.floor`, `torch.ceil`, `torch.trunc`, `torch.fix`, `torch.sigmoid`, `torch.tanh`, `torch.equal`, `torch.numel`, `torch.is_nonzero`, `torch.is_complex`, `torch.is_floating_point`, `torch.is_signed`, `torch.get_device`, `torch.broadcast_shapes`, `torch.broadcast_tensors` | [Elementwise and reductions](#elementwise-and-reductions), [Metadata and views](#metadata-and-views) |
+| Math, reductions, and predicates | `torch.add`, `torch.div`, `torch.divide`, `torch.sub`, `torch.subtract`, `torch.mul`, `torch.multiply`, `torch.cat`, `torch.stack`, `torch.matmul`, `torch.mm`, `torch.sum`, `torch.mean`, `torch.relu`, `torch.abs`, `torch.absolute`, `torch.neg`, `torch.negative`, `torch.cos`, `torch.exp`, `torch.log`, `torch.reciprocal`, `torch.rsqrt`, `torch.sin`, `torch.sqrt`, `torch.square`, `torch.floor`, `torch.ceil`, `torch.trunc`, `torch.fix`, `torch.sigmoid`, `torch.tanh`, `torch.equal`, `torch.allclose`, `torch.numel`, `torch.is_nonzero`, `torch.is_complex`, `torch.is_floating_point`, `torch.is_signed`, `torch.get_device`, `torch.broadcast_shapes`, `torch.broadcast_tensors` | [Elementwise and reductions](#elementwise-and-reductions), [Metadata and views](#metadata-and-views) |
 | Eager process state | `torch.no_grad`, `torch.enable_grad`, `torch.is_grad_enabled`, `torch.autograd.backward`, autocast-cache helpers, deterministic/debug-mode helpers, warning-policy helpers, thread-count queries, matmul-precision helpers, build flags, `torch.__future__`, `torch.version` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
 | Compiler entrypoint | `torch.compile` | [Backend and compiler metadata](#backend-and-compiler-metadata) |
 
@@ -38,7 +38,7 @@ boundaries in [Current baseline](#current-baseline) remain authoritative.
 | --- | --- | --- |
 | Metadata and predicates | `Tensor.shape`, `Tensor.stride`, `Tensor.dense_dim`, `Tensor.sparse_dim`, `Tensor.is_pinned`, `Tensor.is_distributed`, `Tensor.is_sparse`, `Tensor.is_sparse_csr`, `Tensor.is_cpu`, `Tensor.is_cuda`, `Tensor.is_quantized`, `Tensor.is_signed`, `Tensor.dim`, `Tensor.ndimension`, `Tensor.numel`, `Tensor.nelement`, `Tensor.element_size`, `Tensor.nbytes`, `Tensor.is_nonzero`, `Tensor.is_complex`, `Tensor.is_floating_point`, `Tensor.is_shared`, `Tensor.grad_dtype`, `Tensor.output_nr`, `Tensor.retains_grad` | [Metadata and views](#metadata-and-views) |
 | Views and layout transforms | `Tensor.select`, `Tensor.unbind`, `Tensor.view`, `Tensor.view_as`, `Tensor.unsqueeze`, `Tensor.permute`, `Tensor.movedim`, `Tensor.moveaxis`, `Tensor.T`, `Tensor.H`, `Tensor.mT`, `Tensor.mH`, `Tensor.adjoint`, `Tensor.t`, `Tensor.swapdims`, `Tensor.swapaxes`, `Tensor.squeeze`, `Tensor.reshape`, `Tensor.reshape_as`, `Tensor.flatten`, `Tensor.ravel`, `Tensor.contiguous`, `Tensor.cpu`, `Tensor.type`, `Tensor.type_as`, `Tensor.real`, `Tensor.imag`, `Tensor.conj`, `Tensor.positive`, `Tensor.__format__` | [Metadata and views](#metadata-and-views) |
-| Math and autograd methods | `Tensor.clone`, `Tensor.equal`, `Tensor.add`, `Tensor.sub`, `Tensor.subtract`, `Tensor.mul`, `Tensor.multiply`, `Tensor.div`, `Tensor.divide`, `Tensor.abs`, `Tensor.absolute`, `Tensor.neg`, `Tensor.negative`, `Tensor.exp`, `Tensor.cos`, `Tensor.sin`, `Tensor.sqrt`, `Tensor.square`, `Tensor.reciprocal`, `Tensor.rsqrt`, `Tensor.log`, `Tensor.sum`, `Tensor.mean`, `Tensor.relu`, `Tensor.floor`, `Tensor.ceil`, `Tensor.trunc`, `Tensor.fix`, `Tensor.sigmoid`, `Tensor.tanh`, `Tensor.matmul`, `Tensor.backward`, `Tensor.retain_grad` | [Elementwise and reductions](#elementwise-and-reductions), [Backend and compiler metadata](#backend-and-compiler-metadata) |
+| Math and autograd methods | `Tensor.clone`, `Tensor.equal`, `Tensor.allclose`, `Tensor.add`, `Tensor.sub`, `Tensor.subtract`, `Tensor.mul`, `Tensor.multiply`, `Tensor.div`, `Tensor.divide`, `Tensor.abs`, `Tensor.absolute`, `Tensor.neg`, `Tensor.negative`, `Tensor.exp`, `Tensor.cos`, `Tensor.sin`, `Tensor.sqrt`, `Tensor.square`, `Tensor.reciprocal`, `Tensor.rsqrt`, `Tensor.log`, `Tensor.sum`, `Tensor.mean`, `Tensor.relu`, `Tensor.floor`, `Tensor.ceil`, `Tensor.trunc`, `Tensor.fix`, `Tensor.sigmoid`, `Tensor.tanh`, `Tensor.matmul`, `Tensor.backward`, `Tensor.retain_grad` | [Elementwise and reductions](#elementwise-and-reductions), [Backend and compiler metadata](#backend-and-compiler-metadata) |
 
 ### torch.nn.functional
 
@@ -840,7 +840,10 @@ foreign layouts, and backend-specific allocation behavior remain unsupported.
 #### Elementwise and reductions
 
 The eager math surface includes independent deep cloning, exact `Tensor.equal()`
-and `torch.equal()` comparison, identity `Tensor.positive()`/
+and `torch.equal()` comparison, CPU float32 `Tensor.allclose()` and
+`torch.allclose()` boolean comparison for identical shapes and rank-zero scalar
+broadcasting with PyTorch 2.13-compatible tolerance, NaN, infinity, signed-zero,
+empty, offset-view, and noncontiguous-view behavior, identity `Tensor.positive()`/
 `torch.positive()` and unary `+`, unary `-`, `Tensor.neg()`, its
 `Tensor.negative()` alias, `torch.neg()`, and the distinct top-level
 `torch.negative()` builtin. It supports broadcast tensor and real-scalar
@@ -862,6 +865,9 @@ to the same implementation as `torch.matmul`; concrete `out` tensors,
 `torch.bmm`, `torch.addmm`, rank-1 or batched `matmul` behavior, dtype/device
 expansion, tensor subclasses without a handling override, and unsupported
 autograd cases remain outside its contract.
+`torch.isclose`, bool tensor outputs, dtype promotion, CUDA tensors, tensor
+subclasses, active `__torch_function__` modes, and shape-expanding broadcasting
+remain unsupported for `allclose`.
 
 Top-level `torch.neg()` and `torch.negative()` share the same layout-preserving
 float32 CPU negation and autograd path while remaining distinct builtins; their
