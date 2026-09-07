@@ -163,6 +163,7 @@ The public CPU-build `torch.cuda` probe behavior remains unchanged.
 ### Layout/view ops
 
 - [`Tensor.view`, reshape, flatten, ravel, unbind, and edge-unsqueeze release timings](docs/tensor-view-release-timings.md)
+- [`torch.cat`, `torch.concat`, and `torch.concatenate` 1-D release timings](docs/top-level-cat-release-timings.md)
 
 ### Linear algebra
 
