@@ -1233,6 +1233,32 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
         self.assertIn(f"uv_project={dedicated_venv}", log)
         self.assertIn(f"verify|expected={dedicated_venv}", log)
 
+    def test_wrapper_can_be_launched_from_scripts_directory(self):
+        repo, env, log_path = self._make_wrapper_fixture()
+
+        completed = subprocess.run(
+            [
+                "bash",
+                "evaluate_torch_compile_coverage.sh",
+                "--subset",
+                "public",
+            ],
+            cwd=repo / "scripts",
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertEqual(json.loads(completed.stdout)["summary"], "stub evaluator")
+        self.assertEqual(log_path.read_text(encoding="utf-8").count("evaluate|"), 1)
+
     def test_wrapper_ignores_abandoned_legacy_setup_lock_directory(self):
         repo, env, log_path = self._make_wrapper_fixture()
         legacy_lock = repo / "target" / "torch-compile-coverage" / "setup.lock"

@@ -3,6 +3,7 @@
 set -euo pipefail
 
 repository_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+script_path="$repository_root/scripts/evaluate_torch_compile_coverage.sh"
 target_path="$repository_root/target"
 wheel_directory=
 
@@ -61,7 +62,7 @@ if [[ "${TORCH_RS_COMPILE_COVERAGE_SETUP_LOCKED:-}" != "1" ]]; then
         "$setup_lock_file" \
         -- \
         env TORCH_RS_COMPILE_COVERAGE_SETUP_LOCKED=1 \
-        bash "$0" "$@"
+        bash "$script_path" "$@"
 fi
 
 export CARGO_HOME="$target_directory/cargo-home"
