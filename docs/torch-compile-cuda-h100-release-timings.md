@@ -3,7 +3,7 @@
 Date: 2026-09-06
 
 Candidate provenance: clean worktree at
-`aadc7ce394bd7fb85e89f0d11146d7014d3d1381`. The JSON artifact records
+`01655e1b8b252e2057b2371e43f00241eea90eab`. The JSON artifact records
 empty `git.status_short` and `git.diff_stat` before writing the refreshed
 output.
 
@@ -11,7 +11,8 @@ Measurement command, written to an ignored `target/` path before copying the
 refreshed JSON into the checked-in artifact path:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py \
+CUDA_VISIBLE_DEVICES=0 target/torch-compile-coverage/venv/bin/python \
+  scripts/benchmark_compile_cuda.py \
   --include-unprepared-comparison \
   --output target/regenerated-benchmarks/torch-compile-cuda-h100-runtime-ownership-v10.json
 ```
@@ -19,11 +20,11 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py \
 Additional checks run after refreshing this evidence:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest tests.test_compile_cuda_benchmark
-.venv/bin/python -m unittest tests.test_compile_benchmark_artifact
-.venv/bin/python -m unittest tests.test_top_level_compile
-.venv/bin/python -m unittest tests.test_torch_compile_coverage_evaluator
-.venv/bin/python -m compileall -q \
+CUDA_VISIBLE_DEVICES=0 target/torch-compile-coverage/venv/bin/python -m unittest tests.test_compile_cuda_benchmark
+target/torch-compile-coverage/venv/bin/python -m unittest tests.test_compile_benchmark_artifact
+target/torch-compile-coverage/venv/bin/python -m unittest tests.test_top_level_compile
+target/torch-compile-coverage/venv/bin/python -m unittest tests.test_torch_compile_coverage_evaluator
+target/torch-compile-coverage/venv/bin/python -m compileall -q \
   python/torch_rs scripts/benchmark_compile_cuda.py tests/test_compile_cuda_benchmark.py
 cargo fmt --check
 ```
@@ -46,18 +47,18 @@ Results:
 
 | Measurement | Steady median us | MAD us | Notes |
 | --- | ---: | ---: | --- |
-| PyTorch 2.13 `torch.compile(..., backend="inductor")` | 50.950 | 1.369 | Reference workload on the same visible H100 |
-| `torch_rs` prepared compile wrapper | 53.434 | 1.045 | Eligible native CUDA compile evidence using pooled outputs |
-| `torch_rs` unprepared compatibility call | 10534.888 | 809.287 | Non-scoring comparison that prepares on every invocation |
+| PyTorch 2.13 `torch.compile(..., backend="inductor")` | 48.634 | 2.200 | Reference workload on the same visible H100 |
+| `torch_rs` prepared compile wrapper | 53.517 | 0.948 | Eligible native CUDA compile evidence using pooled outputs |
+| `torch_rs` unprepared compatibility call | 11757.638 | 522.090 | Non-scoring comparison that prepares on every invocation |
 
 The prepared wrapper recorded executor invocation count 0 before the first
 call and 67 after timing; the last steady-state call used the same preparation
-id `01ad652f08d9d291`. Cold compile wrapper creation took 13063.449 us, and
-the first compiled call took 192.932 us. The output pool allocated two buffers,
+id `01ad652f08d9d291`. Cold compile wrapper creation took 13080.746 us, and
+the first compiled call took 192.391 us. The output pool allocated two buffers,
 released 67 leases, had zero live buffers after timing, and reused a released
 buffer for the steady-state path. The measured prepared-vs-unprepared
-steady-state speedup was 197.16x. The candidate stayed within a few percent of
-the PyTorch reference, with a CUDA compile score of 95.35% for this single
+steady-state speedup was 219.70x. The candidate stayed within roughly ten percent of
+the PyTorch reference, with a CUDA compile score of 90.87% for this single
 workload.
 
 This release artifact is intentionally narrow: it proves one fixed H100
