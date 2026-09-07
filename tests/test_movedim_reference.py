@@ -309,6 +309,20 @@ class TensorMovedimReferenceTests(unittest.TestCase):
                 ),
             ),
             (
+                "bad-first-source-bool",
+                lambda tensor, operation: getattr(tensor, operation)((True, 0), (1, 2)),
+                lambda module, tensor, operation: getattr(module, operation)(
+                    tensor, (True, 0), (1, 2)
+                ),
+            ),
+            (
+                "bad-first-destination-bool",
+                lambda tensor, operation: getattr(tensor, operation)((0, 1), (False, 2)),
+                lambda module, tensor, operation: getattr(module, operation)(
+                    tensor, (0, 1), (False, 2)
+                ),
+            ),
+            (
                 "bad-later-source-element",
                 lambda tensor, operation: getattr(tensor, operation)((0, 1.5), (1, 2)),
                 lambda module, tensor, operation: getattr(module, operation)(

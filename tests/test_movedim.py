@@ -611,6 +611,8 @@ class TensorMovedimTests(unittest.TestCase):
                         function(tensor, source, destination)
 
             for call in (
+                lambda: method((True, 0), (1, 2)),
+                lambda: function(tensor, (0, 1), (False, 2)),
                 lambda: method((object(), 1), (1, 2)),
                 lambda: function(tensor, (object(), 1), (1, 2)),
                 lambda: method((0, 1), 2),

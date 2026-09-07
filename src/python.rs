@@ -18918,6 +18918,9 @@ fn movedim_sequence_argument_matches_overload(value: &Bound<'_, PyAny>) -> PyRes
         return Ok(true);
     }
     let first = sequence.get_item(0)?;
+    if first.is_instance_of::<PyBool>() {
+        return Ok(false);
+    }
     Ok(PyModule::import(first.py(), "operator")?
         .getattr("index")?
         .call1((&first,))
