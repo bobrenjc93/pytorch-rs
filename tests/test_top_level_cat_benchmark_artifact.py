@@ -35,7 +35,7 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
             ("cat", "concat", "concatenate"),
         )
         workloads = benchmark_top_level_cat.WORKLOADS
-        self.assertEqual(len(workloads), 9)
+        self.assertEqual(len(workloads), 10)
         categories = {workload.category for workload in workloads}
         self.assertEqual(
             categories,
@@ -47,6 +47,7 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
                 "noncontiguous",
                 "axis keyword",
                 "no_grad",
+                "active autograd",
             },
         )
         names = {workload.name for workload in workloads}
@@ -60,6 +61,7 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
             "tuple_dim_negative_one_513_509",
             "axis_keyword_17_19",
             "no_grad_grad_inputs_257_263",
+            "active_autograd_grad_inputs_257_263",
         ):
             self.assertIn(required_name, names)
         self.assertTrue(
@@ -94,6 +96,7 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
                 "singleton_contiguous_8192",
                 "empty_operand_middle_1024_0_511",
                 "noncontiguous_stride2_views_4096",
+                "active_autograd_grad_inputs_257_263",
                 "--apis",
                 "cat",
             ],
@@ -119,7 +122,7 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
             report["environment"]["implementation_orders"],
             [list(order) for order in benchmark_top_level_cat.IMPLEMENTATION_ORDERS],
         )
-        self.assertEqual(report["aggregates"]["timed_supported_cell_count"], 3)
+        self.assertEqual(report["aggregates"]["timed_supported_cell_count"], 4)
 
         by_name = {case["workload"]: case for case in report["cases"]}
         self.assertEqual(
@@ -128,6 +131,7 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
                 "singleton_contiguous_8192",
                 "empty_operand_middle_1024_0_511",
                 "noncontiguous_stride2_views_4096",
+                "active_autograd_grad_inputs_257_263",
             },
         )
         for case in report["cases"]:
@@ -164,6 +168,12 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
             by_name["noncontiguous_stride2_views_4096"]["input_metadata"][0]["stride"],
             [2],
         )
+        active_output = by_name["active_autograd_grad_inputs_257_263"][
+            "output_metadata"
+        ][0]
+        self.assertEqual(active_output["shape"], [520])
+        self.assertTrue(active_output["requires_grad"])
+        self.assertFalse(active_output["is_leaf"])
 
     def test_checked_in_raw_artifact_matches_markdown_summary(self):
         benchmark_top_level_cat.validate_artifact(

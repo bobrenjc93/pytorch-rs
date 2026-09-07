@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Benchmark supported eager CPU 1-D ``torch.cat`` cells against PyTorch."""
+"""Benchmark supported CPU 1-D ``torch.cat`` cells against PyTorch."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ PROTECTED_OUTPUT_PATHS = {
     REPOSITORY_ROOT / "docs" / "burner-evaluation-progress.svg",
 }
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "top_level_cat_cpu_1d_benchmark_v1"
+BENCHMARK_VERSION = "top_level_cat_cpu_1d_benchmark_v2"
 DEFAULT_WARMUPS = 15
 DEFAULT_SAMPLES = 81
 DEFAULT_THREADS = 1
@@ -358,6 +358,23 @@ def _make_no_grad_grad_inputs(module, np):
     )
 
 
+def _make_active_autograd_grad_inputs(module, np):
+    return Operands(
+        [
+            _dense_tensor(module, np, (257,), 2026090720, requires_grad=True),
+            _dense_tensor(
+                module,
+                np,
+                (263,),
+                2026090721,
+                requires_grad=True,
+                bias=0.625,
+            ),
+        ],
+        {"dim": 0},
+    )
+
+
 WORKLOADS = (
     Workload(
         "singleton_contiguous_8192",
@@ -458,6 +475,17 @@ WORKLOADS = (
         (2026090718, 2026090719),
         _make_no_grad_grad_inputs,
     ),
+    Workload(
+        "active_autograd_grad_inputs_257_263",
+        "active autograd",
+        "list dim=0",
+        "two grad-requiring contiguous inputs with lengths 257 and 263 in grad mode",
+        "concatenation output",
+        1024,
+        MODE_EAGER,
+        (2026090720, 2026090721),
+        _make_active_autograd_grad_inputs,
+    ),
 )
 
 
@@ -473,33 +501,23 @@ def _unsupported_out_1d(module, api):
     )
 
 
-def _unsupported_active_autograd_1d(module, api):
+def _unsupported_rank3_dim0(module, api):
     return getattr(module, api)(
         [
-            module.tensor([1.0, 2.0], dtype=module.float32, requires_grad=True),
-            module.tensor([3.0], dtype=module.float32, requires_grad=True),
+            module.ones((1, 2, 3), dtype=module.float32),
+            module.zeros((2, 2, 3), dtype=module.float32),
         ],
         dim=0,
     )
 
 
-def _unsupported_rank2_dim0(module, api):
+def _unsupported_rank3_dim2(module, api):
     return getattr(module, api)(
         [
-            module.ones((2, 3), dtype=module.float32),
-            module.zeros((1, 3), dtype=module.float32),
+            module.ones((2, 3, 1), dtype=module.float32),
+            module.zeros((2, 3, 2), dtype=module.float32),
         ],
-        dim=0,
-    )
-
-
-def _unsupported_rank2_dim1(module, api):
-    return getattr(module, api)(
-        [
-            module.ones((2, 2), dtype=module.float32),
-            module.zeros((2, 1), dtype=module.float32),
-        ],
-        dim=1,
+        dim=2,
     )
 
 
@@ -512,25 +530,18 @@ UNSUPPORTED_CELLS = (
         "cat(): the 'out' argument is not supported",
     ),
     UnsupportedCell(
-        "active_autograd_1d",
-        "active autograd",
-        _unsupported_active_autograd_1d,
-        "RuntimeError",
-        "cat(): autograd recording is not supported",
+        "rank3_dim0",
+        "higher-rank cat",
+        _unsupported_rank3_dim0,
+        "NotImplementedError",
+        "cat(): only exact native CPU float32 rank-1 or rank-2 Tensor inputs are supported",
     ),
     UnsupportedCell(
-        "rank2_dim0",
-        "general-dimensional cat",
-        _unsupported_rank2_dim0,
+        "rank3_dim2",
+        "higher-rank cat",
+        _unsupported_rank3_dim2,
         "NotImplementedError",
-        "cat(): only exact native CPU float32 1-D Tensor inputs are supported",
-    ),
-    UnsupportedCell(
-        "rank2_dim1",
-        "general-dimensional cat",
-        _unsupported_rank2_dim1,
-        "NotImplementedError",
-        "cat(): only exact native CPU float32 1-D Tensor inputs are supported",
+        "cat(): only exact native CPU float32 rank-1 or rank-2 Tensor inputs are supported",
     ),
 )
 
@@ -1151,6 +1162,11 @@ def _aggregate_rows(rows):
             for row in rows
             if row["category"] == "no_grad"
         ],
+        "active autograd": [
+            row["ratios"]["steady_torch_rs_over_pytorch"]
+            for row in rows
+            if row["category"] == "active autograd"
+        ],
     }
     named_groups = {"all supported cells": ratios}
     named_groups.update({f"{api} cells": values for api, values in by_api.items()})
@@ -1326,6 +1342,7 @@ def render_markdown_summary(report):
         _group_line("Noncontiguous cells", groups["noncontiguous cells"]),
         _group_line("Axis-keyword cells", groups["axis keyword cells"]),
         _group_line("`no_grad` cells", groups["no_grad cells"]),
+        _group_line("Active-autograd cells", groups["active autograd cells"]),
         "",
         (
             "Including the unsupported cells below as zero-credit denominator "
@@ -1467,6 +1484,7 @@ def _validate_expected_artifact_shape(report):
         "noncontiguous",
         "axis keyword",
         "no_grad",
+        "active autograd",
     ):
         if required_category not in categories:
             errors.append(f"missing supported category {required_category!r}")
