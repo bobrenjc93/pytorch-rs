@@ -355,42 +355,7 @@ impl PyTensorBase {
                     .cast_into::<PyTuple>()?;
                 &normalized_indices
             };
-            if let Some(indexed_dimensions) = metadata_alias_tuple_dimensions(indices)? {
-                if indexed_dimensions > tensor.inner.shape().len() {
-                    return Err(too_many_indices(tensor.inner.shape().len()));
-                }
-                tensor.inner.metadata_alias()
-            } else if indices.len() == 2
-                && indices.get_item(0)?.is_instance_of::<PyEllipsis>()
-                && indices.get_item(1)?.is_none()
-            {
-                tensor.inner.unsqueeze_back()
-            } else if indices.len() > tensor.inner.shape().len() {
-                return Err(too_many_indices(tensor.inner.shape().len()));
-            } else if let Some(indices) = parse_leading_integer_full_slice(&tensor.inner, indices)?
-            {
-                tensor.inner.index(indices)
-            } else if let Some((indices, range)) =
-                parse_leading_integer_range_slice(&tensor.inner, indices)?
-            {
-                if range.covers_full_dimension {
-                    if indices.is_empty() {
-                        tensor.inner.metadata_alias()
-                    } else {
-                        tensor.inner.index(indices)
-                    }
-                } else if indices.is_empty() {
-                    tensor.inner.slice_dimension(0, range.start, range.length)
-                } else {
-                    match tensor.inner.index(indices) {
-                        Ok(indexed) => indexed.slice_dimension(0, range.start, range.length),
-                        Err(error) => Err(error),
-                    }
-                }
-            } else {
-                let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
-                tensor.inner.index(indices)
-            }
+            getitem_tuple(&tensor.inner, indices)?
         } else if is_exact_full_slice(index)? {
             tensor.inner.index_full_slice()
         } else if index.cast::<PySlice>().is_ok() {
@@ -20231,6 +20196,63 @@ fn dimension_swap_argument_type_error(
     ))
 }
 
+fn getitem_tuple(
+    tensor: &CoreTensor,
+    indices: &Bound<'_, PyTuple>,
+) -> PyResult<Result<CoreTensor, TensorError>> {
+    if let Some(indexed_dimensions) = metadata_alias_tuple_dimensions(indices)? {
+        if indexed_dimensions > tensor.shape().len() {
+            return Err(too_many_indices(tensor.shape().len()));
+        }
+        Ok(tensor.metadata_alias())
+    } else if indices.len() == 2
+        && indices.get_item(0)?.is_instance_of::<PyEllipsis>()
+        && indices.get_item(1)?.is_none()
+    {
+        Ok(tensor.unsqueeze_back())
+    } else if let Some(tuple_range) = parse_full_slice_tuple_range_slice(tensor, indices)? {
+        if tuple_range.range.covers_full_dimension {
+            Ok(tensor.metadata_alias())
+        } else {
+            Ok(tensor.slice_dimension(
+                tuple_range.dimension,
+                tuple_range.range.start,
+                tuple_range.range.length,
+            ))
+        }
+    } else if indices.len() > tensor.shape().len() {
+        Err(too_many_indices(tensor.shape().len()))
+    } else if let Some(indices) = parse_leading_integer_full_slice(tensor, indices)? {
+        Ok(tensor.index(indices))
+    } else if let Some((indices, range)) = parse_leading_integer_range_slice(tensor, indices)? {
+        Ok(apply_leading_integer_range_slice(tensor, indices, range))
+    } else {
+        let indices = parse_integer_indices(tensor, indices.len(), indices.iter())?;
+        Ok(tensor.index(indices))
+    }
+}
+
+fn apply_leading_integer_range_slice(
+    tensor: &CoreTensor,
+    indices: Vec<i64>,
+    range: UnitRangeSlice,
+) -> Result<CoreTensor, TensorError> {
+    if range.covers_full_dimension {
+        if indices.is_empty() {
+            tensor.metadata_alias()
+        } else {
+            tensor.index(indices)
+        }
+    } else if indices.is_empty() {
+        tensor.slice_dimension(0, range.start, range.length)
+    } else {
+        match tensor.index(indices) {
+            Ok(indexed) => indexed.slice_dimension(0, range.start, range.length),
+            Err(error) => Err(error),
+        }
+    }
+}
+
 fn parse_integer_indices<'py>(
     tensor: &CoreTensor,
     length: usize,
@@ -20275,6 +20297,12 @@ struct UnitRangeSlice {
     start: usize,
     length: usize,
     covers_full_dimension: bool,
+}
+
+#[derive(Clone, Copy)]
+struct TupleUnitRangeSlice {
+    dimension: usize,
+    range: UnitRangeSlice,
 }
 
 #[derive(Clone, Copy)]
@@ -20424,6 +20452,68 @@ fn parse_leading_integer_range_slice(
         return Err(invalid_index(&slice_index));
     };
     Ok(Some((parsed_indices, range)))
+}
+
+fn parse_full_slice_tuple_range_slice(
+    tensor: &CoreTensor,
+    indices: &Bound<'_, PyTuple>,
+) -> PyResult<Option<TupleUnitRangeSlice>> {
+    let mut explicit_dimensions = 0_usize;
+    let mut contains_ellipsis = false;
+    let mut range_tuple_position = None;
+    let mut range_explicit_dimension = 0_usize;
+    let mut ellipsis_before_range = false;
+
+    for (tuple_position, index) in indices.iter().enumerate() {
+        if index.is_instance_of::<PyEllipsis>() {
+            if contains_ellipsis {
+                return Ok(None);
+            }
+            contains_ellipsis = true;
+        } else if is_exact_full_slice(&index)? {
+            explicit_dimensions += 1;
+        } else if index.is_instance_of::<PySlice>() {
+            if range_tuple_position.is_some() {
+                return Ok(None);
+            }
+            range_tuple_position = Some(tuple_position);
+            range_explicit_dimension = explicit_dimensions;
+            ellipsis_before_range = contains_ellipsis;
+            explicit_dimensions += 1;
+        } else {
+            return Ok(None);
+        }
+    }
+
+    let Some(range_tuple_position) = range_tuple_position else {
+        return Ok(None);
+    };
+    let rank = tensor.shape().len();
+    if explicit_dimensions > rank {
+        return Err(too_many_indices(rank));
+    }
+    let omitted_dimensions = if contains_ellipsis {
+        rank - explicit_dimensions
+    } else {
+        0
+    };
+    let dimension = if ellipsis_before_range {
+        range_explicit_dimension
+            .checked_add(omitted_dimensions)
+            .ok_or_else(|| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?
+    } else {
+        range_explicit_dimension
+    };
+    let range_index = indices.get_item(range_tuple_position)?;
+    let dimension_size = tensor
+        .shape()
+        .get(dimension)
+        .copied()
+        .ok_or_else(|| too_many_indices(rank))?;
+    let Some(range) = parse_unit_range_slice(&range_index, dimension_size)? else {
+        return Err(invalid_index(&range_index));
+    };
+    Ok(Some(TupleUnitRangeSlice { dimension, range }))
 }
 
 // Return how many tensor dimensions an alias-only tuple consumes. A single

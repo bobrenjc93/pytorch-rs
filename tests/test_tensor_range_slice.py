@@ -92,6 +92,135 @@ class TensorRangeSliceTests(unittest.TestCase):
         self.assertEqual(selected.storage_offset(), 16)
         self.assert_data_pointer_matches_offset(source, selected)
 
+    def test_tuple_range_slices_with_full_slices_and_ellipsis_preserve_view_metadata(self):
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        source = torch.tensor(values.tolist())
+
+        cases = (
+            (
+                (slice(None), slice(1, 3)),
+                values[:, 1:3],
+                (2, 2, 4),
+                (12, 4, 1),
+                4,
+            ),
+            (
+                (slice(1, 2), slice(None), slice(None)),
+                values[1:2, :, :],
+                (1, 3, 4),
+                (12, 4, 1),
+                12,
+            ),
+            (
+                (slice(1, 2), Ellipsis),
+                values[1:2, ...],
+                (1, 3, 4),
+                (12, 4, 1),
+                12,
+            ),
+            (
+                (Ellipsis, slice(1, None)),
+                values[..., 1:],
+                (2, 3, 3),
+                (12, 4, 1),
+                1,
+            ),
+            (
+                (Ellipsis, slice(1, 3), slice(None)),
+                values[..., 1:3, :],
+                (2, 2, 4),
+                (12, 4, 1),
+                4,
+            ),
+            (
+                (slice(None), Ellipsis, slice(1, 3)),
+                values[:, ..., 1:3],
+                (2, 3, 2),
+                (12, 4, 1),
+                1,
+            ),
+            (
+                (slice(None), slice(10**5000, None)),
+                values[:, 3:],
+                (2, 0, 4),
+                (12, 4, 1),
+                12,
+            ),
+            (
+                (slice(None), slice(-2, None)),
+                values[:, -2:],
+                (2, 2, 4),
+                (12, 4, 1),
+                4,
+            ),
+            (
+                (slice(None), slice(None, -1)),
+                values[:, :-1],
+                (2, 2, 4),
+                (12, 4, 1),
+                0,
+            ),
+        )
+        for index, expected_values, shape, stride, offset in cases:
+            with self.subTest(index=index):
+                selected = source[index]
+                self.assertEqual(selected.tolist(), expected_values.tolist())
+                self.assertEqual(selected.shape, shape)
+                self.assertEqual(selected.stride(), stride)
+                self.assertEqual(selected.storage_offset(), offset)
+                self.assertTrue(selected.is_set_to(source[index]))
+                self.assert_data_pointer_matches_offset(source, selected)
+
+        transposed = source.transpose(0, 1)
+        transposed_selected = transposed[:, 1:2]
+        self.assertEqual(
+            transposed_selected.tolist(),
+            values.transpose(1, 0, 2)[:, 1:2].tolist(),
+        )
+        self.assertEqual(transposed_selected.shape, (3, 1, 4))
+        self.assertEqual(transposed_selected.stride(), (4, 12, 1))
+        self.assertEqual(transposed_selected.storage_offset(), 12)
+        self.assert_data_pointer_matches_offset(transposed, transposed_selected)
+
+        offset = source[1]
+        offset_selected = offset[:, 1:]
+        self.assertEqual(offset_selected.tolist(), values[1, :, 1:].tolist())
+        self.assertEqual(offset_selected.shape, (3, 3))
+        self.assertEqual(offset_selected.stride(), (4, 1))
+        self.assertEqual(offset_selected.storage_offset(), 13)
+        self.assert_data_pointer_matches_offset(offset, offset_selected)
+
+        empty_middle = torch.zeros((3, 0, 4))
+        empty_selected = empty_middle[:, 0:1]
+        self.assertEqual(empty_selected.shape, (3, 0, 4))
+        self.assertEqual(empty_selected.stride(), (4, 4, 1))
+        self.assertEqual(empty_selected.storage_offset(), 0)
+        self.assertEqual(empty_selected.data_ptr(), 0)
+        self.assertEqual(empty_selected.tolist(), [[], [], []])
+
+        empty_range = torch.zeros((5, 2))[:, 1:1]
+        self.assertEqual(empty_range.shape, (5, 0))
+        self.assertEqual(empty_range.stride(), (2, 1))
+        self.assertEqual(empty_range.storage_offset(), 1)
+        self.assertEqual(empty_range.data_ptr(), 0)
+
+    def test_full_span_tuple_range_slices_are_aliases(self):
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        source = torch.tensor(values.tolist())
+
+        for index in (
+            (slice(None), slice(0, 3), slice(None)),
+            (slice(None), slice(None, None, 1), slice(None)),
+            (Ellipsis, slice(0, 4)),
+        ):
+            with self.subTest(index=index):
+                selected = source[index]
+                self.assertTrue(selected.is_set_to(source))
+                self.assertEqual(selected.shape, source.shape)
+                self.assertEqual(selected.stride(), source.stride())
+                self.assertEqual(selected.storage_offset(), source.storage_offset())
+                self.assertEqual(selected.data_ptr(), source.data_ptr())
+
     def test_range_slice_backward_through_sum(self):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         leaf = torch.tensor(values.reshape(-1).tolist(), requires_grad=True)
@@ -112,6 +241,29 @@ class TensorRangeSliceTests(unittest.TestCase):
 
         diagnostic_leaf = torch.tensor([1.0, 2.0, 3.0], requires_grad=True)
         self.assert_dropout_probability_node(diagnostic_leaf[1:2], "SliceBackward0")
+
+    def test_tuple_range_slice_backward_through_sum(self):
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        leaf = torch.tensor(values.reshape(-1).tolist(), requires_grad=True)
+        source = (leaf * 2.0).reshape(2, 3, 4).transpose(0, 1)
+        selected = source[:, 1:2]
+
+        self.assertTrue(selected.requires_grad)
+        self.assertFalse(selected.is_leaf)
+        self.assertEqual(selected.output_nr, 0)
+        selected.sum().backward()
+
+        expected_gradient = np.zeros_like(values)
+        expected_gradient[1:2, :, :] = 2.0
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad).reshape(values.shape),
+            expected_gradient,
+        )
+
+        diagnostic_leaf = torch.tensor([[1.0, 2.0, 3.0]], requires_grad=True)
+        self.assert_dropout_probability_node(
+            diagnostic_leaf[:, 1:2], "SliceBackward0"
+        )
 
     def test_full_span_tuple_range_slices_reuse_alias_and_select_nodes(self):
         class SingleUseIndex:
@@ -174,8 +326,16 @@ class TensorRangeSliceTests(unittest.TestCase):
             slice(None, None, -1),
             slice(1, 3, 2),
             (0, slice(None, None, 2)),
-            (slice(1, 3), slice(None)),
-            (slice(None), slice(1, 3)),
+            (slice(None), slice(None, None, 2)),
+            (slice(None), slice(None, None, -1)),
+            (Ellipsis, slice(None, None, 2)),
+            (slice(1, 3), slice(0, 2)),
+            (Ellipsis, slice(1, 3), slice(0, 2)),
+            (slice(None, None, 1), slice(1, 3)),
+            (slice(None), 0, slice(1, 3)),
+            (Ellipsis, 0, slice(1, 3)),
+            (slice(None), None, slice(1, 3)),
+            (Ellipsis, Ellipsis, slice(1, 3)),
             (slice(1, 3), 0),
             ([0, 1],),
         )
@@ -183,6 +343,11 @@ class TensorRangeSliceTests(unittest.TestCase):
             with self.subTest(index=repr(index)):
                 with self.assertRaises(IndexError):
                     source[index]
+
+        with self.assertRaisesRegex(ValueError, "slice step cannot be zero"):
+            source[:, ::0]
+        with self.assertRaisesRegex(IndexError, "too many indices"):
+            torch.zeros((3,))[:, 1:2]
 
         scalar = torch.tensor(1.0)
         with self.assertRaisesRegex(ValueError, "slice step cannot be zero"):
