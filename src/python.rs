@@ -13186,10 +13186,10 @@ fn is_sum_sequence_dimension_item(dimension: &Bound<'_, PyAny>) -> PyResult<bool
     Ok(python_number_index(dimension).is_ok())
 }
 
-fn bind_sum_reduction_dimension<'py>(
-    dimension: ParsedCallArgument<'py>,
+fn bind_sum_reduction_dimension(
+    dimension: ParsedCallArgument<'_>,
     keepdim: bool,
-) -> PyResult<BoundSumReduction<'py>> {
+) -> PyResult<BoundSumReduction<'_>> {
     if is_dimension_swap_integer(&dimension.value)? {
         return Ok(BoundSumReduction::Dimension {
             dimension: BoundSumDimension::Scalar(dimension),
