@@ -3207,8 +3207,7 @@ struct BoundTopLevelSumCall<'py> {
     input: BoundTensorOrTorchFunction<'py>,
     dtype: BoundTopLevelSumDType<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
-    full_reduction: bool,
-    keepdim_full_reduction: bool,
+    reduction: BoundSumReduction<'py>,
 }
 
 enum BoundTopLevelMeanDType<'py> {
@@ -3226,6 +3225,29 @@ struct BoundTopLevelMeanCall<'py> {
 
 struct BoundMethodReductionCall {
     keepdim_full_reduction: bool,
+}
+
+struct BoundMethodSumCall<'py> {
+    reduction: BoundSumReduction<'py>,
+}
+
+enum BoundSumReduction<'py> {
+    Full {
+        keepdim: bool,
+    },
+    Dimension {
+        dimension: BoundSumDimension<'py>,
+        keepdim: bool,
+    },
+    Unsupported,
+}
+
+enum BoundSumDimension<'py> {
+    Scalar(ParsedCallArgument<'py>),
+    SequenceItem {
+        value: Bound<'py, PyAny>,
+        position: usize,
+    },
 }
 
 struct BoundTopLevelSubtractionCall<'py> {
@@ -4698,23 +4720,61 @@ fn dispatch_top_level_sum(
 }
 
 fn apply_top_level_sum(py: Python<'_>, call: &BoundTopLevelSumCall<'_>) -> PyResult<Py<PyAny>> {
-    if !call.full_reduction {
-        return Err(PyNotImplementedError::new_err(
-            "sum(): only full reductions with dim=None support keepdim; dim and out reductions are not supported",
-        ));
-    }
-
     let BoundTensorOrTorchFunction::Tensor(input) = &call.input else {
         unreachable!("sum overrides were dispatched before the native path")
     };
     let input = input.try_borrow()?;
-    let mut output = input.inner.sum();
-    if call.keepdim_full_reduction {
-        output = output
-            .reshape(full_reduction_keepdim_shape(&input.inner))
-            .map_err(|error| tensor_error(&error))?;
-    }
+    let output = apply_sum_reduction(&input.inner, &call.reduction)?;
     Ok(Py::new(py, PyTensor::new(output))?.into_any())
+}
+
+fn apply_sum_reduction(
+    input: &CoreTensor,
+    reduction: &BoundSumReduction<'_>,
+) -> PyResult<CoreTensor> {
+    let output = match reduction {
+        BoundSumReduction::Full { keepdim } => {
+            let mut output = input.sum();
+            if *keepdim {
+                output = output
+                    .reshape(full_reduction_keepdim_shape(input))
+                    .map_err(|error| tensor_error(&error))?;
+            }
+            output
+        }
+        BoundSumReduction::Dimension { dimension, keepdim } => {
+            let dimension = extract_bound_sum_dimension(dimension)?;
+            if input.shape().len() != 1 {
+                return Err(sum_unsupported_reduction());
+            }
+            normalize_dimension(dimension, input.shape().len())?;
+            let mut output = input.sum();
+            if *keepdim {
+                output = output
+                    .reshape([1_i64])
+                    .map_err(|error| tensor_error(&error))?;
+            }
+            output
+        }
+        BoundSumReduction::Unsupported => {
+            return Err(sum_unsupported_reduction());
+        }
+    };
+    Ok(output)
+}
+
+fn extract_bound_sum_dimension(dimension: &BoundSumDimension<'_>) -> PyResult<i64> {
+    match dimension {
+        BoundSumDimension::Scalar(dimension) => extract_dimension_swap_dimension(&dimension.value),
+        BoundSumDimension::SequenceItem { value, position } => {
+            let indexed = python_number_index(value).map_err(|_| {
+                sum_sequence_dimension_unpack_error("type must be tuple of ints", *position)
+            })?;
+            indexed.extract::<i64>().map_err(|_| {
+                sum_sequence_dimension_unpack_error("Overflow when unpacking long long", *position)
+            })
+        }
+    }
 }
 
 fn ordered_top_level_mean_overrides<'py>(
@@ -4806,6 +4866,12 @@ fn apply_top_level_mean(py: Python<'_>, call: &BoundTopLevelMeanCall<'_>) -> PyR
 
 fn full_reduction_keepdim_shape(input: &CoreTensor) -> Vec<i64> {
     vec![1_i64; input.shape().len()]
+}
+
+fn sum_unsupported_reduction() -> PyErr {
+    PyNotImplementedError::new_err(
+        "sum(): only full reductions with dim=None support keepdim; dim and out reductions are not supported",
+    )
 }
 
 fn dispatch_is_conj(
@@ -7453,12 +7519,7 @@ impl PyTensor {
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn sum(&self, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let call = bind_method_sum_arguments(args, kwargs)?;
-        let mut output = self.inner.sum();
-        if call.keepdim_full_reduction {
-            output = output
-                .reshape(full_reduction_keepdim_shape(&self.inner))
-                .map_err(|error| tensor_error(&error))?;
-        }
+        let output = apply_sum_reduction(&self.inner, &call.reduction)?;
         Ok(Self::new(output))
     }
 
@@ -12869,6 +12930,14 @@ fn bind_top_level_sum_arguments<'py>(
     if let Some(dimension) = &dimension
         && !is_sum_dimension_argument(&dimension.value)?
     {
+        if has_keepdim || keyword_dtype.is_some() || has_out {
+            return Err(sum_argument_type_error(
+                "dim",
+                dimension.position,
+                "tuple of ints",
+                &dimension.value,
+            )?);
+        }
         return Err(top_level_sum_invalid_combination(positional, keywords)?);
     }
 
@@ -12896,15 +12965,25 @@ fn bind_top_level_sum_arguments<'py>(
     let keepdim_is_true = keepdim
         .as_ref()
         .is_some_and(|keepdim| keepdim.value.extract::<bool>().is_ok_and(|keepdim| keepdim));
-    let full_reduction = (!has_dimension || explicit_full_dimension) && out.is_none();
-    let keepdim_full_reduction = explicit_full_dimension && keepdim_is_true && out.is_none();
+    let reduction = if out.is_some() {
+        BoundSumReduction::Unsupported
+    } else if !has_dimension {
+        BoundSumReduction::Full { keepdim: false }
+    } else if explicit_full_dimension {
+        BoundSumReduction::Full {
+            keepdim: keepdim_is_true,
+        }
+    } else if let Some(dimension) = dimension {
+        bind_sum_reduction_dimension(dimension, keepdim_is_true)?
+    } else {
+        BoundSumReduction::Unsupported
+    };
 
     Ok(BoundTopLevelSumCall {
         input,
         dtype,
         out,
-        full_reduction,
-        keepdim_full_reduction,
+        reduction,
     })
 }
 
@@ -13086,15 +13165,72 @@ fn is_sum_dimension_argument(dimension: &Bound<'_, PyAny>) -> PyResult<bool> {
     }
     if let Ok(dimensions) = dimension.cast::<PyTuple>() {
         return dimensions.iter().try_fold(true, |valid, item| {
-            Ok(valid && is_dimension_swap_integer(&item)?)
+            Ok(valid && is_sum_sequence_dimension_item(&item)?)
         });
     }
     if let Ok(dimensions) = dimension.cast::<PyList>() {
         return dimensions.iter().try_fold(true, |valid, item| {
-            Ok(valid && is_dimension_swap_integer(&item)?)
+            Ok(valid && is_sum_sequence_dimension_item(&item)?)
         });
     }
     Ok(false)
+}
+
+fn is_sum_sequence_dimension_item(dimension: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if dimension.is_instance_of::<PyBool>() {
+        return Ok(false);
+    }
+    if is_dimension_swap_integer(dimension)? {
+        return Ok(true);
+    }
+    Ok(python_number_index(dimension).is_ok())
+}
+
+fn bind_sum_reduction_dimension<'py>(
+    dimension: ParsedCallArgument<'py>,
+    keepdim: bool,
+) -> PyResult<BoundSumReduction<'py>> {
+    if is_dimension_swap_integer(&dimension.value)? {
+        return Ok(BoundSumReduction::Dimension {
+            dimension: BoundSumDimension::Scalar(dimension),
+            keepdim,
+        });
+    }
+    if let Ok(dimensions) = dimension.value.cast::<PyTuple>() {
+        return Ok(bind_sum_sequence_reduction(
+            dimensions.len(),
+            dimensions.iter(),
+            keepdim,
+        ));
+    }
+    if let Ok(dimensions) = dimension.value.cast::<PyList>() {
+        return Ok(bind_sum_sequence_reduction(
+            dimensions.len(),
+            dimensions.iter(),
+            keepdim,
+        ));
+    }
+    Ok(BoundSumReduction::Unsupported)
+}
+
+fn bind_sum_sequence_reduction<'py>(
+    length: usize,
+    mut dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
+    keepdim: bool,
+) -> BoundSumReduction<'py> {
+    match length {
+        0 => BoundSumReduction::Full { keepdim },
+        1 => BoundSumReduction::Dimension {
+            dimension: BoundSumDimension::SequenceItem {
+                value: dimensions
+                    .next()
+                    .expect("single-length sum dimension sequence must have one item"),
+                position: 1,
+            },
+            keepdim,
+        },
+        _ => BoundSumReduction::Unsupported,
+    }
 }
 
 fn sum_argument_type_error(
@@ -13108,6 +13244,12 @@ fn sum_argument_type_error(
     Ok(PyTypeError::new_err(format!(
         "sum(): argument '{argument}'{position} must be {expected}, not {actual}"
     )))
+}
+
+fn sum_sequence_dimension_unpack_error(message: &str, position: usize) -> PyErr {
+    PyTypeError::new_err(format!(
+        "sum(): argument 'dim' failed to unpack the object at pos {position} with error \"{message}\""
+    ))
 }
 
 fn top_level_sum_invalid_combination(
@@ -13342,10 +13484,10 @@ fn mean_unsupported_dtype_conversion() -> PyErr {
     )
 }
 
-fn bind_method_sum_arguments(
-    positional: &Bound<'_, PyTuple>,
-    keywords: Option<&Bound<'_, PyDict>>,
-) -> PyResult<BoundMethodReductionCall> {
+fn bind_method_sum_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundMethodSumCall<'py>> {
     if positional.len() > 2 {
         if positional.len() == 3 && keywords.is_none_or(PyDictMethods::is_empty) {
             return Err(PyTypeError::new_err(
@@ -13374,8 +13516,8 @@ fn bind_method_sum_arguments(
         if let Some(dtype) = keyword_dtype {
             bind_method_sum_dtype(&dtype.value, false, positional, keywords)?;
         }
-        return Ok(BoundMethodReductionCall {
-            keepdim_full_reduction: false,
+        return Ok(BoundMethodSumCall {
+            reduction: BoundSumReduction::Full { keepdim: false },
         });
     }
 
@@ -13383,7 +13525,15 @@ fn bind_method_sum_arguments(
     let Some(dimension) = dimension else {
         unreachable!("sum method dimension is present when it has a positional or keyword value")
     };
-    if !dimension.value.is_none() || !is_sum_dimension_argument(&dimension.value)? {
+    if !is_sum_dimension_argument(&dimension.value)? {
+        if has_keepdim || keyword_dtype.is_some() {
+            return Err(sum_argument_type_error(
+                "dim",
+                dimension.position,
+                "tuple of ints",
+                &dimension.value,
+            )?);
+        }
         return Err(sum_method_invalid_combination(positional, keywords)?);
     }
 
@@ -13405,9 +13555,14 @@ fn bind_method_sum_arguments(
     if let Some(dtype) = keyword_dtype {
         bind_method_sum_dtype(&dtype.value, true, positional, keywords)?;
     }
-    Ok(BoundMethodReductionCall {
-        keepdim_full_reduction: keepdim_is_true,
-    })
+    let reduction = if dimension.value.is_none() {
+        BoundSumReduction::Full {
+            keepdim: keepdim_is_true,
+        }
+    } else {
+        bind_sum_reduction_dimension(dimension, keepdim_is_true)?
+    };
+    Ok(BoundMethodSumCall { reduction })
 }
 
 fn method_sum_has_unexpected_keyword(keywords: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {

@@ -16,7 +16,9 @@ class TensorSumReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
-            raise AssertionError("Tensor.sum differentials require pinned PyTorch 2.13.0")
+            raise AssertionError(
+                "Tensor.sum differentials require pinned PyTorch 2.13.0"
+            )
 
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
@@ -104,6 +106,56 @@ class TensorSumReferenceTests(unittest.TestCase):
             matrix.tolist(), dtype=module.float32, requires_grad=requires_grad
         )
         return source, source.transpose(0, 1)[selected_column]
+
+    @staticmethod
+    def rank_one_dim_cases(module):
+        contiguous_base = module.tensor(
+            [-5.0, 1.0, -2.0, 3.0, 4.0], dtype=module.float32
+        )
+        _, noncontiguous = TensorSumReferenceTests.rank_one_strided_vector(
+            module, [1.0, -2.0, 3.0, -4.0]
+        )
+        return (
+            (
+                "empty",
+                module.zeros((0, 5), dtype=module.float32).transpose(0, 1)[2],
+            ),
+            ("offset", contiguous_base[1:]),
+            ("noncontiguous", noncontiguous),
+        )
+
+    @staticmethod
+    def call_dim_sum(source, form, module):
+        class IntSubclass(int):
+            pass
+
+        class IndexOnly:
+            def __index__(self):
+                return 0
+
+        if form == "positional dim zero":
+            return source.sum(0)
+        if form == "positional dim negative":
+            return source.sum(-1)
+        if form == "keyword dim zero dtype none":
+            return source.sum(dim=0, keepdim=False, dtype=None)
+        if form == "keyword dim negative dtype none":
+            return source.sum(dim=-1, keepdim=False, dtype=None)
+        if form == "keyword dim zero keepdim dtype none":
+            return source.sum(dim=0, keepdim=True, dtype=None)
+        if form == "keyword dim negative keepdim":
+            return source.sum(dim=-1, keepdim=True, dtype=None)
+        if form == "integer subclass dim":
+            return source.sum(IntSubclass(0))
+        if form == "numpy integer dim keepdim":
+            return source.sum(dim=np.int64(-1), keepdim=True)
+        if form == "tuple integer protocol dim":
+            return source.sum((IndexOnly(),))
+        if form == "list numpy integer dim keepdim":
+            return source.sum([np.int64(-1)], keepdim=True)
+        if form == "dtype float32":
+            return source.sum(dim=0, dtype=module.float32)
+        raise AssertionError(f"unknown dim sum form: {form}")
 
     def test_values_scalar_shape_empty_and_noncontiguous_match_pytorch_2_13(self):
         forms = (
@@ -211,7 +263,9 @@ class TensorSumReferenceTests(unittest.TestCase):
         )
 
         with torch.no_grad():
-            actual_untracked = actual_leaf.sum(dim=None, keepdim=True, dtype=torch.float)
+            actual_untracked = actual_leaf.sum(
+                dim=None, keepdim=True, dtype=torch.float
+            )
         with reference_torch.no_grad():
             expected_untracked = expected_leaf.sum(
                 dim=None, keepdim=True, dtype=reference_torch.float
@@ -291,11 +345,109 @@ class TensorSumReferenceTests(unittest.TestCase):
             actual_untracked, expected_untracked, case="rank-one no_grad"
         )
 
+    def test_rank_one_dim_reductions_match_pytorch_2_13(self):
+        forms = (
+            "positional dim zero",
+            "positional dim negative",
+            "keyword dim zero dtype none",
+            "keyword dim negative dtype none",
+            "keyword dim zero keepdim dtype none",
+            "keyword dim negative keepdim",
+            "integer subclass dim",
+            "numpy integer dim keepdim",
+            "tuple integer protocol dim",
+            "list numpy integer dim keepdim",
+            "dtype float32",
+        )
+        actual_cases = self.rank_one_dim_cases(torch)
+        expected_cases = self.rank_one_dim_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases, expected_cases, strict=True
+        ):
+            case, actual_input = actual_case
+            expected_name, expected_input = expected_case
+            self.assertEqual(case, expected_name)
+            for form in forms:
+                self.assert_scalar_matches(
+                    self.call_dim_sum(actual_input, form, torch),
+                    self.call_dim_sum(expected_input, form, reference_torch),
+                    case=(case, form),
+                )
+
+    def test_rank_one_dim_backward_through_sum_matches_pytorch_2_13(self):
+        actual_empty = torch.zeros((0, 5), dtype=torch.float32, requires_grad=True)
+        expected_empty = reference_torch.zeros(
+            (0, 5), dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_empty_view = actual_empty.transpose(0, 1)[2]
+        expected_empty_view = expected_empty.transpose(0, 1)[2]
+        actual_empty_view.sum(dim=0).backward()
+        expected_empty_view.sum(dim=0).backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_empty.grad), expected_empty.grad.detach().cpu().numpy()
+        )
+
+        values = np.arange(1, 21, dtype=np.float32).reshape(4, 5)[:, 2]
+        actual_leaf, actual_view = self.rank_one_strided_vector(
+            torch, values, requires_grad=True
+        )
+        expected_leaf, expected_view = self.rank_one_strided_vector(
+            reference_torch, values, requires_grad=True
+        )
+        actual_loss = actual_view.sum(dim=-1, dtype=None)
+        expected_loss = expected_view.sum(dim=-1, dtype=None)
+        self.assert_scalar_matches(
+            actual_loss, expected_loss, case="rank-one dim tracked"
+        )
+        for _ in range(2):
+            actual_loss.backward()
+            expected_loss.backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_leaf.grad), expected_leaf.grad.detach().cpu().numpy()
+        )
+
+        actual_kept_leaf, actual_kept_view = self.rank_one_strided_vector(
+            torch, [1.0, -2.0, 3.0], requires_grad=True
+        )
+        expected_kept_leaf, expected_kept_view = self.rank_one_strided_vector(
+            reference_torch, [1.0, -2.0, 3.0], requires_grad=True
+        )
+        actual_kept = actual_kept_view.sum(dim=0, keepdim=True, dtype=None)
+        expected_kept = expected_kept_view.sum(dim=0, keepdim=True, dtype=None)
+        self.assert_scalar_matches(actual_kept, expected_kept, case="rank-one kept")
+        actual_kept.sum().backward()
+        expected_kept.sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_kept_leaf.grad),
+            expected_kept_leaf.grad.detach().cpu().numpy(),
+        )
+
+    def test_rank_one_dim_error_ordering_matches_pytorch_2_13(self):
+        actual = torch.ones((2,), dtype=torch.float32)
+        expected = reference_torch.ones((2,), dtype=reference_torch.float32)
+        cases = (
+            (
+                lambda: actual.sum(2**100, "bad"),
+                lambda: expected.sum(2**100, "bad"),
+            ),
+            (
+                lambda: actual.sum(2**100, dtype=1),
+                lambda: expected.sum(2**100, dtype=1),
+            ),
+            (lambda: actual.sum(2**100), lambda: expected.sum(2**100)),
+            (lambda: actual.sum(1), lambda: expected.sum(1)),
+            (lambda: actual.sum(True), lambda: expected.sum(True)),
+            (lambda: actual.sum("bad", "bad"), lambda: expected.sum("bad", "bad")),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assert_error_matches(actual_call, expected_call)
+
     def test_rank_9_offset_permuted_sum_cases_match_pytorch_2_13(self):
         shape = (2, 3, 2, 2, 2, 2, 2, 2, 2)
-        values = (
-            (np.arange(2 * np.prod(shape), dtype=np.float32) % 23) - 11
-        ).reshape((2, *shape))
+        values = ((np.arange(2 * np.prod(shape), dtype=np.float32) % 23) - 11).reshape(
+            (2, *shape)
+        )
         actual_source = torch.tensor(values.tolist(), dtype=torch.float32)
         expected_source = reference_torch.tensor(values, dtype=reference_torch.float32)
         permutations = (
@@ -320,9 +472,9 @@ class TensorSumReferenceTests(unittest.TestCase):
         singleton_values = (
             (np.arange(2 * np.prod(singleton_shape), dtype=np.float32) % 19) - 9
         ).reshape((2, *singleton_shape))
-        actual_singleton = torch.tensor(
-            singleton_values.tolist(), dtype=torch.float32
-        )[1].permute(2, 0, 3, 5, 4, 8, 7, 6, 1)
+        actual_singleton = torch.tensor(singleton_values.tolist(), dtype=torch.float32)[
+            1
+        ].permute(2, 0, 3, 5, 4, 8, 7, 6, 1)
         expected_singleton = reference_torch.tensor(
             singleton_values, dtype=reference_torch.float32
         )[1].permute(2, 0, 3, 5, 4, 8, 7, 6, 1)
@@ -380,15 +532,13 @@ class TensorSumReferenceTests(unittest.TestCase):
             actual_untracked = actual_view.sum()
         with reference_torch.no_grad():
             expected_untracked = expected_view.sum()
-        self.assert_scalar_matches(
-            actual_untracked, expected_untracked, case="no_grad"
-        )
+        self.assert_scalar_matches(actual_untracked, expected_untracked, case="no_grad")
 
     def test_rank_10_offset_permuted_sum_cases_match_pytorch_2_13(self):
         shape = (2, 3, 2, 5, 2, 3, 2, 2, 2, 2)
-        values = (
-            (np.arange(2 * np.prod(shape), dtype=np.float32) % 29) - 14
-        ).reshape((2, *shape))
+        values = ((np.arange(2 * np.prod(shape), dtype=np.float32) % 29) - 14).reshape(
+            (2, *shape)
+        )
         actual_source = torch.tensor(values.tolist(), dtype=torch.float32)
         expected_source = reference_torch.tensor(values, dtype=reference_torch.float32)
         permutations = (
@@ -413,9 +563,9 @@ class TensorSumReferenceTests(unittest.TestCase):
         singleton_values = (
             (np.arange(2 * np.prod(singleton_shape), dtype=np.float32) % 19) - 9
         ).reshape((2, *singleton_shape))
-        actual_singleton = torch.tensor(
-            singleton_values.tolist(), dtype=torch.float32
-        )[1].permute(2, 0, 3, 5, 4, 9, 8, 7, 6, 1)
+        actual_singleton = torch.tensor(singleton_values.tolist(), dtype=torch.float32)[
+            1
+        ].permute(2, 0, 3, 5, 4, 9, 8, 7, 6, 1)
         expected_singleton = reference_torch.tensor(
             singleton_values, dtype=reference_torch.float32
         )[1].permute(2, 0, 3, 5, 4, 9, 8, 7, 6, 1)
@@ -441,9 +591,7 @@ class TensorSumReferenceTests(unittest.TestCase):
             requires_grad=True,
         )
         actual_empty_view = actual_empty.permute(4, 2, 0, 9, 8, 7, 6, 5, 3, 1)
-        expected_empty_view = expected_empty.permute(
-            4, 2, 0, 9, 8, 7, 6, 5, 3, 1
-        )
+        expected_empty_view = expected_empty.permute(4, 2, 0, 9, 8, 7, 6, 5, 3, 1)
         self.assert_scalar_matches(
             actual_empty_view.sum(), expected_empty_view.sum(), case="rank-10 empty"
         )
@@ -481,9 +629,9 @@ class TensorSumReferenceTests(unittest.TestCase):
 
     def test_rank_11_offset_permuted_sum_cases_match_pytorch_2_13(self):
         shape = (2, 3, 2, 5, 2, 3, 2, 2, 2, 2, 2)
-        values = (
-            (np.arange(2 * np.prod(shape), dtype=np.float32) % 31) - 15
-        ).reshape((2, *shape))
+        values = ((np.arange(2 * np.prod(shape), dtype=np.float32) % 31) - 15).reshape(
+            (2, *shape)
+        )
         actual_source = torch.tensor(values.tolist(), dtype=torch.float32)
         expected_source = reference_torch.tensor(values, dtype=reference_torch.float32)
         permutations = (
@@ -508,9 +656,9 @@ class TensorSumReferenceTests(unittest.TestCase):
         singleton_values = (
             (np.arange(2 * np.prod(singleton_shape), dtype=np.float32) % 19) - 9
         ).reshape((2, *singleton_shape))
-        actual_singleton = torch.tensor(
-            singleton_values.tolist(), dtype=torch.float32
-        )[1].permute(2, 0, 3, 5, 4, 10, 9, 8, 7, 6, 1)
+        actual_singleton = torch.tensor(singleton_values.tolist(), dtype=torch.float32)[
+            1
+        ].permute(2, 0, 3, 5, 4, 10, 9, 8, 7, 6, 1)
         expected_singleton = reference_torch.tensor(
             singleton_values, dtype=reference_torch.float32
         )[1].permute(2, 0, 3, 5, 4, 10, 9, 8, 7, 6, 1)
@@ -538,9 +686,7 @@ class TensorSumReferenceTests(unittest.TestCase):
             requires_grad=True,
         )
         actual_empty_view = actual_empty.permute(4, 2, 0, 10, 9, 8, 7, 6, 5, 3, 1)
-        expected_empty_view = expected_empty.permute(
-            4, 2, 0, 10, 9, 8, 7, 6, 5, 3, 1
-        )
+        expected_empty_view = expected_empty.permute(4, 2, 0, 10, 9, 8, 7, 6, 5, 3, 1)
         self.assert_scalar_matches(
             actual_empty_view.sum(), expected_empty_view.sum(), case="rank-11 empty"
         )
@@ -595,9 +741,9 @@ class TensorSumReferenceTests(unittest.TestCase):
 
     def test_rank_12_offset_permuted_sum_cases_match_pytorch_2_13(self):
         shape = (2, 3, 2, 5, 2, 3, 2, 2, 2, 2, 2, 2)
-        values = (
-            (np.arange(2 * np.prod(shape), dtype=np.float32) % 37) - 18
-        ).reshape((2, *shape))
+        values = ((np.arange(2 * np.prod(shape), dtype=np.float32) % 37) - 18).reshape(
+            (2, *shape)
+        )
         actual_source = torch.tensor(values.tolist(), dtype=torch.float32)
         expected_source = reference_torch.tensor(values, dtype=reference_torch.float32)
         permutations = (
@@ -627,9 +773,9 @@ class TensorSumReferenceTests(unittest.TestCase):
         singleton_values = (
             (np.arange(2 * np.prod(singleton_shape), dtype=np.float32) % 19) - 9
         ).reshape((2, *singleton_shape))
-        actual_singleton = torch.tensor(
-            singleton_values.tolist(), dtype=torch.float32
-        )[1].permute(2, 0, 3, 5, 4, 11, 10, 9, 8, 7, 6, 1)
+        actual_singleton = torch.tensor(singleton_values.tolist(), dtype=torch.float32)[
+            1
+        ].permute(2, 0, 3, 5, 4, 11, 10, 9, 8, 7, 6, 1)
         expected_singleton = reference_torch.tensor(
             singleton_values, dtype=reference_torch.float32
         )[1].permute(2, 0, 3, 5, 4, 11, 10, 9, 8, 7, 6, 1)
@@ -733,9 +879,7 @@ class TensorSumReferenceTests(unittest.TestCase):
 
     def test_invalid_dtype_and_argument_errors_match_pytorch_2_13(self):
         actual = torch.ones((2, 3))
-        expected = reference_torch.ones(
-            (2, 3), dtype=reference_torch.float32
-        )
+        expected = reference_torch.ones((2, 3), dtype=reference_torch.float32)
         cases = (
             (lambda: actual.sum(dtype=1), lambda: expected.sum(dtype=1)),
             (
@@ -767,9 +911,7 @@ class TensorSumReferenceTests(unittest.TestCase):
 
     def test_dimension_keepdim_and_cross_dtype_reductions_remain_unsupported(self):
         actual = torch.ones((2, 3))
-        expected = reference_torch.ones(
-            (2, 3), dtype=reference_torch.float32
-        )
+        expected = reference_torch.ones((2, 3), dtype=reference_torch.float32)
         cases = (
             (lambda: actual.sum(0), lambda: expected.sum(0)),
             (lambda: actual.sum(dim=0), lambda: expected.sum(dim=0)),
@@ -792,7 +934,7 @@ class TensorSumReferenceTests(unittest.TestCase):
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
-                with self.assertRaises(TypeError):
+                with self.assertRaises((TypeError, NotImplementedError)):
                     actual_call()
                 expected_call()
 
