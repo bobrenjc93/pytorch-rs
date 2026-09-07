@@ -612,6 +612,46 @@ impl PartialEq for Tensor {
 }
 
 #[allow(clippy::float_cmp)]
+fn allclose_values_equal(left: f32, right: f32, rtol: f32, atol: f32, equal_nan: bool) -> bool {
+    if left == right {
+        return true;
+    }
+    if left.is_nan() || right.is_nan() {
+        return equal_nan && left.is_nan() && right.is_nan();
+    }
+    if !left.is_finite() || !right.is_finite() {
+        return false;
+    }
+    (left - right).abs() <= atol + rtol * right.abs()
+}
+
+fn contiguous_values_allclose(
+    left: &[f32],
+    right: &[f32],
+    rtol: f32,
+    atol: f32,
+    equal_nan: bool,
+) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    left.iter()
+        .zip(right)
+        .all(|(left, right)| allclose_values_equal(*left, *right, rtol, atol, equal_nan))
+}
+
+fn values_allclose(
+    left: impl Iterator<Item = f32>,
+    right: impl Iterator<Item = f32>,
+    rtol: f32,
+    atol: f32,
+    equal_nan: bool,
+) -> bool {
+    left.zip(right)
+        .all(|(left, right)| allclose_values_equal(left, right, rtol, atol, equal_nan))
+}
+
+#[allow(clippy::float_cmp)]
 fn contiguous_values_equal(left: &[f32], right: &[f32]) -> bool {
     if left.len() != right.len() {
         return false;
@@ -934,6 +974,73 @@ impl Tensor {
     #[must_use]
     pub fn is_same_size(&self, other: &Self) -> bool {
         self.shape() == other.shape()
+    }
+
+    /// Reports whether two tensors have broadcast-compatible shapes.
+    #[must_use]
+    pub(crate) fn is_broadcastable_with(&self, other: &Self) -> bool {
+        let rank = self.shape.len().max(other.shape.len());
+        (0..rank).all(|axis| {
+            broadcast_dimension(
+                aligned_dimension(&self.shape, rank, axis),
+                aligned_dimension(&other.shape, rank, axis),
+            )
+            .is_some()
+        })
+    }
+
+    /// Reports whether this tensor pair is within `PyTorch`'s float32 allclose
+    /// tolerance for identical shapes or either rank-zero broadcast direction.
+    #[must_use]
+    pub(crate) fn allclose_same_shape_or_rank_zero(
+        &self,
+        other: &Self,
+        rtol: f32,
+        atol: f32,
+        equal_nan: bool,
+    ) -> Option<bool> {
+        if self.shape == other.shape {
+            let left_contiguous = self.contiguous_slice();
+            let right_contiguous = other.contiguous_slice();
+            if let (Some(left), Some(right)) = (left_contiguous, right_contiguous) {
+                return Some(contiguous_values_allclose(
+                    left, right, rtol, atol, equal_nan,
+                ));
+            }
+            if self.strides == other.strides
+                && let (Some(left), Some(right)) =
+                    (self.dense_physical_slice(), other.dense_physical_slice())
+            {
+                return Some(contiguous_values_allclose(
+                    left, right, rtol, atol, equal_nan,
+                ));
+            }
+            return Some(values_allclose(
+                self.logical_values_from_contiguous_slice(left_contiguous),
+                other.logical_values_from_contiguous_slice(right_contiguous),
+                rtol,
+                atol,
+                equal_nan,
+            ));
+        }
+
+        if self.shape.is_empty() {
+            let scalar = self.value_at_linear_index(0);
+            return Some(
+                other
+                    .logical_values()
+                    .all(|right| allclose_values_equal(scalar, right, rtol, atol, equal_nan)),
+            );
+        }
+        if other.shape.is_empty() {
+            let scalar = other.value_at_linear_index(0);
+            return Some(
+                self.logical_values()
+                    .all(|left| allclose_values_equal(left, scalar, rtol, atol, equal_nan)),
+            );
+        }
+
+        None
     }
 
     /// Reports whether two tensors point to the exact same logical view.
