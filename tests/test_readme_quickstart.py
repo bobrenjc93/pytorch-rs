@@ -287,7 +287,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         (
             "range slicing",
             "advanced indexing",
-            "sequence `movedim` axes",
+            "variadic top-level reshape dimensions",
             "cross-dtype views",
         ),
         ("[Metadata and views](#metadata-and-views)",),

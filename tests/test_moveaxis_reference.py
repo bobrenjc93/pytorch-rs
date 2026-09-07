@@ -309,21 +309,74 @@ class MoveaxisReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_sequence_axes_remain_deliberately_unsupported(self):
-        actual = torch.zeros((2, 3, 4))
-        expected = reference_torch.zeros((2, 3, 4))
-        for source, destination in (
-            ((0, 2), (2, 0)),
-            ([0, 2], [2, 0]),
-            ((), ()),
+    def test_sequence_axes_match_pytorch_2_13(self):
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        actual = torch.tensor(values.tolist())
+        expected = reference_torch.tensor(values)
+        actual_scalar = torch.tensor(2.5)
+        expected_scalar = reference_torch.tensor(2.5)
+
+        for case, actual_source, expected_source, source, destination in (
+            ("tuple", actual, expected, (0, 2), (2, 0)),
+            ("list", actual, expected, [0, 2], [2, 0]),
+            ("empty", actual, expected, (), ()),
+            ("later-bool", actual, expected, (0, True), (2, 1)),
+            ("scalar-empty", actual_scalar, expected_scalar, (), ()),
         ):
             with self.subTest(source=source, destination=destination):
-                with self.assertRaises(TypeError):
-                    torch.moveaxis(actual, source, destination)
-                reference_torch.moveaxis(expected, source, destination)
-                with self.assertRaises(TypeError):
-                    actual.moveaxis(source, destination)
-                expected.moveaxis(source, destination)
+                self.assert_matches(
+                    torch.moveaxis(actual_source, source, destination),
+                    reference_torch.moveaxis(expected_source, source, destination),
+                    actual_source=actual_source,
+                    expected_source=expected_source,
+                    case=(case, "function"),
+                )
+                self.assert_matches(
+                    actual_source.moveaxis(source, destination),
+                    expected_source.moveaxis(source, destination),
+                    actual_source=actual_source,
+                    expected_source=expected_source,
+                    case=(case, "method"),
+                )
+
+        error_cases = (
+            (
+                lambda tensor: tensor.moveaxis((True, 0), (1, 2)),
+                lambda module, tensor: module.moveaxis(tensor, (True, 0), (1, 2)),
+            ),
+            (
+                lambda tensor: tensor.moveaxis((0, 1), (False, 2)),
+                lambda module, tensor: module.moveaxis(tensor, (0, 1), (False, 2)),
+            ),
+            (
+                lambda tensor: tensor.moveaxis((0, 1.5), (1, 2)),
+                lambda module, tensor: module.moveaxis(tensor, (0, 1.5), (1, 2)),
+            ),
+            (
+                lambda tensor: tensor.moveaxis((0, 1), (1, "2")),
+                lambda module, tensor: module.moveaxis(tensor, (0, 1), (1, "2")),
+            ),
+            (
+                lambda tensor: tensor.moveaxis((0, -3), (1, 2)),
+                lambda module, tensor: module.moveaxis(tensor, (0, -3), (1, 2)),
+            ),
+            (
+                lambda tensor: tensor.moveaxis((0, 1), (2,)),
+                lambda module, tensor: module.moveaxis(tensor, (0, 1), (2,)),
+            ),
+        )
+        for case, (method_call, function_call) in enumerate(error_cases):
+            with self.subTest(case=case, form="method"):
+                self.assert_error_matches(
+                    lambda: method_call(actual),
+                    lambda: method_call(expected),
+                )
+            with self.subTest(case=case, form="function"):
+                self.assert_error_matches(
+                    lambda: function_call(torch, actual),
+                    lambda: function_call(reference_torch, expected),
+                )
+
         self.assertTrue(hasattr(torch.Tensor, "moveaxis"))
         self.assertTrue(hasattr(reference_torch.Tensor, "moveaxis"))
 
