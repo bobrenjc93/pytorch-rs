@@ -1747,45 +1747,6 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             case="same shape accumulation",
         )
 
-        actual_input = torch.tensor(
-            [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]], requires_grad=True
-        )
-        actual_target = torch.tensor([0.5, -1.5, 2.0], requires_grad=True)
-        expected_input = reference_torch.tensor(
-            [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
-            dtype=reference_torch.float32,
-            requires_grad=True,
-        )
-        expected_target = reference_torch.tensor(
-            [0.5, -1.5, 2.0],
-            dtype=reference_torch.float32,
-            requires_grad=True,
-        )
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            actual = functional.mse_loss(actual_input, actual_target, reduction="none")
-            expected = reference_functional.mse_loss(
-                expected_input,
-                expected_target,
-                reduction="none",
-            )
-        self.assert_matches(actual, expected, case="broadcast")
-        actual_weights = self.tensor(
-            torch,
-            [[1.5, -0.5, 2.0], [-3.0, 0.25, 4.0]],
-        )
-        expected_weights = self.tensor(
-            reference_torch,
-            [[1.5, -0.5, 2.0], [-3.0, 0.25, 4.0]],
-        )
-        (actual * actual_weights).sum().backward()
-        (expected * expected_weights).sum().backward()
-        assert_grads_match(
-            (actual_input, actual_target),
-            (expected_input, expected_target),
-            case="broadcast",
-        )
-
         actual_input_base = torch.tensor(
             np.arange(24, dtype=np.float32).reshape(2, 4, 3).tolist(),
             requires_grad=True,
@@ -1862,6 +1823,34 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             (expected_input, expected_target),
             case="empty",
         )
+
+    def test_none_reduction_broadcast_active_autograd_is_rejected(self):
+        actual_input = torch.tensor([[-2.0], [3.0]], requires_grad=True)
+        actual_target = torch.tensor(
+            np.linspace(1.0, -1.0, 6, dtype=np.float32).reshape(2, 1, 3).tolist(),
+            requires_grad=True,
+        )
+        input_before = np.asarray(actual_input).reshape(-1).view(np.uint32).copy()
+        target_before = np.asarray(actual_target).reshape(-1).view(np.uint32).copy()
+
+        with self.assertWarnsRegex(UserWarning, "Using a target size"):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"^mse_loss\(\): autograd recording for broadcasted "
+                r"reduction='none' operands is not supported$",
+            ):
+                functional.mse_loss(actual_input, actual_target, reduction="none")
+
+        np.testing.assert_array_equal(
+            np.asarray(actual_input).reshape(-1).view(np.uint32),
+            input_before,
+        )
+        np.testing.assert_array_equal(
+            np.asarray(actual_target).reshape(-1).view(np.uint32),
+            target_before,
+        )
+        self.assertIsNone(actual_input.grad)
+        self.assertIsNone(actual_target.grad)
 
     def test_sum_reduction_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (

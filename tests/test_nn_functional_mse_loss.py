@@ -591,13 +591,15 @@ class FunctionalMseLossTests(unittest.TestCase):
             "fresh, independent tensor",
             "size-mismatch warning",
             "Unbroadcastable shapes",
+            "broadcasted active autograd for ``reduction='none'``",
             "legacy ``size_average``/``reduce`` behavior",
             "weights",
             "unsupported dtypes or devices",
             "Tensor subclasses",
             "active ``TorchFunctionMode`` contexts",
             "module loss wrappers",
-            "any supported reduction",
+            "``reduction='none'`` for matching shapes",
+            "``reduction='mean'`` or ``reduction='sum'``",
             "inside ``torch.no_grad()``",
         ):
             self.assertIn(documented_limit, normalized_doc)
@@ -2093,7 +2095,9 @@ class FunctionalMseLossTests(unittest.TestCase):
                 self.assertIsNone(input_base.grad)
                 self.assertIsNone(target_base.grad)
 
-    def test_broadcast_none_reduction_requires_grad_matches_composition(self):
+    def test_broadcast_none_reduction_requires_grad_is_rejected_and_no_grad_matches_composition(
+        self,
+    ):
         def scalar_input(input_requires_grad, target_requires_grad):
             return (
                 torch.tensor(0.5, requires_grad=input_requires_grad),
@@ -2121,10 +2125,25 @@ class FunctionalMseLossTests(unittest.TestCase):
                 torch.tensor([0.5, -1.5], requires_grad=target_requires_grad),
             )
 
+        def higher_rank_input_broadcast(input_requires_grad, target_requires_grad):
+            return (
+                torch.tensor(
+                    [[-2.0], [3.0]],
+                    requires_grad=input_requires_grad,
+                ),
+                torch.tensor(
+                    np.linspace(1.0, -1.0, 6, dtype=np.float32)
+                    .reshape(2, 1, 3)
+                    .tolist(),
+                    requires_grad=target_requires_grad,
+                ),
+            )
+
         for case, factory in (
             ("scalar input", scalar_input),
             ("scalar target", scalar_target),
             ("vector target", vector_target),
+            ("higher-rank input broadcast", higher_rank_input_broadcast),
         ):
             for input_requires_grad, target_requires_grad in (
                 (True, False),
@@ -2141,34 +2160,19 @@ class FunctionalMseLossTests(unittest.TestCase):
                         input_requires_grad,
                         target_requires_grad,
                     )
-                    expected_input, expected_target = factory(
-                        input_requires_grad,
-                        target_requires_grad,
-                    )
                     with self.assertWarnsRegex(UserWarning, "Using a target size"):
-                        actual = functional.mse_loss(
-                            actual_input,
-                            actual_target,
-                            reduction="none",
-                        )
-                    expected = (expected_input - expected_target).square()
-                    self.assert_matches_composition(
-                        actual,
-                        expected,
-                        case=(case, "active autograd"),
-                    )
-                    self.assertTrue(actual.requires_grad)
-                    self.assertFalse(actual.is_leaf)
-
-                    weights = torch.tensor([[1.5, -0.5], [2.0, -3.0]])
-                    expected_weights = torch.tensor([[1.5, -0.5], [2.0, -3.0]])
-                    (actual * weights).sum().backward()
-                    (expected * expected_weights).sum().backward()
-                    self.assert_gradient_bits_match(
-                        (actual_input, actual_target),
-                        (expected_input, expected_target),
-                        case=(case, input_requires_grad, target_requires_grad),
-                    )
+                        with self.assertRaisesRegex(
+                            RuntimeError,
+                            r"^mse_loss\(\): autograd recording for broadcasted "
+                            r"reduction='none' operands is not supported$",
+                        ):
+                            functional.mse_loss(
+                                actual_input,
+                                actual_target,
+                                reduction="none",
+                            )
+                    self.assertIsNone(actual_input.grad)
+                    self.assertIsNone(actual_target.grad)
 
                 with self.subTest(
                     case=case,

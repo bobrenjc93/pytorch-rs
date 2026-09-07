@@ -35,6 +35,12 @@ forms return rank-preserving all-ones shapes. Dimension reductions, tuple/list
 dimensions, concrete `out`, dtype conversions, unsupported operands, and
 broader mean overloads remain outside the supported surface.
 
+For `torch.nn.functional.mse_loss(reduction="none")`, active autograd is
+limited to matching input and target shapes. Broadcasted mismatched-shape
+`reduction="none"` calls remain supported for value computation under
+`torch.no_grad()`; scalar `reduction="mean"` and `reduction="sum"` keep their
+existing broadcast autograd coverage.
+
 Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 
 | Area | Weight | Baseline |

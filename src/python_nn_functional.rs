@@ -677,6 +677,15 @@ fn _nn_functional_mse_loss(
     if input_shape != target_shape {
         warn_loss_broadcast(py, "mse_loss", input_shape, target_shape)?;
     }
+    if reduction == MseLossReduction::None
+        && input_shape != target_shape
+        && is_grad_enabled()
+        && (input.inner().requires_grad() || target.inner().requires_grad())
+    {
+        return Err(PyRuntimeError::new_err(
+            "mse_loss(): autograd recording for broadcasted reduction='none' operands is not supported",
+        ));
+    }
     let output = match reduction {
         MseLossReduction::None => input
             .inner()
