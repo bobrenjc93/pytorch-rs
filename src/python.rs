@@ -11746,6 +11746,10 @@ fn cat_unsupported_native_input() -> PyErr {
     )
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "PyTorch-compatible call binding keeps delayed positional, alias, and keyword diagnostics together"
+)]
 fn bind_top_level_stack_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
