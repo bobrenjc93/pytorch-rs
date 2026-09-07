@@ -1879,6 +1879,81 @@ class FunctionalMseLossTests(unittest.TestCase):
             expected_target_grad_bits,
         )
 
+    def test_none_reduction_backward_nan_payload_bits_match_pytorch_2_13_contract(
+        self,
+    ):
+        input_bits = np.asarray(
+            [
+                0x7FC1_2345,
+                0x7FC1_1111,
+                0x3F80_0000,
+                0x7FC1_1111,
+                0x3F80_0000,
+            ],
+            dtype=np.uint32,
+        )
+        target_bits = np.asarray(
+            [
+                0x7F81_2345,
+                0x7FC2_2222,
+                0x7FC2_2222,
+                0x4000_0000,
+                0x4000_0000,
+            ],
+            dtype=np.uint32,
+        )
+        weight_bits = np.asarray(
+            [
+                0x7FC0_1234,
+                0x7FC3_3333,
+                0x7FC3_3333,
+                0x7FC3_3333,
+                0x7FC3_3333,
+            ],
+            dtype=np.uint32,
+        )
+        expected_input_grad_bits = np.asarray(
+            [
+                0x7FC1_2345,
+                0x7FC1_1111,
+                0x7FC2_2222,
+                0x7FC1_1111,
+                0x7FC3_3333,
+            ],
+            dtype=np.uint32,
+        )
+        expected_target_grad_bits = np.asarray(
+            [
+                0x7FC1_2345,
+                0x7FC2_2222,
+                0x7FC2_2222,
+                0x7FC1_1111,
+                0x7FC3_3333,
+            ],
+            dtype=np.uint32,
+        )
+        input = torch.tensor(
+            memoryview(input_bits.view(np.float32)),
+            requires_grad=True,
+        )
+        target = torch.tensor(
+            memoryview(target_bits.view(np.float32)),
+            requires_grad=True,
+        )
+        weights = torch.tensor(memoryview(weight_bits.view(np.float32)))
+
+        actual = functional.mse_loss(input, target, reduction="none")
+        (actual * weights).sum().backward()
+
+        np.testing.assert_array_equal(
+            self.tensor_bits(input.grad),
+            expected_input_grad_bits,
+        )
+        np.testing.assert_array_equal(
+            self.tensor_bits(target.grad),
+            expected_target_grad_bits,
+        )
+
     def test_mean_reduction_first_order_backward_matches_composition(self):
         def assert_gradients(actual_sources, expected_sources, *, case):
             for actual, expected in zip(actual_sources, expected_sources, strict=True):

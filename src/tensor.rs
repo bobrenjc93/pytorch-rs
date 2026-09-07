@@ -5632,11 +5632,13 @@ fn apply_squared_difference_grad_fn(
             .value(right_offset)
             .expect("saved right operand offset must address storage");
         if let Some(gradient) = &mut left_gradient {
-            let local_gradient = square_backward_value(left_value - right_value, output_gradient);
+            let local_gradient =
+                squared_difference_backward_value(left_value, right_value, output_gradient);
             gradient.add(left_index, local_gradient);
         }
         if let Some(gradient) = &mut right_gradient {
-            let local_gradient = square_backward_value(right_value - left_value, output_gradient);
+            let local_gradient =
+                squared_difference_backward_value(right_value, left_value, output_gradient);
             gradient.add(right_index, local_gradient);
         }
     }
@@ -7641,6 +7643,29 @@ fn abs_backward_value(input: f32, upstream: f32) -> f32 {
 #[cfg(any(feature = "python-bindings", test))]
 fn square_backward_value(input: f32, upstream: f32) -> f32 {
     (2.0 * input) * upstream
+}
+
+#[inline]
+#[cfg(any(feature = "python-bindings", test))]
+fn squared_difference_backward_value(operand: f32, other: f32, upstream: f32) -> f32 {
+    if let Some(value) = quiet_nan(operand) {
+        return value;
+    }
+    if let Some(value) = quiet_nan(other) {
+        return value;
+    }
+    square_backward_value(operand - other, upstream)
+}
+
+#[inline]
+#[cfg(any(feature = "python-bindings", test))]
+fn quiet_nan(value: f32) -> Option<f32> {
+    let bits = value.to_bits();
+    if bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        Some(f32::from_bits(bits | F32_QUIET_NAN_MASK))
+    } else {
+        None
+    }
 }
 
 #[inline]

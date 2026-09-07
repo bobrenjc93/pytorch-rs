@@ -1863,6 +1863,81 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             case="empty",
         )
 
+    def test_none_reduction_backward_nan_payload_bits_match_pytorch_2_13(self):
+        input_bits = np.asarray(
+            [
+                0x7FC1_2345,
+                0x7FC1_1111,
+                0x3F80_0000,
+                0x7FC1_1111,
+                0x3F80_0000,
+            ],
+            dtype=np.uint32,
+        )
+        target_bits = np.asarray(
+            [
+                0x7F81_2345,
+                0x7FC2_2222,
+                0x7FC2_2222,
+                0x4000_0000,
+                0x4000_0000,
+            ],
+            dtype=np.uint32,
+        )
+        weight_bits = np.asarray(
+            [
+                0x7FC0_1234,
+                0x7FC3_3333,
+                0x7FC3_3333,
+                0x7FC3_3333,
+                0x7FC3_3333,
+            ],
+            dtype=np.uint32,
+        )
+        actual_input = torch.tensor(
+            memoryview(input_bits.view(np.float32)),
+            requires_grad=True,
+        )
+        actual_target = torch.tensor(
+            memoryview(target_bits.view(np.float32)),
+            requires_grad=True,
+        )
+        expected_input = reference_torch.tensor(
+            input_bits.view(np.float32),
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        expected_target = reference_torch.tensor(
+            target_bits.view(np.float32),
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        actual_weights = torch.tensor(memoryview(weight_bits.view(np.float32)))
+        expected_weights = reference_torch.tensor(
+            weight_bits.view(np.float32),
+            dtype=reference_torch.float32,
+        )
+
+        actual = functional.mse_loss(actual_input, actual_target, reduction="none")
+        expected = reference_functional.mse_loss(
+            expected_input,
+            expected_target,
+            reduction="none",
+        )
+        self.assert_matches(actual, expected, case="nan payload")
+
+        (actual * actual_weights).sum().backward()
+        (expected * expected_weights).sum().backward()
+
+        np.testing.assert_array_equal(
+            np.asarray(actual_input.grad).reshape(-1).view(np.uint32),
+            expected_input.grad.detach().cpu().numpy().reshape(-1).view(np.uint32),
+        )
+        np.testing.assert_array_equal(
+            np.asarray(actual_target.grad).reshape(-1).view(np.uint32),
+            expected_target.grad.detach().cpu().numpy().reshape(-1).view(np.uint32),
+        )
+
     def test_sum_reduction_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (
             (True, False),
