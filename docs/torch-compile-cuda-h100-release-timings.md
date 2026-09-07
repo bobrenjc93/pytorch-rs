@@ -2,10 +2,9 @@
 
 Date: 2026-09-06
 
-Candidate provenance: benchmark-generated from worktree HEAD
-`8c4933a5a8fb151b4b41a1ac5b50ad43db4f7947`. The JSON artifact records the
-pending integration source/test diff in `git.status_short` and `git.diff_stat`
-before writing the refreshed output; the measurements were not hand-edited.
+Candidate provenance: clean current worktree
+`18519b830bc5deb28bac363197b54502a251148b`; the raw JSON records empty
+`git.status_short` and `git.diff_stat` before writing the refreshed artifact.
 
 Measurement command:
 
@@ -17,8 +16,11 @@ TRITON_CACHE_DIR="$PWD/target/triton-cache" \
 XDG_CACHE_HOME="$PWD/target/xdg-cache" \
 .venv/bin/python scripts/benchmark_compile_cuda.py \
   --include-unprepared-comparison \
-  --output docs/benchmark-data/torch-compile-cuda-h100-shape-matrix-v11.json
+  --output target/clean-evidence/torch-compile-cuda-h100-shape-matrix-v11.json
 ```
+
+The generated target JSON was copied verbatim to
+`docs/benchmark-data/torch-compile-cuda-h100-shape-matrix-v11.json`.
 
 Additional checks run after refreshing this evidence:
 
@@ -70,16 +72,16 @@ Results:
 
 | Workload | Shape | Weight | PyTorch cold us | PyTorch steady median us | `torch_rs` cold us | `torch_rs` steady median us | Ratio | Score contribution |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `square_256x256` | `(256, 256)` | 0.25 | 1151833.245 | 40.882 | 205.211 | 38.789 | 1.054x | 25.00 |
-| `square_1024x1024` | `(1024, 1024)` | 0.25 | 40486.930 | 42.988 | 145.330 | 40.745 | 1.055x | 25.00 |
-| `tall_4096x256` | `(4096, 256)` | 0.25 | 37881.288 | 45.629 | 137.277 | 42.601 | 1.071x | 25.00 |
-| `wide_256x4096` | `(256, 4096)` | 0.25 | 36779.031 | 39.393 | 137.628 | 38.819 | 1.015x | 25.00 |
+| `square_256x256` | `(256, 256)` | 0.25 | 1153708.951 | 40.571 | 216.418 | 39.867 | 1.018x | 25.00 |
+| `square_1024x1024` | `(1024, 1024)` | 0.25 | 39109.056 | 44.080 | 137.698 | 40.895 | 1.078x | 25.00 |
+| `tall_4096x256` | `(4096, 256)` | 0.25 | 40097.892 | 45.779 | 147.763 | 43.800 | 1.045x | 25.00 |
+| `wide_256x4096` | `(256, 4096)` | 0.25 | 38987.252 | 38.241 | 174.064 | 40.204 | 0.951x | 23.78 |
 
 Aggregate:
 
-- Common-success geometric-mean speed ratio: 1.0485x across 4/4 shapes.
-- Coverage-adjusted capped ratio: 1.0000.
-- CUDA compile score: 100.00%.
+- Common-success geometric-mean speed ratio: 1.0219x across 4/4 shapes.
+- Coverage-adjusted capped ratio: 0.9878.
+- CUDA compile score: 98.78%.
 - Zero-credit cells retained in denominator: 0.
 
 Correctness evidence remained fail-closed for every shape: the candidate ran on
