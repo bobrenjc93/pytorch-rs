@@ -1,9 +1,9 @@
 # H100 CUDA `torch.compile` Shape-Matrix Timings
 
-Date: 2026-09-06
+Date: 2026-09-07
 
 Candidate provenance: clean current worktree
-`c640a911061960246a2729cb21b380f82354a390`; the raw JSON records empty
+`5f869226afbbf8e5cac6d0994c449094f8a46543`; the raw JSON records empty
 `git.status_short` and `git.diff_stat` before writing the refreshed artifact.
 
 Measurement command:
@@ -38,7 +38,7 @@ Environment recorded by the JSON artifact:
 
 - GPU: NVIDIA H100, compute capability 9.0, driver 580.82.07
 - PyTorch: 2.13.0+cu130, CUDA runtime 13.0
-- `nvcc`: CUDA compilation tools 12.6, V12.6.85
+- `nvcc`: Cuda compilation tools, release 12.6, V12.6.85
 - Benchmark: `torch_compile_cuda_h100_reference_benchmark_v11`
 - Report schema: `torch_compile_cuda_h100_shape_matrix_report_v1`
 - Workload expression: `h100_cuda_pointwise_reduce_float32_v1`
@@ -72,16 +72,16 @@ Results:
 
 | Workload | Shape | Weight | PyTorch cold us | PyTorch steady median us | `torch_rs` cold us | `torch_rs` steady median us | Ratio | Score contribution |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `square_256x256` | `(256, 256)` | 0.25 | 1920652.757 | 45.933 | 194.164 | 32.853 | 1.398x | 25.00 |
-| `square_1024x1024` | `(1024, 1024)` | 0.25 | 799110.774 | 45.509 | 135.575 | 35.624 | 1.277x | 25.00 |
-| `tall_4096x256` | `(4096, 256)` | 0.25 | 1034869.316 | 54.582 | 123.166 | 37.340 | 1.462x | 25.00 |
-| `wide_256x4096` | `(256, 4096)` | 0.25 | 526214.174 | 42.000 | 121.784 | 32.209 | 1.304x | 25.00 |
+| `square_256x256` | `(256, 256)` | 0.25 | 1993247.647 | 52.870 | 207.624 | 56.943 | 0.928x | 23.21 |
+| `square_1024x1024` | `(1024, 1024)` | 0.25 | 833063.968 | 53.220 | 192.020 | 54.940 | 0.969x | 24.22 |
+| `tall_4096x256` | `(4096, 256)` | 0.25 | 910827.398 | 60.815 | 191.970 | 58.612 | 1.038x | 25.00 |
+| `wide_256x4096` | `(256, 4096)` | 0.25 | 360312.338 | 49.685 | 235.316 | 57.484 | 0.864x | 21.61 |
 
 Aggregate:
 
-- Common-success geometric-mean speed ratio: 1.3584x across 4/4 shapes.
-- Coverage-adjusted capped ratio: 1.0000.
-- CUDA compile score: 100.00%.
+- Common-success geometric-mean speed ratio: 0.9477x across 4/4 shapes.
+- Coverage-adjusted capped ratio: 0.9404.
+- CUDA compile score: 94.04%.
 - Zero-credit cells retained in denominator: 0.
 
 Correctness evidence remained fail-closed for every shape: the candidate ran on
