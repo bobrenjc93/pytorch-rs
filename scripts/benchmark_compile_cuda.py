@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Benchmark one CUDA ``torch.compile`` reference workload.
+"""Benchmark a fixed CUDA ``torch.compile`` reference workload matrix.
 
-The benchmark is intentionally narrow: it measures a single PyTorch 2.13
-CUDA/H100 reference workload and one matching private ``torch_rs`` CUDA compile
-path. CPU execution, eager fallback, and forwarding to installed PyTorch are
-fail-closed and never count as eligible CUDA compile evidence.
+The benchmark is intentionally narrow: it measures one PyTorch 2.13 CUDA/H100
+reference expression across a versioned fixed shape matrix and matching private
+``torch_rs`` CUDA compile paths. CPU execution, eager fallback, and forwarding
+to installed PyTorch are fail-closed and never count as eligible CUDA compile
+evidence.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import gc
 import hashlib
 import importlib.metadata as importlib_metadata
 import json
+import math
 import os
 import platform
 import statistics
@@ -31,13 +33,46 @@ PROTECTED_OUTPUT_PATHS = {
 }
 
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v10"
+BENCHMARK_SCHEMA_VERSION = "torch_compile_cuda_h100_shape_matrix_report_v1"
+BENCHMARK_VERSION = "torch_compile_cuda_h100_reference_benchmark_v11"
 WORKLOAD_VERSION = "h100_cuda_pointwise_reduce_float32_v1"
+WORKLOAD_MATRIX_VERSION = "h100_cuda_pointwise_reduce_float32_shape_matrix_v1"
 PREPARED_EXECUTOR_SCHEMA_VERSION = (
     "torch_rs_private_cuda_pointwise_reduce_compile_executor_v1"
 )
 WORKLOAD_SHAPE = (1024, 1024)
 WORKLOAD_SEED = 20260904
+WORKLOAD_MATRIX = (
+    {
+        "name": "square_256x256",
+        "shape": (256, 256),
+        "weight": 0.25,
+        "seed": 20260904,
+        "description": "small square latency-sensitive row reduction",
+    },
+    {
+        "name": "square_1024x1024",
+        "shape": (1024, 1024),
+        "weight": 0.25,
+        "seed": 20260905,
+        "description": "legacy square throughput row reduction",
+    },
+    {
+        "name": "tall_4096x256",
+        "shape": (4096, 256),
+        "weight": 0.25,
+        "seed": 20260906,
+        "description": "many short rows with the same total element count",
+    },
+    {
+        "name": "wide_256x4096",
+        "shape": (256, 4096),
+        "weight": 0.25,
+        "seed": 20260907,
+        "description": "few wide rows with the same total element count",
+    },
+)
+QUICK_WORKLOAD_NAMES = ("square_1024x1024",)
 
 REFERENCE_COMPILE_CONFIG = {
     "backend": "inductor",
@@ -69,6 +104,76 @@ h100_cuda_pointwise_reduce_float32._torch_rs_cuda_compile_output_shape = (
     WORKLOAD_SHAPE[0],
 )
 h100_cuda_pointwise_reduce_float32._torch_rs_cuda_compile_dtype = "torch.float32"
+
+
+def _workload_shape_tuple(shape):
+    if type(shape) is not tuple:
+        shape = tuple(shape)
+    if len(shape) != 2:
+        raise ValueError("workload shape must have exactly two dimensions")
+    rows, columns = shape
+    if type(rows) is not int or type(columns) is not int:
+        raise TypeError("workload shape dimensions must be int")
+    return rows, columns
+
+
+def _workload_matrix_weight_total(cells=WORKLOAD_MATRIX):
+    return sum(float(cell["weight"]) for cell in cells)
+
+
+def _workload_cell_metadata(cell):
+    rows, columns = _workload_shape_tuple(cell["shape"])
+    return {
+        "matrix_version": WORKLOAD_MATRIX_VERSION,
+        "name": cell["name"],
+        "shape": [rows, columns],
+        "weight": float(cell["weight"]),
+        "seed": int(cell["seed"]),
+        "description": cell["description"],
+    }
+
+
+def _default_workload_cell():
+    for cell in WORKLOAD_MATRIX:
+        if _workload_shape_tuple(cell["shape"]) == WORKLOAD_SHAPE:
+            return cell
+    raise AssertionError("default CUDA workload shape is missing from matrix")
+
+
+def _selected_workload_cells(args):
+    if not getattr(args, "quick", False):
+        return list(WORKLOAD_MATRIX)
+
+    quick_names = set(QUICK_WORKLOAD_NAMES)
+    cells = [cell for cell in WORKLOAD_MATRIX if cell["name"] in quick_names]
+    if not cells or len(cells) >= len(WORKLOAD_MATRIX):
+        raise AssertionError("quick workload set must be a strict matrix subset")
+    return cells
+
+
+def _set_workload_shape_marker(workload_shape):
+    rows, columns = _workload_shape_tuple(workload_shape)
+    h100_cuda_pointwise_reduce_float32._torch_rs_cuda_compile_workload_shape = (
+        rows,
+        columns,
+    )
+    h100_cuda_pointwise_reduce_float32._torch_rs_cuda_compile_output_shape = (rows,)
+
+
+def _restore_workload_shape_marker(workload_shape):
+    _set_workload_shape_marker(workload_shape)
+
+
+def _evidence_workload_shape(evidence):
+    shape = evidence.get("workload_shape")
+    if shape is None and isinstance(evidence.get("workload"), dict):
+        shape = evidence["workload"].get("shape")
+    if shape is None:
+        return None
+    try:
+        return _workload_shape_tuple(shape)
+    except (TypeError, ValueError):
+        return None
 
 
 def _version_without_local(version):
@@ -193,17 +298,24 @@ def _validate_counts(args):
         raise SystemExit("--samples must be positive")
     if args.repeats <= 0:
         raise SystemExit("--repeats must be positive")
+    selected_weight_total = _workload_matrix_weight_total(
+        _selected_workload_cells(args)
+    )
+    if selected_weight_total <= 0.0:
+        raise SystemExit("selected CUDA workload matrix weight must be positive")
 
 
-def _make_reference_inputs(reference_torch):
-    reference_torch.manual_seed(WORKLOAD_SEED)
+def _make_reference_inputs(reference_torch, workload_cell=None):
+    workload_cell = workload_cell or _default_workload_cell()
+    rows, columns = _workload_shape_tuple(workload_cell["shape"])
+    reference_torch.manual_seed(int(workload_cell["seed"]))
     x = reference_torch.randn(
-        WORKLOAD_SHAPE,
+        (rows, columns),
         device="cuda",
         dtype=reference_torch.float32,
     )
     bias = reference_torch.randn(
-        (WORKLOAD_SHAPE[1],),
+        (columns,),
         device="cuda",
         dtype=reference_torch.float32,
     )
@@ -305,73 +417,102 @@ def _compile_reference(reference_torch):
     return reference_torch.compile(h100_cuda_pointwise_reduce_float32, **kwargs)
 
 
-def _run_pytorch_reference(reference_torch, args):
-    inputs = _make_reference_inputs(reference_torch)
-    expected = h100_cuda_pointwise_reduce_float32(*inputs)
-    _synchronize(reference_torch)
+def _run_pytorch_reference(reference_torch, args, workload_cell=None):
+    workload_cell = workload_cell or _default_workload_cell()
+    workload_shape = _workload_shape_tuple(workload_cell["shape"])
+    previous_shape = (
+        h100_cuda_pointwise_reduce_float32
+        ._torch_rs_cuda_compile_workload_shape
+    )
+    previous_output_shape = (
+        h100_cuda_pointwise_reduce_float32
+        ._torch_rs_cuda_compile_output_shape
+    )
+    _set_workload_shape_marker(workload_shape)
+    try:
+        inputs = _make_reference_inputs(reference_torch, workload_cell)
+        expected = h100_cuda_pointwise_reduce_float32(*inputs)
+        _synchronize(reference_torch)
 
-    factory_started_ns = time.perf_counter_ns()
-    compiled = _compile_reference(reference_torch)
-    factory_ns = time.perf_counter_ns() - factory_started_ns
+        factory_started_ns = time.perf_counter_ns()
+        compiled = _compile_reference(reference_torch)
+        factory_ns = time.perf_counter_ns() - factory_started_ns
 
-    cold_ns, cold_checksum, cold_output = _time_once(reference_torch, compiled, inputs)
-    reference_torch.testing.assert_close(cold_output, expected)
-
-    for _ in range(args.warmups):
-        _time_repeated(reference_torch, compiled, inputs, args.repeats)
-
-    sample_ns = []
-    sample_checksums = []
-    for _ in range(args.samples):
-        elapsed_ns, checksum = _time_repeated(
+        cold_ns, cold_checksum, cold_output = _time_once(
             reference_torch,
             compiled,
             inputs,
-            args.repeats,
         )
-        sample_ns.append(elapsed_ns)
-        sample_checksums.append(checksum)
+        reference_torch.testing.assert_close(cold_output, expected)
 
-    expected_checksum = _checksum_tensor(expected)
-    checksums = sorted(set([cold_checksum, *sample_checksums]))
-    if len(checksums) != 1:
-        raise AssertionError(
-            "compiled CUDA workload produced unstable checksums: "
-            f"{checksums!r}"
+        for _ in range(args.warmups):
+            _time_repeated(reference_torch, compiled, inputs, args.repeats)
+
+        sample_ns = []
+        sample_checksums = []
+        for _ in range(args.samples):
+            elapsed_ns, checksum = _time_repeated(
+                reference_torch,
+                compiled,
+                inputs,
+                args.repeats,
+            )
+            sample_ns.append(elapsed_ns)
+            sample_checksums.append(checksum)
+
+        expected_checksum = _checksum_tensor(expected)
+        checksums = sorted(set([cold_checksum, *sample_checksums]))
+        if len(checksums) != 1:
+            raise AssertionError(
+                "compiled CUDA workload produced unstable checksums: "
+                f"{checksums!r}"
+            )
+
+        report = {
+            "implementation": "pytorch",
+            "status": "ok",
+            "workload_version": WORKLOAD_VERSION,
+            "workload": _workload_cell_metadata(workload_cell),
+            "workload_name": workload_cell["name"],
+            "workload_shape": list(workload_shape),
+            "workload_weight": float(workload_cell["weight"]),
+            "workload_seed": int(workload_cell["seed"]),
+            "compile_config": dict(REFERENCE_COMPILE_CONFIG),
+            "factory_us": factory_ns / 1000.0,
+            "cold_first_call_us": cold_ns / 1000.0,
+            "cold_checksum": cold_checksum,
+            "timing_boundary": {
+                "explicit_cuda_synchronize_before_timed_region": True,
+                "explicit_cuda_synchronize_after_timed_region": True,
+                "torch_rs_equivalent_explicit_sync": True,
+                "compiled_calls_only": True,
+                "materialization_outside_timed_region": True,
+            },
+            "steady": _summarize_samples(sample_ns, args.repeats),
+            "steady_checksums": sorted(set(sample_checksums)),
+            "input_metadata": [_tensor_metadata(input) for input in inputs],
+            "output_metadata": _tensor_metadata(cold_output),
+            "correctness": {
+                "eager_reference_checksum": expected_checksum,
+                "assert_close": True,
+            },
+        }
+        private_workload_buffers = {
+            "workload": _workload_cell_metadata(workload_cell),
+            "x_host_bytes": _tensor_float32_bytes(inputs[0]),
+            "bias_host_bytes": _tensor_float32_bytes(inputs[1]),
+            "expected_output_bytes": _tensor_float32_bytes(cold_output),
+            "expected_output_checksum": cold_checksum,
+            "expected_output_metadata": _tensor_metadata(cold_output),
+        }
+        return report, private_workload_buffers
+    finally:
+        h100_cuda_pointwise_reduce_float32._torch_rs_cuda_compile_workload_shape = (
+            previous_shape
         )
-
-    report = {
-        "implementation": "pytorch",
-        "status": "ok",
-        "workload_version": WORKLOAD_VERSION,
-        "compile_config": dict(REFERENCE_COMPILE_CONFIG),
-        "factory_us": factory_ns / 1000.0,
-        "cold_first_call_us": cold_ns / 1000.0,
-        "cold_checksum": cold_checksum,
-        "timing_boundary": {
-            "explicit_cuda_synchronize_before_timed_region": True,
-            "explicit_cuda_synchronize_after_timed_region": True,
-            "torch_rs_equivalent_explicit_sync": True,
-            "compiled_calls_only": True,
-            "materialization_outside_timed_region": True,
-        },
-        "steady": _summarize_samples(sample_ns, args.repeats),
-        "steady_checksums": sorted(set(sample_checksums)),
-        "input_metadata": [_tensor_metadata(input) for input in inputs],
-        "output_metadata": _tensor_metadata(cold_output),
-        "correctness": {
-            "eager_reference_checksum": expected_checksum,
-            "assert_close": True,
-        },
-    }
-    private_workload_buffers = {
-        "x_host_bytes": _tensor_float32_bytes(inputs[0]),
-        "bias_host_bytes": _tensor_float32_bytes(inputs[1]),
-        "expected_output_bytes": _tensor_float32_bytes(cold_output),
-        "expected_output_checksum": cold_checksum,
-        "expected_output_metadata": _tensor_metadata(cold_output),
-    }
-    return report, private_workload_buffers
+        h100_cuda_pointwise_reduce_float32._torch_rs_cuda_compile_output_shape = (
+            previous_output_shape
+        )
 
 
 def classify_torch_rs_cuda_compile_evidence(evidence):
@@ -390,6 +531,13 @@ def classify_torch_rs_cuda_compile_evidence(evidence):
         reasons.append("execution status is not ok")
     if evidence.get("workload_version") != WORKLOAD_VERSION:
         reasons.append("workload version does not match the CUDA benchmark")
+    workload_shape = _evidence_workload_shape(evidence)
+    if workload_shape is None:
+        reasons.append("workload shape is missing or malformed")
+    elif workload_shape not in {
+        _workload_shape_tuple(cell["shape"]) for cell in WORKLOAD_MATRIX
+    }:
+        reasons.append("workload shape is not in the fixed CUDA benchmark matrix")
     if evidence.get("compile_backend") != REFERENCE_COMPILE_CONFIG["backend"]:
         reasons.append(
             "compile backend is not the declared CUDA reference backend "
@@ -472,14 +620,16 @@ def _torch_rs_private_cuda_pointwise_kernel(required_cuda_visible_devices):
 def _torch_rs_private_cuda_pointwise_reduce_workload(
     required_cuda_visible_devices,
     workload_buffers,
+    workload_shape=WORKLOAD_SHAPE,
 ):
     from torch_rs import _cuda_pointwise_reduce_workload
 
+    rows, columns = _workload_shape_tuple(workload_shape)
     return _cuda_pointwise_reduce_workload.launch_h100_float32_pointwise_reduce_device0(
         workload_buffers["x_host_bytes"],
         workload_buffers["bias_host_bytes"],
-        rows=WORKLOAD_SHAPE[0],
-        columns=WORKLOAD_SHAPE[1],
+        rows=rows,
+        columns=columns,
         expected_output_bytes=workload_buffers["expected_output_bytes"],
         expected_output_checksum=workload_buffers["expected_output_checksum"],
         expected_output_metadata=workload_buffers["expected_output_metadata"],
@@ -490,14 +640,16 @@ def _torch_rs_private_cuda_pointwise_reduce_workload(
 def _torch_rs_private_cuda_pointwise_reduce_inputs(
     required_cuda_visible_devices,
     workload_buffers,
+    workload_shape=WORKLOAD_SHAPE,
 ):
     from torch_rs import _cuda_pointwise_reduce_workload
 
+    rows, columns = _workload_shape_tuple(workload_shape)
     return _cuda_pointwise_reduce_workload.make_h100_float32_pointwise_reduce_inputs_device0(
         workload_buffers["x_host_bytes"],
         workload_buffers["bias_host_bytes"],
-        rows=WORKLOAD_SHAPE[0],
-        columns=WORKLOAD_SHAPE[1],
+        rows=rows,
+        columns=columns,
         required_cuda_visible_devices=required_cuda_visible_devices,
     )
 
@@ -545,7 +697,11 @@ def _require_private_cuda_pointwise_kernel(pointwise):
         raise AssertionError("private torch_rs CUDA pointwise kernel did not sync")
 
 
-def _require_private_cuda_pointwise_reduce_workload(pointwise_reduce):
+def _require_private_cuda_pointwise_reduce_workload(
+    pointwise_reduce,
+    workload_shape=WORKLOAD_SHAPE,
+):
+    rows, columns = _workload_shape_tuple(workload_shape)
     if pointwise_reduce.get("status") != "ok":
         raise AssertionError(
             "private torch_rs CUDA pointwise-reduce workload failed: "
@@ -563,11 +719,11 @@ def _require_private_cuda_pointwise_reduce_workload(pointwise_reduce):
             "private torch_rs CUDA pointwise-reduce workload did not run on "
             "CUDA device 0"
         )
-    if pointwise_reduce.get("workload_shape") != list(WORKLOAD_SHAPE):
+    if pointwise_reduce.get("workload_shape") != [rows, columns]:
         raise AssertionError(
             "private torch_rs CUDA pointwise-reduce workload shape changed"
         )
-    if pointwise_reduce.get("output_shape") != [WORKLOAD_SHAPE[0]]:
+    if pointwise_reduce.get("output_shape") != [rows]:
         raise AssertionError(
             "private torch_rs CUDA pointwise-reduce output shape changed"
         )
@@ -594,7 +750,11 @@ def _require_private_cuda_pointwise_reduce_workload(pointwise_reduce):
         )
 
 
-def _require_private_cuda_pointwise_reduce_inputs(inputs):
+def _require_private_cuda_pointwise_reduce_inputs(
+    inputs,
+    workload_shape=WORKLOAD_SHAPE,
+):
+    rows, columns = _workload_shape_tuple(workload_shape)
     if inputs.get("status") != "ok":
         raise AssertionError(
             "private torch_rs CUDA pointwise-reduce inputs failed: "
@@ -609,12 +769,12 @@ def _require_private_cuda_pointwise_reduce_inputs(inputs):
             "private torch_rs CUDA pointwise-reduce inputs did not allocate on "
             "CUDA device 0"
         )
-    if inputs.get("workload_shape") != list(WORKLOAD_SHAPE):
+    if inputs.get("workload_shape") != [rows, columns]:
         raise AssertionError("private torch_rs CUDA input workload shape changed")
     expected_metadata = [
         {
-            "shape": [WORKLOAD_SHAPE[0], WORKLOAD_SHAPE[1]],
-            "stride": [WORKLOAD_SHAPE[1], 1],
+            "shape": [rows, columns],
+            "stride": [columns, 1],
             "storage_offset": 0,
             "dtype": "torch.float32",
             "device": "cuda:0",
@@ -624,7 +784,7 @@ def _require_private_cuda_pointwise_reduce_inputs(inputs):
             "is_contiguous": True,
         },
         {
-            "shape": [WORKLOAD_SHAPE[1]],
+            "shape": [columns],
             "stride": [1],
             "storage_offset": 0,
             "dtype": "torch.float32",
@@ -675,7 +835,11 @@ def _require_private_cuda_pointwise_reduce_inputs(inputs):
         raise AssertionError("private torch_rs CUDA input checksums did not match")
 
 
-def _require_public_cuda_tensor_wrapper_evidence(wrapper):
+def _require_public_cuda_tensor_wrapper_evidence(
+    wrapper,
+    workload_shape=WORKLOAD_SHAPE,
+):
+    rows, _columns = _workload_shape_tuple(workload_shape)
     if wrapper is None:
         raise AssertionError("public torch_rs CUDA tensor wrapper evidence is missing")
     if wrapper.get("schema_version") != (
@@ -704,7 +868,7 @@ def _require_public_cuda_tensor_wrapper_evidence(wrapper):
         raise AssertionError(
             "public torch_rs CUDA tensor wrapper did not report CUDA residency"
         )
-    if wrapper.get("shape") != [WORKLOAD_SHAPE[0]]:
+    if wrapper.get("shape") != [rows]:
         raise AssertionError("public torch_rs CUDA tensor wrapper shape changed")
     if wrapper.get("stride") != [1]:
         raise AssertionError("public torch_rs CUDA tensor wrapper stride changed")
@@ -740,7 +904,9 @@ def _require_torch_rs_cuda_compile_prepared_executor(
     metadata,
     *,
     expected_invocation_count=None,
+    workload_shape=WORKLOAD_SHAPE,
 ):
+    rows, columns = _workload_shape_tuple(workload_shape)
     if type(metadata) is not dict:
         raise AssertionError("compiled CUDA wrapper is missing prepared executor")
     if metadata.get("schema_version") != PREPARED_EXECUTOR_SCHEMA_VERSION:
@@ -770,9 +936,9 @@ def _require_torch_rs_cuda_compile_prepared_executor(
         raise AssertionError("prepared executor did not use dynamic=False")
     if metadata.get("device_type") != "cuda" or metadata.get("device_index") != 0:
         raise AssertionError("prepared executor did not select CUDA device 0")
-    if metadata.get("workload_shape") != list(WORKLOAD_SHAPE):
+    if metadata.get("workload_shape") != [rows, columns]:
         raise AssertionError("prepared executor workload shape changed")
-    if metadata.get("output_shape") != [WORKLOAD_SHAPE[0]]:
+    if metadata.get("output_shape") != [rows]:
         raise AssertionError("prepared executor output shape changed")
     if metadata.get("cpu_fallback") is not False:
         raise AssertionError("prepared executor used CPU fallback")
@@ -799,9 +965,11 @@ def _require_torch_rs_cuda_compile_output(
     expected_checksum,
     expected_output_bytes,
     expected_output_metadata,
+    workload_shape=WORKLOAD_SHAPE,
 ):
+    rows, columns = _workload_shape_tuple(workload_shape)
     metadata, compile_execution = _compile_execution_from_output(output)
-    _require_public_cuda_tensor_wrapper_evidence(metadata)
+    _require_public_cuda_tensor_wrapper_evidence(metadata, workload_shape)
     if metadata.get("native_cuda_compile") is not True:
         raise AssertionError("compiled CUDA output did not mark native execution")
     if metadata.get("eager_fallback") is not False:
@@ -844,6 +1012,10 @@ def _require_torch_rs_cuda_compile_output(
         raise AssertionError("compiled CUDA execution inputs were not CUDA")
     if compile_execution.get("output_device_type") != "cuda":
         raise AssertionError("compiled CUDA execution output was not CUDA")
+    if compile_execution.get("workload_shape") != [rows, columns]:
+        raise AssertionError("compiled CUDA execution workload shape changed")
+    if compile_execution.get("output_shape") != [rows]:
+        raise AssertionError("compiled CUDA execution output shape changed")
     if compile_execution.get("output_metadata") != expected_output_metadata:
         raise AssertionError("compiled CUDA output metadata changed")
     if compile_execution.get("device_output_checksum") != expected_checksum:
@@ -1005,9 +1177,11 @@ def _time_torch_rs_cuda_unprepared_compatibility_repeated(
     inputs,
     repeats,
     required_cuda_visible_devices,
+    workload_shape=WORKLOAD_SHAPE,
 ):
     from torch_rs import _cuda_pointwise_reduce_workload
 
+    workload_shape = _workload_shape_tuple(workload_shape)
     output = None
     before_sync = _synchronize_torch_rs_cuda_tensor(
         inputs[0],
@@ -1023,6 +1197,7 @@ def _time_torch_rs_cuda_unprepared_compatibility_repeated(
                 .execute_h100_float32_pointwise_reduce_compiled_device0(
                     *inputs,
                     required_cuda_visible_devices=required_cuda_visible_devices,
+                    workload_shape=workload_shape,
                 )
             )
         assert output is not None
@@ -1053,7 +1228,10 @@ def _run_torch_rs_cuda_unprepared_compatibility_comparison(
     args,
     input_bundle,
     expected_checksum,
+    workload_cell=None,
 ):
+    workload_cell = workload_cell or _default_workload_cell()
+    workload_shape = _workload_shape_tuple(workload_cell["shape"])
     sample_ns = []
     sample_checksums = []
     last_execution = None
@@ -1064,6 +1242,7 @@ def _run_torch_rs_cuda_unprepared_compatibility_comparison(
                 input_bundle.inputs,
                 args.repeats,
                 args.required_cuda_visible_devices,
+                workload_shape,
             )
         )
 
@@ -1073,6 +1252,7 @@ def _run_torch_rs_cuda_unprepared_compatibility_comparison(
                 input_bundle.inputs,
                 args.repeats,
                 args.required_cuda_visible_devices,
+                workload_shape,
             )
         )
         sample_ns.append(elapsed_ns)
@@ -1090,6 +1270,11 @@ def _run_torch_rs_cuda_unprepared_compatibility_comparison(
         "status": "ok",
         "measurement": "compatibility_execute_prepares_each_call",
         "workload_version": WORKLOAD_VERSION,
+        "workload": _workload_cell_metadata(workload_cell),
+        "workload_name": workload_cell["name"],
+        "workload_shape": list(workload_shape),
+        "workload_weight": float(workload_cell["weight"]),
+        "workload_seed": int(workload_cell["seed"]),
         "compile_backend": REFERENCE_COMPILE_CONFIG["backend"],
         "compile_fullgraph": True,
         "compile_dynamic": False,
@@ -1103,12 +1288,15 @@ def _run_torch_rs_cuda_unprepared_compatibility_comparison(
     }
 
 
-def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
+def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers, workload_cell=None):
+    workload_cell = workload_cell or _default_workload_cell()
+    workload_shape = _workload_shape_tuple(workload_cell["shape"])
     input_bundle, input_evidence = _torch_rs_private_cuda_pointwise_reduce_inputs(
         args.required_cuda_visible_devices,
         workload_buffers,
+        workload_shape,
     )
-    _require_private_cuda_pointwise_reduce_inputs(input_evidence)
+    _require_private_cuda_pointwise_reduce_inputs(input_evidence, workload_shape)
     assert input_bundle is not None
     compiled = None
 
@@ -1119,11 +1307,20 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
         mask_attribute,
         missing_attribute,
     )
+    previous_shape = (
+        h100_cuda_pointwise_reduce_float32
+        ._torch_rs_cuda_compile_workload_shape
+    )
+    previous_output_shape = (
+        h100_cuda_pointwise_reduce_float32
+        ._torch_rs_cuda_compile_output_shape
+    )
     setattr(
         h100_cuda_pointwise_reduce_float32,
         mask_attribute,
         args.required_cuda_visible_devices,
     )
+    _set_workload_shape_marker(workload_shape)
     try:
         factory_started_ns = time.perf_counter_ns()
         compiled = torch_rs.compile(
@@ -1137,6 +1334,7 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
         _require_torch_rs_cuda_compile_prepared_executor(
             prepared_executor_before_first_call,
             expected_invocation_count=0,
+            workload_shape=workload_shape,
         )
 
         cold_ns, cold_output, cold_timing_boundary = (
@@ -1148,6 +1346,7 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
                 expected_checksum=workload_buffers["expected_output_checksum"],
                 expected_output_bytes=workload_buffers["expected_output_bytes"],
                 expected_output_metadata=workload_buffers["expected_output_metadata"],
+                workload_shape=workload_shape,
             )
             cold_execution["timing_boundary"] = cold_timing_boundary
             cold_checksum = cold_execution["device_output_checksum"]
@@ -1176,6 +1375,7 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
                         expected_output_metadata=workload_buffers[
                             "expected_output_metadata"
                         ],
+                        workload_shape=workload_shape,
                     )
                 )
                 warmup_execution["timing_boundary"] = warmup_timing_boundary
@@ -1206,6 +1406,7 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
                         expected_output_metadata=workload_buffers[
                             "expected_output_metadata"
                         ],
+                        workload_shape=workload_shape,
                     )
                 )
                 sample_execution["timing_boundary"] = sample_timing_boundary
@@ -1230,6 +1431,7 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
         _require_torch_rs_cuda_compile_prepared_executor(
             prepared_executor_after_timing,
             expected_invocation_count=expected_invocations,
+            workload_shape=workload_shape,
         )
         cold_executor = cold_execution.get("executor") or {}
         last_executor = last_execution.get("executor") or {}
@@ -1306,6 +1508,7 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
                     args,
                     input_bundle,
                     workload_buffers["expected_output_checksum"],
+                    workload_cell,
                 )
             )
             unprepared_median = unprepared_comparison["steady"]["median_us"]
@@ -1325,6 +1528,11 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
             "implementation": "torch_rs",
             "status": "ok",
             "workload_version": WORKLOAD_VERSION,
+            "workload": _workload_cell_metadata(workload_cell),
+            "workload_name": workload_cell["name"],
+            "workload_shape": list(workload_shape),
+            "workload_weight": float(workload_cell["weight"]),
+            "workload_seed": int(workload_cell["seed"]),
             "compile_backend": REFERENCE_COMPILE_CONFIG["backend"],
             "compile_config": dict(REFERENCE_COMPILE_CONFIG),
             "compile_fullgraph": True,
@@ -1377,6 +1585,12 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
                 pass
         else:
             setattr(h100_cuda_pointwise_reduce_float32, mask_attribute, previous_mask)
+        h100_cuda_pointwise_reduce_float32._torch_rs_cuda_compile_workload_shape = (
+            previous_shape
+        )
+        h100_cuda_pointwise_reduce_float32._torch_rs_cuda_compile_output_shape = (
+            previous_output_shape
+        )
         if compiled is not None:
             executor = getattr(compiled, "_torch_rs_cuda_compile_executor", None)
             close = getattr(executor, "close", None)
@@ -1385,11 +1599,22 @@ def _run_torch_rs_cuda_compile(torch_rs, args, workload_buffers):
         input_bundle.close()
 
 
-def torch_rs_zero_credit_unsupported_row(torch_rs, cuda_tensor_evidence=None):
+def torch_rs_zero_credit_unsupported_row(
+    torch_rs,
+    cuda_tensor_evidence=None,
+    workload_cell=None,
+):
+    workload_cell = workload_cell or _default_workload_cell()
+    workload_shape = _workload_shape_tuple(workload_cell["shape"])
     evidence = {
         "implementation": "torch_rs",
         "status": "unsupported",
         "workload_version": WORKLOAD_VERSION,
+        "workload": _workload_cell_metadata(workload_cell),
+        "workload_name": workload_cell["name"],
+        "workload_shape": list(workload_shape),
+        "workload_weight": float(workload_cell["weight"]),
+        "workload_seed": int(workload_cell["seed"]),
         "compile_backend": None,
         "compile_fullgraph": None,
         "compile_dynamic": None,
@@ -1404,6 +1629,11 @@ def torch_rs_zero_credit_unsupported_row(torch_rs, cuda_tensor_evidence=None):
         "implementation": "torch_rs",
         "status": "zero_credit_unsupported",
         "workload_version": WORKLOAD_VERSION,
+        "workload": _workload_cell_metadata(workload_cell),
+        "workload_name": workload_cell["name"],
+        "workload_shape": list(workload_shape),
+        "workload_weight": float(workload_cell["weight"]),
+        "workload_seed": int(workload_cell["seed"]),
         "score_credit": 0.0,
         "reason": (
             "this unsupported row helper records missing CUDA compile evidence "
@@ -1427,6 +1657,160 @@ def torch_rs_zero_credit_unsupported_row(torch_rs, cuda_tensor_evidence=None):
     }
 
 
+def torch_rs_zero_credit_failure_row(
+    torch_rs,
+    error,
+    *,
+    workload_cell=None,
+    cuda_tensor_evidence=None,
+):
+    row = torch_rs_zero_credit_unsupported_row(
+        torch_rs,
+        cuda_tensor_evidence=cuda_tensor_evidence,
+        workload_cell=workload_cell,
+    )
+    row["status"] = "zero_credit_failed"
+    row["reason"] = (
+        "torch_rs CUDA compile evidence failed and remains zero in the "
+        f"benchmark denominator: {type(error).__name__}: {error}"
+    )
+    row["failure"] = {
+        "type": type(error).__name__,
+        "message": str(error),
+    }
+    return row
+
+
+def _score_workload_result(result, denominator_weight):
+    reference = result["reference_workload"]
+    candidate = result["candidate"]
+    workload = result["workload"]
+    eligible = (
+        candidate.get("eligibility", {}).get("eligible_cuda_compile_evidence")
+        is True
+        and reference.get("status") == "ok"
+    )
+    speed_ratio = None
+    capped_speed_ratio = 0.0
+    if eligible:
+        candidate_median = candidate["steady"]["median_us"]
+        reference_median = reference["steady"]["median_us"]
+        speed_ratio = reference_median / candidate_median if candidate_median else 0.0
+        capped_speed_ratio = min(1.0, speed_ratio)
+
+    weight = float(workload["weight"])
+    score = {
+        "eligible_cuda_compile_evidence": eligible,
+        "steady_speed_ratio": speed_ratio,
+        "capped_steady_speed_ratio": capped_speed_ratio,
+        "weight": weight,
+        "denominator_weight": denominator_weight,
+        "weighted_score_contribution_percent": (
+            weight / denominator_weight * capped_speed_ratio * 100.0
+            if denominator_weight
+            else 0.0
+        ),
+        "zero_credit_in_denominator": not eligible,
+    }
+    result["score"] = score
+    candidate["score"] = score
+    return result
+
+
+def _aggregate_workload_results(workload_results):
+    denominator_weight = sum(
+        float(result["workload"]["weight"]) for result in workload_results
+    )
+    scored_results = [
+        _score_workload_result(result, denominator_weight)
+        for result in workload_results
+    ]
+    weighted_capped_ratio = (
+        sum(
+            result["score"]["weight"]
+            * result["score"]["capped_steady_speed_ratio"]
+            for result in scored_results
+        )
+        / denominator_weight
+        if denominator_weight
+        else 0.0
+    )
+    common_success = [
+        result
+        for result in scored_results
+        if result["score"]["steady_speed_ratio"] is not None
+        and result["score"]["steady_speed_ratio"] > 0.0
+    ]
+    common_weight = sum(
+        float(result["workload"]["weight"]) for result in common_success
+    )
+    if common_success:
+        common_success_geomean = math.exp(
+            sum(
+                (
+                    float(result["workload"]["weight"])
+                    / common_weight
+                    * math.log(result["score"]["steady_speed_ratio"])
+                )
+                for result in common_success
+            )
+        )
+    else:
+        common_success_geomean = None
+    zero_credit = [
+        result
+        for result in scored_results
+        if result["score"]["zero_credit_in_denominator"]
+    ]
+    return {
+        "common_success_geomean_speed_ratio": common_success_geomean,
+        "common_success_shape_count": len(common_success),
+        "common_success_weight": common_weight,
+        "coverage_adjusted_capped_speed_ratio": weighted_capped_ratio,
+        "coverage_adjusted_overall_percent": weighted_capped_ratio * 100.0,
+        "torch_rs_cuda_compile_score_percent": weighted_capped_ratio * 100.0,
+        "workload_count": len(scored_results),
+        "denominator_weight": denominator_weight,
+        "full_matrix_weight": _workload_matrix_weight_total(WORKLOAD_MATRIX),
+        "zero_credit_cell_count": len(zero_credit),
+        "zero_credit_unsupported_cell_count": len(zero_credit),
+        "zero_credit_weight": sum(
+            float(result["workload"]["weight"]) for result in zero_credit
+        ),
+        "per_workload": [
+            {
+                "name": result["workload"]["name"],
+                "shape": result["workload"]["shape"],
+                "weight": result["workload"]["weight"],
+                "candidate_status": result["candidate"]["status"],
+                "eligible_cuda_compile_evidence": (
+                    result["score"]["eligible_cuda_compile_evidence"]
+                ),
+                "pytorch_cold_first_call_us": result["reference_workload"].get(
+                    "cold_first_call_us"
+                ),
+                "pytorch_steady_median_us": (
+                    result["reference_workload"].get("steady") or {}
+                ).get("median_us"),
+                "torch_rs_cold_first_call_us": result["candidate"].get(
+                    "cold_first_call_us"
+                ),
+                "torch_rs_steady_median_us": (
+                    result["candidate"].get("steady") or {}
+                ).get("median_us"),
+                "steady_speed_ratio": result["score"]["steady_speed_ratio"],
+                "capped_steady_speed_ratio": (
+                    result["score"]["capped_steady_speed_ratio"]
+                ),
+                "weighted_score_contribution_percent": (
+                    result["score"]["weighted_score_contribution_percent"]
+                ),
+            }
+            for result in scored_results
+        ],
+    }
+
+
 def _device_provenance(reference_torch):
     properties = reference_torch.cuda.get_device_properties(0)
     memory_free, memory_total = reference_torch.cuda.mem_get_info(0)
@@ -1446,9 +1830,12 @@ def _device_provenance(reference_torch):
 
 
 def _environment(reference_torch, torch_rs, args):
+    selected_workloads = [_workload_cell_metadata(cell) for cell in args.workload_cells]
     return {
         "benchmark_version": BENCHMARK_VERSION,
+        "schema_version": BENCHMARK_SCHEMA_VERSION,
         "workload_version": WORKLOAD_VERSION,
+        "workload_matrix_version": WORKLOAD_MATRIX_VERSION,
         "python": sys.version.replace("\n", " "),
         "python_executable": sys.executable,
         "platform": platform.platform(),
@@ -1456,6 +1843,7 @@ def _environment(reference_torch, torch_rs, args):
         "warmups": args.warmups,
         "samples": args.samples,
         "repeats": args.repeats,
+        "run_mode": "quick" if args.quick else "full",
         "pytorch": {
             "version": reference_torch.__version__,
             "path": getattr(reference_torch, "__file__", None),
@@ -1480,9 +1868,26 @@ def _environment(reference_torch, torch_rs, args):
         "reference_compile_config": dict(REFERENCE_COMPILE_CONFIG),
         "workload": {
             "name": h100_cuda_pointwise_reduce_float32.__name__,
-            "shape": list(WORKLOAD_SHAPE),
+            "expression_version": WORKLOAD_VERSION,
             "dtype": "torch.float32",
-            "seed": WORKLOAD_SEED,
+            "base_seed": WORKLOAD_SEED,
+        },
+        "workload_matrix": {
+            "version": WORKLOAD_MATRIX_VERSION,
+            "full_workloads": [
+                _workload_cell_metadata(cell) for cell in WORKLOAD_MATRIX
+            ],
+            "selected_workloads": selected_workloads,
+            "quick_workload_names": list(QUICK_WORKLOAD_NAMES),
+            "quick_subset": bool(args.quick),
+            "quick_subset_is_strict": (
+                bool(args.quick)
+                and 0 < len(selected_workloads) < len(WORKLOAD_MATRIX)
+            ),
+            "selected_weight_total": _workload_matrix_weight_total(
+                args.workload_cells
+            ),
+            "full_weight_total": _workload_matrix_weight_total(WORKLOAD_MATRIX),
         },
         "gpu": _device_provenance(reference_torch),
         "git": _git_provenance(),
@@ -1490,6 +1895,9 @@ def _environment(reference_torch, torch_rs, args):
 
 
 def run_benchmark(args):
+    if not hasattr(args, "quick"):
+        args.quick = False
+    args.workload_cells = _selected_workload_cells(args)
     _validate_counts(args)
     import torch as reference_torch
     import torch_rs
@@ -1508,63 +1916,79 @@ def run_benchmark(args):
     gc_was_enabled = gc.isenabled()
     gc.disable()
     try:
-        pytorch_reference, private_workload_buffers = _run_pytorch_reference(
-            reference_torch,
-            args,
-        )
-        torch_rs_cuda_pointwise_reduce_workload = (
-            _torch_rs_private_cuda_pointwise_reduce_workload(
-                args.required_cuda_visible_devices,
-                private_workload_buffers,
+        workload_results = []
+        for workload_cell in args.workload_cells:
+            workload = _workload_cell_metadata(workload_cell)
+            workload_shape = _workload_shape_tuple(workload_cell["shape"])
+            pytorch_reference, private_workload_buffers = _run_pytorch_reference(
+                reference_torch,
+                args,
+                workload_cell,
             )
-        )
-        _require_private_cuda_pointwise_reduce_workload(
-            torch_rs_cuda_pointwise_reduce_workload,
-        )
-        prerequisite_cuda_tensor_wrapper = torch_rs_cuda_pointwise_reduce_workload[
-            "public_cuda_tensor_wrapper"
-        ]
-        _require_public_cuda_tensor_wrapper_evidence(
-            prerequisite_cuda_tensor_wrapper
-        )
-        torch_rs_row = _run_torch_rs_cuda_compile(
-            torch_rs,
-            args,
-            private_workload_buffers,
-        )
+            pointwise_reduce = None
+            prerequisite_cuda_tensor_wrapper = None
+            try:
+                pointwise_reduce = _torch_rs_private_cuda_pointwise_reduce_workload(
+                    args.required_cuda_visible_devices,
+                    private_workload_buffers,
+                    workload_shape,
+                )
+                _require_private_cuda_pointwise_reduce_workload(
+                    pointwise_reduce,
+                    workload_shape,
+                )
+                prerequisite_cuda_tensor_wrapper = pointwise_reduce[
+                    "public_cuda_tensor_wrapper"
+                ]
+                _require_public_cuda_tensor_wrapper_evidence(
+                    prerequisite_cuda_tensor_wrapper,
+                    workload_shape,
+                )
+                torch_rs_row = _run_torch_rs_cuda_compile(
+                    torch_rs,
+                    args,
+                    private_workload_buffers,
+                    workload_cell,
+                )
+            except Exception as error:
+                torch_rs_row = torch_rs_zero_credit_failure_row(
+                    torch_rs,
+                    error,
+                    workload_cell=workload_cell,
+                    cuda_tensor_evidence=pointwise_reduce,
+                )
+
+            workload_results.append(
+                {
+                    "workload": workload,
+                    "reference_workload": pytorch_reference,
+                    "torch_rs_cuda_pointwise_reduce_workload": pointwise_reduce,
+                    "torch_rs_cuda_compile_inputs": (
+                        torch_rs_row.get("input_tensor_evidence")
+                    ),
+                    "torch_rs_cuda_tensor_wrapper": (
+                        torch_rs_row.get("output_tensor_wrapper")
+                    ),
+                    "torch_rs_cuda_prerequisite_tensor_wrapper": (
+                        prerequisite_cuda_tensor_wrapper
+                    ),
+                    "candidate": torch_rs_row,
+                }
+            )
     finally:
         if gc_was_enabled:
             gc.enable()
 
-    eligible = torch_rs_row["eligibility"]["eligible_cuda_compile_evidence"]
-    if eligible:
-        torch_rs_median = torch_rs_row["steady"]["median_us"]
-        reference_median = pytorch_reference["steady"]["median_us"]
-        speed_ratio = reference_median / torch_rs_median if torch_rs_median else 0.0
-        score_percent = min(1.0, speed_ratio) * 100.0
-    else:
-        speed_ratio = None
-        score_percent = 0.0
+    aggregates = _aggregate_workload_results(workload_results)
 
     return {
+        "schema_version": BENCHMARK_SCHEMA_VERSION,
         "environment": _environment(reference_torch, torch_rs, args),
-        "reference_workload": pytorch_reference,
         "torch_rs_cuda_driver_probe": torch_rs_cuda_driver_probe,
         "torch_rs_cuda_runtime_roundtrip": torch_rs_cuda_runtime_roundtrip,
         "torch_rs_cuda_pointwise_kernel": torch_rs_cuda_pointwise_kernel,
-        "torch_rs_cuda_pointwise_reduce_workload": (
-            torch_rs_cuda_pointwise_reduce_workload
-        ),
-        "torch_rs_cuda_compile_inputs": torch_rs_row["input_tensor_evidence"],
-        "torch_rs_cuda_tensor_wrapper": torch_rs_row["output_tensor_wrapper"],
-        "torch_rs_cuda_prerequisite_tensor_wrapper": prerequisite_cuda_tensor_wrapper,
-        "candidate": torch_rs_row,
-        "aggregates": {
-            "common_success_geomean_speed_ratio": speed_ratio,
-            "coverage_adjusted_overall_percent": score_percent,
-            "torch_rs_cuda_compile_score_percent": score_percent,
-            "zero_credit_unsupported_cell_count": 0 if eligible else 1,
-        },
+        "workload_results": workload_results,
+        "aggregates": aggregates,
     }
 
 
@@ -1592,6 +2016,14 @@ def parse_args():
         help=(
             "also time the compatibility path that prepares CUDA compile setup "
             "on each invocation; this is recorded as non-scoring evidence"
+        ),
+    )
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        help=(
+            "run only the documented strict subset of the fixed CUDA shape "
+            "matrix for smoke testing"
         ),
     )
     parser.add_argument("--output", type=Path)

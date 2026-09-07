@@ -1,31 +1,31 @@
-# H100 CUDA `torch.compile` Runtime-Ownership Timings
+# H100 CUDA `torch.compile` Shape-Matrix Timings
 
 Date: 2026-09-06
 
-Candidate provenance: clean worktree at
-`01655e1b8b252e2057b2371e43f00241eea90eab`. The JSON artifact records
-empty `git.status_short` and `git.diff_stat` before writing the refreshed
-output.
+Candidate provenance: worktree at
+`cfba70e9e4c7773aa9c38ffd9dd28ee26c6d993e`. The JSON artifact records
+an empty git status and diff stat observed before writing the refreshed output.
 
-Measurement command, written to an ignored `target/` path before copying the
-refreshed JSON into the checked-in artifact path:
+Measurement command:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 target/torch-compile-coverage/venv/bin/python \
-  scripts/benchmark_compile_cuda.py \
+CUDA_VISIBLE_DEVICES=0 \
+TORCHINDUCTOR_CACHE_DIR="$PWD/target/torchinductor-cache" \
+TRITON_CACHE_DIR="$PWD/target/triton-cache" \
+XDG_CACHE_HOME="$PWD/target/xdg-cache" \
+.venv/bin/python scripts/benchmark_compile_cuda.py \
   --include-unprepared-comparison \
-  --output target/regenerated-benchmarks/torch-compile-cuda-h100-runtime-ownership-v10.json
+  --output docs/benchmark-data/torch-compile-cuda-h100-shape-matrix-v11.json
 ```
 
 Additional checks run after refreshing this evidence:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 target/torch-compile-coverage/venv/bin/python -m unittest tests.test_compile_cuda_benchmark
-target/torch-compile-coverage/venv/bin/python -m unittest tests.test_compile_benchmark_artifact
-target/torch-compile-coverage/venv/bin/python -m unittest tests.test_top_level_compile
-target/torch-compile-coverage/venv/bin/python -m unittest tests.test_torch_compile_coverage_evaluator
-target/torch-compile-coverage/venv/bin/python -m compileall -q \
-  python/torch_rs scripts/benchmark_compile_cuda.py tests/test_compile_cuda_benchmark.py
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest tests.test_compile_cuda_benchmark
+.venv/bin/python -m unittest tests.test_readme_quickstart
+.venv/bin/python -m unittest tests.test_torch_compile_coverage_evaluator
+.venv/bin/python -m unittest tests.test_compile_benchmark_artifact
+.venv/bin/python -m compileall -q scripts/benchmark_compile_cuda.py tests/test_compile_cuda_benchmark.py
 cargo fmt --check
 ```
 
@@ -34,42 +34,44 @@ Environment recorded by the JSON artifact:
 - GPU: NVIDIA H100, compute capability 9.0, driver 580.82.07
 - PyTorch: 2.13.0+cu130, CUDA runtime 13.0
 - `nvcc`: CUDA compilation tools 12.6, V12.6.85
-- Benchmark: `torch_compile_cuda_h100_reference_benchmark_v10`
-- Workload: `h100_cuda_pointwise_reduce_float32_v1`, shape `(1024, 1024)`,
-  dtype `torch.float32`, seed `20260904`
-- Native CUDA source checksum: `db19ead9f1bddd35e91e1de643e0b810`
+- Benchmark: `torch_compile_cuda_h100_reference_benchmark_v11`
+- Report schema: `torch_compile_cuda_h100_shape_matrix_report_v1`
+- Workload expression: `h100_cuda_pointwise_reduce_float32_v1`
+- Shape matrix: `h100_cuda_pointwise_reduce_float32_shape_matrix_v1`
+- Dtype: `torch.float32`
 - Timing: 5 warmups, 17 samples, 3 repeated calls per sample
 - Timing boundary: both PyTorch and `torch_rs` synchronize before and after
   timed compiled calls; output checksum materialization occurs after the timed
   region for both paths
 
+The fixed matrix uses equal documented weights:
+
+| Workload | Shape | Seed | Weight |
+| --- | ---: | ---: | ---: |
+| `square_256x256` | `(256, 256)` | 20260904 | 0.25 |
+| `square_1024x1024` | `(1024, 1024)` | 20260905 | 0.25 |
+| `tall_4096x256` | `(4096, 256)` | 20260906 | 0.25 |
+| `wide_256x4096` | `(256, 4096)` | 20260907 | 0.25 |
+
 Results:
 
-| Measurement | Steady median us | MAD us | Notes |
-| --- | ---: | ---: | --- |
-| PyTorch 2.13 `torch.compile(..., backend="inductor")` | 48.634 | 2.200 | Reference workload on the same visible H100 |
-| `torch_rs` prepared compile wrapper | 53.517 | 0.948 | Eligible native CUDA compile evidence using pooled outputs |
-| `torch_rs` unprepared compatibility call | 11757.638 | 522.090 | Non-scoring comparison that prepares on every invocation |
+| Workload | Shape | Weight | PyTorch cold us | PyTorch steady median us | `torch_rs` cold us | `torch_rs` steady median us | Ratio | Score contribution |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `square_256x256` | `(256, 256)` | 0.25 | 2189473.309 | 41.860 | 162.335 | 42.638 | 0.982x | 24.54 |
+| `square_1024x1024` | `(1024, 1024)` | 0.25 | 832679.145 | 44.945 | 159.141 | 49.014 | 0.917x | 22.92 |
+| `tall_4096x256` | `(4096, 256)` | 0.25 | 914320.703 | 52.399 | 162.255 | 46.747 | 1.121x | 25.00 |
+| `wide_256x4096` | `(256, 4096)` | 0.25 | 339306.093 | 40.257 | 140.402 | 43.960 | 0.916x | 22.89 |
 
-The prepared wrapper recorded executor invocation count 0 before the first
-call and 67 after timing; the last steady-state call used the same preparation
-id `01ad652f08d9d291`. Cold compile wrapper creation took 13080.746 us, and
-the first compiled call took 192.391 us. The output pool allocated two buffers,
-released 67 leases, had zero live buffers after timing, and reused a released
-buffer for the steady-state path. The measured prepared-vs-unprepared
-steady-state speedup was 219.70x. The candidate stayed within roughly ten percent of
-the PyTorch reference, with a CUDA compile score of 90.87% for this single
-workload.
+Aggregate:
 
-This release artifact is intentionally narrow: it proves one fixed H100
-CUDA pointwise-plus-row-reduction workload and should not be treated as broad
-CUDA compile coverage until paired with held-out shapes, more operators,
-dynamic/fullgraph variants, backward cases where applicable, and explicit
-unsupported zero-credit categories.
+- Common-success geometric-mean speed ratio: 0.9805x across 4/4 shapes.
+- Coverage-adjusted capped ratio: 0.9536.
+- CUDA compile score: 95.36%.
+- Zero-credit cells retained in denominator: 0.
 
-Correctness evidence remained fail-closed: the candidate ran on CUDA device 0,
-used `backend="inductor"`, `fullgraph=True`, `dynamic=False`, reported
-`native_cuda_compile=True`, rejected eager/PyTorch forwarding, synchronized
-around the timed launch, deferred readback until after timing, and matched the
-PyTorch output checksum
-`72f74be90b99aea7`.
+Correctness evidence remained fail-closed for every shape: the candidate ran on
+CUDA device 0, used `backend="inductor"`, `fullgraph=True`, `dynamic=False`,
+reported `native_cuda_compile=True`, rejected eager/PyTorch forwarding,
+synchronized around timed launches, deferred readback until after timing, and
+matched the PyTorch output checksum. The optional `--quick` mode is a strict
+subset containing only `square_1024x1024`; final evidence uses the full matrix.
