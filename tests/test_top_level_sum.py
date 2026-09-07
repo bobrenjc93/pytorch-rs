@@ -746,7 +746,7 @@ class TopLevelSumTests(unittest.TestCase):
             with self.subTest(case=case):
                 with self.assertRaisesRegex(
                     NotImplementedError,
-                    r"^sum\(\): only full reductions with dim=None support keepdim; dim and out reductions are not supported$",
+                    r"^sum\(\): only full reductions and rank-1 dim reductions support keepdim; broader dim and out reductions are not supported$",
                 ):
                     call()
         self.assertEqual(destination.tolist(), [17.0, 19.0, 23.0])

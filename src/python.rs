@@ -4870,7 +4870,7 @@ fn full_reduction_keepdim_shape(input: &CoreTensor) -> Vec<i64> {
 
 fn sum_unsupported_reduction() -> PyErr {
     PyNotImplementedError::new_err(
-        "sum(): only full reductions with dim=None support keepdim; dim and out reductions are not supported",
+        "sum(): only full reductions and rank-1 dim reductions support keepdim; broader dim and out reductions are not supported",
     )
 }
 
