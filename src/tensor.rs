@@ -611,6 +611,7 @@ impl PartialEq for Tensor {
     }
 }
 
+#[cfg(feature = "python-bindings")]
 #[allow(clippy::float_cmp)]
 fn allclose_values_equal(left: f32, right: f32, rtol: f32, atol: f32, equal_nan: bool) -> bool {
     if left == right {
@@ -622,9 +623,11 @@ fn allclose_values_equal(left: f32, right: f32, rtol: f32, atol: f32, equal_nan:
     if !left.is_finite() || !right.is_finite() {
         return false;
     }
-    (left - right).abs() <= atol + rtol * right.abs()
+    let difference = left - right;
+    difference.is_finite() && difference.abs() <= atol + rtol * right.abs()
 }
 
+#[cfg(feature = "python-bindings")]
 fn contiguous_values_allclose(
     left: &[f32],
     right: &[f32],
@@ -640,6 +643,7 @@ fn contiguous_values_allclose(
         .all(|(left, right)| allclose_values_equal(*left, *right, rtol, atol, equal_nan))
 }
 
+#[cfg(feature = "python-bindings")]
 fn values_allclose(
     left: impl Iterator<Item = f32>,
     right: impl Iterator<Item = f32>,
@@ -977,6 +981,7 @@ impl Tensor {
     }
 
     /// Reports whether two tensors have broadcast-compatible shapes.
+    #[cfg(feature = "python-bindings")]
     #[must_use]
     pub(crate) fn is_broadcastable_with(&self, other: &Self) -> bool {
         let rank = self.shape.len().max(other.shape.len());
@@ -991,6 +996,7 @@ impl Tensor {
 
     /// Reports whether this tensor pair is within `PyTorch`'s float32 allclose
     /// tolerance for identical shapes or either rank-zero broadcast direction.
+    #[cfg(feature = "python-bindings")]
     #[must_use]
     pub(crate) fn allclose_same_shape_or_rank_zero(
         &self,

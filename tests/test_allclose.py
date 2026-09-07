@@ -51,6 +51,7 @@ class TensorAllCloseTests(unittest.TestCase):
         offset = torch.tensor(
             [[10.0, 20.0], [1.0, 2.000001], [3.0, 4.0]]
         ).transpose(0, 1)[1]
+        max_float32 = float(np.finfo(np.float32).max)
         cases = (
             (torch.tensor([0.0, -0.0]), torch.tensor([-0.0, 0.0]), {}, True),
             (
@@ -63,6 +64,12 @@ class TensorAllCloseTests(unittest.TestCase):
                 torch.tensor([float("inf")]),
                 torch.tensor([1.0]),
                 {"rtol": float("inf"), "atol": float("inf")},
+                False,
+            ),
+            (
+                torch.tensor([max_float32]),
+                torch.tensor([-max_float32]),
+                {"rtol": 0.0, "atol": float("inf")},
                 False,
             ),
             (

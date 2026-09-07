@@ -70,6 +70,7 @@ class TensorAllCloseReferenceTests(unittest.TestCase):
         expected_boundary_reference = reference_torch.tensor(
             [np.float32(6.024795e-16).item()], dtype=reference_torch.float32
         )
+        max_float32 = float(np.finfo(np.float32).max)
 
         cases = (
             (*tensor_pair([1.0, 1.000001], [1.0, 1.0]), {}),
@@ -83,6 +84,7 @@ class TensorAllCloseReferenceTests(unittest.TestCase):
                 {},
             ),
             (*tensor_pair([float("inf")], [1.0]), {"rtol": float("inf"), "atol": float("inf")}),
+            (*tensor_pair([max_float32], [-max_float32]), {"rtol": 0.0, "atol": float("inf")}),
             (*tensor_pair([float("nan")], [float("nan")]), {}),
             (*tensor_pair([float("nan")], [float("nan")]), {"equal_nan": True}),
             (
