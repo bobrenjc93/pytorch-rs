@@ -1660,28 +1660,80 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         self.assertEqual(indexed.storage_offset(), 4)
         self.assert_metadata_alias(tensor, tensor[...])
 
+        supported_range_full_slice_views = (
+            (
+                (slice(1, None), slice(None)),
+                [[[4.0, 5.0], [6.0, 7.0]]],
+                (1, 2, 2),
+                (4, 2, 1),
+                4,
+            ),
+            (
+                (slice(None), slice(None, -1)),
+                [[[0.0, 1.0]], [[4.0, 5.0]]],
+                (2, 1, 2),
+                (4, 2, 1),
+                0,
+            ),
+            (
+                (slice(1, None), Ellipsis),
+                [[[4.0, 5.0], [6.0, 7.0]]],
+                (1, 2, 2),
+                (4, 2, 1),
+                4,
+            ),
+            (
+                (Ellipsis, slice(None, -1)),
+                [[[0.0], [2.0]], [[4.0], [6.0]]],
+                (2, 2, 1),
+                (4, 2, 1),
+                0,
+            ),
+            (
+                (slice(1, None), slice(None), slice(None)),
+                [[[4.0, 5.0], [6.0, 7.0]]],
+                (1, 2, 2),
+                (4, 2, 1),
+                4,
+            ),
+            (
+                (slice(None), slice(None, -1), slice(None)),
+                [[[0.0, 1.0]], [[4.0, 5.0]]],
+                (2, 1, 2),
+                (4, 2, 1),
+                0,
+            ),
+        )
+        for index, values, shape, stride, offset in supported_range_full_slice_views:
+            with self.subTest(index=repr(index)):
+                selected = tensor[index]
+                self.assertEqual(selected.tolist(), values)
+                self.assertEqual(selected.shape, shape)
+                self.assertEqual(selected.stride(), stride)
+                self.assertEqual(selected.storage_offset(), offset)
+                self.assertTrue(selected.is_set_to(tensor[index]))
+
+        for index in (
+            (slice(None, None, 1), slice(None)),
+            (slice(None, None, 1), Ellipsis),
+            (slice(None), slice(None, None, 1), slice(None)),
+        ):
+            with self.subTest(index=repr(index)):
+                self.assert_metadata_alias(tensor, tensor[index])
+
         unsupported = (
             slice(None, None, 2),
             (slice(None, None, 2),),
             (slice(None), 0),
             (0, slice(None, None, 2)),
             (0, 0, slice(None, None, 2)),
-            (slice(1, None), slice(None)),
-            (slice(None), slice(None, -1)),
-            (slice(None, None, 1), slice(None)),
             (slice(None), slice(None, None, 2)),
-            (slice(1, None), Ellipsis),
-            (Ellipsis, slice(None, -1)),
-            (slice(None, None, 1), Ellipsis),
             (Ellipsis, slice(None, None, 2)),
             (slice(None), 0, Ellipsis),
             (Ellipsis, 0, slice(None)),
             (slice(None), None, Ellipsis),
             (Ellipsis, None, slice(None)),
             (slice(None), Ellipsis, Ellipsis),
-            (slice(1, None), slice(None), slice(None)),
-            (slice(None), slice(None, -1), slice(None)),
-            (slice(None), slice(None, None, 1), slice(None)),
             (slice(None), slice(None, None, 2), slice(None)),
             (0, slice(None), slice(None)),
             (slice(None), 0, slice(None)),
