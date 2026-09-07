@@ -1,83 +1,83 @@
 {
   "aggregates": {
-    "common_success_geomean_speed_ratio": 1.0155026920433479,
+    "common_success_geomean_speed_ratio": 0.980462157401357,
     "common_success_shape_count": 4,
     "common_success_weight": 1.0,
-    "coverage_adjusted_capped_speed_ratio": 0.9699921486716708,
-    "coverage_adjusted_overall_percent": 96.99921486716708,
+    "coverage_adjusted_capped_speed_ratio": 0.9536290001664736,
+    "coverage_adjusted_overall_percent": 95.36290001664736,
     "denominator_weight": 1.0,
     "full_matrix_weight": 1.0,
     "per_workload": [
       {
         "candidate_status": "ok",
-        "capped_steady_speed_ratio": 1.0,
+        "capped_steady_speed_ratio": 0.9817610407073559,
         "eligible_cuda_compile_evidence": true,
         "name": "square_256x256",
-        "pytorch_cold_first_call_us": 1155075.001,
-        "pytorch_steady_median_us": 45.809333333333335,
+        "pytorch_cold_first_call_us": 2189473.309,
+        "pytorch_steady_median_us": 41.86,
         "shape": [
           256,
           256
         ],
-        "steady_speed_ratio": 1.0093422250947444,
-        "torch_rs_cold_first_call_us": 197.639,
-        "torch_rs_steady_median_us": 45.385333333333335,
+        "steady_speed_ratio": 0.9817610407073559,
+        "torch_rs_cold_first_call_us": 162.335,
+        "torch_rs_steady_median_us": 42.63766666666666,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 25.0
+        "weighted_score_contribution_percent": 24.544026017683898
       },
       {
         "candidate_status": "ok",
-        "capped_steady_speed_ratio": 0.9800016571131581,
+        "capped_steady_speed_ratio": 0.9169761020660763,
         "eligible_cuda_compile_evidence": true,
         "name": "square_1024x1024",
-        "pytorch_cold_first_call_us": 43592.623,
-        "pytorch_steady_median_us": 43.36866666666666,
+        "pytorch_cold_first_call_us": 832679.145,
+        "pytorch_steady_median_us": 44.94466666666666,
         "shape": [
           1024,
           1024
         ],
-        "steady_speed_ratio": 0.9800016571131581,
-        "torch_rs_cold_first_call_us": 155.345,
-        "torch_rs_steady_median_us": 44.25366666666667,
+        "steady_speed_ratio": 0.9169761020660763,
+        "torch_rs_cold_first_call_us": 159.141,
+        "torch_rs_steady_median_us": 49.014,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 24.500041427828954
+        "weighted_score_contribution_percent": 22.924402551651905
       },
       {
         "candidate_status": "ok",
         "capped_steady_speed_ratio": 1.0,
         "eligible_cuda_compile_evidence": true,
         "name": "tall_4096x256",
-        "pytorch_cold_first_call_us": 42833.735,
-        "pytorch_steady_median_us": 55.53066666666666,
+        "pytorch_cold_first_call_us": 914320.703,
+        "pytorch_steady_median_us": 52.39933333333334,
         "shape": [
           4096,
           256
         ],
-        "steady_speed_ratio": 1.1946275035675613,
-        "torch_rs_cold_first_call_us": 153.121,
-        "torch_rs_steady_median_us": 46.483666666666664,
+        "steady_speed_ratio": 1.1209052922804865,
+        "torch_rs_cold_first_call_us": 162.255,
+        "torch_rs_steady_median_us": 46.74733333333334,
         "weight": 0.25,
         "weighted_score_contribution_percent": 25.0
       },
       {
         "candidate_status": "ok",
-        "capped_steady_speed_ratio": 0.8999669375735253,
+        "capped_steady_speed_ratio": 0.9157788578924622,
         "eligible_cuda_compile_evidence": true,
         "name": "wide_256x4096",
-        "pytorch_cold_first_call_us": 37173.773,
-        "pytorch_steady_median_us": 39.01566666666666,
+        "pytorch_cold_first_call_us": 339306.093,
+        "pytorch_steady_median_us": 40.257333333333335,
         "shape": [
           256,
           4096
         ],
-        "steady_speed_ratio": 0.8999669375735253,
-        "torch_rs_cold_first_call_us": 170.869,
-        "torch_rs_steady_median_us": 43.352333333333334,
+        "steady_speed_ratio": 0.9157788578924622,
+        "torch_rs_cold_first_call_us": 140.402,
+        "torch_rs_steady_median_us": 43.959666666666664,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 22.499173439338133
+        "weighted_score_contribution_percent": 22.894471447311552
       }
     ],
-    "torch_rs_cuda_compile_score_percent": 96.99921486716708,
+    "torch_rs_cuda_compile_score_percent": 95.36290001664736,
     "workload_count": 4,
     "zero_credit_cell_count": 0,
     "zero_credit_unsupported_cell_count": 0,
@@ -87,9 +87,9 @@
     "benchmark_version": "torch_compile_cuda_h100_reference_benchmark_v11",
     "cuda_visible_devices": "0",
     "git": {
-      "diff_stat": "BENCHMARKING.md                                    |   58 +-\n docs/README.md                                     |    2 +-\n ...ch-compile-cuda-h100-runtime-ownership-v10.json | 4302 --------------------\n docs/torch-compile-cuda-h100-release-timings.md    |   85 +-\n scripts/benchmark_compile_cuda.py                  |  706 +++-\n tests/test_compile_cuda_benchmark.py               |  459 ++-\n 6 files changed, 938 insertions(+), 4674 deletions(-)",
-      "head": "8e4a9f4cc9026534a39ca996696d300e418f351d",
-      "status_short": "M BENCHMARKING.md\n M docs/README.md\n D docs/benchmark-data/torch-compile-cuda-h100-runtime-ownership-v10.json\n M docs/torch-compile-cuda-h100-release-timings.md\n M scripts/benchmark_compile_cuda.py\n M tests/test_compile_cuda_benchmark.py\n?? docs/benchmark-data/torch-compile-cuda-h100-shape-matrix-v11.json"
+      "diff_stat": "",
+      "head": "cfba70e9e4c7773aa9c38ffd9dd28ee26c6d993e",
+      "status_short": ""
     },
     "gpu": {
       "nvcc_version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
@@ -775,7 +775,7 @@
     {
       "candidate": {
         "cold_checksum": "1a19b0b517ca4f23",
-        "cold_first_call_us": 197.639,
+        "cold_first_call_us": 162.335,
         "compile_backend": "inductor",
         "compile_config": {
           "backend": "inductor",
@@ -1158,7 +1158,7 @@
           "rejection_reasons": [],
           "score_credit": 1.0
         },
-        "factory_us": 11873.638,
+        "factory_us": 12189.017,
         "forwarded_to_pytorch": false,
         "implementation": "torch_rs",
         "input_device_type": "cuda",
@@ -2795,32 +2795,32 @@
           "output_pool_live_buffers_after_timing": 0,
           "output_pool_release_count": 67,
           "preparation_id": "fa536b09566834a0",
-          "prepared_steady_median_us": 45.385333333333335,
-          "prepared_vs_unprepared_steady_speedup": 222.6746011927495,
+          "prepared_steady_median_us": 42.63766666666666,
+          "prepared_vs_unprepared_steady_speedup": 269.59402093610504,
           "setup_hoisted_to_compile_wrapper": true,
           "steady_state_output_allocated_in_execute": false,
           "steady_state_reused_output_buffer": true,
           "steady_state_reused_prepared_executor": true,
-          "unprepared_compatibility_steady_median_us": 10106.161
+          "unprepared_compatibility_steady_median_us": 11494.86
         },
         "score": {
-          "capped_steady_speed_ratio": 1.0,
+          "capped_steady_speed_ratio": 0.9817610407073559,
           "denominator_weight": 1.0,
           "eligible_cuda_compile_evidence": true,
-          "steady_speed_ratio": 1.0093422250947444,
+          "steady_speed_ratio": 0.9817610407073559,
           "weight": 0.25,
-          "weighted_score_contribution_percent": 25.0,
+          "weighted_score_contribution_percent": 24.544026017683898,
           "zero_credit_in_denominator": false
         },
         "score_credit": 1.0,
         "status": "ok",
         "steady": {
-          "mad_us": 1.3686666666666696,
-          "max_us": 66.99466666666667,
-          "median_us": 45.385333333333335,
-          "min_us": 42.410666666666664,
+          "mad_us": 0.964666666666659,
+          "max_us": 47.845666666666666,
+          "median_us": 42.63766666666666,
+          "min_us": 40.361,
           "sample_count": 17,
-          "variance_us2": 29.212563121107284
+          "variance_us2": 3.645557031141868
         },
         "steady_checksums": [
           "1a19b0b517ca4f23"
@@ -3182,12 +3182,12 @@
           "setup_repeated_per_invocation": true,
           "status": "ok",
           "steady": {
-            "mad_us": 251.75400000000081,
-            "max_us": 10879.043333333333,
-            "median_us": 10106.161,
-            "min_us": 9249.301333333335,
+            "mad_us": 386.6980000000003,
+            "max_us": 12008.654,
+            "median_us": 11494.86,
+            "min_us": 10317.576,
             "sample_count": 17,
-            "variance_us2": 166627.84193881118
+            "variance_us2": 295212.3337472483
           },
           "steady_checksums": [
             "1a19b0b517ca4f23"
@@ -3234,7 +3234,7 @@
       },
       "reference_workload": {
         "cold_checksum": "1a19b0b517ca4f23",
-        "cold_first_call_us": 1155075.001,
+        "cold_first_call_us": 2189473.309,
         "compile_config": {
           "backend": "inductor",
           "dynamic": false,
@@ -3246,7 +3246,7 @@
           "assert_close": true,
           "eager_reference_checksum": "902068e57afa882c"
         },
-        "factory_us": 718952.418,
+        "factory_us": 776660.964,
         "implementation": "pytorch",
         "input_metadata": [
           {
@@ -3299,12 +3299,12 @@
         },
         "status": "ok",
         "steady": {
-          "mad_us": 3.832666666666668,
-          "max_us": 76.33533333333332,
-          "median_us": 45.809333333333335,
-          "min_us": 38.338,
+          "mad_us": 1.2950000000000017,
+          "max_us": 45.195,
+          "median_us": 41.86,
+          "min_us": 39.586333333333336,
           "sample_count": 17,
-          "variance_us2": 87.4324302099192
+          "variance_us2": 2.0746682545174933
         },
         "steady_checksums": [
           "1a19b0b517ca4f23"
@@ -3337,12 +3337,12 @@
         "workload_weight": 0.25
       },
       "score": {
-        "capped_steady_speed_ratio": 1.0,
+        "capped_steady_speed_ratio": 0.9817610407073559,
         "denominator_weight": 1.0,
         "eligible_cuda_compile_evidence": true,
-        "steady_speed_ratio": 1.0093422250947444,
+        "steady_speed_ratio": 0.9817610407073559,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 25.0,
+        "weighted_score_contribution_percent": 24.544026017683898,
         "zero_credit_in_denominator": false
       },
       "torch_rs_cuda_compile_inputs": {
@@ -4569,7 +4569,7 @@
     {
       "candidate": {
         "cold_checksum": "fc2d121c2337fd34",
-        "cold_first_call_us": 155.345,
+        "cold_first_call_us": 159.141,
         "compile_backend": "inductor",
         "compile_config": {
           "backend": "inductor",
@@ -4952,7 +4952,7 @@
           "rejection_reasons": [],
           "score_credit": 1.0
         },
-        "factory_us": 12508.031,
+        "factory_us": 14325.318,
         "forwarded_to_pytorch": false,
         "implementation": "torch_rs",
         "input_device_type": "cuda",
@@ -6589,32 +6589,32 @@
           "output_pool_live_buffers_after_timing": 0,
           "output_pool_release_count": 67,
           "preparation_id": "77157cce5d96bc91",
-          "prepared_steady_median_us": 44.25366666666667,
-          "prepared_vs_unprepared_steady_speedup": 251.0637988565919,
+          "prepared_steady_median_us": 49.014,
+          "prepared_vs_unprepared_steady_speedup": 220.87059479604466,
           "setup_hoisted_to_compile_wrapper": true,
           "steady_state_output_allocated_in_execute": false,
           "steady_state_reused_output_buffer": true,
           "steady_state_reused_prepared_executor": true,
-          "unprepared_compatibility_steady_median_us": 11110.493666666665
+          "unprepared_compatibility_steady_median_us": 10825.751333333334
         },
         "score": {
-          "capped_steady_speed_ratio": 0.9800016571131581,
+          "capped_steady_speed_ratio": 0.9169761020660763,
           "denominator_weight": 1.0,
           "eligible_cuda_compile_evidence": true,
-          "steady_speed_ratio": 0.9800016571131581,
+          "steady_speed_ratio": 0.9169761020660763,
           "weight": 0.25,
-          "weighted_score_contribution_percent": 24.500041427828954,
+          "weighted_score_contribution_percent": 22.924402551651905,
           "zero_credit_in_denominator": false
         },
         "score_credit": 1.0,
         "status": "ok",
         "steady": {
-          "mad_us": 1.1116666666666646,
-          "max_us": 52.613,
-          "median_us": 44.25366666666667,
-          "min_us": 41.54933333333334,
+          "mad_us": 1.9996666666666627,
+          "max_us": 55.631,
+          "median_us": 49.014,
+          "min_us": 43.742666666666665,
           "sample_count": 17,
-          "variance_us2": 5.563519517108803
+          "variance_us2": 9.833244572087663
         },
         "steady_checksums": [
           "fc2d121c2337fd34"
@@ -6976,12 +6976,12 @@
           "setup_repeated_per_invocation": true,
           "status": "ok",
           "steady": {
-            "mad_us": 194.42766666666466,
-            "max_us": 13395.747,
-            "median_us": 11110.493666666665,
-            "min_us": 9972.873,
+            "mad_us": 660.5756666666657,
+            "max_us": 13059.780333333334,
+            "median_us": 10825.751333333334,
+            "min_us": 9429.816666666666,
             "sample_count": 17,
-            "variance_us2": 668723.7731936697
+            "variance_us2": 897763.5642120591
           },
           "steady_checksums": [
             "fc2d121c2337fd34"
@@ -7028,7 +7028,7 @@
       },
       "reference_workload": {
         "cold_checksum": "fc2d121c2337fd34",
-        "cold_first_call_us": 43592.623,
+        "cold_first_call_us": 832679.145,
         "compile_config": {
           "backend": "inductor",
           "dynamic": false,
@@ -7040,7 +7040,7 @@
           "assert_close": true,
           "eager_reference_checksum": "9a77f782667089ee"
         },
-        "factory_us": 515.58,
+        "factory_us": 482.89,
         "implementation": "pytorch",
         "input_metadata": [
           {
@@ -7093,12 +7093,12 @@
         },
         "status": "ok",
         "steady": {
-          "mad_us": 0.7976666666666645,
-          "max_us": 53.95466666666666,
-          "median_us": 43.36866666666666,
-          "min_us": 40.544666666666664,
+          "mad_us": 2.1129999999999995,
+          "max_us": 68.961,
+          "median_us": 44.94466666666666,
+          "min_us": 41.259,
           "sample_count": 17,
-          "variance_us2": 9.122979101114948
+          "variance_us2": 97.85089358477511
         },
         "steady_checksums": [
           "fc2d121c2337fd34"
@@ -7131,12 +7131,12 @@
         "workload_weight": 0.25
       },
       "score": {
-        "capped_steady_speed_ratio": 0.9800016571131581,
+        "capped_steady_speed_ratio": 0.9169761020660763,
         "denominator_weight": 1.0,
         "eligible_cuda_compile_evidence": true,
-        "steady_speed_ratio": 0.9800016571131581,
+        "steady_speed_ratio": 0.9169761020660763,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 24.500041427828954,
+        "weighted_score_contribution_percent": 22.924402551651905,
         "zero_credit_in_denominator": false
       },
       "torch_rs_cuda_compile_inputs": {
@@ -8363,7 +8363,7 @@
     {
       "candidate": {
         "cold_checksum": "e825140789de3374",
-        "cold_first_call_us": 153.121,
+        "cold_first_call_us": 162.255,
         "compile_backend": "inductor",
         "compile_config": {
           "backend": "inductor",
@@ -8746,7 +8746,7 @@
           "rejection_reasons": [],
           "score_credit": 1.0
         },
-        "factory_us": 13403.856,
+        "factory_us": 13475.473,
         "forwarded_to_pytorch": false,
         "implementation": "torch_rs",
         "input_device_type": "cuda",
@@ -10383,19 +10383,19 @@
           "output_pool_live_buffers_after_timing": 0,
           "output_pool_release_count": 67,
           "preparation_id": "8c114012284d2163",
-          "prepared_steady_median_us": 46.483666666666664,
-          "prepared_vs_unprepared_steady_speedup": 236.5042918301052,
+          "prepared_steady_median_us": 46.74733333333334,
+          "prepared_vs_unprepared_steady_speedup": 268.7776415053978,
           "setup_hoisted_to_compile_wrapper": true,
           "steady_state_output_allocated_in_execute": false,
           "steady_state_reused_output_buffer": true,
           "steady_state_reused_prepared_executor": true,
-          "unprepared_compatibility_steady_median_us": 10993.586666666666
+          "unprepared_compatibility_steady_median_us": 12564.638
         },
         "score": {
           "capped_steady_speed_ratio": 1.0,
           "denominator_weight": 1.0,
           "eligible_cuda_compile_evidence": true,
-          "steady_speed_ratio": 1.1946275035675613,
+          "steady_speed_ratio": 1.1209052922804865,
           "weight": 0.25,
           "weighted_score_contribution_percent": 25.0,
           "zero_credit_in_denominator": false
@@ -10403,12 +10403,12 @@
         "score_credit": 1.0,
         "status": "ok",
         "steady": {
-          "mad_us": 0.944666666666663,
-          "max_us": 58.76566666666666,
-          "median_us": 46.483666666666664,
-          "min_us": 45.23833333333334,
+          "mad_us": 1.8696666666666744,
+          "max_us": 52.102,
+          "median_us": 46.74733333333334,
+          "min_us": 44.27033333333333,
           "sample_count": 17,
-          "variance_us2": 16.31174469127259
+          "variance_us2": 5.924898011534021
         },
         "steady_checksums": [
           "e825140789de3374"
@@ -10770,12 +10770,12 @@
           "setup_repeated_per_invocation": true,
           "status": "ok",
           "steady": {
-            "mad_us": 562.4176666666681,
-            "max_us": 13190.203,
-            "median_us": 10993.586666666666,
-            "min_us": 9563.443333333335,
+            "mad_us": 669.1550000000007,
+            "max_us": 14514.644333333334,
+            "median_us": 12564.638,
+            "min_us": 11672.832666666665,
             "sample_count": 17,
-            "variance_us2": 1077596.0527387026
+            "variance_us2": 606706.5999998595
           },
           "steady_checksums": [
             "e825140789de3374"
@@ -10822,7 +10822,7 @@
       },
       "reference_workload": {
         "cold_checksum": "e825140789de3374",
-        "cold_first_call_us": 42833.735,
+        "cold_first_call_us": 914320.703,
         "compile_config": {
           "backend": "inductor",
           "dynamic": false,
@@ -10834,7 +10834,7 @@
           "assert_close": true,
           "eager_reference_checksum": "093851ee4eb6268b"
         },
-        "factory_us": 540.658,
+        "factory_us": 436.13,
         "implementation": "pytorch",
         "input_metadata": [
           {
@@ -10887,12 +10887,12 @@
         },
         "status": "ok",
         "steady": {
-          "mad_us": 2.533999999999999,
-          "max_us": 83.27266666666667,
-          "median_us": 55.53066666666666,
-          "min_us": 48.03933333333334,
+          "mad_us": 2.3970000000000056,
+          "max_us": 70.89033333333333,
+          "median_us": 52.39933333333334,
+          "min_us": 46.56366666666666,
           "sample_count": 17,
-          "variance_us2": 86.8414306474433
+          "variance_us2": 37.213431410226825
         },
         "steady_checksums": [
           "e825140789de3374"
@@ -10928,7 +10928,7 @@
         "capped_steady_speed_ratio": 1.0,
         "denominator_weight": 1.0,
         "eligible_cuda_compile_evidence": true,
-        "steady_speed_ratio": 1.1946275035675613,
+        "steady_speed_ratio": 1.1209052922804865,
         "weight": 0.25,
         "weighted_score_contribution_percent": 25.0,
         "zero_credit_in_denominator": false
@@ -12157,7 +12157,7 @@
     {
       "candidate": {
         "cold_checksum": "d611fc1244abdf90",
-        "cold_first_call_us": 170.869,
+        "cold_first_call_us": 140.402,
         "compile_backend": "inductor",
         "compile_config": {
           "backend": "inductor",
@@ -12540,7 +12540,7 @@
           "rejection_reasons": [],
           "score_credit": 1.0
         },
-        "factory_us": 14932.539,
+        "factory_us": 13994.077,
         "forwarded_to_pytorch": false,
         "implementation": "torch_rs",
         "input_device_type": "cuda",
@@ -14177,32 +14177,32 @@
           "output_pool_live_buffers_after_timing": 0,
           "output_pool_release_count": 67,
           "preparation_id": "728b99b910f85417",
-          "prepared_steady_median_us": 43.352333333333334,
-          "prepared_vs_unprepared_steady_speedup": 264.4790668706798,
+          "prepared_steady_median_us": 43.959666666666664,
+          "prepared_vs_unprepared_steady_speedup": 260.9748936525148,
           "setup_hoisted_to_compile_wrapper": true,
           "steady_state_output_allocated_in_execute": false,
           "steady_state_reused_output_buffer": true,
           "steady_state_reused_prepared_executor": true,
-          "unprepared_compatibility_steady_median_us": 11465.784666666666
+          "unprepared_compatibility_steady_median_us": 11472.369333333334
         },
         "score": {
-          "capped_steady_speed_ratio": 0.8999669375735253,
+          "capped_steady_speed_ratio": 0.9157788578924622,
           "denominator_weight": 1.0,
           "eligible_cuda_compile_evidence": true,
-          "steady_speed_ratio": 0.8999669375735253,
+          "steady_speed_ratio": 0.9157788578924622,
           "weight": 0.25,
-          "weighted_score_contribution_percent": 22.499173439338133,
+          "weighted_score_contribution_percent": 22.894471447311552,
           "zero_credit_in_denominator": false
         },
         "score_credit": 1.0,
         "status": "ok",
         "steady": {
-          "mad_us": 1.335333333333331,
-          "max_us": 45.96966666666666,
-          "median_us": 43.352333333333334,
-          "min_us": 40.42466666666667,
+          "mad_us": 1.30533333333333,
+          "max_us": 47.05766666666666,
+          "median_us": 43.959666666666664,
+          "min_us": 41.48266666666667,
           "sample_count": 17,
-          "variance_us2": 2.380266405228756
+          "variance_us2": 2.486635657054977
         },
         "steady_checksums": [
           "d611fc1244abdf90"
@@ -14564,12 +14564,12 @@
           "setup_repeated_per_invocation": true,
           "status": "ok",
           "steady": {
-            "mad_us": 333.8653333333332,
-            "max_us": 12501.394,
-            "median_us": 11465.784666666666,
-            "min_us": 10852.483333333334,
+            "mad_us": 1154.7966666666653,
+            "max_us": 13535.510333333334,
+            "median_us": 11472.369333333334,
+            "min_us": 9183.086666666666,
             "sample_count": 17,
-            "variance_us2": 237644.71512486966
+            "variance_us2": 1635043.3735105982
           },
           "steady_checksums": [
             "d611fc1244abdf90"
@@ -14616,7 +14616,7 @@
       },
       "reference_workload": {
         "cold_checksum": "d611fc1244abdf90",
-        "cold_first_call_us": 37173.773,
+        "cold_first_call_us": 339306.093,
         "compile_config": {
           "backend": "inductor",
           "dynamic": false,
@@ -14628,7 +14628,7 @@
           "assert_close": true,
           "eager_reference_checksum": "25e55d26d098f46d"
         },
-        "factory_us": 422.99,
+        "factory_us": 523.352,
         "implementation": "pytorch",
         "input_metadata": [
           {
@@ -14681,12 +14681,12 @@
         },
         "status": "ok",
         "steady": {
-          "mad_us": 1.1583333333333243,
-          "max_us": 59.580333333333336,
-          "median_us": 39.01566666666666,
-          "min_us": 37.50666666666667,
+          "mad_us": 0.5276666666666614,
+          "max_us": 41.315666666666665,
+          "median_us": 40.257333333333335,
+          "min_us": 38.65533333333334,
           "sample_count": 17,
-          "variance_us2": 27.01995976163015
+          "variance_us2": 0.5794863721645502
         },
         "steady_checksums": [
           "d611fc1244abdf90"
@@ -14719,12 +14719,12 @@
         "workload_weight": 0.25
       },
       "score": {
-        "capped_steady_speed_ratio": 0.8999669375735253,
+        "capped_steady_speed_ratio": 0.9157788578924622,
         "denominator_weight": 1.0,
         "eligible_cuda_compile_evidence": true,
-        "steady_speed_ratio": 0.8999669375735253,
+        "steady_speed_ratio": 0.9157788578924622,
         "weight": 0.25,
-        "weighted_score_contribution_percent": 22.499173439338133,
+        "weighted_score_contribution_percent": 22.894471447311552,
         "zero_credit_in_denominator": false
       },
       "torch_rs_cuda_compile_inputs": {
