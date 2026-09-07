@@ -87,11 +87,12 @@ compose the fused squared-error tensor with the supported full-tensor reduction.
 The operation returns a fresh, independent tensor with PyTorch-compatible
 values, shape, strides, scalar metadata, and size-mismatch warning.
 
-Unbroadcastable shapes, legacy ``size_average``/``reduce`` behavior, weights,
-unsupported dtypes or devices, Tensor subclasses, active ``TorchFunctionMode``
-contexts, active autograd recording for ``reduction='none'``, and module loss
-wrappers are not supported. Gradient-requiring operands may be used with
-``reduction='mean'`` or ``reduction='sum'`` or inside ``torch.no_grad()``.
+Unbroadcastable shapes, broadcasted active autograd for ``reduction='none'``,
+legacy ``size_average``/``reduce`` behavior, weights, unsupported dtypes or
+devices, Tensor subclasses, active ``TorchFunctionMode`` contexts, and module
+loss wrappers are not supported. Gradient-requiring operands may be used with
+``reduction='none'`` for matching shapes, with ``reduction='mean'`` or
+``reduction='sum'``, or inside ``torch.no_grad()``.
 """
 
 

@@ -1690,6 +1690,168 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 case=(input_requires_grad, target_requires_grad),
             )
 
+    def test_none_reduction_first_order_backward_matches_pytorch_2_13(self):
+        def assert_grads_match(actual_sources, expected_sources, *, case):
+            for actual, expected in zip(actual_sources, expected_sources, strict=True):
+                with self.subTest(case=case, source=tuple(expected.shape)):
+                    if expected.grad is None:
+                        self.assertIsNone(actual.grad)
+                    else:
+                        self.assertEqual(actual.grad.shape, tuple(expected.grad.shape))
+                        self.assertEqual(actual.grad.stride(), expected.grad.stride())
+                        np.testing.assert_array_equal(
+                            np.asarray(actual.grad).reshape(-1).view(np.uint32),
+                            expected.grad.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                        )
+
+        actual_input = torch.tensor(
+            [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]], requires_grad=True
+        )
+        actual_target = torch.tensor(
+            [[0.5, 2.0, -3.0], [1.0, -1.0, 0.0]], requires_grad=True
+        )
+        expected_input = reference_torch.tensor(
+            [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        expected_target = reference_torch.tensor(
+            [[0.5, 2.0, -3.0], [1.0, -1.0, 0.0]],
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        (actual_input * 3.0).sum().backward()
+        (actual_target * -4.0).sum().backward()
+        (expected_input * 3.0).sum().backward()
+        (expected_target * -4.0).sum().backward()
+        actual = functional.mse_loss(actual_input, actual_target, reduction="none")
+        expected = reference_functional.mse_loss(
+            expected_input,
+            expected_target,
+            reduction="none",
+        )
+        self.assert_matches(actual, expected, case="same shape accumulation")
+        actual_weights = self.tensor(
+            torch,
+            [[1.5, -0.5, 2.0], [-3.0, 0.25, 4.0]],
+        )
+        expected_weights = self.tensor(
+            reference_torch,
+            [[1.5, -0.5, 2.0], [-3.0, 0.25, 4.0]],
+        )
+        (actual * actual_weights).sum().backward()
+        (expected * expected_weights).sum().backward()
+        assert_grads_match(
+            (actual_input, actual_target),
+            (expected_input, expected_target),
+            case="same shape accumulation",
+        )
+
+        actual_input_base = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 4, 3).tolist(),
+            requires_grad=True,
+        )
+        actual_target_base = torch.tensor(
+            np.linspace(-2.0, 2.0, 24, dtype=np.float32).reshape(2, 4, 3).tolist(),
+            requires_grad=True,
+        )
+        expected_input_base = reference_torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 4, 3),
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        expected_target_base = reference_torch.tensor(
+            np.linspace(-2.0, 2.0, 24, dtype=np.float32).reshape(2, 4, 3),
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        actual = functional.mse_loss(
+            actual_input_base[1].transpose(0, 1),
+            actual_target_base[0].transpose(0, 1),
+            reduction="none",
+        )
+        expected = reference_functional.mse_loss(
+            expected_input_base[1].transpose(0, 1),
+            expected_target_base[0].transpose(0, 1),
+            reduction="none",
+        )
+        self.assert_matches(actual, expected, case="offset noncontiguous")
+        actual_weights = self.tensor(
+            torch,
+            np.linspace(-1.5, 2.5, 12, dtype=np.float32).reshape(3, 4).tolist(),
+        )
+        expected_weights = self.tensor(
+            reference_torch,
+            np.linspace(-1.5, 2.5, 12, dtype=np.float32).reshape(3, 4).tolist(),
+        )
+        (actual * actual_weights).sum().backward()
+        (expected * expected_weights).sum().backward()
+        assert_grads_match(
+            (actual_input_base, actual_target_base),
+            (expected_input_base, expected_target_base),
+            case="offset noncontiguous",
+        )
+
+        actual_input = torch.zeros((2, 0, 3), requires_grad=True)
+        actual_target = torch.ones((2, 0, 3), requires_grad=True)
+        expected_input = reference_torch.zeros(
+            (2, 0, 3), dtype=reference_torch.float32, requires_grad=True
+        )
+        expected_target = reference_torch.ones(
+            (2, 0, 3), dtype=reference_torch.float32, requires_grad=True
+        )
+        actual = functional.mse_loss(
+            actual_input.transpose(0, 2),
+            actual_target.transpose(0, 2),
+            reduction="none",
+        )
+        expected = reference_functional.mse_loss(
+            expected_input.transpose(0, 2),
+            expected_target.transpose(0, 2),
+            reduction="none",
+        )
+        self.assert_matches(actual, expected, case="empty")
+        actual_weights = torch.ones((3, 0, 2), dtype=torch.float32)
+        expected_weights = reference_torch.ones(
+            (3, 0, 2),
+            dtype=reference_torch.float32,
+        )
+        (actual * actual_weights).sum().backward()
+        (expected * expected_weights).sum().backward()
+        assert_grads_match(
+            (actual_input, actual_target),
+            (expected_input, expected_target),
+            case="empty",
+        )
+
+    def test_none_reduction_broadcast_active_autograd_is_rejected(self):
+        actual_input = torch.tensor([[-2.0], [3.0]], requires_grad=True)
+        actual_target = torch.tensor(
+            np.linspace(1.0, -1.0, 6, dtype=np.float32).reshape(2, 1, 3).tolist(),
+            requires_grad=True,
+        )
+        input_before = np.asarray(actual_input).reshape(-1).view(np.uint32).copy()
+        target_before = np.asarray(actual_target).reshape(-1).view(np.uint32).copy()
+
+        with self.assertWarnsRegex(UserWarning, "Using a target size"):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"^mse_loss\(\): autograd recording for broadcasted "
+                r"reduction='none' operands is not supported$",
+            ):
+                functional.mse_loss(actual_input, actual_target, reduction="none")
+
+        np.testing.assert_array_equal(
+            np.asarray(actual_input).reshape(-1).view(np.uint32),
+            input_before,
+        )
+        np.testing.assert_array_equal(
+            np.asarray(actual_target).reshape(-1).view(np.uint32),
+            target_before,
+        )
+        self.assertIsNone(actual_input.grad)
+        self.assertIsNone(actual_target.grad)
+
     def test_sum_reduction_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (
             (True, False),

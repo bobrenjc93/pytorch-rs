@@ -7597,6 +7597,9 @@ fn log_backward_value(input: f32, upstream: f32) -> f32 {
 #[inline]
 fn reciprocal_backward_value(input: f32, upstream: f32) -> f32 {
     let reciprocal = reciprocal_value(input);
+    if input.is_nan() {
+        return reciprocal;
+    }
     -upstream * (reciprocal * reciprocal)
 }
 

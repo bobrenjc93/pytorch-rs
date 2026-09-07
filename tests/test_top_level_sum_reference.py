@@ -19,7 +19,9 @@ class TopLevelSumReferenceTests(unittest.TestCase):
     def setUpClass(cls):
         version = reference_torch.__version__.split("+")[0]
         if version != "2.13.0":
-            raise AssertionError("torch.sum differentials require pinned PyTorch 2.13.0")
+            raise AssertionError(
+                "torch.sum differentials require pinned PyTorch 2.13.0"
+            )
 
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
@@ -37,7 +39,9 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             return type(error).__name__, str(error)
         raise AssertionError("torch.sum unexpectedly accepted an invalid call")
 
-    def assert_scalar_matches(self, actual, expected, actual_source, expected_source, *, case):
+    def assert_scalar_matches(
+        self, actual, expected, actual_source, expected_source, *, case
+    ):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, tuple(expected.shape))
             self.assertEqual(actual.stride(), expected.stride())
@@ -134,14 +138,66 @@ class TopLevelSumReferenceTests(unittest.TestCase):
         return source, source.transpose(0, 1)[selected_column]
 
     @staticmethod
+    def rank_one_dim_cases(module):
+        contiguous_base = module.tensor(
+            [-5.0, 1.0, -2.0, 3.0, 4.0], dtype=module.float32
+        )
+        _, noncontiguous = TopLevelSumReferenceTests.rank_one_strided_vector(
+            module, [1.0, -2.0, 3.0, -4.0]
+        )
+        return (
+            (
+                "empty",
+                module.zeros((0, 5), dtype=module.float32).transpose(0, 1)[2],
+            ),
+            ("offset", contiguous_base[1:]),
+            ("noncontiguous", noncontiguous),
+        )
+
+    @staticmethod
+    def call_dim_sum(module, source, form):
+        class IntSubclass(int):
+            pass
+
+        class IndexOnly:
+            def __index__(self):
+                return 0
+
+        if form == "positional dim zero":
+            return module.sum(source, 0)
+        if form == "positional dim negative":
+            return module.sum(source, -1)
+        if form == "keyword dim zero dtype none":
+            return module.sum(input=source, dim=0, keepdim=False, dtype=None)
+        if form == "keyword dim negative dtype none":
+            return module.sum(input=source, dim=-1, keepdim=False, dtype=None)
+        if form == "keyword dim zero keepdim dtype none":
+            return module.sum(input=source, dim=0, keepdim=True, dtype=None)
+        if form == "keyword dim negative keepdim":
+            return module.sum(source, dim=-1, keepdim=True, dtype=None)
+        if form == "dim out none":
+            return module.sum(source, dim=0, keepdim=False, dtype=None, out=None)
+        if form == "dim keepdim out none":
+            return module.sum(source, dim=-1, keepdim=True, dtype=None, out=None)
+        if form == "integer subclass dim":
+            return module.sum(source, IntSubclass(0))
+        if form == "numpy integer dim keepdim":
+            return module.sum(input=source, dim=np.int64(-1), keepdim=True)
+        if form == "tuple integer protocol dim":
+            return module.sum(source, (IndexOnly(),))
+        if form == "list numpy integer dim keepdim":
+            return module.sum(source, [np.int64(-1)], keepdim=True)
+        if form == "dtype float32":
+            return module.sum(source, dim=0, dtype=module.float32)
+        raise AssertionError(f"unknown dim sum form: {form}")
+
+    @staticmethod
     def autograd_case(module, case):
         if case == "scalar":
             leaf = module.tensor(-3.0, dtype=module.float32, requires_grad=True)
             return leaf, leaf
         if case == "empty":
-            leaf = module.zeros(
-                (2, 0, 3), dtype=module.float32, requires_grad=True
-            )
+            leaf = module.zeros((2, 0, 3), dtype=module.float32, requires_grad=True)
             return leaf, leaf.transpose(0, 2)[1]
 
         leaf = module.tensor(
@@ -255,9 +311,7 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             actual_leaf, actual_input = self.autograd_case(torch, case)
             expected_leaf, expected_input = self.autograd_case(reference_torch, case)
             actual_kept = torch.sum(actual_input, dim=None, keepdim=True)
-            expected_kept = reference_torch.sum(
-                expected_input, dim=None, keepdim=True
-            )
+            expected_kept = reference_torch.sum(expected_input, dim=None, keepdim=True)
             self.assert_scalar_matches(
                 actual_kept,
                 expected_kept,
@@ -356,7 +410,11 @@ class TopLevelSumReferenceTests(unittest.TestCase):
         actual_loss = torch.sum(actual_view)
         expected_loss = reference_torch.sum(expected_view)
         self.assert_scalar_matches(
-            actual_loss, expected_loss, actual_view, expected_view, case="rank-one tracked"
+            actual_loss,
+            expected_loss,
+            actual_view,
+            expected_view,
+            case="rank-one tracked",
         )
         for _ in range(2):
             actual_loss.backward()
@@ -376,6 +434,133 @@ class TopLevelSumReferenceTests(unittest.TestCase):
             expected_view,
             case="rank-one no_grad",
         )
+
+    def test_rank_one_dim_reductions_match_pytorch_2_13(self):
+        forms = (
+            "positional dim zero",
+            "positional dim negative",
+            "keyword dim zero dtype none",
+            "keyword dim negative dtype none",
+            "keyword dim zero keepdim dtype none",
+            "keyword dim negative keepdim",
+            "dim out none",
+            "dim keepdim out none",
+            "integer subclass dim",
+            "numpy integer dim keepdim",
+            "tuple integer protocol dim",
+            "list numpy integer dim keepdim",
+            "dtype float32",
+        )
+        actual_cases = self.rank_one_dim_cases(torch)
+        expected_cases = self.rank_one_dim_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases, expected_cases, strict=True
+        ):
+            case, actual_input = actual_case
+            expected_name, expected_input = expected_case
+            self.assertEqual(case, expected_name)
+            for form in forms:
+                self.assert_scalar_matches(
+                    self.call_dim_sum(torch, actual_input, form),
+                    self.call_dim_sum(reference_torch, expected_input, form),
+                    actual_input,
+                    expected_input,
+                    case=(case, form),
+                )
+
+    def test_rank_one_dim_backward_through_sum_matches_pytorch_2_13(self):
+        actual_empty = torch.zeros((0, 5), dtype=torch.float32, requires_grad=True)
+        expected_empty = reference_torch.zeros(
+            (0, 5), dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_empty_view = actual_empty.transpose(0, 1)[2]
+        expected_empty_view = expected_empty.transpose(0, 1)[2]
+        torch.sum(actual_empty_view, dim=0).backward()
+        reference_torch.sum(expected_empty_view, dim=0).backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_empty.grad), expected_empty.grad.detach().cpu().numpy()
+        )
+
+        values = np.arange(1, 21, dtype=np.float32).reshape(4, 5)[:, 2]
+        actual_leaf, actual_view = self.rank_one_strided_vector(
+            torch, values, requires_grad=True
+        )
+        expected_leaf, expected_view = self.rank_one_strided_vector(
+            reference_torch, values, requires_grad=True
+        )
+        actual_loss = torch.sum(actual_view, dim=-1, dtype=None)
+        expected_loss = reference_torch.sum(expected_view, dim=-1, dtype=None)
+        self.assert_scalar_matches(
+            actual_loss,
+            expected_loss,
+            actual_view,
+            expected_view,
+            case="rank-one dim tracked",
+        )
+        for _ in range(2):
+            actual_loss.backward()
+            expected_loss.backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_leaf.grad), expected_leaf.grad.detach().cpu().numpy()
+        )
+
+        actual_kept_leaf, actual_kept_view = self.rank_one_strided_vector(
+            torch, [1.0, -2.0, 3.0], requires_grad=True
+        )
+        expected_kept_leaf, expected_kept_view = self.rank_one_strided_vector(
+            reference_torch, [1.0, -2.0, 3.0], requires_grad=True
+        )
+        actual_kept = torch.sum(actual_kept_view, dim=0, keepdim=True, dtype=None)
+        expected_kept = reference_torch.sum(
+            expected_kept_view, dim=0, keepdim=True, dtype=None
+        )
+        self.assert_scalar_matches(
+            actual_kept,
+            expected_kept,
+            actual_kept_view,
+            expected_kept_view,
+            case="rank-one kept",
+        )
+        torch.sum(actual_kept).backward()
+        reference_torch.sum(expected_kept).backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_kept_leaf.grad),
+            expected_kept_leaf.grad.detach().cpu().numpy(),
+        )
+
+    def test_rank_one_dim_error_ordering_matches_pytorch_2_13(self):
+        actual = torch.ones((2,), dtype=torch.float32)
+        expected = reference_torch.ones((2,), dtype=reference_torch.float32)
+        cases = (
+            (
+                lambda: torch.sum(actual, 2**100, "bad"),
+                lambda: reference_torch.sum(expected, 2**100, "bad"),
+            ),
+            (
+                lambda: torch.sum(actual, 2**100, dtype=1),
+                lambda: reference_torch.sum(expected, 2**100, dtype=1),
+            ),
+            (
+                lambda: torch.sum(actual, 2**100, out=[]),
+                lambda: reference_torch.sum(expected, 2**100, out=[]),
+            ),
+            (
+                lambda: torch.sum(actual, 2**100),
+                lambda: reference_torch.sum(expected, 2**100),
+            ),
+            (lambda: torch.sum(actual, 1), lambda: reference_torch.sum(expected, 1)),
+            (
+                lambda: torch.sum(actual, True),
+                lambda: reference_torch.sum(expected, True),
+            ),
+            (
+                lambda: torch.sum(actual, "bad", "bad"),
+                lambda: reference_torch.sum(expected, "bad", "bad"),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assert_error_matches(actual_call, expected_call)
 
     @staticmethod
     def signature_outcome(callable_object):
@@ -514,9 +699,7 @@ class TopLevelSumReferenceTests(unittest.TestCase):
         class BaseOverride:
             @classmethod
             def __torch_function__(cls, func, types, args=(), kwargs=None):
-                subclass_order.append(
-                    ("base", tuple(item.__name__ for item in types))
-                )
+                subclass_order.append(("base", tuple(item.__name__ for item in types)))
                 return marker
 
         class DerivedOverride(BaseOverride):
