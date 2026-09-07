@@ -508,26 +508,176 @@ class TensorMovedimTests(unittest.TestCase):
             msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
 
-    def test_sequence_dimensions_remain_out_of_scope(self):
-        tensor = torch.zeros((2, 3, 4))
+    def test_sequence_dimensions_share_the_integer_view_engine(self):
         self.assertTrue(hasattr(torch, "movedim"))
         self.assertTrue(hasattr(torch, "moveaxis"))
         self.assertIn("moveaxis", torch.__all__)
         self.assertTrue(hasattr(torch.Tensor, "moveaxis"))
+
+        def movedim_order(rank, source, destination):
+            normalized_source = tuple(axis + rank if axis < 0 else axis for axis in source)
+            normalized_destination = tuple(axis + rank if axis < 0 else axis for axis in destination)
+            order = [axis for axis in range(rank) if axis not in normalized_source]
+            for destination_axis, source_axis in sorted(
+                zip(normalized_destination, normalized_source)
+            ):
+                order.insert(destination_axis, source_axis)
+            return tuple(order)
+
+        values = np.arange(120, dtype=np.float32).reshape(2, 3, 4, 5)
+        base = torch.tensor(values.tolist())
+        cases = (
+            ("contiguous", base, values, (0, 3), [2, 1]),
+            (
+                "transposed",
+                base.transpose(0, 3),
+                values.transpose(3, 1, 2, 0),
+                [0, 2],
+                (2, 0),
+            ),
+            (
+                "offset-negative",
+                base.transpose(0, 3)[1],
+                values.transpose(3, 1, 2, 0)[1],
+                (-1, 0),
+                (0, -1),
+            ),
+            (
+                "empty",
+                torch.zeros((2, 0, 3, 4)),
+                np.zeros((2, 0, 3, 4), dtype=np.float32),
+                [0, 3],
+                [2, 1],
+            ),
+        )
+        for case, tensor, expected_values, source, destination in cases:
+            order = movedim_order(len(tensor.shape), source, destination)
+            for form, moved in (
+                ("tensor.movedim", tensor.movedim(source, destination)),
+                ("tensor.moveaxis", tensor.moveaxis(source, destination)),
+                ("torch.movedim", torch.movedim(tensor, source, destination)),
+                ("torch.moveaxis", torch.moveaxis(tensor, source, destination)),
+            ):
+                with self.subTest(case=case, form=form):
+                    self.assertEqual(
+                        moved.shape,
+                        np.moveaxis(expected_values, source, destination).shape,
+                    )
+                    self.assertEqual(
+                        moved.stride(), tuple(tensor.stride()[axis] for axis in order)
+                    )
+                    self.assertEqual(moved.storage_offset(), tensor.storage_offset())
+                    self.assertEqual(moved.data_ptr(), tensor.data_ptr())
+                    self.assert_values(
+                        moved, np.moveaxis(expected_values, source, destination)
+                    )
+
+        scalar = torch.tensor(2.5)
+        for source, destination in (((), ()), ([], []), ((), [])):
+            with self.subTest(case="scalar-empty-axis", source=source, destination=destination):
+                moved = scalar.movedim(source, destination)
+                self.assertEqual(moved.shape, ())
+                self.assertEqual(moved.stride(), ())
+                self.assertEqual(moved.storage_offset(), 0)
+                self.assertEqual(moved.data_ptr(), scalar.data_ptr())
+                self.assertEqual(moved.item(), 2.5)
+
+    def test_sequence_dimension_errors_match_pytorch_shape(self):
+        tensor = torch.zeros((2, 3, 4))
+        for operation in ("movedim", "moveaxis"):
+            method = getattr(tensor, operation)
+            function = getattr(torch, operation)
+            with self.subTest(operation=operation, case="length"):
+                with self.assertRaises(RuntimeError) as raised:
+                    method((0, 1), (2,))
+                self.assertEqual(
+                    str(raised.exception),
+                    "movedim: Invalid source or destination dims: source "
+                    "([0, 1] dims) should contain the same number of dims as "
+                    "destination ([2] dims)",
+                )
+                with self.assertRaises(RuntimeError):
+                    function(tensor, (0, 1), (2,))
+
+            for source, destination, message in (
+                ((0, -3), (1, 2), "movedim: repeated dim in `source` ([0, -3])"),
+                ((0, 1), (2, -1), "movedim: repeated dim in `destination` ([2, -1])"),
+            ):
+                with self.subTest(operation=operation, source=source, destination=destination):
+                    with self.assertRaises(RuntimeError) as raised:
+                        method(source, destination)
+                    self.assertEqual(str(raised.exception), message)
+                    with self.assertRaises(RuntimeError):
+                        function(tensor, source, destination)
+
+            for call in (
+                lambda: method((object(), 1), (1, 2)),
+                lambda: function(tensor, (object(), 1), (1, 2)),
+                lambda: method((0, 1), 2),
+                lambda: function(tensor, (0, 1), 2),
+            ):
+                with self.subTest(operation=operation, case="binding"):
+                    with self.assertRaises(TypeError):
+                        call()
+
+            with self.subTest(operation=operation, case="late-source-element"):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    rf"^{operation}\(\): argument 'source' failed to unpack "
+                    r'the object at pos 2 with error "type must be tuple of ints,but got float"$',
+                ):
+                    method((0, 1.5), (1, 2))
+            with self.subTest(operation=operation, case="late-destination-element"):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    rf"^{operation}\(\): argument 'destination' failed to unpack "
+                    r'the object at pos 2 with error "type must be tuple of ints,but got str"$',
+                ):
+                    function(tensor, (0, 1), (1, "2"))
+
+            with self.subTest(operation=operation, case="range"):
+                with self.assertRaisesRegex(
+                    IndexError,
+                    r"^Dimension out of range \(expected to be in range of "
+                    r"\[-3, 2\], but got 3\)$",
+                ):
+                    method((0, 3), (1, 2))
+
+        bool_source = tensor.movedim((0, True), (2, 1))
+        self.assertEqual(bool_source.shape, (4, 3, 2))
+        self.assertEqual(bool_source.stride(), (1, 4, 12))
+
+    def test_sequence_mode_dispatch_follows_binding_and_precedes_conversion(self):
+        tensor = torch.zeros((2, 3, 4))
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
         for source, destination in (
-            ((0, 2), (2, 0)),
-            ([0, 2], [2, 0]),
-            ((), ()),
+            ((0, 1.5), (1, 2)),
+            ((0, 3), (1, 2)),
+            ((0, 0), (1, 2)),
+            ((0, 1), (2,)),
         ):
-            with self.subTest(source=source, destination=destination):
-                with self.assertRaises(TypeError):
+            mode = RecordingMode(marker)
+            with mode:
+                result = tensor.movedim(source, destination)
+            self.assertIs(result, marker)
+            self.assertEqual(len(mode.calls), 1)
+
+        for source, destination in (((object(), 1), (1, 2)), ((0, 1), 2)):
+            mode = RecordingMode(marker)
+            with self.assertRaises(TypeError):
+                with mode:
                     tensor.movedim(source, destination)
-                with self.assertRaises(TypeError):
-                    torch.movedim(tensor, source, destination)
-                with self.assertRaises(TypeError):
-                    torch.moveaxis(tensor, source, destination)
-                with self.assertRaises(TypeError):
-                    tensor.moveaxis(source, destination)
+            self.assertEqual(mode.calls, [])
 
     def test_tensorbase_descriptor_metadata_and_unbound_behavior(self):
         tensor = torch.zeros((2, 3, 4))
