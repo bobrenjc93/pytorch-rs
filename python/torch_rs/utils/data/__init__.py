@@ -1,4 +1,5 @@
 from ._utils.worker import get_worker_info
+from ._utils.collate import default_collate
 from .dataset import (
     ChainDataset,
     ConcatDataset,
@@ -25,5 +26,6 @@ __all__ = [
     "StackDataset",
     "Subset",
     "TensorDataset",
+    "default_collate",
     "get_worker_info",
 ]
