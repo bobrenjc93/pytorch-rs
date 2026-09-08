@@ -657,8 +657,8 @@ offset, noncontiguous, empty, and negative-dimension cases, and support
 outputs.
 
 `Tensor.chunk(chunks, dim=0)` and `torch.chunk(input, chunks, dim=0)` accept
-exact native CPU float32 tensors with positive integer-protocol `chunks` values
-when `dim` normalizes to any existing dimension. They return tuples of
+exact native CPU float32 tensors with positive Python or NumPy integer `chunks`
+values when `dim` normalizes to any existing dimension. They return tuples of
 rank-preserving shared-storage narrow-style views, using PyTorch 2.13's uneven
 chunk sizing, including zero-length outputs for empty split dimensions and
 fewer outputs than requested when a non-empty dimension cannot produce the full

@@ -114,7 +114,7 @@ class TensorChunkTests(unittest.TestCase):
                     source, torch.chunk(source, chunks, dimension), chunks, dimension
                 )
 
-    def test_call_forms_input_aliases_and_integer_protocol(self):
+    def test_call_forms_input_aliases_and_integer_arguments(self):
         source = offset_noncontiguous_source()
         calls = (
             ("method default", lambda: source.chunk(2)),
@@ -139,16 +139,6 @@ class TensorChunkTests(unittest.TestCase):
 
         self.assertEqual(len(source.chunk(np.int64(2), IntegerSubclass(1))), 2)
         self.assertEqual(len(torch.chunk(source, np.uint32(2), IntegerSubclass(1))), 2)
-
-        conversion_order = []
-
-        class ChunkCount:
-            def __index__(self):
-                conversion_order.append("chunks")
-                return 2
-
-        self.assertEqual(len(source.chunk(ChunkCount(), 1)), 2)
-        self.assertEqual(conversion_order, ["chunks", "chunks", "chunks"])
 
     def test_backward_through_sum_no_grad_and_empty_dimensions(self):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
@@ -219,6 +209,14 @@ class TensorChunkTests(unittest.TestCase):
     def test_errors_and_surface_limits(self):
         tensor = torch.zeros((2, 3))
         scalar = torch.tensor(1.0)
+
+        class ChunkCount:
+            calls = 0
+
+            def __index__(self):
+                type(self).calls += 1
+                return 2
+
         cases = (
             (
                 lambda: tensor.chunk(),
@@ -266,6 +264,26 @@ class TensorChunkTests(unittest.TestCase):
                 "chunk(): argument 'chunks' (position 2) must be int, not bool",
             ),
             (
+                lambda: tensor.chunk(ChunkCount()),
+                TypeError,
+                "chunk(): argument 'chunks' (position 1) must be int, not ChunkCount",
+            ),
+            (
+                lambda: tensor.chunk(chunks=ChunkCount()),
+                TypeError,
+                "chunk(): argument 'chunks' must be int, not ChunkCount",
+            ),
+            (
+                lambda: torch.chunk(tensor, ChunkCount()),
+                TypeError,
+                "chunk(): argument 'chunks' (position 2) must be int, not ChunkCount",
+            ),
+            (
+                lambda: torch.chunk(input=tensor, chunks=ChunkCount()),
+                TypeError,
+                "chunk(): argument 'chunks' must be int, not ChunkCount",
+            ),
+            (
                 lambda: tensor.chunk(2, True),
                 TypeError,
                 "chunk(): argument 'dim' (position 2) must be int, not bool",
@@ -292,9 +310,11 @@ class TensorChunkTests(unittest.TestCase):
             ),
         )
         for call, error_type, message in cases:
+            ChunkCount.calls = 0
             with self.subTest(message=message), self.assertRaises(error_type) as raised:
                 call()
             self.assertEqual(str(raised.exception), message)
+            self.assertEqual(ChunkCount.calls, 0)
 
         for call in (
             lambda: tensor.chunk(2**100),
@@ -363,6 +383,19 @@ class TensorChunkTests(unittest.TestCase):
         self.assertEqual(dispatch_types, ())
         self.assertEqual(args, ())
         self.assertEqual(kwargs, {"input": tensor, "chunks": 2, "dim": 1})
+
+        class ChunkCount:
+            def __index__(self):
+                raise AssertionError("chunk must not call __index__ for custom counts")
+
+        for call in (
+            lambda: tensor.chunk(ChunkCount()),
+            lambda: torch.chunk(tensor, ChunkCount()),
+        ):
+            rejecting_mode = RecordingMode(marker)
+            with self.subTest(call=call), self.assertRaises(TypeError), rejecting_mode:
+                call()
+            self.assertEqual(rejecting_mode.calls, [])
 
 
 if __name__ == "__main__":

@@ -270,6 +270,22 @@ class TensorChunkReferenceTests(unittest.TestCase):
     def error_contract(self, module):
         tensor = module.zeros((2, 3), dtype=module.float32)
         scalar = module.tensor(1.0, dtype=module.float32)
+
+        class ChunkCount:
+            calls = 0
+
+            def __index__(self):
+                type(self).calls += 1
+                return 2
+
+        custom_errors = (
+            self.error(lambda: tensor.chunk(ChunkCount())),
+            self.error(lambda: tensor.chunk(chunks=ChunkCount())),
+            self.error(lambda: module.chunk(tensor, ChunkCount())),
+            self.error(lambda: module.chunk(input=tensor, chunks=ChunkCount())),
+            ChunkCount.calls,
+        )
+
         return (
             self.error(lambda: tensor.chunk()),
             self.error(lambda: tensor.chunk(2, 0, 0)),
@@ -302,6 +318,7 @@ class TensorChunkReferenceTests(unittest.TestCase):
             self.error(lambda: module.chunk(scalar, 0)),
             len(tensor.chunk(np.int64(2))),
             len(module.chunk(tensor, np.uint32(2))),
+            custom_errors,
         )
 
     def test_errors_and_integer_arguments_match_pytorch_2_13(self):

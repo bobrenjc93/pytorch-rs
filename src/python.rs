@@ -13633,9 +13633,6 @@ fn validate_chunk_count_argument<'py>(
     if let Some(probed) = probe_torch_function_override(&chunks.value) {
         return Ok(Some(probed));
     }
-    if probe_select_index(&chunks.value) {
-        return Ok(None);
-    }
     let actual = python_type_name(&chunks.value)?;
     Err(dimension_swap_argument_type_error(
         "chunk",
