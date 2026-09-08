@@ -250,8 +250,12 @@ class TensorNarrowReferenceTests(unittest.TestCase):
     def test_descriptor_contract_matches_pytorch_2_13(self):
         actual = self.descriptor_contract(torch)
         expected = self.descriptor_contract(reference_torch)
+        actual_function_doc = actual.pop("function_doc")
+        expected.pop("function_doc")
         actual["repr"] = re.sub(r"0x[0-9a-f]+", "0xADDR", actual["repr"])
         expected["repr"] = re.sub(r"0x[0-9a-f]+", "0xADDR", expected["repr"])
+        self.assertIn("tensor-valued ``start`` arguments are not supported", actual_function_doc)
+        self.assertNotIn("torch.narrow(x, -1, torch.tensor", actual_function_doc)
         self.assertEqual(actual, expected)
 
     def mode_dispatch_contract(self, module):
