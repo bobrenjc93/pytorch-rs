@@ -35,7 +35,7 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
             ("cat", "concat", "concatenate"),
         )
         workloads = benchmark_top_level_cat.WORKLOADS
-        self.assertEqual(len(workloads), 9)
+        self.assertEqual(len(workloads), 11)
         categories = {workload.category for workload in workloads}
         self.assertEqual(
             categories,
@@ -46,6 +46,8 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
                 "offset",
                 "noncontiguous",
                 "axis keyword",
+                "autograd forward",
+                "autograd forward+backward",
                 "no_grad",
             },
         )
@@ -59,6 +61,8 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
             "noncontiguous_stride2_views_4096",
             "tuple_dim_negative_one_513_509",
             "axis_keyword_17_19",
+            "autograd_forward_repeated_257_263_257",
+            "autograd_forward_backward_repeated_32_33_32",
             "no_grad_grad_inputs_257_263",
         ):
             self.assertIn(required_name, names)
@@ -94,6 +98,7 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
                 "singleton_contiguous_8192",
                 "empty_operand_middle_1024_0_511",
                 "noncontiguous_stride2_views_4096",
+                "autograd_forward_backward_repeated_32_33_32",
                 "--apis",
                 "cat",
             ],
@@ -119,7 +124,7 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
             report["environment"]["implementation_orders"],
             [list(order) for order in benchmark_top_level_cat.IMPLEMENTATION_ORDERS],
         )
-        self.assertEqual(report["aggregates"]["timed_supported_cell_count"], 3)
+        self.assertEqual(report["aggregates"]["timed_supported_cell_count"], 4)
 
         by_name = {case["workload"]: case for case in report["cases"]}
         self.assertEqual(
@@ -128,13 +133,20 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
                 "singleton_contiguous_8192",
                 "empty_operand_middle_1024_0_511",
                 "noncontiguous_stride2_views_4096",
+                "autograd_forward_backward_repeated_32_33_32",
             },
         )
         for case in report["cases"]:
+            expected_nonmutation = (
+                case["mode"] != benchmark_top_level_cat.MODE_AUTOGRAD_BACKWARD
+            )
             self.assertIs(case["validation"]["metadata_checked"], True)
             self.assertIs(case["validation"]["value_bits_checked"], True)
             self.assertIs(case["validation"]["steady_checksums_checked"], True)
-            self.assertIs(case["validation"]["operand_nonmutation_checked"], True)
+            self.assertIs(
+                case["validation"]["operand_nonmutation_checked"],
+                expected_nonmutation,
+            )
             self.assertEqual(set(case["implementations"]), {"torch_rs", "pytorch"})
             for implementation in ("torch_rs", "pytorch"):
                 passes = case["implementations"][implementation]["passes"]
@@ -164,6 +176,15 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
             by_name["noncontiguous_stride2_views_4096"]["input_metadata"][0]["stride"],
             [2],
         )
+        backward_metadata = by_name[
+            "autograd_forward_backward_repeated_32_33_32"
+        ]["output_metadata"]
+        self.assertEqual(
+            [item["label"] for item in backward_metadata],
+            ["output", "left_grad", "right_grad"],
+        )
+        self.assertEqual(backward_metadata[1]["shape"], [32])
+        self.assertEqual(backward_metadata[2]["shape"], [33])
 
     def test_checked_in_raw_artifact_matches_markdown_summary(self):
         benchmark_top_level_cat.validate_artifact(

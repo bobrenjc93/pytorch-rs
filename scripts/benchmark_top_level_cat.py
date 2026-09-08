@@ -35,7 +35,7 @@ PROTECTED_OUTPUT_PATHS = {
     REPOSITORY_ROOT / "docs" / "burner-evaluation-progress.svg",
 }
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "top_level_cat_cpu_1d_benchmark_v1"
+BENCHMARK_VERSION = "top_level_cat_cpu_1d_benchmark_v2"
 DEFAULT_WARMUPS = 15
 DEFAULT_SAMPLES = 81
 DEFAULT_THREADS = 1
@@ -52,6 +52,8 @@ IMPLEMENTATION_ORDERS = (
 APIS = ("cat", "concat", "concatenate")
 
 MODE_EAGER = "eager"
+MODE_AUTOGRAD_FORWARD = "autograd_forward"
+MODE_AUTOGRAD_BACKWARD = "autograd_backward"
 MODE_NO_GRAD = "no_grad"
 
 
@@ -59,6 +61,7 @@ MODE_NO_GRAD = "no_grad"
 class Operands:
     tensors: object
     kwargs: dict[str, object]
+    leaves: tuple[tuple[str, object], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -341,6 +344,32 @@ def _make_axis_keyword(module, np):
     )
 
 
+def _make_autograd_forward(module, np):
+    left = _dense_tensor(module, np, (257,), 2026090720, requires_grad=True)
+    right = _dense_tensor(
+        module,
+        np,
+        (263,),
+        2026090721,
+        requires_grad=True,
+        bias=0.375,
+    )
+    return Operands([left, right, left], {"dim": 0}, (("left", left), ("right", right)))
+
+
+def _make_autograd_backward(module, np):
+    left = _dense_tensor(module, np, (32,), 2026090722, requires_grad=True)
+    right = _dense_tensor(
+        module,
+        np,
+        (33,),
+        2026090723,
+        requires_grad=True,
+        bias=-0.625,
+    )
+    return Operands([left, right, left], {"dim": 0}, (("left", left), ("right", right)))
+
+
 def _make_no_grad_grad_inputs(module, np):
     return Operands(
         [
@@ -448,6 +477,28 @@ WORKLOADS = (
         _make_axis_keyword,
     ),
     Workload(
+        "autograd_forward_repeated_257_263_257",
+        "autograd forward",
+        "list dim=0",
+        "two grad-requiring contiguous inputs with lengths 257 and 263, left repeated; forward construction only",
+        "concatenation output",
+        1024,
+        MODE_AUTOGRAD_FORWARD,
+        (2026090720, 2026090721),
+        _make_autograd_forward,
+    ),
+    Workload(
+        "autograd_forward_backward_repeated_32_33_32",
+        "autograd forward+backward",
+        "list dim=0",
+        "two grad-requiring contiguous inputs with lengths 32 and 33, left repeated; timed op(...).sum().backward()",
+        "concatenation output plus leaf gradients",
+        128,
+        MODE_AUTOGRAD_BACKWARD,
+        (2026090722, 2026090723),
+        _make_autograd_backward,
+    ),
+    Workload(
         "no_grad_grad_inputs_257_263",
         "no_grad",
         "list dim=0",
@@ -473,33 +524,23 @@ def _unsupported_out_1d(module, api):
     )
 
 
-def _unsupported_active_autograd_1d(module, api):
+def _unsupported_rank3_dim0(module, api):
     return getattr(module, api)(
         [
-            module.tensor([1.0, 2.0], dtype=module.float32, requires_grad=True),
-            module.tensor([3.0], dtype=module.float32, requires_grad=True),
+            module.ones((2, 3, 4), dtype=module.float32),
+            module.zeros((1, 3, 4), dtype=module.float32),
         ],
         dim=0,
     )
 
 
-def _unsupported_rank2_dim0(module, api):
+def _unsupported_rank3_dim2(module, api):
     return getattr(module, api)(
         [
-            module.ones((2, 3), dtype=module.float32),
-            module.zeros((1, 3), dtype=module.float32),
+            module.ones((2, 3, 4), dtype=module.float32),
+            module.zeros((2, 3, 1), dtype=module.float32),
         ],
-        dim=0,
-    )
-
-
-def _unsupported_rank2_dim1(module, api):
-    return getattr(module, api)(
-        [
-            module.ones((2, 2), dtype=module.float32),
-            module.zeros((2, 1), dtype=module.float32),
-        ],
-        dim=1,
+        dim=2,
     )
 
 
@@ -512,25 +553,18 @@ UNSUPPORTED_CELLS = (
         "cat(): the 'out' argument is not supported",
     ),
     UnsupportedCell(
-        "active_autograd_1d",
-        "active autograd",
-        _unsupported_active_autograd_1d,
-        "RuntimeError",
-        "cat(): autograd recording is not supported",
+        "rank3_dim0",
+        "higher-rank cat",
+        _unsupported_rank3_dim0,
+        "NotImplementedError",
+        "cat(): only exact native CPU float32 rank-1 or rank-2 Tensor inputs are supported",
     ),
     UnsupportedCell(
-        "rank2_dim0",
-        "general-dimensional cat",
-        _unsupported_rank2_dim0,
+        "rank3_dim2",
+        "higher-rank cat",
+        _unsupported_rank3_dim2,
         "NotImplementedError",
-        "cat(): only exact native CPU float32 1-D Tensor inputs are supported",
-    ),
-    UnsupportedCell(
-        "rank2_dim1",
-        "general-dimensional cat",
-        _unsupported_rank2_dim1,
-        "NotImplementedError",
-        "cat(): only exact native CPU float32 1-D Tensor inputs are supported",
+        "cat(): only exact native CPU float32 rank-1 or rank-2 Tensor inputs are supported",
     ),
 )
 
@@ -671,14 +705,40 @@ def _execute_operation(module, api, workload, operands):
         context = contextlib.nullcontext()
     with context:
         output = getattr(module, api)(operands.tensors, **operands.kwargs)
+    if workload.mode == MODE_AUTOGRAD_BACKWARD:
+        output.sum().backward()
+        bundle = [("output", output)]
+        for label, leaf in operands.leaves:
+            grad = leaf.grad
+            if grad is None:
+                raise AssertionError(f"{workload.name}/{label} did not materialize grad")
+            bundle.append((f"{label}_grad", grad))
+        return tuple(bundle)
     return (("output", output),)
 
 
+def _make_block_operands(np, module, workload, static_operands, repeats):
+    if workload.mode == MODE_AUTOGRAD_BACKWARD:
+        return [workload.make_operands(module, np) for _ in range(repeats)]
+    return None
+
+
 def _time_block(np, module, api, workload, static_operands, repeats):
+    block_operands = _make_block_operands(
+        np,
+        module,
+        workload,
+        static_operands,
+        repeats,
+    )
     started_ns = time.perf_counter_ns()
     last_bundle = None
-    for _ in range(repeats):
-        last_bundle = _execute_operation(module, api, workload, static_operands)
+    if block_operands is None:
+        for _ in range(repeats):
+            last_bundle = _execute_operation(module, api, workload, static_operands)
+    else:
+        for operands in block_operands:
+            last_bundle = _execute_operation(module, api, workload, operands)
     _synchronize(module)
     elapsed_ns = time.perf_counter_ns() - started_ns
     checksum = _checksum_bundle(np, last_bundle)
@@ -702,14 +762,19 @@ def _summarize_samples(samples_ns, repeats):
 
 
 def _measure_one_pass(np, module, implementation, api, workload, args):
-    static_operands = workload.make_operands(module, np)
+    if workload.mode == MODE_AUTOGRAD_BACKWARD:
+        static_operands = None
+        metadata_operands = workload.make_operands(module, np)
+    else:
+        static_operands = workload.make_operands(module, np)
+        metadata_operands = static_operands
     input_metadata = [
         {"label": label, **_tensor_metadata(tensor)}
-        for label, tensor in _operand_tensors(static_operands)
+        for label, tensor in _operand_tensors(metadata_operands)
     ]
     input_checksums_before = [
         {"label": label, "checksum": _checksum_tensor(np, tensor)}
-        for label, tensor in _operand_tensors(static_operands)
+        for label, tensor in _operand_tensors(metadata_operands)
     ]
 
     cold_ns, cold_checksum, cold_bundle = _time_block(
@@ -751,15 +816,17 @@ def _measure_one_pass(np, module, implementation, api, workload, args):
         sample_checksums.append(checksum)
         sample_sink = _roll_checksum(sample_sink, checksum)
 
-    input_checksums_after = [
-        {"label": label, "checksum": _checksum_tensor(np, tensor)}
-        for label, tensor in _operand_tensors(static_operands)
-    ]
-    if input_checksums_after != input_checksums_before:
-        raise AssertionError(
-            f"{workload.name}/{api}/{implementation} mutated benchmark operands: "
-            f"before={input_checksums_before!r} after={input_checksums_after!r}"
-        )
+    operand_nonmutation_checked = workload.mode != MODE_AUTOGRAD_BACKWARD
+    if operand_nonmutation_checked:
+        input_checksums_after = [
+            {"label": label, "checksum": _checksum_tensor(np, tensor)}
+            for label, tensor in _operand_tensors(static_operands)
+        ]
+        if input_checksums_after != input_checksums_before:
+            raise AssertionError(
+                f"{workload.name}/{api}/{implementation} mutated benchmark operands: "
+                f"before={input_checksums_before!r} after={input_checksums_after!r}"
+            )
 
     return {
         "cold_first_call_us": cold_ns / 1000.0,
@@ -773,7 +840,7 @@ def _measure_one_pass(np, module, implementation, api, workload, args):
         "input_checksums": input_checksums_before,
         "output_metadata": _bundle_metadata(last_bundle),
         "cold_bundle": cold_bundle,
-        "operand_nonmutation_checked": True,
+        "operand_nonmutation_checked": operand_nonmutation_checked,
     }
 
 
@@ -1146,6 +1213,16 @@ def _aggregate_rows(rows):
             for row in rows
             if row["category"] == "axis keyword"
         ],
+        "autograd forward": [
+            row["ratios"]["steady_torch_rs_over_pytorch"]
+            for row in rows
+            if row["category"] == "autograd forward"
+        ],
+        "autograd forward+backward": [
+            row["ratios"]["steady_torch_rs_over_pytorch"]
+            for row in rows
+            if row["category"] == "autograd forward+backward"
+        ],
         "no_grad": [
             row["ratios"]["steady_torch_rs_over_pytorch"]
             for row in rows
@@ -1325,6 +1402,11 @@ def render_markdown_summary(report):
         _group_line("Offset cells", groups["offset cells"]),
         _group_line("Noncontiguous cells", groups["noncontiguous cells"]),
         _group_line("Axis-keyword cells", groups["axis keyword cells"]),
+        _group_line("Autograd-forward cells", groups["autograd forward cells"]),
+        _group_line(
+            "Autograd-forward+backward cells",
+            groups["autograd forward+backward cells"],
+        ),
         _group_line("`no_grad` cells", groups["no_grad cells"]),
         "",
         (
@@ -1466,6 +1548,8 @@ def _validate_expected_artifact_shape(report):
         "offset",
         "noncontiguous",
         "axis keyword",
+        "autograd forward",
+        "autograd forward+backward",
         "no_grad",
     ):
         if required_category not in categories:
@@ -1491,6 +1575,8 @@ def _validate_expected_artifact_shape(report):
     for row in cases:
         cell_name = f"{row.get('api')}/{row.get('workload')}"
         workload = workloads_by_name.get(row.get("workload"))
+        is_backward = row.get("mode") == MODE_AUTOGRAD_BACKWARD
+        expected_nonmutation = not is_backward
         if workload is None:
             errors.append(f"{cell_name} has unknown workload")
         elif row.get("input_seeds") != list(workload.input_seeds):
@@ -1532,9 +1618,12 @@ def _validate_expected_artifact_shape(report):
                     list(order) for order in IMPLEMENTATION_ORDERS
                 ]:
                     errors.append(f"{cell_name}/{implementation} order mismatch")
-                if pass_result.get("operand_nonmutation_checked") is not True:
+                if (
+                    pass_result.get("operand_nonmutation_checked")
+                    is not expected_nonmutation
+                ):
                     errors.append(
-                        f"{cell_name}/{implementation} missing nonmutation check"
+                        f"{cell_name}/{implementation} nonmutation flag mismatch"
                     )
         try:
             _single_checksum_pair(row)
@@ -1546,10 +1635,11 @@ def _validate_expected_artifact_shape(report):
             "value_bits_checked",
             "warmup_checksums_checked",
             "steady_checksums_checked",
-            "operand_nonmutation_checked",
         ):
             if validation.get(required_key) is not True:
                 errors.append(f"{cell_name} missing validation flag {required_key}")
+        if validation.get("operand_nonmutation_checked") is not expected_nonmutation:
+            errors.append(f"{cell_name} validation nonmutation flag mismatch")
 
     for row in unsupported:
         name = row.get("name")
