@@ -147,6 +147,10 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
             self.assertIs(case["validation"]["value_bits_checked"], True)
             self.assertIs(case["validation"]["steady_checksums_checked"], True)
             self.assertIs(case["validation"]["operand_nonmutation_checked"], True)
+            self.assertIs(
+                case["validation"]["timed_operand_nonmutation_checked"],
+                True,
+            )
             self.assertEqual(set(case["implementations"]), {"torch_rs", "pytorch"})
             for implementation in ("torch_rs", "pytorch"):
                 passes = case["implementations"][implementation]["passes"]
@@ -162,6 +166,18 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
                 self.assertTrue(
                     case["implementations"][implementation]["checksums"],
                     msg=f"missing timed checksum for {case['workload']}",
+                )
+                expected_timed_operand_checks = (
+                    1 + case["repeats"]
+                    if case["mode"] == benchmark_top_level_cat.MODE_BACKWARD
+                    else 0
+                )
+                self.assertEqual(
+                    {
+                        pass_result["timed_operand_nonmutation_checks"]
+                        for pass_result in passes
+                    },
+                    {expected_timed_operand_checks},
                 )
 
         self.assertEqual(

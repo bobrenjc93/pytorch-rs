@@ -748,6 +748,13 @@ def _checksum_bundle(np, bundle):
     )
 
 
+def _operand_checksums(np, operands):
+    return [
+        {"label": label, "checksum": _checksum_tensor(np, tensor)}
+        for label, tensor in _operand_tensors(operands)
+    ]
+
+
 def _roll_checksum(previous, checksum):
     return _checksum_payload({"previous": previous, "checksum": checksum})
 
@@ -819,19 +826,36 @@ def _execute_operation(module, api, workload, operands):
 
 
 def _time_block(np, module, api, workload, static_operands, repeats):
+    if workload.mode == MODE_BACKWARD:
+        timed_operands = [workload.make_operands(module, np) for _ in range(repeats)]
+        timed_operand_checksums_before = [
+            _operand_checksums(np, operands) for operands in timed_operands
+        ]
+    else:
+        timed_operands = [static_operands] * repeats
+        timed_operand_checksums_before = []
+
     started_ns = time.perf_counter_ns()
     last_bundle = None
-    for _ in range(repeats):
-        operands = (
-            workload.make_operands(module, np)
-            if workload.mode == MODE_BACKWARD
-            else static_operands
-        )
+    for operands in timed_operands:
         last_bundle = _execute_operation(module, api, workload, operands)
     _synchronize(module)
     elapsed_ns = time.perf_counter_ns() - started_ns
     checksum = _checksum_bundle(np, last_bundle)
-    return elapsed_ns, checksum, last_bundle
+
+    if workload.mode == MODE_BACKWARD:
+        timed_operand_checksums_after = [
+            _operand_checksums(np, operands) for operands in timed_operands
+        ]
+        if timed_operand_checksums_after != timed_operand_checksums_before:
+            raise AssertionError(
+                f"{workload.name}/{api} mutated timed backward operands: "
+                f"before={timed_operand_checksums_before!r} "
+                f"after={timed_operand_checksums_after!r}"
+            )
+        return elapsed_ns, checksum, last_bundle, len(timed_operands)
+
+    return elapsed_ns, checksum, last_bundle, 0
 
 
 def _summarize_samples(samples_ns, repeats):
@@ -856,12 +880,9 @@ def _measure_one_pass(np, module, implementation, api, workload, args):
         {"label": label, **_tensor_metadata(tensor)}
         for label, tensor in _operand_tensors(static_operands)
     ]
-    input_checksums_before = [
-        {"label": label, "checksum": _checksum_tensor(np, tensor)}
-        for label, tensor in _operand_tensors(static_operands)
-    ]
+    input_checksums_before = _operand_checksums(np, static_operands)
 
-    cold_ns, cold_checksum, cold_bundle = _time_block(
+    cold_ns, cold_checksum, cold_bundle, cold_operand_checks = _time_block(
         np,
         module,
         api,
@@ -869,10 +890,11 @@ def _measure_one_pass(np, module, implementation, api, workload, args):
         static_operands,
         1,
     )
+    timed_operand_nonmutation_checks = cold_operand_checks
     warmup_checksums = []
     warmup_sink = "0"
     for _ in range(args.warmups):
-        _, checksum, _ = _time_block(
+        _, checksum, _, operand_checks = _time_block(
             np,
             module,
             api,
@@ -882,13 +904,14 @@ def _measure_one_pass(np, module, implementation, api, workload, args):
         )
         warmup_checksums.append(checksum)
         warmup_sink = _roll_checksum(warmup_sink, checksum)
+        timed_operand_nonmutation_checks += operand_checks
 
     sample_ns = []
     sample_checksums = []
     sample_sink = "0"
     last_bundle = cold_bundle
     for _ in range(args.samples):
-        elapsed_ns, checksum, last_bundle = _time_block(
+        elapsed_ns, checksum, last_bundle, operand_checks = _time_block(
             np,
             module,
             api,
@@ -899,11 +922,9 @@ def _measure_one_pass(np, module, implementation, api, workload, args):
         sample_ns.append(elapsed_ns)
         sample_checksums.append(checksum)
         sample_sink = _roll_checksum(sample_sink, checksum)
+        timed_operand_nonmutation_checks += operand_checks
 
-    input_checksums_after = [
-        {"label": label, "checksum": _checksum_tensor(np, tensor)}
-        for label, tensor in _operand_tensors(static_operands)
-    ]
+    input_checksums_after = _operand_checksums(np, static_operands)
     if input_checksums_after != input_checksums_before:
         raise AssertionError(
             f"{workload.name}/{api}/{implementation} mutated benchmark operands: "
@@ -923,6 +944,7 @@ def _measure_one_pass(np, module, implementation, api, workload, args):
         "output_metadata": _bundle_metadata(last_bundle),
         "cold_bundle": cold_bundle,
         "operand_nonmutation_checked": True,
+        "timed_operand_nonmutation_checks": timed_operand_nonmutation_checks,
     }
 
 
@@ -1184,6 +1206,9 @@ def _run_supported_cells(np, torch_rs, reference_torch, workloads, apis, args):
                         "operand_nonmutation_checked": measured[
                             "operand_nonmutation_checked"
                         ],
+                        "timed_operand_nonmutation_checks": measured[
+                            "timed_operand_nonmutation_checks"
+                        ],
                     }
                     pass_results[implementation].append(pass_record)
 
@@ -1247,6 +1272,14 @@ def _run_supported_cells(np, torch_rs, reference_torch, workloads, apis, args):
                             item["operand_nonmutation_checked"]
                             for implementation in pass_results.values()
                             for item in implementation
+                        ),
+                        "timed_operand_nonmutation_checked": (
+                            workload.mode != MODE_BACKWARD
+                            or all(
+                                item["timed_operand_nonmutation_checks"] > 0
+                                for implementation in pass_results.values()
+                                for item in implementation
+                            )
                         ),
                     },
                 }
@@ -1621,6 +1654,20 @@ def _validate_expected_artifact_shape(report):
                     f"{implementation_result.get('checksums')!r}"
                 )
             for pass_result in passes:
+                expected_timed_operand_checks = (
+                    1 + (DEFAULT_WARMUPS + DEFAULT_SAMPLES) * workload.repeats
+                    if workload.mode == MODE_BACKWARD
+                    else 0
+                )
+                if (
+                    pass_result.get("timed_operand_nonmutation_checks")
+                    != expected_timed_operand_checks
+                ):
+                    errors.append(
+                        f"{cell_name}/{implementation} timed operand "
+                        "nonmutation check count mismatch: "
+                        f"{pass_result.get('timed_operand_nonmutation_checks')!r}"
+                    )
                 if pass_result.get("steady", {}).get("sample_count") != DEFAULT_SAMPLES:
                     errors.append(
                         f"{cell_name}/{implementation} pass sample count mismatch"
@@ -1650,6 +1697,7 @@ def _validate_expected_artifact_shape(report):
             "warmup_checksums_checked",
             "steady_checksums_checked",
             "operand_nonmutation_checked",
+            "timed_operand_nonmutation_checked",
         ):
             if validation.get(required_key) is not True:
                 errors.append(f"{cell_name} missing validation flag {required_key}")
