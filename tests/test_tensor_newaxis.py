@@ -104,6 +104,16 @@ class TensorNewAxisIndexTests(unittest.TestCase):
         expected = np.expand_dims(source_values, axis=axis).tolist()
         self.assertEqual(result.tolist(), expected)
 
+    def assert_data_pointer_matches_offset(self, source, selected):
+        if selected.numel() == 0:
+            self.assertEqual(selected.data_ptr(), 0)
+            return
+        offset_delta = selected.storage_offset() - source.storage_offset()
+        self.assertEqual(
+            selected.data_ptr(),
+            source.data_ptr() + offset_delta * selected.element_size(),
+        )
+
     def assert_leading_unsqueeze(self, source, result, shape, stride, offset):
         self.assert_unsqueeze(source, result, shape, stride, offset, 0)
 
@@ -125,7 +135,15 @@ class TensorNewAxisIndexTests(unittest.TestCase):
         self.assertIsNone(namespace["newaxis"])
 
     def test_bare_none_and_torch_newaxis_use_the_leading_unsqueeze_view(self):
-        for spelling, index in (("None", None), ("torch.newaxis", torch.newaxis)):
+        indices = (
+            ("None", None),
+            ("torch.newaxis", torch.newaxis),
+            ("(None,)", (None,)),
+            ("(torch.newaxis,)", (torch.newaxis,)),
+            ("(None, Ellipsis)", (None, Ellipsis)),
+            ("(torch.newaxis, Ellipsis)", (torch.newaxis, Ellipsis)),
+        )
+        for spelling, index in indices:
             for case, source, shape, stride, offset in self.layout_cases():
                 with self.subTest(spelling=spelling, case=case):
                     result = source[index]
@@ -151,6 +169,82 @@ class TensorNewAxisIndexTests(unittest.TestCase):
 
         scalar = torch.tensor(-0.0)[..., None]
         self.assertEqual(np.asarray(scalar).view(np.uint32).item(), 0x8000_0000)
+
+    def test_full_slice_newaxis_tuple_uses_middle_unsqueeze_view(self):
+        indices = (
+            ("None", (slice(None), None)),
+            ("torch.newaxis", (slice(None), torch.newaxis)),
+            ("with trailing ellipsis", (slice(None), None, Ellipsis)),
+        )
+        for spelling, index in indices:
+            for case, source, axis, shape, stride, offset in self.middle_layout_cases():
+                with self.subTest(spelling=spelling, case=case):
+                    result = source[index]
+                    self.assert_middle_unsqueeze(
+                        source, result, shape, stride, offset, axis
+                    )
+
+    def test_integer_newaxis_tuple_preserves_pytorch_stride_order(self):
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        source = torch.tensor(values.tolist())
+        cases = (
+            ((0, None), values[0][None], (1, 3, 4), (12, 4, 1), 0),
+            ((None, 0), values[0][None], (1, 3, 4), (24, 4, 1), 0),
+            ((1, None), values[1][None], (1, 3, 4), (12, 4, 1), 12),
+            (
+                (slice(None), 0, None),
+                values[:, 0][:, None, :],
+                (2, 1, 4),
+                (12, 4, 1),
+                0,
+            ),
+            (
+                (slice(None), None, 0),
+                values[:, 0][:, None, :],
+                (2, 1, 4),
+                (12, 12, 1),
+                0,
+            ),
+            (
+                (Ellipsis, 0, None),
+                values[..., 0][..., None],
+                (2, 3, 1),
+                (12, 4, 1),
+                0,
+            ),
+            (
+                (Ellipsis, None, 0),
+                values[..., 0][..., None],
+                (2, 3, 1),
+                (12, 4, 4),
+                0,
+            ),
+            (
+                (None, Ellipsis, 0),
+                values[..., 0][None],
+                (1, 2, 3),
+                (24, 12, 4),
+                0,
+            ),
+            (
+                (0, Ellipsis, None),
+                values[0][..., None],
+                (3, 4, 1),
+                (4, 1, 1),
+                0,
+            ),
+        )
+        for index, expected, shape, stride, offset in cases:
+            with self.subTest(index=repr(index)):
+                result = source[index]
+                self.assertIsNot(result, source)
+                self.assertEqual(result.tolist(), expected.tolist())
+                self.assertEqual(result.shape, shape)
+                self.assertEqual(result.stride(), stride)
+                self.assertEqual(result.storage_offset(), offset)
+                self.assert_data_pointer_matches_offset(source, result)
+                self.assertIs(result.dtype, source.dtype)
+                self.assertEqual(result.device, source.device)
 
     @unittest.skipUnless(
         sys.maxsize == (1 << 63) - 1,
@@ -297,6 +391,42 @@ class TensorNewAxisIndexTests(unittest.TestCase):
         ):
             torch.nn.functional.dropout(
                 None, p=diagnostic_leaf[..., None], training=False
+            )
+
+    def test_middle_autograd_and_no_grad_cover_every_supported_layout(self):
+        for case, _, axis, shape, stride, offset in self.middle_layout_cases():
+            with self.subTest(case=case, mode="autograd"):
+                leaf, source = self.make_autograd_case(case)
+                result = source[:, None]
+                self.assert_middle_unsqueeze(
+                    source, result, shape, stride, offset, axis
+                )
+                self.assertTrue(result.requires_grad)
+                self.assertFalse(result.is_leaf)
+                result.sum().backward()
+                np.testing.assert_array_equal(
+                    np.asarray(leaf.grad), self.expected_gradient(case)
+                )
+
+            with self.subTest(case=case, mode="no_grad"):
+                leaf, source = self.make_autograd_case(case)
+                with torch.no_grad():
+                    result = source[:, torch.newaxis]
+                self.assert_middle_unsqueeze(
+                    source, result, shape, stride, offset, axis
+                )
+                self.assertTrue(result.requires_grad)
+                self.assertTrue(result.is_leaf)
+                self.assertIsNone(leaf.grad)
+
+        diagnostic_leaf = torch.tensor([2.0], requires_grad=True)
+        with self.assertRaisesRegex(
+            ValueError,
+            r"^dropout probability has to be between 0 and 1, but got "
+            r"tensor\(\[\[2\.\]\], grad_fn=<UnsqueezeBackward0>\)$",
+        ):
+            torch.nn.functional.dropout(
+                None, p=diagnostic_leaf[:, None], training=False
             )
 
     def test_storage_and_autograd_survive_source_lifetime(self):
@@ -706,25 +836,20 @@ class TensorNewAxisIndexTests(unittest.TestCase):
 
     def test_other_newaxis_forms_remain_unsupported(self):
         tensor = torch.ones((2, 3))
-        leading_mixed = (
-            (None,),
+        unsupported = (
             (None, None),
-            (None, 0),
-            (None, Ellipsis),
-            (slice(None), None),
-            (0, None),
-        )
-        for index in leading_mixed:
-            with self.subTest(index=repr(index)):
-                with self.assertRaisesRegex(IndexError, "only integers"):
-                    tensor[index]
-
-        repeated_or_extended = (
             (Ellipsis, None, None),
-            (Ellipsis, None, 0),
-            (Ellipsis, 0, None),
+            (None, Ellipsis, None),
+            (Ellipsis, Ellipsis, None),
+            (None, slice(None, None, 1)),
+            (slice(None, None, 1), None),
+            (None, slice(0, 1)),
+            (slice(0, 1), None),
+            ([0, 1], None),
+            (torch.tensor([0.0]), None),
+            (True, None),
         )
-        for index in repeated_or_extended:
+        for index in unsupported:
             with self.subTest(index=repr(index)):
                 with self.assertRaises(IndexError):
                     tensor[index]
