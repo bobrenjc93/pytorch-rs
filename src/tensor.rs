@@ -1313,12 +1313,8 @@ impl Tensor {
         Arc::clone(&self.leaf_requires_grad)
     }
 
-    fn view_requires_grad_flag(&self, records_grad: bool) -> Arc<AtomicBool> {
-        if records_grad {
-            requires_grad_flag(true)
-        } else {
-            self.inherited_requires_grad_flag()
-        }
+    fn view_requires_grad_flag(&self) -> Arc<AtomicBool> {
+        self.inherited_requires_grad_flag()
     }
 
     /// Returns whether this tensor has no recorded autograd operation producing it.
@@ -1731,7 +1727,7 @@ impl Tensor {
         mapping: TransformMapping,
         node: AutogradNode,
     ) -> Result<(), TensorError> {
-        output.view_requires_grad = Some(self.view_requires_grad_flag(self.records_grad()));
+        output.view_requires_grad = Some(self.view_requires_grad_flag());
         self.record_transform(output, mapping, node)
     }
 
@@ -2164,7 +2160,7 @@ impl Tensor {
             elements: self.elements,
             output_nr: 0,
             leaf_requires_grad: requires_grad_flag(false),
-            view_requires_grad: Some(self.view_requires_grad_flag(records_grad)),
+            view_requires_grad: Some(self.view_requires_grad_flag()),
             autograd: None,
         };
         if records_grad {
@@ -2760,7 +2756,7 @@ impl Tensor {
             elements,
             output_nr: 0,
             leaf_requires_grad: requires_grad_flag(false),
-            view_requires_grad: Some(self.view_requires_grad_flag(records_grad)),
+            view_requires_grad: Some(self.view_requires_grad_flag()),
             autograd: None,
         };
         if records_grad {
@@ -2827,7 +2823,6 @@ impl Tensor {
             for (output_nr, output) in outputs.iter_mut().enumerate() {
                 output.autograd = Some(Arc::clone(&autograd));
                 output.output_nr = output_nr;
-                output.view_requires_grad = Some(requires_grad_flag(true));
             }
         }
 
@@ -3532,7 +3527,7 @@ impl Tensor {
             elements,
             output_nr: 0,
             leaf_requires_grad: requires_grad_flag(false),
-            view_requires_grad: Some(self.view_requires_grad_flag(records_grad)),
+            view_requires_grad: Some(self.view_requires_grad_flag()),
             autograd: None,
         };
         if records_grad {
@@ -3609,7 +3604,7 @@ impl Tensor {
             elements,
             output_nr: 0,
             leaf_requires_grad: requires_grad_flag(false),
-            view_requires_grad: Some(self.view_requires_grad_flag(records_grad)),
+            view_requires_grad: Some(self.view_requires_grad_flag()),
             autograd: None,
         };
         if records_grad {

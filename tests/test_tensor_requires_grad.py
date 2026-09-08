@@ -250,6 +250,68 @@ class TensorRequiresGradInplaceTests(unittest.TestCase):
         self.assertIsNone(initially_false_view.grad)
         self.assertIsNone(initially_false_child.grad)
 
+    def tracked_view_case(self, base, name):
+        if name == "slice":
+            return base[:1]
+        if name == "reshape":
+            return base.reshape(4)
+        if name == "unsqueeze":
+            return base.unsqueeze(0)
+        if name == "chunk":
+            return base.chunk(2, 0)[0]
+        raise AssertionError(f"unknown tracked view case {name}")
+
+    def test_no_grad_descendants_of_tracked_views_follow_base_toggles(self):
+        for name in ("slice", "reshape", "unsqueeze", "chunk"):
+            with self.subTest(name=name):
+                base = torch.tensor(
+                    [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
+                )
+                first = self.tracked_view_case(base, name)
+                with torch.no_grad():
+                    child = first.reshape(-1)
+
+                self.assertTrue(first.requires_grad)
+                self.assertFalse(first.is_leaf)
+                self.assertTrue(child.requires_grad)
+                self.assertTrue(child.is_leaf)
+                base.requires_grad_(False)
+                self.assertTrue(first.requires_grad)
+                self.assertFalse(child.requires_grad)
+                self.assertFalse((child * 2.0).sum().requires_grad)
+                base.requires_grad_(True)
+                self.assertTrue(child.requires_grad)
+
+    def test_promoted_no_grad_descendants_of_tracked_views_follow_base_disable(self):
+        for name in ("slice", "reshape", "unsqueeze", "chunk"):
+            with self.subTest(name=name):
+                base = torch.tensor(
+                    [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
+                )
+                first = self.tracked_view_case(base, name)
+                with torch.no_grad():
+                    child = first.reshape(-1)
+                child.requires_grad_(True)
+                loss = (child * 3.0).sum()
+                child.requires_grad_(False)
+                base.requires_grad_(False)
+
+                self.assertFalse(child.requires_grad)
+                self.assertTrue(loss.requires_grad)
+                loss.backward()
+                self.assertIsNone(base.grad)
+                self.assertIsNone(child.grad)
+
+        base = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        ordinary_non_leaf = base * 2.0
+        with torch.no_grad():
+            child = ordinary_non_leaf.reshape(-1)
+        base.requires_grad_(False)
+
+        self.assertTrue(ordinary_non_leaf.requires_grad)
+        self.assertTrue(child.requires_grad)
+        self.assertTrue((child * 2.0).sum().requires_grad)
+
     def test_invalid_arguments_use_strict_bool_binding(self):
         for call, message in (
             (

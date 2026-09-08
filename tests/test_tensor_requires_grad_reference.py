@@ -452,6 +452,102 @@ class TensorRequiresGradInplaceReferenceTests(unittest.TestCase):
             self.nested_no_grad_leaf_view_contract(reference_torch),
         )
 
+    def tracked_view_case(self, base, name):
+        if name == "slice":
+            return base[:1]
+        if name == "reshape":
+            return base.reshape(4)
+        if name == "unsqueeze":
+            return base.unsqueeze(0)
+        if name == "chunk":
+            return base.chunk(2, 0)[0]
+        raise AssertionError(f"unknown tracked view case {name}")
+
+    def no_grad_tracked_view_descendant_contract(self, module):
+        results = {}
+        for name in ("slice", "reshape", "unsqueeze", "chunk"):
+            base = module.tensor(
+                [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
+            )
+            first = self.tracked_view_case(base, name)
+            with module.no_grad():
+                child = first.reshape(-1)
+
+            initial = (
+                base.requires_grad,
+                first.requires_grad,
+                first.is_leaf,
+                child.requires_grad,
+                child.is_leaf,
+                (child * 2.0).sum().requires_grad,
+            )
+            base.requires_grad_(False)
+            disabled_loss = (child * 2.0).sum()
+            after_disable = (
+                base.requires_grad,
+                first.requires_grad,
+                first.is_leaf,
+                child.requires_grad,
+                child.is_leaf,
+                disabled_loss.requires_grad,
+            )
+            base.requires_grad_(True)
+            after_reenable = (
+                base.requires_grad,
+                first.requires_grad,
+                child.requires_grad,
+                (child * 2.0).sum().requires_grad,
+            )
+
+            promoted_base = module.tensor(
+                [[5.0, 6.0], [7.0, 8.0]], requires_grad=True
+            )
+            promoted_first = self.tracked_view_case(promoted_base, name)
+            with module.no_grad():
+                promoted_child = promoted_first.reshape(-1)
+            promoted_child.requires_grad_(True)
+            promoted_loss = (promoted_child * 3.0).sum()
+            promoted_child.requires_grad_(False)
+            promoted_base.requires_grad_(False)
+            promoted_loss.backward()
+            promoted_after_disable = (
+                promoted_base.requires_grad,
+                promoted_first.requires_grad,
+                promoted_child.requires_grad,
+                promoted_loss.requires_grad,
+                self.grad_payload(promoted_base.grad),
+                self.grad_payload(promoted_child.grad),
+            )
+
+            results[name] = {
+                "initial": initial,
+                "after_disable": after_disable,
+                "after_reenable": after_reenable,
+                "promoted_after_disable": promoted_after_disable,
+            }
+
+        base = module.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        ordinary_non_leaf = base * 2.0
+        with module.no_grad():
+            child = ordinary_non_leaf.reshape(-1)
+        base.requires_grad_(False)
+        results["ordinary_non_view_non_leaf"] = (
+            base.requires_grad,
+            ordinary_non_leaf.requires_grad,
+            ordinary_non_leaf.is_leaf,
+            child.requires_grad,
+            child.is_leaf,
+            (child * 2.0).sum().requires_grad,
+        )
+
+        return results
+
+    def test_no_grad_descendants_of_tracked_views_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.no_grad_tracked_view_descendant_contract(torch),
+            self.no_grad_tracked_view_descendant_contract(reference_torch),
+        )
+
     def invalid_argument_contract(self, module):
         return tuple(
             self.error(call)
