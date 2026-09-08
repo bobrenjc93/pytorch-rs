@@ -3,24 +3,18 @@
 Date: 2026-09-07
 
 Candidate provenance: current composite worktree head
-`d20dbab1a7ecdeb3f4e37a4ee4e8b5538a0389a1`. The benchmark evidence was
+`85fa3fc9e15ee9016e13c33defe41d80c7b6de41`. The benchmark evidence was
 refreshed after integration so active-autograd 1-D `cat` is timed and only true
 remaining gaps are retained as zero-credit unsupported cells. The raw JSON
-records git provenance, including the worktree diff visible to the timing
-driver.
+records clean git provenance, including empty `status_short` and `diff_stat`
+fields captured before the artifact write.
 
-Exact setup, build, check, and timing commands were run from the repository
+Exact build, timing, summary, and check commands were run from the repository
 root. The benchmark used the worktree-local `.venv` with pinned PyTorch 2.13.0
-and did not install packages outside the worktree. `CUDA_VISIBLE_DEVICES=` kept
-this CPU-only benchmark from selecting the host GPUs.
+and did not install packages outside the worktree. The benchmark driver set
+`CUDA_VISIBLE_DEVICES=` so this CPU-only benchmark did not select the host GPUs.
 
 ```bash
-env UV_CACHE_DIR="$PWD/target/uv-cache" \
-  UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python" \
-  uv venv --clear --python 3.12
-env UV_CACHE_DIR="$PWD/target/uv-cache" \
-  UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python" \
-  uv sync --locked --no-install-project --group dev --group reference
 env -u CONDA_PREFIX \
   TMPDIR="$PWD/target" \
   CARGO_HOME="$PWD/target/cargo-home" \
@@ -28,12 +22,17 @@ env -u CONDA_PREFIX \
   VIRTUAL_ENV="$PWD/.venv" \
   PYO3_PYTHON="$PWD/.venv/bin/python" \
   .venv/bin/maturin develop --release --locked
-env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
-  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= PYTHONNOUSERSITE=1 \
+env PYTHONNOUSERSITE=1 \
+  TMPDIR="$PWD/target" \
+  CARGO_HOME="$PWD/target/cargo-home" \
+  CARGO_TARGET_DIR="$PWD/target" \
+  VIRTUAL_ENV="$PWD/.venv" \
+  PYO3_PYTHON="$PWD/.venv/bin/python" \
   .venv/bin/python scripts/benchmark_top_level_cat.py \
   --cpu 24 --threads 1 \
   --output docs/benchmark-data/top-level-cat-release-timings.json
-.venv/bin/python scripts/benchmark_top_level_cat.py \
+env PYTHONNOUSERSITE=1 \
+  .venv/bin/python scripts/benchmark_top_level_cat.py \
   --render-markdown-summary \
   docs/benchmark-data/top-level-cat-release-timings.json \
   > target/top-level-cat-summary.md
@@ -60,7 +59,7 @@ git diff --check
 ```
 
 Results: the checked-in driver produced
-`docs/benchmark-data/top-level-cat-release-timings.json` in 51.96 seconds with two
+`docs/benchmark-data/top-level-cat-release-timings.json` in 51.78 seconds with two
 implementation orders, 15 untimed warmup blocks, and 81 measured blocks per
 implementation pass. The generated markdown below is validated byte-for-byte
 against that artifact by `scripts/benchmark_top_level_cat.py
@@ -89,10 +88,10 @@ Environment:
   `torch.set_num_threads(1)`, `torch.set_num_interop_threads(1)`;
   `torch_rs.get_num_threads()` and `torch_rs.get_num_interop_threads()` both
   reported 1
-- Dependency installation: locked `uv sync` resolved in 30 ms, prepared
-  packages in 16.75s, and installed in 1.11s
+- Dependency installation: reused the locked worktree-local `.venv`; no package
+  installation outside the worktree was performed for this refresh
 - Build: successful editable release extension rebuild before timing; Cargo
-  reported the release profile finished in 39.99s
+  reported the release profile finished in 31.74s
 
 Inputs are created outside timed regions from deterministic CPU `float32`
 values with fixed NumPy seeds recorded per workload in the JSON artifact. Every
@@ -117,55 +116,55 @@ parity. Capped geomeans clamp each per-cell ratio to `[0.10x, 10.00x]`.
 - Implementation orders: torch_rs then pytorch, pytorch then torch_rs; each implementation appears once before and once after the other implementation
 - Warmup and sampling: 15 untimed warmup blocks and 81 measured blocks per implementation pass
 - CPU affinity: selected CPU 24, pinned affinity [24]; threads=1
-- All supported cells: 2.73x uncapped, 2.52x capped
-- `torch.cat` cells: 2.78x uncapped, 2.55x capped
-- `torch.concat` cells: 2.69x uncapped, 2.50x capped
-- `torch.concatenate` cells: 2.71x uncapped, 2.51x capped
-- Singleton cells: 14.29x uncapped, 10.00x capped
-- Multi-input cells: 2.42x uncapped, 2.42x capped
-- Empty-operand cells: 1.23x uncapped, 1.23x capped
-- Offset cells: 13.23x uncapped, 10.00x capped
-- Noncontiguous cells: 11.62x uncapped, 10.00x capped
-- Axis-keyword cells: 0.66x uncapped, 0.66x capped
-- Active-autograd cells: 1.52x uncapped, 1.52x capped
-- `no_grad` cells: 1.18x uncapped, 1.18x capped
+- All supported cells: 2.73x uncapped, 2.55x capped
+- `torch.cat` cells: 2.79x uncapped, 2.60x capped
+- `torch.concat` cells: 2.67x uncapped, 2.50x capped
+- `torch.concatenate` cells: 2.73x uncapped, 2.54x capped
+- Singleton cells: 14.15x uncapped, 10.00x capped
+- Multi-input cells: 2.41x uncapped, 2.41x capped
+- Empty-operand cells: 1.26x uncapped, 1.26x capped
+- Offset cells: 12.92x uncapped, 10.00x capped
+- Noncontiguous cells: 10.98x uncapped, 10.00x capped
+- Axis-keyword cells: 0.67x uncapped, 0.67x capped
+- Active-autograd cells: 1.54x uncapped, 1.54x capped
+- `no_grad` cells: 1.19x uncapped, 1.19x capped
 
-Including the unsupported cells below as zero-credit denominator entries with a 10.00x capped penalty gives a combined capped aggregate of 3.47x.
+Including the unsupported cells below as zero-credit denominator entries with a 10.00x capped penalty gives a combined capped aggregate of 3.49x.
 
 ## Supported Timed Cells
 
 | Workload | Category | API | Call form | Input / mode | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Materialized checksums |
 | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
-| `singleton_contiguous_8192` | singleton | `torch.cat` | list dim=0 | one contiguous input (8192,), stride (1,) | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 256 | 36.319 us +/- 0.162 us, var 0.634 | 2.447 us +/- 0.026 us, var 0.004 | 14.84x | `18053859545652983804`/`18053859545652983804` |
-| `multi_input_contiguous_257_263_269` | multi-input | `torch.cat` | list dim=0 | three contiguous inputs with lengths 257, 263, and 269 | concatenation output; (789,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 4.545 us +/- 0.039 us, var 0.084 | 2.082 us +/- 0.016 us, var 0.003 | 2.18x | `10775443274831830041`/`10775443274831830041` |
-| `empty_operand_middle_1024_0_511` | empty operand | `torch.cat` | list dim=0 | contiguous inputs with lengths 1024, 0, and 511 | concatenation output; (1535,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 512 | 7.651 us +/- 0.038 us, var 0.015 | 3.502 us +/- 0.028 us, var 0.049 | 2.19x | `9278694249625300899`/`9278694249625300899` |
-| `all_empty_tuple_dim_negative_one` | empty operand | `torch.cat` | tuple dim=-1 | two empty 1-D inputs with length 0 | empty concatenation output; (0,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 1.123 us +/- 0.016 us, var 0.003 | 1.540 us +/- 0.017 us, var 0.003 | 0.73x | `8195591020010394303`/`8195591020010394303` |
-| `offset_contiguous_views_4096` | offset | `torch.cat` | list dim=0 | left/right tensor((3, 4096))[1/2] -> (4096,), stride (1,), nonzero offsets | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 128 | 35.543 us +/- 0.202 us, var 0.784 | 2.634 us +/- 0.040 us, var 0.010 | 13.49x | `4041411121873054337`/`4041411121873054337` |
-| `noncontiguous_stride2_views_4096` | noncontiguous | `torch.cat` | list dim=0 | left/right tensor((4096, 2)).transpose(0, 1)[1/0] -> (4096,), stride (2,) | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 128 | 87.548 us +/- 0.466 us, var 8.791 | 7.425 us +/- 0.025 us, var 0.011 | 11.79x | `11758073942313516581`/`11758073942313516581` |
-| `tuple_dim_negative_one_513_509` | multi-input | `torch.cat` | tuple dim=-1 | two contiguous tuple inputs with lengths 513 and 509 | concatenation output; (1022,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 5.483 us +/- 0.032 us, var 0.004 | 2.004 us +/- 0.012 us, var 0.001 | 2.74x | `14974692540956724659`/`14974692540956724659` |
-| `axis_keyword_17_19` | axis keyword | `torch.cat` | list axis=0 | two contiguous inputs with lengths 17 and 19 | concatenation output; (36,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 1.303 us +/- 0.018 us, var 0.001 | 1.929 us +/- 0.015 us, var 0.003 | 0.68x | `13790662490979461913`/`13790662490979461913` |
-| `no_grad_grad_inputs_257_263` | no_grad | `torch.cat` | list dim=0 | two grad-requiring contiguous inputs with lengths 257 and 263 inside no_grad | concatenation output; (520,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 3.653 us +/- 0.016 us, var 0.005 | 3.076 us +/- 0.019 us, var 0.022 | 1.19x | `4113829215800195259`/`4113829215800195259` |
-| `active_autograd_1d_257_263` | active autograd | `torch.cat` | list dim=0 | two grad-requiring contiguous inputs with lengths 257 and 263; forward construction only | concatenation output; (520,), stride (1,), offset 0, torch.float32, cpu, requires_grad=True, leaf=False | 512 | 3.674 us +/- 0.025 us, var 0.002 | 2.386 us +/- 0.024 us, var 0.020 | 1.54x | `14264808484827237231`/`14264808484827237231` |
-| `singleton_contiguous_8192` | singleton | `torch.concat` | list dim=0 | one contiguous input (8192,), stride (1,) | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 256 | 35.341 us +/- 0.175 us, var 0.592 | 2.530 us +/- 0.028 us, var 0.019 | 13.97x | `18053859545652983804`/`18053859545652983804` |
-| `multi_input_contiguous_257_263_269` | multi-input | `torch.concat` | list dim=0 | three contiguous inputs with lengths 257, 263, and 269 | concatenation output; (789,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 4.527 us +/- 0.020 us, var 0.002 | 2.152 us +/- 0.015 us, var 0.004 | 2.10x | `10775443274831830041`/`10775443274831830041` |
-| `empty_operand_middle_1024_0_511` | empty operand | `torch.concat` | list dim=0 | contiguous inputs with lengths 1024, 0, and 511 | concatenation output; (1535,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 512 | 7.619 us +/- 0.036 us, var 0.029 | 3.593 us +/- 0.023 us, var 0.006 | 2.12x | `9278694249625300899`/`9278694249625300899` |
-| `all_empty_tuple_dim_negative_one` | empty operand | `torch.concat` | tuple dim=-1 | two empty 1-D inputs with length 0 | empty concatenation output; (0,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 1.110 us +/- 0.009 us, var 0.001 | 1.579 us +/- 0.011 us, var 0.001 | 0.70x | `8195591020010394303`/`8195591020010394303` |
-| `offset_contiguous_views_4096` | offset | `torch.concat` | list dim=0 | left/right tensor((3, 4096))[1/2] -> (4096,), stride (1,), nonzero offsets | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 128 | 35.429 us +/- 0.245 us, var 0.796 | 2.722 us +/- 0.087 us, var 0.132 | 13.02x | `4041411121873054337`/`4041411121873054337` |
-| `noncontiguous_stride2_views_4096` | noncontiguous | `torch.concat` | list dim=0 | left/right tensor((4096, 2)).transpose(0, 1)[1/0] -> (4096,), stride (2,) | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 128 | 87.515 us +/- 0.295 us, var 1.932 | 7.624 us +/- 0.094 us, var 0.350 | 11.48x | `11758073942313516581`/`11758073942313516581` |
-| `tuple_dim_negative_one_513_509` | multi-input | `torch.concat` | tuple dim=-1 | two contiguous tuple inputs with lengths 513 and 509 | concatenation output; (1022,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 5.490 us +/- 0.028 us, var 0.015 | 2.022 us +/- 0.010 us, var 0.015 | 2.71x | `14974692540956724659`/`14974692540956724659` |
-| `axis_keyword_17_19` | axis keyword | `torch.concat` | list axis=0 | two contiguous inputs with lengths 17 and 19 | concatenation output; (36,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 1.265 us +/- 0.008 us, var 0.001 | 1.960 us +/- 0.009 us, var 0.002 | 0.65x | `13790662490979461913`/`13790662490979461913` |
-| `no_grad_grad_inputs_257_263` | no_grad | `torch.concat` | list dim=0 | two grad-requiring contiguous inputs with lengths 257 and 263 inside no_grad | concatenation output; (520,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 3.672 us +/- 0.026 us, var 0.003 | 3.116 us +/- 0.016 us, var 0.001 | 1.18x | `4113829215800195259`/`4113829215800195259` |
-| `active_autograd_1d_257_263` | active autograd | `torch.concat` | list dim=0 | two grad-requiring contiguous inputs with lengths 257 and 263; forward construction only | concatenation output; (520,), stride (1,), offset 0, torch.float32, cpu, requires_grad=True, leaf=False | 512 | 3.673 us +/- 0.019 us, var 0.024 | 2.462 us +/- 0.061 us, var 0.022 | 1.49x | `14264808484827237231`/`14264808484827237231` |
-| `singleton_contiguous_8192` | singleton | `torch.concatenate` | list dim=0 | one contiguous input (8192,), stride (1,) | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 256 | 35.323 us +/- 0.123 us, var 0.652 | 2.510 us +/- 0.027 us, var 0.014 | 14.07x | `18053859545652983804`/`18053859545652983804` |
-| `multi_input_contiguous_257_263_269` | multi-input | `torch.concatenate` | list dim=0 | three contiguous inputs with lengths 257, 263, and 269 | concatenation output; (789,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 4.529 us +/- 0.021 us, var 0.006 | 2.108 us +/- 0.012 us, var 0.004 | 2.15x | `10775443274831830041`/`10775443274831830041` |
-| `empty_operand_middle_1024_0_511` | empty operand | `torch.concatenate` | list dim=0 | contiguous inputs with lengths 1024, 0, and 511 | concatenation output; (1535,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 512 | 7.521 us +/- 0.085 us, var 0.024 | 3.628 us +/- 0.034 us, var 0.064 | 2.07x | `9278694249625300899`/`9278694249625300899` |
-| `all_empty_tuple_dim_negative_one` | empty operand | `torch.concatenate` | tuple dim=-1 | two empty 1-D inputs with length 0 | empty concatenation output; (0,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 1.114 us +/- 0.012 us, var 0.003 | 1.580 us +/- 0.014 us, var 0.012 | 0.71x | `8195591020010394303`/`8195591020010394303` |
-| `offset_contiguous_views_4096` | offset | `torch.concatenate` | list dim=0 | left/right tensor((3, 4096))[1/2] -> (4096,), stride (1,), nonzero offsets | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 128 | 35.714 us +/- 0.253 us, var 4.095 | 2.711 us +/- 0.053 us, var 0.042 | 13.17x | `4041411121873054337`/`4041411121873054337` |
-| `noncontiguous_stride2_views_4096` | noncontiguous | `torch.concatenate` | list dim=0 | left/right tensor((4096, 2)).transpose(0, 1)[1/0] -> (4096,), stride (2,) | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 128 | 88.004 us +/- 0.551 us, var 5.295 | 7.593 us +/- 0.087 us, var 1.646 | 11.59x | `11758073942313516581`/`11758073942313516581` |
-| `tuple_dim_negative_one_513_509` | multi-input | `torch.concatenate` | tuple dim=-1 | two contiguous tuple inputs with lengths 513 and 509 | concatenation output; (1022,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 5.497 us +/- 0.022 us, var 0.005 | 2.016 us +/- 0.013 us, var 0.028 | 2.73x | `14974692540956724659`/`14974692540956724659` |
-| `axis_keyword_17_19` | axis keyword | `torch.concatenate` | list axis=0 | two contiguous inputs with lengths 17 and 19 | concatenation output; (36,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 1.275 us +/- 0.010 us, var 0.003 | 1.977 us +/- 0.016 us, var 0.005 | 0.65x | `13790662490979461913`/`13790662490979461913` |
-| `no_grad_grad_inputs_257_263` | no_grad | `torch.concatenate` | list dim=0 | two grad-requiring contiguous inputs with lengths 257 and 263 inside no_grad | concatenation output; (520,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 3.680 us +/- 0.029 us, var 0.007 | 3.124 us +/- 0.022 us, var 0.066 | 1.18x | `4113829215800195259`/`4113829215800195259` |
-| `active_autograd_1d_257_263` | active autograd | `torch.concatenate` | list dim=0 | two grad-requiring contiguous inputs with lengths 257 and 263; forward construction only | concatenation output; (520,), stride (1,), offset 0, torch.float32, cpu, requires_grad=True, leaf=False | 512 | 3.658 us +/- 0.023 us, var 0.030 | 2.405 us +/- 0.021 us, var 0.004 | 1.52x | `14264808484827237231`/`14264808484827237231` |
+| `singleton_contiguous_8192` | singleton | `torch.cat` | list dim=0 | one contiguous input (8192,), stride (1,) | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 256 | 36.325 us +/- 0.264 us, var 1.599 | 2.447 us +/- 0.026 us, var 0.002 | 14.85x | `18053859545652983804`/`18053859545652983804` |
+| `multi_input_contiguous_257_263_269` | multi-input | `torch.cat` | list dim=0 | three contiguous inputs with lengths 257, 263, and 269 | concatenation output; (789,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 4.599 us +/- 0.023 us, var 0.009 | 2.094 us +/- 0.015 us, var 0.003 | 2.20x | `10775443274831830041`/`10775443274831830041` |
+| `empty_operand_middle_1024_0_511` | empty operand | `torch.cat` | list dim=0 | contiguous inputs with lengths 1024, 0, and 511 | concatenation output; (1535,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 512 | 7.735 us +/- 0.034 us, var 0.003 | 3.447 us +/- 0.022 us, var 0.004 | 2.24x | `9278694249625300899`/`9278694249625300899` |
+| `all_empty_tuple_dim_negative_one` | empty operand | `torch.cat` | tuple dim=-1 | two empty 1-D inputs with length 0 | empty concatenation output; (0,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 1.104 us +/- 0.007 us, var 0.000 | 1.542 us +/- 0.009 us, var 0.000 | 0.72x | `8195591020010394303`/`8195591020010394303` |
+| `offset_contiguous_views_4096` | offset | `torch.cat` | list dim=0 | left/right tensor((3, 4096))[1/2] -> (4096,), stride (1,), nonzero offsets | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 128 | 33.302 us +/- 0.185 us, var 0.347 | 2.630 us +/- 0.046 us, var 0.008 | 12.66x | `4041411121873054337`/`4041411121873054337` |
+| `noncontiguous_stride2_views_4096` | noncontiguous | `torch.cat` | list dim=0 | left/right tensor((4096, 2)).transpose(0, 1)[1/0] -> (4096,), stride (2,) | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 128 | 80.961 us +/- 0.327 us, var 1.955 | 7.449 us +/- 0.041 us, var 0.136 | 10.87x | `11758073942313516581`/`11758073942313516581` |
+| `tuple_dim_negative_one_513_509` | multi-input | `torch.cat` | tuple dim=-1 | two contiguous tuple inputs with lengths 513 and 509 | concatenation output; (1022,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 5.670 us +/- 0.101 us, var 0.022 | 1.974 us +/- 0.013 us, var 0.005 | 2.87x | `14974692540956724659`/`14974692540956724659` |
+| `axis_keyword_17_19` | axis keyword | `torch.cat` | list axis=0 | two contiguous inputs with lengths 17 and 19 | concatenation output; (36,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 1.301 us +/- 0.008 us, var 0.003 | 1.923 us +/- 0.011 us, var 0.002 | 0.68x | `13790662490979461913`/`13790662490979461913` |
+| `no_grad_grad_inputs_257_263` | no_grad | `torch.cat` | list dim=0 | two grad-requiring contiguous inputs with lengths 257 and 263 inside no_grad | concatenation output; (520,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 3.846 us +/- 0.072 us, var 0.017 | 3.050 us +/- 0.016 us, var 0.001 | 1.26x | `4113829215800195259`/`4113829215800195259` |
+| `active_autograd_1d_257_263` | active autograd | `torch.cat` | list dim=0 | two grad-requiring contiguous inputs with lengths 257 and 263; forward construction only | concatenation output; (520,), stride (1,), offset 0, torch.float32, cpu, requires_grad=True, leaf=False | 512 | 3.819 us +/- 0.088 us, var 0.017 | 2.372 us +/- 0.019 us, var 0.002 | 1.61x | `14264808484827237231`/`14264808484827237231` |
+| `singleton_contiguous_8192` | singleton | `torch.concat` | list dim=0 | one contiguous input (8192,), stride (1,) | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 256 | 35.218 us +/- 0.220 us, var 1.115 | 2.504 us +/- 0.020 us, var 0.001 | 14.07x | `18053859545652983804`/`18053859545652983804` |
+| `multi_input_contiguous_257_263_269` | multi-input | `torch.concat` | list dim=0 | three contiguous inputs with lengths 257, 263, and 269 | concatenation output; (789,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 4.621 us +/- 0.042 us, var 0.020 | 2.166 us +/- 0.022 us, var 0.003 | 2.13x | `10775443274831830041`/`10775443274831830041` |
+| `empty_operand_middle_1024_0_511` | empty operand | `torch.concat` | list dim=0 | contiguous inputs with lengths 1024, 0, and 511 | concatenation output; (1535,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 512 | 7.670 us +/- 0.046 us, var 0.020 | 3.599 us +/- 0.021 us, var 0.004 | 2.13x | `9278694249625300899`/`9278694249625300899` |
+| `all_empty_tuple_dim_negative_one` | empty operand | `torch.concat` | tuple dim=-1 | two empty 1-D inputs with length 0 | empty concatenation output; (0,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 1.107 us +/- 0.007 us, var 0.000 | 1.593 us +/- 0.010 us, var 0.001 | 0.69x | `8195591020010394303`/`8195591020010394303` |
+| `offset_contiguous_views_4096` | offset | `torch.concat` | list dim=0 | left/right tensor((3, 4096))[1/2] -> (4096,), stride (1,), nonzero offsets | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 128 | 33.233 us +/- 0.138 us, var 0.379 | 2.666 us +/- 0.025 us, var 0.014 | 12.46x | `4041411121873054337`/`4041411121873054337` |
+| `noncontiguous_stride2_views_4096` | noncontiguous | `torch.concat` | list dim=0 | left/right tensor((4096, 2)).transpose(0, 1)[1/0] -> (4096,), stride (2,) | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 128 | 83.944 us +/- 0.735 us, var 5.673 | 7.551 us +/- 0.036 us, var 0.013 | 11.12x | `11758073942313516581`/`11758073942313516581` |
+| `tuple_dim_negative_one_513_509` | multi-input | `torch.concat` | tuple dim=-1 | two contiguous tuple inputs with lengths 513 and 509 | concatenation output; (1022,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 5.438 us +/- 0.078 us, var 0.132 | 2.064 us +/- 0.012 us, var 0.002 | 2.63x | `14974692540956724659`/`14974692540956724659` |
+| `axis_keyword_17_19` | axis keyword | `torch.concat` | list axis=0 | two contiguous inputs with lengths 17 and 19 | concatenation output; (36,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 1.305 us +/- 0.010 us, var 0.002 | 1.982 us +/- 0.011 us, var 0.001 | 0.66x | `13790662490979461913`/`13790662490979461913` |
+| `no_grad_grad_inputs_257_263` | no_grad | `torch.concat` | list dim=0 | two grad-requiring contiguous inputs with lengths 257 and 263 inside no_grad | concatenation output; (520,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 3.599 us +/- 0.018 us, var 0.020 | 3.125 us +/- 0.021 us, var 0.007 | 1.15x | `4113829215800195259`/`4113829215800195259` |
+| `active_autograd_1d_257_263` | active autograd | `torch.concat` | list dim=0 | two grad-requiring contiguous inputs with lengths 257 and 263; forward construction only | concatenation output; (520,), stride (1,), offset 0, torch.float32, cpu, requires_grad=True, leaf=False | 512 | 3.648 us +/- 0.019 us, var 0.001 | 2.439 us +/- 0.015 us, var 0.038 | 1.50x | `14264808484827237231`/`14264808484827237231` |
+| `singleton_contiguous_8192` | singleton | `torch.concatenate` | list dim=0 | one contiguous input (8192,), stride (1,) | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 256 | 34.372 us +/- 0.230 us, var 0.943 | 2.533 us +/- 0.057 us, var 0.084 | 13.57x | `18053859545652983804`/`18053859545652983804` |
+| `multi_input_contiguous_257_263_269` | multi-input | `torch.concatenate` | list dim=0 | three contiguous inputs with lengths 257, 263, and 269 | concatenation output; (789,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 4.644 us +/- 0.021 us, var 0.005 | 2.156 us +/- 0.017 us, var 0.005 | 2.15x | `10775443274831830041`/`10775443274831830041` |
+| `empty_operand_middle_1024_0_511` | empty operand | `torch.concatenate` | list dim=0 | contiguous inputs with lengths 1024, 0, and 511 | concatenation output; (1535,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 512 | 7.747 us +/- 0.064 us, var 0.032 | 3.518 us +/- 0.032 us, var 0.025 | 2.20x | `9278694249625300899`/`9278694249625300899` |
+| `all_empty_tuple_dim_negative_one` | empty operand | `torch.concatenate` | tuple dim=-1 | two empty 1-D inputs with length 0 | empty concatenation output; (0,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 1.235 us +/- 0.129 us, var 0.087 | 1.595 us +/- 0.010 us, var 0.033 | 0.77x | `8195591020010394303`/`8195591020010394303` |
+| `offset_contiguous_views_4096` | offset | `torch.concatenate` | list dim=0 | left/right tensor((3, 4096))[1/2] -> (4096,), stride (1,), nonzero offsets | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 128 | 36.425 us +/- 0.251 us, var 2.659 | 2.665 us +/- 0.030 us, var 0.004 | 13.67x | `4041411121873054337`/`4041411121873054337` |
+| `noncontiguous_stride2_views_4096` | noncontiguous | `torch.concatenate` | list dim=0 | left/right tensor((4096, 2)).transpose(0, 1)[1/0] -> (4096,), stride (2,) | concatenation output; (8192,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 128 | 84.386 us +/- 0.394 us, var 35.384 | 7.693 us +/- 0.146 us, var 1.045 | 10.97x | `11758073942313516581`/`11758073942313516581` |
+| `tuple_dim_negative_one_513_509` | multi-input | `torch.concatenate` | tuple dim=-1 | two contiguous tuple inputs with lengths 513 and 509 | concatenation output; (1022,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 5.284 us +/- 0.039 us, var 0.015 | 2.046 us +/- 0.014 us, var 0.002 | 2.58x | `14974692540956724659`/`14974692540956724659` |
+| `axis_keyword_17_19` | axis keyword | `torch.concatenate` | list axis=0 | two contiguous inputs with lengths 17 and 19 | concatenation output; (36,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 1.314 us +/- 0.011 us, var 0.003 | 1.960 us +/- 0.010 us, var 0.001 | 0.67x | `13790662490979461913`/`13790662490979461913` |
+| `no_grad_grad_inputs_257_263` | no_grad | `torch.concatenate` | list dim=0 | two grad-requiring contiguous inputs with lengths 257 and 263 inside no_grad | concatenation output; (520,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 1024 | 3.695 us +/- 0.021 us, var 0.011 | 3.153 us +/- 0.037 us, var 0.076 | 1.17x | `4113829215800195259`/`4113829215800195259` |
+| `active_autograd_1d_257_263` | active autograd | `torch.concatenate` | list dim=0 | two grad-requiring contiguous inputs with lengths 257 and 263; forward construction only | concatenation output; (520,), stride (1,), offset 0, torch.float32, cpu, requires_grad=True, leaf=False | 512 | 3.716 us +/- 0.031 us, var 0.007 | 2.432 us +/- 0.035 us, var 0.020 | 1.53x | `14264808484827237231`/`14264808484827237231` |
 
 ## Zero-Credit Unsupported Cells
 

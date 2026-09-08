@@ -116,7 +116,7 @@ def _make_set_grad_enabled(set_grad_enabled_native):
 
         def __call__(self, function):
             set_grad_enabled_native(self.prev)
-            return _decorate_grad_mode(lambda: type(self)(self.mode), function)
+            return _decorate_grad_mode(lambda: self.clone(), function)
 
         def __enter__(self) -> None:
             set_grad_enabled_native(self.mode)

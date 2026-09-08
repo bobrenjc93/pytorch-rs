@@ -422,6 +422,35 @@ class AutogradApiTests(unittest.TestCase):
                             torch.set_grad_enabled(mode)
                         self.assertIs(torch.is_grad_enabled(), expected_state)
 
+    def test_set_grad_enabled_decorator_uses_subclass_clone(self):
+        value = torch.tensor([2.0], requires_grad=True)
+        clone_events = []
+
+        class LabeledSetGradEnabled(torch.set_grad_enabled):
+            def __init__(self, mode, label):
+                super().__init__(mode)
+                self.label = label
+
+            def clone(self):
+                clone_events.append((self.label, torch.is_grad_enabled()))
+                clone = type(self)(self.mode, self.label)
+                clone.source_label = self.label
+                return clone
+
+        context = LabeledSetGradEnabled(False, "decorator")
+        self.assertIs(torch.is_grad_enabled(), False)
+
+        @context
+        def disabled():
+            return torch.is_grad_enabled(), (value * value).requires_grad
+
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertEqual(disabled(), (False, False))
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertEqual(disabled(), (False, False))
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertEqual(clone_events, [("decorator", True), ("decorator", True)])
+
     def test_is_grad_enabled_public_contract_and_argument_errors(self):
         function = torch.is_grad_enabled
         self.assertIs(type(function), types.BuiltinFunctionType)
@@ -1836,6 +1865,38 @@ class AutogradReferenceTests(unittest.TestCase):
             )
 
         self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_set_grad_enabled_subclass_decorator_matches_pytorch_2_13(self):
+        def contract(module):
+            value = module.tensor([2.0], requires_grad=True)
+            clone_events = []
+
+            class LabeledSetGradEnabled(module.set_grad_enabled):
+                def __init__(self, mode, label):
+                    super().__init__(mode)
+                    self.label = label
+
+                def clone(self):
+                    clone_events.append((self.label, module.is_grad_enabled()))
+                    clone = type(self)(self.mode, self.label)
+                    clone.source_label = self.label
+                    return clone
+
+            context = LabeledSetGradEnabled(False, "decorator")
+            states = [module.is_grad_enabled()]
+
+            @context
+            def disabled():
+                return module.is_grad_enabled(), (value * value).requires_grad
+
+            states.append(module.is_grad_enabled())
+            first = disabled()
+            states.append(module.is_grad_enabled())
+            second = disabled()
+            states.append(module.is_grad_enabled())
+            return states, first, second, clone_events
+
+        self.assertEqual(contract(torch), contract(reference_torch))
 
     def test_requires_grad_argument_types_match_pytorch_2_13(self):
         class Truthy:
