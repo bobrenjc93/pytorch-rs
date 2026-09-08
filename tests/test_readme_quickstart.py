@@ -92,6 +92,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-view-release-timings.md",
     ),
     (
+        "`torch.cat`, `torch.concat`, and `torch.concatenate` 1-D release timings",
+        "docs/top-level-cat-release-timings.md",
+    ),
+    (
         "`torch.nn.functional.mse_loss` release timings",
         "docs/mse-loss-release-timings.md",
     ),
@@ -142,7 +146,10 @@ HISTORICAL_TIMING_GROUPS = (
     ),
     (
         "Layout/view ops",
-        ("docs/tensor-view-release-timings.md",),
+        (
+            "docs/tensor-view-release-timings.md",
+            "docs/top-level-cat-release-timings.md",
+        ),
     ),
     (
         "Linear algebra",
