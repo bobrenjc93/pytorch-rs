@@ -167,6 +167,26 @@ class TensorNarrowTests(unittest.TestCase):
                 "narrow(): length must be non-negative.",
             ),
             (
+                lambda: tensor.narrow(0, 3, -1),
+                RuntimeError,
+                "narrow(): length must be non-negative.",
+            ),
+            (
+                lambda: tensor.narrow(3, 0, -1),
+                RuntimeError,
+                "narrow(): length must be non-negative.",
+            ),
+            (
+                lambda: torch.narrow(tensor, 0, 3, -1),
+                RuntimeError,
+                "narrow(): length must be non-negative.",
+            ),
+            (
+                lambda: torch.narrow(tensor, 3, 0, -1),
+                RuntimeError,
+                "narrow(): length must be non-negative.",
+            ),
+            (
                 lambda: tensor.narrow(0, 3, 0),
                 IndexError,
                 "start out of range (expected to be in range of [-2, 2], but got 3)",
@@ -188,6 +208,16 @@ class TensorNarrowTests(unittest.TestCase):
             ),
             (
                 lambda: scalar.narrow(0, 0, 1),
+                RuntimeError,
+                "narrow() cannot be applied to a 0-dim tensor.",
+            ),
+            (
+                lambda: scalar.narrow(0, 0, -1),
+                RuntimeError,
+                "narrow() cannot be applied to a 0-dim tensor.",
+            ),
+            (
+                lambda: torch.narrow(scalar, 0, 0, -1),
                 RuntimeError,
                 "narrow() cannot be applied to a 0-dim tensor.",
             ),

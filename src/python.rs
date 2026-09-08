@@ -3840,6 +3840,7 @@ fn narrow_dimension(
             "narrow() cannot be applied to a 0-dim tensor.",
         ));
     }
+    validate_narrow_length(length)?;
     let axis = normalize_dimension(dimension, shape.len())?;
     let (start, length) = normalize_narrow_bounds(shape[axis], start, length)?;
     let inner = tensor
@@ -3857,6 +3858,7 @@ fn validate_narrow_native_input(input: &CoreTensor) -> PyResult<()> {
 }
 
 fn normalize_narrow_bounds(size: usize, start: i64, length: i64) -> PyResult<(usize, usize)> {
+    validate_narrow_length(length)?;
     let signed_size = i64::try_from(size)
         .map_err(|_| PyOverflowError::new_err("tensor dimension size exceeds long long"))?;
     if start < -signed_size || start > signed_size {
@@ -3865,12 +3867,6 @@ fn normalize_narrow_bounds(size: usize, start: i64, length: i64) -> PyResult<(us
             -signed_size, signed_size
         )));
     }
-    if length < 0 {
-        return Err(PyRuntimeError::new_err(
-            "narrow(): length must be non-negative.",
-        ));
-    }
-
     let normalized_start = if start < 0 {
         signed_size + start
     } else {
@@ -3893,6 +3889,15 @@ fn normalize_narrow_bounds(size: usize, start: i64, length: i64) -> PyResult<(us
         usize::try_from(length)
             .map_err(|_| PyOverflowError::new_err("tensor length exceeds the platform limit"))?,
     ))
+}
+
+fn validate_narrow_length(length: i64) -> PyResult<()> {
+    if length < 0 {
+        return Err(PyRuntimeError::new_err(
+            "narrow(): length must be non-negative.",
+        ));
+    }
+    Ok(())
 }
 
 fn narrow_length_exceeds_dimension_error(start: i64, length: i64, size: usize) -> PyErr {

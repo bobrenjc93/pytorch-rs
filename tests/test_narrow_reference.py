@@ -144,6 +144,7 @@ class TensorNarrowReferenceTests(unittest.TestCase):
 
     def binding_contract(self, module):
         tensor = module.zeros((2, 3, 4), dtype=module.float32)
+        scalar = module.tensor(1.0, dtype=module.float32)
 
         class IntegerSubclass(int):
             pass
@@ -187,10 +188,13 @@ class TensorNarrowReferenceTests(unittest.TestCase):
                 self.error(lambda: tensor.narrow(0, 2**100, 1)),
                 self.error(lambda: tensor.narrow(0, 0, 2**100)),
                 self.error(lambda: tensor.narrow(0, 0, -1)),
+                self.error(lambda: tensor.narrow(0, 3, -1)),
+                self.error(lambda: tensor.narrow(3, 0, -1)),
                 self.error(lambda: tensor.narrow(0, 3, 0)),
                 self.error(lambda: tensor.narrow(0, 1, 2)),
                 self.error(lambda: tensor.narrow(3, 0, 1)),
-                self.error(lambda: module.tensor(1.0, dtype=module.float32).narrow(0, 0, 1)),
+                self.error(lambda: scalar.narrow(0, 0, 1)),
+                self.error(lambda: scalar.narrow(0, 0, -1)),
                 self.error(lambda: module.narrow()),
                 self.error(lambda: module.narrow(tensor)),
                 self.error(lambda: module.narrow(tensor, 0)),
@@ -198,6 +202,9 @@ class TensorNarrowReferenceTests(unittest.TestCase):
                 self.error(lambda: module.narrow(tensor, 0, 0, 1, 2)),
                 self.error(lambda: module.narrow([], 0, 0, 1)),
                 self.error(lambda: module.narrow(tensor, 0, 0, -1)),
+                self.error(lambda: module.narrow(tensor, 0, 3, -1)),
+                self.error(lambda: module.narrow(tensor, 3, 0, -1)),
+                self.error(lambda: module.narrow(scalar, 0, 0, -1)),
             ),
         }
 
