@@ -588,22 +588,25 @@ impl PyTensorBase {
     #[doc = r#"
 to(*args, **kwargs) -> Tensor
 
-Converts an exact native CPU ``float32`` Tensor to equivalent supported
-metadata. Requests that leave dtype and device unchanged return ``self`` unless
-``copy=True`` or an indexed CPU device such as ``"cpu:0"`` is requested; copy
-requests return a fresh Tensor and record ``ToCopyBackward0`` when autograd is
-active.
+Converts an exact native ``float32`` Tensor to equivalent supported metadata or
+storage. CPU requests that leave dtype and device unchanged return ``self``
+unless ``copy=True`` or an indexed CPU device such as ``"cpu:0"`` is requested;
+CPU copy requests return a fresh Tensor and record ``ToCopyBackward0`` when
+autograd is active. CUDA tensors created by the public 1-D float32
+``torch.zeros`` path support synchronized transfer to CPU.
 
 Supported forms include ``to()``, ``to(torch.float32)``, ``to(torch.float)``,
 ``to("cpu")``, ``to(torch.device("cpu"))``, ``to(device="cpu")``,
 ``to("cpu", torch.float32)``, ``to(device="cpu", dtype=torch.float32)``, and
-``to(other)`` when ``other`` is another exact native CPU ``float32`` Tensor.
-``copy`` may be ``True`` or ``False``; ``non_blocking`` must be ``False``;
-``memory_format`` may be omitted, ``None``, or ``torch.preserve_format``.
+``to(other)`` when ``other`` is another exact native ``float32`` Tensor on CPU
+or the same narrow CUDA storage path. ``copy`` may be ``True`` or ``False``;
+``non_blocking`` must be ``False``; ``memory_format`` may be omitted, ``None``,
+or ``torch.preserve_format``.
 
-Unsupported: dtype-changing conversions such as ``torch.float64``, non-CPU
-devices including CUDA and meta, ``non_blocking=True``, memory formats other
-than ``torch.preserve_format``, Tensor subclasses, and non-native tensors.
+Unsupported: dtype-changing conversions such as ``torch.float64``, CPU-to-CUDA
+transfers, CUDA-to-CUDA copies, devices other than CPU and the narrow CUDA
+zero-tensor storage path, ``non_blocking=True``, memory formats other than
+``torch.preserve_format``, Tensor subclasses, and non-native tensors.
 
 Example::
 
@@ -631,6 +634,7 @@ Example::
 
         let BoundToArguments {
             other,
+            target_device,
             indexed_cpu_device,
             non_blocking,
             copy,
@@ -649,12 +653,47 @@ Example::
             ));
         }
 
-        {
+        let (source_device, other_device) = {
             let tensor_ref = tensor.try_borrow()?;
             validate_to_native_tensor(&tensor_ref.inner)?;
-            if let Some(other) = &other {
-                validate_to_native_tensor(&other.try_borrow()?.inner)?;
+            let other_device = if let Some(other) = &other {
+                let other = other.try_borrow()?;
+                validate_to_native_tensor(&other.inner)?;
+                Some(other.inner.device())
+            } else {
+                None
+            };
+            (tensor_ref.inner.device(), other_device)
+        };
+        let requested_device = other_device.or(target_device);
+
+        if source_device.is_cuda() {
+            if memory_format != MemoryFormat::Preserve {
+                return Err(PyNotImplementedError::new_err(
+                    "to(): only torch.preserve_format memory_format is supported",
+                ));
             }
+            let target = requested_device.unwrap_or(source_device);
+            if target.is_cpu() {
+                let inner = tensor
+                    .try_borrow()?
+                    .inner
+                    .try_copy_cuda_to_cpu(slf.py())
+                    .map_err(|error| tensor_error(&error))?;
+                return Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any());
+            }
+            if target == source_device && !copy {
+                return Ok(tensor.clone().unbind().into_any());
+            }
+            return Err(PyNotImplementedError::new_err(
+                "to(): CUDA tensors only support no-copy same-device metadata or transfer to CPU",
+            ));
+        }
+
+        if let Some(device) = requested_device
+            && !device.is_cpu()
+        {
+            return Err(to_unsupported_target_device(device));
         }
 
         if !(copy || indexed_cpu_device) {
@@ -758,8 +797,21 @@ Example::
         }
 
         let tensor = slf.as_any().cast::<PyTensor>()?;
-        // CPU is the only supported device. Preserve never normalizes an
-        // existing CPU tensor, including arbitrary non-contiguous views.
+        let device = tensor.try_borrow()?.inner.device();
+        if device.is_cuda() {
+            if memory_format != MemoryFormat::Preserve {
+                return Err(PyNotImplementedError::new_err(
+                    "cpu(): CUDA tensors only support torch.preserve_format memory_format",
+                ));
+            }
+            let inner = tensor
+                .try_borrow()?
+                .inner
+                .try_copy_cuda_to_cpu(slf.py())
+                .map_err(|error| tensor_error(&error))?;
+            return Py::new(slf.py(), PyTensor::new(inner));
+        }
+
         if memory_format == MemoryFormat::Preserve {
             return Ok(tensor.clone().unbind());
         }
@@ -5939,6 +5991,11 @@ fn apply_sum_reduction(
     input: &CoreTensor,
     reduction: &BoundSumReduction<'_>,
 ) -> PyResult<CoreTensor> {
+    if input.device().is_cuda() {
+        return Err(PyNotImplementedError::new_err(
+            "sum(): CUDA tensor reductions are not supported",
+        ));
+    }
     let output = match reduction {
         BoundSumReduction::Full { keepdim } => {
             let mut output = input.sum();
@@ -9736,6 +9793,17 @@ fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
         scalar_dimension,
     } = size;
     let shape = dimensions.clone();
+    if device.is_cuda() {
+        if requires_grad {
+            let error = TensorError::UnsupportedCudaZeroTensor {
+                reason: "requires_grad is true",
+            };
+            return Err(creation_factory_error(&error, &shape, scalar_dimension));
+        }
+        return CoreTensor::cuda_zeros_float32(args.py(), dimensions, device)
+            .map(PyTensor::new)
+            .map_err(|error| creation_factory_error(&error, &shape, scalar_dimension));
+    }
     CoreTensor::zeros_with_metadata(dimensions, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| creation_factory_error(&error, &shape, scalar_dimension))
@@ -10697,6 +10765,7 @@ fn parse_cpu_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<MemoryF
 
 struct BoundToArguments<'py> {
     other: Option<Bound<'py, PyTensor>>,
+    target_device: Option<Device>,
     indexed_cpu_device: bool,
     non_blocking: bool,
     copy: bool,
@@ -10709,7 +10778,7 @@ struct BoundToArguments<'py> {
 enum ToFirstArgument<'py> {
     NoneValue,
     DType,
-    Device { indexed_cpu: bool },
+    Device(ParsedToDevice),
     Tensor(Bound<'py, PyTensor>),
     Override,
 }
@@ -10753,6 +10822,7 @@ fn bind_to_arguments<'py>(
         .map_err(|_| PyMemoryError::new_err("unable to allocate to dispatch operands"))?;
     let mut native_validation_error = None;
     let mut other = None;
+    let mut target_device = None;
     let mut indexed_cpu_device = false;
     let mut positional_non_blocking = None;
     let mut positional_copy = None;
@@ -10760,9 +10830,10 @@ fn bind_to_arguments<'py>(
     match args.len() {
         0 => {
             if let Some(device) = device_keyword.as_ref() {
-                indexed_cpu_device |=
-                    parse_to_device(device, false, &mut native_validation_error, &mut overrides)?
-                        .indexed_cpu;
+                let parsed =
+                    parse_to_device(device, false, &mut native_validation_error, &mut overrides)?;
+                indexed_cpu_device |= parsed.indexed_cpu;
+                target_device = Some(parsed.device);
             }
             if let Some(dtype) = dtype_keyword.as_ref() {
                 parse_to_dtype(dtype, true, &mut native_validation_error, &mut overrides)?;
@@ -10781,11 +10852,10 @@ fn bind_to_arguments<'py>(
                         parse_to_dtype(dtype, true, &mut native_validation_error, &mut overrides)?;
                     }
                 }
-                ToFirstArgument::Device {
-                    indexed_cpu: indexed,
-                } => {
+                ToFirstArgument::Device(parsed) => {
                     reject_to_keyword_presence(device_keyword_present)?;
-                    indexed_cpu_device |= indexed;
+                    indexed_cpu_device |= parsed.indexed_cpu;
+                    target_device = Some(parsed.device);
                     if let Some(dtype) = dtype_keyword.as_ref() {
                         parse_to_dtype(dtype, true, &mut native_validation_error, &mut overrides)?;
                     }
@@ -10814,12 +10884,11 @@ fn bind_to_arguments<'py>(
                     reject_to_keyword_presence(dtype_keyword_present)?;
                     parse_to_dtype(&second, false, &mut native_validation_error, &mut overrides)?;
                 }
-                ToFirstArgument::Device {
-                    indexed_cpu: indexed,
-                } => {
+                ToFirstArgument::Device(parsed) => {
                     reject_to_keyword_presence(device_keyword_present)?;
                     reject_to_keyword_presence(dtype_keyword_present)?;
-                    indexed_cpu_device |= indexed;
+                    indexed_cpu_device |= parsed.indexed_cpu;
+                    target_device = Some(parsed.device);
                     parse_to_dtype(&second, false, &mut native_validation_error, &mut overrides)?;
                 }
                 ToFirstArgument::DType => {
@@ -10864,12 +10933,11 @@ fn bind_to_arguments<'py>(
                     parse_to_dtype(&second, false, &mut native_validation_error, &mut overrides)?;
                     positional_non_blocking = Some(third);
                 }
-                ToFirstArgument::Device {
-                    indexed_cpu: indexed,
-                } => {
+                ToFirstArgument::Device(parsed) => {
                     reject_to_keyword_presence(device_keyword_present)?;
                     reject_to_keyword_presence(dtype_keyword_present)?;
-                    indexed_cpu_device |= indexed;
+                    indexed_cpu_device |= parsed.indexed_cpu;
+                    target_device = Some(parsed.device);
                     parse_to_dtype(&second, false, &mut native_validation_error, &mut overrides)?;
                     positional_non_blocking = Some(third);
                 }
@@ -10921,10 +10989,9 @@ fn bind_to_arguments<'py>(
                     positional_non_blocking = Some(third);
                     positional_copy = Some(fourth);
                 }
-                ToFirstArgument::Device {
-                    indexed_cpu: indexed,
-                } => {
-                    indexed_cpu_device |= indexed;
+                ToFirstArgument::Device(parsed) => {
+                    indexed_cpu_device |= parsed.indexed_cpu;
+                    target_device = Some(parsed.device);
                     parse_to_dtype(&second, false, &mut native_validation_error, &mut overrides)?;
                     positional_non_blocking = Some(third);
                     positional_copy = Some(fourth);
@@ -10969,6 +11036,7 @@ fn bind_to_arguments<'py>(
 
     Ok(BoundToArguments {
         other,
+        target_device,
         indexed_cpu_device,
         non_blocking,
         copy,
@@ -11059,10 +11127,12 @@ fn classify_to_first_argument<'py>(
         return Ok(ToFirstArgument::DType);
     }
     if is_to_native_device_argument(value) {
-        return Ok(ToFirstArgument::Device {
-            indexed_cpu: parse_to_device(value, true, native_validation_error, overrides)?
-                .indexed_cpu,
-        });
+        return Ok(ToFirstArgument::Device(parse_to_device(
+            value,
+            true,
+            native_validation_error,
+            overrides,
+        )?));
     }
     if let Some(probed) = probe_torch_function_override(value) {
         insert_ordered_torch_function_override(overrides, &probed)?;
@@ -11071,7 +11141,9 @@ fn classify_to_first_argument<'py>(
     Err(invalid_to_arguments_error())
 }
 
+#[derive(Clone, Copy)]
 struct ParsedToDevice {
+    device: Device,
     indexed_cpu: bool,
 }
 
@@ -11082,14 +11154,20 @@ fn parse_to_device<'py>(
     overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
 ) -> PyResult<ParsedToDevice> {
     if device.is_none() {
-        return Ok(ParsedToDevice { indexed_cpu: false });
+        return Ok(ParsedToDevice {
+            device: Device::Cpu,
+            indexed_cpu: false,
+        });
     }
     if is_to_native_device_argument(device) {
         return match parse_to_native_device(device) {
             Ok(device) => Ok(device),
             Err(error) => {
                 record_to_native_validation_error(native_validation_error, error);
-                Ok(ParsedToDevice { indexed_cpu: false })
+                Ok(ParsedToDevice {
+                    device: Device::Cpu,
+                    indexed_cpu: false,
+                })
             }
         };
     }
@@ -11100,7 +11178,10 @@ fn parse_to_device<'py>(
     };
     if let Some(probed) = probed {
         insert_ordered_torch_function_override(overrides, &probed)?;
-        return Ok(ParsedToDevice { indexed_cpu: false });
+        return Ok(ParsedToDevice {
+            device: Device::Cpu,
+            indexed_cpu: false,
+        });
     }
     parse_to_native_device(device)
 }
@@ -11118,9 +11199,10 @@ fn parse_to_native_device(device: &Bound<'_, PyAny>) -> PyResult<ParsedToDevice>
         ));
     }
     let descriptor = parse_device_descriptor("to", device)?;
-    debug_assert!(descriptor.inner().is_cpu());
+    let device = descriptor.inner();
     Ok(ParsedToDevice {
-        indexed_cpu: descriptor.has_index(),
+        device,
+        indexed_cpu: device.is_cpu() && descriptor.has_index(),
     })
 }
 
@@ -11223,16 +11305,20 @@ fn reject_to_keyword_presence(present: bool) -> PyResult<()> {
 }
 
 fn validate_to_native_tensor(tensor: &CoreTensor) -> PyResult<()> {
-    if tensor.dtype() == DType::Float32 && tensor.device() == Device::Cpu {
+    if tensor.dtype() == DType::Float32 && (tensor.device().is_cpu() || tensor.device().is_cuda()) {
         return Ok(());
     }
     Err(to_unsupported_native_input())
 }
 
+fn to_unsupported_target_device(device: Device) -> PyErr {
+    PyNotImplementedError::new_err(format!(
+        "to(): device '{device}' is not supported; only 'cpu' is implemented"
+    ))
+}
+
 fn to_unsupported_native_input() -> PyErr {
-    PyNotImplementedError::new_err(
-        "to(): only exact native CPU float32 Tensor inputs are supported",
-    )
+    PyNotImplementedError::new_err("to(): only exact native float32 Tensor inputs are supported")
 }
 
 fn invalid_to_arguments_error() -> PyErr {
@@ -11646,15 +11732,23 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(f64, 
         return Err(arange_one_bound_endpoint_type_error(&end)?);
     }
 
+    let device_argument = device.as_ref();
     let dtype = parse_dtype("arange", dtype.as_ref())?;
     parse_factory_layout("arange", layout.as_ref())?;
-    validate_device_argument_type("arange", device.as_ref())?;
+    validate_device_argument_type("arange", device_argument)?;
     let pin_memory = parse_factory_bool("arange", "pin_memory", pin_memory.as_ref())?;
     let requires_grad = parse_factory_requires_grad("arange", requires_grad.as_ref())?;
     if let Some(error) = keyword_error {
         return Err(error);
     }
-    let device = parse_device("arange", device.as_ref())?;
+    let device = parse_device("arange", device_argument)?;
+    if !device.is_cpu() {
+        return Err(unsupported_cpu_only_device(
+            "arange",
+            device_argument,
+            device,
+        )?);
+    }
 
     if out.is_some() {
         return Err(PyRuntimeError::new_err(
@@ -11710,16 +11804,24 @@ fn parse_two_bound_arange_arguments(
         return Err(arange_two_bound_endpoint_type_error("end", &end)?);
     }
 
+    let device_argument = device.as_ref();
     let explicit_float32_dtype = has_explicit_float32_dtype(dtype.as_ref())?;
     let dtype = parse_dtype("arange", dtype.as_ref())?;
     parse_factory_layout("arange", layout.as_ref())?;
-    validate_device_argument_type("arange", device.as_ref())?;
+    validate_device_argument_type("arange", device_argument)?;
     let pin_memory = parse_factory_bool("arange", "pin_memory", pin_memory.as_ref())?;
     let requires_grad = parse_factory_requires_grad("arange", requires_grad.as_ref())?;
     if let Some(error) = keyword_error {
         return Err(error);
     }
-    let device = parse_device("arange", device.as_ref())?;
+    let device = parse_device("arange", device_argument)?;
+    if !device.is_cpu() {
+        return Err(unsupported_cpu_only_device(
+            "arange",
+            device_argument,
+            device,
+        )?);
+    }
 
     if !explicit_float32_dtype {
         return Err(arange_two_bound_dtype_unsupported());
@@ -12067,11 +12169,17 @@ fn parse_as_tensor_device(function: &str, device: Option<&Bound<'_, PyAny>>) -> 
     };
     if let Ok(device) = device.cast::<PyDevice>() {
         let device = device.try_borrow()?;
-        if device.inner().is_cpu() && !device.has_index() {
-            return Ok(Device::Cpu);
+        if device.inner().is_cpu() {
+            if !device.has_index() {
+                return Ok(Device::Cpu);
+            }
+            return Err(PyNotImplementedError::new_err(format!(
+                "{function}(): indexed CPU devices require a copy and are not supported"
+            )));
         }
         return Err(PyNotImplementedError::new_err(format!(
-            "{function}(): indexed CPU devices require a copy and are not supported"
+            "{function}(): device '{}' is not supported; only 'cpu' is implemented",
+            device.inner()
         )));
     }
 
@@ -12080,7 +12188,16 @@ fn parse_as_tensor_device(function: &str, device: Option<&Bound<'_, PyAny>>) -> 
         return Ok(Device::Cpu);
     }
     validate_as_tensor_device_string(specification)?;
-    parse_device_value(function, device)?;
+    let (device_type, _) = specification
+        .split_once(':')
+        .map_or((specification, None), |(device_type, index)| {
+            (device_type, Some(index))
+        });
+    if device_type != "cpu" {
+        return Err(PyNotImplementedError::new_err(format!(
+            "{function}(): device '{specification}' is not supported; only 'cpu' is implemented"
+        )));
+    }
     Err(PyNotImplementedError::new_err(format!(
         "{function}(): explicit indexed CPU devices require a copy and are not supported"
     )))
@@ -12539,7 +12656,14 @@ fn parse_scalar_tensor_device(device: Option<&Bound<'_, PyAny>>) -> PyResult<Dev
         return Ok(Device::Cpu);
     };
     if let Ok(device) = device.cast::<PyDevice>() {
-        return Ok(device.try_borrow()?.inner());
+        let device = device.try_borrow()?;
+        if device.inner().is_cpu() {
+            return Ok(Device::Cpu);
+        }
+        return Err(PyRuntimeError::new_err(format!(
+            "scalar_tensor(): device '{}' is not supported; only 'cpu' is implemented",
+            device.inner()
+        )));
     }
     let specification = device.cast::<PyString>()?.to_str()?;
     if specification.is_empty() {
@@ -12717,13 +12841,17 @@ fn parse_eye_arguments(
     // Factory options are type-checked before dimension conversion. Device
     // resolution and shape validation happen only after all declared option
     // types and competing keywords have been checked.
+    let device_argument = device.as_ref();
     let dtype = parse_dtype("eye", dtype.as_ref())?;
-    validate_device_argument_type("eye", device.as_ref())?;
+    validate_device_argument_type("eye", device_argument)?;
     let requires_grad = parse_factory_requires_grad("eye", requires_grad.as_ref())?;
     if let Some(error) = keyword_error {
         return Err(error);
     }
-    let device = parse_device("eye", device.as_ref())?;
+    let device = parse_device("eye", device_argument)?;
+    if !device.is_cpu() {
+        return Err(unsupported_cpu_only_device("eye", device_argument, device)?);
+    }
     let n = parse_eye_dimension("n", &n)?;
     let m = m.map_or(Ok(n), |m| parse_eye_dimension("m", &m))?;
     let n = validate_eye_dimension("n", n)?;
@@ -12750,18 +12878,26 @@ fn parse_creation_arguments(
     // PyTorch validates declared argument types in signature order, reports
     // duplicate or unknown keywords, converts an accepted scalar dimension,
     // and only then resolves a valid device specification.
+    let device_argument = device.as_ref();
     let size = parse_creation_size(function, size.as_ref(), shape.as_ref())?;
     let has_out = validate_creation_out(function, out.as_ref())?;
     let dtype = parse_dtype(function, dtype.as_ref())?;
     parse_factory_layout(function, layout.as_ref())?;
-    validate_device_argument_type(function, device.as_ref())?;
+    validate_device_argument_type(function, device_argument)?;
     let pin_memory = parse_factory_bool(function, "pin_memory", pin_memory.as_ref())?;
     let requires_grad = parse_factory_requires_grad(function, requires_grad.as_ref())?;
     if let Some(error) = keyword_error {
         return Err(error);
     }
     let size = finish_creation_size(function, size)?;
-    let device = parse_device(function, device.as_ref())?;
+    let device = parse_device(function, device_argument)?;
+    if function != "zeros" && !device.is_cpu() {
+        return Err(unsupported_cpu_only_device(
+            function,
+            device_argument,
+            device,
+        )?);
+    }
     if has_out {
         return Err(PyRuntimeError::new_err(format!(
             "{function}(): the 'out' argument is not supported"
@@ -12998,18 +13134,26 @@ fn parse_full_arguments(arguments: FullCallArguments<'_>) -> PyResult<ParsedFull
         ));
     };
 
+    let device_argument = device.as_ref();
     let size = parse_size(&size)?;
     let fill_value = parse_fill_value("full", &fill_value)?;
     let has_out = validate_creation_out("full", out.as_ref())?;
     let dtype = parse_dtype("full", dtype.as_ref())?;
     parse_factory_layout("full", layout.as_ref())?;
-    validate_device_argument_type("full", device.as_ref())?;
+    validate_device_argument_type("full", device_argument)?;
     let pin_memory = parse_factory_bool("full", "pin_memory", pin_memory.as_ref())?;
     let requires_grad = parse_factory_requires_grad("full", requires_grad.as_ref())?;
     if let Some(error) = keyword_error {
         return Err(error);
     }
-    let device = parse_device("full", device.as_ref())?;
+    let device = parse_device("full", device_argument)?;
+    if !device.is_cpu() {
+        return Err(unsupported_cpu_only_device(
+            "full",
+            device_argument,
+            device,
+        )?);
+    }
     Ok(ParsedFullArguments {
         size,
         fill_value,
@@ -13379,12 +13523,18 @@ fn creation_negative_dimension_error(function: &str, dimension: i64, shape: &[i6
 fn parse_metadata(
     function: &str,
     dtype: Option<&Bound<'_, PyAny>>,
-    device: Option<&Bound<'_, PyAny>>,
+    device_argument: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<(DType, Device)> {
-    Ok((
-        parse_dtype(function, dtype)?,
-        parse_device(function, device)?,
-    ))
+    let dtype = parse_dtype(function, dtype)?;
+    let device = parse_device(function, device_argument)?;
+    if !device.is_cpu() {
+        return Err(unsupported_cpu_only_device(
+            function,
+            device_argument,
+            device,
+        )?);
+    }
+    Ok((dtype, device))
 }
 
 fn parse_dtype(function: &str, dtype: Option<&Bound<'_, PyAny>>) -> PyResult<DType> {
@@ -13405,6 +13555,25 @@ fn parse_device(function: &str, device: Option<&Bound<'_, PyAny>>) -> PyResult<D
     device.map_or(Ok(Device::Cpu), |device| {
         parse_device_value(function, device)
     })
+}
+
+fn unsupported_cpu_only_device(
+    function: &str,
+    device_argument: Option<&Bound<'_, PyAny>>,
+    device: Device,
+) -> PyResult<PyErr> {
+    let device_label = if let Some(device_argument) = device_argument {
+        if let Ok(specification) = device_argument.cast::<PyString>() {
+            specification.to_str()?.to_owned()
+        } else {
+            device.to_string()
+        }
+    } else {
+        device.to_string()
+    };
+    Ok(PyRuntimeError::new_err(format!(
+        "{function}(): device '{device_label}' is not supported; only 'cpu' is implemented"
+    )))
 }
 
 fn validate_device_argument_type(

@@ -3,6 +3,9 @@ use std::fmt::Formatter;
 use std::iter::FusedIterator;
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "python-bindings")]
+use pyo3::prelude::Python;
+
 use crate::autograd_node::AutogradNode;
 use crate::device::Device;
 use crate::dtype::DType;
@@ -724,6 +727,7 @@ impl Tensor {
                 elements: data.len(),
             });
         }
+        validate_cpu_storage_device("tensor", device)?;
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
@@ -744,8 +748,41 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
+        validate_cpu_storage_device("zeros", device)?;
         let data = filled_storage(elements, 0.0)?;
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn cuda_zeros_float32(
+        py: Python<'_>,
+        shape: impl Into<Vec<usize>>,
+        device: Device,
+    ) -> Result<Self, TensorError> {
+        let shape = shape.into();
+        if shape.len() != 1 {
+            return Err(TensorError::UnsupportedCudaZeroTensor {
+                reason: "shape rank is not 1",
+            });
+        }
+        let Device::Cuda(device_index) = device else {
+            return Err(TensorError::UnsupportedDevice {
+                operation: "zeros",
+                device,
+            });
+        };
+        let (elements, strides) = validated_layout(&shape)?;
+        let storage = Storage::cuda_zeros_float32(py, elements, device_index)?;
+        Ok(Self {
+            storage: Arc::new(storage),
+            shape,
+            strides,
+            offset: 0,
+            elements,
+            output_nr: 0,
+            view_requires_grad: false,
+            autograd: None,
+        })
     }
 
     /// Creates a one-filled tensor.
@@ -765,6 +802,7 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
+        validate_cpu_storage_device("ones", device)?;
         let data = filled_storage(elements, 1.0)?;
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
@@ -777,6 +815,7 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
+        validate_cpu_storage_device("empty", device)?;
         // Public `torch.empty` values are unspecified. The current safe storage
         // model exposes initialized `f32` slices everywhere, so this backing
         // allocation is zero-initialized as an implementation detail.
@@ -848,6 +887,7 @@ impl Tensor {
         shape.push(n);
         shape.push(m);
         let (elements, strides) = validated_layout(&shape)?;
+        validate_cpu_storage_device("eye", device)?;
         let mut data = filled_storage(elements, 0.0)?;
 
         let diagonal = n.min(m);
@@ -878,6 +918,7 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
+        validate_cpu_storage_device("full", device)?;
         validate_storage_capacity(elements)?;
         let data = filled_storage(elements, fill_value)?;
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
@@ -2368,6 +2409,7 @@ impl Tensor {
         memory_format: MemoryFormat,
         node: AutogradNode,
     ) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("clone", self.device())?;
         let expected_rank = match memory_format {
             MemoryFormat::ChannelsLast => Some(4),
             MemoryFormat::ChannelsLast3d => Some(5),
@@ -2458,12 +2500,49 @@ impl Tensor {
         self.try_contiguous_impl(memory_format, false, AutogradNode::Copy)
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn try_copy_cuda_to_cpu(&self, py: Python<'_>) -> Result<Self, TensorError> {
+        if self.device().is_cpu() {
+            return self.try_copy_with_memory_format(MemoryFormat::Preserve);
+        }
+        if self.dtype() != DType::Float32 {
+            return Err(TensorError::UnsupportedCudaZeroTensor {
+                reason: "dtype is not float32",
+            });
+        }
+        if self.shape.len() != 1 {
+            return Err(TensorError::UnsupportedCudaZeroTensor {
+                reason: "shape rank is not 1",
+            });
+        }
+        if self.offset != 0 || !self.is_contiguous() || self.elements != self.storage.len() {
+            return Err(TensorError::UnsupportedCudaZeroTensor {
+                reason: "tensor is not the original contiguous allocation",
+            });
+        }
+        if self.requires_grad() {
+            return Err(TensorError::UnsupportedCudaZeroTensor {
+                reason: "requires_grad is true",
+            });
+        }
+
+        let data = self.storage.copy_cuda_to_cpu_float32(py)?;
+        Ok(Self::from_owned_parts(
+            data,
+            self.shape.clone(),
+            self.strides.clone(),
+            DType::Float32,
+            Device::Cpu,
+        ))
+    }
+
     fn try_contiguous_impl(
         &self,
         memory_format: MemoryFormat,
         reuse_matching_storage: bool,
         node: AutogradNode,
     ) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("contiguous", self.device())?;
         let expected_rank = match memory_format {
             MemoryFormat::ChannelsLast => Some(4),
             MemoryFormat::ChannelsLast3d => Some(5),
@@ -2761,6 +2840,7 @@ impl Tensor {
     ///
     /// Returns an error if result allocation fails.
     pub fn try_to_vec(&self) -> Result<Vec<f32>, TensorError> {
+        validate_cpu_storage_device("tolist", self.device())?;
         if let Some(values) = self.contiguous_slice() {
             return copied_storage(values, self.elements);
         }
@@ -3722,6 +3802,8 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn add(&self, other: &Self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("add", self.device())?;
+        validate_cpu_storage_device("add", other.device())?;
         let output = self.zip_map(other, |left, right| left + right)?;
         self.finish_add_subtract_vjp(other, output, AutogradNode::Add, 1.0)
     }
@@ -3733,6 +3815,8 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn sub(&self, other: &Self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("sub", self.device())?;
+        validate_cpu_storage_device("sub", other.device())?;
         if let Some(output) = self.sub_same_shape_matching_dense_no_grad(other)? {
             return Ok(output);
         }
@@ -4305,6 +4389,8 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn mul(&self, other: &Self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("mul", self.device())?;
+        validate_cpu_storage_device("mul", other.device())?;
         let mut output = self.multiply_values(other)?;
         if (self.requires_grad() || other.requires_grad()) && is_grad_enabled() {
             let left_has_edge = self.autograd.is_some();
@@ -4332,6 +4418,7 @@ impl Tensor {
     /// Returns an error when result metadata or storage allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn square(&self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("square", self.device())?;
         let output = self.multiply_values(self)?;
         self.finish_saved_input_unary_vjp(output, AutogradNode::Power, apply_square_vjp)
     }
@@ -4345,6 +4432,8 @@ impl Tensor {
     /// when the shapes are not broadcastable, or when result shape calculation
     /// or allocation fails.
     pub fn div(&self, other: &Self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("div", self.device())?;
+        validate_cpu_storage_device("div", other.device())?;
         if self.records_grad() || other.records_grad() {
             return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
         }
@@ -4716,6 +4805,7 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn mean(&self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("mean", self.device())?;
         let divisor = full_reduction_mean_divisor(self.elements);
         let mut output = self.sum().div_scalar_values(divisor)?;
         if self.requires_grad() && is_grad_enabled() {
@@ -4754,6 +4844,7 @@ impl Tensor {
     ///
     /// Returns an error unless the tensor contains exactly one element.
     pub fn item(&self) -> Result<f32, TensorError> {
+        validate_cpu_storage_device("item", self.device())?;
         if self.elements != 1 {
             return Err(TensorError::ItemRequiresOneElement {
                 elements: self.elements,
@@ -4769,6 +4860,8 @@ impl Tensor {
     /// Returns an error unless both tensors are matrices with compatible inner
     /// dimensions.
     pub fn matmul(&self, other: &Self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("matmul", self.device())?;
+        validate_cpu_storage_device("matmul", other.device())?;
         self.matmul_with_initializer(other, |_, _, output_elements| {
             filled_storage(output_elements, 0.0)
         })
@@ -5089,6 +5182,7 @@ impl Tensor {
         scalar: f32,
         operation: impl Fn(f32, f32) -> f32,
     ) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("scalar operation", self.device())?;
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
         let strides =
@@ -5104,6 +5198,7 @@ impl Tensor {
     }
 
     fn unary_map(&self, operation: impl Fn(f32) -> f32) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("unary operation", self.device())?;
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
         let strides = self.unary_output_strides(&shape, elements)?;
@@ -8173,6 +8268,14 @@ fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorEr
         .map_err(|_| TensorError::AllocationFailed { elements })?;
     data.resize(elements, fill_value);
     Ok(data)
+}
+
+fn validate_cpu_storage_device(operation: &'static str, device: Device) -> Result<(), TensorError> {
+    if device.is_cpu() {
+        Ok(())
+    } else {
+        Err(TensorError::UnsupportedDevice { operation, device })
+    }
 }
 
 fn copied_storage(values: &[f32], elements: usize) -> Result<Vec<f32>, TensorError> {

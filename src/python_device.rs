@@ -21,9 +21,9 @@ fn repr_device_index(index: i8) -> u16 {
 
 /// Python device descriptor backed by a native [`Device`].
 ///
-/// Tensor storage only implements ordinary CPU execution. The separate index
-/// field preserves the descriptor metadata accepted by `torch.device` without
-/// implying that indexed CPU execution exists in the native backend.
+/// Tensor storage implements ordinary CPU execution plus a narrow CUDA device
+/// storage path. The separate index field preserves the descriptor metadata
+/// accepted by `torch.device`, including unindexed descriptors.
 #[pyclass(name = "device", module = "torch_rs", frozen, eq, skip_from_py_object)]
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct PyDevice {
@@ -32,10 +32,16 @@ pub(crate) struct PyDevice {
 }
 
 impl PyDevice {
-    pub(crate) const fn from_device(inner: Device) -> Self {
-        Self {
-            inner,
-            index: UNINDEXED_DEVICE,
+    pub(crate) fn from_device(inner: Device) -> Self {
+        match inner {
+            Device::Cpu => Self {
+                inner,
+                index: UNINDEXED_DEVICE,
+            },
+            Device::Cuda(index) => Self {
+                inner,
+                index: normalize_device_index(index as i64),
+            },
         }
     }
 
@@ -124,9 +130,28 @@ fn parse_device_string(function: &str, specification: &str) -> PyResult<PyDevice
     if device_type == "cpu" {
         return Ok(PyDevice::from_index(Device::Cpu, index));
     }
+    if device_type == "cuda" {
+        return Ok(PyDevice::from_index(
+            indexed_device(Device::Cuda(0), index),
+            index,
+        ));
+    }
     Err(PyRuntimeError::new_err(format!(
         "{function}(): device '{specification}' is not supported; only 'cpu' is implemented"
     )))
+}
+
+fn indexed_device(device: Device, index: i8) -> Device {
+    match device {
+        Device::Cpu => Device::Cpu,
+        Device::Cuda(_) => {
+            if index == UNINDEXED_DEVICE {
+                Device::Cuda(0)
+            } else {
+                Device::Cuda(usize::from(repr_device_index(index)))
+            }
+        }
+    }
 }
 
 pub(crate) fn device_argument_type_error(
@@ -316,7 +341,10 @@ fn parse_type_and_index(
         )));
     }
     let index = parse_explicit_device_index(index)?;
-    Ok(PyDevice::from_index(parsed.inner(), index))
+    Ok(PyDevice::from_index(
+        indexed_device(parsed.inner(), index),
+        index,
+    ))
 }
 
 #[pymethods]
@@ -339,6 +367,7 @@ impl PyDevice {
     fn r#type(&self) -> &'static str {
         match self.inner {
             Device::Cpu => "cpu",
+            Device::Cuda(_) => "cuda",
         }
     }
 

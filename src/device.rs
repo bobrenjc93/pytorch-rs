@@ -6,6 +6,8 @@ pub enum Device {
     /// Host CPU memory and kernels.
     #[default]
     Cpu,
+    /// NVIDIA CUDA device memory.
+    Cuda(usize),
 }
 
 impl Device {
@@ -14,6 +16,7 @@ impl Device {
     pub const fn index(self) -> Option<usize> {
         match self {
             Self::Cpu => None,
+            Self::Cuda(index) => Some(index),
         }
     }
 
@@ -22,6 +25,7 @@ impl Device {
     pub const fn is_cpu(self) -> bool {
         match self {
             Self::Cpu => true,
+            Self::Cuda(_) => false,
         }
     }
 
@@ -30,6 +34,7 @@ impl Device {
     pub const fn is_cuda(self) -> bool {
         match self {
             Self::Cpu => false,
+            Self::Cuda(_) => true,
         }
     }
 
@@ -38,6 +43,7 @@ impl Device {
     pub const fn is_ipu(self) -> bool {
         match self {
             Self::Cpu => false,
+            Self::Cuda(_) => false,
         }
     }
 
@@ -46,6 +52,7 @@ impl Device {
     pub const fn is_mtia(self) -> bool {
         match self {
             Self::Cpu => false,
+            Self::Cuda(_) => false,
         }
     }
 
@@ -54,6 +61,7 @@ impl Device {
     pub const fn is_maia(self) -> bool {
         match self {
             Self::Cpu => false,
+            Self::Cuda(_) => false,
         }
     }
 
@@ -62,6 +70,7 @@ impl Device {
     pub const fn is_xpu(self) -> bool {
         match self {
             Self::Cpu => false,
+            Self::Cuda(_) => false,
         }
     }
 
@@ -70,6 +79,7 @@ impl Device {
     pub const fn is_xla(self) -> bool {
         match self {
             Self::Cpu => false,
+            Self::Cuda(_) => false,
         }
     }
 
@@ -78,6 +88,7 @@ impl Device {
     pub const fn is_mps(self) -> bool {
         match self {
             Self::Cpu => false,
+            Self::Cuda(_) => false,
         }
     }
 
@@ -86,6 +97,7 @@ impl Device {
     pub const fn is_vulkan(self) -> bool {
         match self {
             Self::Cpu => false,
+            Self::Cuda(_) => false,
         }
     }
 
@@ -94,6 +106,7 @@ impl Device {
     pub const fn is_meta(self) -> bool {
         match self {
             Self::Cpu => false,
+            Self::Cuda(_) => false,
         }
     }
 }
@@ -102,6 +115,7 @@ impl Display for Device {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Cpu => formatter.write_str("cpu"),
+            Self::Cuda(index) => write!(formatter, "cuda:{index}"),
         }
     }
 }

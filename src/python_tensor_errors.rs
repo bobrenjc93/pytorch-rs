@@ -1,7 +1,7 @@
 //! Python exception translation for native tensor errors.
 
 use pyo3::PyErr;
-use pyo3::exceptions::{PyIndexError, PyRuntimeError};
+use pyo3::exceptions::{PyIndexError, PyNotImplementedError, PyRuntimeError};
 
 use crate::TensorError;
 
@@ -23,6 +23,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::NegativeStrides { .. }
         | TensorError::StorageCapacityOverflow { .. }
         | TensorError::AllocationFailed { .. }
+        | TensorError::CudaRuntimeError { .. }
         | TensorError::UnsupportedMemoryFormat { .. }
         | TensorError::ContiguousPreserveFormatUnsupported
         | TensorError::ContiguousMemoryFormatRankMismatch { .. }
@@ -46,6 +47,9 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::TooManyIndices { .. }
         | TensorError::IndexOutOfBounds { .. }
         | TensorError::DimensionOutOfRange { .. } => PyIndexError::new_err(error.to_string()),
+        TensorError::UnsupportedDevice { .. } | TensorError::UnsupportedCudaZeroTensor { .. } => {
+            PyNotImplementedError::new_err(error.to_string())
+        }
     }
 }
 

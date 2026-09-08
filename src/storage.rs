@@ -1,7 +1,14 @@
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "python-bindings")]
+use pyo3::prelude::*;
+#[cfg(feature = "python-bindings")]
+use pyo3::types::PyModule;
+
 use crate::device::Device;
 use crate::dtype::DType;
+#[cfg(feature = "python-bindings")]
+use crate::tensor_error::TensorError;
 
 /// Crate-private CPU float32 storage shared by tensors and autograd snapshots.
 pub(crate) struct Storage {
@@ -10,6 +17,75 @@ pub(crate) struct Storage {
 
 enum StoragePayload {
     CpuFloat32(StorageData<f32>),
+    #[cfg(feature = "python-bindings")]
+    CudaFloat32(CudaFloat32Storage),
+}
+
+#[cfg(feature = "python-bindings")]
+struct CudaFloat32Storage {
+    owner: Py<PyAny>,
+    elements: usize,
+    device_index: usize,
+    data_ptr: usize,
+}
+
+#[cfg(feature = "python-bindings")]
+impl CudaFloat32Storage {
+    fn zeros(py: Python<'_>, elements: usize, device_index: usize) -> Result<Self, TensorError> {
+        let module = PyModule::import(py, "torch_rs._cuda_public_storage").map_err(|error| {
+            TensorError::CudaRuntimeError {
+                operation: "zeros",
+                message: error.to_string(),
+            }
+        })?;
+        let owner = module
+            .getattr("CudaFloat32Storage")
+            .and_then(|storage_type| storage_type.call_method1("zeros", (elements, device_index)))
+            .map_err(|error| TensorError::CudaRuntimeError {
+                operation: "zeros",
+                message: error.to_string(),
+            })?;
+        let data_ptr = owner
+            .getattr("data_ptr")
+            .and_then(|data_ptr| data_ptr.extract::<usize>())
+            .map_err(|error| TensorError::CudaRuntimeError {
+                operation: "zeros",
+                message: error.to_string(),
+            })?;
+        Ok(Self {
+            owner: owner.unbind(),
+            elements,
+            device_index,
+            data_ptr,
+        })
+    }
+
+    fn copy_to_cpu(&self, py: Python<'_>) -> Result<Vec<f32>, TensorError> {
+        let bytes = self
+            .owner
+            .bind(py)
+            .call_method0("copy_to_host")
+            .and_then(|bytes| bytes.extract::<Vec<u8>>())
+            .map_err(|error| TensorError::CudaRuntimeError {
+                operation: "cpu",
+                message: error.to_string(),
+            })?;
+        if bytes.len() != self.elements.saturating_mul(std::mem::size_of::<f32>()) {
+            return Err(TensorError::CudaRuntimeError {
+                operation: "cpu",
+                message: format!(
+                    "copied {} bytes for {} float32 elements",
+                    bytes.len(),
+                    self.elements
+                ),
+            });
+        }
+
+        Ok(bytes
+            .chunks_exact(std::mem::size_of::<f32>())
+            .map(|bytes| f32::from_ne_bytes(bytes.try_into().expect("chunk size is 4")))
+            .collect())
+    }
 }
 
 enum StorageData<T> {
@@ -139,6 +215,7 @@ impl Storage {
                 (Device::Cpu, DType::Float32) => {
                     StoragePayload::CpuFloat32(StorageData::Inline(value))
                 }
+                _ => unreachable!("non-CPU storage must use a device-specific constructor"),
             },
         }
     }
@@ -149,6 +226,7 @@ impl Storage {
                 (Device::Cpu, DType::Float32) => {
                     StoragePayload::CpuFloat32(StorageData::Owned(data))
                 }
+                _ => unreachable!("non-CPU storage must use a device-specific constructor"),
             },
         }
     }
@@ -159,43 +237,74 @@ impl Storage {
                 (Device::Cpu, DType::Float32) => {
                     StoragePayload::CpuFloat32(StorageData::SharedGradient(Mutex::new(data)))
                 }
+                _ => unreachable!("non-CPU storage must use a device-specific constructor"),
             },
         }
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn cuda_zeros_float32(
+        py: Python<'_>,
+        elements: usize,
+        device_index: usize,
+    ) -> Result<Self, TensorError> {
+        Ok(Self {
+            payload: StoragePayload::CudaFloat32(CudaFloat32Storage::zeros(
+                py,
+                elements,
+                device_index,
+            )?),
+        })
     }
 
     pub(crate) fn len(&self) -> usize {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.len(),
+            #[cfg(feature = "python-bindings")]
+            StoragePayload::CudaFloat32(data) => data.elements,
         }
     }
 
     pub(crate) const fn dtype(&self) -> DType {
         match &self.payload {
             StoragePayload::CpuFloat32(_) => DType::Float32,
+            #[cfg(feature = "python-bindings")]
+            StoragePayload::CudaFloat32(_) => DType::Float32,
         }
     }
 
     pub(crate) const fn device(&self) -> Device {
         match &self.payload {
             StoragePayload::CpuFloat32(_) => Device::Cpu,
+            #[cfg(feature = "python-bindings")]
+            StoragePayload::CudaFloat32(data) => Device::Cuda(data.device_index),
         }
     }
 
     pub(crate) fn data_ptr(&self) -> *const u8 {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.data_ptr(),
+            #[cfg(feature = "python-bindings")]
+            StoragePayload::CudaFloat32(data) => data.data_ptr as *const u8,
         }
     }
 
     pub(crate) fn owned_values(&self) -> Option<&[f32]> {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.owned_values(),
+            #[cfg(feature = "python-bindings")]
+            StoragePayload::CudaFloat32(_) => None,
         }
     }
 
     pub(crate) fn value(&self, index: usize) -> Option<f32> {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.value(index),
+            #[cfg(feature = "python-bindings")]
+            StoragePayload::CudaFloat32(_) => {
+                let _ = index;
+                None
+            }
         }
     }
 
@@ -205,12 +314,20 @@ impl Storage {
     ) -> Result<Vec<f32>, E> {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.try_copy_values(copy),
+            #[cfg(feature = "python-bindings")]
+            StoragePayload::CudaFloat32(_) => unreachable!(
+                "CUDA storage must be copied through the synchronized device-to-host path"
+            ),
         }
     }
 
     pub(crate) fn copy_range(&self, start: usize, end: usize) -> Vec<f32> {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.copy_range(start, end),
+            #[cfg(feature = "python-bindings")]
+            StoragePayload::CudaFloat32(_) => unreachable!(
+                "CUDA storage ranges must be copied through the synchronized device-to-host path"
+            ),
         }
     }
 
@@ -222,12 +339,19 @@ impl Storage {
     ) -> Option<R> {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.with_shared_gradient_range(start, end, read),
+            #[cfg(feature = "python-bindings")]
+            StoragePayload::CudaFloat32(_) => None,
         }
     }
 
     pub(crate) fn into_range(self, start: usize, end: usize) -> Vec<f32> {
         match self.payload {
             StoragePayload::CpuFloat32(data) => data.into_range(start, end),
+            #[cfg(feature = "python-bindings")]
+            StoragePayload::CudaFloat32(_) => {
+                let _ = (start, end);
+                unreachable!("CUDA storage cannot be moved into a host range")
+            }
         }
     }
 
@@ -245,12 +369,27 @@ impl Storage {
                     })
                 },
             ),
+            #[cfg(feature = "python-bindings")]
+            StoragePayload::CudaFloat32(_) => Ok(Arc::clone(storage)),
         }
     }
 
     pub(crate) fn accumulate_shared_gradient(&self, contribution: Vec<f32>) {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.accumulate_shared_gradient(contribution),
+            #[cfg(feature = "python-bindings")]
+            StoragePayload::CudaFloat32(_) => {
+                let _ = contribution;
+                unreachable!("CUDA gradients are not supported")
+            }
+        }
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn copy_cuda_to_cpu_float32(&self, py: Python<'_>) -> Result<Vec<f32>, TensorError> {
+        match &self.payload {
+            StoragePayload::CpuFloat32(data) => Ok(data.copy_range(0, data.len())),
+            StoragePayload::CudaFloat32(data) => data.copy_to_cpu(py),
         }
     }
 }
