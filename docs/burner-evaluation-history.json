@@ -43,6 +43,10 @@
     "eval_d4c0b71e": {
       "name": "Repository polish",
       "color": "#6c757d"
+    },
+    "eval_b7f2a91c": {
+      "name": "Hardware heterogeneity",
+      "color": "#ef476f"
     }
   },
   "points": [
@@ -10620,6 +10624,46 @@
         "eval_a61c0e71": 100,
         "eval_6f98c42d": 100,
         "eval_d4c0b71e": 96
+      }
+    },
+    {
+      "key": "base:8d1f642cc0722171867791c352c587a81ab09325",
+      "commit": "8d1f642cc0722171867791c352c587a81ab09325",
+      "recordedAt": "2026-09-08T20:44:27.496Z",
+      "label": "base 8d1f642",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 97,
+        "eval_39340456": 66,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 95,
+        "eval_a61c0e71": 100,
+        "eval_6f98c42d": 100,
+        "eval_d4c0b71e": 96,
+        "eval_b7f2a91c": 0.3
+      }
+    },
+    {
+      "key": "pr:1891",
+      "recordedAt": "2026-09-08T20:44:27.496Z",
+      "label": "PR #1891",
+      "kind": "composite",
+      "prNumber": 1891,
+      "title": "YOLO generation 247: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 97,
+        "eval_39340456": 68,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 95,
+        "eval_a61c0e71": 100,
+        "eval_6f98c42d": 100,
+        "eval_d4c0b71e": 96,
+        "eval_b7f2a91c": 0.3
       }
     }
   ]
