@@ -10583,6 +10583,25 @@
         "eval_6f98c42d": 100,
         "eval_d4c0b71e": 96
       }
+    },
+    {
+      "key": "pr:1886",
+      "recordedAt": "2026-09-08T13:59:50.146Z",
+      "label": "PR #1886",
+      "kind": "composite",
+      "prNumber": 1886,
+      "title": "YOLO generation 245: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 97,
+        "eval_39340456": 62,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 95,
+        "eval_a61c0e71": 100,
+        "eval_6f98c42d": 100,
+        "eval_d4c0b71e": 96
+      }
     }
   ]
 }
