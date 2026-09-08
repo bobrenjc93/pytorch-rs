@@ -13606,7 +13606,7 @@ fn parse_vstack_out(
 fn validate_vstack_tensor(alias: VstackAlias, tensor: &PyTensor, _index: usize) -> PyResult<()> {
     if tensor.inner.dtype() == DType::Float32
         && tensor.inner.device() == Device::Cpu
-        && matches!(tensor.inner.shape().len(), 0 | 1 | 2)
+        && matches!(tensor.inner.shape().len(), 0..=2)
     {
         Ok(())
     } else {
