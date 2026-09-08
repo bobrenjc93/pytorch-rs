@@ -1045,7 +1045,52 @@ def _validate_current_runtime_paths(errors, environment):
             )
 
 
-def _validate_environment_provenance(errors, environment, validator):
+def _is_full_commit_hash(value):
+    return (
+        isinstance(value, str)
+        and len(value) == 40
+        and all(character in "0123456789abcdefABCDEF" for character in value)
+    )
+
+
+def _is_json_int(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _validate_git_provenance(errors, git, *, require_clean_git):
+    if not isinstance(git, dict):
+        errors.append("git provenance is not an object")
+        return
+
+    head = git.get("head")
+    if not _is_full_commit_hash(head):
+        errors.append(f"git head is not a full commit hash: {head!r}")
+    current_head = benchmark_top_level_stack._git_provenance().get("head")
+    if not _is_full_commit_hash(current_head):
+        errors.append(f"current git head is unavailable: {current_head!r}")
+    elif _is_full_commit_hash(head) and head != current_head:
+        errors.append(f"git head mismatch: {head!r} != current {current_head!r}")
+
+    status_short = git.get("status_short")
+    diff_stat = git.get("diff_stat")
+    if not isinstance(status_short, str):
+        errors.append(f"git status_short is not a string: {status_short!r}")
+    if not isinstance(diff_stat, str):
+        errors.append(f"git diff_stat is not a string: {diff_stat!r}")
+    if require_clean_git:
+        if status_short != "":
+            errors.append(f"git status_short is not clean: {status_short!r}")
+        if diff_stat != "":
+            errors.append(f"git diff_stat is not clean: {diff_stat!r}")
+
+
+def _validate_environment_provenance(
+    errors,
+    environment,
+    validator,
+    *,
+    require_clean_git,
+):
     if environment.get("benchmark_version") != (
         benchmark_top_level_stack.BENCHMARK_VERSION
     ):
@@ -1066,8 +1111,11 @@ def _validate_environment_provenance(errors, environment, validator):
     ):
         errors.append("driver SHA-256 does not match the checked-in script")
 
-    if environment.get("git") != benchmark_top_level_stack._git_provenance():
-        errors.append("git provenance does not match the current worktree")
+    _validate_git_provenance(
+        errors,
+        environment.get("git"),
+        require_clean_git=require_clean_git,
+    )
 
     build_profile = environment.get("build_profile", {})
     if build_profile.get("rust_profile") != "release":
@@ -1081,7 +1129,7 @@ def _validate_environment_provenance(errors, environment, validator):
         errors.append(f"benchmark was not pinned to one CPU: {affinity!r}")
 
     threads = environment.get("threads")
-    if not isinstance(threads, int) or threads <= 0:
+    if not _is_json_int(threads) or threads <= 0:
         errors.append(f"invalid thread count: {threads!r}")
     else:
         env_threads = environment.get("env_threads", {})
@@ -1311,8 +1359,12 @@ def validate_artifact_dict(
     report,
     *,
     expected_seed=None,
-    expected_cases_per_category=None,
-    expected_max_elements=None,
+    expected_cases_per_category=DEFAULT_CASES_PER_CATEGORY,
+    expected_max_elements=DEFAULT_MAX_ELEMENTS,
+    expected_warmups=benchmark_top_level_stack.DEFAULT_WARMUPS,
+    expected_samples=benchmark_top_level_stack.DEFAULT_SAMPLES,
+    expected_threads=benchmark_top_level_stack.DEFAULT_THREADS,
+    require_clean_git=True,
 ):
     errors = []
     validator = report.get("validator", {})
@@ -1354,10 +1406,28 @@ def validate_artifact_dict(
         ("max_elements", expected_max_elements),
     )
     for key, expected_value in expected_values:
-        if expected_value is not None and validator.get(key) != expected_value:
+        actual_value = validator.get(key)
+        if expected_value is not None and (
+            not _is_json_int(actual_value) or actual_value != expected_value
+        ):
             errors.append(
                 f"validator {key} mismatch: "
-                f"{validator.get(key)!r} != expected {expected_value!r}"
+                f"{actual_value!r} != expected {expected_value!r}"
+            )
+
+    expected_environment_values = (
+        ("warmups", expected_warmups),
+        ("samples", expected_samples),
+        ("threads", expected_threads),
+    )
+    for key, expected_value in expected_environment_values:
+        actual_value = environment.get(key)
+        if expected_value is not None and (
+            not _is_json_int(actual_value) or actual_value != expected_value
+        ):
+            errors.append(
+                f"environment {key} mismatch: "
+                f"{actual_value!r} != expected {expected_value!r}"
             )
 
     benchmark_integrity = environment.get("benchmark_integrity", {})
@@ -1375,17 +1445,22 @@ def validate_artifact_dict(
         list(order) for order in benchmark_top_level_stack.IMPLEMENTATION_ORDERS
     ]:
         errors.append("implementation order metadata mismatch")
-    _validate_environment_provenance(errors, environment, validator)
+    _validate_environment_provenance(
+        errors,
+        environment,
+        validator,
+        require_clean_git=require_clean_git,
+    )
 
     seed = validator.get("seed")
     cases_per_category = validator.get("cases_per_category")
     max_elements = validator.get("max_elements")
-    if not isinstance(seed, int):
+    if not _is_json_int(seed):
         errors.append(f"invalid seed: {seed!r}")
-    if not isinstance(cases_per_category, int) or cases_per_category <= 0:
+    if not _is_json_int(cases_per_category) or cases_per_category <= 0:
         errors.append(f"invalid cases_per_category: {cases_per_category!r}")
         cases_per_category = 0
-    if not isinstance(max_elements, int) or max_elements <= 0:
+    if not _is_json_int(max_elements) or max_elements <= 0:
         errors.append(f"invalid max_elements: {max_elements!r}")
         max_elements = 0
     expected_count = cases_per_category * len(REQUIRED_CATEGORIES)
@@ -1428,10 +1503,10 @@ def validate_artifact_dict(
 
     samples = environment.get("samples")
     warmups = environment.get("warmups")
-    if not isinstance(samples, int) or samples <= 0:
+    if not _is_json_int(samples) or samples <= 0:
         errors.append(f"invalid sample count: {samples!r}")
         samples = 0
-    if not isinstance(warmups, int) or warmups < 0:
+    if not _is_json_int(warmups) or warmups < 0:
         errors.append(f"invalid warmup count: {warmups!r}")
         warmups = 0
     derived_cases = []
@@ -1496,14 +1571,20 @@ def validate_artifact(
     artifact_path,
     *,
     expected_seed=None,
-    expected_cases_per_category=None,
-    expected_max_elements=None,
+    expected_cases_per_category=DEFAULT_CASES_PER_CATEGORY,
+    expected_max_elements=DEFAULT_MAX_ELEMENTS,
+    expected_warmups=benchmark_top_level_stack.DEFAULT_WARMUPS,
+    expected_samples=benchmark_top_level_stack.DEFAULT_SAMPLES,
+    expected_threads=benchmark_top_level_stack.DEFAULT_THREADS,
 ):
     validate_artifact_dict(
         _load_artifact(artifact_path),
         expected_seed=expected_seed,
         expected_cases_per_category=expected_cases_per_category,
         expected_max_elements=expected_max_elements,
+        expected_warmups=expected_warmups,
+        expected_samples=expected_samples,
+        expected_threads=expected_threads,
     )
 
 
@@ -1542,15 +1623,32 @@ def parse_args():
 def main():
     args = parse_args()
     if args.validate_artifact is not None:
+        if args.warmups < 0:
+            raise SystemExit("--warmups must be non-negative")
+        _positive_int(args.samples, "--samples")
+        _positive_int(args.threads, "--threads")
         if args.cases_per_category is not None:
             _positive_int(args.cases_per_category, "--cases-per-category")
         if args.max_elements is not None:
             _positive_int(args.max_elements, "--max-elements")
+        expected_cases_per_category = (
+            args.cases_per_category
+            if args.cases_per_category is not None
+            else DEFAULT_CASES_PER_CATEGORY
+        )
+        expected_max_elements = (
+            args.max_elements
+            if args.max_elements is not None
+            else DEFAULT_MAX_ELEMENTS
+        )
         validate_artifact(
             args.validate_artifact,
             expected_seed=args.seed,
-            expected_cases_per_category=args.cases_per_category,
-            expected_max_elements=args.max_elements,
+            expected_cases_per_category=expected_cases_per_category,
+            expected_max_elements=expected_max_elements,
+            expected_warmups=args.warmups,
+            expected_samples=args.samples,
+            expected_threads=args.threads,
         )
         return
     if args.warmups < 0:
@@ -1569,7 +1667,16 @@ def main():
     workloads = _workloads_for_cases(cases)
     validator_context = _validator_context(args, seed, cases)
     report = run_validator(args, cases, workloads, validator_context)
-    validate_artifact_dict(report)
+    validate_artifact_dict(
+        report,
+        expected_seed=seed,
+        expected_cases_per_category=args.cases_per_category,
+        expected_max_elements=args.max_elements,
+        expected_warmups=args.warmups,
+        expected_samples=args.samples,
+        expected_threads=args.threads,
+        require_clean_git=False,
+    )
 
     encoded = json.dumps(report, indent=2, sort_keys=True)
     output = (

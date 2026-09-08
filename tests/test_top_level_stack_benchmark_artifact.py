@@ -177,7 +177,36 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
             )
 
             report = json.loads(artifact_path.read_text(encoding="utf-8"))
-            validate_top_level_stack_benchmark.validate_artifact_dict(report)
+            validate_top_level_stack_benchmark.validate_artifact_dict(
+                report,
+                expected_seed=20260908,
+                expected_cases_per_category=1,
+                expected_max_elements=4096,
+                expected_warmups=0,
+                expected_samples=1,
+                expected_threads=1,
+                require_clean_git=False,
+            )
+            current_git = benchmark_top_level_stack._git_provenance()
+            report = copy.deepcopy(report)
+            report["environment"]["git"] = {
+                "head": current_git["head"],
+                "status_short": "",
+                "diff_stat": "",
+            }
+            artifact_path.write_text(
+                json.dumps(report, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            validate_top_level_stack_benchmark.validate_artifact_dict(
+                report,
+                expected_seed=20260908,
+                expected_cases_per_category=1,
+                expected_max_elements=4096,
+                expected_warmups=0,
+                expected_samples=1,
+                expected_threads=1,
+            )
             self.assertEqual(report["validator"]["seed"], 20260908)
             self.assertEqual(report["validator"]["cases_per_category"], 1)
             self.assertEqual(
@@ -313,7 +342,23 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                         "status_short",
                         " M fabricated.py",
                     ),
-                    "git provenance does not match the current worktree",
+                    "git status_short is not clean",
+                ),
+                (
+                    "git-diff-stat",
+                    lambda artifact: artifact["environment"]["git"].__setitem__(
+                        "diff_stat",
+                        " scripts/validate_top_level_stack_benchmark.py | 1 +",
+                    ),
+                    "git diff_stat is not clean",
+                ),
+                (
+                    "git-missing-head",
+                    lambda artifact: artifact["environment"]["git"].__setitem__(
+                        "head",
+                        None,
+                    ),
+                    "git head is not a full commit hash",
                 ),
                 (
                     "unsupported-credit",
@@ -369,11 +414,17 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                     mutate(tampered)
                     with self.assertRaises(AssertionError) as raised:
                         validate_top_level_stack_benchmark.validate_artifact_dict(
-                            tampered
+                            tampered,
+                            expected_seed=20260908,
+                            expected_cases_per_category=1,
+                            expected_max_elements=4096,
+                            expected_warmups=0,
+                            expected_samples=1,
+                            expected_threads=1,
                         )
                     self.assertIn(expected_message, str(raised.exception))
 
-            validation_completed = subprocess.run(
+            default_validation_completed = subprocess.run(
                 [
                     sys.executable,
                     str(VALIDATOR_SCRIPT),
@@ -385,10 +436,16 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                 text=True,
                 timeout=30,
             )
-            self.assertEqual(
-                validation_completed.returncode,
-                0,
-                msg=validation_completed.stdout + validation_completed.stderr,
+            self.assertNotEqual(default_validation_completed.returncode, 0)
+            self.assertIn(
+                "environment warmups mismatch",
+                default_validation_completed.stdout
+                + default_validation_completed.stderr,
+            )
+            self.assertIn(
+                "validator cases_per_category mismatch",
+                default_validation_completed.stdout
+                + default_validation_completed.stderr,
             )
 
             strict_validation_completed = subprocess.run(
@@ -403,6 +460,12 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                     "1",
                     "--max-elements",
                     "4096",
+                    "--warmups",
+                    "0",
+                    "--samples",
+                    "1",
+                    "--threads",
+                    "1",
                 ],
                 check=False,
                 capture_output=True,
@@ -426,6 +489,16 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                     str(artifact_path),
                     "--seed",
                     "222",
+                    "--cases-per-category",
+                    "1",
+                    "--max-elements",
+                    "4096",
+                    "--warmups",
+                    "0",
+                    "--samples",
+                    "1",
+                    "--threads",
+                    "1",
                 ],
                 check=False,
                 capture_output=True,
@@ -453,6 +526,18 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                     str(VALIDATOR_SCRIPT),
                     "--validate-artifact",
                     str(tampered_path),
+                    "--seed",
+                    "20260908",
+                    "--cases-per-category",
+                    "1",
+                    "--max-elements",
+                    "4096",
+                    "--warmups",
+                    "0",
+                    "--samples",
+                    "1",
+                    "--threads",
+                    "1",
                 ],
                 check=False,
                 capture_output=True,
