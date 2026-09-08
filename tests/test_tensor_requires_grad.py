@@ -175,6 +175,36 @@ class TensorRequiresGradInplaceTests(unittest.TestCase):
         initially_false.requires_grad_(False)
         self.assertFalse(initially_false_view.requires_grad)
 
+    def test_promoted_no_grad_view_accumulates_preexisting_graph_after_disable(self):
+        base = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        with torch.no_grad():
+            view = base.transpose(0, 1)
+        view.requires_grad_(True)
+        loss = (view * 2.0).sum()
+        view.requires_grad_(False)
+
+        self.assertTrue(view.requires_grad)
+        self.assertTrue(loss.requires_grad)
+        loss.backward()
+        self.assertIsNone(base.grad)
+        self.assertEqual(view.grad.tolist(), [[2.0, 2.0], [2.0, 2.0]])
+
+        disabled_base = torch.tensor(
+            [[5.0, 6.0], [7.0, 8.0]], requires_grad=True
+        )
+        with torch.no_grad():
+            disabled_view = disabled_base.transpose(0, 1)
+        disabled_view.requires_grad_(True)
+        disabled_loss = (disabled_view * 3.0).sum()
+        disabled_view.requires_grad_(False)
+        disabled_base.requires_grad_(False)
+
+        self.assertFalse(disabled_view.requires_grad)
+        self.assertTrue(disabled_loss.requires_grad)
+        disabled_loss.backward()
+        self.assertIsNone(disabled_base.grad)
+        self.assertIsNone(disabled_view.grad)
+
     def test_nested_leaf_views_created_under_no_grad_keep_source_inheritance(self):
         base = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
         with torch.no_grad():

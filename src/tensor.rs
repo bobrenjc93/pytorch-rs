@@ -36,6 +36,7 @@ struct AutogradMeta {
 enum AutogradKind {
     Leaf {
         requires_grad: Arc<AtomicBool>,
+        inherited_requires_grad: Option<Arc<AtomicBool>>,
         shape: Vec<usize>,
         strides: Vec<usize>,
         dtype: DType,
@@ -289,6 +290,22 @@ impl AutogradMeta {
 
     fn records_grad_edge(&self) -> bool {
         self.requires_grad()
+    }
+
+    fn accumulates_recorded_leaf_gradient(&self) -> bool {
+        match &self.kind {
+            AutogradKind::Leaf {
+                requires_grad,
+                inherited_requires_grad,
+                ..
+            } => {
+                requires_grad.load(Ordering::Relaxed)
+                    || inherited_requires_grad
+                        .as_deref()
+                        .is_some_and(|flag| flag.load(Ordering::Relaxed))
+            }
+            AutogradKind::NonLeaf { .. } => true,
+        }
     }
 
     fn take_grad_fn(&mut self) -> Option<GradFn> {
@@ -1380,6 +1397,7 @@ impl Tensor {
             self.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::Leaf {
                     requires_grad: Arc::clone(&self.leaf_requires_grad),
+                    inherited_requires_grad: self.view_requires_grad.clone(),
                     shape: self.shape.clone(),
                     strides: leaf_gradient_strides_unchecked(
                         &self.shape,
@@ -1440,6 +1458,7 @@ impl Tensor {
             self.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::Leaf {
                     requires_grad: Arc::clone(&self.leaf_requires_grad),
+                    inherited_requires_grad: self.view_requires_grad.clone(),
                     shape: self.shape.clone(),
                     strides: leaf_gradient_strides(&self.shape, &self.strides, self.elements)?,
                     dtype: self.dtype(),
@@ -5318,7 +5337,7 @@ fn run_backward(root: &Arc<AutogradMeta>, root_output_nr: usize) -> Result<(), T
     for (meta, grad_fn) in topology.iter().rev() {
         match grad_fn {
             None => {
-                if meta.requires_grad()
+                if meta.accumulates_recorded_leaf_gradient()
                     && let Some(upstream) = gradients.remove(&gradient_key(meta, 0))
                 {
                     leaf_gradients.push((Arc::clone(meta), upstream));

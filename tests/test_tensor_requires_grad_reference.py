@@ -306,6 +306,70 @@ class TensorRequiresGradInplaceReferenceTests(unittest.TestCase):
             self.no_grad_leaf_view_base_toggle_contract(reference_torch),
         )
 
+    def promoted_no_grad_view_preexisting_graph_contract(self, module):
+        inherited_enabled_base = module.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
+        )
+        with module.no_grad():
+            inherited_enabled_view = inherited_enabled_base.transpose(0, 1)
+        inherited_enabled_view.requires_grad_(True)
+        inherited_enabled_loss = (inherited_enabled_view * 2.0).sum()
+        inherited_enabled_view.requires_grad_(False)
+        inherited_enabled_loss.backward()
+        inherited_enabled = (
+            inherited_enabled_base.requires_grad,
+            inherited_enabled_view.requires_grad,
+            inherited_enabled_loss.requires_grad,
+            self.grad_payload(inherited_enabled_base.grad),
+            self.grad_payload(inherited_enabled_view.grad),
+        )
+
+        inherited_disabled_base = module.tensor(
+            [[5.0, 6.0], [7.0, 8.0]], requires_grad=True
+        )
+        with module.no_grad():
+            inherited_disabled_view = inherited_disabled_base.transpose(0, 1)
+        inherited_disabled_view.requires_grad_(True)
+        inherited_disabled_loss = (inherited_disabled_view * 3.0).sum()
+        inherited_disabled_view.requires_grad_(False)
+        inherited_disabled_base.requires_grad_(False)
+        inherited_disabled_loss.backward()
+        inherited_disabled = (
+            inherited_disabled_base.requires_grad,
+            inherited_disabled_view.requires_grad,
+            inherited_disabled_loss.requires_grad,
+            self.grad_payload(inherited_disabled_base.grad),
+            self.grad_payload(inherited_disabled_view.grad),
+        )
+
+        late_enabled_base = module.tensor([[9.0, 10.0], [11.0, 12.0]])
+        with module.no_grad():
+            late_enabled_view = late_enabled_base.transpose(0, 1)
+        late_enabled_view.requires_grad_(True)
+        late_enabled_loss = (late_enabled_view * 4.0).sum()
+        late_enabled_view.requires_grad_(False)
+        late_enabled_base.requires_grad_(True)
+        late_enabled_loss.backward()
+        late_enabled = (
+            late_enabled_base.requires_grad,
+            late_enabled_view.requires_grad,
+            late_enabled_loss.requires_grad,
+            self.grad_payload(late_enabled_base.grad),
+            self.grad_payload(late_enabled_view.grad),
+        )
+
+        return {
+            "inherited_enabled": inherited_enabled,
+            "inherited_disabled": inherited_disabled,
+            "late_enabled": late_enabled,
+        }
+
+    def test_promoted_no_grad_view_preexisting_graph_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.promoted_no_grad_view_preexisting_graph_contract(torch),
+            self.promoted_no_grad_view_preexisting_graph_contract(reference_torch),
+        )
+
     def nested_no_grad_leaf_view_contract(self, module):
         base = module.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
         with module.no_grad():
