@@ -61,8 +61,9 @@ map, and [BENCHMARKING.md](BENCHMARKING.md) for performance policy.
 
 Correctness gates performance, and missing or unsupported behavior stays in the
 denominator. See [BENCHMARKING.md](BENCHMARKING.md) for benchmark methodology
-and anti-gaming rules, and [FEATURES.md](FEATURES.md) for weighted feature
-coverage.
+and anti-gaming rules, [FEATURES.md](FEATURES.md) for weighted feature coverage,
+and the [hardware heterogeneity evaluator](docs/hardware-heterogeneity-evaluator.md)
+for accelerator-family coverage.
 
 ## Development
 

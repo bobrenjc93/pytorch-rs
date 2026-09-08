@@ -280,9 +280,6 @@ class TensorUnbindTests(unittest.TestCase):
 
         self.assertTrue(hasattr(torch, "unbind"))
         self.assertIn("unbind", torch.__all__)
-        self.assertFalse(hasattr(torch.Tensor, "chunk"))
-        self.assertFalse(hasattr(torch, "chunk"))
-        self.assertNotIn("chunk", torch.__all__)
 
     def test_top_level_forms_reuse_first_axis_view_engine(self):
         source = offset_noncontiguous_source()
@@ -512,10 +509,6 @@ class TensorUnbindTests(unittest.TestCase):
         self.assertEqual(len(torch.unbind(tensor, np.int64(0))), 2)
         self.assertEqual(len(torch.unbind(tensor, 1)), 3)
         self.assertEqual(len(torch.unbind(tensor, -1)), 3)
-
-        self.assertFalse(hasattr(torch.Tensor, "chunk"))
-        self.assertFalse(hasattr(torch, "chunk"))
-        self.assertNotIn("chunk", torch.__all__)
 
     def test_top_level_torch_function_modes_receive_original_calls_and_forward(self):
         tensor = torch.zeros((2, 3))
