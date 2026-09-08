@@ -22,6 +22,7 @@ import json
 import math
 import random
 import secrets
+import statistics
 import sys
 import time
 from pathlib import Path
@@ -710,6 +711,167 @@ def _expected_aggregates(cases, unsupported, error_parity):
     return aggregates
 
 
+def _numeric_list(errors, path, value, *, expected_count=None, positive=False):
+    if not isinstance(value, list):
+        errors.append(f"{path} is not a list")
+        return None
+    if expected_count is not None and len(value) != expected_count:
+        errors.append(f"{path} length mismatch: {len(value)} != {expected_count}")
+    numbers = []
+    for index, item in enumerate(value):
+        if isinstance(item, bool) or not isinstance(item, (float, int)):
+            errors.append(f"{path}[{index}] is not numeric: {item!r}")
+            continue
+        number = float(item)
+        if not math.isfinite(number):
+            errors.append(f"{path}[{index}] is not finite: {item!r}")
+        if positive and number <= 0.0:
+            errors.append(f"{path}[{index}] is not positive: {item!r}")
+        numbers.append(number)
+    return numbers
+
+
+def _expected_steady_summary(samples_us):
+    median_us = statistics.median(samples_us)
+    deviations = [abs(sample - median_us) for sample in samples_us]
+    variance_us2 = statistics.pvariance(samples_us) if len(samples_us) > 1 else 0.0
+    return {
+        "median_us": median_us,
+        "mad_us": statistics.median(deviations),
+        "variance_us2": variance_us2,
+        "sample_count": len(samples_us),
+        "samples_us": samples_us,
+        "min_us": min(samples_us),
+        "max_us": max(samples_us),
+    }
+
+
+def _validate_pass_timing(errors, path, pass_result, samples, warmups):
+    if not isinstance(pass_result, dict):
+        errors.append(f"{path} is not an object")
+        return None
+    steady = pass_result.get("steady")
+    if not isinstance(steady, dict):
+        errors.append(f"{path}.steady is not an object")
+        return None
+    samples_us = _numeric_list(
+        errors,
+        f"{path}.steady.samples_us",
+        steady.get("samples_us"),
+        expected_count=samples,
+        positive=True,
+    )
+    if not samples_us:
+        return None
+    expected_steady = _expected_steady_summary(samples_us)
+    _compare_jsonish(errors, f"{path}.steady", steady, expected_steady)
+
+    cold_first_call_us = pass_result.get("cold_first_call_us")
+    if (
+        isinstance(cold_first_call_us, bool)
+        or not isinstance(cold_first_call_us, (float, int))
+        or not math.isfinite(float(cold_first_call_us))
+        or float(cold_first_call_us) <= 0.0
+    ):
+        errors.append(f"{path}.cold_first_call_us is not a positive finite number")
+        return None
+
+    if warmups == 0:
+        if pass_result.get("warmup_checksums") != []:
+            errors.append(f"{path} unexpected warmup checksums")
+    elif pass_result.get("warmup_checksums") != pass_result.get("steady_checksums"):
+        errors.append(f"{path} warmup/steady checksum mismatch")
+
+    return {
+        "steady": expected_steady,
+        "cold_first_call_us": (
+            float(cold_first_call_us) if cold_first_call_us is not None else None
+        ),
+    }
+
+
+def _validate_implementation_timing(
+    errors,
+    row_name,
+    implementation,
+    implementation_result,
+    samples,
+    warmups,
+):
+    path = f"{row_name}.{implementation}"
+    if not isinstance(implementation_result, dict):
+        errors.append(f"{path} is not an object")
+        return None
+    passes = implementation_result.get("passes", [])
+    if len(passes) != len(benchmark_top_level_stack.IMPLEMENTATION_ORDERS):
+        errors.append(f"{path} pass count mismatch")
+    if implementation_result.get("steady_sample_count") != (
+        samples * len(benchmark_top_level_stack.IMPLEMENTATION_ORDERS)
+    ):
+        errors.append(f"{path} sample count mismatch")
+    if len(implementation_result.get("checksums", [])) != 1:
+        errors.append(f"{path} unstable checksums")
+
+    pass_timings = []
+    for pass_index, pass_result in enumerate(passes):
+        pass_path = f"{path}.passes[{pass_index}]"
+        if isinstance(pass_result, dict):
+            expected_order = (
+                list(benchmark_top_level_stack.IMPLEMENTATION_ORDERS[pass_index])
+                if pass_index < len(benchmark_top_level_stack.IMPLEMENTATION_ORDERS)
+                else None
+            )
+            if pass_result.get("order_index") != pass_index:
+                errors.append(f"{pass_path}.order_index mismatch")
+            if expected_order is not None and pass_result.get("order") != expected_order:
+                errors.append(f"{pass_path}.order mismatch")
+        timing = _validate_pass_timing(
+            errors,
+            pass_path,
+            pass_result,
+            samples,
+            warmups,
+        )
+        if timing is not None:
+            pass_timings.append(timing)
+
+    if len(pass_timings) != len(benchmark_top_level_stack.IMPLEMENTATION_ORDERS):
+        return None
+
+    medians = [item["steady"]["median_us"] for item in pass_timings]
+    mads = [item["steady"]["mad_us"] for item in pass_timings]
+    variances = [item["steady"]["variance_us2"] for item in pass_timings]
+    cold_values = [item["cold_first_call_us"] for item in pass_timings]
+    expected_fields = {
+        "cold_first_call_median_us": statistics.median(cold_values),
+        "cold_first_call_values_us": cold_values,
+        "steady_median_us": statistics.median(medians),
+        "steady_mad_us": statistics.median(mads),
+        "steady_variance_us2": statistics.median(variances),
+        "steady_sample_count": samples
+        * len(benchmark_top_level_stack.IMPLEMENTATION_ORDERS),
+        "checksums": sorted(
+            {
+                checksum
+                for pass_result in passes
+                for checksum in (
+                    (pass_result.get("steady_checksums") or [])
+                    + (pass_result.get("warmup_checksums") or [])
+                    + [pass_result.get("cold_checksum")]
+                )
+            }
+        ),
+    }
+    for key, expected in expected_fields.items():
+        _compare_jsonish(
+            errors,
+            f"{path}.{key}",
+            implementation_result.get(key),
+            expected,
+        )
+    return expected_fields["steady_median_us"]
+
+
 def _absolute_non_resolved(path):
     path = Path(path)
     if path.is_absolute():
@@ -1064,36 +1226,41 @@ def _validate_case_row(errors, context_case, row, samples, warmups):
         if labels != expected_labels:
             errors.append(f"{row_name} missing backward gradient artifacts")
 
+    implementation_medians = {}
     for implementation in ("torch_rs", "pytorch"):
         implementation_result = row.get("implementations", {}).get(
             implementation,
             {},
         )
-        passes = implementation_result.get("passes", [])
-        if len(passes) != len(benchmark_top_level_stack.IMPLEMENTATION_ORDERS):
-            errors.append(f"{row_name}/{implementation} pass count mismatch")
-        if implementation_result.get("steady_sample_count") != (
-            samples * len(benchmark_top_level_stack.IMPLEMENTATION_ORDERS)
-        ):
-            errors.append(f"{row_name}/{implementation} sample count mismatch")
-        if len(implementation_result.get("checksums", [])) != 1:
-            errors.append(f"{row_name}/{implementation} unstable checksums")
-        for pass_result in passes:
-            if pass_result.get("steady", {}).get("sample_count") != samples:
-                errors.append(f"{row_name}/{implementation} pass sample mismatch")
-            if warmups == 0:
-                if pass_result.get("warmup_checksums") != []:
-                    errors.append(
-                        f"{row_name}/{implementation} unexpected warmup checksums"
-                    )
-            elif pass_result.get("warmup_checksums") != pass_result.get(
-                "steady_checksums"
-            ):
-                errors.append(f"{row_name}/{implementation} checksum mismatch")
+        median = _validate_implementation_timing(
+            errors,
+            row_name,
+            implementation,
+            implementation_result,
+            samples,
+            warmups,
+        )
+        if median is not None:
+            implementation_medians[implementation] = median
     try:
         benchmark_top_level_stack._single_checksum_pair(row)
     except AssertionError as error:
         errors.append(str(error))
+    if {"torch_rs", "pytorch"} - set(implementation_medians):
+        return None
+    pytorch_median = implementation_medians["pytorch"]
+    if pytorch_median <= 0.0:
+        errors.append(f"{row_name} PyTorch median is not positive")
+        return None
+    expected_ratios = {
+        "steady_torch_rs_over_pytorch": (
+            implementation_medians["torch_rs"] / pytorch_median
+        ),
+    }
+    _compare_jsonish(errors, f"{row_name}.ratios", row.get("ratios"), expected_ratios)
+    derived = dict(row)
+    derived["ratios"] = expected_ratios
+    return derived
 
 
 def validate_artifact_dict(report):
@@ -1205,10 +1372,19 @@ def validate_artifact_dict(report):
     if not isinstance(warmups, int) or warmups < 0:
         errors.append(f"invalid warmup count: {warmups!r}")
         warmups = 0
+    derived_cases = []
     for context_case in context_cases:
         row = by_name.get(context_case.get("name"))
         if row is not None:
-            _validate_case_row(errors, context_case, row, samples, warmups)
+            derived_row = _validate_case_row(
+                errors,
+                context_case,
+                row,
+                samples,
+                warmups,
+            )
+            if derived_row is not None:
+                derived_cases.append(derived_row)
 
     unsupported = report.get("zero_credit_unsupported_cells", [])
     error_parity = report.get("boundary_error_parity_cells", [])
@@ -1241,7 +1417,7 @@ def validate_artifact_dict(report):
         errors.append("aggregate error-parity cell count mismatch")
     try:
         expected_aggregate_values = _expected_aggregates(
-            cases,
+            derived_cases,
             unsupported,
             error_parity,
         )

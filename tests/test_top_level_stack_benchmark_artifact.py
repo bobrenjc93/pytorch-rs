@@ -1,4 +1,5 @@
 import copy
+from collections import Counter
 import importlib.util
 import json
 import os
@@ -203,6 +204,41 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                         validate_top_level_stack_benchmark.PUBLIC_INPUT_SHAPES,
                     )
 
+            def rebuild_aggregates_from_rows(artifact):
+                supported = artifact["cases"]
+                unsupported = artifact["zero_credit_unsupported_cells"]
+                error_parity = artifact["boundary_error_parity_cells"]
+                aggregates = benchmark_top_level_stack._aggregate_rows(supported)
+                aggregates["zero_credit_unsupported_cell_count"] = len(unsupported)
+                aggregates["boundary_error_parity_cell_count"] = len(error_parity)
+                aggregates["combined_capped_with_zero_credit_unsupported"] = (
+                    benchmark_top_level_stack._geomean(
+                        [
+                            min(
+                                10.0,
+                                max(
+                                    0.10,
+                                    row["ratios"][
+                                        "steady_torch_rs_over_pytorch"
+                                    ],
+                                ),
+                            )
+                            for row in supported
+                        ]
+                        + [10.0] * len(unsupported)
+                    )
+                )
+                aggregates["generated_category_counts"] = dict(
+                    sorted(Counter(row["category"] for row in supported).items())
+                )
+                artifact["aggregates"] = aggregates
+
+            def tamper_ratio_and_rebuild_aggregates(artifact):
+                artifact["cases"][0]["ratios"][
+                    "steady_torch_rs_over_pytorch"
+                ] = 123.0
+                rebuild_aggregates_from_rows(artifact)
+
             tamper_cases = (
                 (
                     "seed",
@@ -219,6 +255,31 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                         123.0,
                     ),
                     "aggregates.steady_geomean_torch_rs_over_pytorch mismatch",
+                ),
+                (
+                    "pass-summary",
+                    lambda artifact: artifact["cases"][0]["implementations"][
+                        "torch_rs"
+                    ]["passes"][0]["steady"].__setitem__(
+                        "median_us",
+                        123.0,
+                    ),
+                    "steady.median_us mismatch",
+                ),
+                (
+                    "implementation-median",
+                    lambda artifact: artifact["cases"][0]["implementations"][
+                        "torch_rs"
+                    ].__setitem__(
+                        "steady_median_us",
+                        123.0,
+                    ),
+                    "torch_rs.steady_median_us mismatch",
+                ),
+                (
+                    "ratio-with-rebuilt-aggregates",
+                    tamper_ratio_and_rebuild_aggregates,
+                    "ratios.steady_torch_rs_over_pytorch mismatch",
                 ),
                 (
                     "driver-sha",
