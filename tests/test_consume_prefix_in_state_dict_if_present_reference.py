@@ -232,6 +232,7 @@ class ConsumePrefixInStateDictReferenceTests(unittest.TestCase):
             exec(f"from {modules_module.__name__} import *", namespace)
             self.assertNotIn(self.actual.__name__, namespace)
             self.assertNotIn("utils", namespace)
+            self.assertIn("Module", namespace)
 
     def test_argument_errors_match_and_larger_serialization_scope_stays_absent(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
@@ -250,7 +251,8 @@ class ConsumePrefixInStateDictReferenceTests(unittest.TestCase):
                 )
 
         self.assertTrue(hasattr(reference_torch.nn, "Module"))
-        self.assertFalse(hasattr(torch.nn, "Module"))
+        self.assertTrue(hasattr(torch.nn, "Module"))
+        self.assertIs(torch.nn.Module, torch.nn.modules.Module)
         for name in ("save", "load"):
             self.assertTrue(hasattr(reference_torch, name))
             self.assertFalse(hasattr(torch, name))

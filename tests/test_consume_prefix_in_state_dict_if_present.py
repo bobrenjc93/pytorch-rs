@@ -187,9 +187,10 @@ class ConsumePrefixInStateDictTests(unittest.TestCase):
 
         modules_wildcard = {}
         exec("from torch_rs.nn.modules import *", modules_wildcard)
+        self.assertIs(modules_wildcard["Module"], torch.nn.Module)
         self.assertNotIn(function.__name__, modules_wildcard)
         self.assertNotIn("utils", modules_wildcard)
-        self.assertEqual(modules_module.__all__, [])
+        self.assertEqual(modules_module.__all__, ["Module"])
 
         self.assertIs(type(function), types.FunctionType)
         self.assertEqual(function.__module__, "torch_rs.nn.modules.utils")
@@ -259,8 +260,7 @@ class ConsumePrefixInStateDictTests(unittest.TestCase):
                     call()
                 self.assertEqual(str(raised.exception), message)
 
-        self.assertFalse(hasattr(torch.nn, "Module"))
-        self.assertFalse(hasattr(torch.nn.modules, "Module"))
+        self.assertIs(torch.nn.Module, torch.nn.modules.Module)
         self.assertFalse(hasattr(torch, "save"))
         self.assertFalse(hasattr(torch, "load"))
         self.assertFalse(hasattr(torch.serialization, "save"))
