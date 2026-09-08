@@ -154,6 +154,30 @@ class TensorPowReferenceTests(unittest.TestCase):
                     case=(case, form, "gradient"),
                 )
 
+    def test_operator_reflected_fallback_matches_pytorch_2_13(self):
+        class ReflectedPower:
+            def __init__(self, marker):
+                self.marker = marker
+                self.other = None
+
+            def __rpow__(self, other):
+                self.other = other
+                return self.marker
+
+        actual_tensor = torch.tensor([2.0])
+        expected_tensor = reference_torch.tensor([2.0], dtype=reference_torch.float32)
+        actual_marker = object()
+        expected_marker = object()
+        actual_rhs = ReflectedPower(actual_marker)
+        expected_rhs = ReflectedPower(expected_marker)
+
+        self.assertIs(actual_tensor.__pow__(actual_rhs), NotImplemented)
+        self.assertIs(expected_tensor.__pow__(expected_rhs), NotImplemented)
+        self.assertIs(actual_tensor ** actual_rhs, actual_marker)
+        self.assertIs(expected_tensor ** expected_rhs, expected_marker)
+        self.assertIs(actual_rhs.other, actual_tensor)
+        self.assertIs(expected_rhs.other, expected_tensor)
+
 
 if __name__ == "__main__":
     unittest.main()

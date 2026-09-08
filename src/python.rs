@@ -8175,6 +8175,18 @@ impl PyTensor {
         self.binary_operation(py, other, BinaryOperation::Multiply, false)
     }
 
+    fn __pow__(
+        &self,
+        py: Python<'_>,
+        exponent: &Bound<'_, PyAny>,
+        modulo: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Py<PyAny>> {
+        if modulo.is_some_and(|value| !value.is_none()) {
+            return Ok(py.NotImplemented());
+        }
+        self.pow_dunder(py, exponent)
+    }
+
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
     #[doc = "\nmul(value) -> Tensor\n\nSee :func:`torch.mul`.\n"]
@@ -8295,6 +8307,29 @@ impl PyTensor {
         };
 
         result.map(Self::new).map_err(|error| tensor_error(&error))
+    }
+
+    fn pow_dunder(&self, py: Python<'_>, exponent: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        if exponent.is_instance_of::<PyTensor>() {
+            return Err(pow_unsupported_native_input());
+        }
+        if probe_torch_function_override(exponent).is_some() {
+            return Ok(py.NotImplemented());
+        }
+        let Some(scalar) = parse_arithmetic_scalar(exponent)? else {
+            return Ok(py.NotImplemented());
+        };
+        if !scalar.is_two() {
+            return Err(pow_unsupported_native_input());
+        }
+
+        validate_pow_native_input(self)?;
+        let result = self
+            .inner
+            .square()
+            .map(PyTensor::new)
+            .map_err(|error| tensor_error(&error))?;
+        result.into_py_any(py)
     }
 
     pub(crate) fn truth_value(&self) -> PyResult<bool> {
@@ -22870,10 +22905,10 @@ impl ParsedFillValue {
 
     fn is_arithmetic_two(&self) -> bool {
         match self {
-            Self::Float(value) => *value == 2.0,
+            Self::Float(value) => value.to_bits() == 2.0_f64.to_bits(),
             Self::SignedInteger(value) => *value == 2,
             Self::UnsignedInteger(value) => *value == 2,
-            Self::TensorScalar(value) => *value == 2.0,
+            Self::TensorScalar(value) => value.to_bits() == 2.0_f32.to_bits(),
         }
     }
 
@@ -23270,8 +23305,9 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     // assigning the descriptor activates the unary-positive numeric slot.
     let positive_descriptor = tensor_base.getattr("positive")?;
     tensor_type.setattr("__pos__", positive_descriptor)?;
-    let pow_descriptor = tensor_base.getattr("pow")?;
-    tensor_type.setattr("__pow__", pow_descriptor)?;
+    // PyO3 exposes the reflected power wrapper when installing nb_power, but
+    // this narrow pow slice intentionally leaves Tensor.__rpow__ unsupported.
+    tensor_type.delattr("__rpow__")?;
     register_scalar_conversions(&tensor_base)?;
     module.add_class::<PyDType>()?;
     module.add("finfo", finfo_type_object(py)?.clone_ref(py))?;

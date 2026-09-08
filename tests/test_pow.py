@@ -167,6 +167,21 @@ class TensorPowTests(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "not an acceptable base type"):
             type("TensorSubclass", (torch.Tensor,), {})
 
+    def test_operator_reflected_fallback_for_foreign_rhs(self):
+        tensor = torch.tensor([2.0])
+        marker = object()
+
+        class ReflectedPower:
+            def __rpow__(self, other):
+                self.other = other
+                return marker
+
+        rhs = ReflectedPower()
+        self.assertIs(tensor.__pow__(rhs), NotImplemented)
+        self.assertIs(tensor ** rhs, marker)
+        self.assertIs(rhs.other, tensor)
+        self.assertIs(tensor.__pow__([]), NotImplemented)
+
     def test_malformed_calls_and_public_metadata(self):
         tensor = torch.tensor([2.0])
         method_descriptor = inspect.getattr_static(torch.Tensor, "pow")
@@ -175,11 +190,12 @@ class TensorPowTests(unittest.TestCase):
 
         self.assertIs(type(method_descriptor), types.MethodDescriptorType)
         self.assertIs(type(tensor.pow), types.BuiltinMethodType)
-        self.assertIs(operator_descriptor, method_descriptor)
+        self.assertIs(type(operator_descriptor), types.WrapperDescriptorType)
         self.assertEqual(method_descriptor.__name__, "pow")
         self.assertEqual(method_descriptor.__qualname__, "TensorBase.pow")
         self.assertEqual(tensor.pow.__qualname__, "Tensor.pow")
-        self.assertEqual(tensor.__pow__.__name__, "pow")
+        self.assertEqual(operator_descriptor.__name__, "__pow__")
+        self.assertEqual(tensor.__pow__.__name__, "__pow__")
 
         self.assertIs(type(function), types.BuiltinFunctionType)
         self.assertEqual(function.__name__, "pow")
