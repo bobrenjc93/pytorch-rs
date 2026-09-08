@@ -97,6 +97,7 @@ class TensorPowTests(unittest.TestCase):
             ("method float", lambda: source.pow(2.0)),
             ("method keyword", lambda: source.pow(exponent=2)),
             ("dunder", lambda: source.__pow__(2)),
+            ("dunder keyword", lambda: source.__pow__(exponent=2)),
             ("operator", lambda: source**2),
             ("top positional int", lambda: torch.pow(source, 2)),
             ("top positional float", lambda: torch.pow(source, 2.0)),
@@ -184,6 +185,20 @@ class TensorPowTests(unittest.TestCase):
         self.assertIs(rhs.other, tensor)
         self.assertIs(tensor.__pow__([]), NotImplemented)
 
+    def test_direct_dunder_call_shapes(self):
+        tensor = torch.tensor([2.0, -3.0])
+        expected = tensor.square()
+
+        self.assert_tensor_matches(
+            tensor.__pow__(exponent=2), expected, case="direct keyword exponent"
+        )
+        self.assert_tensor_matches(
+            pow(tensor, 2, None), expected, case="builtin pow modulo none"
+        )
+        self.assertIs(tensor.__pow__(2, None), NotImplemented)
+        self.assertIs(tensor.__pow__(2, modulo=None), NotImplemented)
+        self.assertIs(tensor.__pow__(exponent=2, modulo=None), NotImplemented)
+
     def test_operator_modes_and_overrides_observe_tensorbase_pow(self):
         tensor = torch.tensor([2.0, -3.0], requires_grad=True)
         descriptor = inspect.getattr_static(torch.Tensor, "pow")
@@ -198,9 +213,10 @@ class TensorPowTests(unittest.TestCase):
                 self.calls.append((func, types, args, kwargs))
                 return self.result
 
-        for form, call in (
-            ("operator", lambda: tensor**2),
-            ("dunder", lambda: tensor.__pow__(2)),
+        for form, call, expected_tail, expected_kwargs in (
+            ("operator", lambda: tensor**2, (2,), {}),
+            ("dunder", lambda: tensor.__pow__(2), (2,), {}),
+            ("dunder keyword", lambda: tensor.__pow__(exponent=2), (), {"exponent": 2}),
         ):
             with self.subTest(form=form):
                 mode = RecordingMode()
@@ -210,10 +226,10 @@ class TensorPowTests(unittest.TestCase):
                 function, dispatch_types, args, kwargs = mode.calls[0]
                 self.assertIs(function, descriptor)
                 self.assertEqual(dispatch_types, (torch.Tensor,))
-                self.assertEqual(len(args), 2)
+                self.assertEqual(len(args), 1 + len(expected_tail))
                 self.assertIs(args[0], tensor)
-                self.assertEqual(args[1], 2)
-                self.assertEqual(kwargs, {})
+                self.assertEqual(args[1:], expected_tail)
+                self.assertEqual(kwargs, expected_kwargs)
 
         order = []
 
@@ -264,7 +280,7 @@ class TensorPowTests(unittest.TestCase):
 
         self.assertIs(type(method_descriptor), types.MethodDescriptorType)
         self.assertIs(type(tensor.pow), types.BuiltinMethodType)
-        self.assertIs(type(operator_descriptor), types.WrapperDescriptorType)
+        self.assertIs(type(operator_descriptor), types.MethodDescriptorType)
         self.assertEqual(method_descriptor.__name__, "pow")
         self.assertEqual(method_descriptor.__qualname__, "TensorBase.pow")
         self.assertEqual(tensor.pow.__qualname__, "Tensor.pow")

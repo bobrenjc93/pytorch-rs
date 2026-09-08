@@ -18,7 +18,7 @@ the source of truth.
 | --- | ---: | --- | --- |
 | tensor storage, shapes, strides, views, indexing | 15% | CPU `f32` tensor metadata, query helpers, shared-storage views including `select`/`narrow`, reshape/transpose, direct, integer-prefix, and full-slice/ellipsis tuple range slicing, contiguous materialization | Tensor-valued `narrow` starts; range slicing with non-unit or negative steps; multi-range slices, advanced indexing, dtype/device expansion, storage-object APIs |
 | dtypes, promotion, devices, dispatch | 10% | CPU/default-device metadata, CPU-build CUDA probes, float32 dtype helpers, selected dispatch probes | Actual CUDA tensors/runtime, mutable device routing, mixed precision, broader promotion |
-| creation, elementwise, reductions | 15% | `as_tensor`/`asarray`, `empty`/scalar/list factories, arithmetic and unary ops, exact/tolerance comparisons, rank-1/rank-2 `cat`/`concat`/`concatenate`, same-shape `stack`, full-tensor `sum`/`mean`, rank-1 dim `sum` | Non-float32 or accelerator creation, concrete `out`, general dimension reductions beyond rank-1 `sum`, higher-rank concatenation, in-place ops |
+| creation, elementwise, reductions | 15% | `as_tensor`/`asarray`, `empty`/scalar/list factories, arithmetic, square-only pow, and unary ops, exact/tolerance comparisons, rank-1/rank-2 `cat`/`concat`/`concatenate`, same-shape `stack`, full-tensor `sum`/`mean`, rank-1 dim `sum` | Non-float32 or accelerator creation, concrete `out`, general dimension reductions beyond rank-1 `sum`, higher-rank concatenation, in-place ops |
 | linear algebra and signal operations | 10% | Rank-2 `matmul`/`mm`, float32 matmul precision preference state | `bmm`, `addmm`, rank-1 or batched `matmul` under `mm`, spectral ops |
 | autograd and higher-order differentiation | 15% | `Tensor.backward`, sequence `torch.autograd.backward`, grad-mode helpers, VJPs for supported views/unaries/reductions | Concrete or higher-order gradients, `autograd.grad`, inference/anomaly contexts |
 | neural-network functional API and modules | 15% | Functional activations, `l1_loss`/`mse_loss`, `linear`, dropout paths, module future flags | Modules/parameters, active-autograd L1/softsign, loss weights and legacy reductions |
@@ -40,6 +40,14 @@ limited to matching input and target shapes. Broadcasted mismatched-shape
 `reduction="none"` calls remain supported for value computation under
 `torch.no_grad()`; scalar `reduction="mean"` and `reduction="sum"` keep their
 existing broadcast autograd coverage.
+
+Square-only `Tensor.pow(exponent)`, `Tensor.__pow__`, Python `x ** 2`, and
+`torch.pow(input, exponent, *, out=None)` are supported for exact native CPU
+float32 tensor bases when `exponent` is exactly numeric `2` or `2.0`, reusing
+the native `square()` value/layout/fresh-storage and first-order VJP behavior.
+Tensor exponents, scalar bases, other exponents, concrete `out`, `__rpow__`,
+in-place `pow_`, subclasses without override handling, and non-CPU or
+non-float32 tensors remain outside the supported surface.
 
 Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 

@@ -5196,14 +5196,24 @@ fn ordered_tensor_pow_method_overrides<'py>(
 }
 
 fn ordered_tensor_pow_dunder_overrides<'py>(
-    exponent: &Bound<'py, PyAny>,
+    args: &Bound<'py, PyTuple>,
+    kwargs: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
     let mut overrides = Vec::new();
     overrides
         .try_reserve_exact(1)
         .map_err(|_| PyMemoryError::new_err("unable to allocate pow dispatch operands"))?;
-    if !exponent.is_instance_of::<PyTensor>()
-        && let Some(probed) = probe_torch_function_override(exponent)
+    let exponent = if args.is_empty() {
+        match kwargs {
+            Some(keywords) => keywords.get_item("exponent")?,
+            None => None,
+        }
+    } else {
+        Some(args.get_item(0)?)
+    };
+    if let Some(exponent) = exponent
+        && !exponent.is_instance_of::<PyTensor>()
+        && let Some(probed) = probe_torch_function_override(&exponent)
     {
         insert_ordered_torch_function_override(&mut overrides, &probed)?;
     }
@@ -5213,10 +5223,10 @@ fn ordered_tensor_pow_dunder_overrides<'py>(
 fn dispatch_tensor_pow_dunder<'py>(
     py: Python<'py>,
     receiver: &Bound<'py, PyTensor>,
-    exponent: &Bound<'py, PyAny>,
-    modulo: Option<&Bound<'py, PyAny>>,
+    args: &Bound<'py, PyTuple>,
+    kwargs: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<Option<Py<PyAny>>> {
-    let overrides = ordered_tensor_pow_dunder_overrides(exponent)?;
+    let overrides = ordered_tensor_pow_dunder_overrides(args, kwargs)?;
     if torch_function_mode_stack::is_empty() && overrides.is_empty() {
         return Ok(None);
     }
@@ -5232,20 +5242,19 @@ fn dispatch_tensor_pow_dunder<'py>(
     }
     let types = PyTuple::new(py, dispatch_types)?;
 
-    let argument_count = 2_usize
-        .checked_add(usize::from(modulo.is_some()))
+    let argument_count = args
+        .len()
+        .checked_add(1)
         .ok_or_else(|| PyMemoryError::new_err("pow dispatch argument count overflowed"))?;
     let mut call_arguments = Vec::new();
     call_arguments
         .try_reserve_exact(argument_count)
         .map_err(|_| PyMemoryError::new_err("unable to allocate pow dispatch arguments"))?;
     call_arguments.push(receiver.clone().into_any());
-    call_arguments.push(exponent.clone());
-    if let Some(modulo) = modulo {
-        call_arguments.push(modulo.clone());
-    }
+    call_arguments.extend(args.iter());
     let call_args = PyTuple::new(py, call_arguments)?;
-    let kwargs = PyDict::new(py);
+    let empty_kwargs = PyDict::new(py);
+    let call_kwargs = kwargs.unwrap_or(&empty_kwargs);
 
     let active_mode = torch_function_mode_stack::pop();
     if let Some(mode) = active_mode.get() {
@@ -5257,7 +5266,7 @@ fn dispatch_tensor_pow_dunder<'py>(
             &function,
             &types,
             &call_args,
-            Some(&kwargs),
+            Some(call_kwargs),
         )?;
         if !is_not_implemented(py, &result) {
             return Ok(Some(result));
@@ -5272,7 +5281,7 @@ fn dispatch_tensor_pow_dunder<'py>(
             &function,
             &types,
             &call_args,
-            Some(&kwargs),
+            Some(call_kwargs),
         )?;
         if !is_not_implemented(py, &result) {
             return Ok(Some(result));
@@ -5280,6 +5289,123 @@ fn dispatch_tensor_pow_dunder<'py>(
     }
 
     Ok(Some(py.NotImplemented()))
+}
+
+fn bind_tensor_pow_dunder_exponent<'py>(
+    args: &Bound<'py, PyTuple>,
+    kwargs: Option<&Bound<'py, PyDict>>,
+) -> PyResult<Option<Bound<'py, PyAny>>> {
+    if args.len() > 1 {
+        return Ok(None);
+    }
+    if let Some(keywords) = kwargs {
+        if keywords.contains("self")? {
+            return Err(PyTypeError::new_err(
+                "TensorBase.pow() got multiple values for argument 'self'",
+            ));
+        }
+        if args.len() == 1 {
+            return if keywords.is_empty() {
+                args.get_item(0).map(Some)
+            } else {
+                Ok(None)
+            };
+        }
+        return if keywords.len() == 1 {
+            keywords.get_item("exponent")
+        } else {
+            Ok(None)
+        };
+    }
+    if args.len() == 1 {
+        args.get_item(0).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
+fn apply_tensor_pow_dunder(
+    py: Python<'_>,
+    receiver: &Bound<'_, PyTensor>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if let Some(keywords) = kwargs
+        && keywords.contains("self")?
+    {
+        return Err(PyTypeError::new_err(
+            "TensorBase.pow() got multiple values for argument 'self'",
+        ));
+    }
+    if let Some(result) = dispatch_tensor_pow_dunder(py, receiver, args, kwargs)? {
+        return Ok(result);
+    }
+    let Some(exponent) = bind_tensor_pow_dunder_exponent(args, kwargs)? else {
+        return Ok(py.NotImplemented());
+    };
+    if exponent.is_instance_of::<PyTensor>() {
+        return Err(pow_unsupported_native_input());
+    }
+    if probe_torch_function_override(&exponent).is_some() {
+        return Ok(py.NotImplemented());
+    }
+    let Some(scalar) = parse_arithmetic_scalar(&exponent)? else {
+        return Ok(py.NotImplemented());
+    };
+    if !scalar.is_two() {
+        return Err(pow_unsupported_native_input());
+    }
+
+    let tensor = receiver.try_borrow()?;
+    validate_pow_native_input(&tensor)?;
+    let result = tensor
+        .inner
+        .square()
+        .map(PyTensor::new)
+        .map_err(|error| tensor_error(&error))?;
+    result.into_py_any(py)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn tensor_pow_dunder_callback(
+    py: Python<'_>,
+    receiver: *mut ffi::PyObject,
+    args: *mut ffi::PyObject,
+    kwargs: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: PyO3's trampoline forwards the live bound receiver and call
+    // arguments supplied by CPython for the duration of the callback.
+    let receiver =
+        unsafe { Bound::<PyAny>::from_borrowed_ptr(py, receiver) }.cast_into::<PyTensor>()?;
+    // SAFETY: CPython owns the positional tuple for the duration of the callback.
+    let args = unsafe { Bound::<PyAny>::from_borrowed_ptr(py, args) }.cast_into::<PyTuple>()?;
+    // SAFETY: the keyword pointer is null or a live dictionary.
+    let kwargs = unsafe { Bound::<PyAny>::from_borrowed_ptr_or_opt(py, kwargs) }
+        .map(Bound::cast_into::<PyDict>)
+        .transpose()?;
+    apply_tensor_pow_dunder(py, &receiver, &args, kwargs.as_ref()).map(Py::into_ptr)
+}
+
+pyo3::inventory::submit! {
+    type Inventory = <PyTensorBase as pyo3::impl_::pyclass::PyClassImpl>::Inventory;
+    Inventory::new(pyo3::impl_::pyclass::PyClassItems {
+        methods: &[
+            pyo3::impl_::pymethods::PyMethodDefType::Method(
+                pyo3::impl_::pymethods::PyMethodDef::cfunction_with_keywords(
+                    c"__pow__",
+                    pyo3::impl_::trampoline::get_trampoline_function!(
+                        cfunction_with_keywords,
+                        tensor_pow_dunder_callback
+                    ),
+                    c"",
+                ),
+            ),
+        ],
+        slots: &[],
+    })
 }
 
 fn dispatch_tensor_pow_method(
@@ -8262,14 +8388,6 @@ impl PyTensor {
         self.binary_operation(py, other, BinaryOperation::Multiply, false)
     }
 
-    fn __pow__(
-        slf: &Bound<'_, Self>,
-        exponent: &Bound<'_, PyAny>,
-        modulo: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<Py<PyAny>> {
-        Self::pow_dunder(slf, exponent, modulo)
-    }
-
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
     #[doc = "\nmul(value) -> Tensor\n\nSee :func:`torch.mul`.\n"]
@@ -8390,41 +8508,6 @@ impl PyTensor {
         };
 
         result.map(Self::new).map_err(|error| tensor_error(&error))
-    }
-
-    fn pow_dunder(
-        slf: &Bound<'_, Self>,
-        exponent: &Bound<'_, PyAny>,
-        modulo: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<Py<PyAny>> {
-        let py = slf.py();
-        if let Some(result) = dispatch_tensor_pow_dunder(py, slf, exponent, modulo)? {
-            return Ok(result);
-        }
-        if modulo.is_some_and(|value| !value.is_none()) {
-            return Ok(py.NotImplemented());
-        }
-        if exponent.is_instance_of::<PyTensor>() {
-            return Err(pow_unsupported_native_input());
-        }
-        if probe_torch_function_override(exponent).is_some() {
-            return Ok(py.NotImplemented());
-        }
-        let Some(scalar) = parse_arithmetic_scalar(exponent)? else {
-            return Ok(py.NotImplemented());
-        };
-        if !scalar.is_two() {
-            return Err(pow_unsupported_native_input());
-        }
-
-        let tensor = slf.try_borrow()?;
-        validate_pow_native_input(&tensor)?;
-        let result = tensor
-            .inner
-            .square()
-            .map(PyTensor::new)
-            .map_err(|error| tensor_error(&error))?;
-        result.into_py_any(py)
     }
 
     pub(crate) fn truth_value(&self) -> PyResult<bool> {
@@ -23400,6 +23483,11 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     // assigning the descriptor activates the unary-positive numeric slot.
     let positive_descriptor = tensor_base.getattr("positive")?;
     tensor_type.setattr("__pos__", positive_descriptor)?;
+    // Tensor power uses a TensorBase descriptor rather than PyO3's generated
+    // wrapper so direct __pow__ calls accept PyTorch's keyword forms while the
+    // numeric slot still falls back to reflected operands when appropriate.
+    let pow_descriptor = tensor_base.getattr("__pow__")?;
+    tensor_type.setattr("__pow__", pow_descriptor)?;
     // PyO3 exposes the reflected power wrapper when installing nb_power, but
     // this narrow pow slice intentionally leaves Tensor.__rpow__ unsupported.
     if tensor_type.hasattr("__rpow__")? {

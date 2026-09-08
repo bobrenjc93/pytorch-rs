@@ -103,6 +103,7 @@ class TensorPowReferenceTests(unittest.TestCase):
             ("method float", lambda: source.pow(2.0)),
             ("method keyword", lambda: source.pow(exponent=2)),
             ("dunder", lambda: source.__pow__(2)),
+            ("dunder keyword", lambda: source.__pow__(exponent=2)),
             ("operator", lambda: source**2),
             ("top positional int", lambda: module.pow(source, 2)),
             ("top positional float", lambda: module.pow(source, 2.0)),
@@ -178,8 +179,31 @@ class TensorPowReferenceTests(unittest.TestCase):
         self.assertIs(actual_rhs.other, actual_tensor)
         self.assertIs(expected_rhs.other, expected_tensor)
 
+    def test_direct_dunder_call_shapes_match_pytorch_2_13(self):
+        actual_tensor = torch.tensor([2.0, -3.0], dtype=torch.float32)
+        expected_tensor = reference_torch.tensor(
+            [2.0, -3.0], dtype=reference_torch.float32
+        )
+
+        self.assert_tensor_matches(
+            actual_tensor.__pow__(exponent=2),
+            expected_tensor.__pow__(exponent=2),
+            case="direct keyword exponent",
+        )
+        self.assert_tensor_matches(
+            pow(actual_tensor, 2, None),
+            pow(expected_tensor, 2, None),
+            case="builtin pow modulo none",
+        )
+        self.assertIs(actual_tensor.__pow__(2, None), NotImplemented)
+        self.assertIs(expected_tensor.__pow__(2, None), NotImplemented)
+        self.assertIs(actual_tensor.__pow__(2, modulo=None), NotImplemented)
+        self.assertIs(expected_tensor.__pow__(2, modulo=None), NotImplemented)
+        self.assertIs(actual_tensor.__pow__(exponent=2, modulo=None), NotImplemented)
+        self.assertIs(expected_tensor.__pow__(exponent=2, modulo=None), NotImplemented)
+
     def test_operator_torch_function_dispatch_matches_pytorch_2_13(self):
-        def mode_call(module, tensor, result):
+        def mode_call(module, tensor, result, call):
             class RecordingMode(module.overrides.TorchFunctionMode):
                 def __init__(self):
                     self.calls = []
@@ -190,25 +214,75 @@ class TensorPowReferenceTests(unittest.TestCase):
 
             mode = RecordingMode()
             with mode:
-                output = tensor**2
+                output = call(tensor)
             return output, mode.calls[0]
 
         actual_tensor = torch.tensor([2.0])
         expected_tensor = reference_torch.tensor([2.0], dtype=reference_torch.float32)
         actual_marker = object()
         expected_marker = object()
-        self.assertIs(mode_call(torch, actual_tensor, actual_marker)[0], actual_marker)
         self.assertIs(
-            mode_call(reference_torch, expected_tensor, expected_marker)[0],
+            mode_call(torch, actual_tensor, actual_marker, lambda value: value**2)[0],
+            actual_marker,
+        )
+        self.assertIs(
+            mode_call(
+                reference_torch,
+                expected_tensor,
+                expected_marker,
+                lambda value: value**2,
+            )[0],
             expected_marker,
         )
 
+        cases = (
+            ("operator", lambda value: value**2, (2,), {}),
+            (
+                "dunder keyword",
+                lambda value: value.__pow__(exponent=2),
+                (),
+                {"exponent": 2},
+            ),
+        )
+        for form, pow_call, expected_tail, expected_kwargs in cases:
+            with self.subTest(form=form):
+                for module, tensor, (_, call) in (
+                    (
+                        torch,
+                        actual_tensor,
+                        mode_call(torch, actual_tensor, actual_marker, pow_call),
+                    ),
+                    (
+                        reference_torch,
+                        expected_tensor,
+                        mode_call(
+                            reference_torch, expected_tensor, expected_marker, pow_call
+                        ),
+                    ),
+                ):
+                    function, dispatch_types, args, kwargs = call
+                    self.assertEqual(function.__qualname__, "TensorBase.pow")
+                    self.assertEqual(dispatch_types, (module.Tensor,))
+                    self.assertEqual(len(args), 1 + len(expected_tail))
+                    self.assertIs(args[0], tensor)
+                    self.assertEqual(args[1:], expected_tail)
+                    self.assertEqual(kwargs, expected_kwargs)
+
         for module, tensor, (_, call) in (
-            (torch, actual_tensor, mode_call(torch, actual_tensor, actual_marker)),
+            (
+                torch,
+                actual_tensor,
+                mode_call(torch, actual_tensor, actual_marker, lambda value: value.__pow__(2)),
+            ),
             (
                 reference_torch,
                 expected_tensor,
-                mode_call(reference_torch, expected_tensor, expected_marker),
+                mode_call(
+                    reference_torch,
+                    expected_tensor,
+                    expected_marker,
+                    lambda value: value.__pow__(2),
+                ),
             ),
         ):
             function, dispatch_types, args, kwargs = call
