@@ -14,6 +14,11 @@ fn normalize_device_index(index: i64) -> i8 {
     index.to_le_bytes()[0].cast_signed()
 }
 
+fn normalize_native_device_index(index: usize) -> i8 {
+    // Native device ordinals use the same low-byte DeviceIndex representation.
+    index.to_le_bytes()[0].cast_signed()
+}
+
 fn repr_device_index(index: i8) -> u16 {
     // PyTorch 2.13's repr widens a signed DeviceIndex directly to uint16_t.
     u16::from_le_bytes(i16::from(index).to_le_bytes())
@@ -40,7 +45,7 @@ impl PyDevice {
             },
             Device::Cuda(index) => Self {
                 inner,
-                index: normalize_device_index(index as i64),
+                index: normalize_native_device_index(index),
             },
         }
     }

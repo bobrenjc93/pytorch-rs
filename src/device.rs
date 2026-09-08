@@ -23,91 +23,61 @@ impl Device {
     /// Reports whether this device executes on host CPU memory.
     #[must_use]
     pub const fn is_cpu(self) -> bool {
-        match self {
-            Self::Cpu => true,
-            Self::Cuda(_) => false,
-        }
+        matches!(self, Self::Cpu)
     }
 
     /// Reports whether this device executes on a CUDA accelerator.
     #[must_use]
     pub const fn is_cuda(self) -> bool {
-        match self {
-            Self::Cpu => false,
-            Self::Cuda(_) => true,
-        }
+        matches!(self, Self::Cuda(_))
     }
 
     /// Reports whether this device executes on a Graphcore IPU accelerator.
     #[must_use]
     pub const fn is_ipu(self) -> bool {
-        match self {
-            Self::Cpu => false,
-            Self::Cuda(_) => false,
-        }
+        false
     }
 
     /// Reports whether this device executes on a Meta MTIA accelerator.
     #[must_use]
     pub const fn is_mtia(self) -> bool {
-        match self {
-            Self::Cpu => false,
-            Self::Cuda(_) => false,
-        }
+        false
     }
 
     /// Reports whether this device executes on a Maia accelerator.
     #[must_use]
     pub const fn is_maia(self) -> bool {
-        match self {
-            Self::Cpu => false,
-            Self::Cuda(_) => false,
-        }
+        false
     }
 
     /// Reports whether this device executes on an Intel XPU accelerator.
     #[must_use]
     pub const fn is_xpu(self) -> bool {
-        match self {
-            Self::Cpu => false,
-            Self::Cuda(_) => false,
-        }
+        false
     }
 
     /// Reports whether this device executes on an XLA accelerator.
     #[must_use]
     pub const fn is_xla(self) -> bool {
-        match self {
-            Self::Cpu => false,
-            Self::Cuda(_) => false,
-        }
+        false
     }
 
     /// Reports whether this device executes on an Apple MPS accelerator.
     #[must_use]
     pub const fn is_mps(self) -> bool {
-        match self {
-            Self::Cpu => false,
-            Self::Cuda(_) => false,
-        }
+        false
     }
 
     /// Reports whether this device executes on a Vulkan accelerator.
     #[must_use]
     pub const fn is_vulkan(self) -> bool {
-        match self {
-            Self::Cpu => false,
-            Self::Cuda(_) => false,
-        }
+        false
     }
 
     /// Reports whether this device represents metadata-only tensor storage.
     #[must_use]
     pub const fn is_meta(self) -> bool {
-        match self {
-            Self::Cpu => false,
-            Self::Cuda(_) => false,
-        }
+        false
     }
 }
 

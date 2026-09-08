@@ -9783,7 +9783,7 @@ fn flatten(
 )]
 fn empty(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("empty", args, kwargs)?;
-    let (size, dtype, device, requires_grad) = parse_creation_arguments("empty", arguments)?;
+    let (size, dtype, device, requires_grad, _) = parse_creation_arguments("empty", arguments)?;
     let ParsedCreationSize {
         dimensions,
         scalar_dimension,
@@ -9800,7 +9800,8 @@ fn empty(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
 )]
 fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("zeros", args, kwargs)?;
-    let (size, dtype, device, requires_grad) = parse_creation_arguments("zeros", arguments)?;
+    let (size, dtype, device, requires_grad, unindexed_cuda_device) =
+        parse_creation_arguments("zeros", arguments)?;
     let ParsedCreationSize {
         dimensions,
         scalar_dimension,
@@ -9812,6 +9813,11 @@ fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
                 reason: "requires_grad is true",
             };
             return Err(creation_factory_error(&error, &shape, scalar_dimension));
+        }
+        if unindexed_cuda_device && dimensions.len() == 1 {
+            return Err(PyNotImplementedError::new_err(
+                "zeros(): unindexed CUDA devices are not supported; use 'cuda:0'",
+            ));
         }
         return CoreTensor::cuda_zeros_float32(args.py(), dimensions, device)
             .map(PyTensor::new)
@@ -9828,7 +9834,7 @@ fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
 )]
 fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("ones", args, kwargs)?;
-    let (size, dtype, device, requires_grad) = parse_creation_arguments("ones", arguments)?;
+    let (size, dtype, device, requires_grad, _) = parse_creation_arguments("ones", arguments)?;
     let ParsedCreationSize {
         dimensions,
         scalar_dimension,
@@ -10842,17 +10848,11 @@ fn bind_to_arguments<'py>(
 
     match args.len() {
         0 => {
-            if let Some(device) = device_keyword.as_ref() {
-                if !device.is_none() {
-                    let parsed = parse_to_device(
-                        device,
-                        false,
-                        &mut native_validation_error,
-                        &mut overrides,
-                    )?;
-                    indexed_cpu_device |= parsed.indexed_cpu;
-                    target_device = Some(parsed.device);
-                }
+            if let Some(device) = device_keyword.as_ref().filter(|device| !device.is_none()) {
+                let parsed =
+                    parse_to_device(device, false, &mut native_validation_error, &mut overrides)?;
+                indexed_cpu_device |= parsed.indexed_cpu;
+                target_device = Some(parsed.device);
             }
             if let Some(dtype) = dtype_keyword.as_ref() {
                 parse_to_dtype(dtype, true, &mut native_validation_error, &mut overrides)?;
@@ -12886,7 +12886,7 @@ fn parse_eye_arguments(
 fn parse_creation_arguments(
     function: &str,
     arguments: CreationCallArguments<'_>,
-) -> PyResult<(ParsedCreationSize, DType, Device, bool)> {
+) -> PyResult<(ParsedCreationSize, DType, Device, bool, bool)> {
     let CreationCallArguments {
         size,
         shape,
@@ -12915,14 +12915,8 @@ fn parse_creation_arguments(
     }
     let size = finish_creation_size(function, size)?;
     let device = parse_device(function, device_argument)?;
-    if function == "zeros"
-        && device.is_cuda()
-        && is_unindexed_cuda_device_argument(device_argument)?
-    {
-        return Err(PyNotImplementedError::new_err(
-            "zeros(): unindexed CUDA devices are not supported; use 'cuda:0'",
-        ));
-    }
+    let unindexed_cuda_device =
+        device.is_cuda() && is_unindexed_cuda_device_argument(device_argument)?;
     if function != "zeros" && !device.is_cpu() {
         return Err(unsupported_cpu_only_device(
             function,
@@ -12940,7 +12934,7 @@ fn parse_creation_arguments(
             "{function}(): pin_memory=True is not supported; only unpinned CPU storage is implemented"
         )));
     }
-    Ok((size, dtype, device, requires_grad))
+    Ok((size, dtype, device, requires_grad, unindexed_cuda_device))
 }
 
 fn parse_like_factory_arguments<'py>(
@@ -13275,7 +13269,7 @@ fn validate_creation_sequence_leading_dimension(
         return Ok(true);
     }
     let dimension = dimensions.get_item(0)?;
-    let valid = if dimension.is_instance_of::<PyBool>() {
+    let valid = if dimension.is_instance_of::<PyBool>() || is_numpy_bool_scalar(&dimension)? {
         false
     } else {
         validate_creation_sequence_dimension_type(function, 0, &dimension).is_ok()
@@ -13296,6 +13290,11 @@ fn validate_creation_sequence_dimension_type(
     index: usize,
     dimension: &Bound<'_, PyAny>,
 ) -> PyResult<()> {
+    if is_numpy_bool_scalar(dimension)? {
+        return Err(creation_sequence_dimension_type_error_at(
+            function, index, dimension,
+        )?);
+    }
     if dimension.is_instance_of::<PyInt>() {
         return Ok(());
     }
@@ -13316,7 +13315,7 @@ fn bind_creation_positional_dimension<'py>(
     dimension: &Bound<'py, PyAny>,
     sequence_error: PyErr,
 ) -> PyResult<PendingCreationSize<'py>> {
-    if dimension.is_instance_of::<PyBool>() {
+    if dimension.is_instance_of::<PyBool>() || is_numpy_bool_scalar(dimension)? {
         return Err(creation_dimension_type_error(function, dimension)?);
     }
 
@@ -13461,6 +13460,11 @@ fn extract_variadic_creation_dimension(
     position: usize,
     dimension: &Bound<'_, PyAny>,
 ) -> PyResult<i64> {
+    if is_numpy_bool_scalar(dimension)? {
+        return Err(creation_dimension_unpack_type_error(
+            function, position, dimension,
+        )?);
+    }
     let indexed = if dimension.is_instance_of::<PyInt>() {
         dimension.clone()
     } else {
@@ -13477,6 +13481,10 @@ fn extract_variadic_creation_dimension(
     indexed
         .extract::<i64>()
         .map_err(|_| creation_dimension_overflow_at(function, position))
+}
+
+fn is_numpy_bool_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    is_numpy_scalar_of_types(value, &["bool_"])
 }
 
 fn creation_dimension_type_error(function: &str, dimension: &Bound<'_, PyAny>) -> PyResult<PyErr> {
