@@ -366,6 +366,139 @@ class TensorToTests(unittest.TestCase):
             {"non_blocking": non_blocking},
         )
 
+    def test_torch_function_override_descriptor_lookup_is_not_prescanned(self):
+        tensor = torch.tensor([1.0], dtype=torch.float32)
+        descriptor = inspect.getattr_static(torch.Tensor, "to")
+
+        def assert_dispatches_with_two_lookups(call, expected_arg_count, expected_kwargs):
+            marker = object()
+            events = []
+
+            class LookupLimitedDescriptor:
+                def __get__(self, obj, objtype=None):
+                    events.append("get")
+                    if events.count("get") > 2:
+                        raise RuntimeError("late override failure")
+
+                    def handler(func, types, args=(), kwargs=None):
+                        events.append(
+                            (
+                                "call",
+                                func is descriptor,
+                                tuple(dispatch_type.__name__ for dispatch_type in types),
+                                len(args),
+                                None if kwargs is None else tuple(kwargs),
+                            )
+                        )
+                        return marker
+
+                    return handler
+
+            class Override:
+                __torch_function__ = LookupLimitedDescriptor()
+
+            value = Override()
+            self.assertIs(call(value), marker)
+            self.assertEqual(
+                events,
+                [
+                    "get",
+                    "get",
+                    (
+                        "call",
+                        True,
+                        ("Override",),
+                        expected_arg_count,
+                        None if expected_kwargs is None else tuple(expected_kwargs),
+                    ),
+                ],
+            )
+
+        assert_dispatches_with_two_lookups(
+            lambda value: tensor.to(value),
+            2,
+            None,
+        )
+        assert_dispatches_with_two_lookups(
+            lambda value: tensor.to("cuda", value),
+            3,
+            None,
+        )
+        assert_dispatches_with_two_lookups(
+            lambda value: tensor.to(copy=value),
+            1,
+            {"copy": object()},
+        )
+
+    def test_torch_function_transient_attribute_error_uses_slot_policy(self):
+        tensor = torch.tensor([1.0], dtype=torch.float32)
+        descriptor = inspect.getattr_static(torch.Tensor, "to")
+
+        def make_override(attribute_error_at):
+            marker = object()
+            events = []
+
+            class FlakyDescriptor:
+                def __get__(self, obj, objtype=None):
+                    events.append("get")
+                    if events.count("get") == attribute_error_at:
+                        raise AttributeError("transient __torch_function__ miss")
+
+                    def handler(func, types, args=(), kwargs=None):
+                        events.append(
+                            (
+                                "call",
+                                func is descriptor,
+                                tuple(dispatch_type.__name__ for dispatch_type in types),
+                                len(args),
+                                None if kwargs is None else tuple(kwargs),
+                            )
+                        )
+                        return marker
+
+                    return handler
+
+            class Override:
+                __torch_function__ = FlakyDescriptor()
+
+            return Override(), marker, events
+
+        for case, call, expected_arg_count, expected_kwargs in (
+            ("first positional", lambda value: tensor.to(value), 2, None),
+            ("dtype keyword", lambda value: tensor.to(dtype=value), 1, ("dtype",)),
+        ):
+            value, marker, events = make_override(attribute_error_at=1)
+            with self.subTest(case=case):
+                self.assertIs(call(value), marker)
+                self.assertEqual(
+                    events,
+                    [
+                        "get",
+                        "get",
+                        "get",
+                        (
+                            "call",
+                            True,
+                            ("Override",),
+                            expected_arg_count,
+                            expected_kwargs,
+                        ),
+                    ],
+                )
+
+        for case, call in (
+            ("positional dtype after device", lambda value: tensor.to("cuda", value)),
+            ("device keyword", lambda value: tensor.to(device=value)),
+            ("copy keyword", lambda value: tensor.to(copy=value)),
+            ("non_blocking keyword", lambda value: tensor.to(non_blocking=value)),
+            ("memory_format keyword", lambda value: tensor.to(memory_format=value)),
+        ):
+            value, _, events = make_override(attribute_error_at=1)
+            with self.subTest(case=case):
+                with self.assertRaises(TypeError):
+                    call(value)
+                self.assertEqual(events, ["get"])
+
     def test_tensorbase_descriptor_metadata_documentation_and_unbound_calls(self):
         tensor = torch.tensor([1.0], dtype=torch.float32)
         descriptor = inspect.getattr_static(torch.Tensor, "to")

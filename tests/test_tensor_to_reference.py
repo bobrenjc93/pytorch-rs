@@ -447,6 +447,110 @@ class TensorToReferenceTests(unittest.TestCase):
             self.device_like_override_outside_device_slot_contract(reference_torch),
         )
 
+    def descriptor_lookup_contract(self, module):
+        tensor = module.tensor([1.0], dtype=module.float32)
+        descriptor = inspect.getattr_static(module.Tensor, "to")
+
+        def run_case(name, call, fail_after=None, attribute_error_at=None):
+            marker = object()
+            events = []
+
+            class FlakyDescriptor:
+                def __get__(self, obj, objtype=None):
+                    events.append("get")
+                    lookup_count = events.count("get")
+                    if attribute_error_at is not None and lookup_count == attribute_error_at:
+                        raise AttributeError("transient __torch_function__ miss")
+                    if fail_after is not None and lookup_count > fail_after:
+                        raise RuntimeError("late override failure")
+
+                    def handler(func, types, args=(), kwargs=None):
+                        events.append(
+                            (
+                                "call",
+                                func is descriptor,
+                                tuple(dispatch_type.__name__ for dispatch_type in types),
+                                len(args),
+                                None if kwargs is None else tuple(kwargs),
+                            )
+                        )
+                        return marker
+
+                    return handler
+
+            class Override:
+                __torch_function__ = FlakyDescriptor()
+
+            try:
+                result = call(tensor, Override())
+            except Exception as error:
+                outcome = ("error", type(error).__name__)
+            else:
+                outcome = ("ok", result is marker)
+            return name, outcome, tuple(events)
+
+        return tuple(
+            run_case(name, call, **options)
+            for name, call, options in (
+                (
+                    "first positional late failure after two lookups",
+                    lambda tensor, value: tensor.to(value),
+                    {"fail_after": 2},
+                ),
+                (
+                    "unsupported device before override late failure after two lookups",
+                    lambda tensor, value: tensor.to("cuda", value),
+                    {"fail_after": 2},
+                ),
+                (
+                    "copy keyword late failure after two lookups",
+                    lambda tensor, value: tensor.to(copy=value),
+                    {"fail_after": 2},
+                ),
+                (
+                    "first positional transient miss",
+                    lambda tensor, value: tensor.to(value),
+                    {"attribute_error_at": 1},
+                ),
+                (
+                    "dtype keyword transient miss",
+                    lambda tensor, value: tensor.to(dtype=value),
+                    {"attribute_error_at": 1},
+                ),
+                (
+                    "positional dtype after device transient miss",
+                    lambda tensor, value: tensor.to("cuda", value),
+                    {"attribute_error_at": 1},
+                ),
+                (
+                    "device keyword transient miss",
+                    lambda tensor, value: tensor.to(device=value),
+                    {"attribute_error_at": 1},
+                ),
+                (
+                    "copy keyword transient miss",
+                    lambda tensor, value: tensor.to(copy=value),
+                    {"attribute_error_at": 1},
+                ),
+                (
+                    "non_blocking keyword transient miss",
+                    lambda tensor, value: tensor.to(non_blocking=value),
+                    {"attribute_error_at": 1},
+                ),
+                (
+                    "memory_format keyword transient miss",
+                    lambda tensor, value: tensor.to(memory_format=value),
+                    {"attribute_error_at": 1},
+                ),
+            )
+        )
+
+    def test_torch_function_descriptor_lookup_counts_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.descriptor_lookup_contract(torch),
+            self.descriptor_lookup_contract(reference_torch),
+        )
+
     def callable_contract(self, module):
         tensor = module.tensor([1.0], dtype=module.float32)
         descriptor = inspect.getattr_static(module.Tensor, "to")

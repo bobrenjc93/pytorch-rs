@@ -602,12 +602,26 @@ Example::
             return Err(to_unsupported_native_input());
         }
         let tensor = receiver.cast::<PyTensor>()?;
-        let call = bind_to_arguments(args, kwargs, !torch_function_mode_stack::is_empty())?;
+        let call = bind_to_arguments(args, kwargs)?;
         if let Some(result) = dispatch_tensor_to_method(slf.py(), tensor, &call, args, kwargs)? {
             return Ok(result);
         }
 
-        if call.non_blocking {
+        let BoundToArguments {
+            other,
+            indexed_cpu_device,
+            non_blocking,
+            copy,
+            memory_format,
+            native_validation_error,
+            overrides: _,
+        } = call;
+
+        if let Some(error) = native_validation_error {
+            return Err(error);
+        }
+
+        if non_blocking {
             return Err(PyNotImplementedError::new_err(
                 "to(): non_blocking=True is not supported",
             ));
@@ -616,19 +630,19 @@ Example::
         {
             let tensor_ref = tensor.try_borrow()?;
             validate_to_native_tensor(&tensor_ref.inner)?;
-            if let Some(other) = &call.other {
+            if let Some(other) = &other {
                 validate_to_native_tensor(&other.try_borrow()?.inner)?;
             }
         }
 
-        if !(call.copy || call.indexed_cpu_device) {
+        if !(copy || indexed_cpu_device) {
             return Ok(tensor.clone().unbind().into_any());
         }
 
         let inner = tensor
             .try_borrow()?
             .inner
-            .try_copy_with_memory_format(call.memory_format)
+            .try_copy_with_memory_format(memory_format)
             .map_err(|error| tensor_error(&error))?;
         Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
     }
@@ -3592,6 +3606,20 @@ fn probe_dtype_torch_function_override<'py>(
 ) -> Option<ProbedTorchFunctionOverride<'py>> {
     // Unlike tensor arguments, PyTorch's dtype parser does not retry a failed
     // __torch_function__ lookup through a tensor-type fallback.
+    let handler = probe_torch_function_handler(value, false)?;
+    if is_disabled_torch_function_handler(&handler) {
+        return None;
+    }
+    Some(probed_torch_function_override(value))
+}
+
+#[allow(
+    unsafe_code,
+    reason = "some PyTorch argument slots use a one-shot exception-suppressing attribute probe"
+)]
+fn probe_torch_function_override_once<'py>(
+    value: &Bound<'py, PyAny>,
+) -> Option<ProbedTorchFunctionOverride<'py>> {
     let handler = probe_torch_function_handler(value, false)?;
     if is_disabled_torch_function_handler(&handler) {
         return None;
@@ -9921,6 +9949,7 @@ struct BoundToArguments<'py> {
     non_blocking: bool,
     copy: bool,
     memory_format: MemoryFormat,
+    native_validation_error: Option<PyErr>,
     overrides: Vec<ProbedTorchFunctionOverride<'py>>,
 }
 
@@ -9937,7 +9966,6 @@ enum ToFirstArgument<'py> {
 fn bind_to_arguments<'py>(
     args: &Bound<'py, PyTuple>,
     kwargs: Option<&Bound<'py, PyDict>>,
-    defer_native_validation: bool,
 ) -> PyResult<BoundToArguments<'py>> {
     let mut device_keyword_present = false;
     let mut device_keyword = None;
@@ -9967,12 +9995,11 @@ fn bind_to_arguments<'py>(
         }
     }
 
-    let defer_native_validation =
-        defer_native_validation || contains_to_torch_function_override_operand(args, kwargs);
     let mut overrides = Vec::new();
     overrides
         .try_reserve_exact(8)
         .map_err(|_| PyMemoryError::new_err("unable to allocate to dispatch operands"))?;
+    let mut native_validation_error = None;
     let mut other = None;
     let mut indexed_cpu_device = false;
     let mut positional_non_blocking = None;
@@ -9982,23 +10009,24 @@ fn bind_to_arguments<'py>(
         0 => {
             if let Some(device) = device_keyword.as_ref() {
                 indexed_cpu_device |=
-                    parse_to_device(device, defer_native_validation, &mut overrides)?.indexed_cpu;
+                    parse_to_device(device, false, &mut native_validation_error, &mut overrides)?
+                        .indexed_cpu;
             }
             if let Some(dtype) = dtype_keyword.as_ref() {
-                parse_to_dtype(dtype, defer_native_validation, &mut overrides)?;
+                parse_to_dtype(dtype, true, &mut native_validation_error, &mut overrides)?;
             }
         }
         1 => {
             let first = classify_to_first_argument(
                 &args.get_item(0)?,
-                defer_native_validation,
+                &mut native_validation_error,
                 &mut overrides,
             )?;
             match first {
                 ToFirstArgument::NoneValue | ToFirstArgument::Override => {
                     reject_to_keyword_presence(device_keyword_present)?;
                     if let Some(dtype) = dtype_keyword.as_ref() {
-                        parse_to_dtype(dtype, defer_native_validation, &mut overrides)?;
+                        parse_to_dtype(dtype, true, &mut native_validation_error, &mut overrides)?;
                     }
                 }
                 ToFirstArgument::Device {
@@ -10007,7 +10035,7 @@ fn bind_to_arguments<'py>(
                     reject_to_keyword_presence(device_keyword_present)?;
                     indexed_cpu_device |= indexed;
                     if let Some(dtype) = dtype_keyword.as_ref() {
-                        parse_to_dtype(dtype, defer_native_validation, &mut overrides)?;
+                        parse_to_dtype(dtype, true, &mut native_validation_error, &mut overrides)?;
                     }
                 }
                 ToFirstArgument::DType => {
@@ -10024,7 +10052,7 @@ fn bind_to_arguments<'py>(
         2 => {
             let first = classify_to_first_argument(
                 &args.get_item(0)?,
-                defer_native_validation,
+                &mut native_validation_error,
                 &mut overrides,
             )?;
             let second = args.get_item(1)?;
@@ -10032,7 +10060,7 @@ fn bind_to_arguments<'py>(
                 ToFirstArgument::NoneValue => {
                     reject_to_keyword_presence(device_keyword_present)?;
                     reject_to_keyword_presence(dtype_keyword_present)?;
-                    parse_to_dtype(&second, defer_native_validation, &mut overrides)?;
+                    parse_to_dtype(&second, false, &mut native_validation_error, &mut overrides)?;
                 }
                 ToFirstArgument::Device {
                     indexed_cpu: indexed,
@@ -10040,7 +10068,7 @@ fn bind_to_arguments<'py>(
                     reject_to_keyword_presence(device_keyword_present)?;
                     reject_to_keyword_presence(dtype_keyword_present)?;
                     indexed_cpu_device |= indexed;
-                    parse_to_dtype(&second, defer_native_validation, &mut overrides)?;
+                    parse_to_dtype(&second, false, &mut native_validation_error, &mut overrides)?;
                 }
                 ToFirstArgument::DType => {
                     reject_to_keyword_presence(device_keyword_present)?;
@@ -10051,7 +10079,12 @@ fn bind_to_arguments<'py>(
                     reject_to_keyword_presence(device_keyword_present)?;
                     reject_to_keyword_presence(dtype_keyword_present)?;
                     if is_to_native_dtype_or_none_argument(&second) {
-                        parse_to_dtype(&second, defer_native_validation, &mut overrides)?;
+                        parse_to_dtype(
+                            &second,
+                            false,
+                            &mut native_validation_error,
+                            &mut overrides,
+                        )?;
                     } else {
                         positional_non_blocking = Some(second);
                     }
@@ -10067,7 +10100,7 @@ fn bind_to_arguments<'py>(
         3 => {
             let first = classify_to_first_argument(
                 &args.get_item(0)?,
-                defer_native_validation,
+                &mut native_validation_error,
                 &mut overrides,
             )?;
             let second = args.get_item(1)?;
@@ -10076,7 +10109,7 @@ fn bind_to_arguments<'py>(
                 ToFirstArgument::NoneValue => {
                     reject_to_keyword_presence(device_keyword_present)?;
                     reject_to_keyword_presence(dtype_keyword_present)?;
-                    parse_to_dtype(&second, defer_native_validation, &mut overrides)?;
+                    parse_to_dtype(&second, false, &mut native_validation_error, &mut overrides)?;
                     positional_non_blocking = Some(third);
                 }
                 ToFirstArgument::Device {
@@ -10085,7 +10118,7 @@ fn bind_to_arguments<'py>(
                     reject_to_keyword_presence(device_keyword_present)?;
                     reject_to_keyword_presence(dtype_keyword_present)?;
                     indexed_cpu_device |= indexed;
-                    parse_to_dtype(&second, defer_native_validation, &mut overrides)?;
+                    parse_to_dtype(&second, false, &mut native_validation_error, &mut overrides)?;
                     positional_non_blocking = Some(third);
                 }
                 ToFirstArgument::DType => {
@@ -10098,7 +10131,12 @@ fn bind_to_arguments<'py>(
                     reject_to_keyword_presence(device_keyword_present)?;
                     reject_to_keyword_presence(dtype_keyword_present)?;
                     if is_to_native_dtype_or_none_argument(&second) {
-                        parse_to_dtype(&second, defer_native_validation, &mut overrides)?;
+                        parse_to_dtype(
+                            &second,
+                            false,
+                            &mut native_validation_error,
+                            &mut overrides,
+                        )?;
                         positional_non_blocking = Some(third);
                     } else {
                         positional_non_blocking = Some(second);
@@ -10117,7 +10155,7 @@ fn bind_to_arguments<'py>(
         4 => {
             let first = classify_to_first_argument(
                 &args.get_item(0)?,
-                defer_native_validation,
+                &mut native_validation_error,
                 &mut overrides,
             )?;
             let second = args.get_item(1)?;
@@ -10127,7 +10165,7 @@ fn bind_to_arguments<'py>(
             reject_to_keyword_presence(dtype_keyword_present)?;
             match first {
                 ToFirstArgument::NoneValue | ToFirstArgument::Override => {
-                    parse_to_dtype(&second, defer_native_validation, &mut overrides)?;
+                    parse_to_dtype(&second, false, &mut native_validation_error, &mut overrides)?;
                     positional_non_blocking = Some(third);
                     positional_copy = Some(fourth);
                 }
@@ -10135,7 +10173,7 @@ fn bind_to_arguments<'py>(
                     indexed_cpu: indexed,
                 } => {
                     indexed_cpu_device |= indexed;
-                    parse_to_dtype(&second, defer_native_validation, &mut overrides)?;
+                    parse_to_dtype(&second, false, &mut native_validation_error, &mut overrides)?;
                     positional_non_blocking = Some(third);
                     positional_copy = Some(fourth);
                 }
@@ -10173,7 +10211,7 @@ fn bind_to_arguments<'py>(
     };
     let memory_format = parse_to_memory_format(
         memory_format_keyword.as_ref(),
-        defer_native_validation,
+        &mut native_validation_error,
         &mut overrides,
     )?;
 
@@ -10183,23 +10221,8 @@ fn bind_to_arguments<'py>(
         non_blocking,
         copy,
         memory_format,
+        native_validation_error,
         overrides,
-    })
-}
-
-fn contains_to_torch_function_override_operand(
-    args: &Bound<'_, PyTuple>,
-    kwargs: Option<&Bound<'_, PyDict>>,
-) -> bool {
-    args.iter().enumerate().any(|(index, value)| {
-        let native_device_slot = index == 0 && is_to_native_device_argument(&value);
-        !native_device_slot && probe_torch_function_override(&value).is_some()
-    }) || kwargs.is_some_and(|kwargs| {
-        kwargs.iter().any(|(key, value)| {
-            let native_device_slot = key.extract::<String>().is_ok_and(|key| key == "device")
-                && is_to_native_device_argument(&value);
-            !native_device_slot && probe_torch_function_override(&value).is_some()
-        })
     })
 }
 
@@ -10267,7 +10290,7 @@ fn dispatch_tensor_to_method(
 
 fn classify_to_first_argument<'py>(
     value: &Bound<'py, PyAny>,
-    defer_native_validation: bool,
+    native_validation_error: &mut Option<PyErr>,
     overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
 ) -> PyResult<ToFirstArgument<'py>> {
     if value.is_none() {
@@ -10280,14 +10303,13 @@ fn classify_to_first_argument<'py>(
         return Ok(ToFirstArgument::Tensor(value.cast::<PyTensor>()?.clone()));
     }
     if let Ok(dtype) = value.cast::<PyDType>() {
-        if !defer_native_validation {
-            validate_to_dtype(dtype.try_borrow()?.inner())?;
-        }
+        validate_to_dtype(dtype.try_borrow()?.inner(), native_validation_error);
         return Ok(ToFirstArgument::DType);
     }
     if is_to_native_device_argument(value) {
         return Ok(ToFirstArgument::Device {
-            indexed_cpu: parse_to_device(value, defer_native_validation, overrides)?.indexed_cpu,
+            indexed_cpu: parse_to_device(value, true, native_validation_error, overrides)?
+                .indexed_cpu,
         });
     }
     if let Some(probed) = probe_torch_function_override(value) {
@@ -10303,19 +10325,28 @@ struct ParsedToDevice {
 
 fn parse_to_device<'py>(
     device: &Bound<'py, PyAny>,
-    defer_native_validation: bool,
+    retry_failed_lookup: bool,
+    native_validation_error: &mut Option<PyErr>,
     overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
 ) -> PyResult<ParsedToDevice> {
     if device.is_none() {
         return Ok(ParsedToDevice { indexed_cpu: false });
     }
     if is_to_native_device_argument(device) {
-        if defer_native_validation {
-            return Ok(ParsedToDevice { indexed_cpu: false });
-        }
-        return parse_to_native_device(device);
+        return match parse_to_native_device(device) {
+            Ok(device) => Ok(device),
+            Err(error) => {
+                record_to_native_validation_error(native_validation_error, error);
+                Ok(ParsedToDevice { indexed_cpu: false })
+            }
+        };
     }
-    if let Some(probed) = probe_torch_function_override(device) {
+    let probed = if retry_failed_lookup {
+        probe_torch_function_override(device)
+    } else {
+        probe_torch_function_override_once(device)
+    };
+    if let Some(probed) = probed {
         insert_ordered_torch_function_override(overrides, &probed)?;
         return Ok(ParsedToDevice { indexed_cpu: false });
     }
@@ -10343,33 +10374,39 @@ fn parse_to_native_device(device: &Bound<'_, PyAny>) -> PyResult<ParsedToDevice>
 
 fn parse_to_dtype<'py>(
     dtype: &Bound<'py, PyAny>,
-    defer_native_validation: bool,
+    retry_failed_lookup: bool,
+    native_validation_error: &mut Option<PyErr>,
     overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
 ) -> PyResult<()> {
     if dtype.is_none() {
         return Ok(());
     }
-    if let Some(probed) = probe_dtype_torch_function_override(dtype) {
+    let probed = if retry_failed_lookup {
+        probe_torch_function_override(dtype)
+    } else {
+        probe_dtype_torch_function_override(dtype)
+    };
+    if let Some(probed) = probed {
         insert_ordered_torch_function_override(overrides, &probed)?;
         return Ok(());
     }
     let Ok(dtype) = dtype.cast::<PyDType>() else {
         return Err(invalid_to_arguments_error());
     };
-    if defer_native_validation {
-        Ok(())
-    } else {
-        validate_to_dtype(dtype.try_borrow()?.inner())
-    }
+    validate_to_dtype(dtype.try_borrow()?.inner(), native_validation_error);
+    Ok(())
 }
 
-fn validate_to_dtype(dtype: DType) -> PyResult<()> {
+fn validate_to_dtype(dtype: DType, native_validation_error: &mut Option<PyErr>) {
     if dtype == DType::Float32 {
-        return Ok(());
+        return;
     }
-    Err(PyNotImplementedError::new_err(
-        "to(): dtype conversions are not supported; only torch.float32 identity is implemented",
-    ))
+    record_to_native_validation_error(
+        native_validation_error,
+        PyNotImplementedError::new_err(
+            "to(): dtype conversions are not supported; only torch.float32 identity is implemented",
+        ),
+    );
 }
 
 fn parse_to_bool<'py>(
@@ -10379,7 +10416,7 @@ fn parse_to_bool<'py>(
     if value.is_exact_instance_of::<PyBool>() {
         return value.extract::<bool>();
     }
-    if let Some(probed) = probe_torch_function_override(value) {
+    if let Some(probed) = probe_torch_function_override_once(value) {
         insert_ordered_torch_function_override(overrides, &probed)?;
         return Ok(false);
     }
@@ -10388,7 +10425,7 @@ fn parse_to_bool<'py>(
 
 fn parse_to_memory_format<'py>(
     memory_format: Option<&Bound<'py, PyAny>>,
-    defer_native_validation: bool,
+    native_validation_error: &mut Option<PyErr>,
     overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
 ) -> PyResult<MemoryFormat> {
     let Some(memory_format) = memory_format else {
@@ -10397,24 +10434,33 @@ fn parse_to_memory_format<'py>(
     if memory_format.is_none() {
         return Ok(MemoryFormat::Preserve);
     }
-    if let Some(probed) = probe_torch_function_override(memory_format) {
+    if let Some(probed) = probe_torch_function_override_once(memory_format) {
         insert_ordered_torch_function_override(overrides, &probed)?;
         return Ok(MemoryFormat::Preserve);
     }
     if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
         let memory_format = memory_format.try_borrow()?.inner();
-        if memory_format == MemoryFormat::Preserve || defer_native_validation {
-            return Ok(memory_format);
+        if memory_format != MemoryFormat::Preserve {
+            record_to_native_validation_error(
+                native_validation_error,
+                PyNotImplementedError::new_err(
+                    "to(): only torch.preserve_format memory_format is supported",
+                ),
+            );
         }
-        return Err(PyNotImplementedError::new_err(
-            "to(): only torch.preserve_format memory_format is supported",
-        ));
+        return Ok(memory_format);
     }
 
     let type_name = memory_format.get_type().name()?;
     Err(PyTypeError::new_err(format!(
         "to(): argument 'memory_format' must be torch.memory_format, not {type_name}"
     )))
+}
+
+fn record_to_native_validation_error(native_validation_error: &mut Option<PyErr>, error: PyErr) {
+    if native_validation_error.is_none() {
+        *native_validation_error = Some(error);
+    }
 }
 
 fn reject_to_keyword_presence(present: bool) -> PyResult<()> {
