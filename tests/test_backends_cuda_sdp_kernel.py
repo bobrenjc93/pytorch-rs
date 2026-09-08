@@ -16,6 +16,13 @@ import warnings
 import torch_rs as torch
 
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 SDP_KERNEL_DOC = """
     .. warning:: This flag is beta and subject to change.
 
@@ -204,8 +211,14 @@ print(json.dumps({
             0,
             msg=completed.stdout + completed.stderr,
         )
+        observed = json.loads(completed.stdout)
+        cuda_available = observed.pop("cuda_available")
+        cuda_count = observed.pop("cuda_count")
+        self.assertIs(type(cuda_count), int)
+        self.assertGreaterEqual(cuda_count, 0)
+        self.assertIs(cuda_available, cuda_count > 0)
         self.assertEqual(
-            json.loads(completed.stdout),
+            observed,
             {
                 "before": [False, False, False, False],
                 "after_create": [False, False, False, False],
@@ -218,8 +231,6 @@ print(json.dumps({
                 "built": False,
                 "ck_available": False,
                 "flash_available": False,
-                "cuda_available": False,
-                "cuda_count": 0,
                 "sdpa_execution": False,
                 "nn_attention": False,
                 "torch_compile": True,
@@ -581,8 +592,7 @@ print(json.dumps({
             )
             self.assertFalse(hasattr(torch.nn, "attention"))
             self.assertTrue(callable(torch.compile))
-            self.assertIs(torch.cuda.is_available(), False)
-            self.assertEqual(torch.cuda.device_count(), 0)
+            assert_cuda_runtime_probe_matches_visibility(self)
             with self.assertRaisesRegex(
                 RuntimeError,
                 "^tensor\\(\\): device 'cuda' is not supported; "

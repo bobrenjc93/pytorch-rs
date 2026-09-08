@@ -11,6 +11,7 @@ import threading
 _CUDA_SUCCESS = 0
 _CUDA_MEMCPY_DEVICE_TO_HOST = 2
 _FLOAT32_BYTES = 4
+_C_SIZE_MAX = (1 << (ctypes.sizeof(ctypes.c_size_t) * 8)) - 1
 
 _RUNTIME_LOCK = threading.Lock()
 _RUNTIME: ctypes.CDLL | None = None
@@ -78,6 +79,8 @@ def _configure_runtime(runtime: ctypes.CDLL) -> None:
             return
         runtime.cudaGetDeviceCount.argtypes = [ctypes.POINTER(ctypes.c_int)]
         runtime.cudaGetDeviceCount.restype = ctypes.c_int
+        runtime.cudaGetDevice.argtypes = [ctypes.POINTER(ctypes.c_int)]
+        runtime.cudaGetDevice.restype = ctypes.c_int
         runtime.cudaSetDevice.argtypes = [ctypes.c_int]
         runtime.cudaSetDevice.restype = ctypes.c_int
         runtime.cudaMalloc.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_size_t]
@@ -134,6 +137,34 @@ def _device_count(runtime: ctypes.CDLL) -> int:
     return max(0, int(count.value))
 
 
+def _storage_byte_count(element_count: int) -> int:
+    if element_count > _C_SIZE_MAX // _FLOAT32_BYTES:
+        raise OverflowError("CUDA storage byte size exceeds size_t")
+    return element_count * _FLOAT32_BYTES
+
+
+class _CudaDeviceGuard:
+    def __init__(self, runtime: ctypes.CDLL, device_index: int) -> None:
+        self._runtime = runtime
+        self._device_index = device_index
+        self._previous_device: int | None = None
+        self._changed = False
+
+    def __enter__(self) -> "_CudaDeviceGuard":
+        current = ctypes.c_int()
+        _check_call(self._runtime, "cudaGetDevice", ctypes.byref(current))
+        self._previous_device = int(current.value)
+        self._changed = self._previous_device != self._device_index
+        if self._changed:
+            _check_call(self._runtime, "cudaSetDevice", self._device_index)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> bool:
+        if self._changed and self._previous_device is not None:
+            _check_call(self._runtime, "cudaSetDevice", self._previous_device)
+        return False
+
+
 def is_available() -> bool:
     return device_count() > 0
 
@@ -176,24 +207,24 @@ class CudaFloat32Storage:
                 f"CUDA device {device_index} is unavailable; device_count() is {count}"
             )
 
-        _check_call(runtime, "cudaSetDevice", device_index)
+        byte_count = _storage_byte_count(element_count)
         self._runtime = runtime
         self._pointer = ctypes.c_void_p()
         self._elements = element_count
         self._device_index = device_index
         self._closed = False
 
-        byte_count = element_count * _FLOAT32_BYTES
-        if byte_count:
-            _check_call(runtime, "cudaMalloc", ctypes.byref(self._pointer), byte_count)
-            try:
-                _check_call(runtime, "cudaMemset", self._pointer, 0, byte_count)
+        with _CudaDeviceGuard(runtime, device_index):
+            if byte_count:
+                _check_call(runtime, "cudaMalloc", ctypes.byref(self._pointer), byte_count)
+                try:
+                    _check_call(runtime, "cudaMemset", self._pointer, 0, byte_count)
+                    _check_call(runtime, "cudaDeviceSynchronize")
+                except Exception:
+                    self.close()
+                    raise
+            else:
                 _check_call(runtime, "cudaDeviceSynchronize")
-            except Exception:
-                self.close()
-                raise
-        else:
-            _check_call(runtime, "cudaDeviceSynchronize")
         _INITIALIZED = True
 
     @property
@@ -211,21 +242,21 @@ class CudaFloat32Storage:
     def copy_to_host(self) -> bytes:
         if self._closed:
             raise RuntimeError("CUDA storage has been freed")
-        _check_call(self._runtime, "cudaSetDevice", self._device_index)
-        byte_count = self._elements * _FLOAT32_BYTES
-        if byte_count == 0:
+        byte_count = _storage_byte_count(self._elements)
+        with _CudaDeviceGuard(self._runtime, self._device_index):
+            if byte_count == 0:
+                _check_call(self._runtime, "cudaDeviceSynchronize")
+                return b""
+            output = ctypes.create_string_buffer(byte_count)
+            _check_call(
+                self._runtime,
+                "cudaMemcpy",
+                output,
+                self._pointer,
+                byte_count,
+                _CUDA_MEMCPY_DEVICE_TO_HOST,
+            )
             _check_call(self._runtime, "cudaDeviceSynchronize")
-            return b""
-        output = ctypes.create_string_buffer(byte_count)
-        _check_call(
-            self._runtime,
-            "cudaMemcpy",
-            output,
-            self._pointer,
-            byte_count,
-            _CUDA_MEMCPY_DEVICE_TO_HOST,
-        )
-        _check_call(self._runtime, "cudaDeviceSynchronize")
         return output.raw
 
     def close(self) -> None:
@@ -235,7 +266,8 @@ class CudaFloat32Storage:
         self._pointer = ctypes.c_void_p()
         self._closed = True
         if pointer.value:
-            self._runtime.cudaFree(pointer)
+            with _CudaDeviceGuard(self._runtime, self._device_index):
+                _check_call(self._runtime, "cudaFree", pointer)
 
     def __del__(self) -> None:
         try:

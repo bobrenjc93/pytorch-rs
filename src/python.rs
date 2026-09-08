@@ -8754,6 +8754,8 @@ impl PyTensor {
             return Err(keyword_error);
         }
         let other = other.try_borrow()?;
+        validate_equal_native_tensor(&self.inner)?;
+        validate_equal_native_tensor(&other.inner)?;
         Ok(self.inner == other.inner)
     }
 
@@ -9620,7 +9622,18 @@ fn equal(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
     }
     let input = input.try_borrow()?;
     let other = other.try_borrow()?;
+    validate_equal_native_tensor(&input.inner)?;
+    validate_equal_native_tensor(&other.inner)?;
     Ok(input.inner == other.inner)
+}
+
+fn validate_equal_native_tensor(tensor: &CoreTensor) -> PyResult<()> {
+    if tensor.device().is_cuda() {
+        return Err(PyNotImplementedError::new_err(
+            "equal(): CUDA tensor equality is not supported",
+        ));
+    }
+    Ok(())
 }
 
 #[allow(clippy::doc_markdown)]
@@ -10830,10 +10843,16 @@ fn bind_to_arguments<'py>(
     match args.len() {
         0 => {
             if let Some(device) = device_keyword.as_ref() {
-                let parsed =
-                    parse_to_device(device, false, &mut native_validation_error, &mut overrides)?;
-                indexed_cpu_device |= parsed.indexed_cpu;
-                target_device = Some(parsed.device);
+                if !device.is_none() {
+                    let parsed = parse_to_device(
+                        device,
+                        false,
+                        &mut native_validation_error,
+                        &mut overrides,
+                    )?;
+                    indexed_cpu_device |= parsed.indexed_cpu;
+                    target_device = Some(parsed.device);
+                }
             }
             if let Some(dtype) = dtype_keyword.as_ref() {
                 parse_to_dtype(dtype, true, &mut native_validation_error, &mut overrides)?;
@@ -11200,6 +11219,11 @@ fn parse_to_native_device(device: &Bound<'_, PyAny>) -> PyResult<ParsedToDevice>
     }
     let descriptor = parse_device_descriptor("to", device)?;
     let device = descriptor.inner();
+    if device.is_cuda() && !descriptor.has_index() {
+        return Err(PyNotImplementedError::new_err(
+            "to(): unindexed CUDA devices are not supported; use 'cuda:0'",
+        ));
+    }
     Ok(ParsedToDevice {
         device,
         indexed_cpu: device.is_cpu() && descriptor.has_index(),
@@ -12891,6 +12915,14 @@ fn parse_creation_arguments(
     }
     let size = finish_creation_size(function, size)?;
     let device = parse_device(function, device_argument)?;
+    if function == "zeros"
+        && device.is_cuda()
+        && is_unindexed_cuda_device_argument(device_argument)?
+    {
+        return Err(PyNotImplementedError::new_err(
+            "zeros(): unindexed CUDA devices are not supported; use 'cuda:0'",
+        ));
+    }
     if function != "zeros" && !device.is_cpu() {
         return Err(unsupported_cpu_only_device(
             function,
@@ -13555,6 +13587,20 @@ fn parse_device(function: &str, device: Option<&Bound<'_, PyAny>>) -> PyResult<D
     device.map_or(Ok(Device::Cpu), |device| {
         parse_device_value(function, device)
     })
+}
+
+fn is_unindexed_cuda_device_argument(device: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+    let Some(device) = device else {
+        return Ok(false);
+    };
+    if let Ok(descriptor) = device.cast::<PyDevice>() {
+        let descriptor = descriptor.try_borrow()?;
+        return Ok(descriptor.inner().is_cuda() && !descriptor.has_index());
+    }
+    if let Ok(specification) = device.cast::<PyString>() {
+        return Ok(specification.to_str()? == "cuda");
+    }
+    Ok(false)
 }
 
 fn unsupported_cpu_only_device(

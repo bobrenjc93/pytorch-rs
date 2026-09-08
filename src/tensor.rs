@@ -772,6 +772,7 @@ impl Tensor {
             });
         };
         let (elements, strides) = validated_layout(&shape)?;
+        validate_storage_capacity(elements)?;
         let storage = Storage::cuda_zeros_float32(py, elements, device_index)?;
         Ok(Self {
             storage: Arc::new(storage),

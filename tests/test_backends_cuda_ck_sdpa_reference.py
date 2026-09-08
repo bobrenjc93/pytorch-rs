@@ -12,6 +12,13 @@ import unittest
 
 import torch_rs as torch
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -278,8 +285,7 @@ class CudaCkSdpaAvailabilityReferenceTests(unittest.TestCase):
         reference_torch.cuda.synchronize(device)
         reference_torch.testing.assert_close(result.cpu(), expected)
 
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertFalse(
             hasattr(torch.nn.functional, "scaled_dot_product_attention")
         )

@@ -220,7 +220,11 @@ class TensorToTests(unittest.TestCase):
     def test_unsupported_forms_fail_closed(self):
         tensor = torch.tensor([1.0], dtype=torch.float32)
         unsupported = (
-            (lambda: tensor.to("cuda"), RuntimeError, "only 'cpu' is implemented"),
+            (
+                lambda: tensor.to("cuda"),
+                NotImplementedError,
+                "unindexed CUDA devices are not supported",
+            ),
             (lambda: tensor.to("cuda:0"), RuntimeError, "only 'cpu' is implemented"),
             (lambda: tensor.to("meta"), RuntimeError, "only 'cpu' is implemented"),
             (
@@ -283,7 +287,9 @@ class TensorToTests(unittest.TestCase):
         self.assertEqual(DeviceString.calls, [])
 
         DeviceString.calls.clear()
-        with self.assertRaisesRegex(RuntimeError, r"only 'cpu' is implemented"):
+        with self.assertRaisesRegex(
+            NotImplementedError, "unindexed CUDA devices are not supported"
+        ):
             tensor.to(device=DeviceString("cuda"))
         self.assertEqual(DeviceString.calls, [])
 

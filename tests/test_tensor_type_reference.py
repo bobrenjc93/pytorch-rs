@@ -5,6 +5,13 @@ import unittest
 
 import torch_rs as torch
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -488,8 +495,7 @@ class TensorTypeReferenceTests(unittest.TestCase):
             "torch.FloatTensor",
         )
         self.assertEqual(torch.tensor([1.0]).type(), "torch.FloatTensor")
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
         with self.assertRaises(RuntimeError):
             torch.tensor([1.0, 2.0], device="cuda:0")

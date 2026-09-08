@@ -12,6 +12,13 @@ import warnings
 
 import torch_rs as torch
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -477,8 +484,7 @@ class CudaSdpKernelReferenceTests(unittest.TestCase):
     def test_unsupported_execution_boundary_stays_narrow(self):
         self.assertFalse(hasattr(torch.nn.functional, "scaled_dot_product_attention"))
         self.assertFalse(hasattr(torch.nn, "attention"))
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertTrue(callable(torch.compile))
         if reference_torch.cuda.is_available():
             device = reference_torch.device("cuda", 0)

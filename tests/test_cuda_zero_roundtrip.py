@@ -9,7 +9,7 @@ except ImportError:
     reference_torch = None
 
 
-def _cuda_test_unavailable():
+def _cuda_roundtrip_test_unavailable():
     if os.environ.get("CUDA_VISIBLE_DEVICES") != "0":
         return "run with CUDA_VISIBLE_DEVICES=0"
     if reference_torch is None:
@@ -19,10 +19,23 @@ def _cuda_test_unavailable():
     return None
 
 
-_CUDA_SKIP_REASON = _cuda_test_unavailable()
+def _cuda_two_gpu_test_unavailable():
+    if os.environ.get("CUDA_VISIBLE_DEVICES") != "0,1":
+        return "run with CUDA_VISIBLE_DEVICES=0,1"
+    if reference_torch is None:
+        return "install PyTorch for CUDA differentials"
+    if not reference_torch.cuda.is_available():
+        return "reference PyTorch CUDA is unavailable"
+    if reference_torch.cuda.device_count() < 2:
+        return "two CUDA devices are required"
+    return None
 
 
-@unittest.skipIf(_CUDA_SKIP_REASON is not None, _CUDA_SKIP_REASON)
+_CUDA_ROUNDTRIP_SKIP_REASON = _cuda_roundtrip_test_unavailable()
+_CUDA_TWO_GPU_SKIP_REASON = _cuda_two_gpu_test_unavailable()
+
+
+@unittest.skipIf(_CUDA_ROUNDTRIP_SKIP_REASON is not None, _CUDA_ROUNDTRIP_SKIP_REASON)
 class CudaZeroRoundtripTests(unittest.TestCase):
     def assert_cuda_probe_matches_pytorch(self):
         self.assertIs(type(torch.cuda.device_count()), int)
@@ -106,6 +119,45 @@ class CudaZeroRoundtripTests(unittest.TestCase):
                 self.assertFalse(actual_to_cpu.is_cuda)
                 self.assertIsNot(actual_to_cpu, actual)
 
+    def test_to_device_none_keeps_cuda_tensor_on_device(self):
+        actual = torch.zeros((2,), device="cuda:0")
+        expected = reference_torch.zeros((2,), device="cuda:0")
+
+        self.assertIs(actual.to(device=None), actual)
+        self.assertIs(expected.to(device=None), expected)
+        self.assertIs(actual.to(dtype=torch.float32, device=None), actual)
+        self.assertIs(expected.to(dtype=reference_torch.float32, device=None), expected)
+        self.assertEqual(str(actual.device), str(expected.device))
+        self.assertTrue(actual.is_cuda)
+
+    def test_cuda_zero_capacity_overflow_fails_before_allocation(self):
+        with self.assertRaisesRegex(RuntimeError, "Storage size calculation overflowed"):
+            torch.zeros((2**62,), device="cuda:0")
+
+    def test_unindexed_cuda_devices_fail_closed(self):
+        expected = reference_torch.zeros((1,), device="cuda")
+        self.assertEqual(str(expected.device), "cuda:0")
+
+        for device in ("cuda", torch.device("cuda")):
+            with self.subTest(device=device):
+                with self.assertRaisesRegex(NotImplementedError, "unindexed CUDA"):
+                    torch.zeros((1,), device=device)
+
+        tensor = torch.zeros((1,), device="cuda:0")
+        with self.assertRaisesRegex(NotImplementedError, "unindexed CUDA"):
+            tensor.to("cuda")
+
+    def test_equal_on_cuda_tensors_fails_closed_without_panic(self):
+        tensor = torch.zeros((1,), device="cuda:0")
+        expected = reference_torch.zeros((1,), device="cuda:0")
+        self.assertTrue(reference_torch.equal(expected, expected))
+        self.assertTrue(expected.equal(expected))
+
+        with self.assertRaisesRegex(NotImplementedError, "CUDA tensor equality"):
+            torch.equal(tensor, tensor)
+        with self.assertRaisesRegex(NotImplementedError, "CUDA tensor equality"):
+            tensor.equal(tensor)
+
     def test_cuda_zero_unsupported_cases_fail_closed(self):
         unsupported_cases = (
             (
@@ -177,6 +229,25 @@ class CudaZeroRoundtripTests(unittest.TestCase):
                     reference_torch.cuda.synchronize(0)
                 with self.assertRaises(Exception):
                     actual_call(torch)
+
+
+@unittest.skipIf(_CUDA_TWO_GPU_SKIP_REASON is not None, _CUDA_TWO_GPU_SKIP_REASON)
+class CudaCurrentDeviceGuardTests(unittest.TestCase):
+    def setUp(self):
+        self._previous_device = reference_torch.cuda.current_device()
+        self.addCleanup(reference_torch.cuda.set_device, self._previous_device)
+
+    def test_allocation_and_cpu_copy_preserve_current_cuda_device(self):
+        reference_torch.cuda.set_device(0)
+
+        tensor = torch.zeros((1,), device="cuda:1")
+        self.assertEqual(reference_torch.cuda.current_device(), 0)
+
+        self.assertEqual(tensor.cpu().tolist(), [0.0])
+        self.assertEqual(reference_torch.cuda.current_device(), 0)
+
+        self.assertEqual(tensor.to("cpu").tolist(), [0.0])
+        self.assertEqual(reference_torch.cuda.current_device(), 0)
 
 
 if __name__ == "__main__":
