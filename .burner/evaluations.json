@@ -82,6 +82,15 @@
       "id": "eval_d4c0b71e",
       "createdAt": "2026-08-28T21:17:58.000Z",
       "definitionVersion": "evaldef_repo_d4c0b71e_v1"
+    },
+    {
+      "name": "Hardware heterogeneity",
+      "prompt": "Score accelerator hardware heterogeneity from 0 to 100 using the fixed v1 backend and capability matrix in docs/hardware-heterogeneity-evaluator.md and docs/hardware-heterogeneity-matrix-v1.json. For each NVIDIA CUDA, AMD ROCm, Apple MPS, Intel XPU, Google TPU/XLA, Intel Gaudi HPU, and Meta MTIA family, score the weighted fraction of reference-eligible stable PyTorch 2.13 behavior that torch_rs executes correctly on that accelerator across device tensors/transfers, dtypes/layout/views, math/reductions/linear algebra, autograd/training, neural networks/optimizers, RNG/serialization, compilation, and multi-device/distributed behavior. Average the seven backend scores equally and report both that feature-depth score and the unweighted backend-breadth percentage. A cell earns credit only from executable differential tests on real corresponding hardware, or reproducible commit-bound hardware CI/release evidence when that hardware is unavailable locally. Device parsing, availability flags, metadata shims, cross-compilation, emulation, CPU fallback, installed-PyTorch forwarding, documentation claims, and private one-workload benchmark paths do not establish general backend support; award only the exact cases they prove. Missing, skipped, unsupported, stale, or unverifiable cases stay in the denominator as zero. This host has real NVIDIA H100 GPUs, so inspect or run CUDA-relevant tests with CUDA_VISIBLE_DEVICES=0 rather than assuming CUDA is unavailable. A score of 100 means full tested parity across every reference-eligible matrix cell on all seven accelerator families. Use the latest applicable point in docs/burner-evaluation-history.json as numeric calibration for the code revision it measured: preserve that credit when relevant code and evidence are unchanged, and move it only for concrete changes since that revision.",
+      "weight": 4,
+      "enabled": true,
+      "id": "eval_b7f2a91c",
+      "createdAt": "2026-09-08T16:15:00.000Z",
+      "definitionVersion": "evaldef_repo_b7f2a91c_v1"
     }
   ]
 }
