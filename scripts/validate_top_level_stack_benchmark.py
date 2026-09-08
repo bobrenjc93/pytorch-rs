@@ -1300,7 +1300,16 @@ def _validate_case_row(errors, context_case, row, samples, warmups):
     layout = context_case.get("layout")
     if shape in PUBLIC_INPUT_SHAPES:
         errors.append(f"{row_name} uses fixed public input shape {shape!r}")
-    for key in ("workload", "category", "mode", "repeats", "dim", "input_count"):
+    for key in (
+        "workload",
+        "category",
+        "mode",
+        "repeats",
+        "dim",
+        "input_count",
+        "shape",
+        "layout",
+    ):
         expected_key = "name" if key == "workload" else key
         if row.get(key) != context_case.get(expected_key):
             errors.append(

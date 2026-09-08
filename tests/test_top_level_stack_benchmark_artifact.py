@@ -338,6 +338,22 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                     "ratios.steady_torch_rs_over_pytorch mismatch",
                 ),
                 (
+                    "row-shape",
+                    lambda artifact: artifact["cases"][0].__setitem__(
+                        "shape",
+                        [999],
+                    ),
+                    "shape mismatch",
+                ),
+                (
+                    "row-layout",
+                    lambda artifact: artifact["cases"][0].__setitem__(
+                        "layout",
+                        "fabricated",
+                    ),
+                    "layout mismatch",
+                ),
+                (
                     "measured-checksums-stripped",
                     strip_measured_checksums,
                     "steady_checksums mismatch",
