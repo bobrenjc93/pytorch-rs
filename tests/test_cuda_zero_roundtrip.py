@@ -212,7 +212,13 @@ class CudaZeroRoundtripTests(unittest.TestCase):
         expected = reference_torch.zeros((1,), device="cuda")
         self.assertEqual(str(expected.device), "cuda:0")
 
-        for device in ("cuda", torch.device("cuda")):
+        for device in (
+            "cuda",
+            "cuda:255",
+            "cuda:511",
+            torch.device("cuda"),
+            torch.device("cuda:255"),
+        ):
             with self.subTest(device=device):
                 with self.assertRaisesRegex(NotImplementedError, "unindexed CUDA"):
                     torch.zeros((1,), device=device)

@@ -562,9 +562,12 @@ class TopLevelReciprocalReferenceTests(unittest.TestCase):
         self.assertTrue(hasattr(reference_torch.Tensor, "reciprocal_"))
         self.assertFalse(hasattr(torch, "float64"))
         self.assertTrue(hasattr(reference_torch, "float64"))
-        with self.assertRaises(RuntimeError):
-            torch.device("cuda")
-        self.assertEqual(reference_torch.device("cuda").type, "cuda")
+        cuda = torch.device("cuda")
+        expected_cuda = reference_torch.device("cuda")
+        self.assertEqual(cuda.type, expected_cuda.type)
+        self.assertIsNone(cuda.index)
+        self.assertIsNone(expected_cuda.index)
+        self.assertEqual(str(cuda), str(expected_cuda))
 
 
 if __name__ == "__main__":

@@ -13887,8 +13887,9 @@ fn is_unindexed_cuda_device_argument(device: Option<&Bound<'_, PyAny>>) -> PyRes
         let descriptor = descriptor.try_borrow()?;
         return Ok(descriptor.inner().is_cuda() && !descriptor.has_index());
     }
-    if let Ok(specification) = device.cast::<PyString>() {
-        return Ok(specification.to_str()? == "cuda");
+    if device.cast::<PyString>().is_ok() {
+        let descriptor = parse_device_descriptor("device", device)?;
+        return Ok(descriptor.inner().is_cuda() && !descriptor.has_index());
     }
     Ok(false)
 }
