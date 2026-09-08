@@ -116,6 +116,114 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
                         ),
                     )
 
+    def mixed_newaxis_indices(self, module, scalar):
+        indices = [
+            ("tuple leading", (module.newaxis,)),
+            ("leading ellipsis", (module.newaxis, Ellipsis)),
+            ("trailing ellipsis", (Ellipsis, module.newaxis)),
+        ]
+        if scalar:
+            return tuple(indices)
+        return (
+            *indices,
+            ("x[:, None]", (slice(None), module.newaxis)),
+            ("x[None, :]", (module.newaxis, slice(None))),
+            ("x[:, None, ...]", (slice(None), module.newaxis, Ellipsis)),
+            ("x[0, None]", (0, module.newaxis)),
+            ("x[None, 0]", (module.newaxis, 0)),
+            ("x[..., 0, None]", (Ellipsis, 0, module.newaxis)),
+            ("x[..., None, 0]", (Ellipsis, module.newaxis, 0)),
+            ("x[0, ..., None]", (0, Ellipsis, module.newaxis)),
+            ("x[None, ..., 0]", (module.newaxis, Ellipsis, 0)),
+        )
+
+    def test_mixed_newaxis_layout_value_and_aliasing_match_pytorch_2_13(self):
+        actual_cases = self.layout_cases(torch)
+        expected_cases = self.layout_cases(reference_torch)
+        for (actual_case, actual), (expected_case, expected) in zip(
+            actual_cases, expected_cases, strict=True
+        ):
+            self.assertEqual(actual_case, expected_case)
+            actual_indices = self.mixed_newaxis_indices(
+                torch, scalar=actual_case == "scalar"
+            )
+            expected_indices = self.mixed_newaxis_indices(
+                reference_torch, scalar=expected_case == "scalar"
+            )
+            for (actual_label, actual_index), (expected_label, expected_index) in zip(
+                actual_indices, expected_indices, strict=True
+            ):
+                self.assertEqual(actual_label, expected_label)
+                with self.subTest(case=actual_case, index=actual_label):
+                    self.assertEqual(
+                        self.unsqueeze_contract(actual, actual_index),
+                        self.unsqueeze_contract(expected, expected_index),
+                    )
+
+    def newaxis_error_contract(self, module, source, index):
+        try:
+            source[index]
+        except Exception as error:
+            return (type(error).__name__, str(error))
+        self.fail(f"{module.__name__} accepted unsupported index {index!r}")
+
+    def test_supported_newaxis_validation_errors_match_pytorch_2_13(self):
+        scalar_cases = (
+            lambda module: (slice(None), module.newaxis),
+            lambda module: (module.newaxis, slice(None)),
+            lambda module: (module.newaxis, 0),
+            lambda module: (0, module.newaxis),
+        )
+        for index_factory in scalar_cases:
+            with self.subTest(index=index_factory(torch)):
+                self.assertEqual(
+                    self.newaxis_error_contract(
+                        torch,
+                        torch.tensor(-0.0, dtype=torch.float32),
+                        index_factory(torch),
+                    ),
+                    self.newaxis_error_contract(
+                        reference_torch,
+                        reference_torch.tensor(
+                            -0.0, dtype=reference_torch.float32
+                        ),
+                        index_factory(reference_torch),
+                    ),
+                )
+
+        matrix_cases = (
+            lambda module: (module.newaxis, 3),
+            lambda module: (3, module.newaxis),
+            lambda module: (
+                module.newaxis,
+                slice(None),
+                slice(None),
+                slice(None),
+            ),
+            lambda module: (
+                slice(None),
+                module.newaxis,
+                slice(None),
+                slice(None),
+            ),
+        )
+        for index_factory in matrix_cases:
+            with self.subTest(index=index_factory(torch)):
+                self.assertEqual(
+                    self.newaxis_error_contract(
+                        torch,
+                        torch.zeros((2, 3), dtype=torch.float32),
+                        index_factory(torch),
+                    ),
+                    self.newaxis_error_contract(
+                        reference_torch,
+                        reference_torch.zeros(
+                            (2, 3), dtype=reference_torch.float32
+                        ),
+                        index_factory(reference_torch),
+                    ),
+                )
+
     def extreme_empty_contract(
         self, module, leading_dimension, trailing_dimension
     ):
@@ -272,11 +380,79 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
             self.unsqueeze_node_diagnostic(reference_torch, trailing),
         )
 
+    def autograd_contract_for_index(self, module, case, index):
+        leaf, source = self.make_autograd_case(module, case)
+        result = source[index]
+        metadata = (
+            result is not source,
+            result.data_ptr() == source.data_ptr(),
+            result.is_set_to(source),
+            result.requires_grad,
+            result.is_leaf,
+            tuple(result.shape),
+            result.stride(),
+            result.storage_offset(),
+        )
+        result.sum().backward()
+        return metadata, np.asarray(leaf.grad, dtype=np.float32).copy()
+
+    def no_grad_contract_for_index(self, module, case, index):
+        leaf, source = self.make_autograd_case(module, case)
+        with module.no_grad():
+            result = source[index]
+        return (
+            result is not source,
+            result.data_ptr() == source.data_ptr(),
+            result.is_set_to(source),
+            result.requires_grad,
+            result.is_leaf,
+            tuple(result.shape),
+            result.stride(),
+            result.storage_offset(),
+            leaf.grad,
+        )
+
     def test_autograd_and_no_grad_match_pytorch_2_13_for_every_layout(self):
         self.assert_autograd_and_no_grad_match_pytorch_2_13(False)
 
     def test_trailing_autograd_and_no_grad_match_pytorch_2_13(self):
         self.assert_autograd_and_no_grad_match_pytorch_2_13(True)
+
+    def test_mixed_newaxis_autograd_no_grad_and_full_sum_match_pytorch_2_13(self):
+        index_cases = (
+            ("x[:, None]", lambda module: (slice(None), module.newaxis)),
+            ("x[0, None]", lambda module: (0, module.newaxis)),
+            ("x[None, 0]", lambda module: (module.newaxis, 0)),
+            ("x[..., 0, None]", lambda module: (Ellipsis, 0, module.newaxis)),
+            ("x[..., None, 0]", lambda module: (Ellipsis, module.newaxis, 0)),
+        )
+        for case in ("empty", "contiguous", "offset", "noncontiguous"):
+            for label, index_factory in index_cases:
+                with self.subTest(case=case, index=label, mode="autograd"):
+                    actual_metadata, actual_gradient = self.autograd_contract_for_index(
+                        torch, case, index_factory(torch)
+                    )
+                    expected_metadata, expected_gradient = (
+                        self.autograd_contract_for_index(
+                            reference_torch,
+                            case,
+                            index_factory(reference_torch),
+                        )
+                    )
+                    self.assertEqual(actual_metadata, expected_metadata)
+                    np.testing.assert_array_equal(actual_gradient, expected_gradient)
+
+                with self.subTest(case=case, index=label, mode="no_grad"):
+                    self.assertEqual(
+                        self.no_grad_contract_for_index(
+                            torch, case, index_factory(torch)
+                        ),
+                        self.no_grad_contract_for_index(
+                            reference_torch,
+                            case,
+                            index_factory(reference_torch),
+                        ),
+                    )
 
     def public_unsqueeze_contract(self, module, source, dim, form="function"):
         if form == "method":
