@@ -153,8 +153,11 @@ class TensorIsMpsReferenceTests(unittest.TestCase):
                     RuntimeError, r"only 'cpu' is implemented"
                 ):
                     torch.tensor([1.0], device=specification)
-
-        self.assertFalse(hasattr(torch.Tensor, "to"))
+            with self.subTest(actual_action="transfer", device=specification):
+                with self.assertRaisesRegex(
+                    RuntimeError, r"only 'cpu' is implemented"
+                ):
+                    torch.tensor([1.0]).to(specification)
 
     def error(self, action):
         try:

@@ -260,9 +260,10 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
         self.assertIs(torch.cuda.is_available(), False)
         self.assertEqual(torch.cuda.device_count(), 0)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
-        self.assertFalse(hasattr(torch.Tensor, "to"))
         with self.assertRaises(RuntimeError):
             torch.tensor([2.0, 3.0], device="cuda:0")
+        with self.assertRaisesRegex(RuntimeError, r"only 'cpu' is implemented"):
+            torch.tensor([2.0, 3.0]).to("cuda:0")
 
     def test_only_the_supported_cuda_build_queries_are_exposed(self):
         actual_module = torch.backends.cuda

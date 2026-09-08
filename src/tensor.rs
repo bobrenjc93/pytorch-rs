@@ -2348,6 +2348,14 @@ impl Tensor {
         &self,
         memory_format: MemoryFormat,
     ) -> Result<Self, TensorError> {
+        self.try_clone_with_memory_format_and_node(memory_format, AutogradNode::Clone)
+    }
+
+    fn try_clone_with_memory_format_and_node(
+        &self,
+        memory_format: MemoryFormat,
+        node: AutogradNode,
+    ) -> Result<Self, TensorError> {
         let expected_rank = match memory_format {
             MemoryFormat::ChannelsLast => Some(4),
             MemoryFormat::ChannelsLast3d => Some(5),
@@ -2385,7 +2393,7 @@ impl Tensor {
         };
         let data = self.materialize_with_strides(&strides, |value| value)?;
         let mut output = Self::from_owned_parts(data, shape, strides, self.dtype(), self.device());
-        self.record_transform(&mut output, TransformMapping::Identity, AutogradNode::Clone)?;
+        self.record_transform(&mut output, TransformMapping::Identity, node)?;
         Ok(output)
     }
 
@@ -2427,6 +2435,9 @@ impl Tensor {
         &self,
         memory_format: MemoryFormat,
     ) -> Result<Self, TensorError> {
+        if memory_format == MemoryFormat::Preserve {
+            return self.try_clone_with_memory_format_and_node(memory_format, AutogradNode::Copy);
+        }
         // PyTorch's device-copy path validates canonical destination metadata
         // before checking a requested channel-last format's rank. Keep this
         // copy-specific preflight separate from contiguous's existing
