@@ -1,0 +1,95 @@
+{
+  "schema_version": "hardware_heterogeneity_matrix_v1",
+  "evaluation_id": "eval_b7f2a91c",
+  "reference": {
+    "framework": "PyTorch",
+    "version": "2.13"
+  },
+  "backend_aggregation": "equal_arithmetic_mean",
+  "backends": [
+    {
+      "id": "cuda_nvidia",
+      "name": "NVIDIA CUDA",
+      "pytorch_surface": "cuda"
+    },
+    {
+      "id": "rocm_amd",
+      "name": "AMD ROCm",
+      "pytorch_surface": "cuda_on_hip"
+    },
+    {
+      "id": "mps_apple",
+      "name": "Apple MPS",
+      "pytorch_surface": "mps"
+    },
+    {
+      "id": "xpu_intel",
+      "name": "Intel XPU",
+      "pytorch_surface": "xpu"
+    },
+    {
+      "id": "xla_tpu_google",
+      "name": "Google TPU/XLA",
+      "pytorch_surface": "xla"
+    },
+    {
+      "id": "hpu_gaudi_intel",
+      "name": "Intel Gaudi HPU",
+      "pytorch_surface": "hpu"
+    },
+    {
+      "id": "mtia_meta",
+      "name": "Meta MTIA",
+      "pytorch_surface": "mtia"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "device_tensors_and_transfers",
+      "weight": 15
+    },
+    {
+      "id": "dtypes_layout_views",
+      "weight": 15
+    },
+    {
+      "id": "math_reductions_linalg",
+      "weight": 15
+    },
+    {
+      "id": "autograd_training",
+      "weight": 15
+    },
+    {
+      "id": "nn_optimizers",
+      "weight": 15
+    },
+    {
+      "id": "rng_serialization",
+      "weight": 10
+    },
+    {
+      "id": "compilation",
+      "weight": 10
+    },
+    {
+      "id": "multi_device_distributed",
+      "weight": 5
+    }
+  ],
+  "breadth_required_capabilities": [
+    "device_tensors_and_transfers",
+    "math_reductions_linalg",
+    "autograd_training"
+  ],
+  "zero_credit_evidence": [
+    "api_or_availability_probe_only",
+    "cross_compile_only",
+    "emulation_only",
+    "cpu_fallback",
+    "installed_pytorch_forwarding",
+    "documentation_only",
+    "missing_or_skipped_hardware_run",
+    "stale_or_unbound_artifact"
+  ]
+}
