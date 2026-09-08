@@ -364,6 +364,7 @@ class ChainDatasetReferenceTests(unittest.TestCase):
             "Subset",
             "TensorDataset",
             "default_collate",
+            "default_convert",
             "get_worker_info",
         }
 
