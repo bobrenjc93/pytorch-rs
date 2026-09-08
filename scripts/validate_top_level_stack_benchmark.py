@@ -17,6 +17,7 @@ from dataclasses import dataclass
 import gc
 import importlib.util
 import json
+import math
 import random
 import secrets
 import sys
@@ -480,6 +481,13 @@ def _case_record(case):
     }
 
 
+def _expected_case_records(seed, cases_per_category, max_elements):
+    return [
+        _case_record(case)
+        for case in generate_cases(seed, cases_per_category, max_elements)
+    ]
+
+
 def _positive_int(value, name):
     if value <= 0:
         raise SystemExit(f"{name} must be positive")
@@ -646,6 +654,189 @@ def _same_shape_input_metadata(row):
     return inputs, shapes
 
 
+def _compare_jsonish(errors, path, actual, expected):
+    if isinstance(expected, float):
+        if not isinstance(actual, (float, int)) or not math.isclose(
+            float(actual),
+            expected,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        ):
+            errors.append(f"{path} mismatch: {actual!r} != {expected!r}")
+        return
+    if isinstance(expected, dict):
+        if not isinstance(actual, dict):
+            errors.append(f"{path} is not an object")
+            return
+        if set(actual) != set(expected):
+            errors.append(
+                f"{path} keys mismatch: "
+                f"missing={sorted(set(expected) - set(actual))!r} "
+                f"extra={sorted(set(actual) - set(expected))!r}"
+            )
+        for key in sorted(set(actual) & set(expected)):
+            _compare_jsonish(errors, f"{path}.{key}", actual[key], expected[key])
+        return
+    if isinstance(expected, list):
+        if not isinstance(actual, list):
+            errors.append(f"{path} is not a list")
+            return
+        if len(actual) != len(expected):
+            errors.append(f"{path} length mismatch: {len(actual)} != {len(expected)}")
+            return
+        for index, (actual_item, expected_item) in enumerate(zip(actual, expected)):
+            _compare_jsonish(errors, f"{path}[{index}]", actual_item, expected_item)
+        return
+    if actual != expected:
+        errors.append(f"{path} mismatch: {actual!r} != {expected!r}")
+
+
+def _expected_aggregates(cases, unsupported, error_parity):
+    aggregates = benchmark_top_level_stack._aggregate_rows(cases)
+    capped_with_zero_credit = [
+        min(10.0, max(0.10, row["ratios"]["steady_torch_rs_over_pytorch"]))
+        for row in cases
+    ] + [10.0] * len(unsupported)
+    aggregates["zero_credit_unsupported_cell_count"] = len(unsupported)
+    aggregates["boundary_error_parity_cell_count"] = len(error_parity)
+    aggregates["combined_capped_with_zero_credit_unsupported"] = (
+        benchmark_top_level_stack._geomean(capped_with_zero_credit)
+    )
+    aggregates["generated_category_counts"] = dict(
+        sorted(Counter(row["category"] for row in cases).items())
+    )
+    return aggregates
+
+
+def _validate_environment_provenance(errors, environment, validator):
+    if environment.get("benchmark_version") != (
+        benchmark_top_level_stack.BENCHMARK_VERSION
+    ):
+        errors.append("benchmark version mismatch")
+    if environment.get("validator") != validator:
+        errors.append("environment validator context does not match top-level context")
+    if environment.get("api") != f"torch.{benchmark_top_level_stack.API}":
+        errors.append(f"API metadata mismatch: {environment.get('api')!r}")
+    if environment.get("cwd") != str(REPOSITORY_ROOT):
+        errors.append(f"cwd mismatch: {environment.get('cwd')!r}")
+
+    driver = environment.get("driver", {})
+    expected_driver_path = BENCHMARK_SCRIPT.relative_to(REPOSITORY_ROOT).as_posix()
+    if driver.get("path") != expected_driver_path:
+        errors.append(f"driver path mismatch: {driver.get('path')!r}")
+    if driver.get("sha256") != benchmark_top_level_stack._file_sha256(
+        BENCHMARK_SCRIPT
+    ):
+        errors.append("driver SHA-256 does not match the checked-in script")
+
+    if environment.get("git") != benchmark_top_level_stack._git_provenance():
+        errors.append("git provenance does not match the current worktree")
+
+    build_profile = environment.get("build_profile", {})
+    if build_profile.get("rust_profile") != "release":
+        errors.append(f"build profile mismatch: {build_profile!r}")
+    if build_profile.get("native_extension_required") is not True:
+        errors.append("native extension requirement is not recorded")
+
+    affinity = environment.get("cpu_affinity", {})
+    pinned_affinity = affinity.get("pinned_affinity")
+    if pinned_affinity is not None and len(pinned_affinity) != 1:
+        errors.append(f"benchmark was not pinned to one CPU: {affinity!r}")
+
+    threads = environment.get("threads")
+    if not isinstance(threads, int) or threads <= 0:
+        errors.append(f"invalid thread count: {threads!r}")
+    else:
+        env_threads = environment.get("env_threads", {})
+        for name in benchmark_top_level_stack.THREAD_ENVIRONMENT_VARIABLES:
+            if env_threads.get(name) != str(threads):
+                errors.append(f"{name} mismatch: {env_threads.get(name)!r}")
+        for section, key in (
+            ("pytorch", "threads"),
+            ("pytorch", "interop_threads"),
+            ("torch_rs", "threads"),
+            ("torch_rs", "interop_threads"),
+        ):
+            if environment.get(section, {}).get(key) != threads:
+                errors.append(f"{section}.{key} mismatch")
+
+    pytorch = environment.get("pytorch", {})
+    if benchmark_top_level_stack._version_without_local(
+        pytorch.get("version", "")
+    ) != benchmark_top_level_stack.REFERENCE_PYTORCH_VERSION:
+        errors.append(f"PyTorch version mismatch: {pytorch.get('version')!r}")
+
+    for section, key in (
+        ("rust", "rustc"),
+        ("rust", "cargo"),
+        ("numpy", "version"),
+        ("numpy", "path"),
+        ("pytorch", "path"),
+        ("torch_rs", "path"),
+        ("torch_rs", "extension_path"),
+    ):
+        if environment.get(section, {}).get(key) in (None, ""):
+            errors.append(f"missing provenance field {section}.{key}")
+
+
+def _validate_unsupported_rows(errors, unsupported, error_parity):
+    expected_by_name = {
+        f"top_level_torch_stack_{unsupported_cell.name}": unsupported_cell
+        for unsupported_cell in benchmark_top_level_stack.UNSUPPORTED_CELLS
+    }
+    for row in unsupported + error_parity:
+        name = row.get("name")
+        expected = expected_by_name.get(name)
+        if expected is None:
+            errors.append(f"{name} unknown boundary row")
+            continue
+        if row.get("api") != f"torch.{benchmark_top_level_stack.API}":
+            errors.append(f"{name} API mismatch")
+        if row.get("input_description") != expected.input_description:
+            errors.append(f"{name} input description mismatch")
+        if row.get("credit") != expected.credit:
+            errors.append(
+                f"{name} credit mismatch: {row.get('credit')!r} != {expected.credit!r}"
+            )
+        if row.get("reason") != expected.reason:
+            errors.append(f"{name} reason mismatch")
+
+        torch_rs_status = row.get("torch_rs", {})
+        if torch_rs_status.get("kind") != "error":
+            errors.append(f"{name} torch_rs status is not an error")
+        if torch_rs_status.get("error_type") != expected.torch_rs_error_type:
+            errors.append(f"{name} torch_rs error type mismatch")
+        if (
+            expected.torch_rs_message is not None
+            and torch_rs_status.get("message") != expected.torch_rs_message
+        ):
+            errors.append(f"{name} torch_rs error message mismatch")
+
+        pytorch_status = row.get("pytorch", {})
+        if pytorch_status.get("kind") != expected.pytorch_expected_kind:
+            errors.append(f"{name} PyTorch status mismatch")
+        if expected.credit == benchmark_top_level_stack.CREDIT_ZERO:
+            if pytorch_status.get("kind") != "supported":
+                errors.append(f"{name} zero-credit row is not PyTorch-supported")
+        elif expected.credit == benchmark_top_level_stack.CREDIT_ERROR_PARITY:
+            if pytorch_status.get("kind") != "error":
+                errors.append(f"{name} error-parity row is not a PyTorch error")
+            if (
+                pytorch_status.get("error_type") != torch_rs_status.get("error_type")
+                or pytorch_status.get("message") != torch_rs_status.get("message")
+            ):
+                errors.append(f"{name} error-parity status mismatch")
+        else:
+            errors.append(f"{name} unknown credit policy {expected.credit!r}")
+
+        validation = row.get("validation", {})
+        if (
+            validation.get("torch_rs_error_checked") is not True
+            or validation.get("pytorch_status_checked") is not True
+        ):
+            errors.append(f"{name} missing unsupported-cell validation flags")
+
+
 def _validate_case_row(errors, context_case, row, samples, warmups):
     row_name = f"{row.get('api')}/{row.get('workload')}"
     shape = tuple(context_case.get("shape") or ())
@@ -669,6 +860,8 @@ def _validate_case_row(errors, context_case, row, samples, warmups):
         errors.append(f"{row_name} API metadata mismatch")
     if row.get("generated") is not True:
         errors.append(f"{row_name} is not marked as generated")
+    if row.get("validator_case") != context_case:
+        errors.append(f"{row_name} validator case metadata mismatch")
 
     validation = row.get("validation", {})
     for required_key in (
@@ -794,33 +987,51 @@ def validate_artifact_dict(report):
         benchmark_top_level_stack.BENCHMARK_VERSION
     ):
         errors.append("benchmark driver version mismatch")
+    if validator.get("benchmark_driver_path") != (
+        str(Path("scripts") / "benchmark_top_level_stack.py")
+    ):
+        errors.append("benchmark driver path mismatch")
     if validator.get("fixed_public_matrix_excluded") is not True:
         errors.append("public matrix exclusion is not recorded")
     if validator.get("same_shape_cpu_float32_only") is not True:
         errors.append("CPU float32 same-shape contract is not recorded")
+    if validator.get("required_categories") != list(REQUIRED_CATEGORIES):
+        errors.append("required category metadata mismatch")
+    if validator.get("fixed_public_input_shapes") != [
+        list(shape) for shape in sorted(PUBLIC_INPUT_SHAPES, key=repr)
+    ]:
+        errors.append("fixed public input shape metadata mismatch")
+    if validator.get("seed_source") not in ("cli", "secrets.randbits(64)"):
+        errors.append(f"seed source mismatch: {validator.get('seed_source')!r}")
 
     benchmark_integrity = environment.get("benchmark_integrity", {})
     if benchmark_integrity.get("workload_set") != WORKLOAD_SET:
         errors.append("workload set metadata mismatch")
+    if benchmark_integrity.get("required_validator_path") != (
+        str(Path("scripts") / "validate_top_level_stack_benchmark.py")
+    ):
+        errors.append("required validator path metadata mismatch")
     if benchmark_integrity.get("fixed_public_matrix_excluded") is not True:
         errors.append("environment does not record public matrix exclusion")
     if benchmark_integrity.get("same_shape_cpu_float32_only") is not True:
         errors.append("environment does not record CPU float32 same-shape contract")
-    if environment.get("benchmark_version") != (
-        benchmark_top_level_stack.BENCHMARK_VERSION
-    ):
-        errors.append("benchmark version mismatch")
-    if environment.get("validator") != validator:
-        errors.append("environment validator context does not match top-level context")
     if environment.get("implementation_orders") != [
         list(order) for order in benchmark_top_level_stack.IMPLEMENTATION_ORDERS
     ]:
         errors.append("implementation order metadata mismatch")
+    _validate_environment_provenance(errors, environment, validator)
 
+    seed = validator.get("seed")
     cases_per_category = validator.get("cases_per_category")
+    max_elements = validator.get("max_elements")
+    if not isinstance(seed, int):
+        errors.append(f"invalid seed: {seed!r}")
     if not isinstance(cases_per_category, int) or cases_per_category <= 0:
         errors.append(f"invalid cases_per_category: {cases_per_category!r}")
         cases_per_category = 0
+    if not isinstance(max_elements, int) or max_elements <= 0:
+        errors.append(f"invalid max_elements: {max_elements!r}")
+        max_elements = 0
     expected_count = cases_per_category * len(REQUIRED_CATEGORIES)
     cases = report.get("cases") or []
     context_cases = validator.get("generated_cases") or []
@@ -830,6 +1041,14 @@ def validate_artifact_dict(report):
         errors.append(
             f"validator case count mismatch: {len(context_cases)} != {expected_count}"
         )
+    if isinstance(seed, int) and cases_per_category > 0 and max_elements > 0:
+        expected_context_cases = _expected_case_records(
+            seed,
+            cases_per_category,
+            max_elements,
+        )
+        if context_cases != expected_context_cases:
+            errors.append("validator generated cases do not match seed/config")
 
     category_counts = Counter(row.get("category") for row in cases)
     expected_category_counts = Counter(
@@ -848,6 +1067,8 @@ def validate_artifact_dict(report):
     context_names = [context_case.get("name") for context_case in context_cases]
     if set(by_name) != set(context_names):
         errors.append("case set does not match validator context")
+    if environment.get("workloads") != context_names:
+        errors.append("environment workload list does not match validator context")
 
     samples = environment.get("samples")
     warmups = environment.get("warmups")
@@ -862,6 +1083,8 @@ def validate_artifact_dict(report):
         if row is not None:
             _validate_case_row(errors, context_case, row, samples, warmups)
 
+    unsupported = report.get("zero_credit_unsupported_cells", [])
+    error_parity = report.get("boundary_error_parity_cells", [])
     for credit, field in (
         (
             benchmark_top_level_stack.CREDIT_ZERO,
@@ -880,18 +1103,25 @@ def validate_artifact_dict(report):
                 f"missing={sorted(expected_names - actual_names)!r} "
                 f"extra={sorted(actual_names - expected_names)!r}"
             )
+    _validate_unsupported_rows(errors, unsupported, error_parity)
 
     aggregates = report.get("aggregates", {})
     if aggregates.get("timed_supported_cell_count") != len(cases):
         errors.append("aggregate timed cell count does not match cases")
-    if aggregates.get("zero_credit_unsupported_cell_count") != len(
-        report.get("zero_credit_unsupported_cells", [])
-    ):
+    if aggregates.get("zero_credit_unsupported_cell_count") != len(unsupported):
         errors.append("aggregate unsupported cell count mismatch")
-    if aggregates.get("boundary_error_parity_cell_count") != len(
-        report.get("boundary_error_parity_cells", [])
-    ):
+    if aggregates.get("boundary_error_parity_cell_count") != len(error_parity):
         errors.append("aggregate error-parity cell count mismatch")
+    try:
+        expected_aggregate_values = _expected_aggregates(
+            cases,
+            unsupported,
+            error_parity,
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        errors.append(f"could not recompute aggregates: {error}")
+    else:
+        _compare_jsonish(errors, "aggregates", aggregates, expected_aggregate_values)
 
     if errors:
         raise AssertionError("\n".join(errors))

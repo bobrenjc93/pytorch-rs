@@ -1,3 +1,4 @@
+import copy
 import importlib.util
 import json
 import os
@@ -202,6 +203,60 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                         validate_top_level_stack_benchmark.PUBLIC_INPUT_SHAPES,
                     )
 
+            tamper_cases = (
+                (
+                    "seed",
+                    lambda artifact: (
+                        artifact["validator"].__setitem__("seed", 1),
+                        artifact["environment"]["validator"].__setitem__("seed", 1),
+                    ),
+                    "validator generated cases do not match seed/config",
+                ),
+                (
+                    "aggregate",
+                    lambda artifact: artifact["aggregates"].__setitem__(
+                        "steady_geomean_torch_rs_over_pytorch",
+                        123.0,
+                    ),
+                    "aggregates.steady_geomean_torch_rs_over_pytorch mismatch",
+                ),
+                (
+                    "driver-sha",
+                    lambda artifact: artifact["environment"]["driver"].__setitem__(
+                        "sha256",
+                        "0" * 64,
+                    ),
+                    "driver SHA-256 does not match the checked-in script",
+                ),
+                (
+                    "git-status",
+                    lambda artifact: artifact["environment"]["git"].__setitem__(
+                        "status_short",
+                        " M fabricated.py",
+                    ),
+                    "git provenance does not match the current worktree",
+                ),
+                (
+                    "unsupported-credit",
+                    lambda artifact: artifact["zero_credit_unsupported_cells"][
+                        0
+                    ].__setitem__(
+                        "credit",
+                        benchmark_top_level_stack.CREDIT_ERROR_PARITY,
+                    ),
+                    "credit mismatch",
+                ),
+            )
+            for label, mutate, expected_message in tamper_cases:
+                with self.subTest(tamper=label):
+                    tampered = copy.deepcopy(report)
+                    mutate(tampered)
+                    with self.assertRaises(AssertionError) as raised:
+                        validate_top_level_stack_benchmark.validate_artifact_dict(
+                            tampered
+                        )
+                    self.assertIn(expected_message, str(raised.exception))
+
             validation_completed = subprocess.run(
                 [
                     sys.executable,
@@ -218,6 +273,33 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                 validation_completed.returncode,
                 0,
                 msg=validation_completed.stdout + validation_completed.stderr,
+            )
+
+            tampered_path = Path(temporary_directory) / "tampered-stack-validator.json"
+            tampered = copy.deepcopy(report)
+            tampered["aggregates"][
+                "steady_geomean_capped_0_10_10_0"
+            ] = 456.0
+            tampered_path.write_text(
+                json.dumps(tampered, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            tampered_validation = subprocess.run(
+                [
+                    sys.executable,
+                    str(VALIDATOR_SCRIPT),
+                    "--validate-artifact",
+                    str(tampered_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertNotEqual(tampered_validation.returncode, 0)
+            self.assertIn(
+                "aggregates.steady_geomean_capped_0_10_10_0 mismatch",
+                tampered_validation.stdout + tampered_validation.stderr,
             )
 
 
