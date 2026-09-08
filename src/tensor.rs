@@ -144,6 +144,7 @@ enum GradFn {
         output_count: usize,
         output_elements: usize,
     },
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
     Chunk {
         input: SavedTensor,
         dimension: usize,
@@ -2605,7 +2606,7 @@ impl Tensor {
     ///
     /// Returns an error for a missing dimension, checked arithmetic overflow,
     /// or view metadata allocation failure.
-    #[cfg_attr(not(any(feature = "python-bindings", test)), allow(dead_code))]
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
     pub(crate) fn chunk_dimension(
         &self,
         dimension: usize,
@@ -2651,6 +2652,7 @@ impl Tensor {
         Ok(outputs)
     }
 
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
     fn chunk_lengths(size: usize, chunks: usize) -> Result<Vec<usize>, TensorError> {
         let chunk_size = if size == 0 {
             0
