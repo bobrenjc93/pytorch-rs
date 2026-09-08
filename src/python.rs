@@ -2414,6 +2414,43 @@ pub(crate) fn stack_variable_function(
     dispatch_top_level_stack(py, &call, args, kwargs)
 }
 
+pub(crate) fn vstack_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    vstack_alias_variable_function(VstackAlias::Vstack, py, args, kwargs)
+}
+
+pub(crate) fn row_stack_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    vstack_alias_variable_function(VstackAlias::RowStack, py, args, kwargs)
+}
+
+fn vstack_alias_variable_function(
+    alias: VstackAlias,
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let TopLevelVstackArguments {
+        tensors,
+        out,
+        keyword_error,
+    } = bind_top_level_vstack_arguments(alias, args, kwargs)?;
+    let tensors = parse_vstack_tensors_argument(alias, &tensors)?;
+    let out = parse_vstack_out(alias, out)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+
+    let call = BoundTopLevelVstackCall { tensors, out };
+    dispatch_top_level_vstack(alias, py, &call, args, kwargs)
+}
+
 pub(crate) fn adjoint_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -3211,6 +3248,28 @@ impl CatAlias {
     }
 }
 
+#[derive(Clone, Copy)]
+enum VstackAlias {
+    Vstack,
+    RowStack,
+}
+
+impl VstackAlias {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Vstack => "vstack",
+            Self::RowStack => "row_stack",
+        }
+    }
+
+    const fn qualified_name(self) -> &'static str {
+        match self {
+            Self::Vstack => "torch.vstack",
+            Self::RowStack => "torch.row_stack",
+        }
+    }
+}
+
 struct TopLevelCatArguments<'py> {
     tensors: ParsedCallArgument<'py>,
     dim: Option<ParsedCallArgument<'py>>,
@@ -3234,6 +3293,17 @@ struct TopLevelStackArguments<'py> {
 struct BoundTopLevelStackCall<'py> {
     tensors: BoundTopLevelCatTensors<'py>,
     dim: BoundTopLevelCatDimension<'py>,
+    out: Option<BoundTensorOrTorchFunction<'py>>,
+}
+
+struct TopLevelVstackArguments<'py> {
+    tensors: ParsedCallArgument<'py>,
+    out: Option<ParsedCallArgument<'py>>,
+    keyword_error: Option<PyErr>,
+}
+
+struct BoundTopLevelVstackCall<'py> {
+    tensors: BoundTopLevelCatTensors<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
 }
 
@@ -5406,6 +5476,162 @@ fn apply_top_level_stack(py: Python<'_>, call: &BoundTopLevelStackCall<'_>) -> P
     }
     let result =
         CoreTensor::stack(&inner_tensors, dimension).map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(result))?.into_any())
+}
+
+fn ordered_top_level_vstack_overrides<'py>(
+    call: &BoundTopLevelVstackCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let tensor_capacity = match &call.tensors {
+        BoundTopLevelCatTensors::Sequence(tensors) => tensors.len(),
+        BoundTopLevelCatTensors::Override(_) => 1,
+    };
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(
+            tensor_capacity
+                + usize::from(matches!(
+                    &call.out,
+                    Some(BoundTensorOrTorchFunction::Override(_))
+                )),
+        )
+        .map_err(|_| PyMemoryError::new_err("unable to allocate vstack dispatch operands"))?;
+
+    match &call.tensors {
+        BoundTopLevelCatTensors::Sequence(tensors) => {
+            for tensor in tensors {
+                if let BoundTensorOrTorchFunction::Override(probed) = tensor {
+                    insert_ordered_torch_function_override(&mut overrides, probed)?;
+                }
+            }
+        }
+        BoundTopLevelCatTensors::Override(probed) => {
+            insert_ordered_torch_function_override(&mut overrides, probed)?;
+        }
+    }
+    if let Some(BoundTensorOrTorchFunction::Override(probed)) = &call.out {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
+fn dispatch_top_level_vstack(
+    alias: VstackAlias,
+    py: Python<'_>,
+    call: &BoundTopLevelVstackCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_top_level_vstack_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_vstack(py, alias, call);
+    }
+
+    let function = variable_function(py, alias.name())?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_top_level_vstack(py, alias, call);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        alias.qualified_name(),
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_vstack(
+    py: Python<'_>,
+    alias: VstackAlias,
+    call: &BoundTopLevelVstackCall<'_>,
+) -> PyResult<Py<PyAny>> {
+    let BoundTopLevelCatTensors::Sequence(tensors) = &call.tensors else {
+        unreachable!("vstack tensor-sequence override was dispatched before the native path")
+    };
+    if tensors.is_empty() {
+        return Err(PyRuntimeError::new_err(
+            "vstack expects a non-empty TensorList",
+        ));
+    }
+
+    let mut borrowed_tensors = try_size_vector(tensors.len())?;
+    for (index, tensor) in tensors.iter().enumerate() {
+        let BoundTensorOrTorchFunction::Tensor(tensor) = tensor else {
+            unreachable!("vstack sequence element overrides were dispatched before the native path")
+        };
+        let tensor = tensor.try_borrow()?;
+        validate_vstack_tensor(alias, &tensor, index)?;
+        try_push_size(&mut borrowed_tensors, tensor)?;
+    }
+
+    let mut normalized_views = try_size_vector(borrowed_tensors.len())?;
+    for tensor in &borrowed_tensors {
+        match tensor.inner.shape().len() {
+            0 => try_push_size(
+                &mut normalized_views,
+                tensor
+                    .inner
+                    .reshape([1, 1])
+                    .map_err(|error| tensor_error(&error))?,
+            )?,
+            1 => try_push_size(
+                &mut normalized_views,
+                tensor
+                    .inner
+                    .unsqueeze_front()
+                    .map_err(|error| tensor_error(&error))?,
+            )?,
+            2 => {}
+            _ => unreachable!("vstack rank validation should reject ranks above 2"),
+        }
+    }
+
+    let mut inner_tensors = try_size_vector(borrowed_tensors.len())?;
+    let mut normalized_views = normalized_views.iter();
+    for tensor in &borrowed_tensors {
+        match tensor.inner.shape().len() {
+            0 | 1 => try_push_size(
+                &mut inner_tensors,
+                normalized_views
+                    .next()
+                    .expect("normalized vstack view count must match input count"),
+            )?,
+            2 => try_push_size(&mut inner_tensors, &tensor.inner)?,
+            _ => unreachable!("vstack rank validation should reject ranks above 2"),
+        }
+    }
+    validate_vstack_tensor_shapes(&inner_tensors)?;
+    if call.out.is_some() {
+        return Err(PyRuntimeError::new_err(format!(
+            "{}(): the 'out' argument is not supported",
+            alias.name()
+        )));
+    }
+
+    let result = CoreTensor::cat(&inner_tensors, 0).map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(result))?.into_any())
 }
 
@@ -14191,6 +14417,220 @@ fn stack_unsupported_native_input() -> PyErr {
     PyNotImplementedError::new_err(
         "stack(): only exact native CPU float32 Tensor inputs are supported",
     )
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "PyTorch-compatible call binding keeps delayed positional and keyword diagnostics together"
+)]
+fn bind_top_level_vstack_arguments<'py>(
+    alias: VstackAlias,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<TopLevelVstackArguments<'py>> {
+    let function_name = alias.name();
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "{function_name}() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut tensors = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut out = None;
+    let mut keyword_error = None;
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "tensors" => {
+                    if tensors.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err(format!(
+                                "{function_name}() got multiple values for argument 'tensors'"
+                            ))
+                        });
+                    } else {
+                        tensors = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                "out" => {
+                    if out.is_some() {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err(format!(
+                                "{function_name}() got multiple values for argument 'out'"
+                            ))
+                        });
+                    } else {
+                        out = Some(ParsedCallArgument {
+                            value,
+                            position: None,
+                        });
+                    }
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "{function_name}() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let Some(tensors) = tensors else {
+        return Err(PyTypeError::new_err(format!(
+            "{function_name}() missing 1 required positional arguments: \"tensors\""
+        )));
+    };
+
+    Ok(TopLevelVstackArguments {
+        tensors,
+        out,
+        keyword_error,
+    })
+}
+
+fn parse_vstack_tensors_argument<'py>(
+    alias: VstackAlias,
+    tensors: &ParsedCallArgument<'py>,
+) -> PyResult<BoundTopLevelCatTensors<'py>> {
+    if tensors.value.is_instance_of::<PyTuple>() || tensors.value.is_instance_of::<PyList>() {
+        return Ok(BoundTopLevelCatTensors::Sequence(
+            parse_vstack_tensor_sequence(alias, tensors)?,
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&tensors.value) {
+        return Ok(BoundTopLevelCatTensors::Override(probed));
+    }
+    Err(vstack_tensor_sequence_type_error(alias, tensors)?)
+}
+
+fn parse_vstack_tensor_sequence<'py>(
+    alias: VstackAlias,
+    tensors: &ParsedCallArgument<'py>,
+) -> PyResult<Vec<BoundTensorOrTorchFunction<'py>>> {
+    if !tensors.value.is_instance_of::<PyTuple>() && !tensors.value.is_instance_of::<PyList>() {
+        return Err(vstack_tensor_sequence_type_error(alias, tensors)?);
+    }
+
+    let sequence = tensors.value.cast::<PySequence>()?;
+    let length = sequence.len()?;
+    let mut parsed = try_size_vector(length)?;
+    for index in 0..length {
+        let item = sequence.get_item(index)?;
+        if item.is_exact_instance_of::<PyTensor>() {
+            try_push_size(
+                &mut parsed,
+                BoundTensorOrTorchFunction::Tensor(item.cast_into::<PyTensor>()?),
+            )?;
+        } else if let Some(probed) = probe_torch_function_override(&item) {
+            try_push_size(&mut parsed, BoundTensorOrTorchFunction::Override(probed))?;
+        } else if item.is_instance_of::<PyTensor>() {
+            return Err(vstack_unsupported_native_input(alias));
+        } else {
+            let actual = python_type_name(&item)?;
+            return Err(PyTypeError::new_err(format!(
+                "expected Tensor as element {index} in argument 0, but got {actual}"
+            )));
+        }
+    }
+    Ok(parsed)
+}
+
+fn parse_vstack_out(
+    alias: VstackAlias,
+    out: Option<ParsedCallArgument<'_>>,
+) -> PyResult<Option<BoundTensorOrTorchFunction<'_>>> {
+    let Some(out) = out else {
+        return Ok(None);
+    };
+    if out.value.is_none() {
+        return Ok(None);
+    }
+    if out.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(Some(BoundTensorOrTorchFunction::Tensor(
+            out.value.cast::<PyTensor>()?.clone(),
+        )));
+    }
+    if let Some(probed) = probe_torch_function_override(&out.value) {
+        return Ok(Some(BoundTensorOrTorchFunction::Override(probed)));
+    }
+    if !out.value.is_instance_of::<PyTensor>() {
+        let actual = python_type_name(&out.value)?;
+        return Err(PyTypeError::new_err(format!(
+            "{}(): argument 'out' must be Tensor, not {actual}",
+            alias.name()
+        )));
+    }
+    Err(vstack_unsupported_native_input(alias))
+}
+
+fn validate_vstack_tensor(alias: VstackAlias, tensor: &PyTensor, _index: usize) -> PyResult<()> {
+    if tensor.inner.dtype() == DType::Float32
+        && tensor.inner.device() == Device::Cpu
+        && matches!(tensor.inner.shape().len(), 0..=2)
+    {
+        Ok(())
+    } else {
+        Err(vstack_unsupported_native_input(alias))
+    }
+}
+
+fn validate_vstack_tensor_shapes(tensors: &[&CoreTensor]) -> PyResult<()> {
+    let first_shape = tensors[0].shape();
+    for (index, tensor) in tensors.iter().enumerate().skip(1) {
+        let shape = tensor.shape();
+        if shape.len() != first_shape.len() {
+            return Err(PyRuntimeError::new_err(format!(
+                "Tensors must have same number of dimensions: got {} and {}",
+                first_shape.len(),
+                shape.len()
+            )));
+        }
+        for axis in 1..first_shape.len() {
+            if first_shape[axis] != shape[axis] {
+                return Err(PyRuntimeError::new_err(format!(
+                    "Sizes of tensors must match except in dimension 0. Expected size {} but got size {} for tensor number {index} in the list.",
+                    first_shape[axis], shape[axis],
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn vstack_tensor_sequence_type_error(
+    alias: VstackAlias,
+    tensors: &ParsedCallArgument<'_>,
+) -> PyResult<PyErr> {
+    let position = tensors
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(&tensors.value)?;
+    Ok(PyTypeError::new_err(format!(
+        "{}(): argument 'tensors'{position} must be tuple of Tensors, not {actual}",
+        alias.name()
+    )))
+}
+
+fn vstack_unsupported_native_input(alias: VstackAlias) -> PyErr {
+    PyNotImplementedError::new_err(format!(
+        "{}(): only exact native CPU float32 scalar, rank-1, or rank-2 Tensor inputs are supported",
+        alias.name()
+    ))
 }
 
 fn parse_eye_dimension(argument: &str, dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
