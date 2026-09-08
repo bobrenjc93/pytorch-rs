@@ -35,7 +35,7 @@ struct AutogradMeta {
 
 enum AutogradKind {
     Leaf {
-        requires_grad: AtomicBool,
+        requires_grad: Arc<AtomicBool>,
         shape: Vec<usize>,
         strides: Vec<usize>,
         dtype: DType,
@@ -321,6 +321,10 @@ impl Drop for AutogradMeta {
     }
 }
 
+fn requires_grad_flag(requires_grad: bool) -> Arc<AtomicBool> {
+    Arc::new(AtomicBool::new(requires_grad))
+}
+
 /// A tensor with immutable shared storage and native shape/stride metadata.
 ///
 /// Metadata-only views may have a nonzero storage offset and non-contiguous
@@ -332,7 +336,8 @@ pub struct Tensor {
     offset: usize,
     elements: usize,
     output_nr: usize,
-    view_requires_grad: bool,
+    leaf_requires_grad: Arc<AtomicBool>,
+    view_requires_grad: Option<Arc<AtomicBool>>,
     autograd: Option<Arc<AutogradMeta>>,
 }
 
@@ -910,7 +915,8 @@ impl Tensor {
             offset: 0,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -923,7 +929,8 @@ impl Tensor {
             offset: 0,
             elements: 1,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -1250,15 +1257,38 @@ impl Tensor {
 
     /// Returns whether operations on this tensor may require reverse-mode gradients.
     ///
-    /// Views made while recording is disabled preserve this property without
+    /// Unrecorded metadata views can inherit this property dynamically without
     /// retaining a backward edge to their source tensor.
     #[must_use]
     pub fn requires_grad(&self) -> bool {
-        self.view_requires_grad
+        self.autograd
+            .as_deref()
+            .is_some_and(AutogradMeta::requires_grad)
             || self
-                .autograd
+                .view_requires_grad
                 .as_deref()
-                .is_some_and(AutogradMeta::requires_grad)
+                .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    }
+
+    fn inherited_requires_grad_flag(&self) -> Arc<AtomicBool> {
+        if let Some(metadata) = self.autograd.as_deref() {
+            return match &metadata.kind {
+                AutogradKind::Leaf { requires_grad, .. } => Arc::clone(requires_grad),
+                AutogradKind::NonLeaf { .. } => requires_grad_flag(true),
+            };
+        }
+
+        self.view_requires_grad
+            .as_ref()
+            .map_or_else(|| Arc::clone(&self.leaf_requires_grad), Arc::clone)
+    }
+
+    fn view_requires_grad_flag(&self, records_grad: bool) -> Arc<AtomicBool> {
+        if records_grad {
+            requires_grad_flag(true)
+        } else {
+            self.inherited_requires_grad_flag()
+        }
     }
 
     /// Returns whether this tensor has no recorded autograd operation producing it.
@@ -1339,13 +1369,15 @@ impl Tensor {
     #[must_use]
     pub fn with_requires_grad(mut self, requires_grad: bool) -> Self {
         if !requires_grad {
+            self.leaf_requires_grad.store(false, Ordering::Relaxed);
             self.autograd = None;
             self.output_nr = 0;
-            self.view_requires_grad = false;
+            self.view_requires_grad = None;
         } else if self.autograd.is_none() {
+            self.leaf_requires_grad.store(true, Ordering::Relaxed);
             self.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::Leaf {
-                    requires_grad: AtomicBool::new(true),
+                    requires_grad: Arc::clone(&self.leaf_requires_grad),
                     shape: self.shape.clone(),
                     strides: leaf_gradient_strides_unchecked(
                         &self.shape,
@@ -1358,13 +1390,13 @@ impl Tensor {
                 },
             }));
             self.output_nr = 0;
-            self.view_requires_grad = false;
         } else if let Some(metadata) = self.autograd.as_deref()
             && let AutogradKind::Leaf {
                 requires_grad: flag,
                 ..
             } = &metadata.kind
         {
+            self.leaf_requires_grad.store(true, Ordering::Relaxed);
             flag.store(true, Ordering::Relaxed);
         }
         self
@@ -1386,6 +1418,8 @@ impl Tensor {
                     requires_grad: flag,
                     ..
                 } => {
+                    self.leaf_requires_grad
+                        .store(requires_grad, Ordering::Relaxed);
                     flag.store(requires_grad, Ordering::Relaxed);
                     return Ok(());
                 }
@@ -1400,9 +1434,10 @@ impl Tensor {
         }
 
         if requires_grad {
+            self.leaf_requires_grad.store(true, Ordering::Relaxed);
             self.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::Leaf {
-                    requires_grad: AtomicBool::new(true),
+                    requires_grad: Arc::clone(&self.leaf_requires_grad),
                     shape: self.shape.clone(),
                     strides: leaf_gradient_strides(&self.shape, &self.strides, self.elements)?,
                     dtype: self.dtype(),
@@ -1485,7 +1520,8 @@ impl Tensor {
             offset: 0,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }))
     }
@@ -1593,7 +1629,10 @@ impl Tensor {
             || self.storage.len() != self.elements
             || self.dtype() != DType::Float32
             || self.device() != Device::Cpu
-            || self.view_requires_grad
+            || self
+                .view_requires_grad
+                .as_deref()
+                .is_some_and(|flag| flag.load(Ordering::Relaxed))
         {
             return false;
         }
@@ -1603,8 +1642,8 @@ impl Tensor {
 
     fn is_finite_owned_leaf(&self) -> bool {
         // Factory-created leaves span their complete allocation. Recorded
-        // views are non-leaves, while views created under no_grad carry
-        // view_requires_grad without leaf metadata.
+        // views are non-leaves, while unrecorded views can dynamically inherit
+        // a source flag without leaf metadata.
         if !self.is_finite_owned() {
             return false;
         }
@@ -1659,7 +1698,7 @@ impl Tensor {
         mapping: TransformMapping,
         node: AutogradNode,
     ) -> Result<(), TensorError> {
-        output.view_requires_grad = self.requires_grad();
+        output.view_requires_grad = Some(self.view_requires_grad_flag(self.records_grad()));
         self.record_transform(output, mapping, node)
     }
 
@@ -2083,6 +2122,7 @@ impl Tensor {
             strides.push(self.strides[dimension]);
         }
 
+        let records_grad = self.records_grad();
         let mut output = Self {
             storage: Arc::clone(&self.storage),
             shape,
@@ -2090,10 +2130,11 @@ impl Tensor {
             offset: self.offset,
             elements: self.elements,
             output_nr: 0,
-            view_requires_grad: self.requires_grad(),
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: Some(self.view_requires_grad_flag(records_grad)),
             autograd: None,
         };
-        if self.records_grad() {
+        if records_grad {
             let mut saved_dimensions = try_result_vector(dimensions.len(), self.elements)?;
             saved_dimensions.extend_from_slice(dimensions);
             let output_shape = try_clone_result_shape(&output.shape, output.elements)?;
@@ -2200,7 +2241,8 @@ impl Tensor {
                 offset: self.offset,
                 elements: self.elements,
                 output_nr: 0,
-                view_requires_grad: false,
+                leaf_requires_grad: requires_grad_flag(false),
+                view_requires_grad: None,
                 autograd: None,
             },
             TransformMapping::Identity,
@@ -2292,7 +2334,8 @@ impl Tensor {
             offset: self.offset,
             elements: self.elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         };
         self.record_view_transform(&mut output, TransformMapping::Identity, node)?;
@@ -2578,7 +2621,8 @@ impl Tensor {
                 offset: self.offset,
                 elements: self.elements,
                 output_nr: 0,
-                view_requires_grad: false,
+                leaf_requires_grad: requires_grad_flag(false),
+                view_requires_grad: None,
                 autograd: None,
             };
             self.record_view_transform(&mut output, TransformMapping::Identity, node)?;
@@ -2672,7 +2716,8 @@ impl Tensor {
                 offset,
                 elements,
                 output_nr: 0,
-                view_requires_grad: false,
+                leaf_requires_grad: requires_grad_flag(false),
+                view_requires_grad: None,
                 autograd: None,
             },
             TransformMapping::Slice {
@@ -2698,7 +2743,8 @@ impl Tensor {
             offset: self.offset,
             elements: self.elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         })
     }
@@ -3333,6 +3379,7 @@ impl Tensor {
         let strides = try_clone_result_shape(&self.strides[indices.len()..], self.elements)?;
         let elements = element_count(&shape)?;
         validate_view_bounds(&shape, &strides, offset, elements, self.storage.len())?;
+        let records_grad = record_history && self.records_grad();
         let mut output = Self {
             storage: Arc::clone(&self.storage),
             shape,
@@ -3340,10 +3387,11 @@ impl Tensor {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: self.requires_grad(),
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: Some(self.view_requires_grad_flag(records_grad)),
             autograd: None,
         };
-        if record_history && self.records_grad() {
+        if records_grad {
             let input_start = if elements == 0 {
                 0
             } else {
@@ -3408,6 +3456,7 @@ impl Tensor {
         strides.extend_from_slice(&self.strides[dimension + 1..]);
         let elements = element_count(&shape)?;
         validate_view_bounds(&shape, &strides, offset, elements, self.storage.len())?;
+        let records_grad = record_history && self.records_grad();
         let mut output = Self {
             storage: Arc::clone(&self.storage),
             shape,
@@ -3415,10 +3464,11 @@ impl Tensor {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: self.requires_grad(),
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: Some(self.view_requires_grad_flag(records_grad)),
             autograd: None,
         };
-        if record_history && self.records_grad() {
+        if records_grad {
             self.record_transform(
                 &mut output,
                 TransformMapping::Select {
@@ -3648,7 +3698,8 @@ impl Tensor {
                 offset: 0,
                 elements: self.elements,
                 output_nr: 0,
-                view_requires_grad: false,
+                leaf_requires_grad: requires_grad_flag(false),
+                view_requires_grad: None,
                 autograd: None,
             },
             TransformMapping::Identity,
@@ -3689,7 +3740,8 @@ impl Tensor {
                 offset: self.offset,
                 elements: self.elements,
                 output_nr: 0,
-                view_requires_grad: false,
+                leaf_requires_grad: requires_grad_flag(false),
+                view_requires_grad: None,
                 autograd: None,
             },
             TransformMapping::Identity,
@@ -8511,7 +8563,8 @@ mod tests {
         TensorError, contiguous_strides, contiguous_values_equal, full_reduction_mean_divisor,
         l1_loss_difference_value, log_value, logical_offset_for_linear_index,
         materialize_concat_small_rank_fast_path, materialize_contiguous_trailing_broadcast,
-        rsqrt_value, sqrt_value, squared_difference_value, try_result_vector, validate_view_bounds,
+        requires_grad_flag, rsqrt_value, sqrt_value, squared_difference_value, try_result_vector,
+        validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -8526,7 +8579,8 @@ mod tests {
             offset: tensor.offset,
             elements: tensor.elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13100,7 +13154,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13124,7 +13179,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13148,7 +13204,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13172,7 +13229,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13196,7 +13254,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13220,7 +13279,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13244,7 +13304,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13268,7 +13329,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13292,7 +13354,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13316,7 +13379,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -16632,7 +16696,8 @@ mod tests {
             offset: 0,
             elements: 4,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         };
         let right = Tensor::ones([2, 1]).unwrap();
@@ -16933,7 +16998,8 @@ mod tests {
             offset: 0,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         };
 

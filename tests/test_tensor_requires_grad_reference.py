@@ -229,6 +229,83 @@ class TensorRequiresGradInplaceReferenceTests(unittest.TestCase):
             self.no_grad_leaf_view_contract(reference_torch),
         )
 
+    def no_grad_leaf_view_base_toggle_contract(self, module):
+        base = module.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        with module.no_grad():
+            view = base.transpose(0, 1)
+
+        initial = (base.requires_grad, view.requires_grad, view.is_leaf)
+        base.requires_grad_(False)
+        disabled_loss = (view * 2.0).sum()
+        after_disable = (
+            base.requires_grad,
+            view.requires_grad,
+            disabled_loss.requires_grad,
+        )
+        base.requires_grad_(True)
+        inherited_loss = (view * 2.0).sum()
+        inherited_loss.backward()
+        after_reenable = (
+            base.requires_grad,
+            view.requires_grad,
+            inherited_loss.requires_grad,
+            self.grad_payload(base.grad),
+            self.grad_payload(view.grad),
+        )
+
+        view.requires_grad_(True)
+        base.requires_grad_(False)
+        promoted_loss = (view * 2.0).sum()
+        promoted_loss.backward()
+        after_promote = (
+            base.requires_grad,
+            view.requires_grad,
+            promoted_loss.requires_grad,
+            self.grad_payload(base.grad),
+            self.grad_payload(view.grad),
+        )
+
+        initially_false = module.tensor([[3.0, 4.0], [5.0, 6.0]])
+        with module.no_grad():
+            initially_false_view = initially_false.transpose(0, 1)
+        false_initial = (
+            initially_false.requires_grad,
+            initially_false_view.requires_grad,
+            initially_false_view.is_leaf,
+        )
+        initially_false.requires_grad_(True)
+        late_loss = (initially_false_view * 5.0).sum()
+        late_loss.backward()
+        after_late_enable = (
+            initially_false.requires_grad,
+            initially_false_view.requires_grad,
+            late_loss.requires_grad,
+            self.grad_payload(initially_false.grad),
+            self.grad_payload(initially_false_view.grad),
+        )
+        initially_false.requires_grad_(False)
+        after_late_disable = (
+            initially_false.requires_grad,
+            initially_false_view.requires_grad,
+            (initially_false_view * 5.0).sum().requires_grad,
+        )
+
+        return {
+            "initial": initial,
+            "after_disable": after_disable,
+            "after_reenable": after_reenable,
+            "after_promote": after_promote,
+            "false_initial": false_initial,
+            "after_late_enable": after_late_enable,
+            "after_late_disable": after_late_disable,
+        }
+
+    def test_no_grad_leaf_views_track_base_toggles_until_promoted(self):
+        self.assertEqual(
+            self.no_grad_leaf_view_base_toggle_contract(torch),
+            self.no_grad_leaf_view_base_toggle_contract(reference_torch),
+        )
+
     def invalid_argument_contract(self, module):
         return tuple(
             self.error(call)

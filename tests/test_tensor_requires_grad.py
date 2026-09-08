@@ -135,6 +135,46 @@ class TensorRequiresGradInplaceTests(unittest.TestCase):
         self.assertEqual(view.grad.tolist(), [[3.0, 3.0], [3.0, 3.0]])
         self.assertIsNone(base.grad)
 
+    def test_leaf_views_created_under_no_grad_track_base_until_promoted(self):
+        base = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        with torch.no_grad():
+            view = base.transpose(0, 1)
+
+        self.assertTrue(view.requires_grad)
+        base.requires_grad_(False)
+        self.assertFalse(view.requires_grad)
+        self.assertFalse((view * 2.0).sum().requires_grad)
+        base.requires_grad_(True)
+        self.assertTrue(view.requires_grad)
+        inherited_loss = (view * 2.0).sum()
+        self.assertTrue(inherited_loss.requires_grad)
+        inherited_loss.backward()
+        self.assertIsNone(base.grad)
+        self.assertIsNone(view.grad)
+
+        view.requires_grad_(True)
+        base.requires_grad_(False)
+        self.assertTrue(view.requires_grad)
+        promoted_loss = (view * 2.0).sum()
+        self.assertTrue(promoted_loss.requires_grad)
+        promoted_loss.backward()
+        self.assertIsNone(base.grad)
+        self.assertEqual(view.grad.tolist(), [[2.0, 2.0], [2.0, 2.0]])
+
+        initially_false = torch.tensor([[3.0, 4.0], [5.0, 6.0]])
+        with torch.no_grad():
+            initially_false_view = initially_false.transpose(0, 1)
+        self.assertFalse(initially_false_view.requires_grad)
+        initially_false.requires_grad_(True)
+        self.assertTrue(initially_false_view.requires_grad)
+        late_loss = (initially_false_view * 5.0).sum()
+        self.assertTrue(late_loss.requires_grad)
+        late_loss.backward()
+        self.assertIsNone(initially_false.grad)
+        self.assertIsNone(initially_false_view.grad)
+        initially_false.requires_grad_(False)
+        self.assertFalse(initially_false_view.requires_grad)
+
     def test_invalid_arguments_use_strict_bool_binding(self):
         for call, message in (
             (
