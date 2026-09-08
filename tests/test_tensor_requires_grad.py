@@ -175,6 +175,51 @@ class TensorRequiresGradInplaceTests(unittest.TestCase):
         initially_false.requires_grad_(False)
         self.assertFalse(initially_false_view.requires_grad)
 
+    def test_nested_leaf_views_created_under_no_grad_keep_source_inheritance(self):
+        base = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        with torch.no_grad():
+            view = base.transpose(0, 1)
+        view.requires_grad_(True)
+        with torch.no_grad():
+            child = view.transpose(0, 1)
+
+        self.assertTrue(child.requires_grad)
+        view.requires_grad_(False)
+        self.assertTrue(view.requires_grad)
+        self.assertTrue(child.requires_grad)
+        child_loss = (child * 2.0).sum()
+        self.assertTrue(child_loss.requires_grad)
+        child_loss.backward()
+        self.assertIsNone(base.grad)
+        self.assertIsNone(view.grad)
+        self.assertIsNone(child.grad)
+        base.requires_grad_(False)
+        self.assertFalse(view.requires_grad)
+        self.assertFalse(child.requires_grad)
+        self.assertFalse((child * 2.0).sum().requires_grad)
+
+        initially_false = torch.tensor([[3.0, 4.0], [5.0, 6.0]])
+        with torch.no_grad():
+            initially_false_view = initially_false.transpose(0, 1)
+        initially_false_view.requires_grad_(True)
+        with torch.no_grad():
+            initially_false_child = initially_false_view.transpose(0, 1)
+
+        self.assertFalse(initially_false_child.requires_grad)
+        self.assertFalse((initially_false_child * 3.0).sum().requires_grad)
+        initially_false_view.requires_grad_(False)
+        self.assertFalse(initially_false_view.requires_grad)
+        self.assertFalse(initially_false_child.requires_grad)
+        initially_false.requires_grad_(True)
+        self.assertTrue(initially_false_view.requires_grad)
+        self.assertTrue(initially_false_child.requires_grad)
+        late_loss = (initially_false_child * 3.0).sum()
+        self.assertTrue(late_loss.requires_grad)
+        late_loss.backward()
+        self.assertIsNone(initially_false.grad)
+        self.assertIsNone(initially_false_view.grad)
+        self.assertIsNone(initially_false_child.grad)
+
     def test_invalid_arguments_use_strict_bool_binding(self):
         for call, message in (
             (

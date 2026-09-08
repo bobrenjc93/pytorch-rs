@@ -1271,6 +1271,10 @@ impl Tensor {
     }
 
     fn inherited_requires_grad_flag(&self) -> Arc<AtomicBool> {
+        if let Some(requires_grad) = self.view_requires_grad.as_ref() {
+            return Arc::clone(requires_grad);
+        }
+
         if let Some(metadata) = self.autograd.as_deref() {
             return match &metadata.kind {
                 AutogradKind::Leaf { requires_grad, .. } => Arc::clone(requires_grad),
@@ -1278,9 +1282,7 @@ impl Tensor {
             };
         }
 
-        self.view_requires_grad
-            .as_ref()
-            .map_or_else(|| Arc::clone(&self.leaf_requires_grad), Arc::clone)
+        Arc::clone(&self.leaf_requires_grad)
     }
 
     fn view_requires_grad_flag(&self, records_grad: bool) -> Arc<AtomicBool> {

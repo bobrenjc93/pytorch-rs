@@ -306,6 +306,88 @@ class TensorRequiresGradInplaceReferenceTests(unittest.TestCase):
             self.no_grad_leaf_view_base_toggle_contract(reference_torch),
         )
 
+    def nested_no_grad_leaf_view_contract(self, module):
+        base = module.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        with module.no_grad():
+            view = base.transpose(0, 1)
+        view.requires_grad_(True)
+        with module.no_grad():
+            child = view.transpose(0, 1)
+
+        true_initial = (
+            base.requires_grad,
+            view.requires_grad,
+            child.requires_grad,
+            (child * 2.0).sum().requires_grad,
+        )
+        view.requires_grad_(False)
+        true_loss = (child * 2.0).sum()
+        true_loss.backward()
+        true_after_view_disable = (
+            base.requires_grad,
+            view.requires_grad,
+            child.requires_grad,
+            true_loss.requires_grad,
+            self.grad_payload(base.grad),
+            self.grad_payload(view.grad),
+            self.grad_payload(child.grad),
+        )
+        base.requires_grad_(False)
+        true_after_base_disable = (
+            base.requires_grad,
+            view.requires_grad,
+            child.requires_grad,
+            (child * 2.0).sum().requires_grad,
+        )
+
+        initially_false = module.tensor([[3.0, 4.0], [5.0, 6.0]])
+        with module.no_grad():
+            false_view = initially_false.transpose(0, 1)
+        false_view.requires_grad_(True)
+        with module.no_grad():
+            false_child = false_view.transpose(0, 1)
+
+        false_initial = (
+            initially_false.requires_grad,
+            false_view.requires_grad,
+            false_child.requires_grad,
+            (false_child * 3.0).sum().requires_grad,
+        )
+        false_view.requires_grad_(False)
+        false_after_view_disable = (
+            initially_false.requires_grad,
+            false_view.requires_grad,
+            false_child.requires_grad,
+            (false_child * 3.0).sum().requires_grad,
+        )
+        initially_false.requires_grad_(True)
+        false_late_loss = (false_child * 3.0).sum()
+        false_late_loss.backward()
+        false_after_base_enable = (
+            initially_false.requires_grad,
+            false_view.requires_grad,
+            false_child.requires_grad,
+            false_late_loss.requires_grad,
+            self.grad_payload(initially_false.grad),
+            self.grad_payload(false_view.grad),
+            self.grad_payload(false_child.grad),
+        )
+
+        return {
+            "true_initial": true_initial,
+            "true_after_view_disable": true_after_view_disable,
+            "true_after_base_disable": true_after_base_disable,
+            "false_initial": false_initial,
+            "false_after_view_disable": false_after_view_disable,
+            "false_after_base_enable": false_after_base_enable,
+        }
+
+    def test_nested_no_grad_leaf_views_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.nested_no_grad_leaf_view_contract(torch),
+            self.nested_no_grad_leaf_view_contract(reference_torch),
+        )
+
     def invalid_argument_contract(self, module):
         return tuple(
             self.error(call)
