@@ -881,8 +881,9 @@ callables, multiplication through `*`, `Tensor.mul()`, `Tensor.multiply()`,
 `torch.mul()`, and the distinct top-level `torch.multiply()` builtin,
 rank-1/rank-2 concatenation through
 `torch.cat(tensors, dim=0, *, out=None)` and its distinct
-`torch.concat`/`torch.concatenate` aliases, same-shape stacking through
-`torch.stack(tensors, dim=0, *, out=None)`, true
+`torch.concat`/`torch.concatenate` aliases, row-wise vertical stacking through
+`torch.vstack(tensors, *, out=None)` and its distinct `torch.row_stack` alias,
+same-shape stacking through `torch.stack(tensors, dim=0, *, out=None)`, true
 division through `/`, `Tensor.div()`, `Tensor.divide()`, `torch.div()`, and
 `torch.divide()`, plus the listed unary kernels,
 `Tensor.sum(dim=None)`, supported rank-1 `Tensor.sum(dim=0)`/`Tensor.sum(dim=-1)`,
@@ -926,6 +927,22 @@ forms and override-capable sequence, dimension, and `out` arguments. Concrete
 tensors, mismatched non-concat dimensions, mixed dtype/device metadata,
 unsupported dimensions, non-list/tuple native inputs, tensor subclasses without
 a handling override, and higher-rank public concatenation remain unsupported.
+
+Top-level `torch.vstack(tensors, *, out=None)` and its distinct
+`torch.row_stack` alias accept non-empty exact tuple/list inputs containing
+exact native CPU float32 scalar, rank-1, or rank-2 tensors. Each operand is
+normalized with the same view semantics as `torch.atleast_2d`, then
+materialized through row-wise `torch.cat(..., dim=0)`, preserving
+PyTorch-compatible values, shape, stride, storage offset, dtype, CPU-device
+metadata, signed-zero behavior, fresh output storage, first-order
+autograd/backward accumulation, no-grad behavior for grad-requiring operands,
+callable metadata, and `TorchFunctionMode`/`__torch_function__` dispatch for
+supported public call forms and override-capable sequence and `out` arguments.
+Concrete `out` tensors, empty input sequences, rank-greater-than-2 normalized
+tensors, mismatched normalized non-row dimensions, mixed dtype/device metadata,
+non-list/tuple native inputs, tensor subclasses without a handling override,
+and declined or otherwise unsupported `__torch_function__` modes remain
+unsupported.
 
 Top-level `torch.stack(tensors, dim=0, *, out=None)` accepts non-empty exact
 tuple/list inputs containing same-shaped exact native CPU float32 tensors,
