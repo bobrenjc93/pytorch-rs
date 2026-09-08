@@ -90,6 +90,35 @@ and generated workload matrix in its JSON output.
 - [`Tensor.reciprocal` and `torch.reciprocal` release timings](docs/tensor-reciprocal-release-timings.md)
 - [`torch.nn.functional.softsign` release timings](docs/softsign-release-timings.md)
 
+Treat the fixed public `torch.stack` timing matrix as repeatability evidence
+only until it is paired with a generated-shape validator run using a held-out
+seed:
+
+```bash
+CUDA_VISIBLE_DEVICES= .venv/bin/python \
+  scripts/validate_top_level_stack_benchmark.py --seed <held-out-seed>
+```
+
+The stack validator generates CPU `float32` same-shape workloads for
+contiguous, empty, offset, noncontiguous, autograd-forward, and
+autograd-forward+backward stack categories. It excludes the fixed public input
+shapes, reuses the stack benchmark's symmetric timing and checksum checks, and
+records the seed, generated cases, benchmark driver, and validator provenance
+in the JSON output. Validate a saved validator artifact with:
+
+```bash
+.venv/bin/python scripts/validate_top_level_stack_benchmark.py \
+  --validate-artifact target/top-level-stack-generated-validator.json \
+  --seed <held-out-seed>
+```
+
+The saved-artifact validation path enforces the benchmark-quality warmup,
+sample, thread, case-count, and max-element defaults unless the evaluator
+supplies explicit expected counts on the command line. It also rejects artifacts
+without a full git commit hash, clean recorded `git status --short`, clean
+recorded `git diff HEAD --stat`, or current-worktree/virtualenv runtime
+provenance.
+
 ### Compilation
 
 - [`torch.compile` eager CPU release timings](docs/torch-compile-cpu-release-timings.md)
