@@ -1,0 +1,969 @@
+#!/usr/bin/env python3
+"""Run generated-shape validation for the top-level ``torch.stack`` benchmark.
+
+The fixed release-timing matrix is repeatable public evidence. Merge decisions
+also need an evaluator-supplied held-out path that cannot be targeted by an
+implementation branch. This script generates CPU float32 same-shape stack
+workloads from a seed, excludes the fixed public stack benchmark input shapes,
+and reuses the benchmark driver's symmetric timing, checksum, and boundary-row
+validation logic.
+"""
+
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+from dataclasses import dataclass
+import gc
+import importlib.util
+import json
+import random
+import secrets
+import sys
+import time
+from pathlib import Path
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+BENCHMARK_SCRIPT = REPOSITORY_ROOT / "scripts" / "benchmark_top_level_stack.py"
+VALIDATOR_VERSION = "top_level_stack_generated_shape_validator_v1"
+WORKLOAD_SET = "generated_heldout_validator"
+REQUIRED_CATEGORIES = (
+    "contiguous",
+    "empty",
+    "offset",
+    "noncontiguous",
+    "autograd forward",
+    "autograd forward+backward",
+)
+NONZERO_DIMENSION_CHOICES = (
+    1,
+    2,
+    3,
+    4,
+    5,
+    7,
+    9,
+    11,
+    13,
+    16,
+    17,
+    31,
+    33,
+    63,
+    65,
+    127,
+    129,
+    257,
+)
+NONUNIT_DIMENSION_CHOICES = tuple(
+    dimension for dimension in NONZERO_DIMENSION_CHOICES if dimension != 1
+)
+
+
+def _load_benchmark_module():
+    spec = importlib.util.spec_from_file_location(
+        "_torch_rs_top_level_stack_benchmark",
+        BENCHMARK_SCRIPT,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load benchmark script from {BENCHMARK_SCRIPT}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+benchmark_top_level_stack = _load_benchmark_module()
+
+
+@dataclass(frozen=True)
+class GeneratedStackCase:
+    name: str
+    category: str
+    layout: str
+    mode: str
+    shape: tuple[int, ...]
+    dim: int
+    input_source_indices: tuple[int, ...]
+    seeds: tuple[int, ...]
+    repeats: int
+    source_shape: tuple[int, ...] | None = None
+    offset_index: int | None = None
+
+
+PUBLIC_INPUT_SHAPES = frozenset(
+    {
+        (),
+        (257,),
+        (257, 263),
+        (2, 0, 3),
+        (127, 131),
+        (512, 1024),
+        (32, 33),
+    }
+)
+
+
+def _product(shape):
+    elements = 1
+    for dimension in shape:
+        elements *= dimension
+    return elements
+
+
+def _shape_label(shape):
+    if not shape:
+        return "scalar"
+    return "x".join(str(dimension) for dimension in shape)
+
+
+def _category_slug(category):
+    return category.replace("+", "_").replace(" ", "_")
+
+
+def _dim_label(dim):
+    return f"neg{abs(dim)}" if dim < 0 else str(dim)
+
+
+def _stack_dim(rng, rank):
+    return rng.choice(tuple(range(-(rank + 1), rank + 1)))
+
+
+def _seed_tuple(rng, count):
+    return tuple(rng.randrange(1, 2**31 - 1) for _ in range(count))
+
+
+def _candidate_nonempty_shape(rng, max_elements, *, max_rank=4):
+    for _ in range(1000):
+        rank = rng.choice(tuple(range(1, max_rank + 1)))
+        shape = tuple(rng.choice(NONZERO_DIMENSION_CHOICES) for _ in range(rank))
+        if _product(shape) <= max_elements:
+            return shape
+    raise SystemExit(
+        "could not generate a non-empty stack shape below "
+        f"max-elements={max_elements}"
+    )
+
+
+def _candidate_empty_shape(rng):
+    rank = rng.choice((1, 2, 3, 4))
+    zero_axis = rng.randrange(rank)
+    dimensions = []
+    for axis in range(rank):
+        if axis == zero_axis:
+            dimensions.append(0)
+        else:
+            dimensions.append(rng.choice(NONZERO_DIMENSION_CHOICES))
+    return tuple(dimensions)
+
+
+def _case_repeats(shape, input_count, mode):
+    elements = _product(shape) * input_count
+    if elements == 0:
+        base_repeats = 2048
+    elif elements <= 128:
+        base_repeats = 1024
+    elif elements <= 4096:
+        base_repeats = 128
+    elif elements <= 65536:
+        base_repeats = 16
+    else:
+        base_repeats = 4
+
+    if mode == benchmark_top_level_stack.MODE_AUTOGRAD_BACKWARD:
+        return max(1, base_repeats // 16)
+    if mode == benchmark_top_level_stack.MODE_AUTOGRAD_FORWARD:
+        return max(1, base_repeats // 4)
+    return base_repeats
+
+
+def _case_signature(case):
+    return (
+        case.category,
+        case.layout,
+        case.mode,
+        case.shape,
+        case.dim,
+        case.input_source_indices,
+        case.source_shape,
+        case.offset_index,
+    )
+
+
+def _new_case_name(category, ordinal, shape, input_count, dim):
+    return (
+        f"generated_{_category_slug(category)}_{ordinal:02d}_"
+        f"{_shape_label(shape)}_inputs{input_count}_dim{_dim_label(dim)}"
+    )
+
+
+def _contiguous_candidate(rng, max_elements, ordinal):
+    input_count = rng.choice((2, 3, 4))
+    shape = _candidate_nonempty_shape(rng, max_elements)
+    dim = _stack_dim(rng, len(shape))
+    mode = benchmark_top_level_stack.MODE_EAGER
+    return GeneratedStackCase(
+        name=_new_case_name("contiguous", ordinal, shape, input_count, dim),
+        category="contiguous",
+        layout="contiguous",
+        mode=mode,
+        shape=shape,
+        dim=dim,
+        input_source_indices=tuple(range(input_count)),
+        seeds=_seed_tuple(rng, input_count),
+        repeats=_case_repeats(shape, input_count, mode),
+    )
+
+
+def _empty_candidate(rng, max_elements, ordinal):
+    del max_elements
+    input_count = rng.choice((2, 3, 4))
+    shape = _candidate_empty_shape(rng)
+    dim = _stack_dim(rng, len(shape))
+    mode = benchmark_top_level_stack.MODE_EAGER
+    return GeneratedStackCase(
+        name=_new_case_name("empty", ordinal, shape, input_count, dim),
+        category="empty",
+        layout="empty",
+        mode=mode,
+        shape=shape,
+        dim=dim,
+        input_source_indices=tuple(range(input_count)),
+        seeds=_seed_tuple(rng, input_count),
+        repeats=_case_repeats(shape, input_count, mode),
+    )
+
+
+def _offset_candidate(rng, max_elements, ordinal):
+    input_count = rng.choice((2, 3))
+    prefix = rng.choice((2, 3, 4))
+    logical_limit = max(1, max_elements // (input_count * prefix))
+    shape = _candidate_nonempty_shape(rng, logical_limit, max_rank=3)
+    dim = _stack_dim(rng, len(shape))
+    mode = benchmark_top_level_stack.MODE_EAGER
+    offset_index = rng.randrange(1, prefix)
+    return GeneratedStackCase(
+        name=_new_case_name("offset", ordinal, shape, input_count, dim),
+        category="offset",
+        layout="offset",
+        mode=mode,
+        shape=shape,
+        dim=dim,
+        input_source_indices=tuple(range(input_count)),
+        seeds=_seed_tuple(rng, input_count),
+        repeats=_case_repeats(shape, input_count, mode),
+        source_shape=(prefix, *shape),
+        offset_index=offset_index,
+    )
+
+
+def _noncontiguous_candidate(rng, max_elements, ordinal):
+    input_count = rng.choice((2, 3))
+    logical_limit = max(1, max_elements // input_count)
+    rows = rng.choice(NONUNIT_DIMENSION_CHOICES)
+    cols = rng.choice(NONUNIT_DIMENSION_CHOICES)
+    attempts = 0
+    while rows * cols > logical_limit and attempts < 1000:
+        rows = rng.choice(NONUNIT_DIMENSION_CHOICES)
+        cols = rng.choice(NONUNIT_DIMENSION_CHOICES)
+        attempts += 1
+    if rows * cols > logical_limit:
+        raise SystemExit(
+            "could not generate a noncontiguous stack shape below "
+            f"max-elements={max_elements}"
+        )
+    shape = (cols, rows)
+    dim = _stack_dim(rng, len(shape))
+    mode = benchmark_top_level_stack.MODE_EAGER
+    return GeneratedStackCase(
+        name=_new_case_name("noncontiguous", ordinal, shape, input_count, dim),
+        category="noncontiguous",
+        layout="noncontiguous",
+        mode=mode,
+        shape=shape,
+        dim=dim,
+        input_source_indices=tuple(range(input_count)),
+        seeds=_seed_tuple(rng, input_count),
+        repeats=_case_repeats(shape, input_count, mode),
+        source_shape=(rows, cols),
+    )
+
+
+def _autograd_forward_candidate(rng, max_elements, ordinal):
+    input_count = rng.choice((2, 3))
+    logical_limit = max(1, min(max_elements // input_count, 65536))
+    shape = _candidate_nonempty_shape(rng, logical_limit, max_rank=3)
+    dim = _stack_dim(rng, len(shape))
+    mode = benchmark_top_level_stack.MODE_AUTOGRAD_FORWARD
+    return GeneratedStackCase(
+        name=_new_case_name("autograd forward", ordinal, shape, input_count, dim),
+        category="autograd forward",
+        layout="contiguous",
+        mode=mode,
+        shape=shape,
+        dim=dim,
+        input_source_indices=tuple(range(input_count)),
+        seeds=_seed_tuple(rng, input_count),
+        repeats=_case_repeats(shape, input_count, mode),
+    )
+
+
+def _autograd_backward_candidate(rng, max_elements, ordinal):
+    logical_limit = max(1, min(max_elements // 3, 16384))
+    shape = _candidate_nonempty_shape(rng, logical_limit, max_rank=3)
+    dim = _stack_dim(rng, len(shape))
+    mode = benchmark_top_level_stack.MODE_AUTOGRAD_BACKWARD
+    input_count = 3
+    return GeneratedStackCase(
+        name=_new_case_name(
+            "autograd forward+backward",
+            ordinal,
+            shape,
+            input_count,
+            dim,
+        ),
+        category="autograd forward+backward",
+        layout="contiguous",
+        mode=mode,
+        shape=shape,
+        dim=dim,
+        input_source_indices=(0, 1, 0),
+        seeds=_seed_tuple(rng, 2),
+        repeats=_case_repeats(shape, input_count, mode),
+    )
+
+
+CATEGORY_GENERATORS = {
+    "contiguous": _contiguous_candidate,
+    "empty": _empty_candidate,
+    "offset": _offset_candidate,
+    "noncontiguous": _noncontiguous_candidate,
+    "autograd forward": _autograd_forward_candidate,
+    "autograd forward+backward": _autograd_backward_candidate,
+}
+
+
+def generate_cases(seed, cases_per_category, max_elements):
+    rng = random.Random(seed)
+    cases = []
+    seen_signatures = set()
+    seen_names = set()
+    for category in REQUIRED_CATEGORIES:
+        generator = CATEGORY_GENERATORS[category]
+        for ordinal in range(cases_per_category):
+            for _ in range(1000):
+                case = generator(rng, max_elements, ordinal)
+                if case.shape in PUBLIC_INPUT_SHAPES:
+                    continue
+                signature = _case_signature(case)
+                if signature in seen_signatures or case.name in seen_names:
+                    continue
+                seen_signatures.add(signature)
+                seen_names.add(case.name)
+                cases.append(case)
+                break
+            else:
+                raise SystemExit(
+                    "could not generate a held-out "
+                    f"{category!r} stack case below max-elements={max_elements}"
+                )
+    return tuple(cases)
+
+
+def _make_sources(module, np, case):
+    sources = []
+    for index, seed in enumerate(case.seeds):
+        bias = (index - 1) * 0.125
+        requires_grad = case.mode in (
+            benchmark_top_level_stack.MODE_AUTOGRAD_FORWARD,
+            benchmark_top_level_stack.MODE_AUTOGRAD_BACKWARD,
+        )
+        if case.layout == "offset":
+            base = benchmark_top_level_stack._dense_tensor(
+                module,
+                np,
+                case.source_shape,
+                seed,
+                bias=bias,
+            )
+            sources.append(base[case.offset_index])
+        elif case.layout == "noncontiguous":
+            base = benchmark_top_level_stack._dense_tensor(
+                module,
+                np,
+                case.source_shape,
+                seed,
+                bias=bias,
+            )
+            sources.append(base.transpose(0, 1))
+        else:
+            sources.append(
+                benchmark_top_level_stack._dense_tensor(
+                    module,
+                    np,
+                    case.shape,
+                    seed,
+                    requires_grad=requires_grad,
+                    bias=bias,
+                )
+            )
+    return tuple(sources)
+
+
+def _make_operands_factory(case):
+    def make_operands(module, np):
+        sources = _make_sources(module, np, case)
+        tensors = [sources[index] for index in case.input_source_indices]
+        leaves = ()
+        if case.mode == benchmark_top_level_stack.MODE_AUTOGRAD_BACKWARD:
+            leaves = tuple(
+                (f"source_{index}", source) for index, source in enumerate(sources)
+            )
+        return benchmark_top_level_stack.Operands(tensors, case.dim, leaves)
+
+    return make_operands
+
+
+def _workloads_for_cases(cases):
+    workloads = []
+    for case in cases:
+        repeated = (
+            "; source_0 is stacked twice"
+            if len(set(case.input_source_indices)) != len(case.input_source_indices)
+            else ""
+        )
+        source = (
+            f" from source shape {case.source_shape!r}"
+            if case.source_shape is not None
+            else ""
+        )
+        workloads.append(
+            benchmark_top_level_stack.Workload(
+                name=case.name,
+                category=case.category,
+                input_description=(
+                    f"held-out generated CPU float32 {case.layout} same-shape "
+                    f"stack: {len(case.input_source_indices)} inputs of shape "
+                    f"{case.shape!r}, dim={case.dim}{source}{repeated}"
+                ),
+                output_description=(
+                    "stack output plus accumulated leaf gradients"
+                    if case.mode == benchmark_top_level_stack.MODE_AUTOGRAD_BACKWARD
+                    else "stack output"
+                ),
+                repeats=case.repeats,
+                mode=case.mode,
+                seeds=case.seeds,
+                make_operands=_make_operands_factory(case),
+            )
+        )
+    return tuple(workloads)
+
+
+def _case_record(case):
+    return {
+        "name": case.name,
+        "category": case.category,
+        "layout": case.layout,
+        "mode": case.mode,
+        "shape": list(case.shape),
+        "dim": case.dim,
+        "input_count": len(case.input_source_indices),
+        "input_source_indices": list(case.input_source_indices),
+        "seeds": list(case.seeds),
+        "repeats": case.repeats,
+        "source_shape": (
+            list(case.source_shape) if case.source_shape is not None else None
+        ),
+        "offset_index": case.offset_index,
+    }
+
+
+def _positive_int(value, name):
+    if value <= 0:
+        raise SystemExit(f"{name} must be positive")
+    return value
+
+
+def _validator_context(args, seed, cases):
+    return {
+        "validator_version": VALIDATOR_VERSION,
+        "independent_validator_path": str(
+            Path("scripts") / "validate_top_level_stack_benchmark.py"
+        ),
+        "independent_validator_sha256": benchmark_top_level_stack._file_sha256(
+            Path(__file__).resolve()
+        ),
+        "benchmark_driver_path": str(
+            Path("scripts") / "benchmark_top_level_stack.py"
+        ),
+        "benchmark_driver_version": benchmark_top_level_stack.BENCHMARK_VERSION,
+        "seed": seed,
+        "seed_source": "cli" if args.seed is not None else "secrets.randbits(64)",
+        "cases_per_category": args.cases_per_category,
+        "max_elements": args.max_elements,
+        "required_categories": list(REQUIRED_CATEGORIES),
+        "generated_cases": [_case_record(case) for case in cases],
+        "fixed_public_input_shapes": [
+            list(shape) for shape in sorted(PUBLIC_INPUT_SHAPES, key=repr)
+        ],
+        "fixed_public_matrix_excluded": True,
+        "same_shape_cpu_float32_only": True,
+        "merge_decision_use": (
+            "run with an evaluator-supplied held-out seed; do not use the "
+            "fixed public stack matrix alone for merge scoring"
+        ),
+    }
+
+
+def _annotate_supported_rows(rows, cases):
+    by_name = {case.name: case for case in cases}
+    for row in rows:
+        case = by_name[row["workload"]]
+        row["generated"] = True
+        row["shape"] = list(case.shape)
+        row["dim"] = case.dim
+        row["input_count"] = len(case.input_source_indices)
+        row["layout"] = case.layout
+        row["validator_case"] = _case_record(case)
+        row["validation"]["held_out_generated_shape"] = True
+        row["validation"]["fixed_public_matrix_excluded"] = True
+        row["validation"]["same_shape_cpu_float32_inputs"] = True
+
+
+def run_validator(args, cases, workloads, validator_context):
+    affinity = benchmark_top_level_stack._pin_cpu(args.cpu)
+    benchmark_top_level_stack._configure_thread_environment(
+        args.threads,
+        args.cuda_visible_devices,
+    )
+    np, torch_rs, reference_torch = benchmark_top_level_stack._import_backends()
+    benchmark_top_level_stack._validate_reference_version(reference_torch)
+    benchmark_top_level_stack._configure_reference_threads(reference_torch, args.threads)
+    benchmark_top_level_stack._validate_thread_configuration(
+        torch_rs,
+        reference_torch,
+        args.threads,
+    )
+
+    gc_was_enabled = gc.isenabled()
+    gc.disable()
+    started = time.time()
+    try:
+        supported = benchmark_top_level_stack._run_supported_cells(
+            np,
+            torch_rs,
+            reference_torch,
+            workloads,
+            args,
+        )
+        unsupported = benchmark_top_level_stack._run_unsupported_cells(
+            np,
+            torch_rs,
+            reference_torch,
+        )
+    finally:
+        if gc_was_enabled:
+            gc.enable()
+
+    _annotate_supported_rows(supported, cases)
+    aggregates = benchmark_top_level_stack._aggregate_rows(supported)
+    zero_credit = [
+        row
+        for row in unsupported
+        if row["credit"] == benchmark_top_level_stack.CREDIT_ZERO
+    ]
+    error_parity = [
+        row
+        for row in unsupported
+        if row["credit"] == benchmark_top_level_stack.CREDIT_ERROR_PARITY
+    ]
+    capped_with_zero_credit = [
+        min(10.0, max(0.10, row["ratios"]["steady_torch_rs_over_pytorch"]))
+        for row in supported
+    ] + [10.0] * len(zero_credit)
+    aggregates["zero_credit_unsupported_cell_count"] = len(zero_credit)
+    aggregates["boundary_error_parity_cell_count"] = len(error_parity)
+    aggregates["combined_capped_with_zero_credit_unsupported"] = (
+        benchmark_top_level_stack._geomean(capped_with_zero_credit)
+    )
+    aggregates["generated_category_counts"] = dict(
+        sorted(Counter(row["category"] for row in supported).items())
+    )
+
+    ended = time.time()
+    args.workloads = tuple(workload.name for workload in workloads)
+    environment = benchmark_top_level_stack._environment(
+        torch_rs,
+        reference_torch,
+        np,
+        affinity,
+        args,
+    )
+    environment["benchmark_integrity"].update(
+        {
+            "workload_set": WORKLOAD_SET,
+            "required_validator_path": str(
+                Path("scripts") / "validate_top_level_stack_benchmark.py"
+            ),
+            "merge_decision_usage": (
+                "candidate-local stack timing evidence only until paired with "
+                "this generated-shape validator using an evaluator-held seed"
+            ),
+            "same_shape_cpu_float32_only": True,
+            "fixed_public_matrix_excluded": True,
+        }
+    )
+    environment["validator"] = validator_context
+    return {
+        "environment": environment,
+        "started_epoch_seconds": started,
+        "ended_epoch_seconds": ended,
+        "duration_seconds": ended - started,
+        "cases": supported,
+        "zero_credit_unsupported_cells": zero_credit,
+        "boundary_error_parity_cells": error_parity,
+        "aggregates": aggregates,
+        "validator": validator_context,
+    }
+
+
+def _load_artifact(path):
+    with benchmark_top_level_stack._input_path(path).open(
+        encoding="utf-8"
+    ) as artifact_file:
+        return json.load(artifact_file)
+
+
+def _canonical_stack_dim(dim, rank):
+    return dim + rank + 1 if dim < 0 else dim
+
+
+def _same_shape_input_metadata(row):
+    inputs = row.get("input_metadata") or []
+    shapes = [tuple(item.get("shape", ())) for item in inputs]
+    return inputs, shapes
+
+
+def _validate_case_row(errors, context_case, row, samples, warmups):
+    row_name = f"{row.get('api')}/{row.get('workload')}"
+    shape = tuple(context_case.get("shape") or ())
+    dim = context_case.get("dim")
+    input_count = context_case.get("input_count")
+    mode = context_case.get("mode")
+    category = context_case.get("category")
+    layout = context_case.get("layout")
+    if shape in PUBLIC_INPUT_SHAPES:
+        errors.append(f"{row_name} uses fixed public input shape {shape!r}")
+    for key in ("workload", "category", "mode", "repeats", "dim", "input_count"):
+        expected_key = "name" if key == "workload" else key
+        if row.get(key) != context_case.get(expected_key):
+            errors.append(
+                f"{row_name} {key} mismatch: "
+                f"{row.get(key)!r} != {context_case.get(expected_key)!r}"
+            )
+    if row.get("seed_values") != context_case.get("seeds"):
+        errors.append(f"{row_name} seed metadata mismatch")
+    if row.get("api") != f"torch.{benchmark_top_level_stack.API}":
+        errors.append(f"{row_name} API metadata mismatch")
+    if row.get("generated") is not True:
+        errors.append(f"{row_name} is not marked as generated")
+
+    validation = row.get("validation", {})
+    for required_key in (
+        "metadata_checked",
+        "value_bits_checked",
+        "warmup_checksums_checked",
+        "steady_checksums_checked",
+        "held_out_generated_shape",
+        "fixed_public_matrix_excluded",
+        "same_shape_cpu_float32_inputs",
+    ):
+        if validation.get(required_key) is not True:
+            errors.append(f"{row_name} missing validation flag {required_key}")
+
+    inputs, input_shapes = _same_shape_input_metadata(row)
+    if len(inputs) != input_count:
+        errors.append(f"{row_name} input metadata count mismatch")
+    if len(set(input_shapes)) != 1 or (input_shapes and input_shapes[0] != shape):
+        errors.append(f"{row_name} inputs are not the generated same shape")
+    for item in inputs:
+        if item.get("dtype") != "torch.float32":
+            errors.append(f"{row_name} input dtype is not torch.float32")
+        if item.get("device") != "cpu":
+            errors.append(f"{row_name} input device is not cpu")
+        if item.get("layout") != "torch.strided":
+            errors.append(f"{row_name} input layout is not torch.strided")
+        if category == "offset" and item.get("storage_offset", 0) <= 0:
+            errors.append(f"{row_name} offset input lacks nonzero storage offset")
+        if layout == "noncontiguous" and item.get("is_contiguous") is not False:
+            errors.append(f"{row_name} noncontiguous input is contiguous")
+        if mode in (
+            benchmark_top_level_stack.MODE_AUTOGRAD_FORWARD,
+            benchmark_top_level_stack.MODE_AUTOGRAD_BACKWARD,
+        ) and item.get("requires_grad") is not True:
+            errors.append(f"{row_name} autograd input does not require grad")
+
+    if category == "empty" and 0 not in shape:
+        errors.append(f"{row_name} empty category has no zero dimension")
+    if category == "contiguous":
+        for item in inputs:
+            if item.get("storage_offset") != 0 or item.get("is_contiguous") is not True:
+                errors.append(f"{row_name} contiguous input metadata mismatch")
+
+    output_metadata = row.get("output_metadata") or []
+    if not output_metadata:
+        errors.append(f"{row_name} missing output metadata")
+    else:
+        output_shape = list(shape)
+        output_shape.insert(_canonical_stack_dim(dim, len(shape)), input_count)
+        output = output_metadata[0]
+        if output.get("shape") != output_shape:
+            errors.append(
+                f"{row_name} output shape mismatch: "
+                f"{output.get('shape')!r} != {output_shape!r}"
+            )
+        if output.get("dtype") != "torch.float32" or output.get("device") != "cpu":
+            errors.append(f"{row_name} output is not CPU float32")
+        if mode in (
+            benchmark_top_level_stack.MODE_AUTOGRAD_FORWARD,
+            benchmark_top_level_stack.MODE_AUTOGRAD_BACKWARD,
+        ) and output.get("requires_grad") is not True:
+            errors.append(f"{row_name} autograd output does not require grad")
+
+    if mode == benchmark_top_level_stack.MODE_AUTOGRAD_BACKWARD:
+        labels = [entry.get("label") for entry in output_metadata]
+        expected_labels = [
+            "output",
+            *[
+                f"source_{index}_grad"
+                for index in range(len(context_case.get("seeds") or ()))
+            ],
+        ]
+        if labels != expected_labels:
+            errors.append(f"{row_name} missing backward gradient artifacts")
+
+    for implementation in ("torch_rs", "pytorch"):
+        implementation_result = row.get("implementations", {}).get(
+            implementation,
+            {},
+        )
+        passes = implementation_result.get("passes", [])
+        if len(passes) != len(benchmark_top_level_stack.IMPLEMENTATION_ORDERS):
+            errors.append(f"{row_name}/{implementation} pass count mismatch")
+        if implementation_result.get("steady_sample_count") != (
+            samples * len(benchmark_top_level_stack.IMPLEMENTATION_ORDERS)
+        ):
+            errors.append(f"{row_name}/{implementation} sample count mismatch")
+        if len(implementation_result.get("checksums", [])) != 1:
+            errors.append(f"{row_name}/{implementation} unstable checksums")
+        for pass_result in passes:
+            if pass_result.get("steady", {}).get("sample_count") != samples:
+                errors.append(f"{row_name}/{implementation} pass sample mismatch")
+            if warmups == 0:
+                if pass_result.get("warmup_checksums") != []:
+                    errors.append(
+                        f"{row_name}/{implementation} unexpected warmup checksums"
+                    )
+            elif pass_result.get("warmup_checksums") != pass_result.get(
+                "steady_checksums"
+            ):
+                errors.append(f"{row_name}/{implementation} checksum mismatch")
+    try:
+        benchmark_top_level_stack._single_checksum_pair(row)
+    except AssertionError as error:
+        errors.append(str(error))
+
+
+def validate_artifact_dict(report):
+    errors = []
+    validator = report.get("validator", {})
+    environment = report.get("environment", {})
+    if validator.get("validator_version") != VALIDATOR_VERSION:
+        errors.append("validator version mismatch")
+    if validator.get("independent_validator_path") != (
+        str(Path("scripts") / "validate_top_level_stack_benchmark.py")
+    ):
+        errors.append("validator path mismatch")
+    if validator.get("independent_validator_sha256") != (
+        benchmark_top_level_stack._file_sha256(Path(__file__).resolve())
+    ):
+        errors.append("validator SHA-256 does not match the checked-in script")
+    if validator.get("benchmark_driver_version") != (
+        benchmark_top_level_stack.BENCHMARK_VERSION
+    ):
+        errors.append("benchmark driver version mismatch")
+    if validator.get("fixed_public_matrix_excluded") is not True:
+        errors.append("public matrix exclusion is not recorded")
+    if validator.get("same_shape_cpu_float32_only") is not True:
+        errors.append("CPU float32 same-shape contract is not recorded")
+
+    benchmark_integrity = environment.get("benchmark_integrity", {})
+    if benchmark_integrity.get("workload_set") != WORKLOAD_SET:
+        errors.append("workload set metadata mismatch")
+    if benchmark_integrity.get("fixed_public_matrix_excluded") is not True:
+        errors.append("environment does not record public matrix exclusion")
+    if benchmark_integrity.get("same_shape_cpu_float32_only") is not True:
+        errors.append("environment does not record CPU float32 same-shape contract")
+    if environment.get("benchmark_version") != (
+        benchmark_top_level_stack.BENCHMARK_VERSION
+    ):
+        errors.append("benchmark version mismatch")
+    if environment.get("validator") != validator:
+        errors.append("environment validator context does not match top-level context")
+    if environment.get("implementation_orders") != [
+        list(order) for order in benchmark_top_level_stack.IMPLEMENTATION_ORDERS
+    ]:
+        errors.append("implementation order metadata mismatch")
+
+    cases_per_category = validator.get("cases_per_category")
+    if not isinstance(cases_per_category, int) or cases_per_category <= 0:
+        errors.append(f"invalid cases_per_category: {cases_per_category!r}")
+        cases_per_category = 0
+    expected_count = cases_per_category * len(REQUIRED_CATEGORIES)
+    cases = report.get("cases") or []
+    context_cases = validator.get("generated_cases") or []
+    if len(cases) != expected_count:
+        errors.append(f"case count mismatch: {len(cases)} != {expected_count}")
+    if len(context_cases) != expected_count:
+        errors.append(
+            f"validator case count mismatch: {len(context_cases)} != {expected_count}"
+        )
+
+    category_counts = Counter(row.get("category") for row in cases)
+    expected_category_counts = Counter(
+        {category: cases_per_category for category in REQUIRED_CATEGORIES}
+    )
+    if category_counts != expected_category_counts:
+        errors.append(f"category coverage mismatch: {dict(category_counts)!r}")
+    if report.get("aggregates", {}).get("generated_category_counts") != dict(
+        sorted(expected_category_counts.items())
+    ):
+        errors.append("aggregate generated category counts mismatch")
+
+    by_name = {row.get("workload"): row for row in cases}
+    if len(by_name) != len(cases):
+        errors.append("duplicate workload names in cases")
+    context_names = [context_case.get("name") for context_case in context_cases]
+    if set(by_name) != set(context_names):
+        errors.append("case set does not match validator context")
+
+    samples = environment.get("samples")
+    warmups = environment.get("warmups")
+    if not isinstance(samples, int) or samples <= 0:
+        errors.append(f"invalid sample count: {samples!r}")
+        samples = 0
+    if not isinstance(warmups, int) or warmups < 0:
+        errors.append(f"invalid warmup count: {warmups!r}")
+        warmups = 0
+    for context_case in context_cases:
+        row = by_name.get(context_case.get("name"))
+        if row is not None:
+            _validate_case_row(errors, context_case, row, samples, warmups)
+
+    for credit, field in (
+        (
+            benchmark_top_level_stack.CREDIT_ZERO,
+            "zero_credit_unsupported_cells",
+        ),
+        (
+            benchmark_top_level_stack.CREDIT_ERROR_PARITY,
+            "boundary_error_parity_cells",
+        ),
+    ):
+        expected_names = benchmark_top_level_stack._expected_unsupported_names(credit)
+        actual_names = {row.get("name") for row in report.get(field, [])}
+        if actual_names != expected_names:
+            errors.append(
+                f"{field} mismatch: "
+                f"missing={sorted(expected_names - actual_names)!r} "
+                f"extra={sorted(actual_names - expected_names)!r}"
+            )
+
+    aggregates = report.get("aggregates", {})
+    if aggregates.get("timed_supported_cell_count") != len(cases):
+        errors.append("aggregate timed cell count does not match cases")
+    if aggregates.get("zero_credit_unsupported_cell_count") != len(
+        report.get("zero_credit_unsupported_cells", [])
+    ):
+        errors.append("aggregate unsupported cell count mismatch")
+    if aggregates.get("boundary_error_parity_cell_count") != len(
+        report.get("boundary_error_parity_cells", [])
+    ):
+        errors.append("aggregate error-parity cell count mismatch")
+
+    if errors:
+        raise AssertionError("\n".join(errors))
+
+
+def validate_artifact(artifact_path):
+    validate_artifact_dict(_load_artifact(artifact_path))
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--seed", type=int)
+    parser.add_argument("--cases-per-category", type=int, default=2)
+    parser.add_argument("--max-elements", type=int, default=262_144)
+    parser.add_argument(
+        "--warmups",
+        type=int,
+        default=benchmark_top_level_stack.DEFAULT_WARMUPS,
+    )
+    parser.add_argument(
+        "--samples",
+        type=int,
+        default=benchmark_top_level_stack.DEFAULT_SAMPLES,
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=benchmark_top_level_stack.DEFAULT_THREADS,
+    )
+    parser.add_argument("--cpu", type=int)
+    parser.add_argument("--cuda-visible-devices", default="")
+    parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--validate-artifact",
+        type=Path,
+        metavar="RAW_JSON",
+        help="validate a generated stack-validator JSON artifact",
+    )
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    if args.validate_artifact is not None:
+        validate_artifact(args.validate_artifact)
+        return
+    if args.warmups < 0:
+        raise SystemExit("--warmups must be non-negative")
+    _positive_int(args.samples, "--samples")
+    _positive_int(args.threads, "--threads")
+    _positive_int(args.cases_per_category, "--cases-per-category")
+    _positive_int(args.max_elements, "--max-elements")
+
+    seed = args.seed if args.seed is not None else secrets.randbits(64)
+    cases = generate_cases(seed, args.cases_per_category, args.max_elements)
+    workloads = _workloads_for_cases(cases)
+    validator_context = _validator_context(args, seed, cases)
+    report = run_validator(args, cases, workloads, validator_context)
+    validate_artifact_dict(report)
+
+    encoded = json.dumps(report, indent=2, sort_keys=True)
+    output = (
+        benchmark_top_level_stack._output_path(args.output)
+        if args.output is not None
+        else None
+    )
+    if output is None:
+        print(encoded)
+    else:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(encoded + "\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()
