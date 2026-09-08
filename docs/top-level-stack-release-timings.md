@@ -3,10 +3,11 @@
 Date: 2026-09-08
 
 Measured provenance: git head
-`37b3b2fb5564c26c6b01afe12f21e995b9c01175`. The raw JSON artifact records
+`b967450e81e0df4dc4f98468603b20711004bde4`. The raw JSON artifact records
 the exact git head, worktree status, driver checksum, Python, PyTorch, Rust,
 CPU, thread, and affinity provenance captured when the benchmark ran. Its
-`git.status_short` and `git.diff_stat` were empty at benchmark capture.
+`git.status_short` and `git.diff_stat` record the local source/test
+integration diff present while measuring this uncommitted review update.
 
 Exact build, check, and timing commands were run from the repository root. The
 benchmark used the worktree-local `.venv` with pinned PyTorch 2.13.0 and did
@@ -53,6 +54,8 @@ env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
   .venv/bin/python -m unittest \
   tests.test_top_level_stack tests.test_top_level_stack_reference \
   tests.test_top_level_stack_benchmark_artifact tests.test_readme_quickstart
+env PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES= \
+  .venv/bin/python -m unittest tests.test_autograd tests.test_no_grad_namespace
 cargo fmt --check
 CARGO_TARGET_DIR="$PWD/target/stack-wheel-build" \
   cargo test --locked --all-targets
@@ -73,9 +76,9 @@ Setup evidence from regeneration:
 - Locked dependency installation resolved 36 packages in 27 ms, prepared 31
   packages in 16.73s, and installed them in 1.33s.
 - Release build used `target/stack-wheel-build`; Cargo reported
-  `Finished release profile [optimized] target(s) in 41.02s`.
+  `Finished release profile [optimized] target(s) in 32.81s`.
 - Release wheel reinstall reported resolving in 1 ms, preparing in 39 ms, and
-  installing in 18 ms.
+  installing in 19 ms.
 - Native-extension verification completed successfully and reported import paths
   under this worktree-local `.venv`.
 
@@ -111,30 +114,30 @@ zero-credit aggregate.
 - Implementation orders: torch_rs then pytorch, pytorch then torch_rs; each implementation appears once before and once after the other implementation
 - Warmup and sampling: 15 untimed warmup blocks and 81 measured blocks per implementation pass
 - CPU affinity: selected CPU 24, pinned affinity [24]; threads=1
-- All supported cells: 3.59x uncapped, 2.36x capped
-- Scalar cells: 0.64x uncapped, 0.64x capped
-- Vector cells: 2.56x uncapped, 2.56x capped
-- Matrix cells: 34.43x uncapped, 10.00x capped
-- Empty cells: 0.60x uncapped, 0.60x capped
-- Offset cells: 30.18x uncapped, 10.00x capped
-- Noncontiguous cells: 1.93x uncapped, 1.93x capped
-- Autograd forward cells: 27.47x uncapped, 10.00x capped
-- Autograd forward+backward cells: 0.51x uncapped, 0.51x capped
+- All supported cells: 0.74x uncapped, 0.74x capped
+- Scalar cells: 0.52x uncapped, 0.52x capped
+- Vector cells: 1.39x uncapped, 1.39x capped
+- Matrix cells: 1.16x uncapped, 1.16x capped
+- Empty cells: 0.49x uncapped, 0.49x capped
+- Offset cells: 0.76x uncapped, 0.76x capped
+- Noncontiguous cells: 1.36x uncapped, 1.36x capped
+- Autograd forward cells: 0.92x uncapped, 0.92x capped
+- Autograd forward+backward cells: 0.22x uncapped, 0.22x capped
 
-Including the PyTorch-supported unsupported cells below as zero-credit denominator entries with a 10.00x capped penalty gives a combined capped aggregate of 3.15x.
+Including the PyTorch-supported unsupported cells below as zero-credit denominator entries with a 10.00x capped penalty gives a combined capped aggregate of 1.24x.
 
 ## Supported Timed Cells
 
 | Workload | Category | Input / mode | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Materialized checksums |
 | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
-| `scalar_three_inputs_dim0` | scalar | three scalar tensors, dim=0 | stack output; (3,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 10000 | 1.539 us +/- 0.006 us, var 0.001 | 2.401 us +/- 0.013 us, var 0.002 | 0.64x | `3595086523326908924`/`3595086523326908924` |
-| `vector_three_inputs_dim_neg1_257` | vector | three vectors of shape (257,), dim=-1 | stack output; (257, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 512 | 9.497 us +/- 0.035 us, var 0.012 | 3.703 us +/- 0.021 us, var 0.002 | 2.56x | `9666124477339715250`/`9666124477339715250` |
-| `matrix_three_inputs_dim1_257x263` | matrix | three matrices of shape (257, 263), dim=1 | stack output; (257, 3, 263), stride (789, 263, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 8 | 827.456 us +/- 21.365 us, var 617.637 | 24.034 us +/- 0.515 us, var 336.245 | 34.43x | `9196514359419668404`/`9196514359419668404` |
-| `empty_two_inputs_dim2_2x0x3` | empty | two empty tensors of shape (2, 0, 3), dim=2 | stack output; (2, 0, 2, 3), stride (6, 6, 3, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 1.050 us +/- 0.008 us, var 0.000 | 1.755 us +/- 0.022 us, var 0.088 | 0.60x | `5914968957525217100`/`5914968957525217100` |
-| `offset_two_inputs_dim0_127x131` | offset | two nonzero-storage-offset views from tensor((3, 127, 131))[1], dim=0 | stack output; (2, 127, 131), stride (16637, 131, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 20 | 148.274 us +/- 5.401 us, var 59.023 | 4.912 us +/- 0.099 us, var 0.215 | 30.18x | `4576909815035170523`/`4576909815035170523` |
-| `noncontig_two_inputs_dim0_512x1024` | noncontiguous | two transposed views from tensor((1024, 512)).transpose(0, 1), dim=0 | stack output; (2, 512, 1024), stride (524288, 1024, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 3 | 4963.784 us +/- 204.486 us, var 122135.517 | 2570.077 us +/- 251.527 us, var 219442.987 | 1.93x | `16879733367057555647`/`16879733367057555647` |
-| `autograd_forward_two_inputs_dim1_127x131` | autograd forward | two requires_grad=True leaves of shape (127, 131), dim=1; forward construction only | stack output; (127, 2, 131), stride (262, 131, 1), offset 0, torch.float32, cpu, requires_grad=True, leaf=False | 20 | 149.271 us +/- 2.562 us, var 33.482 | 5.434 us +/- 0.188 us, var 0.897 | 27.47x | `1017021100399807393`/`1017021100399807393` |
-| `autograd_forward_backward_repeated_dim1_32x33` | autograd forward+backward | left/right/left requires_grad=True leaves of shape (32, 33), dim=1; timed stack(...).sum().backward() | stack output plus accumulated leaf gradients; (32, 3, 33), stride (99, 33, 1), offset 0, torch.float32, cpu, requires_grad=True, leaf=False | 5 | 26.374 us +/- 0.460 us, var 2.460 | 52.068 us +/- 1.342 us, var 17.761 | 0.51x | `15114439219529365358`/`15114439219529365358` |
+| `scalar_three_inputs_dim0` | scalar | three scalar tensors, dim=0 | stack output; (3,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 10000 | 1.281 us +/- 0.006 us, var 0.013 | 2.461 us +/- 0.028 us, var 0.006 | 0.52x | `3595086523326908924`/`3595086523326908924` |
+| `vector_three_inputs_dim_neg1_257` | vector | three vectors of shape (257,), dim=-1 | stack output; (257, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 512 | 5.232 us +/- 0.038 us, var 0.010 | 3.753 us +/- 0.021 us, var 0.016 | 1.39x | `9666124477339715250`/`9666124477339715250` |
+| `matrix_three_inputs_dim1_257x263` | matrix | three matrices of shape (257, 263), dim=1 | stack output; (257, 3, 263), stride (789, 263, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 8 | 27.995 us +/- 1.344 us, var 6.021 | 24.031 us +/- 0.687 us, var 86.662 | 1.16x | `9196514359419668404`/`9196514359419668404` |
+| `empty_two_inputs_dim2_2x0x3` | empty | two empty tensors of shape (2, 0, 3), dim=2 | stack output; (2, 0, 2, 3), stride (6, 6, 3, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 0.844 us +/- 0.005 us, var 0.001 | 1.712 us +/- 0.010 us, var 0.003 | 0.49x | `5914968957525217100`/`5914968957525217100` |
+| `offset_two_inputs_dim0_127x131` | offset | two nonzero-storage-offset views from tensor((3, 127, 131))[1], dim=0 | stack output; (2, 127, 131), stride (16637, 131, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 20 | 3.693 us +/- 0.101 us, var 0.313 | 4.842 us +/- 0.056 us, var 0.311 | 0.76x | `4576909815035170523`/`4576909815035170523` |
+| `noncontig_two_inputs_dim0_512x1024` | noncontiguous | two transposed views from tensor((1024, 512)).transpose(0, 1), dim=0 | stack output; (2, 512, 1024), stride (524288, 1024, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 3 | 3199.975 us +/- 458.091 us, var 369551.465 | 2353.007 us +/- 11.851 us, var 1876.288 | 1.36x | `16879733367057555647`/`16879733367057555647` |
+| `autograd_forward_two_inputs_dim1_127x131` | autograd forward | two requires_grad=True leaves of shape (127, 131), dim=1; forward construction only | stack output; (127, 2, 131), stride (262, 131, 1), offset 0, torch.float32, cpu, requires_grad=True, leaf=False | 20 | 4.955 us +/- 0.065 us, var 0.150 | 5.389 us +/- 0.104 us, var 0.204 | 0.92x | `1017021100399807393`/`1017021100399807393` |
+| `autograd_forward_backward_repeated_dim1_32x33` | autograd forward+backward | left/right/left requires_grad=True leaves of shape (32, 33), dim=1; timed stack(...).sum().backward() | stack output plus accumulated leaf gradients; (32, 3, 33), stride (99, 33, 1), offset 0, torch.float32, cpu, requires_grad=True, leaf=False | 5 | 11.237 us +/- 0.182 us, var 0.378 | 50.866 us +/- 0.675 us, var 3.781 | 0.22x | `15114439219529365358`/`15114439219529365358` |
 
 ## Zero-Credit Unsupported Cells
 

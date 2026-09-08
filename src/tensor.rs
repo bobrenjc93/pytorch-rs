@@ -1632,6 +1632,32 @@ impl Tensor {
         Ok(output)
     }
 
+    fn finish_stack_vjp(
+        inputs: &[&Self],
+        mut output: Self,
+        dimension: usize,
+    ) -> Result<Self, TensorError> {
+        if inputs.iter().any(|input| input.requires_grad()) && is_grad_enabled() {
+            let mut saved_inputs = try_result_vector(inputs.len(), output.elements)?;
+            for input in inputs {
+                saved_inputs.push(SavedTensor::try_from_stack_input(input, dimension)?);
+            }
+            let output_shape = try_clone_result_shape(&output.shape, output.elements)?;
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Concat {
+                        inputs: saved_inputs,
+                        dimension,
+                        output_shape,
+                        output_elements: output.elements,
+                        node: AutogradNode::Stack,
+                    })),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
     #[cfg(any(feature = "python-bindings", test))]
     fn finish_squared_difference_vjp(
         &self,
@@ -2057,48 +2083,11 @@ impl Tensor {
         self.unsqueeze_axis(self.shape.len())
     }
 
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
     pub(crate) fn unsqueeze_axis(&self, axis: usize) -> Result<Self, TensorError> {
         debug_assert!(axis <= self.shape.len());
-        let mut shape = try_result_vector(self.shape.len() + 1, self.elements)?;
-        shape.extend_from_slice(&self.shape[..axis]);
-        shape.push(1);
-        shape.extend_from_slice(&self.shape[axis..]);
-
-        let inserted_stride = if axis == self.shape.len() {
-            1
-        } else {
-            // PyTorch carries sizes and strides through signed 64-bit
-            // arithmetic here, including wrapping for zero-element views.
-            let inserted_stride =
-                signed_wrapping_stride_product_value(self.strides[axis], self.shape[axis])?;
-            // Packed SymInt values below -2^62 identify symbolic nodes
-            // instead of concrete integers, even in an eager stride list.
-            if inserted_stride < MIN_CONCRETE_SYMINT {
-                return Err(TensorError::NonConcreteInteger);
-            }
-            if inserted_stride < 0 {
-                let mut strides = try_result_vector(self.strides.len() + 1, self.elements)?;
-                for &stride in &self.strides[..axis] {
-                    strides.push(
-                        i64::try_from(stride)
-                            .map_err(|_| TensorError::StrideCalculationOverflow)?,
-                    );
-                }
-                strides.push(inserted_stride);
-                for &stride in &self.strides[axis..] {
-                    strides.push(
-                        i64::try_from(stride)
-                            .map_err(|_| TensorError::StrideCalculationOverflow)?,
-                    );
-                }
-                return Err(TensorError::NegativeStrides { strides });
-            }
-            usize::try_from(inserted_stride).map_err(|_| TensorError::StrideCalculationOverflow)?
-        };
-        let mut strides = try_result_vector(self.strides.len() + 1, self.elements)?;
-        strides.extend_from_slice(&self.strides[..axis]);
-        strides.push(inserted_stride);
-        strides.extend_from_slice(&self.strides[axis..]);
+        let (shape, strides) =
+            unsqueezed_shape_and_strides(&self.shape, &self.strides, self.elements, axis)?;
 
         self.finish_view_transform(
             Self {
@@ -2693,15 +2682,23 @@ impl Tensor {
             }
         }
 
-        let mut unsqueezed = try_result_vector(inputs.len(), first.elements)?;
-        for input in inputs {
-            unsqueezed.push(input.unsqueeze_axis(dimension)?);
+        let mut shape = try_result_vector(output_rank, first.elements)?;
+        shape.extend_from_slice(&first.shape[..dimension]);
+        shape.push(inputs.len());
+        shape.extend_from_slice(&first.shape[dimension..]);
+        let elements = first
+            .elements
+            .checked_mul(inputs.len())
+            .ok_or(TensorError::ElementCountOverflow)?;
+        if element_count(&shape)? != elements {
+            return Err(TensorError::ElementCountOverflow);
         }
-        let mut unsqueezed_refs = try_result_vector(unsqueezed.len(), first.elements)?;
-        for input in &unsqueezed {
-            unsqueezed_refs.push(input);
-        }
-        Self::cat_with_grad_fn(&unsqueezed_refs, dimension, AutogradNode::Stack)
+        validate_storage_capacity(elements)?;
+
+        let strides = contiguous_strides(&shape, elements)?;
+        let data = materialize_stack(inputs, dimension, elements)?;
+        let output = Self::from_owned_parts(data, shape, strides, first.dtype(), first.device());
+        Self::finish_stack_vjp(inputs, output, dimension)
     }
 
     fn cat_with_grad_fn(
@@ -5064,6 +5061,24 @@ impl SavedTensor {
         })
     }
 
+    fn try_from_stack_input(tensor: &Tensor, dimension: usize) -> Result<Self, TensorError> {
+        let (shape, strides) = unsqueezed_shape_and_strides(
+            &tensor.shape,
+            &tensor.strides,
+            tensor.elements,
+            dimension,
+        )?;
+        Ok(Self {
+            storage: None,
+            shape,
+            strides,
+            offset: tensor.offset,
+            elements: tensor.elements,
+            output_nr: tensor.output_nr,
+            autograd: tensor.autograd.as_ref().map(Arc::clone),
+        })
+    }
+
     fn contiguous_slice(&self) -> Option<&[f32]> {
         if self.elements == 0 {
             return Some(&[]);
@@ -5452,6 +5467,80 @@ fn materialize_concat(
     debug_assert_eq!(output_block.checked_mul(outer), Some(output_elements));
     debug_assert_eq!(data.len(), output_elements);
     Ok(data)
+}
+
+fn materialize_stack(
+    inputs: &[&Tensor],
+    dimension: usize,
+    output_elements: usize,
+) -> Result<Vec<f32>, TensorError> {
+    let Some(first) = inputs.first() else {
+        return Ok(Vec::new());
+    };
+    let inner = element_count(&first.shape[dimension..])?;
+    let outer = element_count(&first.shape[..dimension])?;
+    if let Some(data) =
+        materialize_stack_from_contiguous_slices(inputs, inner, outer, output_elements)?
+    {
+        return Ok(data);
+    }
+
+    let mut materialized_inputs = try_result_vector(inputs.len(), output_elements)?;
+    for input in inputs {
+        materialized_inputs.push(input.try_to_vec()?);
+    }
+    let mut slices = try_result_vector(materialized_inputs.len(), output_elements)?;
+    for values in &materialized_inputs {
+        slices.push(values.as_slice());
+    }
+    let mut data = try_result_vector(output_elements, output_elements)?;
+    append_stack_blocks(&mut data, &slices, inner, outer)?;
+    debug_assert_eq!(data.len(), output_elements);
+    Ok(data)
+}
+
+fn materialize_stack_from_contiguous_slices(
+    inputs: &[&Tensor],
+    inner: usize,
+    outer: usize,
+    output_elements: usize,
+) -> Result<Option<Vec<f32>>, TensorError> {
+    let mut slices = try_result_vector(inputs.len(), output_elements)?;
+    for input in inputs {
+        let Some(values) = input.contiguous_slice() else {
+            return Ok(None);
+        };
+        slices.push(values);
+    }
+
+    let mut data = try_result_vector(output_elements, output_elements)?;
+    append_stack_blocks(&mut data, &slices, inner, outer)?;
+    debug_assert_eq!(data.len(), output_elements);
+    Ok(Some(data))
+}
+
+fn append_stack_blocks(
+    data: &mut Vec<f32>,
+    input_slices: &[&[f32]],
+    inner: usize,
+    outer: usize,
+) -> Result<(), TensorError> {
+    for outer_index in 0..outer {
+        let start = outer_index
+            .checked_mul(inner)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let end = start
+            .checked_add(inner)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        for values in input_slices {
+            data.extend_from_slice(
+                values
+                    .get(start..end)
+                    .ok_or(TensorError::IndexCalculationOverflow)?,
+            );
+        }
+    }
+    Ok(())
 }
 
 fn materialize_concat_small_rank_fast_path(
@@ -7400,6 +7489,54 @@ fn try_clone_result_shape(shape: &[usize], elements: usize) -> Result<Vec<usize>
     let mut cloned = try_result_vector(shape.len(), elements)?;
     cloned.extend_from_slice(shape);
     Ok(cloned)
+}
+
+fn unsqueezed_shape_and_strides(
+    shape: &[usize],
+    strides: &[usize],
+    elements: usize,
+    axis: usize,
+) -> Result<(Vec<usize>, Vec<usize>), TensorError> {
+    let mut output_shape = try_result_vector(shape.len() + 1, elements)?;
+    output_shape.extend_from_slice(&shape[..axis]);
+    output_shape.push(1);
+    output_shape.extend_from_slice(&shape[axis..]);
+
+    let inserted_stride = if axis == shape.len() {
+        1
+    } else {
+        // PyTorch carries sizes and strides through signed 64-bit arithmetic
+        // here, including wrapping for zero-element views.
+        let inserted_stride = signed_wrapping_stride_product_value(strides[axis], shape[axis])?;
+        // Packed SymInt values below -2^62 identify symbolic nodes instead of
+        // concrete integers, even in an eager stride list.
+        if inserted_stride < MIN_CONCRETE_SYMINT {
+            return Err(TensorError::NonConcreteInteger);
+        }
+        if inserted_stride < 0 {
+            let mut output_strides = try_result_vector(strides.len() + 1, elements)?;
+            for &stride in &strides[..axis] {
+                output_strides.push(
+                    i64::try_from(stride).map_err(|_| TensorError::StrideCalculationOverflow)?,
+                );
+            }
+            output_strides.push(inserted_stride);
+            for &stride in &strides[axis..] {
+                output_strides.push(
+                    i64::try_from(stride).map_err(|_| TensorError::StrideCalculationOverflow)?,
+                );
+            }
+            return Err(TensorError::NegativeStrides {
+                strides: output_strides,
+            });
+        }
+        usize::try_from(inserted_stride).map_err(|_| TensorError::StrideCalculationOverflow)?
+    };
+    let mut output_strides = try_result_vector(strides.len() + 1, elements)?;
+    output_strides.extend_from_slice(&strides[..axis]);
+    output_strides.push(inserted_stride);
+    output_strides.extend_from_slice(&strides[axis..]);
+    Ok((output_shape, output_strides))
 }
 
 fn try_clone_reshape_shape(shape: &[i64], elements: usize) -> Result<Vec<i64>, TensorError> {
