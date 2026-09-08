@@ -13,6 +13,7 @@ use crate::tensor_error::TensorError;
 
 const F32_SIGN_MASK: u32 = 0x8000_0000;
 const F32_QUIET_NAN_MASK: u32 = 0x0040_0000;
+#[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
 const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
 // Keep tiny latency cases on the single-row loop while still row-blocking the
@@ -100,6 +101,12 @@ enum GradFn {
         #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
         node: AutogradNode,
     },
+    Stack {
+        inputs: Vec<SavedTensor>,
+        dimension: usize,
+        output_shape: Vec<usize>,
+        output_elements: usize,
+    },
     Multiply {
         left: SavedTensor,
         right: SavedTensor,
@@ -182,7 +189,7 @@ impl GradFn {
                 left.take_parent(pending);
                 right.take_parent(pending);
             }
-            Self::Concat { inputs, .. } => {
+            Self::Concat { inputs, .. } | Self::Stack { inputs, .. } => {
                 for input in inputs {
                     input.take_parent(pending);
                 }
@@ -236,6 +243,7 @@ impl GradFn {
             }
             Self::AddSubtract { .. }
             | Self::Concat { .. }
+            | Self::Stack { .. }
             | Self::Negate { .. }
             | Self::ZeroVjp(_)
             | Self::Sum { .. }
@@ -263,6 +271,7 @@ impl GradFn {
             Self::SavedOutputUnary(node) => node.output.storage = None,
             Self::AddSubtract { .. }
             | Self::Concat { .. }
+            | Self::Stack { .. }
             | Self::Negate { .. }
             | Self::ZeroVjp(_)
             | Self::Sum { .. }
@@ -1270,6 +1279,7 @@ impl Tensor {
             | GradFn::Concat { node, .. }
             | GradFn::Negate { node, .. }
             | GradFn::Transform { node, .. } => *node,
+            GradFn::Stack { .. } => AutogradNode::Stack,
             #[cfg(any(feature = "python-bindings", test))]
             GradFn::SquaredDifference { .. } => AutogradNode::SquaredDifference,
             GradFn::SavedInputUnary(node) => node.identity,
@@ -1625,6 +1635,31 @@ impl Tensor {
                         output_shape,
                         output_elements: output.elements,
                         node,
+                    })),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
+    fn finish_stack_vjp(
+        inputs: &[&Self],
+        mut output: Self,
+        dimension: usize,
+    ) -> Result<Self, TensorError> {
+        if inputs.iter().any(|input| input.requires_grad()) && is_grad_enabled() {
+            let mut saved_inputs = try_result_vector(inputs.len(), output.elements)?;
+            for input in inputs {
+                saved_inputs.push(SavedTensor::try_from_tensor(input, false)?);
+            }
+            let output_shape = try_clone_result_shape(&output.shape, output.elements)?;
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Stack {
+                        inputs: saved_inputs,
+                        dimension,
+                        output_shape,
+                        output_elements: output.elements,
                     })),
                 },
             }));
@@ -2057,6 +2092,7 @@ impl Tensor {
         self.unsqueeze_axis(self.shape.len())
     }
 
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
     pub(crate) fn unsqueeze_axis(&self, axis: usize) -> Result<Self, TensorError> {
         debug_assert!(axis <= self.shape.len());
         let mut shape = try_result_vector(self.shape.len() + 1, self.elements)?;
@@ -2693,15 +2729,23 @@ impl Tensor {
             }
         }
 
-        let mut unsqueezed = try_result_vector(inputs.len(), first.elements)?;
-        for input in inputs {
-            unsqueezed.push(input.unsqueeze_axis(dimension)?);
+        let elements = first
+            .elements
+            .checked_mul(inputs.len())
+            .ok_or(TensorError::ElementCountOverflow)?;
+        let mut shape = try_result_vector(output_rank, elements)?;
+        shape.extend_from_slice(&first.shape[..dimension]);
+        shape.push(inputs.len());
+        shape.extend_from_slice(&first.shape[dimension..]);
+        if element_count(&shape)? != elements {
+            return Err(TensorError::ElementCountOverflow);
         }
-        let mut unsqueezed_refs = try_result_vector(unsqueezed.len(), first.elements)?;
-        for input in &unsqueezed {
-            unsqueezed_refs.push(input);
-        }
-        Self::cat_with_grad_fn(&unsqueezed_refs, dimension, AutogradNode::Stack)
+        validate_storage_capacity(elements)?;
+
+        let strides = contiguous_strides(&shape, elements)?;
+        let data = materialize_stack(inputs, dimension, &shape, elements)?;
+        let output = Self::from_owned_parts(data, shape, strides, first.dtype(), first.device());
+        Self::finish_stack_vjp(inputs, output, dimension)
     }
 
     fn cat_with_grad_fn(
@@ -5224,7 +5268,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                             push_saved_parent(&mut stack, right);
                             push_saved_parent(&mut stack, left);
                         }
-                        GradFn::Concat { inputs, .. } => {
+                        GradFn::Concat { inputs, .. } | GradFn::Stack { inputs, .. } => {
                             for input in inputs.iter().rev() {
                                 push_saved_parent(&mut stack, input);
                             }
@@ -5276,20 +5320,10 @@ fn apply_grad_fn(
             apply_mean_grad_fn(input, *divisor, upstream, gradients)?;
         }
         GradFn::MultiplyScalar { input, scalar } => {
-            if let Some(meta) = &input.autograd {
-                let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
-                let mut gradient = try_result_vector(input.elements, input.elements)?;
-                gradient.extend(upstream.iter().map(|value| value * scalar));
-                add_gradient(gradients, meta, input.output_nr, gradient);
-            }
+            apply_multiply_scalar_grad_fn(input, *scalar, upstream, gradients)?;
         }
         GradFn::Negate { input, .. } => {
-            if let Some(meta) = &input.autograd {
-                debug_assert_eq!(input.elements, upstream.len());
-                let mut gradient = try_result_vector(input.elements, input.elements)?;
-                gradient.extend(upstream.iter().copied().map(negate_value));
-                add_gradient(gradients, meta, input.output_nr, gradient);
-            }
+            apply_negate_grad_fn(input, upstream, gradients)?;
         }
         GradFn::SavedInputUnary(node) => apply_saved_input_unary(node, upstream, gradients)?,
         GradFn::SavedOutputUnary(node) => apply_saved_output_unary(node, upstream, gradients)?,
@@ -5317,6 +5351,19 @@ fn apply_grad_fn(
             output_elements,
             ..
         } => apply_concat_grad_fn(
+            inputs,
+            *dimension,
+            output_shape,
+            *output_elements,
+            upstream,
+            gradients,
+        )?,
+        GradFn::Stack {
+            inputs,
+            dimension,
+            output_shape,
+            output_elements,
+        } => apply_stack_grad_fn(
             inputs,
             *dimension,
             output_shape,
@@ -5358,6 +5405,35 @@ fn apply_grad_fn(
             }
         }
         GradFn::Unbind { .. } => unreachable!(),
+    }
+    Ok(())
+}
+
+fn apply_multiply_scalar_grad_fn(
+    input: &SavedTensor,
+    scalar: Option<f32>,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    if let Some(meta) = &input.autograd {
+        let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
+        let mut gradient = try_result_vector(input.elements, input.elements)?;
+        gradient.extend(upstream.iter().map(|value| value * scalar));
+        add_gradient(gradients, meta, input.output_nr, gradient);
+    }
+    Ok(())
+}
+
+fn apply_negate_grad_fn(
+    input: &SavedTensor,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    if let Some(meta) = &input.autograd {
+        debug_assert_eq!(input.elements, upstream.len());
+        let mut gradient = try_result_vector(input.elements, input.elements)?;
+        gradient.extend(upstream.iter().copied().map(negate_value));
+        add_gradient(gradients, meta, input.output_nr, gradient);
     }
     Ok(())
 }
@@ -5412,6 +5488,149 @@ fn apply_add_subtract_grad_fn(
     if let (Some(meta), Some(gradient)) = (&right.autograd, right_gradient) {
         add_gradient(gradients, meta, right.output_nr, gradient.values);
     }
+    Ok(())
+}
+
+fn materialize_stack(
+    inputs: &[&Tensor],
+    dimension: usize,
+    output_shape: &[usize],
+    output_elements: usize,
+) -> Result<Vec<f32>, TensorError> {
+    if let Some(data) =
+        materialize_stack_small_rank_fast_path(inputs, dimension, output_shape, output_elements)?
+    {
+        return Ok(data);
+    }
+
+    let Some(first) = inputs.first().copied() else {
+        return Err(TensorError::ShapeMismatch {
+            left: Vec::new(),
+            right: Vec::new(),
+        });
+    };
+    debug_assert_eq!(output_shape.len(), first.shape.len() + 1);
+    debug_assert_eq!(output_shape[dimension], inputs.len());
+
+    let inner = element_count(&first.shape[dimension..])?;
+    let outer = element_count(&first.shape[..dimension])?;
+    let mut iterators = try_result_vector(inputs.len(), output_elements)?;
+    for input in inputs {
+        iterators.push(input.logical_values());
+    }
+
+    let mut data = try_result_vector(output_elements, output_elements)?;
+    for _ in 0..outer {
+        for values in &mut iterators {
+            for _ in 0..inner {
+                data.push(values.next().ok_or(TensorError::IndexCalculationOverflow)?);
+            }
+        }
+    }
+    debug_assert_eq!(data.len(), output_elements);
+    Ok(data)
+}
+
+fn materialize_stack_small_rank_fast_path(
+    inputs: &[&Tensor],
+    dimension: usize,
+    output_shape: &[usize],
+    output_elements: usize,
+) -> Result<Option<Vec<f32>>, TensorError> {
+    let Some(first) = inputs.first().copied() else {
+        return Ok(None);
+    };
+    if output_elements == 0 {
+        return Ok(Some(try_result_vector(0, 0)?));
+    }
+
+    match (first.shape.len(), dimension) {
+        (0, 0) if inputs.iter().all(|input| can_append_scalar_fast(input)) => {
+            let mut data = try_result_vector(output_elements, output_elements)?;
+            for input in inputs {
+                append_scalar_fast(&mut data, input)?;
+            }
+            debug_assert_eq!(data.len(), output_elements);
+            Ok(Some(data))
+        }
+        (1, 0) if inputs.iter().all(|input| can_append_rank_1_fast(input)) => {
+            let mut data = try_result_vector(output_elements, output_elements)?;
+            for input in inputs {
+                append_rank_1_fast(&mut data, input)?;
+            }
+            debug_assert_eq!(data.len(), output_elements);
+            Ok(Some(data))
+        }
+        (1, 1) if inputs.iter().all(|input| can_append_rank_1_fast(input)) => {
+            let [length, _] = output_shape else {
+                return Err(TensorError::IndexCalculationOverflow);
+            };
+            let mut data = try_result_vector(output_elements, output_elements)?;
+            for index in 0..*length {
+                for input in inputs {
+                    append_rank_1_value_fast(&mut data, input, index)?;
+                }
+            }
+            debug_assert_eq!(data.len(), output_elements);
+            Ok(Some(data))
+        }
+        (2, 0) if inputs.iter().all(|input| can_append_rank_2_fast(input)) => {
+            let mut data = try_result_vector(output_elements, output_elements)?;
+            for input in inputs {
+                append_rank_2_fast(&mut data, input)?;
+            }
+            debug_assert_eq!(data.len(), output_elements);
+            Ok(Some(data))
+        }
+        (2, 1) if inputs.iter().all(|input| can_append_rank_2_fast(input)) => {
+            let [rows, _, _] = output_shape else {
+                return Err(TensorError::IndexCalculationOverflow);
+            };
+            let mut data = try_result_vector(output_elements, output_elements)?;
+            for row in 0..*rows {
+                for input in inputs {
+                    append_rank_2_row_fast(&mut data, input, row)?;
+                }
+            }
+            debug_assert_eq!(data.len(), output_elements);
+            Ok(Some(data))
+        }
+        (2, 2) if inputs.iter().all(|input| can_append_rank_2_fast(input)) => {
+            let [rows, columns, _] = output_shape else {
+                return Err(TensorError::IndexCalculationOverflow);
+            };
+            let mut data = try_result_vector(output_elements, output_elements)?;
+            for row in 0..*rows {
+                for column in 0..*columns {
+                    for input in inputs {
+                        append_rank_2_value_fast(&mut data, input, row, column)?;
+                    }
+                }
+            }
+            debug_assert_eq!(data.len(), output_elements);
+            Ok(Some(data))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn can_append_scalar_fast(input: &Tensor) -> bool {
+    input.shape.is_empty() && input.contiguous_slice().is_some()
+}
+
+fn append_scalar_fast(data: &mut Vec<f32>, input: &Tensor) -> Result<(), TensorError> {
+    if !input.shape.is_empty() {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
+    let values = input
+        .contiguous_slice()
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    data.push(
+        values
+            .first()
+            .copied()
+            .ok_or(TensorError::IndexCalculationOverflow)?,
+    );
     Ok(())
 }
 
@@ -5516,6 +5735,43 @@ fn append_rank_1_fast(data: &mut Vec<f32>, input: &Tensor) -> Result<(), TensorE
     append_strided_values_fast(data, values, input.offset, length, stride)
 }
 
+fn append_rank_1_value_fast(
+    data: &mut Vec<f32>,
+    input: &Tensor,
+    index: usize,
+) -> Result<(), TensorError> {
+    if input.shape.len() != 1 {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
+    if let Some(values) = input.contiguous_slice() {
+        data.push(
+            values
+                .get(index)
+                .copied()
+                .ok_or(TensorError::IndexCalculationOverflow)?,
+        );
+        return Ok(());
+    }
+
+    let Some((values, [length], [stride])) = input.owned_fixed_rank_parts::<1>() else {
+        return Err(TensorError::IndexCalculationOverflow);
+    };
+    if index >= length {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
+    let offset = index
+        .checked_mul(stride)
+        .and_then(|offset| input.offset.checked_add(offset))
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    data.push(
+        values
+            .get(offset)
+            .copied()
+            .ok_or(TensorError::IndexCalculationOverflow)?,
+    );
+    Ok(())
+}
+
 fn append_rank_2_fast(data: &mut Vec<f32>, input: &Tensor) -> Result<(), TensorError> {
     if input.shape.len() != 2 {
         return Err(TensorError::IndexCalculationOverflow);
@@ -5584,6 +5840,61 @@ fn append_rank_2_row_fast(
         .and_then(|offset| input.offset.checked_add(offset))
         .ok_or(TensorError::IndexCalculationOverflow)?;
     append_rank_2_row_values_fast(data, values, row_offset, columns, column_stride)
+}
+
+fn append_rank_2_value_fast(
+    data: &mut Vec<f32>,
+    input: &Tensor,
+    row: usize,
+    column: usize,
+) -> Result<(), TensorError> {
+    if input.shape.len() != 2 {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
+    if let Some(values) = input.contiguous_slice() {
+        let [rows, columns] = input.shape.as_slice() else {
+            return Err(TensorError::IndexCalculationOverflow);
+        };
+        if row >= *rows || column >= *columns {
+            return Err(TensorError::IndexCalculationOverflow);
+        }
+        let index = row
+            .checked_mul(*columns)
+            .and_then(|offset| offset.checked_add(column))
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        data.push(
+            values
+                .get(index)
+                .copied()
+                .ok_or(TensorError::IndexCalculationOverflow)?,
+        );
+        return Ok(());
+    }
+
+    let Some((values, [rows, columns], [row_stride, column_stride])) =
+        input.owned_fixed_rank_parts::<2>()
+    else {
+        return Err(TensorError::IndexCalculationOverflow);
+    };
+    if row >= rows || column >= columns {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
+    let offset = row
+        .checked_mul(row_stride)
+        .and_then(|row_offset| input.offset.checked_add(row_offset))
+        .and_then(|row_offset| {
+            column
+                .checked_mul(column_stride)
+                .and_then(|column_offset| row_offset.checked_add(column_offset))
+        })
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    data.push(
+        values
+            .get(offset)
+            .copied()
+            .ok_or(TensorError::IndexCalculationOverflow)?,
+    );
+    Ok(())
 }
 
 fn append_rank_2_row_values_fast(
@@ -5684,6 +5995,58 @@ fn apply_concat_grad_fn(
         axis_start = axis_start
             .checked_add(input_axis)
             .ok_or(TensorError::IndexCalculationOverflow)?;
+    }
+    Ok(())
+}
+
+fn apply_stack_grad_fn(
+    inputs: &[SavedTensor],
+    dimension: usize,
+    output_shape: &[usize],
+    output_elements: usize,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    debug_assert_eq!(output_elements, upstream.len());
+    if upstream.len() != output_elements || dimension >= output_shape.len() {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
+
+    let inner = element_count(&output_shape[dimension + 1..])?;
+    let outer = element_count(&output_shape[..dimension])?;
+    let output_axis = output_shape[dimension];
+    if output_axis != inputs.len() {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
+    let output_block = output_axis
+        .checked_mul(inner)
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+
+    for (input_index, input) in inputs.iter().enumerate() {
+        if let Some(meta) = &input.autograd {
+            let mut gradient = try_result_vector(input.elements, input.elements)?;
+            let axis_offset = input_index
+                .checked_mul(inner)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            for outer_index in 0..outer {
+                let output_base = outer_index
+                    .checked_mul(output_block)
+                    .and_then(|base| base.checked_add(axis_offset))
+                    .ok_or(TensorError::IndexCalculationOverflow)?;
+                let output_end = output_base
+                    .checked_add(inner)
+                    .ok_or(TensorError::IndexCalculationOverflow)?;
+                gradient.extend_from_slice(
+                    upstream
+                        .get(output_base..output_end)
+                        .ok_or(TensorError::IndexCalculationOverflow)?,
+                );
+            }
+            if gradient.len() != input.elements {
+                return Err(TensorError::IndexCalculationOverflow);
+            }
+            add_gradient(gradients, meta, input.output_nr, gradient);
+        }
     }
     Ok(())
 }
@@ -8211,7 +8574,8 @@ mod tests {
         TensorError, contiguous_strides, contiguous_values_equal, full_reduction_mean_divisor,
         l1_loss_difference_value, log_value, logical_offset_for_linear_index,
         materialize_concat_small_rank_fast_path, materialize_contiguous_trailing_broadcast,
-        rsqrt_value, sqrt_value, squared_difference_value, try_result_vector, validate_view_bounds,
+        materialize_stack_small_rank_fast_path, rsqrt_value, sqrt_value, squared_difference_value,
+        try_result_vector, validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -12275,6 +12639,172 @@ mod tests {
     }
 
     #[test]
+    fn stack_small_rank_fast_path_matches_shared_gradient_fallback_for_scalars_and_vectors() {
+        let negative_zero = Tensor::from_vec(vec![f32::from_bits(0x8000_0000)], []).unwrap();
+        let nan = Tensor::from_vec(vec![f32::from_bits(0x7fc1_2345)], []).unwrap();
+        assert_stack_fast_path_matches_shared_fallback(
+            "scalars",
+            &[negative_zero, nan],
+            0,
+            &[2],
+            &[0x8000_0000, 0x7fc1_2345],
+        );
+
+        let offset = offset_contiguous_tensor(&[0x3f80_0000, 0x4000_0000, 0x4040_0000], &[3]);
+        let strided = Tensor::from_vec(
+            [
+                0x4120_0000,
+                0x4130_0000,
+                0x4140_0000,
+                0x4150_0000,
+                0x4160_0000,
+                0x4170_0000,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            [3, 2],
+        )
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap()
+        .index_integer(0)
+        .unwrap();
+
+        assert!(offset.is_contiguous());
+        assert_ne!(offset.storage_offset(), 0);
+        assert_eq!(strided.shape(), [3]);
+        assert_eq!(strided.stride(), [2]);
+        assert!(!strided.is_contiguous());
+
+        assert_stack_fast_path_matches_shared_fallback(
+            "rank-1 leading",
+            &[offset.clone(), strided.clone()],
+            0,
+            &[2, 3],
+            &[
+                0x3f80_0000,
+                0x4000_0000,
+                0x4040_0000,
+                0x4120_0000,
+                0x4140_0000,
+                0x4160_0000,
+            ],
+        );
+        assert_stack_fast_path_matches_shared_fallback(
+            "rank-1 trailing",
+            &[offset, strided],
+            1,
+            &[3, 2],
+            &[
+                0x3f80_0000,
+                0x4120_0000,
+                0x4000_0000,
+                0x4140_0000,
+                0x4040_0000,
+                0x4160_0000,
+            ],
+        );
+    }
+
+    #[test]
+    fn stack_small_rank_fast_path_matches_shared_gradient_fallback_for_matrices() {
+        let offset = offset_contiguous_tensor(
+            &[
+                0x3f80_0000,
+                0x4000_0000,
+                0x4040_0000,
+                0x4080_0000,
+                0x40a0_0000,
+                0x40c0_0000,
+            ],
+            &[2, 3],
+        );
+        let strided = Tensor::from_vec(
+            [
+                0x4120_0000,
+                0x4130_0000,
+                0x4140_0000,
+                0x4150_0000,
+                0x4160_0000,
+                0x4170_0000,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            [3, 2],
+        )
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+
+        assert!(offset.is_contiguous());
+        assert_ne!(offset.storage_offset(), 0);
+        assert_eq!(strided.shape(), [2, 3]);
+        assert_eq!(strided.stride(), [1, 2]);
+        assert!(!strided.is_contiguous());
+
+        assert_stack_fast_path_matches_shared_fallback(
+            "rank-2 leading",
+            &[offset.clone(), strided.clone()],
+            0,
+            &[2, 2, 3],
+            &[
+                0x3f80_0000,
+                0x4000_0000,
+                0x4040_0000,
+                0x4080_0000,
+                0x40a0_0000,
+                0x40c0_0000,
+                0x4120_0000,
+                0x4140_0000,
+                0x4160_0000,
+                0x4130_0000,
+                0x4150_0000,
+                0x4170_0000,
+            ],
+        );
+        assert_stack_fast_path_matches_shared_fallback(
+            "rank-2 middle",
+            &[offset.clone(), strided.clone()],
+            1,
+            &[2, 2, 3],
+            &[
+                0x3f80_0000,
+                0x4000_0000,
+                0x4040_0000,
+                0x4120_0000,
+                0x4140_0000,
+                0x4160_0000,
+                0x4080_0000,
+                0x40a0_0000,
+                0x40c0_0000,
+                0x4130_0000,
+                0x4150_0000,
+                0x4170_0000,
+            ],
+        );
+        assert_stack_fast_path_matches_shared_fallback(
+            "rank-2 trailing",
+            &[offset, strided],
+            2,
+            &[2, 3, 2],
+            &[
+                0x3f80_0000,
+                0x4120_0000,
+                0x4000_0000,
+                0x4140_0000,
+                0x4040_0000,
+                0x4160_0000,
+                0x4080_0000,
+                0x4130_0000,
+                0x40a0_0000,
+                0x4150_0000,
+                0x40c0_0000,
+                0x4170_0000,
+            ],
+        );
+    }
+
+    #[test]
     fn cat_rank_1_fast_path_matches_shared_gradient_fallback_for_views() {
         let offset = offset_contiguous_tensor(&[0x0000_0000, 0x8000_0000, 0x7fc1_2345], &[3]);
         let strided = Tensor::from_vec(
@@ -12467,6 +12997,63 @@ mod tests {
         assert!(no_grad_output.is_leaf());
         assert!(no_grad_left.grad().unwrap().is_none());
         assert!(no_grad_right.grad().unwrap().is_none());
+    }
+
+    #[test]
+    fn stack_trailing_matrix_dimension_backpropagates_to_original_inputs() {
+        let left = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let right = Tensor::from_vec(vec![5.0, 6.0, 7.0, 8.0], [2, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let stacked = Tensor::stack(&[&left, &right, &left], 2).unwrap();
+        assert_eq!(stacked.shape(), [2, 2, 3]);
+        assert!(stacked.requires_grad());
+        assert!(!stacked.is_leaf());
+        #[cfg(feature = "python-bindings")]
+        assert_eq!(stacked.grad_fn_name(), Some("StackBackward0"));
+
+        let weights =
+            Tensor::from_vec((1_u8..=12).map(f32::from).collect::<Vec<_>>(), [2, 2, 3]).unwrap();
+        stacked.mul(&weights).unwrap().sum().backward().unwrap();
+
+        assert_eq!(
+            left.grad().unwrap().unwrap().as_slice(),
+            [4.0, 10.0, 16.0, 22.0]
+        );
+        assert_eq!(
+            right.grad().unwrap().unwrap().as_slice(),
+            [2.0, 5.0, 8.0, 11.0]
+        );
+    }
+
+    #[test]
+    fn stack_backpropagates_through_noncontiguous_view_inputs() {
+        let source = Tensor::from_vec((1_u8..=6).map(f32::from).collect::<Vec<_>>(), [2, 3])
+            .unwrap()
+            .with_requires_grad(true);
+        let view = source.transpose(0, 1).unwrap();
+        let other = Tensor::from_vec((7_u8..=12).map(f32::from).collect::<Vec<_>>(), [3, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let stacked = Tensor::stack(&[&view, &other], 1).unwrap();
+        assert_eq!(stacked.shape(), [3, 2, 2]);
+        assert!(stacked.requires_grad());
+        assert!(!stacked.is_leaf());
+
+        let weights =
+            Tensor::from_vec((1_u8..=12).map(f32::from).collect::<Vec<_>>(), [3, 2, 2]).unwrap();
+        stacked.mul(&weights).unwrap().sum().backward().unwrap();
+
+        assert_eq!(
+            source.grad().unwrap().unwrap().as_slice(),
+            [1.0, 5.0, 9.0, 2.0, 6.0, 10.0]
+        );
+        assert_eq!(
+            other.grad().unwrap().unwrap().as_slice(),
+            [3.0, 4.0, 7.0, 8.0, 11.0, 12.0]
+        );
     }
 
     #[test]
@@ -12670,6 +13257,76 @@ mod tests {
 
     fn add_values(left: f32, right: f32) -> f32 {
         left + right
+    }
+
+    fn assert_stack_fast_path_matches_shared_fallback(
+        case: &str,
+        inputs: &[Tensor],
+        dimension: usize,
+        expected_shape: &[usize],
+        expected_bits: &[u32],
+    ) {
+        let references = inputs.iter().collect::<Vec<_>>();
+        let fast_path = materialize_stack_small_rank_fast_path(
+            &references,
+            dimension,
+            expected_shape,
+            expected_bits.len(),
+        )
+        .unwrap()
+        .unwrap_or_else(|| panic!("{case}: expected stack fast path"));
+        assert!(
+            fast_path
+                .iter()
+                .copied()
+                .map(f32::to_bits)
+                .eq(expected_bits.iter().copied()),
+            "{case}: direct fast-path values"
+        );
+
+        let actual = Tensor::stack(&references, dimension).unwrap();
+        let shared_inputs = inputs.iter().map(shared_gradient_copy).collect::<Vec<_>>();
+        let shared_references = shared_inputs.iter().collect::<Vec<_>>();
+        assert!(
+            materialize_stack_small_rank_fast_path(
+                &shared_references,
+                dimension,
+                expected_shape,
+                expected_bits.len(),
+            )
+            .unwrap()
+            .is_none(),
+            "{case}: shared-gradient inputs should exercise the generic fallback"
+        );
+        let fallback = Tensor::stack(&shared_references, dimension).unwrap();
+        let expected_strides = contiguous_strides(expected_shape, expected_bits.len()).unwrap();
+
+        for (label, tensor) in [("public", &actual), ("fallback", &fallback)] {
+            assert_eq!(tensor.shape(), expected_shape, "{case}/{label}");
+            assert_eq!(tensor.stride(), expected_strides, "{case}/{label}");
+            assert_eq!(tensor.storage_offset(), 0, "{case}/{label}");
+            assert_eq!(tensor.dtype(), DType::Float32, "{case}/{label}");
+            assert_eq!(tensor.device(), Device::Cpu, "{case}/{label}");
+            assert!(tensor.is_contiguous(), "{case}/{label}");
+            assert!(
+                tensor
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected_bits.iter().copied()),
+                "{case}/{label}: values"
+            );
+            for input in inputs {
+                assert!(!tensor.shares_storage_with(input), "{case}/{label}");
+            }
+        }
+
+        assert!(
+            actual
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(fallback.logical_values().map(f32::to_bits)),
+            "{case}: optimized stack should match fallback"
+        );
     }
 
     fn assert_cat_fast_path_matches_shared_fallback(
