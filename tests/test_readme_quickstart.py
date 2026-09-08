@@ -324,7 +324,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         ),
         (
             "Module layers",
-            '`l1_loss` reductions other than `"none"`/`"sum"`',
+            '`l1_loss` reductions other than `"none"`/`"mean"`/`"sum"`',
             '`mse_loss` reductions other than `"none"`/`"mean"`/`"sum"`',
             "loss `weight` arguments",
             "legacy loss reduction arguments",

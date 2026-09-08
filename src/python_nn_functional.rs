@@ -30,6 +30,7 @@ const SOFTSIGN_EXACT_TENSOR_ERROR: &str = "softsign() only supports an exact nat
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum L1LossReduction {
     None,
+    Mean,
     Sum,
 }
 
@@ -567,12 +568,13 @@ fn _nn_functional_l1_loss(
         .and_then(|reduction| reduction.to_str().ok())
         .and_then(|reduction| match reduction {
             "none" => Some(L1LossReduction::None),
+            "mean" => Some(L1LossReduction::Mean),
             "sum" => Some(L1LossReduction::Sum),
             _ => None,
         });
     let Some(reduction) = reduction else {
         return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.l1_loss only supports reduction='none' or reduction='sum'",
+            "torch_rs.nn.functional.l1_loss only supports reduction='none', reduction='mean', or reduction='sum'",
         ));
     };
     if !weight.is_none() {
@@ -609,6 +611,11 @@ fn _nn_functional_l1_loss(
         L1LossReduction::None => input
             .inner()
             .absolute_difference(target.inner())
+            .map_err(|error| tensor_error(&error))?,
+        L1LossReduction::Mean => input
+            .inner()
+            .absolute_difference(target.inner())
+            .and_then(|output| output.mean())
             .map_err(|error| tensor_error(&error))?,
         L1LossReduction::Sum => input
             .inner()
