@@ -21391,11 +21391,8 @@ fn getitem_tuple(
             return Err(too_many_indices(tensor.shape().len()));
         }
         Ok(tensor.metadata_alias())
-    } else if indices.len() == 2
-        && indices.get_item(0)?.is_instance_of::<PyEllipsis>()
-        && indices.get_item(1)?.is_none()
-    {
-        Ok(tensor.unsqueeze_back())
+    } else if let Some(indexed) = getitem_single_newaxis_tuple(tensor, indices)? {
+        Ok(indexed)
     } else if let Some(tuple_range) = parse_full_slice_tuple_range_slice(tensor, indices)? {
         if tuple_range.range.covers_full_dimension {
             Ok(tensor.metadata_alias())
@@ -21416,6 +21413,85 @@ fn getitem_tuple(
         let indices = parse_integer_indices(tensor, indices.len(), indices.iter())?;
         Ok(tensor.index(indices))
     }
+}
+
+fn getitem_single_newaxis_tuple(
+    tensor: &CoreTensor,
+    indices: &Bound<'_, PyTuple>,
+) -> PyResult<Option<Result<CoreTensor, TensorError>>> {
+    let mut newaxis_count = 0_usize;
+    let mut explicit_dimensions = 0_usize;
+    let mut contains_ellipsis = false;
+    for index in indices.iter() {
+        if index.is_none() {
+            newaxis_count += 1;
+            if newaxis_count > 1 {
+                return Ok(None);
+            }
+        } else if index.is_instance_of::<PyEllipsis>() {
+            if contains_ellipsis {
+                return Ok(None);
+            }
+            contains_ellipsis = true;
+        } else if is_exact_full_slice(&index)? {
+            explicit_dimensions = explicit_dimensions.checked_add(1).ok_or_else(|| {
+                PyOverflowError::new_err("tensor rank exceeds the platform limit")
+            })?;
+        } else if index.is_instance_of::<PySlice>() {
+            return Ok(None);
+        } else {
+            explicit_dimensions = explicit_dimensions.checked_add(1).ok_or_else(|| {
+                PyOverflowError::new_err("tensor rank exceeds the platform limit")
+            })?;
+        }
+    }
+
+    if newaxis_count != 1 {
+        return Ok(None);
+    }
+
+    let rank = tensor.shape().len();
+    if explicit_dimensions > rank {
+        return Err(too_many_indices(rank));
+    }
+    let omitted_dimensions = if contains_ellipsis {
+        rank - explicit_dimensions
+    } else {
+        0
+    };
+
+    let mut indexed = None;
+    let mut axis = 0_usize;
+    for index in indices.iter() {
+        if index.is_none() {
+            let base = indexed.as_ref().unwrap_or(tensor);
+            indexed = Some(match base.unsqueeze_axis(axis) {
+                Ok(indexed) => indexed,
+                Err(error) => return Ok(Some(Err(error))),
+            });
+            axis = axis.checked_add(1).ok_or_else(|| {
+                PyOverflowError::new_err("tensor rank exceeds the platform limit")
+            })?;
+        } else if index.is_instance_of::<PyEllipsis>() {
+            axis = axis.checked_add(omitted_dimensions).ok_or_else(|| {
+                PyOverflowError::new_err("tensor rank exceeds the platform limit")
+            })?;
+        } else if is_exact_full_slice(&index)? {
+            axis = axis.checked_add(1).ok_or_else(|| {
+                PyOverflowError::new_err("tensor rank exceeds the platform limit")
+            })?;
+        } else if index.is_instance_of::<PySlice>() {
+            return Ok(None);
+        } else {
+            let integer = parse_integer_index(&index)?;
+            let base = indexed.as_ref().unwrap_or(tensor);
+            indexed = Some(match base.select_dimension(axis, integer) {
+                Ok(indexed) => indexed,
+                Err(error) => return Ok(Some(Err(error))),
+            });
+        }
+    }
+    Ok(indexed.map(Ok))
 }
 
 fn apply_leading_integer_range_slice(
