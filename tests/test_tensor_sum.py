@@ -56,6 +56,34 @@ class TensorSumTests(unittest.TestCase):
                 np.float32(expected).view(np.uint32).item(),
             )
 
+    def assert_tensor(self, value, expected, source, *, case):
+        expected = np.asarray(expected, dtype=np.float32)
+        with self.subTest(case=case, metadata=True):
+            self.assertEqual(value.shape, expected.shape)
+            self.assertEqual(value.stride(), self.contiguous_strides(expected.shape))
+            self.assertEqual(value.storage_offset(), 0)
+            self.assertEqual(value.numel(), expected.size)
+            self.assertTrue(value.is_contiguous())
+            self.assertIs(value.dtype, torch.float32)
+            self.assertEqual(value.device, torch.device("cpu"))
+            self.assertFalse(value.is_set_to(source))
+            if source.numel() and value.numel():
+                self.assertNotEqual(value.data_ptr(), source.data_ptr())
+        with self.subTest(case=case, value=True):
+            np.testing.assert_array_equal(
+                np.asarray(value).view(np.uint32),
+                expected.view(np.uint32),
+            )
+
+    @staticmethod
+    def contiguous_strides(shape):
+        strides = []
+        running = 1
+        for size in reversed(shape):
+            strides.append(running)
+            running *= max(size, 1)
+        return tuple(reversed(strides))
+
     @staticmethod
     def supported_calls(source):
         return (
@@ -188,6 +216,112 @@ class TensorSumTests(unittest.TestCase):
             ("tuple integer protocol dim", False, lambda: source.sum((IndexOnly(),))),
             (
                 "list numpy integer dim keepdim",
+                True,
+                lambda: source.sum([np.int64(-1)], keepdim=True),
+            ),
+        )
+
+    @staticmethod
+    def rank_two_dim_cases():
+        dense_values = np.arange(1, 7, dtype=np.float32).reshape(2, 3)
+        noncontiguous_values = np.arange(12, dtype=np.float32).reshape(3, 4)
+        offset_values = np.arange(20, dtype=np.float32).reshape(4, 5)
+        singleton_values = np.array([[7.0, -2.0, 5.0]], dtype=np.float32)
+        return (
+            (
+                "contiguous",
+                torch.tensor(dense_values.tolist(), dtype=torch.float32),
+                dense_values,
+            ),
+            (
+                "noncontiguous",
+                torch.tensor(noncontiguous_values.tolist(), dtype=torch.float32)
+                .transpose(0, 1),
+                noncontiguous_values.T,
+            ),
+            (
+                "offset noncontiguous",
+                torch.tensor(offset_values.tolist(), dtype=torch.float32)
+                .transpose(0, 1)[2:],
+                offset_values.T[2:],
+            ),
+            (
+                "empty rows",
+                torch.zeros((0, 3), dtype=torch.float32),
+                np.zeros((0, 3), dtype=np.float32),
+            ),
+            (
+                "empty columns",
+                torch.zeros((2, 0), dtype=torch.float32),
+                np.zeros((2, 0), dtype=np.float32),
+            ),
+            (
+                "empty offset",
+                torch.zeros((2, 0, 3), dtype=torch.float32).transpose(0, 2)[1],
+                np.zeros((0, 2), dtype=np.float32),
+            ),
+            (
+                "singleton row",
+                torch.tensor(singleton_values.tolist(), dtype=torch.float32),
+                singleton_values,
+            ),
+        )
+
+    @staticmethod
+    def supported_rank_two_dim_calls(source):
+        class IntSubclass(int):
+            pass
+
+        class IndexOnly:
+            def __index__(self):
+                return 0
+
+        return (
+            ("positional dim zero", 0, False, lambda: source.sum(0)),
+            ("positional dim one", 1, False, lambda: source.sum(1)),
+            ("positional dim negative one", 1, False, lambda: source.sum(-1)),
+            ("positional dim negative two", 0, False, lambda: source.sum(-2)),
+            (
+                "keyword dim zero keepdim false dtype none",
+                0,
+                False,
+                lambda: source.sum(dim=0, keepdim=False, dtype=None),
+            ),
+            (
+                "keyword dim one keepdim false dtype none",
+                1,
+                False,
+                lambda: source.sum(dim=1, keepdim=False, dtype=None),
+            ),
+            (
+                "keyword dim negative one keepdim true dtype none",
+                1,
+                True,
+                lambda: source.sum(dim=-1, keepdim=True, dtype=None),
+            ),
+            (
+                "keyword dim negative two keepdim true dtype none",
+                0,
+                True,
+                lambda: source.sum(dim=-2, keepdim=True, dtype=None),
+            ),
+            (
+                "dtype float32 identity",
+                0,
+                False,
+                lambda: source.sum(dim=0, dtype=torch.float32),
+            ),
+            ("integer subclass dim", 0, False, lambda: source.sum(IntSubclass(0))),
+            (
+                "numpy integer dim keepdim",
+                1,
+                True,
+                lambda: source.sum(dim=np.int64(-1), keepdim=True),
+            ),
+            ("tuple integer protocol dim", 0, False, lambda: source.sum((IndexOnly(),))),
+            (
+                "list numpy integer dim keepdim",
+                1,
                 True,
                 lambda: source.sum([np.int64(-1)], keepdim=True),
             ),
@@ -372,6 +506,61 @@ class TensorSumTests(unittest.TestCase):
         np.testing.assert_array_equal(
             np.asarray(kept_leaf.grad), expected_kept_gradient
         )
+
+    def test_rank_two_single_dim_reductions_match_values_and_metadata(self):
+        for case, source, expected_values in self.rank_two_dim_cases():
+            for form, dimension, keepdim, call in self.supported_rank_two_dim_calls(
+                source
+            ):
+                expected = expected_values.sum(
+                    axis=dimension, dtype=np.float32, keepdims=keepdim
+                )
+                self.assert_tensor(
+                    call(), expected, source, case=(case, form, source.stride())
+                )
+
+    def test_rank_two_single_dim_reductions_expand_backward_to_input(self):
+        for dimension in (0, 1, -1, -2):
+            normalized_dimension = dimension % 2
+            for keepdim in (False, True):
+                leaf = torch.tensor(
+                    np.arange(20, dtype=np.float32).reshape(4, 5).tolist(),
+                    requires_grad=True,
+                )
+                view = leaf.transpose(0, 1)[1:4]
+                reduced = view.sum(dim=dimension, keepdim=keepdim, dtype=None)
+                self.assertTrue(reduced.requires_grad)
+                self.assertFalse(reduced.is_leaf)
+                reduced.sum().backward()
+                expected_gradient = np.zeros((4, 5), dtype=np.float32)
+                expected_gradient[:, 1:4] = 1.0
+                np.testing.assert_array_equal(
+                    np.asarray(leaf.grad),
+                    expected_gradient,
+                    err_msg=f"dimension={dimension}, keepdim={keepdim}",
+                )
+                if keepdim:
+                    expected_shape = (1, 4) if normalized_dimension == 0 else (3, 1)
+                else:
+                    expected_shape = (4,) if normalized_dimension == 0 else (3,)
+                self.assertEqual(reduced.shape, expected_shape)
+
+        empty_rows = torch.zeros((0, 3), dtype=torch.float32, requires_grad=True)
+        empty_rows.sum(dim=0).sum().backward()
+        self.assertEqual(empty_rows.grad.shape, empty_rows.shape)
+        self.assertEqual(empty_rows.grad.tolist(), [])
+
+        empty_columns = torch.zeros((2, 0), dtype=torch.float32, requires_grad=True)
+        empty_columns.sum(dim=1, keepdim=True).sum().backward()
+        self.assertEqual(empty_columns.grad.shape, empty_columns.shape)
+        self.assertEqual(empty_columns.grad.tolist(), [[], []])
+
+        leaf = torch.ones((2, 3), dtype=torch.float32, requires_grad=True)
+        with torch.no_grad():
+            untracked = leaf.sum(dim=1, keepdim=True, dtype=torch.float32)
+        self.assertFalse(untracked.requires_grad)
+        self.assertTrue(untracked.is_leaf)
+        self.assertIsNone(leaf.grad)
 
     def test_rank_one_dim_error_ordering(self):
         tensor = torch.ones((2,), dtype=torch.float32)
@@ -659,22 +848,42 @@ class TensorSumTests(unittest.TestCase):
                 with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
                     call()
 
-    def test_dimension_keepdim_and_out_forms_remain_unsupported(self):
+    def test_multi_dim_out_rank_dtype_device_and_subclass_boundaries_remain_unsupported(
+        self,
+    ):
         tensor = torch.ones((2, 3))
+        rank_three = torch.ones((1, 2, 3))
         cases = (
-            ("positional dim", lambda: tensor.sum(0)),
-            ("keyword dim", lambda: tensor.sum(dim=0)),
-            ("positional keepdim", lambda: tensor.sum(0, False)),
-            ("keyword keepdim", lambda: tensor.sum(dim=0, keepdim=True)),
-            ("out", lambda: tensor.sum(out=None)),
+            ("tuple dim", lambda: tensor.sum((0, 1))),
+            ("list dim", lambda: tensor.sum([0, 1])),
+            ("higher-rank dim", lambda: rank_three.sum(dim=1)),
         )
         for case, call in cases:
             with self.subTest(case=case):
                 with self.assertRaisesRegex(
-                    (TypeError, NotImplementedError),
-                    r"^sum\(\)",
+                    NotImplementedError,
+                    r"^sum\(\): only full reductions with dim=None, rank-1 dim=0/-1 reductions, and rank-2 single-dimension reductions are supported; multi-dim reductions, higher-rank dim reductions, and concrete out are not supported$",
                 ):
                     call()
+
+        with self.assertRaisesRegex(TypeError, r"^sum\(\)"):
+            tensor.sum(out=None)
+        with self.assertRaisesRegex(TypeError, "must be torch.dtype"):
+            tensor.sum(dim=0, dtype=object())
+        self.assertFalse(hasattr(torch, "float64"))
+        with self.assertRaisesRegex((NotImplementedError, RuntimeError), "not supported"):
+            torch.ones((2, 3), device="cuda")
+
+        try:
+            class TensorSubclass(torch.Tensor):
+                pass
+
+            subclass = TensorSubclass(torch.ones((2, 3)))
+        except TypeError:
+            subclass = None
+        if subclass is not None:
+            with self.assertRaisesRegex(NotImplementedError, "exact native"):
+                subclass.sum(dim=0)
 
 
 if __name__ == "__main__":
