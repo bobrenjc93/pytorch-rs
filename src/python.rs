@@ -5195,6 +5195,93 @@ fn ordered_tensor_pow_method_overrides<'py>(
     ordered_binary_overrides(input, exponent, "unable to allocate pow dispatch operands")
 }
 
+fn ordered_tensor_pow_dunder_overrides<'py>(
+    exponent: &Bound<'py, PyAny>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(1)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate pow dispatch operands"))?;
+    if !exponent.is_instance_of::<PyTensor>()
+        && let Some(probed) = probe_torch_function_override(exponent)
+    {
+        insert_ordered_torch_function_override(&mut overrides, &probed)?;
+    }
+    Ok(overrides)
+}
+
+fn dispatch_tensor_pow_dunder<'py>(
+    py: Python<'py>,
+    receiver: &Bound<'py, PyTensor>,
+    exponent: &Bound<'py, PyAny>,
+    modulo: Option<&Bound<'py, PyAny>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    let overrides = ordered_tensor_pow_dunder_overrides(exponent)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return Ok(None);
+    }
+
+    let function = py.get_type::<PyTensorBase>().getattr("pow")?.unbind();
+    let mut dispatch_types = Vec::new();
+    dispatch_types
+        .try_reserve_exact(1 + overrides.len())
+        .map_err(|_| PyMemoryError::new_err("unable to allocate pow dispatch operands"))?;
+    dispatch_types.push(py.get_type::<PyTensor>().into_any());
+    for probed in &overrides {
+        dispatch_types.push(probed.dispatch_type.clone());
+    }
+    let types = PyTuple::new(py, dispatch_types)?;
+
+    let argument_count = 2_usize
+        .checked_add(usize::from(modulo.is_some()))
+        .ok_or_else(|| PyMemoryError::new_err("pow dispatch argument count overflowed"))?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate pow dispatch arguments"))?;
+    call_arguments.push(receiver.clone().into_any());
+    call_arguments.push(exponent.clone());
+    if let Some(modulo) = modulo {
+        call_arguments.push(modulo.clone());
+    }
+    let call_args = PyTuple::new(py, call_arguments)?;
+    let kwargs = PyDict::new(py);
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(
+            py,
+            &handler,
+            &function,
+            &types,
+            &call_args,
+            Some(&kwargs),
+        )?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(
+            py,
+            &handler,
+            &function,
+            &types,
+            &call_args,
+            Some(&kwargs),
+        )?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    Ok(Some(py.NotImplemented()))
+}
+
 fn dispatch_tensor_pow_method(
     py: Python<'_>,
     receiver: &Bound<'_, PyAny>,
@@ -8176,15 +8263,11 @@ impl PyTensor {
     }
 
     fn __pow__(
-        &self,
-        py: Python<'_>,
+        slf: &Bound<'_, Self>,
         exponent: &Bound<'_, PyAny>,
         modulo: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Py<PyAny>> {
-        if modulo.is_some_and(|value| !value.is_none()) {
-            return Ok(py.NotImplemented());
-        }
-        self.pow_dunder(py, exponent)
+        Self::pow_dunder(slf, exponent, modulo)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -8309,7 +8392,18 @@ impl PyTensor {
         result.map(Self::new).map_err(|error| tensor_error(&error))
     }
 
-    fn pow_dunder(&self, py: Python<'_>, exponent: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    fn pow_dunder(
+        slf: &Bound<'_, Self>,
+        exponent: &Bound<'_, PyAny>,
+        modulo: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Py<PyAny>> {
+        let py = slf.py();
+        if let Some(result) = dispatch_tensor_pow_dunder(py, slf, exponent, modulo)? {
+            return Ok(result);
+        }
+        if modulo.is_some_and(|value| !value.is_none()) {
+            return Ok(py.NotImplemented());
+        }
         if exponent.is_instance_of::<PyTensor>() {
             return Err(pow_unsupported_native_input());
         }
@@ -8323,8 +8417,9 @@ impl PyTensor {
             return Err(pow_unsupported_native_input());
         }
 
-        validate_pow_native_input(self)?;
-        let result = self
+        let tensor = slf.try_borrow()?;
+        validate_pow_native_input(&tensor)?;
+        let result = tensor
             .inner
             .square()
             .map(PyTensor::new)

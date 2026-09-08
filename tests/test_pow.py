@@ -182,6 +182,78 @@ class TensorPowTests(unittest.TestCase):
         self.assertIs(rhs.other, tensor)
         self.assertIs(tensor.__pow__([]), NotImplemented)
 
+    def test_operator_modes_and_overrides_observe_tensorbase_pow(self):
+        tensor = torch.tensor([2.0, -3.0], requires_grad=True)
+        descriptor = inspect.getattr_static(torch.Tensor, "pow")
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result=marker):
+                self.calls = []
+                self.result = result
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        for form, call in (
+            ("operator", lambda: tensor**2),
+            ("dunder", lambda: tensor.__pow__(2)),
+        ):
+            with self.subTest(form=form):
+                mode = RecordingMode()
+                with mode:
+                    self.assertIs(call(), marker)
+                self.assertEqual(len(mode.calls), 1)
+                function, dispatch_types, args, kwargs = mode.calls[0]
+                self.assertIs(function, descriptor)
+                self.assertEqual(dispatch_types, (torch.Tensor,))
+                self.assertEqual(len(args), 2)
+                self.assertIs(args[0], tensor)
+                self.assertEqual(args[1], 2)
+                self.assertEqual(kwargs, {})
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = tensor**2
+        self.assertEqual(order, ["upper", "lower"])
+        self.assert_tensor_matches(forwarded, tensor.square(), case="forwarded mode")
+
+        events = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append((func, types, args, kwargs))
+                return marker
+
+        for form, call in (
+            ("operator override", lambda rhs: tensor**rhs),
+            ("dunder override", lambda rhs: tensor.__pow__(rhs)),
+        ):
+            with self.subTest(form=form):
+                events.clear()
+                rhs = Override()
+                self.assertIs(call(rhs), marker)
+                self.assertEqual(len(events), 1)
+                function, dispatch_types, args, kwargs = events[0]
+                self.assertIs(function, descriptor)
+                self.assertEqual(dispatch_types, (torch.Tensor, Override))
+                self.assertEqual(len(args), 2)
+                self.assertIs(args[0], tensor)
+                self.assertIs(args[1], rhs)
+                self.assertEqual(kwargs, {})
+
     def test_malformed_calls_and_public_metadata(self):
         tensor = torch.tensor([2.0])
         method_descriptor = inspect.getattr_static(torch.Tensor, "pow")

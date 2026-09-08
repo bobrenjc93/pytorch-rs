@@ -178,6 +178,77 @@ class TensorPowReferenceTests(unittest.TestCase):
         self.assertIs(actual_rhs.other, actual_tensor)
         self.assertIs(expected_rhs.other, expected_tensor)
 
+    def test_operator_torch_function_dispatch_matches_pytorch_2_13(self):
+        def mode_call(module, tensor, result):
+            class RecordingMode(module.overrides.TorchFunctionMode):
+                def __init__(self):
+                    self.calls = []
+
+                def __torch_function__(self, func, types, args=(), kwargs=None):
+                    self.calls.append((func, types, args, kwargs))
+                    return result
+
+            mode = RecordingMode()
+            with mode:
+                output = tensor**2
+            return output, mode.calls[0]
+
+        actual_tensor = torch.tensor([2.0])
+        expected_tensor = reference_torch.tensor([2.0], dtype=reference_torch.float32)
+        actual_marker = object()
+        expected_marker = object()
+        self.assertIs(mode_call(torch, actual_tensor, actual_marker)[0], actual_marker)
+        self.assertIs(
+            mode_call(reference_torch, expected_tensor, expected_marker)[0],
+            expected_marker,
+        )
+
+        for module, tensor, (_, call) in (
+            (torch, actual_tensor, mode_call(torch, actual_tensor, actual_marker)),
+            (
+                reference_torch,
+                expected_tensor,
+                mode_call(reference_torch, expected_tensor, expected_marker),
+            ),
+        ):
+            function, dispatch_types, args, kwargs = call
+            self.assertEqual(function.__qualname__, "TensorBase.pow")
+            self.assertEqual(dispatch_types, (module.Tensor,))
+            self.assertEqual(len(args), 2)
+            self.assertIs(args[0], tensor)
+            self.assertEqual(args[1], 2)
+            self.assertEqual(kwargs, {})
+
+        def override_call(module, tensor, result):
+            events = []
+
+            class Override:
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    events.append((func, types, args, kwargs))
+                    return result
+
+            rhs = Override()
+            output = tensor**rhs
+            return output, rhs, Override, events[0]
+
+        actual = override_call(torch, actual_tensor, actual_marker)
+        expected = override_call(reference_torch, expected_tensor, expected_marker)
+        self.assertIs(actual[0], actual_marker)
+        self.assertIs(expected[0], expected_marker)
+
+        for module, tensor, (_, rhs, override_type, call) in (
+            (torch, actual_tensor, actual),
+            (reference_torch, expected_tensor, expected),
+        ):
+            function, dispatch_types, args, kwargs = call
+            self.assertEqual(function.__qualname__, "TensorBase.pow")
+            self.assertEqual(dispatch_types, (module.Tensor, override_type))
+            self.assertEqual(len(args), 2)
+            self.assertIs(args[0], tensor)
+            self.assertIs(args[1], rhs)
+            self.assertEqual(kwargs, {})
+
 
 if __name__ == "__main__":
     unittest.main()
