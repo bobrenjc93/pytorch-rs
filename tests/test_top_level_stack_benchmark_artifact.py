@@ -295,6 +295,32 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                             pass_result["steady_checksums"] = []
                             pass_result["warmup_checksums"] = []
 
+            def forge_output_checksums(artifact):
+                fake_checksum = "fabricated-checksum"
+
+                def checksum_sink(count):
+                    sink = "0"
+                    for _ in range(count):
+                        sink = benchmark_top_level_stack._roll_checksum(
+                            sink,
+                            fake_checksum,
+                        )
+                    return sink
+
+                steady_sink = checksum_sink(artifact["environment"]["samples"])
+                warmup_sink = checksum_sink(artifact["environment"]["warmups"])
+                for row in artifact["cases"]:
+                    row["validation"]["reference_checksum"] = fake_checksum
+                    for implementation in ("torch_rs", "pytorch"):
+                        implementation_result = row["implementations"][implementation]
+                        implementation_result["checksums"] = [fake_checksum]
+                        for pass_result in implementation_result["passes"]:
+                            pass_result["cold_checksum"] = fake_checksum
+                            pass_result["steady_checksums"] = [fake_checksum]
+                            pass_result["steady_checksum_sink"] = steady_sink
+                            pass_result["warmup_checksums"] = [fake_checksum]
+                            pass_result["warmup_checksum_sink"] = warmup_sink
+
             tamper_cases = (
                 (
                     "seed",
@@ -357,6 +383,11 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                     "measured-checksums-stripped",
                     strip_measured_checksums,
                     "steady_checksums mismatch",
+                ),
+                (
+                    "output-checksums-forged",
+                    forge_output_checksums,
+                    "reference checksum mismatch",
                 ),
                 (
                     "steady-checksum-sink",

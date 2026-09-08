@@ -817,9 +817,19 @@ def _validate_checksum_sink(errors, path, value, expected_checksum, count):
     return True
 
 
-def _validate_pass_timing(errors, path, pass_result, samples, warmups):
+def _validate_pass_timing(
+    errors,
+    path,
+    pass_result,
+    samples,
+    warmups,
+    expected_checksum,
+):
     if not isinstance(pass_result, dict):
         errors.append(f"{path} is not an object")
+        return None
+    if not isinstance(expected_checksum, str) or not expected_checksum:
+        errors.append(f"{path} expected reference checksum is unavailable")
         return None
     steady = pass_result.get("steady")
     if not isinstance(steady, dict):
@@ -851,17 +861,23 @@ def _validate_pass_timing(errors, path, pass_result, samples, warmups):
     if not isinstance(cold_checksum, str) or not cold_checksum:
         errors.append(f"{path}.cold_checksum is not a non-empty string")
         return None
+    cold_checksum_ok = cold_checksum == expected_checksum
+    if not cold_checksum_ok:
+        errors.append(
+            f"{path}.cold_checksum mismatch: "
+            f"{cold_checksum!r} != expected {expected_checksum!r}"
+        )
     steady_checksum_ok = _validate_checksum_list(
         errors,
         f"{path}.steady_checksums",
         pass_result.get("steady_checksums"),
-        cold_checksum,
+        expected_checksum,
     )
     steady_sink_ok = _validate_checksum_sink(
         errors,
         f"{path}.steady_checksum_sink",
         pass_result.get("steady_checksum_sink"),
-        cold_checksum,
+        expected_checksum,
         samples,
     )
     warmup_checksum_ok = True
@@ -881,17 +897,18 @@ def _validate_pass_timing(errors, path, pass_result, samples, warmups):
             errors,
             f"{path}.warmup_checksums",
             pass_result.get("warmup_checksums"),
-            cold_checksum,
+            expected_checksum,
         )
         warmup_sink_ok = _validate_checksum_sink(
             errors,
             f"{path}.warmup_checksum_sink",
             pass_result.get("warmup_checksum_sink"),
-            cold_checksum,
+            expected_checksum,
             warmups,
         )
     if not (
-        steady_checksum_ok
+        cold_checksum_ok
+        and steady_checksum_ok
         and steady_sink_ok
         and warmup_checksum_ok
         and warmup_sink_ok
@@ -913,10 +930,14 @@ def _validate_implementation_timing(
     implementation_result,
     samples,
     warmups,
+    expected_checksum,
 ):
     path = f"{row_name}.{implementation}"
     if not isinstance(implementation_result, dict):
         errors.append(f"{path} is not an object")
+        return None
+    if not isinstance(expected_checksum, str) or not expected_checksum:
+        errors.append(f"{path} expected reference checksum is unavailable")
         return None
     passes = implementation_result.get("passes", [])
     if len(passes) != len(benchmark_top_level_stack.IMPLEMENTATION_ORDERS):
@@ -925,8 +946,12 @@ def _validate_implementation_timing(
         samples * len(benchmark_top_level_stack.IMPLEMENTATION_ORDERS)
     ):
         errors.append(f"{path} sample count mismatch")
-    if len(implementation_result.get("checksums", [])) != 1:
-        errors.append(f"{path} unstable checksums")
+    if implementation_result.get("checksums") != [expected_checksum]:
+        errors.append(
+            f"{path}.checksums mismatch: "
+            f"{implementation_result.get('checksums')!r} "
+            f"!= expected [{expected_checksum!r}]"
+        )
 
     pass_timings = []
     for pass_index, pass_result in enumerate(passes):
@@ -947,6 +972,7 @@ def _validate_implementation_timing(
             pass_result,
             samples,
             warmups,
+            expected_checksum,
         )
         if timing is not None:
             pass_timings.append(timing)
@@ -966,17 +992,6 @@ def _validate_implementation_timing(
         "steady_variance_us2": statistics.median(variances),
         "steady_sample_count": samples
         * len(benchmark_top_level_stack.IMPLEMENTATION_ORDERS),
-        "checksums": sorted(
-            {
-                checksum
-                for pass_result in passes
-                for checksum in (
-                    (pass_result.get("steady_checksums") or [])
-                    + (pass_result.get("warmup_checksums") or [])
-                    + [pass_result.get("cold_checksum")]
-                )
-            }
-        ),
     }
     for key, expected in expected_fields.items():
         _compare_jsonish(
@@ -1290,7 +1305,51 @@ def _validate_unsupported_rows(errors, unsupported, error_parity):
             errors.append(f"{name} missing unsupported-cell validation flags")
 
 
-def _validate_case_row(errors, context_case, row, samples, warmups):
+def _expected_reference_checksums(errors, generated_cases):
+    if not generated_cases:
+        return {}
+    try:
+        import numpy as np
+        import torch as reference_torch
+    except Exception as error:
+        errors.append(f"could not import reference runtime for checksums: {error}")
+        return {}
+    try:
+        benchmark_top_level_stack._validate_reference_version(reference_torch)
+    except SystemExit as error:
+        errors.append(str(error))
+        return {}
+
+    checksums = {}
+    for case in generated_cases:
+        try:
+            workload = _workloads_for_cases((case,))[0]
+            with reference_torch.enable_grad():
+                expected_bundle = benchmark_top_level_stack._expected_bundle(
+                    np,
+                    reference_torch,
+                    workload,
+                )
+            checksums[case.name] = benchmark_top_level_stack._checksum_bundle(
+                np,
+                expected_bundle,
+            )
+        except Exception as error:
+            errors.append(
+                f"{case.name} reference checksum recompute failed: "
+                f"{type(error).__name__}: {error}"
+            )
+    return checksums
+
+
+def _validate_case_row(
+    errors,
+    context_case,
+    row,
+    samples,
+    warmups,
+    expected_checksum,
+):
     row_name = f"{row.get('api')}/{row.get('workload')}"
     shape = tuple(context_case.get("shape") or ())
     dim = context_case.get("dim")
@@ -1326,6 +1385,13 @@ def _validate_case_row(errors, context_case, row, samples, warmups):
         errors.append(f"{row_name} validator case metadata mismatch")
 
     validation = row.get("validation", {})
+    if not isinstance(expected_checksum, str) or not expected_checksum:
+        errors.append(f"{row_name} expected reference checksum is unavailable")
+    elif validation.get("reference_checksum") != expected_checksum:
+        errors.append(
+            f"{row_name} reference checksum mismatch: "
+            f"{validation.get('reference_checksum')!r} != expected {expected_checksum!r}"
+        )
     for required_key in (
         "metadata_checked",
         "value_bits_checked",
@@ -1412,6 +1478,7 @@ def _validate_case_row(errors, context_case, row, samples, warmups):
             implementation_result,
             samples,
             warmups,
+            expected_checksum,
         )
         if median is not None:
             implementation_medians[implementation] = median
@@ -1553,14 +1620,13 @@ def validate_artifact_dict(
         errors.append(
             f"validator case count mismatch: {len(context_cases)} != {expected_count}"
         )
-    if isinstance(seed, int) and cases_per_category > 0 and max_elements > 0:
-        expected_context_cases = _expected_case_records(
-            seed,
-            cases_per_category,
-            max_elements,
-        )
+    generated_case_objects = ()
+    if _is_json_int(seed) and cases_per_category > 0 and max_elements > 0:
+        generated_case_objects = generate_cases(seed, cases_per_category, max_elements)
+        expected_context_cases = [_case_record(case) for case in generated_case_objects]
         if context_cases != expected_context_cases:
             errors.append("validator generated cases do not match seed/config")
+    expected_checksums = _expected_reference_checksums(errors, generated_case_objects)
 
     category_counts = Counter(row.get("category") for row in cases)
     expected_category_counts = Counter(
@@ -1600,6 +1666,7 @@ def validate_artifact_dict(
                 row,
                 samples,
                 warmups,
+                expected_checksums.get(context_case.get("name")),
             )
             if derived_row is not None:
                 derived_cases.append(derived_row)
