@@ -238,6 +238,34 @@ class CudaZeroRoundtripTests(unittest.TestCase):
         with self.assertRaisesRegex(NotImplementedError, "CUDA tensor equality"):
             tensor.equal(tensor)
 
+    def test_reflected_scalar_division_on_cuda_fails_closed_without_panic(self):
+        tensor = torch.zeros((1,), device="cuda:0")
+        expected = reference_torch.zeros((1,), device="cuda:0")
+
+        reference_results = (
+            1 / expected,
+            reference_torch.div(1, expected),
+            reference_torch.divide(1, expected),
+        )
+        reference_torch.cuda.synchronize(0)
+        for result in reference_results:
+            self.assertEqual(str(result.device), "cuda:0")
+
+        with self.assertRaisesRegex(
+            NotImplementedError, "device 'cuda:0' is not supported"
+        ):
+            1 / tensor
+
+        for call in (
+            lambda: torch.div(1, tensor),
+            lambda: torch.divide(1, tensor),
+        ):
+            with self.subTest(call=call):
+                with self.assertRaisesRegex(
+                    NotImplementedError, "only exact native CPU float32"
+                ):
+                    call()
+
     def test_cuda_zero_unsupported_cases_fail_closed(self):
         unsupported_cases = (
             (

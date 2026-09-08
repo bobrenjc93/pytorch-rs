@@ -4537,6 +4537,7 @@ impl Tensor {
     /// Returns an error when gradient recording is enabled for this tensor, or
     /// when result allocation fails.
     pub fn scalar_div(&self, scalar: f32) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("div", self.device())?;
         if self.records_grad() {
             return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
         }
@@ -4569,6 +4570,7 @@ impl Tensor {
         &self,
         scalar: f32,
     ) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("div", self.device())?;
         if self.records_grad() {
             return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
         }
