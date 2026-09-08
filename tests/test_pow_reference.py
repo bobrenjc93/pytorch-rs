@@ -1,3 +1,4 @@
+import inspect
 import unittest
 
 import numpy as np
@@ -156,6 +157,14 @@ class TensorPowReferenceTests(unittest.TestCase):
                 )
 
     def test_operator_reflected_fallback_matches_pytorch_2_13(self):
+        def forwarded_operator(module, tensor, rhs):
+            class ForwardingMode(module.overrides.TorchFunctionMode):
+                def __torch_function__(self, func, types, args=(), kwargs=None):
+                    return func(*args, **(kwargs or {}))
+
+            with ForwardingMode():
+                return tensor**rhs
+
         class ReflectedPower:
             def __init__(self, marker):
                 self.marker = marker
@@ -176,6 +185,18 @@ class TensorPowReferenceTests(unittest.TestCase):
         self.assertIs(expected_tensor.__pow__(expected_rhs), NotImplemented)
         self.assertIs(actual_tensor ** actual_rhs, actual_marker)
         self.assertIs(expected_tensor ** expected_rhs, expected_marker)
+        self.assertIs(actual_rhs.other, actual_tensor)
+        self.assertIs(expected_rhs.other, expected_tensor)
+
+        actual_rhs = ReflectedPower(actual_marker)
+        expected_rhs = ReflectedPower(expected_marker)
+        self.assertIs(
+            forwarded_operator(torch, actual_tensor, actual_rhs), actual_marker
+        )
+        self.assertIs(
+            forwarded_operator(reference_torch, expected_tensor, expected_rhs),
+            expected_marker,
+        )
         self.assertIs(actual_rhs.other, actual_tensor)
         self.assertIs(expected_rhs.other, expected_tensor)
 
@@ -261,7 +282,9 @@ class TensorPowReferenceTests(unittest.TestCase):
                     ),
                 ):
                     function, dispatch_types, args, kwargs = call
-                    self.assertEqual(function.__qualname__, "TensorBase.pow")
+                    self.assertIs(
+                        function, inspect.getattr_static(module.Tensor, "__pow__")
+                    )
                     self.assertEqual(dispatch_types, (module.Tensor,))
                     self.assertEqual(len(args), 1 + len(expected_tail))
                     self.assertIs(args[0], tensor)
@@ -286,7 +309,7 @@ class TensorPowReferenceTests(unittest.TestCase):
             ),
         ):
             function, dispatch_types, args, kwargs = call
-            self.assertEqual(function.__qualname__, "TensorBase.pow")
+            self.assertIs(function, inspect.getattr_static(module.Tensor, "__pow__"))
             self.assertEqual(dispatch_types, (module.Tensor,))
             self.assertEqual(len(args), 2)
             self.assertIs(args[0], tensor)
@@ -316,7 +339,7 @@ class TensorPowReferenceTests(unittest.TestCase):
             (reference_torch, expected_tensor, expected),
         ):
             function, dispatch_types, args, kwargs = call
-            self.assertEqual(function.__qualname__, "TensorBase.pow")
+            self.assertIs(function, inspect.getattr_static(module.Tensor, "__pow__"))
             self.assertEqual(dispatch_types, (module.Tensor, override_type))
             self.assertEqual(len(args), 2)
             self.assertIs(args[0], tensor)

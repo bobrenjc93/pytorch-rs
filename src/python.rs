@@ -5231,7 +5231,7 @@ fn dispatch_tensor_pow_dunder<'py>(
         return Ok(None);
     }
 
-    let function = py.get_type::<PyTensorBase>().getattr("pow")?.unbind();
+    let function = py.get_type::<PyTensor>().getattr("__pow__")?.unbind();
     let mut dispatch_types = Vec::new();
     dispatch_types
         .try_reserve_exact(1 + overrides.len())

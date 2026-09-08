@@ -201,7 +201,7 @@ class TensorPowTests(unittest.TestCase):
 
     def test_operator_modes_and_overrides_observe_tensorbase_pow(self):
         tensor = torch.tensor([2.0, -3.0], requires_grad=True)
-        descriptor = inspect.getattr_static(torch.Tensor, "pow")
+        descriptor = inspect.getattr_static(torch.Tensor, "__pow__")
         marker = object()
 
         class RecordingMode(torch.overrides.TorchFunctionMode):
@@ -246,6 +246,18 @@ class TensorPowTests(unittest.TestCase):
                 forwarded = tensor**2
         self.assertEqual(order, ["upper", "lower"])
         self.assert_tensor_matches(forwarded, tensor.square(), case="forwarded mode")
+
+        class ReflectedPower:
+            def __rpow__(self, other):
+                self.other = other
+                return marker
+
+        rhs = ReflectedPower()
+        order.clear()
+        with ForwardingMode("reflected"):
+            self.assertIs(tensor**rhs, marker)
+        self.assertEqual(order, ["reflected"])
+        self.assertIs(rhs.other, tensor)
 
         events = []
 
