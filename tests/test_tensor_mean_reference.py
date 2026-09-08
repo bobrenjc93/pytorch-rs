@@ -25,6 +25,14 @@ class TensorMeanReferenceTests(unittest.TestCase):
             expected_call()
         self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
 
+    def assert_exact_error_matches(self, actual_call, expected_call):
+        with self.assertRaises(Exception) as actual_raised:
+            actual_call()
+        with self.assertRaises(Exception) as expected_raised:
+            expected_call()
+        self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
+        self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+
     def assert_scalar_matches(self, actual, expected, source, *, case):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, tuple(expected.shape))
@@ -68,6 +76,37 @@ class TensorMeanReferenceTests(unittest.TestCase):
             ("positive infinity", module.tensor([1.0, float("inf"), 2.0], dtype=module.float32)),
             ("negative infinity", module.tensor([1.0, float("-inf"), 2.0], dtype=module.float32)),
             ("mixed infinities", module.tensor([float("inf"), float("-inf")], dtype=module.float32)),
+        )
+
+    @staticmethod
+    def rank_one_strided_vector(module, values, *, requires_grad=False):
+        rows = len(values)
+        columns = 5
+        selected_column = 2
+        matrix = np.full((rows, columns), np.float32(0.5), dtype=np.float32)
+        matrix[:, selected_column] = np.asarray(values, dtype=np.float32)
+        source = module.tensor(
+            matrix.tolist(), dtype=module.float32, requires_grad=requires_grad
+        )
+        return source, source.transpose(0, 1)[selected_column]
+
+    @staticmethod
+    def rank_one_dim_cases(module):
+        contiguous_base = module.tensor(
+            [-5.0, 1.0, -2.0, 3.0, 4.0], dtype=module.float32
+        )
+        noncontiguous_base, noncontiguous = TensorMeanReferenceTests.rank_one_strided_vector(
+            module, [1.0, -2.0, 3.0, -4.0]
+        )
+        return (
+            (
+                "empty",
+                module.zeros((0, 5), dtype=module.float32).transpose(0, 1)[2],
+            ),
+            ("singleton", module.tensor([[[7.0]]], dtype=module.float32)[0][0]),
+            ("offset", contiguous_base[1:]),
+            ("noncontiguous", noncontiguous),
+            ("noncontiguous base", noncontiguous_base.transpose(0, 1)[0]),
         )
 
     @staticmethod
@@ -144,6 +183,65 @@ class TensorMeanReferenceTests(unittest.TestCase):
             )
         raise AssertionError(f"unknown top-level mean form: {form}")
 
+    @staticmethod
+    def call_dim_mean(source, form, module):
+        class IntSubclass(int):
+            pass
+
+        class IndexOnly:
+            def __index__(self):
+                return 0
+
+        if form == "method positional dim zero":
+            return source.mean(0)
+        if form == "method positional dim negative":
+            return source.mean(-1)
+        if form == "method keyword dim zero dtype none":
+            return source.mean(dim=0, keepdim=False, dtype=None)
+        if form == "method keyword dim negative dtype none":
+            return source.mean(dim=-1, keepdim=False, dtype=None)
+        if form == "method keyword dim zero keepdim dtype none":
+            return source.mean(dim=0, keepdim=True, dtype=None)
+        if form == "method keyword dim negative keepdim":
+            return source.mean(dim=-1, keepdim=True, dtype=None)
+        if form == "method integer subclass dim":
+            return source.mean(IntSubclass(0))
+        if form == "method numpy integer dim keepdim":
+            return source.mean(dim=np.int64(-1), keepdim=True)
+        if form == "method tuple integer protocol dim":
+            return source.mean((IndexOnly(),))
+        if form == "method list numpy integer dim keepdim":
+            return source.mean([np.int64(-1)], keepdim=True)
+        if form == "method dtype float32 identity":
+            return source.mean(dim=0, dtype=module.float32)
+        if form == "top-level positional dim zero":
+            return module.mean(source, 0)
+        if form == "top-level positional dim negative":
+            return module.mean(source, -1)
+        if form == "top-level keyword dim zero dtype none":
+            return module.mean(input=source, dim=0, keepdim=False, dtype=None)
+        if form == "top-level keyword dim negative dtype none":
+            return module.mean(input=source, dim=-1, keepdim=False, dtype=None)
+        if form == "top-level keyword dim zero keepdim dtype none":
+            return module.mean(input=source, dim=0, keepdim=True, dtype=None)
+        if form == "top-level keyword dim negative keepdim":
+            return module.mean(source, dim=-1, keepdim=True, dtype=None)
+        if form == "top-level dim out none":
+            return module.mean(source, dim=0, keepdim=False, dtype=None, out=None)
+        if form == "top-level dim keepdim out none":
+            return module.mean(source, dim=-1, keepdim=True, dtype=None, out=None)
+        if form == "top-level integer subclass dim":
+            return module.mean(source, IntSubclass(0))
+        if form == "top-level numpy integer dim keepdim":
+            return module.mean(input=source, dim=np.int64(-1), keepdim=True)
+        if form == "top-level tuple integer protocol dim":
+            return module.mean(source, (IndexOnly(),))
+        if form == "top-level list numpy integer dim keepdim":
+            return module.mean(source, [np.int64(-1)], keepdim=True)
+        if form == "top-level dtype float32 identity":
+            return module.mean(source, dim=0, dtype=module.float32)
+        raise AssertionError(f"unknown dim mean form: {form}")
+
     def test_supported_values_metadata_and_storage_match_pytorch_2_13(self):
         method_forms = (
             "default",
@@ -199,6 +297,49 @@ class TensorMeanReferenceTests(unittest.TestCase):
                     self.call_top_level_mean(expected_input, form, reference_torch),
                     actual_input,
                     case=(name, "top-level", form),
+                )
+
+    def test_rank_one_dim_reductions_match_pytorch_2_13(self):
+        forms = (
+            "method positional dim zero",
+            "method positional dim negative",
+            "method keyword dim zero dtype none",
+            "method keyword dim negative dtype none",
+            "method keyword dim zero keepdim dtype none",
+            "method keyword dim negative keepdim",
+            "method integer subclass dim",
+            "method numpy integer dim keepdim",
+            "method tuple integer protocol dim",
+            "method list numpy integer dim keepdim",
+            "method dtype float32 identity",
+            "top-level positional dim zero",
+            "top-level positional dim negative",
+            "top-level keyword dim zero dtype none",
+            "top-level keyword dim negative dtype none",
+            "top-level keyword dim zero keepdim dtype none",
+            "top-level keyword dim negative keepdim",
+            "top-level dim out none",
+            "top-level dim keepdim out none",
+            "top-level integer subclass dim",
+            "top-level numpy integer dim keepdim",
+            "top-level tuple integer protocol dim",
+            "top-level list numpy integer dim keepdim",
+            "top-level dtype float32 identity",
+        )
+        actual_cases = self.rank_one_dim_cases(torch)
+        expected_cases = self.rank_one_dim_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases, expected_cases, strict=True
+        ):
+            name, actual_input = actual_case
+            expected_name, expected_input = expected_case
+            self.assertEqual(name, expected_name)
+            for form in forms:
+                self.assert_scalar_matches(
+                    self.call_dim_mean(actual_input, form, torch),
+                    self.call_dim_mean(expected_input, form, reference_torch),
+                    actual_input,
+                    case=(name, form),
                 )
 
     def test_first_order_autograd_and_no_grad_match_pytorch_2_13(self):
@@ -302,6 +443,84 @@ class TensorMeanReferenceTests(unittest.TestCase):
         self.assertEqual(outcomes[0][3:5], outcomes[1][3:5])
         np.testing.assert_array_equal(outcomes[0][5], outcomes[1][5])
         self.assertEqual(outcomes[0][6:], outcomes[1][6:])
+
+    def test_rank_one_dim_backward_through_sum_matches_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            empty = module.zeros((0, 5), dtype=module.float32, requires_grad=True)
+            empty_view = empty.transpose(0, 1)[2]
+            empty_view.mean(dim=0).backward()
+
+            values = np.arange(1, 21, dtype=np.float32).reshape(4, 5)[:, 2]
+            leaf, view = self.rank_one_strided_vector(
+                module, values, requires_grad=True
+            )
+            loss = view.mean(dim=-1, dtype=None)
+            loss.backward()
+            loss.backward()
+
+            kept_leaf, kept_view = self.rank_one_strided_vector(
+                module, [1.0, -2.0, 3.0], requires_grad=True
+            )
+            kept = module.mean(kept_view, dim=0, keepdim=True, dtype=None)
+            kept_shape = tuple(kept.shape)
+            kept_stride = kept.stride()
+            kept.sum().backward()
+
+            outcomes.append(
+                (
+                    tuple(empty.grad.shape),
+                    empty.grad.tolist(),
+                    np.asarray(leaf.grad).copy(),
+                    kept_shape,
+                    kept_stride,
+                    np.asarray(kept_leaf.grad).copy(),
+                )
+            )
+        self.assertEqual(outcomes[0][0:2], outcomes[1][0:2])
+        np.testing.assert_array_equal(outcomes[0][2], outcomes[1][2])
+        self.assertEqual(outcomes[0][3:5], outcomes[1][3:5])
+        np.testing.assert_array_equal(outcomes[0][5], outcomes[1][5])
+
+    def test_rank_one_dim_error_ordering_matches_pytorch_2_13(self):
+        actual = torch.ones((2,), dtype=torch.float32)
+        expected = reference_torch.ones((2,), dtype=reference_torch.float32)
+        exact_cases = (
+            (lambda: actual.mean(2**100, "bad"), lambda: expected.mean(2**100, "bad")),
+            (lambda: actual.mean(2**100, dtype=1), lambda: expected.mean(2**100, dtype=1)),
+            (lambda: actual.mean(2**100), lambda: expected.mean(2**100)),
+            (lambda: actual.mean(1), lambda: expected.mean(1)),
+            (lambda: actual.mean(True), lambda: expected.mean(True)),
+            (lambda: actual.mean("bad", "bad"), lambda: expected.mean("bad", "bad")),
+            (lambda: torch.mean(actual, 2**100), lambda: reference_torch.mean(expected, 2**100)),
+            (lambda: torch.mean(actual, 1), lambda: reference_torch.mean(expected, 1)),
+            (lambda: torch.mean(actual, True), lambda: reference_torch.mean(expected, True)),
+        )
+        for case, (actual_call, expected_call) in enumerate(exact_cases):
+            with self.subTest(case=case):
+                self.assert_exact_error_matches(actual_call, expected_call)
+
+        type_only_cases = (
+            (
+                lambda: torch.mean(actual, 2**100, "bad"),
+                lambda: reference_torch.mean(expected, 2**100, "bad"),
+            ),
+            (
+                lambda: torch.mean(actual, 2**100, dtype=1),
+                lambda: reference_torch.mean(expected, 2**100, dtype=1),
+            ),
+            (
+                lambda: torch.mean(actual, 2**100, out=[]),
+                lambda: reference_torch.mean(expected, 2**100, out=[]),
+            ),
+            (
+                lambda: torch.mean(actual, "bad", "bad"),
+                lambda: reference_torch.mean(expected, "bad", "bad"),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(type_only_cases):
+            with self.subTest(case=case):
+                self.assert_error_matches(actual_call, expected_call)
 
     def test_callable_metadata_matches_pytorch_2_13(self):
         actual_tensor = torch.tensor([1.0, 2.0])
@@ -415,6 +634,40 @@ class TensorMeanReferenceTests(unittest.TestCase):
                     None,
                     keepdim=True,
                     out=reference_torch.empty((1, 1)),
+                ),
+            ),
+            (
+                lambda: torch.mean(
+                    torch.ones((2,), dtype=torch.float32),
+                    dim=0,
+                    keepdim=True,
+                    out=torch.ones((1,), dtype=torch.float32),
+                ),
+                lambda: reference_torch.mean(
+                    reference_torch.ones((2,), dtype=reference_torch.float32),
+                    dim=0,
+                    keepdim=True,
+                    out=reference_torch.empty((1,), dtype=reference_torch.float32),
+                ),
+            ),
+            (
+                lambda: torch.ones((2,), dtype=torch.float32).mean(
+                    dim=0, dtype=reference_torch.float64
+                ),
+                lambda: reference_torch.ones(
+                    (2,), dtype=reference_torch.float32
+                ).mean(dim=0, dtype=reference_torch.float64),
+            ),
+            (
+                lambda: torch.mean(
+                    torch.ones((2,), dtype=torch.float32),
+                    dim=0,
+                    dtype=reference_torch.float64,
+                ),
+                lambda: reference_torch.mean(
+                    reference_torch.ones((2,), dtype=reference_torch.float32),
+                    dim=0,
+                    dtype=reference_torch.float64,
                 ),
             ),
         )
