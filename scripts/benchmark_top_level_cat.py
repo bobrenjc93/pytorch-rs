@@ -40,6 +40,9 @@ HELD_OUT_VALIDATION_VERSION = "top_level_cat_held_out_semantics_v1"
 DEFAULT_WARMUPS = 15
 DEFAULT_SAMPLES = 81
 DEFAULT_THREADS = 1
+CAPPED_RATIO_MIN = 0.10
+CAPPED_RATIO_MAX = 10.0
+ZERO_CREDIT_CAPPED_RATIO = CAPPED_RATIO_MAX
 THREAD_ENVIRONMENT_VARIABLES = (
     "OMP_NUM_THREADS",
     "MKL_NUM_THREADS",
@@ -104,8 +107,17 @@ def _run_text(command):
 
 
 def _git_provenance():
+    head = _run_text(["git", "rev-parse", "HEAD"])
     return {
-        "head": _run_text(["git", "rev-parse", "HEAD"]),
+        "head": head,
+        "measured_source_commit": head,
+        "artifact_report_commit": head,
+        "artifact_report_commit_note": (
+            "This field records the commit checked out when the "
+            "artifact/report pair was generated. status_short and diff_stat "
+            "record whether that checkout had pending report or harness edits; "
+            "the checked-in report commit may be a later artifact-only commit."
+        ),
         "status_short": _run_text(["git", "status", "--short"]),
         "diff_stat": _run_text(["git", "diff", "HEAD", "--stat"]),
     }
@@ -917,6 +929,30 @@ def _geomean(values):
     return math.exp(sum(math.log(value) for value in values) / len(values))
 
 
+def _capped_ratio(value):
+    return min(CAPPED_RATIO_MAX, max(CAPPED_RATIO_MIN, value))
+
+
+def _coverage_adjusted_aggregate(supported_rows, zero_credit_rows):
+    supported_capped = [
+        _capped_ratio(row["ratios"]["steady_torch_rs_over_pytorch"])
+        for row in supported_rows
+    ]
+    zero_credit_capped = [ZERO_CREDIT_CAPPED_RATIO] * len(zero_credit_rows)
+    denominator = supported_capped + zero_credit_capped
+    return {
+        "denominator_cell_count": len(denominator),
+        "timed_supported_cell_count": len(supported_rows),
+        "zero_credit_cell_count": len(zero_credit_rows),
+        "zero_credit_unsupported_cell_count": len(zero_credit_rows),
+        "zero_credit_incorrect_cell_count": 0,
+        "zero_credit_capped_ratio": ZERO_CREDIT_CAPPED_RATIO,
+        "unsupported_cells_in_denominator": bool(zero_credit_rows),
+        "incorrect_cells_in_denominator": True,
+        "geomean_capped_0_10_10_0": _geomean(denominator),
+    }
+
+
 def _select_workloads(selected_names):
     if not selected_names:
         return WORKLOADS
@@ -1475,14 +1511,14 @@ def _aggregate_rows(rows):
         "timed_supported_cell_count": len(rows),
         "steady_geomean_torch_rs_over_pytorch": _geomean(ratios),
         "steady_geomean_capped_0_10_10_0": _geomean(
-            [min(10.0, max(0.10, ratio)) for ratio in ratios]
+            [_capped_ratio(ratio) for ratio in ratios]
         ),
         "groups": {
             name: {
                 "cell_count": len(values),
                 "geomean": _geomean(values),
                 "geomean_capped_0_10_10_0": _geomean(
-                    [min(10.0, max(0.10, value)) for value in values]
+                    [_capped_ratio(value) for value in values]
                 ),
             }
             for name, values in named_groups.items()
@@ -1521,7 +1557,12 @@ def run_benchmark(args):
 
     aggregates = _aggregate_rows(supported)
     aggregates["zero_credit_unsupported_cell_count"] = len(unsupported)
-    aggregates["unsupported_cells_in_performance_score"] = False
+    aggregates["coverage_adjusted"] = _coverage_adjusted_aggregate(
+        supported,
+        unsupported,
+    )
+    aggregates["supported_only_speed_geomeans_exclude_zero_credit"] = True
+    aggregates["unsupported_cells_in_performance_score"] = True
 
     ended = time.time()
     return {
@@ -1592,8 +1633,10 @@ def render_markdown_summary(report):
     unsupported = report["zero_credit_unsupported_cells"]
     held_out = report["held_out_validation"]
     aggregates = report["aggregates"]
+    coverage_adjusted = aggregates["coverage_adjusted"]
     groups = aggregates["groups"]
     environment = report["environment"]
+    git = environment["git"]
     implementation_orders = ", ".join(
         " then ".join(order) for order in environment["implementation_orders"]
     )
@@ -1601,10 +1644,14 @@ def render_markdown_summary(report):
     selected_cpu = affinity["selected_cpu"]
     pinned_affinity = affinity["pinned_affinity"]
     lines = [
+        "# CPU `torch.cat` Release Timings",
+        "",
         "## Aggregate",
         "",
         f"- Raw JSON artifact: `{DEFAULT_ARTIFACT_PATH.relative_to(REPOSITORY_ROOT)}`",
         f"- Benchmark: `{environment['benchmark_version']}`",
+        f"- Measured source commit: `{git['measured_source_commit']}`",
+        f"- Artifact/report generation commit: `{git['artifact_report_commit']}`",
         (
             f"- Timed supported cells: {len(cases)} "
             f"({len(APIS)} APIs x {len(WORKLOADS)} workload shapes and modes)"
@@ -1646,11 +1693,22 @@ def render_markdown_summary(report):
             groups["rank-2 neutral empty cells"],
         ),
         _group_line("Backward cells", groups["backward cells"]),
+        (
+            "- Coverage-adjusted all cells: "
+            f"{coverage_adjusted['geomean_capped_0_10_10_0']:.2f}x capped "
+            f"over {coverage_adjusted['denominator_cell_count']} cells "
+            f"({coverage_adjusted['timed_supported_cell_count']} timed supported, "
+            f"{coverage_adjusted['zero_credit_unsupported_cell_count']} "
+            "zero-credit unsupported, "
+            f"{coverage_adjusted['zero_credit_incorrect_cell_count']} "
+            "zero-credit incorrect)"
+        ),
         "",
         (
-            "Unsupported cells below are feature-coverage evidence only. They "
-            "retain zero-credit status in the raw artifact and are excluded "
-            "from the performance geomeans above."
+            "Unsupported cells below are zero-credit coverage evidence. They "
+            "are excluded from the supported-only speed geomeans above and "
+            "included in the coverage-adjusted aggregate with the 10.00x "
+            "capped lower-is-better penalty."
         ),
         (
             f"Held-out semantic validation: {held_out['case_count']} deterministic "
@@ -1695,7 +1753,7 @@ def _load_artifact(path):
 
 def _markdown_summary(markdown_path):
     markdown = _input_path(markdown_path).read_text(encoding="utf-8")
-    marker = "## Aggregate"
+    marker = "# CPU `torch.cat` Release Timings"
     try:
         return markdown[markdown.index(marker) :]
     except ValueError:
@@ -1736,6 +1794,21 @@ def _validate_expected_artifact_shape(report):
         list(order) for order in IMPLEMENTATION_ORDERS
     ]:
         errors.append("implementation order metadata mismatch")
+    git = environment.get("git", {})
+    for required_key in (
+        "head",
+        "measured_source_commit",
+        "artifact_report_commit",
+        "artifact_report_commit_note",
+        "status_short",
+        "diff_stat",
+    ):
+        if required_key not in git:
+            errors.append(f"git provenance missing {required_key}")
+    if git.get("measured_source_commit") != git.get("head"):
+        errors.append("measured source commit does not match git head")
+    if git.get("artifact_report_commit") != git.get("head"):
+        errors.append("artifact/report generation commit does not match git head")
     driver = environment.get("driver", {})
     expected_driver_path = (
         Path(__file__).resolve().relative_to(REPOSITORY_ROOT).as_posix()
@@ -1815,10 +1888,27 @@ def _validate_expected_artifact_shape(report):
         errors.append("aggregate timed cell count does not match cases")
     if aggregates.get("zero_credit_unsupported_cell_count") != len(unsupported):
         errors.append("aggregate unsupported cell count does not match rows")
-    if aggregates.get("unsupported_cells_in_performance_score") is not False:
-        errors.append("unsupported cells must be excluded from performance scoring")
+    if aggregates.get("supported_only_speed_geomeans_exclude_zero_credit") is not True:
+        errors.append("supported-only speed geomeans must declare zero-credit exclusion")
+    if aggregates.get("unsupported_cells_in_performance_score") is not True:
+        errors.append("unsupported cells must be retained in a performance denominator")
     if "combined_capped_with_zero_credit_unsupported" in aggregates:
         errors.append("unsupported cells are folded into a performance aggregate")
+    expected_coverage_adjusted = _coverage_adjusted_aggregate(cases, unsupported)
+    coverage_adjusted = aggregates.get("coverage_adjusted", {})
+    for key, expected_value in expected_coverage_adjusted.items():
+        actual_value = coverage_adjusted.get(key)
+        if isinstance(expected_value, float):
+            if not math.isclose(actual_value or 0.0, expected_value, rel_tol=1e-12):
+                errors.append(
+                    "coverage-adjusted aggregate mismatch for "
+                    f"{key}: {actual_value!r} != {expected_value!r}"
+                )
+        elif actual_value != expected_value:
+            errors.append(
+                "coverage-adjusted aggregate mismatch for "
+                f"{key}: {actual_value!r} != {expected_value!r}"
+            )
 
     held_out = report.get("held_out_validation", {})
     if held_out.get("version") != HELD_OUT_VALIDATION_VERSION:

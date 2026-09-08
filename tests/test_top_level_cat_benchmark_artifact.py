@@ -136,8 +136,18 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
         self.assertEqual(report["aggregates"]["timed_supported_cell_count"], 7)
         self.assertIs(
             report["aggregates"]["unsupported_cells_in_performance_score"],
-            False,
+            True,
         )
+        coverage_adjusted = report["aggregates"]["coverage_adjusted"]
+        self.assertEqual(coverage_adjusted["timed_supported_cell_count"], 7)
+        self.assertEqual(coverage_adjusted["zero_credit_unsupported_cell_count"], 3)
+        self.assertEqual(coverage_adjusted["zero_credit_incorrect_cell_count"], 0)
+        self.assertEqual(coverage_adjusted["denominator_cell_count"], 10)
+        self.assertEqual(
+            coverage_adjusted["zero_credit_capped_ratio"],
+            benchmark_top_level_cat.ZERO_CREDIT_CAPPED_RATIO,
+        )
+        self.assertIs(coverage_adjusted["unsupported_cells_in_denominator"], True)
         self.assertNotIn(
             "combined_capped_with_zero_credit_unsupported",
             report["aggregates"],
@@ -230,18 +240,47 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
         )
         self.assertEqual(backward_metadata[0]["shape"], [777])
 
-    def test_unsupported_cells_are_feature_coverage_not_performance_score(self):
+    def test_coverage_adjusted_aggregate_keeps_zero_credit_denominator(self):
         report = json.loads(
             benchmark_top_level_cat.DEFAULT_ARTIFACT_PATH.read_text(encoding="utf-8")
         )
         aggregates = report["aggregates"]
         unsupported = report["zero_credit_unsupported_cells"]
-        self.assertIs(aggregates["unsupported_cells_in_performance_score"], False)
+        self.assertIs(aggregates["unsupported_cells_in_performance_score"], True)
+        self.assertIs(
+            aggregates["supported_only_speed_geomeans_exclude_zero_credit"],
+            True,
+        )
         self.assertNotIn("combined_capped_with_zero_credit_unsupported", aggregates)
         self.assertEqual(
             aggregates["zero_credit_unsupported_cell_count"],
             len(unsupported),
         )
+        coverage_adjusted = aggregates["coverage_adjusted"]
+        self.assertEqual(
+            coverage_adjusted["denominator_cell_count"],
+            len(report["cases"]) + len(unsupported),
+        )
+        self.assertEqual(
+            coverage_adjusted["timed_supported_cell_count"],
+            len(report["cases"]),
+        )
+        self.assertEqual(
+            coverage_adjusted["zero_credit_cell_count"],
+            len(unsupported),
+        )
+        self.assertEqual(
+            coverage_adjusted["zero_credit_unsupported_cell_count"],
+            len(unsupported),
+        )
+        self.assertEqual(coverage_adjusted["zero_credit_incorrect_cell_count"], 0)
+        self.assertIs(coverage_adjusted["unsupported_cells_in_denominator"], True)
+        self.assertIs(coverage_adjusted["incorrect_cells_in_denominator"], True)
+        self.assertEqual(
+            coverage_adjusted["zero_credit_capped_ratio"],
+            benchmark_top_level_cat.ZERO_CREDIT_CAPPED_RATIO,
+        )
+        self.assertGreater(coverage_adjusted["geomean_capped_0_10_10_0"], 0.0)
         self.assertTrue(unsupported)
         self.assertTrue(all(row["credit"] == "zero" for row in unsupported))
         self.assertEqual(
@@ -250,6 +289,10 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
         )
 
     def test_checked_in_raw_artifact_matches_markdown_summary(self):
+        markdown = benchmark_top_level_cat.DEFAULT_MARKDOWN_REPORT_PATH.read_text(
+            encoding="utf-8"
+        )
+        self.assertTrue(markdown.startswith("# CPU `torch.cat` Release Timings\n"))
         benchmark_top_level_cat.validate_artifact(
             benchmark_top_level_cat.DEFAULT_ARTIFACT_PATH,
             benchmark_top_level_cat.DEFAULT_MARKDOWN_REPORT_PATH,

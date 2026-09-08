@@ -92,7 +92,8 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/tensor-view-release-timings.md",
     ),
     (
-        "`torch.cat`, `torch.concat`, and `torch.concatenate` 1-D release timings",
+        "CPU `torch.cat`, `torch.concat`, and `torch.concatenate` "
+        "rank-1/rank-2 release timings",
         "docs/top-level-cat-release-timings.md",
     ),
     (
