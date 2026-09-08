@@ -13,6 +13,10 @@ _UNSUPPORTED_TYPE_MESSAGE = (
 _UNSUPPORTED_TENSOR_MESSAGE = (
     "default_collate(): only exact native CPU float32 Tensor batches are supported"
 )
+_UNSUPPORTED_CONVERT_TYPE_MESSAGE = (
+    "default_convert(): only exact native tensors, strings, bytes, and "
+    "list, tuple, namedtuple, or dict containers are supported; found {}"
+)
 
 
 def _is_namedtuple(value):
@@ -95,6 +99,50 @@ def _collate_sequence(batch, elem):
     return elem_type(collated)
 
 
+def _convert_dict(data):
+    elem_type = type(data)
+    converted = {key: _convert(data[key]) for key in data}
+    if elem_type is dict:
+        return converted
+
+    clone = copy.copy(data)
+    clone.clear()
+    clone.update(converted)
+    return clone
+
+
+def _convert_namedtuple(data):
+    elem_type = type(data)
+    return elem_type(*(_convert(value) for value in data))
+
+
+def _convert_sequence(data):
+    converted = [_convert(value) for value in data]
+    if isinstance(data, tuple):
+        return converted
+    if type(data) is list:
+        return converted
+
+    clone = copy.copy(data)
+    for index, value in enumerate(converted):
+        clone[index] = value
+    return clone
+
+
+def _convert(data):
+    if type(data) is torch.Tensor:
+        return data
+    if isinstance(data, (str, bytes)):
+        return data
+    if isinstance(data, dict):
+        return _convert_dict(data)
+    if _is_namedtuple(data):
+        return _convert_namedtuple(data)
+    if isinstance(data, (list, tuple)):
+        return _convert_sequence(data)
+    raise TypeError(_UNSUPPORTED_CONVERT_TYPE_MESSAGE.format(type(data)))
+
+
 def _collate(batch):
     elem = batch[0]
     if type(elem) is torch.Tensor:
@@ -124,3 +172,17 @@ def default_collate(batch):
     subset remain unsupported.
     """
     return _collate(batch)
+
+
+def default_convert(data):
+    r"""Convert a supported single data point without batching.
+
+    Exact native tensor, string, and bytes leaves are returned unchanged. Lists,
+    plain tuples, namedtuples, and dicts are traversed recursively; lists,
+    namedtuples, and dicts preserve container type and dict key order, while
+    plain tuples return lists for PyTorch compatibility.
+
+    NumPy arrays, numeric scalars, arbitrary objects, batch stacking, and the
+    broader :func:`default_collate` conversion surface remain unsupported.
+    """
+    return _convert(data)
