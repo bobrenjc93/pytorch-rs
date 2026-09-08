@@ -34,11 +34,11 @@ use crate::python::{
     real_variable_function, reciprocal_variable_function, reshape_variable_function,
     resolve_conj_variable_function, resolve_neg_variable_function, row_stack_variable_function,
     rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
-    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
-    square_variable_function, stack_variable_function, sub_variable_function,
-    subtract_variable_function, sum_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function, unsqueeze_variable_function,
-    vstack_variable_function, zeros_like_variable_function,
+    sigmoid_variable_function, sin_variable_function, softsign_variable_function,
+    sqrt_variable_function, square_variable_function, stack_variable_function,
+    sub_variable_function, subtract_variable_function, sum_variable_function,
+    tanh_variable_function, trunc_variable_function, unbind_variable_function,
+    unsqueeze_variable_function, vstack_variable_function, zeros_like_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
@@ -87,6 +87,7 @@ const VARIABLE_FUNCTION_NAMES: &[&str] = &[
     "cos",
     "sqrt",
     "sigmoid",
+    "softsign",
     "square",
     "pow",
     "sum",
@@ -737,6 +738,14 @@ const SIGMOID_DOC: &std::ffi::CStr = c"
 sigmoid(input, *, out=None) -> Tensor
 
 Alias for :func:`torch.special.expit`.
+";
+
+const SOFTSIGN_DOC: &std::ffi::CStr = cr"
+softsign(input, *, out=None) -> Tensor
+
+Applies element-wise, the function :math:`\text{SoftSign}(x) = \frac{x}{1 + |x|}`
+
+See :class:`~torch.nn.Softsign` for more details.
 ";
 
 const SQUARE_DOC: &std::ffi::CStr = cr"
@@ -1523,6 +1532,7 @@ variable_function_callback!(sin_callback, sin_variable_function);
 variable_function_callback!(cos_callback, cos_variable_function);
 variable_function_callback!(sqrt_callback, sqrt_variable_function);
 variable_function_callback!(sigmoid_callback, sigmoid_variable_function);
+variable_function_callback!(softsign_callback, softsign_variable_function);
 variable_function_callback!(square_callback, square_variable_function);
 variable_function_callback!(pow_callback, pow_variable_function);
 variable_function_callback!(sum_callback, sum_variable_function);
@@ -1579,6 +1589,10 @@ macro_rules! variable_function_method {
     unsafe_code,
     reason = "PyType_FromSpec requires an audited raw type specification"
 )]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the variable-function owner is a direct registration table"
+)]
 fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
     // CPython descriptors retain pointers to their method definitions. Leak
     // this tiny table deliberately so it remains valid for the type lifetime.
@@ -1623,6 +1637,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"cos", cos_callback, COS_DOC),
         variable_function_method!(c"sqrt", sqrt_callback, SQRT_DOC),
         variable_function_method!(c"sigmoid", sigmoid_callback, SIGMOID_DOC),
+        variable_function_method!(c"softsign", softsign_callback, SOFTSIGN_DOC),
         variable_function_method!(c"square", square_callback, SQUARE_DOC),
         variable_function_method!(c"pow", pow_callback, POW_DOC),
         variable_function_method!(c"sum", sum_callback, SUM_DOC),

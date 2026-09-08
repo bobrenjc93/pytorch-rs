@@ -301,7 +301,9 @@ class FunctionalSoftsignReferenceTests(unittest.TestCase):
 
         self.assertFalse(hasattr(torch.nn, "Softsign"))
         self.assertTrue(hasattr(reference_torch.nn, "Softsign"))
-        self.assertFalse(hasattr(torch.Tensor, "softsign"))
+        self.assertTrue(hasattr(torch.Tensor, "softsign"))
+        self.assertTrue(hasattr(torch, "softsign"))
+        self.assertFalse(hasattr(reference_torch, "softsign"))
         self.assertFalse(hasattr(reference_torch.Tensor, "softsign"))
 
 

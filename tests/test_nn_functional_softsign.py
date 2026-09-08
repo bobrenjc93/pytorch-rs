@@ -326,7 +326,8 @@ class FunctionalSoftsignTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
 
         self.assertFalse(hasattr(nn, "Softsign"))
-        self.assertFalse(hasattr(torch.Tensor, "softsign"))
+        self.assertTrue(hasattr(torch.Tensor, "softsign"))
+        self.assertTrue(hasattr(torch, "softsign"))
         self.assertFalse(hasattr(functional, "softsign_"))
 
 
