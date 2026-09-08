@@ -27,21 +27,21 @@ use crate::python::{
     imag_variable_function, is_conj_variable_function, is_inference_variable_function,
     log_variable_function, matmul_variable_function, mean_variable_function, mm_variable_function,
     moveaxis_variable_function, movedim_variable_function, mul_variable_function,
-    multiply_variable_function, neg_variable_function, negative_variable_function,
-    ones_like_variable_function, permute_variable_function, positive_variable_function,
-    promote_types_variable_function, ravel_variable_function, real_variable_function,
-    reciprocal_variable_function, reshape_variable_function, resolve_conj_variable_function,
-    resolve_neg_variable_function, rsqrt_variable_function, scalar_tensor_variable_function,
-    select_variable_function, sigmoid_variable_function, sin_variable_function,
-    sqrt_variable_function, square_variable_function, stack_variable_function,
-    sub_variable_function, subtract_variable_function, sum_variable_function,
-    tanh_variable_function, trunc_variable_function, unbind_variable_function,
-    unsqueeze_variable_function, zeros_like_variable_function,
+    multiply_variable_function, narrow_variable_function, neg_variable_function,
+    negative_variable_function, ones_like_variable_function, permute_variable_function,
+    positive_variable_function, promote_types_variable_function, ravel_variable_function,
+    real_variable_function, reciprocal_variable_function, reshape_variable_function,
+    resolve_conj_variable_function, resolve_neg_variable_function, rsqrt_variable_function,
+    scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
+    sin_variable_function, sqrt_variable_function, square_variable_function,
+    stack_variable_function, sub_variable_function, subtract_variable_function,
+    sum_variable_function, tanh_variable_function, trunc_variable_function,
+    unbind_variable_function, unsqueeze_variable_function, zeros_like_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 67] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 68] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -95,6 +95,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 67] = [
     "unbind",
     "unsqueeze",
     "select",
+    "narrow",
     "permute",
     "movedim",
     "moveaxis",
@@ -1130,11 +1131,11 @@ cat(tensors, dim=0, *, out=None) -> Tensor
 Concatenates the given sequence of tensors in :attr:`tensors` in the given dimension.
 
 The current native implementation supports non-empty tuple/list inputs of
-exact native CPU ``float32`` 1-D tensors for ``dim=0`` and ``dim=-1``, including
-the PyTorch ``axis`` keyword alias. Concrete ``out`` tensors, empty input
-sequences, scalar and non-1-D tensors,
-mixed dtype/device metadata, unhandled tensor subclasses, active autograd
-recording, and other dimensions remain unsupported.
+exact native CPU ``float32`` rank-1 or rank-2 tensors for the valid rank-local
+dimensions, including PyTorch-compatible 1-D ``(0,)`` neutral empty operands
+and the PyTorch ``axis`` keyword alias. Concrete ``out`` tensors, empty input
+sequences, scalar and rank-greater-than-2 tensors, mixed dtype/device metadata,
+unhandled tensor subclasses, and other dimensions remain unsupported.
 ";
 
 const CONCAT_DOC: &std::ffi::CStr = c"
@@ -1142,8 +1143,9 @@ concat(tensors, dim=0, *, out=None) -> Tensor
 
 Alias of :func:`torch.cat`.
 
-The current native implementation supports the same 1-D CPU ``float32``
-boundary as ``torch.cat``, including the PyTorch ``axis`` keyword alias.
+The current native implementation supports the same rank-1/rank-2 CPU
+``float32`` boundary as ``torch.cat``, including PyTorch-compatible 1-D
+``(0,)`` neutral empty operands and the PyTorch ``axis`` keyword alias.
 ";
 
 const CONCATENATE_DOC: &std::ffi::CStr = c"
@@ -1151,8 +1153,9 @@ concatenate(tensors, dim=0, *, out=None) -> Tensor
 
 Alias of :func:`torch.cat`.
 
-The current native implementation supports the same 1-D CPU ``float32``
-boundary as ``torch.cat``, including the PyTorch ``axis`` keyword alias.
+The current native implementation supports the same rank-1/rank-2 CPU
+``float32`` boundary as ``torch.cat``, including PyTorch-compatible 1-D
+``(0,)`` neutral empty operands and the PyTorch ``axis`` keyword alias.
 ";
 
 const STACK_DOC: &std::ffi::CStr = c"
@@ -1192,6 +1195,8 @@ unsupported.
 ";
 
 const SELECT_DOC: &std::ffi::CStr = c"\nselect(input, dim, index) -> Tensor\n\nSlices the :attr:`input` tensor along the selected dimension at the given index.\nThis function returns a view of the original tensor with the given dimension removed.\n\n.. note:: If :attr:`input` is a sparse tensor and returning a view of\n          the tensor is not possible, a RuntimeError exception is\n          raised. In this is the case, consider using\n          :func:`torch.select_copy` function.\n\nArgs:\n    input (Tensor): the input tensor.\n    dim (int): the dimension to slice\n    index (int): the index to select with\n\n.. note::\n\n    :meth:`select` is equivalent to slicing. For example,\n    ``tensor.select(0, index)`` is equivalent to ``tensor[index]`` and\n    ``tensor.select(2, index)`` is equivalent to ``tensor[:,:,index]``.\n";
+
+const NARROW_DOC: &std::ffi::CStr = c"\nnarrow(input, dim, start, length) -> Tensor\n\nReturns a new tensor that is a narrowed version of :attr:`input` tensor. The\ndimension :attr:`dim` is input from :attr:`start` to ``start + length``. The\nreturned tensor and :attr:`input` tensor share the same underlying storage.\n\nArgs:\n    input (Tensor): the tensor to narrow\n    dim (int): the dimension along which to narrow\n    start (int): index of the element to start the narrowed dimension from. Can\n        be negative, which means indexing from the end of `dim`\n    length (int): length of the narrowed dimension, must be weakly positive\n\n.. note::\n\n    This implementation supports integer-protocol ``start`` values only;\n    tensor-valued ``start`` arguments are not supported.\n\nExample::\n\n    >>> x = torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]])\n    >>> torch.narrow(x, 0, 0, 2)\n    tensor([[ 1,  2,  3],\n            [ 4,  5,  6]])\n    >>> torch.narrow(x, 1, 1, 2)\n    tensor([[ 2,  3],\n            [ 5,  6],\n            [ 8,  9]])\n    >>> torch.narrow(x, -1, -1, 1)\n    tensor([[3],\n            [6],\n            [9]])\n";
 
 const PERMUTE_DOC: &std::ffi::CStr = c"\npermute(input, dims) -> Tensor\n\nReturns a view of the original tensor :attr:`input` with its dimensions permuted.\n\nArgs:\n    input (Tensor): the input tensor.\n    dims (torch.Size, tuple of int or list of int): the desired ordering of dimensions.\n\nExample:\n    >>> x = torch.randn(2, 3, 5)\n    >>> x.size()\n    torch.Size([2, 3, 5])\n    >>> torch.permute(x, (2, 0, 1)).size()\n    torch.Size([5, 2, 3])\n";
 
@@ -1507,6 +1512,7 @@ variable_function_callback!(resolve_neg_callback, resolve_neg_variable_function)
 variable_function_callback!(unbind_callback, unbind_variable_function);
 variable_function_callback!(unsqueeze_callback, unsqueeze_variable_function);
 variable_function_callback!(select_callback, select_variable_function);
+variable_function_callback!(narrow_callback, narrow_variable_function);
 variable_function_callback!(permute_callback, permute_variable_function);
 variable_function_callback!(movedim_callback, movedim_variable_function);
 variable_function_callback!(moveaxis_callback, moveaxis_variable_function);
@@ -1596,6 +1602,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"unbind", unbind_callback, UNBIND_DOC),
         variable_function_method!(c"unsqueeze", unsqueeze_callback, UNSQUEEZE_DOC),
         variable_function_method!(c"select", select_callback, SELECT_DOC),
+        variable_function_method!(c"narrow", narrow_callback, NARROW_DOC),
         variable_function_method!(c"permute", permute_callback, PERMUTE_DOC),
         variable_function_method!(c"movedim", movedim_callback, MOVEDIM_DOC),
         variable_function_method!(c"moveaxis", moveaxis_callback, MOVEAXIS_DOC),
