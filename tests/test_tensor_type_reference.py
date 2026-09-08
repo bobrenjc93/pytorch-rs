@@ -443,7 +443,6 @@ class TensorTypeReferenceTests(unittest.TestCase):
         )
         unsupported_calls = (
             lambda: actual.type("torch.DoubleTensor"),
-            lambda: actual.type("torch.cuda.FloatTensor"),
             lambda: actual.type(reference_torch.float32),
             lambda: actual.type(reference_torch.float64),
             lambda: actual.type(torch.Tensor),
@@ -465,6 +464,19 @@ class TensorTypeReferenceTests(unittest.TestCase):
                     actual.is_leaf,
                 )
                 self.assertEqual(after, before)
+
+        with self.assertRaises(NotImplementedError):
+            actual.type("torch.cuda.FloatTensor")
+        after = (
+            actual.tolist(),
+            actual.data_ptr(),
+            actual.shape,
+            actual.stride(),
+            actual.storage_offset(),
+            actual.requires_grad,
+            actual.is_leaf,
+        )
+        self.assertEqual(after, before)
 
         expected = reference_torch.tensor(
             [1.0], dtype=reference_torch.float32

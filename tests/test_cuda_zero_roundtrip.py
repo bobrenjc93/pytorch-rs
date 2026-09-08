@@ -130,6 +130,80 @@ class CudaZeroRoundtripTests(unittest.TestCase):
         self.assertEqual(str(actual.device), str(expected.device))
         self.assertTrue(actual.is_cuda)
 
+    def test_cuda_tensor_type_queries_and_cpu_type_target_match_pytorch(self):
+        actual = torch.zeros((2,), device="cuda:0")
+        expected = reference_torch.zeros((2,), device="cuda:0")
+        reference_torch.cuda.synchronize(0)
+
+        self.assertEqual(actual.type(), expected.type())
+        self.assertEqual(actual.type(None), expected.type(None))
+        self.assertIs(actual.type(torch.float32), actual)
+        self.assertIs(expected.type(reference_torch.float32), expected)
+        self.assertIs(actual.type("torch.cuda.FloatTensor"), actual)
+        self.assertIs(expected.type("torch.cuda.FloatTensor"), expected)
+
+        actual_cpu = actual.type("torch.FloatTensor")
+        expected_cpu = expected.type("torch.FloatTensor")
+        self.assertIsNot(actual_cpu, actual)
+        self.assertEqual(str(actual_cpu.device), str(expected_cpu.device))
+        self.assertFalse(actual_cpu.is_cuda)
+        self.assertEqual(actual_cpu.tolist(), expected_cpu.tolist())
+
+        actual_type_as_cpu = actual.type_as(torch.zeros((2,)))
+        expected_type_as_cpu = expected.type_as(reference_torch.zeros((2,)))
+        self.assertEqual(str(actual_type_as_cpu.device), str(expected_type_as_cpu.device))
+        self.assertFalse(actual_type_as_cpu.is_cuda)
+        self.assertEqual(actual_type_as_cpu.tolist(), expected_type_as_cpu.tolist())
+
+        with self.assertRaisesRegex(NotImplementedError, "CUDA tensor conversions"):
+            torch.zeros((2,)).type_as(actual)
+
+    def test_as_tensor_cpu_target_copies_cuda_tensor_to_host(self):
+        actual = torch.zeros((2,), device="cuda:0")
+        expected = reference_torch.zeros((2,), device="cuda:0")
+        reference_torch.cuda.synchronize(0)
+
+        for actual_options, expected_options in (
+            ({}, {}),
+            ({"device": None}, {"device": None}),
+            ({"dtype": torch.float32}, {"dtype": reference_torch.float32}),
+        ):
+            with self.subTest(options=actual_options):
+                actual_alias = torch.as_tensor(actual, **actual_options)
+                expected_alias = reference_torch.as_tensor(expected, **expected_options)
+                self.assertIs(actual_alias, actual)
+                self.assertIs(expected_alias, expected)
+                self.assertEqual(str(actual_alias.device), str(expected_alias.device))
+
+        for actual_options, expected_options in (
+            ({"device": "cpu"}, {"device": "cpu"}),
+            ({"device": torch.device("cpu")}, {"device": reference_torch.device("cpu")}),
+            (
+                {"dtype": torch.float32, "device": "cpu"},
+                {"dtype": reference_torch.float32, "device": "cpu"},
+            ),
+        ):
+            with self.subTest(options=actual_options):
+                actual_cpu = torch.as_tensor(actual, **actual_options)
+                expected_cpu = reference_torch.as_tensor(expected, **expected_options)
+                self.assertIsNot(actual_cpu, actual)
+                self.assertEqual(str(actual_cpu.device), str(expected_cpu.device))
+                self.assertFalse(actual_cpu.is_cuda)
+                self.assertEqual(actual_cpu.tolist(), expected_cpu.tolist())
+
+    def test_cuda_tensor_repr_is_inspectable(self):
+        actual = torch.zeros((2,), device="cuda:0")
+        expected = reference_torch.zeros((2,), device="cuda:0")
+        reference_torch.cuda.synchronize(0)
+
+        actual_repr = repr(actual)
+        expected_repr = repr(expected)
+        self.assertIn("tensor(", actual_repr)
+        self.assertIn("0.0", actual_repr)
+        self.assertIn("device='cuda:0'", actual_repr)
+        self.assertIn("shape=[2]", actual_repr)
+        self.assertIn("device='cuda:0'", expected_repr)
+
     def test_cuda_zero_capacity_overflow_fails_before_allocation(self):
         with self.assertRaisesRegex(RuntimeError, "Storage size calculation overflowed"):
             torch.zeros((2**62,), device="cuda:0")

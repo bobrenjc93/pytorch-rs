@@ -1722,15 +1722,32 @@ Example::
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyTensor>> {
         let (arguments, keyword_error) = bind_tensor_arguments("type_as", args, kwargs, ["other"])?;
-        parse_tensor_argument("type_as", "other", &arguments[0])?;
+        let other = parse_tensor_argument("type_as", "other", &arguments[0])?;
         if let Some(keyword_error) = keyword_error {
             return Err(keyword_error);
         }
 
-        // Float32 on CPU is the only supported tensor type, so matching
-        // PyTorch's no-op path also preserves the exact Python wrapper and its
-        // storage and autograd state.
-        Ok(slf.as_any().cast::<PyTensor>()?.clone().unbind())
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        let (source_device, other_device) = {
+            let tensor = tensor.try_borrow()?;
+            let other = other.try_borrow()?;
+            (tensor.inner.device(), other.inner.device())
+        };
+        if source_device == other_device {
+            return Ok(tensor.clone().unbind());
+        }
+        if source_device.is_cuda() && other_device.is_cpu() {
+            let inner = tensor
+                .try_borrow()?
+                .inner
+                .try_copy_cuda_to_cpu(slf.py())
+                .map_err(|error| tensor_error(&error))?;
+            return Py::new(slf.py(), PyTensor::new(inner));
+        }
+
+        Err(PyNotImplementedError::new_err(
+            "type_as(): CUDA tensor conversions are not supported; only existing CUDA float32 tensors and CUDA-to-CPU copies are implemented",
+        ))
     }
 }
 
@@ -1818,46 +1835,72 @@ pub(crate) fn as_tensor_variable_function(
         return Ok(result);
     }
     let device = parse_as_tensor_device("as_tensor", arguments.device.as_ref())?;
+    let device_requested = arguments.device.is_some();
 
     if dtype != DType::Float32 || !device.is_cpu() {
         return Err(PyNotImplementedError::new_err(
             "as_tensor(): only identity conversion for CPU float32 tensors is supported",
         ));
     }
-    if !data.value.is_exact_instance_of::<PyTensor>() {
-        if let Some(value) = extract_exact_python_float_scalar(&data.value)? {
-            return Ok(
-                Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
-            );
-        }
-        if let Some(value) = extract_exact_numpy_float32_scalar(&data.value)? {
-            return Ok(
-                Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
-            );
-        }
-        if explicit_float32_dtype
-            && let Some(value) = extract_integer_as_float32_scalar(&data.value)?
-        {
-            return Ok(
-                Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any(),
-            );
-        }
-        if let Some((flattened, shape)) =
-            as_tensor_float_sequence(&data.value, explicit_float32_dtype)?
-        {
-            return Ok(Py::new(
-                py,
-                CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
-                    .map(PyTensor::new)
-                    .map_err(|error| tensor_error(&error))?,
-            )?
-            .into_any());
-        }
-        return Err(PyNotImplementedError::new_err(
-            "as_tensor(): only exact native CPU float32 Tensor inputs, Python float scalars, exact numpy.float32 scalars, exact list/tuple sequences of Python floats, or Python/NumPy integer scalars and exact list/tuple integer sequences with explicit dtype=torch.float32 are supported; NumPy arrays, other NumPy scalars, integer and boolean inference, and other conversions are not implemented",
-        ));
+    if data.value.is_exact_instance_of::<PyTensor>() {
+        return as_tensor_native_tensor(py, &data.value, device, device_requested);
     }
-    Ok(data.value.unbind())
+    if let Some(value) = extract_exact_python_float_scalar(&data.value)? {
+        return Ok(Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any());
+    }
+    if let Some(value) = extract_exact_numpy_float32_scalar(&data.value)? {
+        return Ok(Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any());
+    }
+    if explicit_float32_dtype && let Some(value) = extract_integer_as_float32_scalar(&data.value)? {
+        return Ok(Py::new(py, rank_zero_scalar_tensor(value, dtype, device, false)?)?.into_any());
+    }
+    if let Some((flattened, shape)) = as_tensor_float_sequence(&data.value, explicit_float32_dtype)?
+    {
+        return Ok(Py::new(
+            py,
+            CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
+                .map(PyTensor::new)
+                .map_err(|error| tensor_error(&error))?,
+        )?
+        .into_any());
+    }
+    Err(PyNotImplementedError::new_err(
+        "as_tensor(): only exact native CPU float32 Tensor inputs, Python float scalars, exact numpy.float32 scalars, exact list/tuple sequences of Python floats, or Python/NumPy integer scalars and exact list/tuple integer sequences with explicit dtype=torch.float32 are supported; NumPy arrays, other NumPy scalars, integer and boolean inference, and other conversions are not implemented",
+    ))
+}
+
+fn as_tensor_native_tensor(
+    py: Python<'_>,
+    data: &Bound<'_, PyAny>,
+    device: Device,
+    device_requested: bool,
+) -> PyResult<Py<PyAny>> {
+    let tensor = data.cast::<PyTensor>()?;
+    let source_device = {
+        let tensor = tensor.try_borrow()?;
+        if tensor.inner.dtype() != DType::Float32 {
+            return Err(PyNotImplementedError::new_err(
+                "as_tensor(): only identity conversion for CPU/CUDA float32 tensors and CUDA-to-CPU copy are supported",
+            ));
+        }
+        tensor.inner.device()
+    };
+
+    if device_requested && device.is_cpu() && source_device.is_cuda() {
+        let inner = tensor
+            .try_borrow()?
+            .inner
+            .try_copy_cuda_to_cpu(py)
+            .map_err(|error| tensor_error(&error))?;
+        return Ok(Py::new(py, PyTensor::new(inner))?.into_any());
+    }
+    if source_device.is_cpu() || source_device.is_cuda() {
+        return Ok(data.clone().unbind());
+    }
+
+    Err(PyNotImplementedError::new_err(
+        "as_tensor(): only identity conversion for CPU/CUDA float32 tensors and CUDA-to-CPU copy are supported",
+    ))
 }
 
 pub(crate) fn asarray_variable_function(
@@ -9119,16 +9162,29 @@ impl PyTensor {
             .ok_or_else(|| PyTypeError::new_err("len() of a 0-d tensor"))
     }
 
-    fn __repr__(&self) -> PyResult<String> {
-        let values = self
-            .inner
-            .try_to_vec()
-            .map_err(|error| tensor_error(&error))?;
-        Ok(format!(
-            "tensor({:?}, shape={:?})",
-            values,
-            self.inner.shape()
-        ))
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        let values = if self.inner.device().is_cuda() {
+            self.inner
+                .try_copy_cuda_to_cpu(py)
+                .and_then(|tensor| tensor.try_to_vec())
+        } else {
+            self.inner.try_to_vec()
+        }
+        .map_err(|error| tensor_error(&error))?;
+        if self.inner.device().is_cuda() {
+            Ok(format!(
+                "tensor({:?}, device='{}', shape={:?})",
+                values,
+                self.inner.device(),
+                self.inner.shape()
+            ))
+        } else {
+            Ok(format!(
+                "tensor({:?}, shape={:?})",
+                values,
+                self.inner.shape()
+            ))
+        }
     }
 }
 

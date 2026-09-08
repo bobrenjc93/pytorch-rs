@@ -185,21 +185,26 @@ class CudaReferenceTests(unittest.TestCase):
         with self.assertRaises(pickle.PicklingError):
             pickle.dumps(expected_old)
 
-    def test_cpu_build_probe_values_are_static_without_changing_cuda_runtime_state(self):
+    def test_runtime_probe_values_match_pytorch_visibility(self):
         cuda = torch.cuda
         self.assertIs(cuda.is_initialized(), False)
-        self.assertIs(cuda.is_available(), False)
-        self.assertEqual(cuda.device_count(), 0)
+        self.assertIs(type(cuda.is_available()), bool)
+        self.assertIs(type(cuda.device_count()), int)
+        self.assertIs(cuda.is_available(), reference_torch.cuda.is_available())
+        self.assertEqual(cuda.device_count(), reference_torch.cuda.device_count())
         self.assertIs(cuda.is_initialized(), False)
         self.assertFalse(hasattr(cuda, "_initialized"))
         self.assertFalse(hasattr(cuda, "_cached_device_count"))
 
         script = r"""
-import torch
+import torch_rs as torch
 
 assert torch.cuda.is_initialized() is False
-assert type(torch.cuda.is_available()) is bool
-assert type(torch.cuda.device_count()) is int
+available = torch.cuda.is_available()
+count = torch.cuda.device_count()
+assert type(available) is bool
+assert type(count) is int
+assert available is (count > 0)
 assert torch.cuda.is_initialized() is False
 """
         completed = subprocess.run(

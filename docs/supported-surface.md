@@ -754,12 +754,15 @@ For real-valued tensors, `Tensor.imag` and top-level `torch.imag()` share
 PyTorch's non-complex `RuntimeError` path without mutating storage, metadata, or
 autograd state. Complex dtypes and imaginary views remain unsupported.
 
-`Tensor.type()` returns the exact string `"torch.FloatTensor"` when its dtype is
-omitted or explicitly `None`; `torch.float32`, its `torch.float` alias, and
-`"torch.FloatTensor"` return the exact tensor wrapper through positional or
-`dtype=` forms, with strict-bool `non_blocking` accepted as an identity-only
-hint. These paths do not touch storage, layout metadata, or autograd state.
-Other targets and the deprecated `async` form are rejected before mutation.
+`Tensor.type()` returns the exact legacy type string for the tensor device
+(`"torch.FloatTensor"` on CPU or `"torch.cuda.FloatTensor"` for the narrow CUDA
+zero-storage tensors) when its dtype is omitted or explicitly `None`;
+`torch.float32`, its `torch.float` alias, and the matching legacy string return
+the exact tensor wrapper through positional or `dtype=` forms, with strict-bool
+`non_blocking` accepted as an identity-only hint. CUDA tensors also support the
+`"torch.FloatTensor"` target through the same synchronized CPU copy path as
+`Tensor.cpu()`. Other targets and the deprecated `async` form are rejected
+before mutation.
 
 `torch.dtype.abbr` returns the native compact abbreviation for every supported
 `float32` descriptor. `dtype.to_real()` returns the exact canonical singleton
@@ -799,16 +802,19 @@ its implementation engine.
 #### Creation
 
 `torch.as_tensor(data, dtype=None, device=None)` is exposed as a
-PyTorch-style top-level builtin for exact native CPU `float32` tensor identity
-conversion, exact Python `float` scalar construction, exact NumPy `float32`
-scalar construction, exact Python list/tuple sequences containing only Python
-`float` leaves, and Python/NumPy integer scalars plus exact list/tuple integer
-sequences when `dtype=torch.float32` or `dtype=torch.float` is explicit. When
-`data` is an exact native CPU `float32` tensor and
-`dtype` and `device` are omitted, `None`, or the unindexed CPU/`torch.float32`
-defaults, the exact same Python Tensor object is returned with unchanged
-storage, shape, stride, storage offset, dtype, device, layout, autograd history,
-leaf state, and output number. When `data` is an exact Python `float`, exact
+PyTorch-style top-level builtin for exact native CPU or narrow CUDA `float32`
+tensor identity conversion, synchronized CUDA-to-CPU copies when a CUDA tensor
+is given an explicit CPU target, exact Python `float` scalar construction,
+exact NumPy `float32` scalar construction, exact Python list/tuple sequences
+containing only Python `float` leaves, and Python/NumPy integer scalars plus
+exact list/tuple integer sequences when `dtype=torch.float32` or
+`dtype=torch.float` is explicit. When `data` is an exact native CPU `float32`
+tensor and `dtype` and `device` are omitted, `None`, or the unindexed
+CPU/`torch.float32` defaults, the exact same Python Tensor object is returned
+with unchanged storage, shape, stride, storage offset, dtype, device, layout,
+autograd history, leaf state, and output number. Exact native CUDA `float32`
+tensors preserve object identity when `device` is omitted or `None`, and copy
+to host for explicit CPU targets. When `data` is an exact Python `float`, exact
 NumPy `float32`, or accepted explicit-dtype integer scalar with the same
 default-equivalent metadata, a fresh rank-0 CPU `float32` leaf tensor is
 allocated with `requires_grad=False`, including finite values, signed zero,
