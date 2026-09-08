@@ -2758,11 +2758,6 @@ impl Tensor {
         Self::finish_concat_vjp(inputs, output, dimension, node)
     }
 
-    #[cfg(feature = "python-bindings")]
-    pub(crate) fn cat_1d(inputs: &[&Self]) -> Result<Self, TensorError> {
-        Self::cat(inputs, 0)
-    }
-
     fn contiguous_slice(&self) -> Option<&[f32]> {
         if self.elements == 0 {
             return Some(&[]);
@@ -5426,6 +5421,12 @@ fn materialize_concat(
     output_shape: &[usize],
     output_elements: usize,
 ) -> Result<Vec<f32>, TensorError> {
+    if let Some(data) =
+        materialize_concat_small_rank_fast_path(inputs, dimension, output_shape, output_elements)?
+    {
+        return Ok(data);
+    }
+
     let inner = element_count(&output_shape[dimension + 1..])?;
     let outer = element_count(&output_shape[..dimension])?;
     let output_axis = output_shape[dimension];
@@ -5451,6 +5452,186 @@ fn materialize_concat(
     debug_assert_eq!(output_block.checked_mul(outer), Some(output_elements));
     debug_assert_eq!(data.len(), output_elements);
     Ok(data)
+}
+
+fn materialize_concat_small_rank_fast_path(
+    inputs: &[&Tensor],
+    dimension: usize,
+    output_shape: &[usize],
+    output_elements: usize,
+) -> Result<Option<Vec<f32>>, TensorError> {
+    match (output_shape.len(), dimension) {
+        (1, 0) if inputs.iter().all(|input| can_append_rank_1_fast(input)) => {
+            let mut data = try_result_vector(output_elements, output_elements)?;
+            for input in inputs {
+                append_rank_1_fast(&mut data, input)?;
+            }
+            debug_assert_eq!(data.len(), output_elements);
+            Ok(Some(data))
+        }
+        (2, 0) if inputs.iter().all(|input| can_append_rank_2_fast(input)) => {
+            let mut data = try_result_vector(output_elements, output_elements)?;
+            for input in inputs {
+                append_rank_2_fast(&mut data, input)?;
+            }
+            debug_assert_eq!(data.len(), output_elements);
+            Ok(Some(data))
+        }
+        (2, 1) if inputs.iter().all(|input| can_append_rank_2_fast(input)) => {
+            let mut data = try_result_vector(output_elements, output_elements)?;
+            for row in 0..output_shape[0] {
+                for input in inputs {
+                    append_rank_2_row_fast(&mut data, input, row)?;
+                }
+            }
+            debug_assert_eq!(data.len(), output_elements);
+            Ok(Some(data))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn can_append_rank_1_fast(input: &Tensor) -> bool {
+    input.shape.len() == 1
+        && (input.contiguous_slice().is_some() || input.owned_fixed_rank_parts::<1>().is_some())
+}
+
+fn can_append_rank_2_fast(input: &Tensor) -> bool {
+    input.shape.len() == 2
+        && (input.contiguous_slice().is_some() || input.owned_fixed_rank_parts::<2>().is_some())
+}
+
+fn append_rank_1_fast(data: &mut Vec<f32>, input: &Tensor) -> Result<(), TensorError> {
+    if input.shape.len() != 1 {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
+    if let Some(values) = input.contiguous_slice() {
+        data.extend_from_slice(values);
+        return Ok(());
+    }
+
+    let Some((values, [length], [stride])) = input.owned_fixed_rank_parts::<1>() else {
+        return Err(TensorError::IndexCalculationOverflow);
+    };
+    append_strided_values_fast(data, values, input.offset, length, stride)
+}
+
+fn append_rank_2_fast(data: &mut Vec<f32>, input: &Tensor) -> Result<(), TensorError> {
+    if input.shape.len() != 2 {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
+    if let Some(values) = input.contiguous_slice() {
+        data.extend_from_slice(values);
+        return Ok(());
+    }
+
+    let Some((values, [rows, columns], [row_stride, column_stride])) =
+        input.owned_fixed_rank_parts::<2>()
+    else {
+        return Err(TensorError::IndexCalculationOverflow);
+    };
+    let mut row_offset = input.offset;
+    for row in 0..rows {
+        append_rank_2_row_values_fast(data, values, row_offset, columns, column_stride)?;
+        if row + 1 != rows {
+            row_offset = row_offset
+                .checked_add(row_stride)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+        }
+    }
+    Ok(())
+}
+
+fn append_rank_2_row_fast(
+    data: &mut Vec<f32>,
+    input: &Tensor,
+    row: usize,
+) -> Result<(), TensorError> {
+    if input.shape.len() != 2 {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
+    if let Some(values) = input.contiguous_slice() {
+        let [rows, columns] = input.shape.as_slice() else {
+            return Err(TensorError::IndexCalculationOverflow);
+        };
+        if row >= *rows {
+            return Err(TensorError::IndexCalculationOverflow);
+        }
+        let start = row
+            .checked_mul(*columns)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let end = start
+            .checked_add(*columns)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        data.extend_from_slice(
+            values
+                .get(start..end)
+                .ok_or(TensorError::IndexCalculationOverflow)?,
+        );
+        return Ok(());
+    }
+
+    let Some((values, [rows, columns], [row_stride, column_stride])) =
+        input.owned_fixed_rank_parts::<2>()
+    else {
+        return Err(TensorError::IndexCalculationOverflow);
+    };
+    if row >= rows {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
+    let row_offset = row
+        .checked_mul(row_stride)
+        .and_then(|offset| input.offset.checked_add(offset))
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    append_rank_2_row_values_fast(data, values, row_offset, columns, column_stride)
+}
+
+fn append_rank_2_row_values_fast(
+    data: &mut Vec<f32>,
+    values: &[f32],
+    row_offset: usize,
+    columns: usize,
+    column_stride: usize,
+) -> Result<(), TensorError> {
+    if columns == 0 {
+        return Ok(());
+    }
+    if column_stride == 1 {
+        let row_end = row_offset
+            .checked_add(columns)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        data.extend_from_slice(
+            values
+                .get(row_offset..row_end)
+                .ok_or(TensorError::IndexCalculationOverflow)?,
+        );
+        return Ok(());
+    }
+    append_strided_values_fast(data, values, row_offset, columns, column_stride)
+}
+
+fn append_strided_values_fast(
+    data: &mut Vec<f32>,
+    values: &[f32],
+    offset: usize,
+    length: usize,
+    stride: usize,
+) -> Result<(), TensorError> {
+    let mut offset = offset;
+    for index in 0..length {
+        data.push(
+            values
+                .get(offset)
+                .copied()
+                .ok_or(TensorError::IndexCalculationOverflow)?,
+        );
+        if index + 1 != length {
+            offset = offset
+                .checked_add(stride)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+        }
+    }
+    Ok(())
 }
 
 fn apply_concat_grad_fn(
@@ -8027,10 +8208,10 @@ mod tests {
         AutogradKind, BroadcastPlan, CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS,
         CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device, F32_SIGN_MASK, GradFn, LogicalValuesInner,
         MemoryFormat, OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor,
-        TensorError, contiguous_values_equal, full_reduction_mean_divisor,
+        TensorError, contiguous_strides, contiguous_values_equal, full_reduction_mean_divisor,
         l1_loss_difference_value, log_value, logical_offset_for_linear_index,
-        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value,
-        squared_difference_value, try_result_vector, validate_view_bounds,
+        materialize_concat_small_rank_fast_path, materialize_contiguous_trailing_broadcast,
+        rsqrt_value, sqrt_value, squared_difference_value, try_result_vector, validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -12094,6 +12275,163 @@ mod tests {
     }
 
     #[test]
+    fn cat_rank_1_fast_path_matches_shared_gradient_fallback_for_views() {
+        let offset = offset_contiguous_tensor(&[0x0000_0000, 0x8000_0000, 0x7fc1_2345], &[3]);
+        let strided = Tensor::from_vec(
+            [
+                0x3f80_0000,
+                0x4000_0000,
+                0x4040_0000,
+                0x4080_0000,
+                0x40a0_0000,
+                0x40c0_0000,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            [2, 3],
+        )
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap()
+        .index_integer(1)
+        .unwrap();
+        let tail = Tensor::from_vec(vec![f32::from_bits(0xff80_0000)], [1]).unwrap();
+
+        assert!(offset.is_contiguous());
+        assert_ne!(offset.storage_offset(), 0);
+        assert_eq!(strided.shape(), [2]);
+        assert_eq!(strided.stride(), [3]);
+        assert!(!strided.is_contiguous());
+
+        assert_cat_fast_path_matches_shared_fallback(
+            "rank-1 mixed views",
+            &[offset, strided, tail],
+            0,
+            &[6],
+            &[
+                0x0000_0000,
+                0x8000_0000,
+                0x7fc1_2345,
+                0x4000_0000,
+                0x40a0_0000,
+                0xff80_0000,
+            ],
+        );
+    }
+
+    #[test]
+    fn cat_rank_2_fast_path_matches_shared_gradient_fallback_for_rows() {
+        let offset = offset_contiguous_tensor(
+            &[
+                0x0000_0000,
+                0x8000_0000,
+                0x3f80_0000,
+                0x4000_0000,
+                0x4040_0000,
+                0x4080_0000,
+            ],
+            &[2, 3],
+        );
+        let strided = offset_strided_matrix([
+            0x40a0_0000,
+            0x40c0_0000,
+            0x40e0_0000,
+            0x4100_0000,
+            0x4110_0000,
+            0x4120_0000,
+            0x4130_0000,
+            0x4140_0000,
+            0x4150_0000,
+        ]);
+
+        assert!(offset.is_contiguous());
+        assert_ne!(offset.storage_offset(), 0);
+        assert_eq!(strided.shape(), [3, 3]);
+        assert_eq!(strided.stride(), [1, 3]);
+        assert!(!strided.is_contiguous());
+
+        assert_cat_fast_path_matches_shared_fallback(
+            "rank-2 rows",
+            &[offset, strided],
+            0,
+            &[5, 3],
+            &[
+                0x0000_0000,
+                0x8000_0000,
+                0x3f80_0000,
+                0x4000_0000,
+                0x4040_0000,
+                0x4080_0000,
+                0x40a0_0000,
+                0x4100_0000,
+                0x4130_0000,
+                0x40c0_0000,
+                0x4110_0000,
+                0x4140_0000,
+                0x40e0_0000,
+                0x4120_0000,
+                0x4150_0000,
+            ],
+        );
+    }
+
+    #[test]
+    fn cat_rank_2_fast_path_matches_shared_gradient_fallback_for_columns() {
+        let strided = offset_strided_matrix([
+            0x0000_0000,
+            0x8000_0000,
+            0x3f80_0000,
+            0x4000_0000,
+            0x4040_0000,
+            0x4080_0000,
+            0x40a0_0000,
+            0x40c0_0000,
+            0x7fc1_2345,
+        ]);
+        let offset = offset_contiguous_tensor(
+            &[
+                0x4100_0000,
+                0x4110_0000,
+                0x4120_0000,
+                0x4130_0000,
+                0x4140_0000,
+                0x4150_0000,
+            ],
+            &[3, 2],
+        );
+
+        assert_eq!(strided.shape(), [3, 3]);
+        assert_eq!(strided.stride(), [1, 3]);
+        assert!(!strided.is_contiguous());
+        assert!(offset.is_contiguous());
+        assert_ne!(offset.storage_offset(), 0);
+
+        assert_cat_fast_path_matches_shared_fallback(
+            "rank-2 columns",
+            &[strided, offset],
+            1,
+            &[3, 5],
+            &[
+                0x0000_0000,
+                0x4000_0000,
+                0x40a0_0000,
+                0x4100_0000,
+                0x4110_0000,
+                0x8000_0000,
+                0x4040_0000,
+                0x40c0_0000,
+                0x4120_0000,
+                0x4130_0000,
+                0x3f80_0000,
+                0x4080_0000,
+                0x7fc1_2345,
+                0x4140_0000,
+                0x4150_0000,
+            ],
+        );
+    }
+
+    #[test]
     fn stack_backpropagates_and_accumulates_repeated_inputs() {
         let left = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
             .unwrap()
@@ -12332,6 +12670,76 @@ mod tests {
 
     fn add_values(left: f32, right: f32) -> f32 {
         left + right
+    }
+
+    fn assert_cat_fast_path_matches_shared_fallback(
+        case: &str,
+        inputs: &[Tensor],
+        dimension: usize,
+        expected_shape: &[usize],
+        expected_bits: &[u32],
+    ) {
+        let references = inputs.iter().collect::<Vec<_>>();
+        let fast_path = materialize_concat_small_rank_fast_path(
+            &references,
+            dimension,
+            expected_shape,
+            expected_bits.len(),
+        )
+        .unwrap()
+        .unwrap_or_else(|| panic!("{case}: expected concat fast path"));
+        assert!(
+            fast_path
+                .iter()
+                .copied()
+                .map(f32::to_bits)
+                .eq(expected_bits.iter().copied()),
+            "{case}: direct fast-path values"
+        );
+
+        let actual = Tensor::cat(&references, dimension).unwrap();
+        let shared_inputs = inputs.iter().map(shared_gradient_copy).collect::<Vec<_>>();
+        let shared_references = shared_inputs.iter().collect::<Vec<_>>();
+        assert!(
+            materialize_concat_small_rank_fast_path(
+                &shared_references,
+                dimension,
+                expected_shape,
+                expected_bits.len(),
+            )
+            .unwrap()
+            .is_none(),
+            "{case}: shared-gradient inputs should exercise the generic fallback"
+        );
+        let fallback = Tensor::cat(&shared_references, dimension).unwrap();
+        let expected_strides = contiguous_strides(expected_shape, expected_bits.len()).unwrap();
+
+        for (label, tensor) in [("public", &actual), ("fallback", &fallback)] {
+            assert_eq!(tensor.shape(), expected_shape, "{case}/{label}");
+            assert_eq!(tensor.stride(), expected_strides, "{case}/{label}");
+            assert_eq!(tensor.storage_offset(), 0, "{case}/{label}");
+            assert_eq!(tensor.dtype(), DType::Float32, "{case}/{label}");
+            assert_eq!(tensor.device(), Device::Cpu, "{case}/{label}");
+            assert!(tensor.is_contiguous(), "{case}/{label}");
+            assert!(
+                tensor
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected_bits.iter().copied()),
+                "{case}/{label}: values"
+            );
+            for input in inputs {
+                assert!(!tensor.shares_storage_with(input), "{case}/{label}");
+            }
+        }
+
+        assert!(
+            actual
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(fallback.logical_values().map(f32::to_bits)),
+            "{case}: optimized cat should match fallback"
+        );
     }
 
     fn offset_contiguous_tensor(bits: &[u32], shape: &[usize]) -> Tensor {
