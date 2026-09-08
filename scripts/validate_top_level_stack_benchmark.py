@@ -1144,7 +1144,13 @@ def _is_json_int(value):
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _validate_git_provenance(errors, git, *, require_clean_git):
+def _validate_git_provenance(
+    errors,
+    git,
+    *,
+    require_clean_git,
+    current_git_provenance=None,
+):
     if not isinstance(git, dict):
         errors.append("git provenance is not an object")
         return
@@ -1152,7 +1158,15 @@ def _validate_git_provenance(errors, git, *, require_clean_git):
     head = git.get("head")
     if not _is_full_commit_hash(head):
         errors.append(f"git head is not a full commit hash: {head!r}")
-    current_head = benchmark_top_level_stack._git_provenance().get("head")
+    current_git = (
+        benchmark_top_level_stack._git_provenance()
+        if current_git_provenance is None
+        else current_git_provenance
+    )
+    if not isinstance(current_git, dict):
+        errors.append(f"current git provenance is not an object: {current_git!r}")
+        current_git = {}
+    current_head = current_git.get("head")
     if not _is_full_commit_hash(current_head):
         errors.append(f"current git head is unavailable: {current_head!r}")
     elif _is_full_commit_hash(head) and head != current_head:
@@ -1169,6 +1183,20 @@ def _validate_git_provenance(errors, git, *, require_clean_git):
             errors.append(f"git status_short is not clean: {status_short!r}")
         if diff_stat != "":
             errors.append(f"git diff_stat is not clean: {diff_stat!r}")
+        current_status_short = current_git.get("status_short")
+        current_diff_stat = current_git.get("diff_stat")
+        if not isinstance(current_status_short, str):
+            errors.append(
+                f"current git status_short is not a string: {current_status_short!r}"
+            )
+        elif current_status_short != "":
+            errors.append(
+                f"current git status_short is not clean: {current_status_short!r}"
+            )
+        if not isinstance(current_diff_stat, str):
+            errors.append(f"current git diff_stat is not a string: {current_diff_stat!r}")
+        elif current_diff_stat != "":
+            errors.append(f"current git diff_stat is not clean: {current_diff_stat!r}")
 
 
 def _validate_environment_provenance(
@@ -1177,6 +1205,7 @@ def _validate_environment_provenance(
     validator,
     *,
     require_clean_git,
+    current_git_provenance=None,
 ):
     if environment.get("benchmark_version") != (
         benchmark_top_level_stack.BENCHMARK_VERSION
@@ -1202,6 +1231,7 @@ def _validate_environment_provenance(
         errors,
         environment.get("git"),
         require_clean_git=require_clean_git,
+        current_git_provenance=current_git_provenance,
     )
 
     build_profile = environment.get("build_profile", {})
@@ -1513,6 +1543,7 @@ def validate_artifact_dict(
     expected_samples=benchmark_top_level_stack.DEFAULT_SAMPLES,
     expected_threads=benchmark_top_level_stack.DEFAULT_THREADS,
     require_clean_git=True,
+    current_git_provenance=None,
 ):
     errors = []
     validator = report.get("validator", {})
@@ -1598,6 +1629,7 @@ def validate_artifact_dict(
         environment,
         validator,
         require_clean_git=require_clean_git,
+        current_git_provenance=current_git_provenance,
     )
 
     seed = validator.get("seed")

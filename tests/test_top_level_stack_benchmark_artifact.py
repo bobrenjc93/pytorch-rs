@@ -188,12 +188,13 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                 require_clean_git=False,
             )
             current_git = benchmark_top_level_stack._git_provenance()
-            report = copy.deepcopy(report)
-            report["environment"]["git"] = {
+            clean_current_git = {
                 "head": current_git["head"],
                 "status_short": "",
                 "diff_stat": "",
             }
+            report = copy.deepcopy(report)
+            report["environment"]["git"] = clean_current_git
             artifact_path.write_text(
                 json.dumps(report, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
@@ -206,6 +207,7 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                 expected_warmups=1,
                 expected_samples=1,
                 expected_threads=1,
+                current_git_provenance=clean_current_git,
             )
             self.assertEqual(report["validator"]["seed"], 20260908)
             self.assertEqual(report["validator"]["cases_per_category"], 1)
@@ -492,6 +494,42 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                             expected_warmups=1,
                             expected_samples=1,
                             expected_threads=1,
+                            current_git_provenance=clean_current_git,
+                        )
+                    self.assertIn(expected_message, str(raised.exception))
+
+            current_git_tamper_cases = (
+                (
+                    "current-git-status",
+                    {
+                        **clean_current_git,
+                        "status_short": " M scripts/validate_top_level_stack_benchmark.py",
+                    },
+                    "current git status_short is not clean",
+                ),
+                (
+                    "current-git-diff-stat",
+                    {
+                        **clean_current_git,
+                        "diff_stat": (
+                            " scripts/validate_top_level_stack_benchmark.py | 1 +"
+                        ),
+                    },
+                    "current git diff_stat is not clean",
+                ),
+            )
+            for label, current_git_override, expected_message in current_git_tamper_cases:
+                with self.subTest(tamper=label):
+                    with self.assertRaises(AssertionError) as raised:
+                        validate_top_level_stack_benchmark.validate_artifact_dict(
+                            report,
+                            expected_seed=20260908,
+                            expected_cases_per_category=1,
+                            expected_max_elements=4096,
+                            expected_warmups=1,
+                            expected_samples=1,
+                            expected_threads=1,
+                            current_git_provenance=current_git_override,
                         )
                     self.assertIn(expected_message, str(raised.exception))
 
@@ -543,14 +581,24 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                 text=True,
                 timeout=30,
             )
-            self.assertEqual(
-                strict_validation_completed.returncode,
-                0,
-                msg=(
-                    strict_validation_completed.stdout
-                    + strict_validation_completed.stderr
-                ),
+            strict_validation_output = (
+                strict_validation_completed.stdout + strict_validation_completed.stderr
             )
+            if (
+                current_git.get("status_short") == ""
+                and current_git.get("diff_stat") == ""
+            ):
+                self.assertEqual(
+                    strict_validation_completed.returncode,
+                    0,
+                    msg=strict_validation_output,
+                )
+            else:
+                self.assertNotEqual(strict_validation_completed.returncode, 0)
+                self.assertIn(
+                    "current git status_short is not clean",
+                    strict_validation_output,
+                )
 
             wrong_seed_validation = subprocess.run(
                 [
