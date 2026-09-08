@@ -192,6 +192,20 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                     for category in validate_top_level_stack_benchmark.REQUIRED_CATEGORIES
                 },
             )
+            self.assertEqual(
+                set(report["aggregates"]["groups"]),
+                {
+                    "all supported cells",
+                    *{
+                        f"{category} cells"
+                        for category in validate_top_level_stack_benchmark.REQUIRED_CATEGORIES
+                    },
+                },
+            )
+            self.assertEqual(
+                report["aggregates"]["groups"]["contiguous cells"]["cell_count"],
+                1,
+            )
             for case in report["cases"]:
                 with self.subTest(case=case["workload"]):
                     self.assertTrue(case["generated"])
@@ -208,7 +222,11 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                 supported = artifact["cases"]
                 unsupported = artifact["zero_credit_unsupported_cells"]
                 error_parity = artifact["boundary_error_parity_cells"]
-                aggregates = benchmark_top_level_stack._aggregate_rows(supported)
+                aggregates = (
+                    validate_top_level_stack_benchmark._aggregate_generated_rows(
+                        supported
+                    )
+                )
                 aggregates["zero_credit_unsupported_cell_count"] = len(unsupported)
                 aggregates["boundary_error_parity_cell_count"] = len(error_parity)
                 aggregates["combined_capped_with_zero_credit_unsupported"] = (

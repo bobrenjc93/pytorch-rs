@@ -545,6 +545,48 @@ def _annotate_supported_rows(rows, cases):
         row["validation"]["same_shape_cpu_float32_inputs"] = True
 
 
+def _aggregate_generated_rows(rows):
+    ratios = [row["ratios"]["steady_torch_rs_over_pytorch"] for row in rows]
+    ratios_by_category = {
+        category: [
+            row["ratios"]["steady_torch_rs_over_pytorch"]
+            for row in rows
+            if row["category"] == category
+        ]
+        for category in REQUIRED_CATEGORIES
+    }
+    groups = {"all supported cells": ratios}
+    groups.update(
+        {
+            f"{category} cells": values
+            for category, values in ratios_by_category.items()
+            if values
+        }
+    )
+    return {
+        "timed_supported_cell_count": len(rows),
+        "steady_geomean_torch_rs_over_pytorch": benchmark_top_level_stack._geomean(
+            ratios
+        ),
+        "steady_geomean_capped_0_10_10_0": benchmark_top_level_stack._geomean(
+            [min(10.0, max(0.10, ratio)) for ratio in ratios]
+        ),
+        "groups": {
+            name: {
+                "cell_count": len(values),
+                "geomean": benchmark_top_level_stack._geomean(values),
+                "geomean_capped_0_10_10_0": (
+                    benchmark_top_level_stack._geomean(
+                        [min(10.0, max(0.10, value)) for value in values]
+                    )
+                ),
+            }
+            for name, values in groups.items()
+            if values
+        },
+    }
+
+
 def run_validator(args, cases, workloads, validator_context):
     affinity = benchmark_top_level_stack._pin_cpu(args.cpu)
     benchmark_top_level_stack._configure_thread_environment(
@@ -581,7 +623,7 @@ def run_validator(args, cases, workloads, validator_context):
             gc.enable()
 
     _annotate_supported_rows(supported, cases)
-    aggregates = benchmark_top_level_stack._aggregate_rows(supported)
+    aggregates = _aggregate_generated_rows(supported)
     zero_credit = [
         row
         for row in unsupported
@@ -697,7 +739,7 @@ def _compare_jsonish(errors, path, actual, expected):
 
 
 def _expected_aggregates(cases, unsupported, error_parity):
-    aggregates = benchmark_top_level_stack._aggregate_rows(cases)
+    aggregates = _aggregate_generated_rows(cases)
     capped_with_zero_credit = [
         min(10.0, max(0.10, row["ratios"]["steady_torch_rs_over_pytorch"]))
         for row in cases
