@@ -1091,6 +1091,26 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\npow(exponent) -> Tensor\n\nSee :func:`torch.pow`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn pow(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let (exponent, keyword_error) = bind_tensor_pow_arguments(args, kwargs)?;
+        let exponent = parse_pow_exponent(PowCallKind::TensorMethod, &exponent, args, kwargs)?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+
+        let input = parse_tensor_pow_method_receiver(slf.as_any())?;
+        let call = BoundTensorPowCall { input, exponent };
+        dispatch_tensor_pow_method(slf.py(), slf.as_any(), &call, args, kwargs)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nreciprocal() -> Tensor\n\nSee :func:`torch.reciprocal`\n"]
     #[pyo3(text_signature = None)]
     fn reciprocal(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
@@ -2435,6 +2455,27 @@ pub(crate) fn square_variable_function(
     unary_out_variable_function(UnaryOutOperation::SQUARE, py, args, kwargs)
 }
 
+pub(crate) fn pow_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (arguments, out, keyword_error) = bind_top_level_pow_arguments(args, kwargs)?;
+    let input = parse_top_level_pow_input(&arguments[0], args, kwargs)?;
+    let exponent = parse_pow_exponent(PowCallKind::TopLevel, &arguments[1], args, kwargs)?;
+    let out = parse_top_level_pow_out(out, args, kwargs)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+
+    let call = BoundTopLevelPowCall {
+        input,
+        exponent,
+        out,
+    };
+    dispatch_top_level_pow(py, &call, args, kwargs)
+}
+
 pub(crate) fn sum_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -3270,6 +3311,23 @@ struct BoundTopLevelMeanCall<'py> {
     keepdim_full_reduction: bool,
 }
 
+struct BoundTopLevelPowCall<'py> {
+    input: BoundPowBase<'py>,
+    exponent: BoundPowExponent<'py>,
+    out: Option<BoundTensorOrTorchFunction<'py>>,
+}
+
+struct BoundTensorPowCall<'py> {
+    input: BoundPowBase<'py>,
+    exponent: BoundPowExponent<'py>,
+}
+
+#[derive(Clone, Copy)]
+enum PowCallKind {
+    TopLevel,
+    TensorMethod,
+}
+
 struct BoundMethodReductionCall {
     keepdim_full_reduction: bool,
 }
@@ -3358,6 +3416,12 @@ type BoundTopLevelMmArguments<'py> = (
     Option<PyErr>,
 );
 
+type BoundTopLevelPowArguments<'py> = (
+    [ParsedCallArgument<'py>; 2],
+    Option<ParsedCallArgument<'py>>,
+    Option<PyErr>,
+);
+
 type BoundTensorMethodDivisionArguments<'py> = (
     ParsedCallArgument<'py>,
     Option<ParsedCallArgument<'py>>,
@@ -3401,6 +3465,20 @@ enum BoundAddOperand<'py> {
 enum BoundDivOperand<'py> {
     Tensor(Bound<'py, PyTensor>),
     Scalar(Bound<'py, PyAny>),
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+enum BoundPowBase<'py> {
+    Tensor(Bound<'py, PyTensor>),
+    Scalar,
+    UnsupportedNativeTensor,
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+enum BoundPowExponent<'py> {
+    Square,
+    UnsupportedScalar,
+    Tensor,
     Override(ProbedTorchFunctionOverride<'py>),
 }
 
@@ -4999,6 +5077,196 @@ fn apply_top_level_unary_out(
     };
     let input = input.try_borrow()?;
     let output = (operation.apply)(&input.inner).map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(output))?.into_any())
+}
+
+fn ordered_top_level_pow_overrides<'py>(
+    call: &BoundTopLevelPowCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let input = match &call.input {
+        BoundPowBase::Override(probed) => Some(probed),
+        BoundPowBase::Tensor(_) | BoundPowBase::Scalar | BoundPowBase::UnsupportedNativeTensor => {
+            None
+        }
+    };
+    let exponent = match &call.exponent {
+        BoundPowExponent::Override(probed) => Some(probed),
+        BoundPowExponent::Square
+        | BoundPowExponent::UnsupportedScalar
+        | BoundPowExponent::Tensor => None,
+    };
+    let out = match &call.out {
+        Some(BoundTensorOrTorchFunction::Override(probed)) => Some(probed),
+        Some(BoundTensorOrTorchFunction::Tensor(_)) | None => None,
+    };
+
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(3)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate pow dispatch operands"))?;
+    for probed in [input, exponent, out].into_iter().flatten() {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
+fn dispatch_top_level_pow(
+    py: Python<'_>,
+    call: &BoundTopLevelPowCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_top_level_pow_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_pow(py, call);
+    }
+
+    let function = variable_function(py, "pow")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_top_level_pow(py, call);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.pow",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_pow(py: Python<'_>, call: &BoundTopLevelPowCall<'_>) -> PyResult<Py<PyAny>> {
+    if call.out.is_some() {
+        return Err(PyRuntimeError::new_err(
+            "pow(): the 'out' argument is not supported",
+        ));
+    }
+
+    let BoundPowBase::Tensor(input) = &call.input else {
+        return Err(pow_unsupported_native_input());
+    };
+    let BoundPowExponent::Square = &call.exponent else {
+        return Err(pow_unsupported_native_input());
+    };
+
+    let input = input.try_borrow()?;
+    validate_pow_native_input(&input)?;
+    let output = input.inner.square().map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(output))?.into_any())
+}
+
+fn ordered_tensor_pow_method_overrides<'py>(
+    call: &BoundTensorPowCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let input = match &call.input {
+        BoundPowBase::Override(probed) => Some(probed),
+        BoundPowBase::Tensor(_) | BoundPowBase::Scalar | BoundPowBase::UnsupportedNativeTensor => {
+            None
+        }
+    };
+    let exponent = match &call.exponent {
+        BoundPowExponent::Override(probed) => Some(probed),
+        BoundPowExponent::Square
+        | BoundPowExponent::UnsupportedScalar
+        | BoundPowExponent::Tensor => None,
+    };
+    ordered_binary_overrides(input, exponent, "unable to allocate pow dispatch operands")
+}
+
+fn dispatch_tensor_pow_method(
+    py: Python<'_>,
+    receiver: &Bound<'_, PyAny>,
+    call: &BoundTensorPowCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_tensor_pow_method_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_tensor_pow_method(py, call);
+    }
+
+    let function = py.get_type::<PyTensorBase>().getattr("pow")?.unbind();
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+    let argument_count = args
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("pow dispatch argument count overflowed"))?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate pow dispatch arguments"))?;
+    call_arguments.push(receiver.clone());
+    call_arguments.extend(args.iter());
+    let call_args = PyTuple::new(py, call_arguments)?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_tensor_pow_method(py, call);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.Tensor.pow",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_tensor_pow_method(py: Python<'_>, call: &BoundTensorPowCall<'_>) -> PyResult<Py<PyAny>> {
+    let BoundPowBase::Tensor(input) = &call.input else {
+        return Err(pow_unsupported_native_input());
+    };
+    let BoundPowExponent::Square = &call.exponent else {
+        return Err(pow_unsupported_native_input());
+    };
+
+    let input = input.try_borrow()?;
+    validate_pow_native_input(&input)?;
+    let output = input.inner.square().map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(output))?.into_any())
 }
 
@@ -17367,6 +17635,156 @@ fn has_mm_mat2_alias_keyword(keywords: Option<&Bound<'_, PyDict>>) -> PyResult<b
     Ok(keywords.get_item("other")?.is_some() || keywords.get_item("x2")?.is_some())
 }
 
+fn bind_top_level_pow_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundTopLevelPowArguments<'py>> {
+    if positional.len() > 2 {
+        return Err(top_level_pow_binding_error(positional, keywords)?);
+    }
+
+    let mut input = None;
+    let mut exponent = None;
+    let mut out = None;
+    let mut keyword_error = None;
+    for (index, value) in positional.iter().enumerate() {
+        let argument = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+        match index {
+            0 => input = argument,
+            1 => exponent = argument,
+            _ => unreachable!("positional count was checked above"),
+        }
+    }
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "input" | "x" | "a" | "x1" if input.is_none() => {
+                    input = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "input" | "x" | "a" | "x1" => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("pow() got multiple values for argument 'input'")
+                    });
+                }
+                "exponent" if exponent.is_none() => {
+                    exponent = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "exponent" => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("pow() got multiple values for argument 'exponent'")
+                    });
+                }
+                "out" if out.is_none() => {
+                    out = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "out" => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("pow() got multiple values for argument 'out'")
+                    });
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "pow() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let Some(input) = input else {
+        return Err(top_level_pow_binding_error(positional, keywords)?);
+    };
+    let Some(exponent) = exponent else {
+        return Err(top_level_pow_binding_error(positional, keywords)?);
+    };
+    Ok(([input, exponent], out, keyword_error))
+}
+
+fn top_level_pow_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    Ok(PyTypeError::new_err(format!(
+        "pow() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (Tensor input, Tensor exponent, *, Tensor out = None)\n * (Number self, Tensor exponent, *, Tensor out = None)\n * (Tensor input, Number exponent, *, Tensor out = None)\n"
+    )))
+}
+
+fn bind_tensor_pow_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(ParsedCallArgument<'py>, Option<PyErr>)> {
+    if positional.len() > 1 {
+        return Err(tensor_pow_binding_error(positional, keywords)?);
+    }
+
+    let mut exponent = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "exponent" if exponent.is_none() => {
+                    exponent = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "exponent" => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("pow() got multiple values for argument 'exponent'")
+                    });
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "pow() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let Some(exponent) = exponent else {
+        return Err(tensor_pow_binding_error(positional, keywords)?);
+    };
+    Ok((exponent, keyword_error))
+}
+
+fn tensor_pow_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    Ok(PyTypeError::new_err(format!(
+        "pow() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (Tensor exponent)\n * (Number exponent)\n"
+    )))
+}
+
 fn bind_tensor_add_sub_method_arguments<'py>(
     operation: AddSubMethodOperation,
     positional: &Bound<'py, PyTuple>,
@@ -18581,6 +18999,92 @@ fn parse_top_level_add_operand<'py>(
     unreachable!("unsupported addition operands were rejected by parse_tensor_argument")
 }
 
+fn parse_top_level_pow_input<'py>(
+    value: &ParsedCallArgument<'py>,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundPowBase<'py>> {
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundPowBase::Tensor(
+            value.value.cast::<PyTensor>()?.clone(),
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundPowBase::Override(probed));
+    }
+    if value.value.is_instance_of::<PyTensor>() {
+        return Ok(BoundPowBase::UnsupportedNativeTensor);
+    }
+    if is_real_arithmetic_scalar(&value.value)? {
+        return Ok(BoundPowBase::Scalar);
+    }
+    Err(top_level_pow_binding_error(positional, keywords)?)
+}
+
+fn parse_tensor_pow_method_receiver<'py>(
+    receiver: &Bound<'py, PyAny>,
+) -> PyResult<BoundPowBase<'py>> {
+    if receiver.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundPowBase::Tensor(receiver.cast::<PyTensor>()?.clone()));
+    }
+    if let Some(probed) = probe_torch_function_override(receiver) {
+        return Ok(BoundPowBase::Override(probed));
+    }
+    if receiver.is_instance_of::<PyTensor>() {
+        return Ok(BoundPowBase::UnsupportedNativeTensor);
+    }
+    Err(pow_unsupported_native_input())
+}
+
+fn parse_pow_exponent<'py>(
+    kind: PowCallKind,
+    value: &ParsedCallArgument<'py>,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundPowExponent<'py>> {
+    if value.value.is_instance_of::<PyTensor>() {
+        return Ok(BoundPowExponent::Tensor);
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundPowExponent::Override(probed));
+    }
+    let Some(scalar) = parse_arithmetic_scalar(&value.value)? else {
+        return Err(pow_binding_error(kind, positional, keywords)?);
+    };
+    if scalar.is_two() {
+        Ok(BoundPowExponent::Square)
+    } else {
+        Ok(BoundPowExponent::UnsupportedScalar)
+    }
+}
+
+fn parse_top_level_pow_out<'py>(
+    out: Option<ParsedCallArgument<'py>>,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<Option<BoundTensorOrTorchFunction<'py>>> {
+    let Some(out) = out else {
+        return Ok(None);
+    };
+    if out.value.is_none() {
+        return Ok(None);
+    }
+    if out.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(Some(BoundTensorOrTorchFunction::Tensor(
+            out.value.cast::<PyTensor>()?.clone(),
+        )));
+    }
+    if let Some(probed) = probe_torch_function_override(&out.value) {
+        return Ok(Some(BoundTensorOrTorchFunction::Override(probed)));
+    }
+    if out.value.is_instance_of::<PyTensor>() {
+        return Ok(Some(BoundTensorOrTorchFunction::Tensor(
+            out.value.cast::<PyTensor>()?.clone(),
+        )));
+    }
+    Err(top_level_pow_binding_error(positional, keywords)?)
+}
+
 fn parse_top_level_add_alpha<'py>(
     alpha: Option<&ParsedCallArgument<'py>>,
 ) -> PyResult<BoundSubAlpha<'py>> {
@@ -18850,6 +19354,19 @@ fn addition_unsupported_native_input() -> PyErr {
     PyNotImplementedError::new_err(
         "add(): only exact native CPU float32 Tensor/Tensor, Tensor/real-number, or real-number/Tensor operands are supported",
     )
+}
+
+fn pow_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "pow(): only exact native CPU float32 Tensor bases with exponent 2 or 2.0 are supported",
+    )
+}
+
+fn validate_pow_native_input(input: &PyTensor) -> PyResult<()> {
+    if input.inner.dtype() == DType::Float32 && input.inner.device() == Device::Cpu {
+        return Ok(());
+    }
+    Err(pow_unsupported_native_input())
 }
 
 fn add_sub_method_unsupported_native_input(operation: AddSubMethodOperation) -> PyErr {
@@ -19768,6 +20285,17 @@ fn tensor_division_method_binding_error(
         .call1((message,))
         .map_err(|_| allocation.error())?;
     Ok(PyErr::from_value(exception))
+}
+
+fn pow_binding_error(
+    kind: PowCallKind,
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    match kind {
+        PowCallKind::TopLevel => top_level_pow_binding_error(positional, keywords),
+        PowCallKind::TensorMethod => tensor_pow_binding_error(positional, keywords),
+    }
 }
 
 fn top_level_division_binding_error(
@@ -22340,6 +22868,15 @@ impl ParsedFillValue {
         }
     }
 
+    fn is_arithmetic_two(&self) -> bool {
+        match self {
+            Self::Float(value) => *value == 2.0,
+            Self::SignedInteger(value) => *value == 2,
+            Self::UnsignedInteger(value) => *value == 2,
+            Self::TensorScalar(value) => *value == 2.0,
+        }
+    }
+
     fn into_f32(self) -> PyResult<f32> {
         match self {
             Self::Float(value) => {
@@ -22420,6 +22957,13 @@ impl ParsedArithmeticScalar {
             Self::PythonBool(value) => *value,
             Self::Number(value) => value.is_arithmetic_one(),
             Self::WideNumpyUnsigned => false,
+        }
+    }
+
+    fn is_two(&self) -> bool {
+        match self {
+            Self::PythonBool(_) | Self::WideNumpyUnsigned => false,
+            Self::Number(value) => value.is_arithmetic_two(),
         }
     }
 
@@ -22726,6 +23270,8 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     // assigning the descriptor activates the unary-positive numeric slot.
     let positive_descriptor = tensor_base.getattr("positive")?;
     tensor_type.setattr("__pos__", positive_descriptor)?;
+    let pow_descriptor = tensor_base.getattr("pow")?;
+    tensor_type.setattr("__pow__", pow_descriptor)?;
     register_scalar_conversions(&tensor_base)?;
     module.add_class::<PyDType>()?;
     module.add("finfo", finfo_type_object(py)?.clone_ref(py))?;
