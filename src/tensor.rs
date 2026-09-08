@@ -6159,15 +6159,13 @@ fn apply_chunk_grad_fn(
                 return Err(TensorError::IndexCalculationOverflow);
             }
 
-            let partial = slice_backward(input, dimension, start, length, &output_gradient)?;
-            match &mut assembled {
-                Some(gradient) => {
-                    for (value, contribution) in gradient.iter_mut().zip(partial) {
-                        *value += contribution;
-                    }
-                }
-                None => assembled = Some(partial),
+            if assembled.is_none() {
+                assembled = Some(filled_storage(input.elements, 0.0)?);
             }
+            let gradient = assembled
+                .as_mut()
+                .expect("chunk gradient storage was initialized above");
+            slice_backward_into(gradient, input, dimension, start, length, &output_gradient)?;
         }
         start = start
             .checked_add(length)
@@ -6513,8 +6511,23 @@ fn slice_backward(
     upstream: &[f32],
 ) -> Result<Vec<f32>, TensorError> {
     let mut gradient = filled_storage(input.elements, 0.0)?;
+    slice_backward_into(&mut gradient, input, dimension, start, length, upstream)?;
+    Ok(gradient)
+}
+
+fn slice_backward_into(
+    gradient: &mut [f32],
+    input: &SavedTensor,
+    dimension: usize,
+    start: usize,
+    length: usize,
+    upstream: &[f32],
+) -> Result<(), TensorError> {
+    if gradient.len() != input.elements {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
     if upstream.is_empty() {
-        return Ok(gradient);
+        return Ok(());
     }
 
     let input_strides = contiguous_strides(&input.shape, input.elements)?;
@@ -6554,7 +6567,7 @@ fn slice_backward(
             .get_mut(input_index)
             .ok_or(TensorError::IndexCalculationOverflow)? = value;
     }
-    Ok(gradient)
+    Ok(())
 }
 
 fn select_backward(
@@ -12874,6 +12887,26 @@ mod tests {
             .backward()
             .unwrap();
         let gradient = signed_source.grad().unwrap().unwrap();
+        assert_eq!(gradient.as_slice()[0].to_bits(), (-0.0_f32).to_bits());
+        assert_eq!(gradient.as_slice()[1].to_bits(), 1.0_f32.to_bits());
+    }
+
+    #[test]
+    fn chunk_backward_preserves_signed_zero_when_outputs_contribute() {
+        let source = Tensor::from_vec(vec![1.0, 2.0], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        let chunks = source.chunk_dimension(0, 2).unwrap();
+        chunks[0]
+            .mul_scalar(-0.0)
+            .unwrap()
+            .sum()
+            .add(&chunks[1].sum())
+            .unwrap()
+            .backward()
+            .unwrap();
+
+        let gradient = source.grad().unwrap().unwrap();
         assert_eq!(gradient.as_slice()[0].to_bits(), (-0.0_f32).to_bits());
         assert_eq!(gradient.as_slice()[1].to_bits(), 1.0_f32.to_bits());
     }

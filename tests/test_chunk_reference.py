@@ -194,6 +194,14 @@ class TensorChunkReferenceTests(unittest.TestCase):
         first, second = call(combined_source, 2, 1)
         (first.sum() + second.sum()).backward()
 
+        signed_zero_leaf = module.tensor(
+            [1.0, 2.0],
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        first, second = call(signed_zero_leaf, 2, 0)
+        ((first * -0.0).sum() + second.sum()).backward()
+
         no_grad_source = module.tensor(
             [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]],
             dtype=module.float32,
@@ -222,6 +230,9 @@ class TensorChunkReferenceTests(unittest.TestCase):
             "output_metadata": output_metadata,
             "gradient": leaf.grad.tolist(),
             "combined_gradient": combined_leaf.grad.tolist(),
+            "signed_zero_gradient_bits": tuple(
+                np.asarray(signed_zero_leaf.grad).view(np.uint32).tolist()
+            ),
             "no_grad": tuple(
                 (
                     output.output_nr,

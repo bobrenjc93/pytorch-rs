@@ -188,6 +188,14 @@ class TensorChunkTests(unittest.TestCase):
             np.full_like(values, 2.0),
         )
 
+        signed_zero_leaf = torch.tensor([1.0, 2.0], requires_grad=True)
+        first, second = signed_zero_leaf.chunk(2)
+        ((first * -0.0).sum() + second.sum()).backward()
+        np.testing.assert_array_equal(
+            np.asarray(signed_zero_leaf.grad).view(np.uint32),
+            np.asarray([0x8000_0000, 0x3F80_0000], dtype=np.uint32),
+        )
+
         no_grad_source = torch.tensor(
             [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], requires_grad=True
         )
