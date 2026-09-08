@@ -198,9 +198,12 @@ class DefaultCollateReferenceTests(unittest.TestCase):
         )
         self.assert_tensor_matches(actual["a"][0], expected["a"][0], case="dict leaf")
 
-    def test_plain_tuple_preserves_requested_type_with_pytorch_tensor_values(self):
+    def test_plain_tuple_returns_pytorch_compatible_list(self):
         actual = torch.utils.data.default_collate(
-            [(torch.tensor([1.0]), torch.tensor([2.0])), (torch.tensor([3.0]), torch.tensor([4.0]))]
+            [
+                (torch.tensor([1.0]), torch.tensor([2.0])),
+                (torch.tensor([3.0]), torch.tensor([4.0])),
+            ]
         )
         expected = reference_torch.utils.data.default_collate(
             [
@@ -215,8 +218,9 @@ class DefaultCollateReferenceTests(unittest.TestCase):
             ]
         )
 
-        self.assertIs(type(actual), tuple)
+        self.assertIs(type(actual), list)
         self.assertIs(type(expected), list)
+        self.assertIs(type(actual), type(expected))
         self.assertEqual(len(actual), len(expected))
         for index, (actual_leaf, expected_leaf) in enumerate(zip(actual, expected)):
             self.assert_tensor_matches(

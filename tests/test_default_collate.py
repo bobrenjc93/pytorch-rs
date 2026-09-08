@@ -96,9 +96,9 @@ class DefaultCollateTests(unittest.TestCase):
         self.assertIs(type(result), OrderedDict)
         self.assertEqual(list(result), ["z", "a"])
         self.assertIs(type(result["z"]), list)
-        self.assertIs(type(result["z"][1]), tuple)
+        self.assertIs(type(result["z"][1]), list)
         self.assertIs(type(result["z"][1][1]), Point)
-        self.assertIs(type(result["a"]), tuple)
+        self.assertIs(type(result["a"]), list)
         self.assert_tensor_matches(
             result["z"][0],
             [[1.0, 2.0], [10.0, 20.0]],
@@ -109,7 +109,7 @@ class DefaultCollateTests(unittest.TestCase):
             result["z"][1][0],
             [3.0, 30.0],
             shape=(2,),
-            case="nested tuple scalar leaf",
+            case="nested plain tuple scalar leaf",
         )
         self.assert_tensor_matches(
             result["z"][1][1].x,
@@ -127,7 +127,27 @@ class DefaultCollateTests(unittest.TestCase):
             result["a"][0],
             [[6.0], [60.0]],
             shape=(2, 1),
-            case="dict tuple leaf",
+            case="dict plain tuple leaf",
+        )
+
+        tuple_batch = [
+            (torch.tensor([1.0]), torch.tensor([2.0])),
+            (torch.tensor([3.0]), torch.tensor([4.0])),
+        ]
+        tuple_result = default_collate(tuple_batch)
+        self.assertIs(type(tuple_result), list)
+        self.assertEqual(len(tuple_result), 2)
+        self.assert_tensor_matches(
+            tuple_result[0],
+            [[1.0], [3.0]],
+            shape=(2, 1),
+            case="plain tuple first field",
+        )
+        self.assert_tensor_matches(
+            tuple_result[1],
+            [[2.0], [4.0]],
+            shape=(2, 1),
+            case="plain tuple second field",
         )
 
     def test_unsupported_leaves_and_mismatched_structures_fail_closed(self):

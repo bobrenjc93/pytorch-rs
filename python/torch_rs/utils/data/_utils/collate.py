@@ -83,6 +83,8 @@ def _collate_sequence(batch, elem):
             raise RuntimeError("each element in list of batch should be of equal size")
 
     collated = [_collate(samples) for samples in zip(*batch)]
+    if isinstance(elem, tuple):
+        return collated
     if elem_type is list:
         return collated
     if isinstance(elem, list):
@@ -90,8 +92,6 @@ def _collate_sequence(batch, elem):
         for index, value in enumerate(collated):
             clone[index] = value
         return clone
-    if elem_type is tuple:
-        return tuple(collated)
     return elem_type(collated)
 
 
@@ -114,9 +114,10 @@ def default_collate(batch):
 
     The supported subset mirrors PyTorch's tensor default-collation behavior for
     exact native CPU float32 tensor leaves by returning ``torch.stack(batch,
-    dim=0)``. Lists, tuples, namedtuples, and dicts are traversed recursively
-    when every batch element has the same structure; container type and dict key
-    order are preserved.
+    dim=0)``. Lists, plain tuples, namedtuples, and dicts are traversed
+    recursively when every batch element has the same structure. Lists,
+    namedtuples, and dicts preserve container type and dict key order; plain
+    tuples return lists for PyTorch compatibility.
 
     NumPy arrays, strings, bytes, numeric scalars, arbitrary objects, worker
     shared-memory collation, and tensors outside the exact native CPU float32
