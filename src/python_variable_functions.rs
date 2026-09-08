@@ -32,17 +32,18 @@ use crate::python::{
     ones_like_variable_function, permute_variable_function, positive_variable_function,
     pow_variable_function, promote_types_variable_function, ravel_variable_function,
     real_variable_function, reciprocal_variable_function, reshape_variable_function,
-    resolve_conj_variable_function, resolve_neg_variable_function, rsqrt_variable_function,
-    scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
-    sin_variable_function, sqrt_variable_function, square_variable_function,
-    stack_variable_function, sub_variable_function, subtract_variable_function,
-    sum_variable_function, tanh_variable_function, trunc_variable_function,
-    unbind_variable_function, unsqueeze_variable_function, zeros_like_variable_function,
+    resolve_conj_variable_function, resolve_neg_variable_function, row_stack_variable_function,
+    rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
+    square_variable_function, stack_variable_function, sub_variable_function,
+    subtract_variable_function, sum_variable_function, tanh_variable_function,
+    trunc_variable_function, unbind_variable_function, unsqueeze_variable_function,
+    vstack_variable_function, zeros_like_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 70] = [
+const VARIABLE_FUNCTION_NAMES: &[&str] = &[
     "get_device",
     "as_tensor",
     "asarray",
@@ -60,6 +61,8 @@ const VARIABLE_FUNCTION_NAMES: [&str; 70] = [
     "concat",
     "concatenate",
     "stack",
+    "vstack",
+    "row_stack",
     "abs",
     "absolute",
     "adjoint",
@@ -1180,6 +1183,29 @@ autograd. Concrete ``out`` tensors, empty input sequences, mixed dtype/device
 metadata, and unhandled tensor subclasses remain unsupported.
 ";
 
+const VSTACK_DOC: &std::ffi::CStr = c"
+vstack(tensors, *, out=None) -> Tensor
+
+Stacks tensors in sequence vertically (row wise).
+
+This is equivalent to ``torch.cat([torch.atleast_2d(t) for t in tensors], dim=0)``.
+The current native implementation supports non-empty tuple/list inputs of
+exact native CPU ``float32`` scalar, rank-1, or rank-2 tensors, including
+non-contiguous input views and first-order autograd. Concrete ``out`` tensors,
+empty input sequences, rank-greater-than-2 normalized tensors, mixed
+dtype/device metadata, unhandled tensor subclasses, and unsupported
+``__torch_function__`` modes remain unsupported.
+";
+
+const ROW_STACK_DOC: &std::ffi::CStr = c"
+row_stack(tensors, *, out=None) -> Tensor
+
+Alias of :func:`torch.vstack`.
+
+The current native implementation supports the same exact native CPU
+``float32`` scalar, rank-1, and rank-2 boundary as ``torch.vstack``.
+";
+
 const IS_CONJ_DOC: &std::ffi::CStr = c"\nis_conj(input) -> (bool)\n\nReturns True if the :attr:`input` is a conjugated tensor, i.e. its conjugate bit is set to `True`.\n\nArgs:\n    input (Tensor): the input tensor.\n";
 
 const IS_INFERENCE_DOC: &std::ffi::CStr = c"\nis_inference(input) -> (bool)\n\nReturns True if :attr:`input` is an inference tensor.\n\nA non-view tensor is an inference tensor if and only if it was\nallocated during inference mode. A view tensor is an inference\ntensor if and only if the tensor it is a view of is an inference tensor.\n\nFor details on inference mode please see\n`Inference Mode <https://pytorch.org/cppdocs/notes/inference_mode.html>`_.\n\nArgs:\n    input (Tensor): the input tensor.\n";
@@ -1474,6 +1500,8 @@ variable_function_callback!(cat_callback, cat_variable_function);
 variable_function_callback!(concat_callback, concat_variable_function);
 variable_function_callback!(concatenate_callback, concatenate_variable_function);
 variable_function_callback!(stack_callback, stack_variable_function);
+variable_function_callback!(vstack_callback, vstack_variable_function);
+variable_function_callback!(row_stack_callback, row_stack_variable_function);
 variable_function_callback!(abs_callback, abs_variable_function);
 variable_function_callback!(absolute_callback, absolute_variable_function);
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
@@ -1572,6 +1600,8 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"concat", concat_callback, CONCAT_DOC),
         variable_function_method!(c"concatenate", concatenate_callback, CONCATENATE_DOC),
         variable_function_method!(c"stack", stack_callback, STACK_DOC),
+        variable_function_method!(c"vstack", vstack_callback, VSTACK_DOC),
+        variable_function_method!(c"row_stack", row_stack_callback, ROW_STACK_DOC),
         variable_function_method!(c"abs", abs_callback, ABS_DOC),
         variable_function_method!(c"absolute", absolute_callback, ABSOLUTE_DOC),
         variable_function_method!(c"adjoint", adjoint_callback, ADJOINT_DOC),
@@ -1671,7 +1701,7 @@ pub(crate) fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<(
         .getattr("__all__")?
         .call_method1("remove", ("_VariableFunctionsClass",))?;
     let variable_functions = variable_functions.bind(py);
-    for name in VARIABLE_FUNCTION_NAMES {
+    for &name in VARIABLE_FUNCTION_NAMES {
         let function = variable_functions.getattr(name)?;
         function.setattr("__module__", "torch")?;
         module.add(name, function)?;
