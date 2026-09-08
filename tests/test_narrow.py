@@ -306,34 +306,69 @@ class TensorNarrowTests(unittest.TestCase):
         self.assertEqual(args, (tensor, 0, tensor_start, 1))
         self.assertIsNone(kwargs)
 
-    def test_start_torch_function_overrides_dispatch_before_native_limits(self):
+    def test_argument_torch_function_overrides_dispatch_before_native_limits(self):
         tensor = torch.zeros((2, 3, 4))
         descriptor = inspect.getattr_static(torch.Tensor, "narrow")
         marker = object()
         events = []
 
-        class StartOverride:
+        class Override:
             @classmethod
             def __torch_function__(cls, func, types, args=(), kwargs=None):
                 events.append((func, types, args, kwargs))
                 return marker
 
-        start = StartOverride()
-        self.assertIs(tensor.narrow(0, start, 1), marker)
-        self.assertIs(torch.narrow(tensor, 0, start, 1), marker)
-        self.assertEqual(len(events), 2)
-
-        method_function, method_types, method_args, method_kwargs = events[0]
-        self.assertIs(method_function, descriptor)
-        self.assertEqual(method_types, (StartOverride,))
-        self.assertEqual(method_args, (tensor, 0, start, 1))
-        self.assertIsNone(method_kwargs)
-
-        top_function, top_types, top_args, top_kwargs = events[1]
-        self.assertIs(top_function, torch.narrow)
-        self.assertEqual(top_types, (StartOverride,))
-        self.assertEqual(top_args, (tensor, 0, start, 1))
-        self.assertIsNone(top_kwargs)
+        dim = Override()
+        start = Override()
+        length = Override()
+        cases = (
+            (
+                "method dim",
+                lambda: tensor.narrow(dim, 0, 1),
+                descriptor,
+                (tensor, dim, 0, 1),
+            ),
+            (
+                "method start",
+                lambda: tensor.narrow(0, start, 1),
+                descriptor,
+                (tensor, 0, start, 1),
+            ),
+            (
+                "method length",
+                lambda: tensor.narrow(0, 0, length),
+                descriptor,
+                (tensor, 0, 0, length),
+            ),
+            (
+                "top dim",
+                lambda: torch.narrow(tensor, dim, 0, 1),
+                torch.narrow,
+                (tensor, dim, 0, 1),
+            ),
+            (
+                "top start",
+                lambda: torch.narrow(tensor, 0, start, 1),
+                torch.narrow,
+                (tensor, 0, start, 1),
+            ),
+            (
+                "top length",
+                lambda: torch.narrow(tensor, 0, 0, length),
+                torch.narrow,
+                (tensor, 0, 0, length),
+            ),
+        )
+        for case, call, expected_function, expected_args in cases:
+            with self.subTest(case=case):
+                events.clear()
+                self.assertIs(call(), marker)
+                self.assertEqual(len(events), 1)
+                function, dispatch_types, args, kwargs = events[0]
+                self.assertIs(function, expected_function)
+                self.assertEqual(dispatch_types, (Override,))
+                self.assertEqual(args, expected_args)
+                self.assertIsNone(kwargs)
 
         class IntegerStartOverride(int):
             @classmethod
@@ -346,7 +381,7 @@ class TensorNarrowTests(unittest.TestCase):
         self.assertEqual(events[-2][1], (IntegerStartOverride,))
         self.assertEqual(events[-1][1], (IntegerStartOverride,))
 
-        class DecliningStart:
+        class DecliningOverride:
             calls = 0
 
             @classmethod
@@ -354,19 +389,43 @@ class TensorNarrowTests(unittest.TestCase):
                 cls.calls += 1
                 return NotImplemented
 
-        with self.assertRaisesRegex(
-            TypeError,
-            r"^Multiple dispatch failed for 'torch\.Tensor\.narrow'; all __torch_function__ handlers returned NotImplemented:",
-        ):
-            tensor.narrow(0, DecliningStart(), 1)
-        self.assertEqual(DecliningStart.calls, 1)
-
-        with self.assertRaisesRegex(
-            TypeError,
-            r"^Multiple dispatch failed for 'torch\.narrow'; all __torch_function__ handlers returned NotImplemented:",
-        ):
-            torch.narrow(tensor, 0, DecliningStart(), 1)
-        self.assertEqual(DecliningStart.calls, 2)
+        declining_cases = (
+            (
+                "method dim",
+                lambda override: tensor.narrow(override, 0, 1),
+                r"^Multiple dispatch failed for 'torch\.Tensor\.narrow'; all __torch_function__ handlers returned NotImplemented:",
+            ),
+            (
+                "method start",
+                lambda override: tensor.narrow(0, override, 1),
+                r"^Multiple dispatch failed for 'torch\.Tensor\.narrow'; all __torch_function__ handlers returned NotImplemented:",
+            ),
+            (
+                "method length",
+                lambda override: tensor.narrow(0, 0, override),
+                r"^Multiple dispatch failed for 'torch\.Tensor\.narrow'; all __torch_function__ handlers returned NotImplemented:",
+            ),
+            (
+                "top dim",
+                lambda override: torch.narrow(tensor, override, 0, 1),
+                r"^Multiple dispatch failed for 'torch\.narrow'; all __torch_function__ handlers returned NotImplemented:",
+            ),
+            (
+                "top start",
+                lambda override: torch.narrow(tensor, 0, override, 1),
+                r"^Multiple dispatch failed for 'torch\.narrow'; all __torch_function__ handlers returned NotImplemented:",
+            ),
+            (
+                "top length",
+                lambda override: torch.narrow(tensor, 0, 0, override),
+                r"^Multiple dispatch failed for 'torch\.narrow'; all __torch_function__ handlers returned NotImplemented:",
+            ),
+        )
+        for expected_calls, (case, call, message) in enumerate(declining_cases, start=1):
+            with self.subTest(case=case):
+                with self.assertRaisesRegex(TypeError, message):
+                    call(DecliningOverride())
+                self.assertEqual(DecliningOverride.calls, expected_calls)
 
 
 if __name__ == "__main__":
