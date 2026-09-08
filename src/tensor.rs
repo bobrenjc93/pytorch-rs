@@ -2758,11 +2758,6 @@ impl Tensor {
         Self::finish_concat_vjp(inputs, output, dimension, node)
     }
 
-    #[cfg(feature = "python-bindings")]
-    pub(crate) fn cat_1d(inputs: &[&Self]) -> Result<Self, TensorError> {
-        Self::cat(inputs, 0)
-    }
-
     fn contiguous_slice(&self) -> Option<&[f32]> {
         if self.elements == 0 {
             return Some(&[]);

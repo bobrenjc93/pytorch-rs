@@ -475,6 +475,35 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nnarrow(dimension, start, length) -> Tensor\n\nSee :func:`torch.narrow`.\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn narrow(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let narrow = bind_narrow_arguments(args, kwargs, NarrowCallKind::Method)?;
+
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_narrow_method(slf.py(), tensor, &narrow, args, kwargs)? {
+            return Ok(result);
+        }
+        if !slf.as_any().is_exact_instance_of::<PyTensor>() {
+            return Err(narrow_unsupported_native_input());
+        }
+        if narrow.tensor_start_unsupported {
+            return Err(narrow_tensor_start_unsupported());
+        }
+
+        let [dimension, start, length] = &narrow.arguments;
+        let length = extract_select_index(&length.value)?;
+        let start = extract_select_index(&start.value)?;
+        let dimension = extract_dimension_swap_dimension(&dimension.value)?;
+        narrow_dimension(slf.py(), tensor, dimension, start, length)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nIs ``True`` if the Tensor is quantized, ``False`` otherwise.\n"]
     #[getter]
     fn is_quantized(slf: &Bound<'_, Self>) -> PyResult<bool> {
@@ -2575,6 +2604,15 @@ pub(crate) fn select_variable_function(
     dispatch_top_level_select(py, &input, &dimension, &index, args, kwargs)
 }
 
+pub(crate) fn narrow_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (input, narrow) = bind_top_level_narrow_arguments(args, kwargs)?;
+    dispatch_top_level_narrow(py, &input, &narrow, args, kwargs)
+}
+
 pub(crate) fn permute_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -3787,6 +3825,97 @@ fn select_dimension(
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
 }
 
+fn narrow_dimension(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    dimension: i64,
+    start: i64,
+    length: i64,
+) -> PyResult<Py<PyAny>> {
+    let tensor = tensor.try_borrow()?;
+    validate_narrow_native_input(&tensor.inner)?;
+    let shape = tensor.inner.shape();
+    if shape.is_empty() {
+        return Err(PyRuntimeError::new_err(
+            "narrow() cannot be applied to a 0-dim tensor.",
+        ));
+    }
+    validate_narrow_length(length)?;
+    let axis = normalize_dimension(dimension, shape.len())?;
+    let (start, length) = normalize_narrow_bounds(shape[axis], start, length)?;
+    let inner = tensor
+        .inner
+        .slice_dimension(axis, start, length)
+        .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+}
+
+fn validate_narrow_native_input(input: &CoreTensor) -> PyResult<()> {
+    if input.dtype() == DType::Float32 && input.device() == Device::Cpu {
+        return Ok(());
+    }
+    Err(narrow_unsupported_native_input())
+}
+
+fn normalize_narrow_bounds(size: usize, start: i64, length: i64) -> PyResult<(usize, usize)> {
+    validate_narrow_length(length)?;
+    let signed_size = i64::try_from(size)
+        .map_err(|_| PyOverflowError::new_err("tensor dimension size exceeds long long"))?;
+    if start < -signed_size || start > signed_size {
+        return Err(PyIndexError::new_err(format!(
+            "start out of range (expected to be in range of [{}, {}], but got {start})",
+            -signed_size, signed_size
+        )));
+    }
+    let normalized_start = if start < 0 {
+        signed_size + start
+    } else {
+        start
+    };
+    let end = normalized_start
+        .checked_add(length)
+        .ok_or_else(|| narrow_length_exceeds_dimension_error(normalized_start, length, size))?;
+    if end > signed_size {
+        return Err(narrow_length_exceeds_dimension_error(
+            normalized_start,
+            length,
+            size,
+        ));
+    }
+
+    Ok((
+        usize::try_from(normalized_start)
+            .map_err(|_| PyOverflowError::new_err("tensor start exceeds the platform limit"))?,
+        usize::try_from(length)
+            .map_err(|_| PyOverflowError::new_err("tensor length exceeds the platform limit"))?,
+    ))
+}
+
+fn validate_narrow_length(length: i64) -> PyResult<()> {
+    if length < 0 {
+        return Err(PyRuntimeError::new_err(
+            "narrow(): length must be non-negative.",
+        ));
+    }
+    Ok(())
+}
+
+fn narrow_length_exceeds_dimension_error(start: i64, length: i64, size: usize) -> PyErr {
+    PyRuntimeError::new_err(format!(
+        "start ({start}) + length ({length}) exceeds dimension size ({size})."
+    ))
+}
+
+fn narrow_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "narrow(): only exact native CPU float32 Tensor inputs are supported",
+    )
+}
+
+fn narrow_tensor_start_unsupported() -> PyErr {
+    PyNotImplementedError::new_err("narrow(): tensor-valued start is not supported")
+}
+
 fn dispatch_top_level_unbind(
     py: Python<'_>,
     input: &BoundTensorOrTorchFunction<'_>,
@@ -3922,6 +4051,198 @@ fn dispatch_top_level_select(
             select_dimension(py, tensor, dimension, index)
         }
     }
+}
+
+fn dispatch_top_level_narrow(
+    py: Python<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
+    narrow: &BoundNarrowArguments<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_top_level_narrow_overrides(input, narrow)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_narrow(py, input, narrow);
+    }
+
+    let function = variable_function(py, "narrow")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Concrete integer conversion and tensor bounds checks remain deferred
+    // until every torch-function handler has had an opportunity to replace
+    // the otherwise valid generated call.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_top_level_narrow(py, input, narrow);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.narrow",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_narrow(
+    py: Python<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
+    narrow: &BoundNarrowArguments<'_>,
+) -> PyResult<Py<PyAny>> {
+    let BoundTensorOrTorchFunction::Tensor(tensor) = input else {
+        unreachable!("narrow input override was dispatched before the native path")
+    };
+    apply_bound_narrow(py, tensor, narrow)
+}
+
+fn apply_bound_narrow(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    narrow: &BoundNarrowArguments<'_>,
+) -> PyResult<Py<PyAny>> {
+    if narrow.tensor_start_unsupported {
+        return Err(narrow_tensor_start_unsupported());
+    }
+    if narrow.dimension_override.is_some()
+        || narrow.start_override.is_some()
+        || narrow.length_override.is_some()
+    {
+        unreachable!("narrow argument overrides were dispatched before the native path");
+    }
+
+    let [dimension, start, length] = &narrow.arguments;
+    let length = extract_select_index(&length.value)?;
+    let start = extract_select_index(&start.value)?;
+    let dimension = extract_dimension_swap_dimension(&dimension.value)?;
+    narrow_dimension(py, tensor, dimension, start, length)
+}
+
+fn ordered_top_level_narrow_overrides<'py>(
+    input: &BoundTensorOrTorchFunction<'py>,
+    narrow: &BoundNarrowArguments<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(
+            usize::from(matches!(input, BoundTensorOrTorchFunction::Override(_)))
+                + usize::from(narrow.dimension_override.is_some())
+                + usize::from(narrow.start_override.is_some())
+                + usize::from(narrow.length_override.is_some()),
+        )
+        .map_err(|_| PyMemoryError::new_err("unable to allocate narrow dispatch operands"))?;
+    if let BoundTensorOrTorchFunction::Override(probed) = input {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(probed) = &narrow.dimension_override {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(probed) = &narrow.start_override {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(probed) = &narrow.length_override {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
+fn ordered_narrow_method_overrides<'py>(
+    narrow: &BoundNarrowArguments<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(
+            usize::from(narrow.dimension_override.is_some())
+                + usize::from(narrow.start_override.is_some())
+                + usize::from(narrow.length_override.is_some()),
+        )
+        .map_err(|_| PyMemoryError::new_err("unable to allocate narrow dispatch operands"))?;
+    if let Some(probed) = &narrow.dimension_override {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(probed) = &narrow.start_override {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(probed) = &narrow.length_override {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
+fn dispatch_narrow_method(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    narrow: &BoundNarrowArguments<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    let overrides = ordered_narrow_method_overrides(narrow)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return Ok(None);
+    }
+
+    let function = py.get_type::<PyTensorBase>().getattr("narrow")?.unbind();
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+    let argument_count = args
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("narrow dispatch argument count overflowed"))?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate narrow dispatch arguments"))?;
+    call_arguments.push(tensor.clone().into_any());
+    call_arguments.extend(args.iter());
+    let call_args = PyTuple::new(py, call_arguments)?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.Tensor.narrow",
+        active_mode.get(),
+        &overrides,
+    )?)
 }
 
 pub(crate) fn dispatch_tensorbase_method_mode(
@@ -4400,14 +4721,12 @@ fn apply_top_level_cat(py: Python<'_>, call: &BoundTopLevelCatCall<'_>) -> PyRes
     }
 
     let mut borrowed_tensors = try_size_vector(tensors.len())?;
-    let mut any_requires_grad = false;
     for (index, tensor) in tensors.iter().enumerate() {
         let BoundTensorOrTorchFunction::Tensor(tensor) = tensor else {
             unreachable!("cat sequence element overrides were dispatched before the native path")
         };
         let tensor = tensor.try_borrow()?;
         validate_cat_tensor(&tensor, index)?;
-        any_requires_grad |= tensor.inner.requires_grad();
         try_push_size(&mut borrowed_tensors, tensor)?;
     }
 
@@ -4421,23 +4740,47 @@ fn apply_top_level_cat(py: Python<'_>, call: &BoundTopLevelCatCall<'_>) -> PyRes
             unreachable!("cat dim override was dispatched before the native path")
         }
     };
-    normalize_dimension(dimension, 1)?;
+    let effective_shape = cat_effective_shape(&borrowed_tensors);
+    let dimension = normalize_dimension(dimension, effective_shape.len())?;
+    validate_cat_tensor_shapes(&borrowed_tensors, dimension, effective_shape)?;
     if call.out.is_some() {
         return Err(PyRuntimeError::new_err(
             "cat(): the 'out' argument is not supported",
         ));
     }
-    if any_requires_grad && is_grad_enabled() {
-        return Err(PyRuntimeError::new_err(
-            "cat(): autograd recording is not supported",
-        ));
+
+    let neutral_shape = cat_neutral_empty_shape(effective_shape, dimension)?;
+    let mut neutral_views = try_size_vector(borrowed_tensors.len())?;
+    if effective_shape.len() > 1 {
+        for tensor in &borrowed_tensors {
+            if is_cat_neutral_empty(&tensor.inner) {
+                try_push_size(
+                    &mut neutral_views,
+                    tensor
+                        .inner
+                        .view(&neutral_shape)
+                        .map_err(|error| tensor_error(&error))?,
+                )?;
+            }
+        }
     }
 
     let mut inner_tensors = try_size_vector(borrowed_tensors.len())?;
+    let mut neutral_views = neutral_views.iter();
     for tensor in &borrowed_tensors {
-        try_push_size(&mut inner_tensors, &tensor.inner)?;
+        if effective_shape.len() > 1 && is_cat_neutral_empty(&tensor.inner) {
+            try_push_size(
+                &mut inner_tensors,
+                neutral_views
+                    .next()
+                    .expect("neutral view count must match neutral tensor count"),
+            )?;
+        } else {
+            try_push_size(&mut inner_tensors, &tensor.inner)?;
+        }
     }
-    let result = CoreTensor::cat_1d(&inner_tensors).map_err(|error| tensor_error(&error))?;
+    let result =
+        CoreTensor::cat(&inner_tensors, dimension).map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(result))?.into_any())
 }
 
@@ -11871,12 +12214,65 @@ fn validate_cat_tensor(tensor: &PyTensor, index: usize) -> PyResult<()> {
     }
     if tensor.inner.dtype() == DType::Float32
         && tensor.inner.device() == Device::Cpu
-        && tensor.inner.shape().len() == 1
+        && matches!(tensor.inner.shape().len(), 1 | 2)
     {
         Ok(())
     } else {
         Err(cat_unsupported_native_input())
     }
+}
+
+fn cat_effective_shape<'a>(tensors: &'a [PyRef<'_, PyTensor>]) -> &'a [usize] {
+    tensors
+        .iter()
+        .find(|tensor| !is_cat_neutral_empty(&tensor.inner))
+        .unwrap_or(&tensors[0])
+        .inner
+        .shape()
+}
+
+fn is_cat_neutral_empty(tensor: &CoreTensor) -> bool {
+    tensor.shape() == [0]
+}
+
+fn cat_neutral_empty_shape(effective_shape: &[usize], dimension: usize) -> PyResult<Vec<i64>> {
+    let mut shape = try_size_vector(effective_shape.len())?;
+    for (axis, size) in effective_shape.iter().copied().enumerate() {
+        let size = if axis == dimension { 0 } else { size };
+        let size =
+            i64::try_from(size).map_err(|_| tensor_error(&TensorError::ElementCountOverflow))?;
+        try_push_size(&mut shape, size)?;
+    }
+    Ok(shape)
+}
+
+fn validate_cat_tensor_shapes(
+    tensors: &[PyRef<'_, PyTensor>],
+    dimension: usize,
+    first_shape: &[usize],
+) -> PyResult<()> {
+    for (index, tensor) in tensors.iter().enumerate().skip(1) {
+        let shape = tensor.inner.shape();
+        if is_cat_neutral_empty(&tensor.inner) && shape.len() != first_shape.len() {
+            continue;
+        }
+        if shape.len() != first_shape.len() {
+            return Err(PyRuntimeError::new_err(format!(
+                "Tensors must have same number of dimensions: got {} and {}",
+                first_shape.len(),
+                shape.len()
+            )));
+        }
+        for axis in 0..first_shape.len() {
+            if axis != dimension && first_shape[axis] != shape[axis] {
+                return Err(PyRuntimeError::new_err(format!(
+                    "Sizes of tensors must match except in dimension {dimension}. Expected size {} but got size {} for tensor number {index} in the list.",
+                    first_shape[axis], shape[axis],
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn cat_tensor_sequence_type_error(
@@ -11895,7 +12291,7 @@ fn cat_tensor_sequence_type_error(
 
 fn cat_unsupported_native_input() -> PyErr {
     PyNotImplementedError::new_err(
-        "cat(): only exact native CPU float32 1-D Tensor inputs are supported",
+        "cat(): only exact native CPU float32 rank-1 or rank-2 Tensor inputs are supported",
     )
 }
 
@@ -12718,6 +13114,583 @@ fn extract_select_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {
     }
     let concrete = call_python_index(index)?;
     extract_dimension_swap_dimension(&concrete)
+}
+
+#[derive(Clone, Copy)]
+enum NarrowCallKind {
+    Method,
+    TopLevel,
+}
+
+impl NarrowCallKind {
+    const fn overloads(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Method => (
+                "(int dim, Tensor start, int length)",
+                "(int dim, int start, int length)",
+            ),
+            Self::TopLevel => (
+                "(Tensor input, int dim, Tensor start, int length)",
+                "(Tensor input, int dim, int start, int length)",
+            ),
+        }
+    }
+}
+
+enum NarrowStartStatus<'py> {
+    Valid,
+    TensorStart,
+    Override(ProbedTorchFunctionOverride<'py>),
+    Invalid,
+}
+
+enum NarrowIntegerArgumentStatus<'py> {
+    Valid,
+    Override(ProbedTorchFunctionOverride<'py>),
+    Invalid,
+}
+
+struct NarrowTypeValidity<'py, const N: usize> {
+    tensor_start_overload_invalid: [bool; N],
+    integer_start_overload_invalid: [bool; N],
+    tensor_start_unsupported: bool,
+    dimension_override: Option<ProbedTorchFunctionOverride<'py>>,
+    start_override: Option<ProbedTorchFunctionOverride<'py>>,
+    length_override: Option<ProbedTorchFunctionOverride<'py>>,
+}
+
+struct BoundNarrowArguments<'py> {
+    arguments: [ParsedCallArgument<'py>; 3],
+    tensor_start_unsupported: bool,
+    dimension_override: Option<ProbedTorchFunctionOverride<'py>>,
+    start_override: Option<ProbedTorchFunctionOverride<'py>>,
+    length_override: Option<ProbedTorchFunctionOverride<'py>>,
+}
+
+type NarrowArgumentMismatches<'a, 'py, const N: usize> = (
+    &'a [&'a str; N],
+    &'a [Option<ParsedCallArgument<'py>>; N],
+    &'a NarrowTypeValidity<'py, N>,
+);
+
+impl<const N: usize> NarrowTypeValidity<'_, N> {
+    fn tensor_start_overload_matches(&self) -> bool {
+        self.tensor_start_overload_invalid
+            .iter()
+            .all(|invalid| !invalid)
+    }
+
+    fn integer_start_overload_matches(&self) -> bool {
+        self.integer_start_overload_invalid
+            .iter()
+            .all(|invalid| !invalid)
+    }
+}
+
+fn bind_narrow_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+    kind: NarrowCallKind,
+) -> PyResult<BoundNarrowArguments<'py>> {
+    const NAMES: [&str; 3] = ["dim", "start", "length"];
+
+    if positional.len() > NAMES.len() {
+        return Err(narrow_invalid_combination_error::<3>(
+            positional, keywords, kind, None,
+        )?);
+    }
+
+    let mut arguments: [Option<ParsedCallArgument<'py>>; 3] = std::array::from_fn(|_| None);
+    for (index, value) in positional.iter().enumerate() {
+        arguments[index] = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+    }
+
+    let keyword_error = bind_narrow_keywords(&NAMES, &mut arguments, keywords)?;
+    let validation_length = arguments
+        .iter()
+        .position(Option::is_none)
+        .unwrap_or(NAMES.len());
+    let validity = narrow_method_argument_validity(&arguments, validation_length)?;
+
+    if arguments.iter().any(Option::is_none) || keyword_error {
+        return Err(narrow_invalid_combination_error::<3>(
+            positional, keywords, kind, None,
+        )?);
+    }
+    let tensor_start_overload_matches = validity.tensor_start_overload_matches();
+    let tensor_start_unsupported =
+        validity.tensor_start_unsupported && tensor_start_overload_matches;
+    let dimension_override = validity.dimension_override.clone();
+    let start_override = if tensor_start_overload_matches {
+        validity.start_override.clone()
+    } else {
+        None
+    };
+    let length_override = validity.length_override.clone();
+    let has_argument_override =
+        dimension_override.is_some() || start_override.is_some() || length_override.is_some();
+    let matches_supported_or_dispatchable_overload = validity.integer_start_overload_matches()
+        || tensor_start_unsupported
+        || tensor_start_overload_matches && has_argument_override;
+    if !matches_supported_or_dispatchable_overload {
+        return Err(narrow_invalid_combination_error(
+            positional,
+            keywords,
+            kind,
+            Some((&NAMES, &arguments, &validity)),
+        )?);
+    }
+
+    Ok(BoundNarrowArguments {
+        arguments: arguments
+            .map(|argument| argument.expect("all required narrow arguments were bound")),
+        tensor_start_unsupported,
+        dimension_override,
+        start_override,
+        length_override,
+    })
+}
+
+fn bind_top_level_narrow_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(BoundTensorOrTorchFunction<'py>, BoundNarrowArguments<'py>)> {
+    const NAMES: [&str; 4] = ["input", "dim", "start", "length"];
+    const INPUT_ALIASES: [&str; 4] = ["input", "x", "a", "x1"];
+
+    if positional.len() > NAMES.len() {
+        return Err(narrow_invalid_combination_error::<4>(
+            positional,
+            keywords,
+            NarrowCallKind::TopLevel,
+            None,
+        )?);
+    }
+
+    let mut arguments: [Option<ParsedCallArgument<'py>>; 4] = std::array::from_fn(|_| None);
+    for (index, value) in positional.iter().enumerate() {
+        arguments[index] = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+    }
+
+    let mut keyword_error = false;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            let Some(index) = NAMES.iter().position(|name| *name == key).or_else(|| {
+                INPUT_ALIASES
+                    .iter()
+                    .position(|name| *name == key)
+                    .map(|_| 0)
+            }) else {
+                keyword_error = true;
+                continue;
+            };
+            if arguments[index].is_some() {
+                keyword_error = true;
+                continue;
+            }
+            arguments[index] = Some(ParsedCallArgument {
+                value,
+                position: None,
+            });
+        }
+    }
+
+    let validation_length = arguments
+        .iter()
+        .position(Option::is_none)
+        .unwrap_or(NAMES.len());
+    let validity = narrow_top_level_argument_validity(&arguments, validation_length)?;
+
+    if arguments.iter().any(Option::is_none) || keyword_error {
+        return Err(narrow_invalid_combination_error::<4>(
+            positional,
+            keywords,
+            NarrowCallKind::TopLevel,
+            None,
+        )?);
+    }
+    let tensor_start_overload_matches = validity.tensor_start_overload_matches();
+    let tensor_start_unsupported =
+        validity.tensor_start_unsupported && tensor_start_overload_matches;
+    let dimension_override = validity.dimension_override.clone();
+    let start_override = if tensor_start_overload_matches {
+        validity.start_override.clone()
+    } else {
+        None
+    };
+    let length_override = validity.length_override.clone();
+    let has_argument_override =
+        dimension_override.is_some() || start_override.is_some() || length_override.is_some();
+    let matches_supported_or_dispatchable_overload = validity.integer_start_overload_matches()
+        || tensor_start_unsupported
+        || tensor_start_overload_matches && has_argument_override;
+    if !matches_supported_or_dispatchable_overload {
+        return Err(narrow_invalid_combination_error(
+            positional,
+            keywords,
+            NarrowCallKind::TopLevel,
+            Some((&NAMES, &arguments, &validity)),
+        )?);
+    }
+
+    let [input, dimension, start, length] =
+        arguments.map(|argument| argument.expect("all required narrow arguments were bound"));
+    let input = bind_exact_native_narrow_input(&input)?;
+    Ok((
+        input,
+        BoundNarrowArguments {
+            arguments: [dimension, start, length],
+            tensor_start_unsupported,
+            dimension_override,
+            start_override,
+            length_override,
+        },
+    ))
+}
+
+fn bind_narrow_keywords<'py, const N: usize>(
+    names: &[&str; N],
+    arguments: &mut [Option<ParsedCallArgument<'py>>; N],
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<bool> {
+    let mut keyword_error = false;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            let Some(index) = names.iter().position(|name| *name == key) else {
+                keyword_error = true;
+                continue;
+            };
+            if arguments[index].is_some() {
+                keyword_error = true;
+                continue;
+            }
+            arguments[index] = Some(ParsedCallArgument {
+                value,
+                position: None,
+            });
+        }
+    }
+    Ok(keyword_error)
+}
+
+fn narrow_method_argument_validity<'py>(
+    arguments: &[Option<ParsedCallArgument<'py>>; 3],
+    length: usize,
+) -> PyResult<NarrowTypeValidity<'py, 3>> {
+    let mut tensor_start_overload_invalid = [false; 3];
+    let mut integer_start_overload_invalid = [false; 3];
+    let mut tensor_start_unsupported = false;
+    let mut dimension_override = None;
+    let mut start_override = None;
+    let mut length_override = None;
+    if length >= 1 {
+        let value = &arguments[0]
+            .as_ref()
+            .expect("narrow dim is present before validation gap")
+            .value;
+        match narrow_dimension_status(value)? {
+            NarrowIntegerArgumentStatus::Valid => {}
+            NarrowIntegerArgumentStatus::Override(probed) => {
+                dimension_override = Some(probed);
+            }
+            NarrowIntegerArgumentStatus::Invalid => {
+                tensor_start_overload_invalid[0] = true;
+                integer_start_overload_invalid[0] = true;
+            }
+        }
+    }
+    if length >= 2 {
+        let value = &arguments[1]
+            .as_ref()
+            .expect("narrow start is present before validation gap")
+            .value;
+        let start_is_tensor = value.cast::<PyTensor>().is_ok();
+        match narrow_start_status(value, start_is_tensor)? {
+            NarrowStartStatus::Valid => {
+                tensor_start_overload_invalid[1] = true;
+            }
+            NarrowStartStatus::TensorStart => {
+                tensor_start_unsupported = true;
+                integer_start_overload_invalid[1] = true;
+            }
+            NarrowStartStatus::Override(probed) => {
+                start_override = Some(probed);
+                integer_start_overload_invalid[1] = true;
+            }
+            NarrowStartStatus::Invalid => {
+                tensor_start_overload_invalid[1] = true;
+                integer_start_overload_invalid[1] = true;
+            }
+        }
+    }
+    if length >= 3 {
+        let value = &arguments[2]
+            .as_ref()
+            .expect("narrow length is present before validation gap")
+            .value;
+        match narrow_length_status(value)? {
+            NarrowIntegerArgumentStatus::Valid => {}
+            NarrowIntegerArgumentStatus::Override(probed) => {
+                length_override = Some(probed);
+            }
+            NarrowIntegerArgumentStatus::Invalid => {
+                tensor_start_overload_invalid[2] = true;
+                integer_start_overload_invalid[2] = true;
+            }
+        }
+    }
+    Ok(NarrowTypeValidity {
+        tensor_start_overload_invalid,
+        integer_start_overload_invalid,
+        tensor_start_unsupported,
+        dimension_override,
+        start_override,
+        length_override,
+    })
+}
+
+fn narrow_top_level_argument_validity<'py>(
+    arguments: &[Option<ParsedCallArgument<'py>>; 4],
+    length: usize,
+) -> PyResult<NarrowTypeValidity<'py, 4>> {
+    let mut tensor_start_overload_invalid = [false; 4];
+    let mut integer_start_overload_invalid = [false; 4];
+    let mut tensor_start_unsupported = false;
+    let mut dimension_override = None;
+    let mut start_override = None;
+    let mut length_override = None;
+    if length >= 1 {
+        let input = &arguments[0]
+            .as_ref()
+            .expect("narrow input is present before validation gap")
+            .value;
+        let invalid =
+            input.cast::<PyTensor>().is_err() && probe_torch_function_override(input).is_none();
+        tensor_start_overload_invalid[0] = invalid;
+        integer_start_overload_invalid[0] = invalid;
+    }
+    if length >= 2 {
+        let value = &arguments[1]
+            .as_ref()
+            .expect("narrow dim is present before validation gap")
+            .value;
+        match narrow_dimension_status(value)? {
+            NarrowIntegerArgumentStatus::Valid => {}
+            NarrowIntegerArgumentStatus::Override(probed) => {
+                dimension_override = Some(probed);
+            }
+            NarrowIntegerArgumentStatus::Invalid => {
+                tensor_start_overload_invalid[1] = true;
+                integer_start_overload_invalid[1] = true;
+            }
+        }
+    }
+    if length >= 3 {
+        let value = &arguments[2]
+            .as_ref()
+            .expect("narrow start is present before validation gap")
+            .value;
+        let start_is_tensor = value.cast::<PyTensor>().is_ok();
+        match narrow_start_status(value, start_is_tensor)? {
+            NarrowStartStatus::Valid => {
+                tensor_start_overload_invalid[2] = true;
+            }
+            NarrowStartStatus::TensorStart => {
+                tensor_start_unsupported = true;
+                integer_start_overload_invalid[2] = true;
+            }
+            NarrowStartStatus::Override(probed) => {
+                start_override = Some(probed);
+                integer_start_overload_invalid[2] = true;
+            }
+            NarrowStartStatus::Invalid => {
+                tensor_start_overload_invalid[2] = true;
+                integer_start_overload_invalid[2] = true;
+            }
+        }
+    }
+    if length >= 4 {
+        let value = &arguments[3]
+            .as_ref()
+            .expect("narrow length is present before validation gap")
+            .value;
+        match narrow_length_status(value)? {
+            NarrowIntegerArgumentStatus::Valid => {}
+            NarrowIntegerArgumentStatus::Override(probed) => {
+                length_override = Some(probed);
+            }
+            NarrowIntegerArgumentStatus::Invalid => {
+                tensor_start_overload_invalid[3] = true;
+                integer_start_overload_invalid[3] = true;
+            }
+        }
+    }
+    Ok(NarrowTypeValidity {
+        tensor_start_overload_invalid,
+        integer_start_overload_invalid,
+        tensor_start_unsupported,
+        dimension_override,
+        start_override,
+        length_override,
+    })
+}
+
+fn narrow_start_status<'py>(
+    value: &Bound<'py, PyAny>,
+    start_is_tensor: bool,
+) -> PyResult<NarrowStartStatus<'py>> {
+    if start_is_tensor {
+        return Ok(NarrowStartStatus::TensorStart);
+    }
+    if let Some(probed) = probe_torch_function_override(value) {
+        return Ok(NarrowStartStatus::Override(probed));
+    }
+    if narrow_integer_is_valid(value)? {
+        Ok(NarrowStartStatus::Valid)
+    } else {
+        Ok(NarrowStartStatus::Invalid)
+    }
+}
+
+fn narrow_dimension_status<'py>(
+    value: &Bound<'py, PyAny>,
+) -> PyResult<NarrowIntegerArgumentStatus<'py>> {
+    if is_dimension_swap_integer(value)? {
+        return Ok(NarrowIntegerArgumentStatus::Valid);
+    }
+    if let Some(probed) = probe_torch_function_override(value) {
+        return Ok(NarrowIntegerArgumentStatus::Override(probed));
+    }
+    Ok(NarrowIntegerArgumentStatus::Invalid)
+}
+
+fn narrow_length_status<'py>(
+    value: &Bound<'py, PyAny>,
+) -> PyResult<NarrowIntegerArgumentStatus<'py>> {
+    if narrow_integer_is_valid(value)? {
+        return Ok(NarrowIntegerArgumentStatus::Valid);
+    }
+    if let Some(probed) = probe_torch_function_override(value) {
+        return Ok(NarrowIntegerArgumentStatus::Override(probed));
+    }
+    Ok(NarrowIntegerArgumentStatus::Invalid)
+}
+
+fn narrow_integer_is_valid(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if is_dimension_swap_integer(value)? {
+        return Ok(true);
+    }
+    Ok(probe_select_index(value))
+}
+
+fn bind_exact_native_narrow_input<'py>(
+    input: &ParsedCallArgument<'py>,
+) -> PyResult<BoundTensorOrTorchFunction<'py>> {
+    if input.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundTensorOrTorchFunction::Tensor(
+            input.value.cast::<PyTensor>()?.clone(),
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&input.value) {
+        return Ok(BoundTensorOrTorchFunction::Override(probed));
+    }
+    if input.value.is_instance_of::<PyTensor>() {
+        return Err(narrow_unsupported_native_input());
+    }
+    let actual = python_type_name(&input.value)?;
+    Err(dimension_swap_argument_type_error(
+        "narrow",
+        "input",
+        input.position,
+        "Tensor",
+        &actual,
+    ))
+}
+
+fn narrow_invalid_combination_error<const N: usize>(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    kind: NarrowCallKind,
+    mismatches: Option<NarrowArgumentMismatches<'_, '_, N>>,
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    let (tensor_start_overload, int_start_overload) = kind.overloads();
+    let mut message = format!(
+        "narrow() received an invalid combination of arguments - got ({summary}), but expected one of:\n * {tensor_start_overload}"
+    );
+    if let Some((names, arguments, validity)) = mismatches {
+        let mismatch =
+            narrow_argument_mismatch(names, arguments, &validity.tensor_start_overload_invalid)?;
+        message
+            .push_str("\n      didn't match because some of the arguments have invalid types: (");
+        message.push_str(&mismatch);
+        message.push(')');
+    }
+    message.push_str("\n * ");
+    message.push_str(int_start_overload);
+    if let Some((names, arguments, validity)) = mismatches {
+        let mismatch =
+            narrow_argument_mismatch(names, arguments, &validity.integer_start_overload_invalid)?;
+        message
+            .push_str("\n      didn't match because some of the arguments have invalid types: (");
+        message.push_str(&mismatch);
+        message.push(')');
+    }
+    message.push('\n');
+    Ok(PyTypeError::new_err(message))
+}
+
+fn narrow_argument_mismatch<const N: usize>(
+    names: &[&str; N],
+    arguments: &[Option<ParsedCallArgument<'_>>; N],
+    invalid: &[bool; N],
+) -> PyResult<String> {
+    let mut mismatch = String::new();
+    let first = arguments
+        .first()
+        .and_then(Option::as_ref)
+        .expect("narrow mismatch is only reported for fully bound arguments");
+    let allocation = PythonAllocationFallback::new(first.value.py());
+    for (index, ((name, argument), invalid)) in names
+        .iter()
+        .zip(arguments.iter())
+        .zip(invalid.iter().copied())
+        .enumerate()
+    {
+        if index != 0 {
+            try_push_string_with(&mut mismatch, ", ", &allocation)?;
+        }
+        if invalid {
+            try_push_string_with(&mut mismatch, "!", &allocation)?;
+        }
+        let argument = argument
+            .as_ref()
+            .expect("narrow mismatch is only reported for fully bound arguments");
+        if argument.position.is_none() {
+            try_push_string_with(&mut mismatch, name, &allocation)?;
+            try_push_string_with(&mut mismatch, "=", &allocation)?;
+        }
+        let detail = call_argument_type_description_with(&argument.value, &allocation)?;
+        try_push_string_with(&mut mismatch, &detail, &allocation)?;
+        if invalid {
+            try_push_string_with(&mut mismatch, "!", &allocation)?;
+        }
+    }
+    if arguments[0]
+        .as_ref()
+        .is_some_and(|argument| argument.position.is_none())
+    {
+        try_push_string_with(&mut mismatch, ", ", &allocation)?;
+    }
+    Ok(mismatch)
 }
 
 pub(crate) fn bind_size_dimension<'py>(
