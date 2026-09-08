@@ -38,7 +38,7 @@ PROTECTED_OUTPUT_PATHS = {
     REPOSITORY_ROOT / "docs" / "burner-evaluation-progress.svg",
 }
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "top_level_stack_cpu_benchmark_v1"
+BENCHMARK_VERSION = "top_level_stack_cpu_benchmark_v2"
 DEFAULT_WARMUPS = 15
 DEFAULT_SAMPLES = 81
 DEFAULT_THREADS = 1
@@ -53,6 +53,9 @@ IMPLEMENTATION_ORDERS = (
     ("pytorch", "torch_rs"),
 )
 API = "stack"
+
+CREDIT_ZERO = "zero"
+CREDIT_ERROR_PARITY = "error_parity"
 
 MODE_EAGER = "eager"
 MODE_AUTOGRAD_FORWARD = "autograd_forward"
@@ -87,6 +90,8 @@ class UnsupportedCell:
     torch_rs_error_type: str
     torch_rs_message: str | None
     pytorch_expected_kind: str
+    credit: str
+    reason: str
 
 
 def _version_without_local(version):
@@ -486,6 +491,8 @@ UNSUPPORTED_CELLS = (
         "RuntimeError",
         "stack expects a non-empty TensorList",
         "error",
+        CREDIT_ERROR_PARITY,
+        "torch_rs and PyTorch both reject an empty input sequence",
     ),
     UnsupportedCell(
         "mixed_shapes",
@@ -494,6 +501,8 @@ UNSUPPORTED_CELLS = (
         "RuntimeError",
         "stack expects each tensor to be equal size, but got [1] at entry 0 and [2] at entry 1",
         "error",
+        CREDIT_ERROR_PARITY,
+        "torch_rs and PyTorch both reject unequal input tensor shapes",
     ),
     UnsupportedCell(
         "mixed_metadata",
@@ -502,6 +511,8 @@ UNSUPPORTED_CELLS = (
         "AttributeError",
         None,
         "supported",
+        CREDIT_ZERO,
+        "PyTorch supports dtype promotion for this call and torch_rs does not",
     ),
     UnsupportedCell(
         "concrete_out",
@@ -510,6 +521,8 @@ UNSUPPORTED_CELLS = (
         "RuntimeError",
         "stack(): the 'out' argument is not supported",
         "supported",
+        CREDIT_ZERO,
+        "PyTorch supports a concrete out tensor and torch_rs rejects it",
     ),
 )
 
@@ -888,8 +901,9 @@ def _environment(torch_rs, reference_torch, np, affinity, args):
                 "final output metadata and logical bytes"
             ),
             "unsupported_policy": (
-                "unsupported public boundary rows are retained as zero-credit "
-                "denominator entries"
+                "PyTorch-supported boundary rows that torch_rs rejects are retained "
+                "as zero-credit denominator entries; matching invalid-input error "
+                "parity rows are checked but excluded from the unsupported denominator"
             ),
         },
     }
@@ -949,6 +963,30 @@ def _run_unsupported_cells(np, torch_rs, reference_torch):
             raise AssertionError(
                 f"{cell_name} PyTorch status mismatch: {pytorch_status!r}"
             )
+        if unsupported_cell.credit == CREDIT_ZERO:
+            if pytorch_status["kind"] != "supported":
+                raise AssertionError(
+                    f"{cell_name} zero-credit row is not PyTorch-supported: "
+                    f"{pytorch_status!r}"
+                )
+        elif unsupported_cell.credit == CREDIT_ERROR_PARITY:
+            if pytorch_status["kind"] != "error":
+                raise AssertionError(
+                    f"{cell_name} error-parity row is not a PyTorch error: "
+                    f"{pytorch_status!r}"
+                )
+            if (
+                pytorch_status.get("error_type") != torch_rs_status.get("error_type")
+                or pytorch_status.get("message") != torch_rs_status.get("message")
+            ):
+                raise AssertionError(
+                    f"{cell_name} error-parity mismatch:\n"
+                    f"torch_rs={torch_rs_status!r}\npytorch={pytorch_status!r}"
+                )
+        else:
+            raise AssertionError(
+                f"{cell_name} unknown credit policy {unsupported_cell.credit!r}"
+            )
 
         rows.append(
             {
@@ -957,8 +995,8 @@ def _run_unsupported_cells(np, torch_rs, reference_torch):
                 "input_description": unsupported_cell.input_description,
                 "torch_rs": torch_rs_status,
                 "pytorch": pytorch_status,
-                "credit": "zero",
-                "reason": "torch_rs does not support this documented boundary cell",
+                "credit": unsupported_cell.credit,
+                "reason": unsupported_cell.reason,
                 "validation": {
                     "torch_rs_error_checked": True,
                     "pytorch_status_checked": True,
@@ -1185,12 +1223,19 @@ def run_benchmark(args):
             gc.enable()
 
     aggregates = _aggregate_rows(supported)
-    unsupported_penalty = [10.0] * len(unsupported)
+    zero_credit = [
+        row for row in unsupported if row["credit"] == CREDIT_ZERO
+    ]
+    error_parity = [
+        row for row in unsupported if row["credit"] == CREDIT_ERROR_PARITY
+    ]
+    unsupported_penalty = [10.0] * len(zero_credit)
     capped_with_zero_credit = [
         min(10.0, max(0.10, row["ratios"]["steady_torch_rs_over_pytorch"]))
         for row in supported
     ] + unsupported_penalty
-    aggregates["zero_credit_unsupported_cell_count"] = len(unsupported)
+    aggregates["zero_credit_unsupported_cell_count"] = len(zero_credit)
+    aggregates["boundary_error_parity_cell_count"] = len(error_parity)
     aggregates["combined_capped_with_zero_credit_unsupported"] = _geomean(
         capped_with_zero_credit
     )
@@ -1202,7 +1247,8 @@ def run_benchmark(args):
         "ended_epoch_seconds": ended,
         "duration_seconds": ended - started,
         "cases": supported,
-        "zero_credit_unsupported_cells": unsupported,
+        "zero_credit_unsupported_cells": zero_credit,
+        "boundary_error_parity_cells": error_parity,
         "aggregates": aggregates,
     }
 
@@ -1277,6 +1323,7 @@ def _group_line(label, group):
 def render_markdown_summary(report):
     cases = report["cases"]
     unsupported = report["zero_credit_unsupported_cells"]
+    error_parity = report["boundary_error_parity_cells"]
     aggregates = report["aggregates"]
     groups = aggregates["groups"]
     environment = report["environment"]
@@ -1293,6 +1340,7 @@ def render_markdown_summary(report):
         f"- Benchmark: `{environment['benchmark_version']}`",
         f"- Timed supported cells: {len(cases)} (1 API x {len(WORKLOADS)} workload shapes and modes)",
         f"- Zero-credit unsupported cells: {len(unsupported)}",
+        f"- Error-parity boundary cells: {len(error_parity)}",
         (
             "- Implementation orders: "
             f"{implementation_orders}; each implementation appears once before "
@@ -1321,9 +1369,9 @@ def render_markdown_summary(report):
         ),
         "",
         (
-            "Including the unsupported cells below as zero-credit denominator "
-            "entries with a 10.00x capped penalty gives a combined capped "
-            "aggregate of "
+            "Including the PyTorch-supported unsupported cells below as "
+            "zero-credit denominator entries with a 10.00x capped penalty gives "
+            "a combined capped aggregate of "
             f"{aggregates['combined_capped_with_zero_credit_unsupported']:.2f}x."
         ),
         "",
@@ -1343,8 +1391,9 @@ def render_markdown_summary(report):
             "## Zero-Credit Unsupported Cells",
             "",
             (
-                "These cells are not timed. They are preserved as zero-credit "
-                "denominator entries instead of being removed from the evidence set."
+                "These cells are not timed. PyTorch supports them and torch_rs "
+                "rejects them, so they are preserved as zero-credit denominator "
+                "entries instead of being removed from the evidence set."
             ),
             "",
             "| Workload | Input | `torch_rs` status | PyTorch status | Credit |",
@@ -1352,6 +1401,21 @@ def render_markdown_summary(report):
         ]
     )
     lines.extend(_format_unsupported_cell(row) for row in unsupported)
+    lines.extend(
+        [
+            "",
+            "## Error-Parity Boundary Cells",
+            "",
+            (
+                "These cells are checked but excluded from the zero-credit "
+                "denominator because PyTorch rejects the same invalid inputs."
+            ),
+            "",
+            "| Workload | Input | `torch_rs` status | PyTorch status | Credit |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+    )
+    lines.extend(_format_unsupported_cell(row) for row in error_parity)
     lines.append("")
     return "\n".join(lines)
 
@@ -1374,8 +1438,12 @@ def _expected_case_names():
     return {f"torch.{API}/{workload.name}" for workload in WORKLOADS}
 
 
-def _expected_unsupported_names():
-    return {f"top_level_torch_stack_{unsupported.name}" for unsupported in UNSUPPORTED_CELLS}
+def _expected_unsupported_names(credit):
+    return {
+        f"top_level_torch_stack_{unsupported.name}"
+        for unsupported in UNSUPPORTED_CELLS
+        if unsupported.credit == credit
+    }
 
 
 def _validate_expected_artifact_shape(report):
@@ -1457,13 +1525,22 @@ def _validate_expected_artifact_shape(report):
         errors.append(f"category coverage mismatch: {dict(category_counts)!r}")
 
     unsupported = report.get("zero_credit_unsupported_cells", [])
+    error_parity = report.get("boundary_error_parity_cells", [])
     actual_unsupported_names = {row.get("name") for row in unsupported}
-    expected_unsupported_names = _expected_unsupported_names()
+    expected_unsupported_names = _expected_unsupported_names(CREDIT_ZERO)
     if actual_unsupported_names != expected_unsupported_names:
         errors.append(
             "unsupported cell set mismatch: "
             f"missing={sorted(expected_unsupported_names - actual_unsupported_names)!r} "
             f"extra={sorted(actual_unsupported_names - expected_unsupported_names)!r}"
+        )
+    actual_error_parity_names = {row.get("name") for row in error_parity}
+    expected_error_parity_names = _expected_unsupported_names(CREDIT_ERROR_PARITY)
+    if actual_error_parity_names != expected_error_parity_names:
+        errors.append(
+            "error-parity boundary cell set mismatch: "
+            f"missing={sorted(expected_error_parity_names - actual_error_parity_names)!r} "
+            f"extra={sorted(actual_error_parity_names - expected_error_parity_names)!r}"
         )
 
     aggregates = report.get("aggregates", {})
@@ -1471,6 +1548,22 @@ def _validate_expected_artifact_shape(report):
         errors.append("aggregate timed cell count does not match cases")
     if aggregates.get("zero_credit_unsupported_cell_count") != len(unsupported):
         errors.append("aggregate unsupported cell count does not match rows")
+    if aggregates.get("boundary_error_parity_cell_count") != len(error_parity):
+        errors.append("aggregate error-parity cell count does not match rows")
+    expected_combined = _geomean(
+        [
+            min(10.0, max(0.10, row["ratios"]["steady_torch_rs_over_pytorch"]))
+            for row in cases
+        ]
+        + [10.0] * len(unsupported)
+    )
+    if not math.isclose(
+        aggregates.get("combined_capped_with_zero_credit_unsupported", math.nan),
+        expected_combined,
+        rel_tol=1e-12,
+        abs_tol=1e-12,
+    ):
+        errors.append("combined zero-credit aggregate does not match row set")
 
     for row in cases:
         cell_name = f"{row.get('api')}/{row.get('workload')}"
@@ -1530,29 +1623,45 @@ def _validate_expected_artifact_shape(report):
             if labels != ["output", "left_grad", "right_grad"]:
                 errors.append(f"{cell_name} missing backward gradient artifacts")
 
-    for row in unsupported:
+    expected_by_name = {
+        f"top_level_torch_stack_{unsupported.name}": unsupported
+        for unsupported in UNSUPPORTED_CELLS
+    }
+    for row in unsupported + error_parity:
         name = row.get("name")
-        expected_unsupported = {
-            f"top_level_torch_stack_{unsupported.name}": unsupported
-            for unsupported in UNSUPPORTED_CELLS
-        }.get(name)
-        if row.get("credit") != "zero":
-            errors.append(f"{name} unsupported row is not zero credit")
+        expected_unsupported = expected_by_name.get(name)
+        if expected_unsupported is None:
+            errors.append(f"{name} unknown boundary row")
+            continue
+        if row.get("credit") != expected_unsupported.credit:
+            errors.append(
+                f"{name} credit mismatch: "
+                f"{row.get('credit')!r} != {expected_unsupported.credit!r}"
+            )
         torch_rs_status = row.get("torch_rs", {})
         if torch_rs_status.get("kind") != "error":
             errors.append(f"{name} torch_rs status is not an error")
-        if expected_unsupported is not None:
-            if torch_rs_status.get("error_type") != expected_unsupported.torch_rs_error_type:
-                errors.append(f"{name} torch_rs error type mismatch")
-            expected_message = expected_unsupported.torch_rs_message
+        if torch_rs_status.get("error_type") != expected_unsupported.torch_rs_error_type:
+            errors.append(f"{name} torch_rs error type mismatch")
+        expected_message = expected_unsupported.torch_rs_message
+        if (
+            expected_message is not None
+            and torch_rs_status.get("message") != expected_message
+        ):
+            errors.append(f"{name} torch_rs error message mismatch")
+        pytorch_status = row.get("pytorch", {})
+        if pytorch_status.get("kind") != expected_unsupported.pytorch_expected_kind:
+            errors.append(f"{name} PyTorch status mismatch")
+        if row.get("credit") == CREDIT_ZERO and pytorch_status.get("kind") != "supported":
+            errors.append(f"{name} zero-credit row is not PyTorch-supported")
+        if row.get("credit") == CREDIT_ERROR_PARITY:
+            if pytorch_status.get("kind") != "error":
+                errors.append(f"{name} error-parity row is not a PyTorch error")
             if (
-                expected_message is not None
-                and torch_rs_status.get("message") != expected_message
+                pytorch_status.get("error_type") != torch_rs_status.get("error_type")
+                or pytorch_status.get("message") != torch_rs_status.get("message")
             ):
-                errors.append(f"{name} torch_rs error message mismatch")
-            pytorch_status = row.get("pytorch", {})
-            if pytorch_status.get("kind") != expected_unsupported.pytorch_expected_kind:
-                errors.append(f"{name} PyTorch status mismatch")
+                errors.append(f"{name} error-parity status mismatch")
         validation = row.get("validation", {})
         if (
             validation.get("torch_rs_error_checked") is not True

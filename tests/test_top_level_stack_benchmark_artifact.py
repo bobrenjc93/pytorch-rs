@@ -42,14 +42,27 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
         )
         self.assertEqual(len(benchmark_top_level_stack.WORKLOADS), 8)
 
-    def test_zero_credit_rows_cover_unsupported_stack_boundaries(self):
+    def test_boundary_rows_cover_stack_policy_cases(self):
         self.assertEqual(
-            {cell.name for cell in benchmark_top_level_stack.UNSUPPORTED_CELLS},
+            {
+                cell.name
+                for cell in benchmark_top_level_stack.UNSUPPORTED_CELLS
+                if cell.credit == benchmark_top_level_stack.CREDIT_ZERO
+            },
+            {
+                "mixed_metadata",
+                "concrete_out",
+            },
+        )
+        self.assertEqual(
+            {
+                cell.name
+                for cell in benchmark_top_level_stack.UNSUPPORTED_CELLS
+                if cell.credit == benchmark_top_level_stack.CREDIT_ERROR_PARITY
+            },
             {
                 "empty_input_sequence",
                 "mixed_shapes",
-                "mixed_metadata",
-                "concrete_out",
             },
         )
 
