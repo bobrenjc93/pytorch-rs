@@ -373,6 +373,53 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                 msg=validation_completed.stdout + validation_completed.stderr,
             )
 
+            strict_validation_completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(VALIDATOR_SCRIPT),
+                    "--validate-artifact",
+                    str(artifact_path),
+                    "--seed",
+                    "20260908",
+                    "--cases-per-category",
+                    "1",
+                    "--max-elements",
+                    "4096",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(
+                strict_validation_completed.returncode,
+                0,
+                msg=(
+                    strict_validation_completed.stdout
+                    + strict_validation_completed.stderr
+                ),
+            )
+
+            wrong_seed_validation = subprocess.run(
+                [
+                    sys.executable,
+                    str(VALIDATOR_SCRIPT),
+                    "--validate-artifact",
+                    str(artifact_path),
+                    "--seed",
+                    "222",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertNotEqual(wrong_seed_validation.returncode, 0)
+            self.assertIn(
+                "validator seed mismatch",
+                wrong_seed_validation.stdout + wrong_seed_validation.stderr,
+            )
+
             tampered_path = Path(temporary_directory) / "tampered-stack-validator.json"
             tampered = copy.deepcopy(report)
             tampered["aggregates"][

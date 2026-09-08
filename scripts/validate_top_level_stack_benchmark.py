@@ -32,6 +32,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 BENCHMARK_SCRIPT = REPOSITORY_ROOT / "scripts" / "benchmark_top_level_stack.py"
 VALIDATOR_VERSION = "top_level_stack_generated_shape_validator_v1"
 WORKLOAD_SET = "generated_heldout_validator"
+DEFAULT_CASES_PER_CATEGORY = 2
+DEFAULT_MAX_ELEMENTS = 262_144
 REQUIRED_CATEGORIES = (
     "contiguous",
     "empty",
@@ -1263,7 +1265,13 @@ def _validate_case_row(errors, context_case, row, samples, warmups):
     return derived
 
 
-def validate_artifact_dict(report):
+def validate_artifact_dict(
+    report,
+    *,
+    expected_seed=None,
+    expected_cases_per_category=None,
+    expected_max_elements=None,
+):
     errors = []
     validator = report.get("validator", {})
     environment = report.get("environment", {})
@@ -1297,6 +1305,18 @@ def validate_artifact_dict(report):
         errors.append("fixed public input shape metadata mismatch")
     if validator.get("seed_source") not in ("cli", "secrets.randbits(64)"):
         errors.append(f"seed source mismatch: {validator.get('seed_source')!r}")
+
+    expected_values = (
+        ("seed", expected_seed),
+        ("cases_per_category", expected_cases_per_category),
+        ("max_elements", expected_max_elements),
+    )
+    for key, expected_value in expected_values:
+        if expected_value is not None and validator.get(key) != expected_value:
+            errors.append(
+                f"validator {key} mismatch: "
+                f"{validator.get(key)!r} != expected {expected_value!r}"
+            )
 
     benchmark_integrity = environment.get("benchmark_integrity", {})
     if benchmark_integrity.get("workload_set") != WORKLOAD_SET:
@@ -1430,15 +1450,26 @@ def validate_artifact_dict(report):
         raise AssertionError("\n".join(errors))
 
 
-def validate_artifact(artifact_path):
-    validate_artifact_dict(_load_artifact(artifact_path))
+def validate_artifact(
+    artifact_path,
+    *,
+    expected_seed=None,
+    expected_cases_per_category=None,
+    expected_max_elements=None,
+):
+    validate_artifact_dict(
+        _load_artifact(artifact_path),
+        expected_seed=expected_seed,
+        expected_cases_per_category=expected_cases_per_category,
+        expected_max_elements=expected_max_elements,
+    )
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=int)
-    parser.add_argument("--cases-per-category", type=int, default=2)
-    parser.add_argument("--max-elements", type=int, default=262_144)
+    parser.add_argument("--cases-per-category", type=int)
+    parser.add_argument("--max-elements", type=int)
     parser.add_argument(
         "--warmups",
         type=int,
@@ -1469,12 +1500,25 @@ def parse_args():
 def main():
     args = parse_args()
     if args.validate_artifact is not None:
-        validate_artifact(args.validate_artifact)
+        if args.cases_per_category is not None:
+            _positive_int(args.cases_per_category, "--cases-per-category")
+        if args.max_elements is not None:
+            _positive_int(args.max_elements, "--max-elements")
+        validate_artifact(
+            args.validate_artifact,
+            expected_seed=args.seed,
+            expected_cases_per_category=args.cases_per_category,
+            expected_max_elements=args.max_elements,
+        )
         return
     if args.warmups < 0:
         raise SystemExit("--warmups must be non-negative")
     _positive_int(args.samples, "--samples")
     _positive_int(args.threads, "--threads")
+    if args.cases_per_category is None:
+        args.cases_per_category = DEFAULT_CASES_PER_CATEGORY
+    if args.max_elements is None:
+        args.max_elements = DEFAULT_MAX_ELEMENTS
     _positive_int(args.cases_per_category, "--cases-per-category")
     _positive_int(args.max_elements, "--max-elements")
 
