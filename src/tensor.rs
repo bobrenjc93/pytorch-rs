@@ -4809,7 +4809,7 @@ impl Tensor {
         match dimension {
             0 => {
                 debug_assert_eq!(output_elements, *columns);
-                for column in 0..*columns {
+                for (column, output) in data.iter_mut().enumerate() {
                     let mut total = 0.0_f32;
                     let mut offset = self
                         .offset
@@ -4830,12 +4830,12 @@ impl Tensor {
                                 .ok_or(TensorError::IndexCalculationOverflow)?;
                         }
                     }
-                    data[column] = total;
+                    *output = total;
                 }
             }
             1 => {
                 debug_assert_eq!(output_elements, *rows);
-                for row in 0..*rows {
+                for (row, output) in data.iter_mut().enumerate() {
                     let mut total = 0.0_f32;
                     let mut offset = self
                         .offset
@@ -4855,7 +4855,7 @@ impl Tensor {
                                 .ok_or(TensorError::IndexCalculationOverflow)?;
                         }
                     }
-                    data[row] = total;
+                    *output = total;
                 }
             }
             _ => return Err(TensorError::IndexCalculationOverflow),
