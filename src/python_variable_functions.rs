@@ -43,7 +43,7 @@ use crate::python::{
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 70] = [
+const VARIABLE_FUNCTION_NAMES: &[&str] = &[
     "get_device",
     "as_tensor",
     "asarray",
@@ -1701,7 +1701,7 @@ pub(crate) fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<(
         .getattr("__all__")?
         .call_method1("remove", ("_VariableFunctionsClass",))?;
     let variable_functions = variable_functions.bind(py);
-    for name in VARIABLE_FUNCTION_NAMES {
+    for &name in VARIABLE_FUNCTION_NAMES {
         let function = variable_functions.getattr(name)?;
         function.setattr("__module__", "torch")?;
         module.add(name, function)?;
