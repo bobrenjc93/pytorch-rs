@@ -158,7 +158,7 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                     "--max-elements",
                     "4096",
                     "--warmups",
-                    "0",
+                    "1",
                     "--samples",
                     "1",
                     "--output",
@@ -182,7 +182,7 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                 expected_seed=20260908,
                 expected_cases_per_category=1,
                 expected_max_elements=4096,
-                expected_warmups=0,
+                expected_warmups=1,
                 expected_samples=1,
                 expected_threads=1,
                 require_clean_git=False,
@@ -203,7 +203,7 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                 expected_seed=20260908,
                 expected_cases_per_category=1,
                 expected_max_elements=4096,
-                expected_warmups=0,
+                expected_warmups=1,
                 expected_samples=1,
                 expected_threads=1,
             )
@@ -286,6 +286,15 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                 ] = 123.0
                 rebuild_aggregates_from_rows(artifact)
 
+            def strip_measured_checksums(artifact):
+                for row in artifact["cases"]:
+                    for implementation in ("torch_rs", "pytorch"):
+                        for pass_result in row["implementations"][implementation][
+                            "passes"
+                        ]:
+                            pass_result["steady_checksums"] = []
+                            pass_result["warmup_checksums"] = []
+
             tamper_cases = (
                 (
                     "seed",
@@ -327,6 +336,21 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                     "ratio-with-rebuilt-aggregates",
                     tamper_ratio_and_rebuild_aggregates,
                     "ratios.steady_torch_rs_over_pytorch mismatch",
+                ),
+                (
+                    "measured-checksums-stripped",
+                    strip_measured_checksums,
+                    "steady_checksums mismatch",
+                ),
+                (
+                    "steady-checksum-sink",
+                    lambda artifact: artifact["cases"][0]["implementations"][
+                        "torch_rs"
+                    ]["passes"][0].__setitem__(
+                        "steady_checksum_sink",
+                        "0",
+                    ),
+                    "steady_checksum_sink mismatch",
                 ),
                 (
                     "driver-sha",
@@ -418,7 +442,7 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                             expected_seed=20260908,
                             expected_cases_per_category=1,
                             expected_max_elements=4096,
-                            expected_warmups=0,
+                            expected_warmups=1,
                             expected_samples=1,
                             expected_threads=1,
                         )
@@ -461,7 +485,7 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                     "--max-elements",
                     "4096",
                     "--warmups",
-                    "0",
+                    "1",
                     "--samples",
                     "1",
                     "--threads",
@@ -494,7 +518,7 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                     "--max-elements",
                     "4096",
                     "--warmups",
-                    "0",
+                    "1",
                     "--samples",
                     "1",
                     "--threads",
@@ -533,7 +557,7 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                     "--max-elements",
                     "4096",
                     "--warmups",
-                    "0",
+                    "1",
                     "--samples",
                     "1",
                     "--threads",

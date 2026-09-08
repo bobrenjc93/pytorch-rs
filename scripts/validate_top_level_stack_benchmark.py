@@ -790,6 +790,33 @@ def _expected_steady_summary(samples_us):
     }
 
 
+def _validate_checksum_list(errors, path, value, expected_checksum):
+    if not isinstance(value, list):
+        errors.append(f"{path} is not a list")
+        return False
+    if value != [expected_checksum]:
+        errors.append(
+            f"{path} mismatch: {value!r} != expected [{expected_checksum!r}]"
+        )
+        return False
+    return True
+
+
+def _expected_checksum_sink(checksum, count):
+    sink = "0"
+    for _ in range(count):
+        sink = benchmark_top_level_stack._roll_checksum(sink, checksum)
+    return sink
+
+
+def _validate_checksum_sink(errors, path, value, expected_checksum, count):
+    expected = _expected_checksum_sink(expected_checksum, count)
+    if value != expected:
+        errors.append(f"{path} mismatch: {value!r} != expected {expected!r}")
+        return False
+    return True
+
+
 def _validate_pass_timing(errors, path, pass_result, samples, warmups):
     if not isinstance(pass_result, dict):
         errors.append(f"{path} is not an object")
@@ -820,11 +847,56 @@ def _validate_pass_timing(errors, path, pass_result, samples, warmups):
         errors.append(f"{path}.cold_first_call_us is not a positive finite number")
         return None
 
+    cold_checksum = pass_result.get("cold_checksum")
+    if not isinstance(cold_checksum, str) or not cold_checksum:
+        errors.append(f"{path}.cold_checksum is not a non-empty string")
+        return None
+    steady_checksum_ok = _validate_checksum_list(
+        errors,
+        f"{path}.steady_checksums",
+        pass_result.get("steady_checksums"),
+        cold_checksum,
+    )
+    steady_sink_ok = _validate_checksum_sink(
+        errors,
+        f"{path}.steady_checksum_sink",
+        pass_result.get("steady_checksum_sink"),
+        cold_checksum,
+        samples,
+    )
+    warmup_checksum_ok = True
+    warmup_sink_ok = True
     if warmups == 0:
         if pass_result.get("warmup_checksums") != []:
             errors.append(f"{path} unexpected warmup checksums")
-    elif pass_result.get("warmup_checksums") != pass_result.get("steady_checksums"):
-        errors.append(f"{path} warmup/steady checksum mismatch")
+            warmup_checksum_ok = False
+        if pass_result.get("warmup_checksum_sink") != "0":
+            errors.append(
+                f"{path}.warmup_checksum_sink mismatch: "
+                f"{pass_result.get('warmup_checksum_sink')!r} != expected '0'"
+            )
+            warmup_sink_ok = False
+    else:
+        warmup_checksum_ok = _validate_checksum_list(
+            errors,
+            f"{path}.warmup_checksums",
+            pass_result.get("warmup_checksums"),
+            cold_checksum,
+        )
+        warmup_sink_ok = _validate_checksum_sink(
+            errors,
+            f"{path}.warmup_checksum_sink",
+            pass_result.get("warmup_checksum_sink"),
+            cold_checksum,
+            warmups,
+        )
+    if not (
+        steady_checksum_ok
+        and steady_sink_ok
+        and warmup_checksum_ok
+        and warmup_sink_ok
+    ):
+        return None
 
     return {
         "steady": expected_steady,
