@@ -277,9 +277,9 @@ class TensorOutputNumberReferenceTests(unittest.TestCase):
             self.iteration_replacement_protocol_contract(reference_torch),
         )
 
-    def test_unbind_exposes_multi_output_state_while_chunk_remains_unsupported(self):
+    def test_unbind_and_chunk_expose_multi_output_state(self):
         self.assertTrue(hasattr(torch.Tensor, "unbind"))
-        self.assertFalse(hasattr(torch.Tensor, "chunk"))
+        self.assertTrue(hasattr(torch.Tensor, "chunk"))
         self.assertTrue(hasattr(reference_torch.Tensor, "unbind"))
         self.assertTrue(hasattr(reference_torch.Tensor, "chunk"))
 
@@ -295,7 +295,8 @@ class TensorOutputNumberReferenceTests(unittest.TestCase):
         )
         unbound = source.unbind(0)
         reference_unbound = reference_source.unbind(0)
-        chunked = reference_source.chunk(3, 0)
+        chunked = source.chunk(3, 0)
+        reference_chunked = reference_source.chunk(3, 0)
 
         self.assertEqual(tuple(output.output_nr for output in unbound), (0, 1, 2))
         self.assertEqual(
@@ -303,8 +304,18 @@ class TensorOutputNumberReferenceTests(unittest.TestCase):
             tuple(output.output_nr for output in reference_unbound),
         )
         self.assertEqual(tuple(output.output_nr for output in chunked), (0, 1, 2))
+        self.assertEqual(
+            tuple(output.output_nr for output in chunked),
+            tuple(output.output_nr for output in reference_chunked),
+        )
         self.assertTrue(
-            all(output.requires_grad for output in unbound + reference_unbound + chunked)
+            all(
+                output.requires_grad
+                for output in unbound
+                + reference_unbound
+                + chunked
+                + reference_chunked
+            )
         )
         self.assertTrue(any(output.output_nr != 0 for output in unbound))
         self.assertTrue(any(output.output_nr != 0 for output in chunked))

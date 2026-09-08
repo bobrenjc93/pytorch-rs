@@ -144,6 +144,14 @@ enum GradFn {
         output_count: usize,
         output_elements: usize,
     },
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+    Chunk {
+        input: SavedTensor,
+        dimension: usize,
+        lengths: Vec<usize>,
+        #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+        node: AutogradNode,
+    },
 }
 
 #[derive(Clone)]
@@ -197,7 +205,8 @@ impl GradFn {
             | Self::Sum { input }
             | Self::Mean { input, .. }
             | Self::Transform { input, .. }
-            | Self::Unbind { input, .. } => input.take_parent(pending),
+            | Self::Unbind { input, .. }
+            | Self::Chunk { input, .. } => input.take_parent(pending),
             Self::SavedInputUnary(node) => node.input.take_parent(pending),
             Self::SavedOutputUnary(node) => node.input.take_parent(pending),
             Self::ZeroVjp(node) => node.input.take_parent(pending),
@@ -241,7 +250,8 @@ impl GradFn {
             | Self::Sum { .. }
             | Self::Mean { .. }
             | Self::Transform { .. }
-            | Self::Unbind { .. } => {}
+            | Self::Unbind { .. }
+            | Self::Chunk { .. } => {}
         }
         Ok(())
     }
@@ -268,7 +278,8 @@ impl GradFn {
             | Self::Sum { .. }
             | Self::Mean { .. }
             | Self::Transform { .. }
-            | Self::Unbind { .. } => {}
+            | Self::Unbind { .. }
+            | Self::Chunk { .. } => {}
         }
         Ok(())
     }
@@ -1278,6 +1289,7 @@ impl Tensor {
             GradFn::Sum { .. } => AutogradNode::Sum,
             GradFn::Mean { .. } => AutogradNode::Mean,
             GradFn::Unbind { .. } => AutogradNode::Unbind,
+            GradFn::Chunk { node, .. } => *node,
         };
         Some(node.python_name())
     }
@@ -2538,6 +2550,16 @@ impl Tensor {
         start: usize,
         length: usize,
     ) -> Result<Self, TensorError> {
+        self.slice_dimension_impl(dimension, start, length, true)
+    }
+
+    fn slice_dimension_impl(
+        &self,
+        dimension: usize,
+        start: usize,
+        length: usize,
+        record_history: bool,
+    ) -> Result<Self, TensorError> {
         let Some(&size) = self.shape.get(dimension) else {
             return if self.shape.is_empty() {
                 Err(TensorError::SliceCannotApplyToScalar)
@@ -2561,24 +2583,123 @@ impl Tensor {
         let strides = try_clone_result_shape(&self.strides, self.elements)?;
         let elements = element_count(&shape)?;
         validate_view_bounds(&shape, &strides, offset, elements, self.storage.len())?;
-        self.finish_view_transform(
-            Self {
-                storage: Arc::clone(&self.storage),
-                shape,
-                strides,
-                offset,
-                elements,
-                output_nr: 0,
-                view_requires_grad: false,
-                autograd: None,
-            },
-            TransformMapping::Slice {
-                dimension,
-                start,
-                length,
-            },
-            AutogradNode::Slice,
-        )
+        let mut output = Self {
+            storage: Arc::clone(&self.storage),
+            shape,
+            strides,
+            offset,
+            elements,
+            output_nr: 0,
+            view_requires_grad: self.requires_grad(),
+            autograd: None,
+        };
+        if record_history && self.records_grad() {
+            self.record_transform(
+                &mut output,
+                TransformMapping::Slice {
+                    dimension,
+                    start,
+                    length,
+                },
+                AutogradNode::Slice,
+            )?;
+        }
+        Ok(output)
+    }
+
+    /// Splits one dimension into PyTorch-style uneven shared-storage chunks.
+    ///
+    /// The caller passes an already-normalized dimension and a positive chunk
+    /// count. The returned tensors keep the selected dimension, preserve
+    /// strides, and share storage, dtype, and device with `self`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a missing dimension, checked arithmetic overflow,
+    /// or view metadata allocation failure.
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+    pub(crate) fn chunk_dimension(
+        &self,
+        dimension: usize,
+        chunks: usize,
+    ) -> Result<Vec<Self>, TensorError> {
+        debug_assert!(chunks > 0);
+        let Some(&size) = self.shape.get(dimension) else {
+            return Err(TensorError::InvalidScalarIndex);
+        };
+
+        let lengths = Self::chunk_lengths(size, chunks)?;
+        let mut outputs = try_result_vector(lengths.len(), self.elements)?;
+        let mut start = 0_usize;
+        for &length in &lengths {
+            outputs.push(self.slice_dimension_impl(dimension, start, length, false)?);
+            start = start
+                .checked_add(length)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+        }
+
+        if self.records_grad() && !outputs.is_empty() {
+            let node = if size == 0 {
+                AutogradNode::SplitWithSizes
+            } else {
+                AutogradNode::Split
+            };
+            let autograd = Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Chunk {
+                        input: SavedTensor::try_from_tensor(self, false)?,
+                        dimension,
+                        lengths,
+                        node,
+                    })),
+                },
+            });
+            for (output_nr, output) in outputs.iter_mut().enumerate() {
+                output.autograd = Some(Arc::clone(&autograd));
+                output.output_nr = output_nr;
+            }
+        }
+
+        Ok(outputs)
+    }
+
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+    fn chunk_lengths(size: usize, chunks: usize) -> Result<Vec<usize>, TensorError> {
+        let chunk_size = if size == 0 {
+            0
+        } else {
+            size.checked_add(chunks)
+                .and_then(|value| value.checked_sub(1))
+                .ok_or(TensorError::IndexCalculationOverflow)?
+                / chunks
+        };
+        let output_count = if size == 0 {
+            chunks
+        } else {
+            size.checked_add(chunk_size)
+                .and_then(|value| value.checked_sub(1))
+                .ok_or(TensorError::IndexCalculationOverflow)?
+                / chunk_size
+        };
+
+        let mut lengths = try_result_vector(output_count, size)?;
+        let mut consumed = 0_usize;
+        for _ in 0..output_count {
+            let remaining = size
+                .checked_sub(consumed)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            let length = if size == 0 {
+                0
+            } else {
+                chunk_size.min(remaining)
+            };
+            lengths.push(length);
+            consumed = consumed
+                .checked_add(length)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+        }
+
+        Ok(lengths)
     }
 
     fn metadata_alias_with_grad_fn(&self, node: AutogradNode) -> Result<Self, TensorError> {
@@ -5180,6 +5301,14 @@ fn run_backward(root: &Arc<AutogradMeta>, root_output_nr: usize) -> Result<(), T
                     &mut gradients,
                 )?;
             }
+            Some(GradFn::Chunk {
+                input,
+                dimension,
+                lengths,
+                ..
+            }) => {
+                apply_chunk_grad_fn(meta, input, *dimension, lengths, &mut gradients)?;
+            }
             Some(grad_fn) => {
                 let Some(upstream) = gradients.remove(&gradient_key(meta, 0)) else {
                     continue;
@@ -5265,7 +5394,8 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                         | GradFn::Sum { input }
                         | GradFn::Mean { input, .. }
                         | GradFn::Transform { input, .. }
-                        | GradFn::Unbind { input, .. } => {
+                        | GradFn::Unbind { input, .. }
+                        | GradFn::Chunk { input, .. } => {
                             push_saved_parent(&mut stack, input);
                         }
                         GradFn::SavedInputUnary(node) => {
@@ -5383,7 +5513,7 @@ fn apply_grad_fn(
                 add_gradient(gradients, meta, input.output_nr, gradient);
             }
         }
-        GradFn::Unbind { .. } => unreachable!(),
+        GradFn::Unbind { .. } | GradFn::Chunk { .. } => unreachable!(),
     }
     Ok(())
 }
@@ -5963,7 +6093,7 @@ fn apply_unbind_grad_fn(
     output_elements: usize,
     gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
-    let mut assembled = None;
+    let mut assembled: Option<Vec<f32>> = None;
     let input_strides = contiguous_strides(&input.shape, input.elements)?;
     let mut coordinates = try_result_vector(input.shape.len().saturating_sub(1), output_elements)?;
     coordinates.resize(input.shape.len().saturating_sub(1), 0_usize);
@@ -6016,6 +6146,41 @@ fn apply_unbind_grad_fn(
                 .get_mut(input_index)
                 .ok_or(TensorError::IndexCalculationOverflow)? = value;
         }
+    }
+    if let (Some(meta), Some(gradient)) = (&input.autograd, assembled) {
+        add_gradient(gradients, meta, input.output_nr, gradient);
+    }
+    Ok(())
+}
+
+fn apply_chunk_grad_fn(
+    node: &Arc<AutogradMeta>,
+    input: &SavedTensor,
+    dimension: usize,
+    lengths: &[usize],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    let mut assembled: Option<Vec<f32>> = None;
+    let mut start = 0_usize;
+    for (output_nr, &length) in lengths.iter().enumerate() {
+        if let Some(output_gradient) = gradients.remove(&gradient_key(node, output_nr)) {
+            let mut output_shape = try_clone_result_shape(&input.shape, input.elements)?;
+            output_shape[dimension] = length;
+            if output_gradient.len() != element_count(&output_shape)? {
+                return Err(TensorError::IndexCalculationOverflow);
+            }
+
+            if assembled.is_none() {
+                assembled = Some(filled_storage(input.elements, 0.0)?);
+            }
+            let gradient = assembled
+                .as_mut()
+                .expect("chunk gradient storage was initialized above");
+            slice_backward_into(gradient, input, dimension, start, length, &output_gradient)?;
+        }
+        start = start
+            .checked_add(length)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
     }
     if let (Some(meta), Some(gradient)) = (&input.autograd, assembled) {
         add_gradient(gradients, meta, input.output_nr, gradient);
@@ -6357,8 +6522,23 @@ fn slice_backward(
     upstream: &[f32],
 ) -> Result<Vec<f32>, TensorError> {
     let mut gradient = filled_storage(input.elements, 0.0)?;
+    slice_backward_into(&mut gradient, input, dimension, start, length, upstream)?;
+    Ok(gradient)
+}
+
+fn slice_backward_into(
+    gradient: &mut [f32],
+    input: &SavedTensor,
+    dimension: usize,
+    start: usize,
+    length: usize,
+    upstream: &[f32],
+) -> Result<(), TensorError> {
+    if gradient.len() != input.elements {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
     if upstream.is_empty() {
-        return Ok(gradient);
+        return Ok(());
     }
 
     let input_strides = contiguous_strides(&input.shape, input.elements)?;
@@ -6398,7 +6578,7 @@ fn slice_backward(
             .get_mut(input_index)
             .ok_or(TensorError::IndexCalculationOverflow)? = value;
     }
-    Ok(gradient)
+    Ok(())
 }
 
 fn select_backward(
@@ -12718,6 +12898,26 @@ mod tests {
             .backward()
             .unwrap();
         let gradient = signed_source.grad().unwrap().unwrap();
+        assert_eq!(gradient.as_slice()[0].to_bits(), (-0.0_f32).to_bits());
+        assert_eq!(gradient.as_slice()[1].to_bits(), 1.0_f32.to_bits());
+    }
+
+    #[test]
+    fn chunk_backward_preserves_signed_zero_when_outputs_contribute() {
+        let source = Tensor::from_vec(vec![1.0, 2.0], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        let chunks = source.chunk_dimension(0, 2).unwrap();
+        chunks[0]
+            .mul_scalar(-0.0)
+            .unwrap()
+            .sum()
+            .add(&chunks[1].sum())
+            .unwrap()
+            .backward()
+            .unwrap();
+
+        let gradient = source.grad().unwrap().unwrap();
         assert_eq!(gradient.as_slice()[0].to_bits(), (-0.0_f32).to_bits());
         assert_eq!(gradient.as_slice()[1].to_bits(), 1.0_f32.to_bits());
     }

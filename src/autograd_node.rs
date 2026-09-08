@@ -24,6 +24,8 @@ pub(crate) enum AutogradNode {
     Select,
     Sin,
     Slice,
+    Split,
+    SplitWithSizes,
     Sigmoid,
     Sqrt,
     #[cfg(any(feature = "python-bindings", test))]
@@ -69,6 +71,8 @@ impl AutogradNode {
             Self::Select => "SelectBackward0",
             Self::Sin => "SinBackward0",
             Self::Slice => "SliceBackward0",
+            Self::Split => "SplitBackward0",
+            Self::SplitWithSizes => "SplitWithSizesBackward0",
             Self::Sigmoid => "SigmoidBackward0",
             Self::Sqrt => "SqrtBackward0",
             #[cfg(any(feature = "python-bindings", test))]
