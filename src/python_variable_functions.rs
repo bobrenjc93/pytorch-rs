@@ -29,19 +29,20 @@ use crate::python::{
     moveaxis_variable_function, movedim_variable_function, mul_variable_function,
     multiply_variable_function, narrow_variable_function, neg_variable_function,
     negative_variable_function, ones_like_variable_function, permute_variable_function,
-    positive_variable_function, promote_types_variable_function, ravel_variable_function,
-    real_variable_function, reciprocal_variable_function, reshape_variable_function,
-    resolve_conj_variable_function, resolve_neg_variable_function, rsqrt_variable_function,
-    scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
-    sin_variable_function, sqrt_variable_function, square_variable_function,
-    stack_variable_function, sub_variable_function, subtract_variable_function,
-    sum_variable_function, tanh_variable_function, trunc_variable_function,
-    unbind_variable_function, unsqueeze_variable_function, zeros_like_variable_function,
+    positive_variable_function, pow_variable_function, promote_types_variable_function,
+    ravel_variable_function, real_variable_function, reciprocal_variable_function,
+    reshape_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
+    rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
+    square_variable_function, stack_variable_function, sub_variable_function,
+    subtract_variable_function, sum_variable_function, tanh_variable_function,
+    trunc_variable_function, unbind_variable_function, unsqueeze_variable_function,
+    zeros_like_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 68] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 69] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -84,6 +85,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 68] = [
     "sqrt",
     "sigmoid",
     "square",
+    "pow",
     "sum",
     "mean",
     "tanh",
@@ -751,6 +753,13 @@ Example::
     tensor([-2.0755,  1.0226,  0.0831,  0.4806])
     >>> torch.square(a)
     tensor([ 4.3077,  1.0457,  0.0069,  0.2310])
+";
+
+const POW_DOC: &std::ffi::CStr = cr"
+pow(input, exponent, *, out=None) -> Tensor
+
+Takes the power of each element in :attr:`input` with :attr:`exponent` and
+returns a tensor with the result.
 ";
 
 const SUM_DOC: &std::ffi::CStr = c"
@@ -1484,6 +1493,7 @@ variable_function_callback!(cos_callback, cos_variable_function);
 variable_function_callback!(sqrt_callback, sqrt_variable_function);
 variable_function_callback!(sigmoid_callback, sigmoid_variable_function);
 variable_function_callback!(square_callback, square_variable_function);
+variable_function_callback!(pow_callback, pow_variable_function);
 variable_function_callback!(sum_callback, sum_variable_function);
 variable_function_callback!(mean_callback, mean_variable_function);
 variable_function_callback!(tanh_callback, tanh_variable_function);
@@ -1580,6 +1590,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"sqrt", sqrt_callback, SQRT_DOC),
         variable_function_method!(c"sigmoid", sigmoid_callback, SIGMOID_DOC),
         variable_function_method!(c"square", square_callback, SQUARE_DOC),
+        variable_function_method!(c"pow", pow_callback, POW_DOC),
         variable_function_method!(c"sum", sum_callback, SUM_DOC),
         variable_function_method!(c"mean", mean_callback, MEAN_DOC),
         variable_function_method!(c"tanh", tanh_callback, TANH_DOC),
