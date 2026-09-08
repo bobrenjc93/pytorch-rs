@@ -19,30 +19,30 @@ use crate::python::{
     adjoint_variable_function, arange_variable_function, as_tensor_variable_function,
     asarray_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
     atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
-    cat_variable_function, ceil_variable_function, concat_variable_function,
-    concatenate_variable_function, conj_variable_function, cos_variable_function,
-    detach_variable_function, div_variable_function, divide_variable_function,
-    empty_like_variable_function, exp_variable_function, fix_variable_function,
-    floor_variable_function, full_like_variable_function, get_device_variable_function,
-    imag_variable_function, is_conj_variable_function, is_inference_variable_function,
-    log_variable_function, matmul_variable_function, mean_variable_function, mm_variable_function,
-    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
-    multiply_variable_function, narrow_variable_function, neg_variable_function,
-    negative_variable_function, ones_like_variable_function, permute_variable_function,
-    positive_variable_function, pow_variable_function, promote_types_variable_function,
-    ravel_variable_function, real_variable_function, reciprocal_variable_function,
-    reshape_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
-    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
-    square_variable_function, stack_variable_function, sub_variable_function,
-    subtract_variable_function, sum_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function, unsqueeze_variable_function,
-    zeros_like_variable_function,
+    cat_variable_function, ceil_variable_function, chunk_variable_function,
+    concat_variable_function, concatenate_variable_function, conj_variable_function,
+    cos_variable_function, detach_variable_function, div_variable_function,
+    divide_variable_function, empty_like_variable_function, exp_variable_function,
+    fix_variable_function, floor_variable_function, full_like_variable_function,
+    get_device_variable_function, imag_variable_function, is_conj_variable_function,
+    is_inference_variable_function, log_variable_function, matmul_variable_function,
+    mean_variable_function, mm_variable_function, moveaxis_variable_function,
+    movedim_variable_function, mul_variable_function, multiply_variable_function,
+    narrow_variable_function, neg_variable_function, negative_variable_function,
+    ones_like_variable_function, permute_variable_function, positive_variable_function,
+    pow_variable_function, promote_types_variable_function, ravel_variable_function,
+    real_variable_function, reciprocal_variable_function, reshape_variable_function,
+    resolve_conj_variable_function, resolve_neg_variable_function, rsqrt_variable_function,
+    scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
+    sin_variable_function, sqrt_variable_function, square_variable_function,
+    stack_variable_function, sub_variable_function, subtract_variable_function,
+    sum_variable_function, tanh_variable_function, trunc_variable_function,
+    unbind_variable_function, unsqueeze_variable_function, zeros_like_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 69] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 70] = [
     "get_device",
     "as_tensor",
     "asarray",
@@ -98,6 +98,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 69] = [
     "unsqueeze",
     "select",
     "narrow",
+    "chunk",
     "permute",
     "movedim",
     "moveaxis",
@@ -1207,6 +1208,8 @@ const SELECT_DOC: &std::ffi::CStr = c"\nselect(input, dim, index) -> Tensor\n\nS
 
 const NARROW_DOC: &std::ffi::CStr = c"\nnarrow(input, dim, start, length) -> Tensor\n\nReturns a new tensor that is a narrowed version of :attr:`input` tensor. The\ndimension :attr:`dim` is input from :attr:`start` to ``start + length``. The\nreturned tensor and :attr:`input` tensor share the same underlying storage.\n\nArgs:\n    input (Tensor): the tensor to narrow\n    dim (int): the dimension along which to narrow\n    start (int): index of the element to start the narrowed dimension from. Can\n        be negative, which means indexing from the end of `dim`\n    length (int): length of the narrowed dimension, must be weakly positive\n\n.. note::\n\n    This implementation supports integer-protocol ``start`` values only;\n    tensor-valued ``start`` arguments are not supported.\n\nExample::\n\n    >>> x = torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]])\n    >>> torch.narrow(x, 0, 0, 2)\n    tensor([[ 1,  2,  3],\n            [ 4,  5,  6]])\n    >>> torch.narrow(x, 1, 1, 2)\n    tensor([[ 2,  3],\n            [ 5,  6],\n            [ 8,  9]])\n    >>> torch.narrow(x, -1, -1, 1)\n    tensor([[3],\n            [6],\n            [9]])\n";
 
+const CHUNK_DOC: &std::ffi::CStr = c"\nchunk(input: Tensor, chunks: int, dim: int = 0) -> Tuple[Tensor, ...]\n\nAttempts to split a tensor into the specified number of chunks. Each chunk is a view of\nthe input tensor.\n\n\n.. note::\n\n    This function may return fewer than the specified number of chunks!\n\n.. seealso::\n\n    :func:`torch.tensor_split` a function that always returns exactly the specified number of chunks\n\nIf the tensor size along the given dimension :attr:`dim` is divisible by :attr:`chunks`,\nall returned chunks will be the same size.\nIf the tensor size along the given dimension :attr:`dim` is not divisible by :attr:`chunks`,\nall returned chunks will be the same size, except the last one.\nIf such division is not possible, this function may return fewer\nthan the specified number of chunks.\n\nArguments:\n    input (Tensor): the tensor to split\n    chunks (int): number of chunks to return\n    dim (int): dimension along which to split the tensor\n\nExample:\n    >>> torch.arange(11).chunk(6)\n    (tensor([0, 1]),\n     tensor([2, 3]),\n     tensor([4, 5]),\n     tensor([6, 7]),\n     tensor([8, 9]),\n     tensor([10]))\n    >>> torch.arange(12).chunk(6)\n    (tensor([0, 1]),\n     tensor([2, 3]),\n     tensor([4, 5]),\n     tensor([6, 7]),\n     tensor([8, 9]),\n     tensor([10, 11]))\n    >>> torch.arange(13).chunk(6)\n    (tensor([0, 1, 2]),\n     tensor([3, 4, 5]),\n     tensor([6, 7, 8]),\n     tensor([ 9, 10, 11]),\n     tensor([12]))\n";
+
 const PERMUTE_DOC: &std::ffi::CStr = c"\npermute(input, dims) -> Tensor\n\nReturns a view of the original tensor :attr:`input` with its dimensions permuted.\n\nArgs:\n    input (Tensor): the input tensor.\n    dims (torch.Size, tuple of int or list of int): the desired ordering of dimensions.\n\nExample:\n    >>> x = torch.randn(2, 3, 5)\n    >>> x.size()\n    torch.Size([2, 3, 5])\n    >>> torch.permute(x, (2, 0, 1)).size()\n    torch.Size([5, 2, 3])\n";
 
 const MOVEDIM_DOC: &std::ffi::CStr = cr"
@@ -1523,6 +1526,7 @@ variable_function_callback!(unbind_callback, unbind_variable_function);
 variable_function_callback!(unsqueeze_callback, unsqueeze_variable_function);
 variable_function_callback!(select_callback, select_variable_function);
 variable_function_callback!(narrow_callback, narrow_variable_function);
+variable_function_callback!(chunk_callback, chunk_variable_function);
 variable_function_callback!(permute_callback, permute_variable_function);
 variable_function_callback!(movedim_callback, movedim_variable_function);
 variable_function_callback!(moveaxis_callback, moveaxis_variable_function);
@@ -1614,6 +1618,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"unsqueeze", unsqueeze_callback, UNSQUEEZE_DOC),
         variable_function_method!(c"select", select_callback, SELECT_DOC),
         variable_function_method!(c"narrow", narrow_callback, NARROW_DOC),
+        variable_function_method!(c"chunk", chunk_callback, CHUNK_DOC),
         variable_function_method!(c"permute", permute_callback, PERMUTE_DOC),
         variable_function_method!(c"movedim", movedim_callback, MOVEDIM_DOC),
         variable_function_method!(c"moveaxis", moveaxis_callback, MOVEAXIS_DOC),

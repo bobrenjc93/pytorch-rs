@@ -506,6 +506,28 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nchunk(chunks, dim=0) -> List of Tensors\n\nSee :func:`torch.chunk`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn chunk(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let chunk = bind_chunk_arguments(args, kwargs)?;
+
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_chunk_method(slf.py(), tensor, &chunk, args, kwargs)? {
+            return Ok(result);
+        }
+        if !slf.as_any().is_exact_instance_of::<PyTensor>() {
+            return Err(chunk_unsupported_native_input());
+        }
+
+        apply_bound_chunk(slf.py(), tensor, &chunk)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nIs ``True`` if the Tensor is quantized, ``False`` otherwise.\n"]
     #[getter]
     fn is_quantized(slf: &Bound<'_, Self>) -> PyResult<bool> {
@@ -2743,6 +2765,15 @@ pub(crate) fn narrow_variable_function(
     dispatch_top_level_narrow(py, &input, &narrow, args, kwargs)
 }
 
+pub(crate) fn chunk_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (input, chunk) = bind_top_level_chunk_arguments(args, kwargs)?;
+    dispatch_top_level_chunk(py, &input, &chunk, args, kwargs)
+}
+
 pub(crate) fn permute_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -4094,6 +4125,228 @@ fn narrow_unsupported_native_input() -> PyErr {
 
 fn narrow_tensor_start_unsupported() -> PyErr {
     PyNotImplementedError::new_err("narrow(): tensor-valued start is not supported")
+}
+
+fn chunk_dimension(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    chunks: &ParsedCallArgument<'_>,
+    dimension: Option<&ParsedCallArgument<'_>>,
+) -> PyResult<Py<PyAny>> {
+    let chunks = extract_select_index(&chunks.value)?;
+    let dimension = dimension.map_or(Ok(0), |dimension| {
+        extract_dimension_swap_dimension(&dimension.value)
+    })?;
+    let tensor = tensor.try_borrow()?;
+    validate_chunk_native_input(&tensor.inner)?;
+    if tensor.inner.shape().is_empty() {
+        return Err(PyRuntimeError::new_err(
+            "chunk expects at least a 1-dimensional tensor",
+        ));
+    }
+    validate_chunk_count(chunks)?;
+    let axis = normalize_dimension(dimension, tensor.inner.shape().len())?;
+    let chunks = usize::try_from(chunks)
+        .map_err(|_| PyOverflowError::new_err("chunk count exceeds the platform limit"))?;
+    let outputs = tensor
+        .inner
+        .chunk_dimension(axis, chunks)
+        .map_err(|error| tensor_error(&error))?;
+    Ok(PyTuple::new(py, outputs.into_iter().map(PyTensor::new))?
+        .into_any()
+        .unbind())
+}
+
+fn validate_chunk_count(chunks: i64) -> PyResult<()> {
+    if chunks <= 0 {
+        return Err(PyRuntimeError::new_err(format!(
+            "chunk expects `chunks` to be greater than 0, got: {chunks}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_chunk_native_input(input: &CoreTensor) -> PyResult<()> {
+    if input.dtype() == DType::Float32 && input.device() == Device::Cpu {
+        return Ok(());
+    }
+    Err(chunk_unsupported_native_input())
+}
+
+fn chunk_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "chunk(): only exact native CPU float32 Tensor inputs are supported",
+    )
+}
+
+fn dispatch_top_level_chunk(
+    py: Python<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
+    chunk: &BoundChunkArguments<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_top_level_chunk_overrides(input, chunk)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_chunk(py, input, chunk);
+    }
+
+    let function = variable_function(py, "chunk")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_top_level_chunk(py, input, chunk);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.chunk",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_chunk(
+    py: Python<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
+    chunk: &BoundChunkArguments<'_>,
+) -> PyResult<Py<PyAny>> {
+    let BoundTensorOrTorchFunction::Tensor(tensor) = input else {
+        unreachable!("chunk input override was dispatched before the native path")
+    };
+    apply_bound_chunk(py, tensor, chunk)
+}
+
+fn apply_bound_chunk(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    chunk: &BoundChunkArguments<'_>,
+) -> PyResult<Py<PyAny>> {
+    if chunk.chunks_override.is_some() || chunk.dimension_override.is_some() {
+        unreachable!("chunk argument overrides were dispatched before the native path");
+    }
+    chunk_dimension(py, tensor, &chunk.chunks, chunk.dimension.as_ref())
+}
+
+fn ordered_top_level_chunk_overrides<'py>(
+    input: &BoundTensorOrTorchFunction<'py>,
+    chunk: &BoundChunkArguments<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(
+            usize::from(matches!(input, BoundTensorOrTorchFunction::Override(_)))
+                + usize::from(chunk.chunks_override.is_some())
+                + usize::from(chunk.dimension_override.is_some()),
+        )
+        .map_err(|_| PyMemoryError::new_err("unable to allocate chunk dispatch operands"))?;
+    if let BoundTensorOrTorchFunction::Override(probed) = input {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(probed) = &chunk.chunks_override {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(probed) = &chunk.dimension_override {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
+fn ordered_chunk_method_overrides<'py>(
+    chunk: &BoundChunkArguments<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(
+            usize::from(chunk.chunks_override.is_some())
+                + usize::from(chunk.dimension_override.is_some()),
+        )
+        .map_err(|_| PyMemoryError::new_err("unable to allocate chunk dispatch operands"))?;
+    if let Some(probed) = &chunk.chunks_override {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(probed) = &chunk.dimension_override {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
+fn dispatch_chunk_method(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    chunk: &BoundChunkArguments<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    let overrides = ordered_chunk_method_overrides(chunk)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return Ok(None);
+    }
+
+    let function = py.get_type::<PyTensorBase>().getattr("chunk")?.unbind();
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+    let argument_count = args
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("chunk dispatch argument count overflowed"))?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate chunk dispatch arguments"))?;
+    call_arguments.push(tensor.clone().into_any());
+    call_arguments.extend(args.iter());
+    let call_args = PyTuple::new(py, call_arguments)?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.Tensor.chunk",
+        active_mode.get(),
+        &overrides,
+    )?)
 }
 
 fn dispatch_top_level_unbind(
@@ -14280,6 +14533,302 @@ fn extract_select_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {
     }
     let concrete = call_python_index(index)?;
     extract_dimension_swap_dimension(&concrete)
+}
+
+struct BoundChunkArguments<'py> {
+    chunks: ParsedCallArgument<'py>,
+    dimension: Option<ParsedCallArgument<'py>>,
+    chunks_override: Option<ProbedTorchFunctionOverride<'py>>,
+    dimension_override: Option<ProbedTorchFunctionOverride<'py>>,
+}
+
+fn bind_chunk_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundChunkArguments<'py>> {
+    const NAMES: [&str; 2] = ["chunks", "dim"];
+
+    if positional.len() > NAMES.len() {
+        return Err(PyTypeError::new_err(format!(
+            "chunk() takes from 1 to 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let chunks = if positional.is_empty() {
+        keyword_argument(keywords, "chunks")?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let dimension = if positional.len() < 2 {
+        keyword_argument(keywords, "dim")?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    };
+
+    let Some(chunks) = chunks else {
+        return Err(chunk_missing_arguments_error(&["chunks"]));
+    };
+    let chunks_override = validate_chunk_count_argument(&chunks)?;
+    let dimension_override = dimension
+        .as_ref()
+        .map(validate_chunk_dimension_argument)
+        .transpose()?
+        .flatten();
+
+    let bound_keyword_count = usize::from(chunks.position.is_none())
+        + usize::from(
+            dimension
+                .as_ref()
+                .is_some_and(|dimension| dimension.position.is_none()),
+        );
+    if let Some(keyword_error) = chunk_keyword_error(
+        "chunk",
+        &NAMES,
+        positional.len(),
+        keywords,
+        bound_keyword_count,
+    )? {
+        return Err(keyword_error);
+    }
+
+    Ok(BoundChunkArguments {
+        chunks,
+        dimension,
+        chunks_override,
+        dimension_override,
+    })
+}
+
+fn bind_top_level_chunk_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(BoundTensorOrTorchFunction<'py>, BoundChunkArguments<'py>)> {
+    const NAMES: [&str; 3] = ["input", "chunks", "dim"];
+    const INPUT_ALIASES: [&str; 4] = ["input", "x", "a", "x1"];
+
+    if positional.len() > NAMES.len() {
+        return Err(PyTypeError::new_err(format!(
+            "chunk() takes from 2 to 3 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let input = if positional.is_empty() {
+        keyword_argument_any(keywords, &INPUT_ALIASES)?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    if input.is_none() {
+        return Err(chunk_missing_arguments_error(&["input", "chunks"]));
+    }
+    let input = input.expect("chunk input was checked above");
+    let input_was_keyword = input.position.is_none();
+    let input = bind_exact_native_chunk_input(&input)?;
+
+    let chunks = if positional.len() < 2 {
+        keyword_argument(keywords, "chunks")?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    };
+    let Some(chunks) = chunks else {
+        return Err(chunk_missing_arguments_error(&["chunks"]));
+    };
+    let dimension = if positional.len() < 3 {
+        keyword_argument(keywords, "dim")?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(2)?,
+            position: Some(3),
+        })
+    };
+
+    let chunks_override = validate_chunk_count_argument(&chunks)?;
+    let dimension_override = dimension
+        .as_ref()
+        .map(validate_chunk_dimension_argument)
+        .transpose()?
+        .flatten();
+
+    if let Some(keyword_error) = chunk_keyword_error(
+        "chunk",
+        &NAMES,
+        positional.len(),
+        keywords,
+        usize::from(input_was_keyword)
+            + usize::from(chunks.position.is_none())
+            + usize::from(
+                dimension
+                    .as_ref()
+                    .is_some_and(|dimension| dimension.position.is_none()),
+            ),
+    )? {
+        return Err(keyword_error);
+    }
+
+    Ok((
+        input,
+        BoundChunkArguments {
+            chunks,
+            dimension,
+            chunks_override,
+            dimension_override,
+        },
+    ))
+}
+
+fn keyword_argument<'py>(
+    keywords: Option<&Bound<'py, PyDict>>,
+    name: &str,
+) -> PyResult<Option<Bound<'py, PyAny>>> {
+    Ok(keywords
+        .map(|keywords| keywords.get_item(name))
+        .transpose()?
+        .flatten())
+}
+
+fn keyword_argument_any<'py>(
+    keywords: Option<&Bound<'py, PyDict>>,
+    names: &[&str],
+) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let Some(keywords) = keywords else {
+        return Ok(None);
+    };
+    for name in names {
+        if let Some(value) = keywords.get_item(*name)? {
+            return Ok(Some(value));
+        }
+    }
+    Ok(None)
+}
+
+fn chunk_keyword_error(
+    operation: &str,
+    names: &[&str],
+    positional_count: usize,
+    keywords: Option<&Bound<'_, PyDict>>,
+    bound_keyword_count: usize,
+) -> PyResult<Option<PyErr>> {
+    let Some(keywords) = keywords else {
+        return Ok(None);
+    };
+    if keywords.len() <= bound_keyword_count {
+        return Ok(None);
+    }
+    for key in keywords.keys() {
+        let key = key.extract::<String>()?;
+        let Some(position) = names.iter().position(|name| *name == key) else {
+            return Ok(Some(PyTypeError::new_err(format!(
+                "{operation}() got an unexpected keyword argument '{key}'"
+            ))));
+        };
+        if position < positional_count {
+            return Ok(Some(PyTypeError::new_err(format!(
+                "{operation}() got multiple values for argument '{key}'"
+            ))));
+        }
+    }
+    Ok(None)
+}
+
+fn validate_chunk_count_argument<'py>(
+    chunks: &ParsedCallArgument<'py>,
+) -> PyResult<Option<ProbedTorchFunctionOverride<'py>>> {
+    if is_dimension_swap_integer(&chunks.value)? {
+        return Ok(None);
+    }
+    if let Some(probed) = probe_torch_function_override(&chunks.value) {
+        return Ok(Some(probed));
+    }
+    let actual = python_type_name(&chunks.value)?;
+    Err(dimension_swap_argument_type_error(
+        "chunk",
+        "chunks",
+        chunks.position,
+        "int",
+        &actual,
+    ))
+}
+
+fn validate_chunk_dimension_argument<'py>(
+    dimension: &ParsedCallArgument<'py>,
+) -> PyResult<Option<ProbedTorchFunctionOverride<'py>>> {
+    if is_dimension_swap_integer(&dimension.value)? {
+        return Ok(None);
+    }
+    if let Some(probed) = probe_torch_function_override(&dimension.value) {
+        return Ok(Some(probed));
+    }
+    let actual = python_type_name(&dimension.value)?;
+    Err(dimension_swap_argument_type_error(
+        "chunk",
+        "dim",
+        dimension.position,
+        "int",
+        &actual,
+    ))
+}
+
+fn bind_exact_native_chunk_input<'py>(
+    input: &ParsedCallArgument<'py>,
+) -> PyResult<BoundTensorOrTorchFunction<'py>> {
+    if input.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundTensorOrTorchFunction::Tensor(
+            input.value.cast::<PyTensor>()?.clone(),
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&input.value) {
+        return Ok(BoundTensorOrTorchFunction::Override(probed));
+    }
+    if input.value.is_instance_of::<PyTensor>() {
+        return Err(chunk_unsupported_native_input());
+    }
+    parse_tensor_argument("chunk", "input", input)
+        .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
+}
+
+fn chunk_missing_arguments_error(missing: &[&str]) -> PyErr {
+    let quoted_names = missing
+        .iter()
+        .map(|name| format!("\"{name}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let argument = if missing.len() == 1 {
+        "arguments"
+    } else {
+        "argument"
+    };
+    PyTypeError::new_err(format!(
+        "chunk() missing {} required positional {argument}: {quoted_names}",
+        missing.len()
+    ))
 }
 
 #[derive(Clone, Copy)]
