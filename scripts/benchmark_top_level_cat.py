@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Benchmark supported eager CPU 1-D ``torch.cat`` cells against PyTorch."""
+"""Benchmark supported eager CPU ``torch.cat`` cells against PyTorch."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ PROTECTED_OUTPUT_PATHS = {
     REPOSITORY_ROOT / "docs" / "burner-evaluation-progress.svg",
 }
 REFERENCE_PYTORCH_VERSION = "2.13.0"
-BENCHMARK_VERSION = "top_level_cat_cpu_1d_benchmark_v1"
+BENCHMARK_VERSION = "top_level_cat_cpu_supported_benchmark_v2"
 DEFAULT_WARMUPS = 15
 DEFAULT_SAMPLES = 81
 DEFAULT_THREADS = 1
@@ -53,6 +53,31 @@ APIS = ("cat", "concat", "concatenate")
 
 MODE_EAGER = "eager"
 MODE_NO_GRAD = "no_grad"
+MODE_BACKWARD = "backward"
+CATEGORY_ORDER = (
+    "singleton",
+    "multi-input",
+    "empty operand",
+    "offset",
+    "noncontiguous",
+    "axis keyword",
+    "active autograd",
+    "no_grad",
+    "rank-2",
+    "backward",
+)
+CATEGORY_LABELS = {
+    "singleton": "Singleton cells",
+    "multi-input": "Multi-input cells",
+    "empty operand": "Empty-operand cells",
+    "offset": "Offset cells",
+    "noncontiguous": "Noncontiguous cells",
+    "axis keyword": "Axis-keyword cells",
+    "active autograd": "Active-autograd cells",
+    "no_grad": "`no_grad` cells",
+    "rank-2": "Rank-2 cells",
+    "backward": "Backward cells",
+}
 
 
 @dataclass(frozen=True)
@@ -375,6 +400,61 @@ def _make_active_autograd_1d(module, np):
     )
 
 
+def _make_rank2_dim0_generated(module, np):
+    return Operands(
+        [
+            _dense_tensor(module, np, (23, 37), 2026090801),
+            _dense_tensor(module, np, (19, 37), 2026090802, bias=0.125),
+        ],
+        {"dim": 0},
+    )
+
+
+def _make_rank2_dim1_generated(module, np):
+    return Operands(
+        [
+            _dense_tensor(module, np, (31, 17), 2026090803),
+            _dense_tensor(module, np, (31, 13), 2026090804, bias=-0.25),
+            _dense_tensor(module, np, (31, 11), 2026090805, bias=0.5),
+        ],
+        {"dim": 1},
+    )
+
+
+def _make_backward_rank1_generated(module, np):
+    return Operands(
+        [
+            _dense_tensor(module, np, (113,), 2026090806, requires_grad=True),
+            _dense_tensor(
+                module,
+                np,
+                (127,),
+                2026090807,
+                requires_grad=True,
+                bias=-0.125,
+            ),
+        ],
+        {"dim": 0},
+    )
+
+
+def _make_backward_rank2_dim1_generated(module, np):
+    return Operands(
+        [
+            _dense_tensor(module, np, (7, 11), 2026090808, requires_grad=True),
+            _dense_tensor(
+                module,
+                np,
+                (7, 5),
+                2026090809,
+                requires_grad=True,
+                bias=0.375,
+            ),
+        ],
+        {"dim": 1},
+    )
+
+
 WORKLOADS = (
     Workload(
         "singleton_contiguous_8192",
@@ -485,6 +565,50 @@ WORKLOADS = (
         MODE_EAGER,
         (2026090720, 2026090721),
         _make_active_autograd_1d,
+    ),
+    Workload(
+        "rank2_dim0_generated_23_19x37",
+        "rank-2",
+        "list dim=0",
+        "held-out generated rank-2 inputs with shapes (23, 37) and (19, 37)",
+        "rank-2 row concatenation output",
+        256,
+        MODE_EAGER,
+        (2026090801, 2026090802),
+        _make_rank2_dim0_generated,
+    ),
+    Workload(
+        "rank2_dim1_generated_31x17_13_11",
+        "rank-2",
+        "list dim=1",
+        "held-out generated rank-2 inputs with shapes (31, 17), (31, 13), and (31, 11)",
+        "rank-2 column concatenation output",
+        256,
+        MODE_EAGER,
+        (2026090803, 2026090804, 2026090805),
+        _make_rank2_dim1_generated,
+    ),
+    Workload(
+        "backward_rank1_generated_113_127",
+        "backward",
+        "list dim=0",
+        "held-out generated grad-requiring 1-D inputs with lengths 113 and 127; sum backward",
+        "forward output plus leaf gradients",
+        64,
+        MODE_BACKWARD,
+        (2026090806, 2026090807),
+        _make_backward_rank1_generated,
+    ),
+    Workload(
+        "backward_rank2_dim1_generated_7x11_5",
+        "backward",
+        "list dim=1",
+        "held-out generated grad-requiring rank-2 inputs with shapes (7, 11) and (7, 5); sum backward",
+        "forward output plus leaf gradients",
+        64,
+        MODE_BACKWARD,
+        (2026090808, 2026090809),
+        _make_backward_rank2_dim1_generated,
     ),
 )
 
@@ -682,6 +806,15 @@ def _execute_operation(module, api, workload, operands):
         context = contextlib.nullcontext()
     with context:
         output = getattr(module, api)(operands.tensors, **operands.kwargs)
+    if workload.mode == MODE_BACKWARD:
+        output.sum().backward()
+        bundle = [("output", output)]
+        for label, tensor in _operand_tensors(operands):
+            gradient = tensor.grad
+            if gradient is None:
+                raise AssertionError(f"{workload.name}/{label} did not receive a gradient")
+            bundle.append((f"{label}.grad", gradient))
+        return tuple(bundle)
     return (("output", output),)
 
 
@@ -689,7 +822,12 @@ def _time_block(np, module, api, workload, static_operands, repeats):
     started_ns = time.perf_counter_ns()
     last_bundle = None
     for _ in range(repeats):
-        last_bundle = _execute_operation(module, api, workload, static_operands)
+        operands = (
+            workload.make_operands(module, np)
+            if workload.mode == MODE_BACKWARD
+            else static_operands
+        )
+        last_bundle = _execute_operation(module, api, workload, operands)
     _synchronize(module)
     elapsed_ns = time.perf_counter_ns() - started_ns
     checksum = _checksum_bundle(np, last_bundle)
@@ -1127,46 +1265,12 @@ def _aggregate_rows(rows):
         for api in (f"torch.{name}" for name in APIS)
     }
     by_category = {
-        "singleton": [
+        category: [
             row["ratios"]["steady_torch_rs_over_pytorch"]
             for row in rows
-            if row["category"] == "singleton"
-        ],
-        "multi-input": [
-            row["ratios"]["steady_torch_rs_over_pytorch"]
-            for row in rows
-            if row["category"] == "multi-input"
-        ],
-        "empty operand": [
-            row["ratios"]["steady_torch_rs_over_pytorch"]
-            for row in rows
-            if row["category"] == "empty operand"
-        ],
-        "offset": [
-            row["ratios"]["steady_torch_rs_over_pytorch"]
-            for row in rows
-            if row["category"] == "offset"
-        ],
-        "noncontiguous": [
-            row["ratios"]["steady_torch_rs_over_pytorch"]
-            for row in rows
-            if row["category"] == "noncontiguous"
-        ],
-        "axis keyword": [
-            row["ratios"]["steady_torch_rs_over_pytorch"]
-            for row in rows
-            if row["category"] == "axis keyword"
-        ],
-        "active autograd": [
-            row["ratios"]["steady_torch_rs_over_pytorch"]
-            for row in rows
-            if row["category"] == "active autograd"
-        ],
-        "no_grad": [
-            row["ratios"]["steady_torch_rs_over_pytorch"]
-            for row in rows
-            if row["category"] == "no_grad"
-        ],
+            if row["category"] == category
+        ]
+        for category in CATEGORY_ORDER
     }
     named_groups = {"all supported cells": ratios}
     named_groups.update({f"{api} cells": values for api, values in by_api.items()})
@@ -1219,15 +1323,7 @@ def run_benchmark(args):
             gc.enable()
 
     aggregates = _aggregate_rows(supported)
-    unsupported_penalty = [10.0] * len(unsupported)
-    capped_with_zero_credit = [
-        min(10.0, max(0.10, row["ratios"]["steady_torch_rs_over_pytorch"]))
-        for row in supported
-    ] + unsupported_penalty
     aggregates["zero_credit_unsupported_cell_count"] = len(unsupported)
-    aggregates["combined_capped_with_zero_credit_unsupported"] = _geomean(
-        capped_with_zero_credit
-    )
 
     ended = time.time()
     return {
@@ -1335,31 +1431,29 @@ def render_markdown_summary(report):
             "`torch.concatenate` cells",
             groups["torch.concatenate cells"],
         ),
-        _group_line("Singleton cells", groups["singleton cells"]),
-        _group_line("Multi-input cells", groups["multi-input cells"]),
-        _group_line("Empty-operand cells", groups["empty operand cells"]),
-        _group_line("Offset cells", groups["offset cells"]),
-        _group_line("Noncontiguous cells", groups["noncontiguous cells"]),
-        _group_line("Axis-keyword cells", groups["axis keyword cells"]),
-        _group_line("Active-autograd cells", groups["active autograd cells"]),
-        _group_line("`no_grad` cells", groups["no_grad cells"]),
-        "",
-        (
-            "Including the unsupported cells below as zero-credit denominator "
-            "entries with a 10.00x capped penalty gives a combined capped "
-            "aggregate of "
-            f"{aggregates['combined_capped_with_zero_credit_unsupported']:.2f}x."
-        ),
-        "",
-        "## Supported Timed Cells",
-        "",
-        (
-            "| Workload | Category | API | Call form | Input / mode | Output | "
-            "Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- "
-            "MAD, variance | `torch_rs` / PyTorch | Materialized checksums |"
-        ),
-        "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
     ]
+    for category in CATEGORY_ORDER:
+        group_name = f"{category} cells"
+        if group_name in groups:
+            lines.append(_group_line(CATEGORY_LABELS[category], groups[group_name]))
+    lines.extend(
+        [
+            "",
+            (
+                "Unsupported cells below are retained as feature/API coverage "
+                "evidence and are not included in the performance aggregates."
+            ),
+            "",
+            "## Supported Timed Cells",
+            "",
+            (
+                "| Workload | Category | API | Call form | Input / mode | Output | "
+                "Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- "
+                "MAD, variance | `torch_rs` / PyTorch | Materialized checksums |"
+            ),
+            "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
     lines.extend(_format_timed_cell(row) for row in cases)
     lines.extend(
         [
@@ -1476,16 +1570,7 @@ def _validate_expected_artifact_shape(report):
         errors.append(f"API coverage mismatch: {dict(api_counts)!r}")
 
     categories = {row.get("category") for row in cases}
-    for required_category in (
-        "singleton",
-        "multi-input",
-        "empty operand",
-        "offset",
-        "noncontiguous",
-        "axis keyword",
-        "active autograd",
-        "no_grad",
-    ):
+    for required_category in CATEGORY_ORDER:
         if required_category not in categories:
             errors.append(f"missing supported category {required_category!r}")
 

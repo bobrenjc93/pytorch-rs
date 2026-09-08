@@ -60,7 +60,7 @@ gates.
 ### Layout/view ops
 
 - [View and reshape timings](tensor-view-release-timings.md): View, reshape, flatten, ravel, unbind, and edge-unsqueeze release evidence.
-- [Cat timings](top-level-cat-release-timings.md): `torch.cat`, `torch.concat`, and `torch.concatenate` 1-D release evidence with retained raw JSON in [benchmark-data/top-level-cat-release-timings.json](benchmark-data/top-level-cat-release-timings.json).
+- [Cat timings](top-level-cat-release-timings.md): `torch.cat`, `torch.concat`, and `torch.concatenate` supported CPU release evidence with retained raw JSON in [benchmark-data/top-level-cat-release-timings.json](benchmark-data/top-level-cat-release-timings.json).
 
 ### Linear algebra
 

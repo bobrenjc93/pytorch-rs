@@ -5421,6 +5421,12 @@ fn materialize_concat(
     output_shape: &[usize],
     output_elements: usize,
 ) -> Result<Vec<f32>, TensorError> {
+    if let Some(data) =
+        materialize_concat_small_rank_fast_path(inputs, dimension, output_shape, output_elements)?
+    {
+        return Ok(data);
+    }
+
     let inner = element_count(&output_shape[dimension + 1..])?;
     let outer = element_count(&output_shape[..dimension])?;
     let output_axis = output_shape[dimension];
@@ -5446,6 +5452,135 @@ fn materialize_concat(
     debug_assert_eq!(output_block.checked_mul(outer), Some(output_elements));
     debug_assert_eq!(data.len(), output_elements);
     Ok(data)
+}
+
+fn materialize_concat_small_rank_fast_path(
+    inputs: &[&Tensor],
+    dimension: usize,
+    output_shape: &[usize],
+    output_elements: usize,
+) -> Result<Option<Vec<f32>>, TensorError> {
+    match (output_shape.len(), dimension) {
+        (1, 0) if inputs.iter().all(|input| can_append_rank_1_fast(input)) => {
+            let mut data = try_result_vector(output_elements, output_elements)?;
+            for input in inputs {
+                append_rank_1_fast(&mut data, input);
+            }
+            debug_assert_eq!(data.len(), output_elements);
+            Ok(Some(data))
+        }
+        (2, 0) if inputs.iter().all(|input| can_append_rank_2_fast(input)) => {
+            let mut data = try_result_vector(output_elements, output_elements)?;
+            for input in inputs {
+                append_rank_2_fast(&mut data, input);
+            }
+            debug_assert_eq!(data.len(), output_elements);
+            Ok(Some(data))
+        }
+        (2, 1) if inputs.iter().all(|input| can_append_rank_2_fast(input)) => {
+            let rows = output_shape[0];
+            let mut data = try_result_vector(output_elements, output_elements)?;
+            for row in 0..rows {
+                for input in inputs {
+                    append_rank_2_row_fast(&mut data, input, row);
+                }
+            }
+            debug_assert_eq!(data.len(), output_elements);
+            Ok(Some(data))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn can_append_rank_1_fast(input: &Tensor) -> bool {
+    input.contiguous_slice().is_some()
+        || matches!(
+            (
+                input.shape.as_slice(),
+                input.strides.as_slice(),
+                input.storage.owned_values(),
+            ),
+            ([_], [_], Some(_))
+        )
+}
+
+fn can_append_rank_2_fast(input: &Tensor) -> bool {
+    input.contiguous_slice().is_some()
+        || matches!(
+            (
+                input.shape.as_slice(),
+                input.strides.as_slice(),
+                input.storage.owned_values(),
+            ),
+            ([_, _], [_, _], Some(_))
+        )
+}
+
+fn append_rank_1_fast(data: &mut Vec<f32>, input: &Tensor) {
+    if let Some(values) = input.contiguous_slice() {
+        data.extend_from_slice(values);
+        return;
+    }
+
+    let ([length], [stride], Some(values)) = (
+        input.shape.as_slice(),
+        input.strides.as_slice(),
+        input.storage.owned_values(),
+    ) else {
+        unreachable!("rank-1 concat fast path was prevalidated")
+    };
+    let mut offset = input.offset;
+    for _ in 0..*length {
+        data.push(values[offset]);
+        offset = offset.wrapping_add(*stride);
+    }
+}
+
+fn append_rank_2_fast(data: &mut Vec<f32>, input: &Tensor) {
+    if let Some(values) = input.contiguous_slice() {
+        data.extend_from_slice(values);
+        return;
+    }
+
+    let ([rows, _], [_, _], Some(_)) = (
+        input.shape.as_slice(),
+        input.strides.as_slice(),
+        input.storage.owned_values(),
+    ) else {
+        unreachable!("rank-2 concat fast path was prevalidated")
+    };
+    for row in 0..*rows {
+        append_rank_2_row_fast(data, input, row);
+    }
+}
+
+fn append_rank_2_row_fast(data: &mut Vec<f32>, input: &Tensor, row: usize) {
+    if input.contiguous_slice().is_some() {
+        let [_, columns] = input.shape.as_slice() else {
+            unreachable!("rank-2 concat fast path was prevalidated")
+        };
+        let start = row * *columns;
+        let end = start + *columns;
+        data.extend_from_slice(&input.as_slice()[start..end]);
+        return;
+    }
+
+    let ([_, columns], [row_stride, column_stride], Some(values)) = (
+        input.shape.as_slice(),
+        input.strides.as_slice(),
+        input.storage.owned_values(),
+    ) else {
+        unreachable!("rank-2 concat fast path was prevalidated")
+    };
+    let mut offset = input.offset.wrapping_add(row.wrapping_mul(*row_stride));
+    if *column_stride == 1 {
+        data.extend_from_slice(&values[offset..offset + *columns]);
+        return;
+    }
+    for _ in 0..*columns {
+        data.push(values[offset]);
+        offset = offset.wrapping_add(*column_stride);
+    }
 }
 
 fn apply_concat_grad_fn(
