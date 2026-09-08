@@ -358,6 +358,23 @@ def _make_no_grad_grad_inputs(module, np):
     )
 
 
+def _make_active_autograd_1d(module, np):
+    return Operands(
+        [
+            _dense_tensor(module, np, (257,), 2026090720, requires_grad=True),
+            _dense_tensor(
+                module,
+                np,
+                (263,),
+                2026090721,
+                requires_grad=True,
+                bias=0.625,
+            ),
+        ],
+        {"dim": 0},
+    )
+
+
 WORKLOADS = (
     Workload(
         "singleton_contiguous_8192",
@@ -458,6 +475,17 @@ WORKLOADS = (
         (2026090718, 2026090719),
         _make_no_grad_grad_inputs,
     ),
+    Workload(
+        "active_autograd_1d_257_263",
+        "active autograd",
+        "list dim=0",
+        "two grad-requiring contiguous inputs with lengths 257 and 263; forward construction only",
+        "concatenation output",
+        512,
+        MODE_EAGER,
+        (2026090720, 2026090721),
+        _make_active_autograd_1d,
+    ),
 )
 
 
@@ -473,33 +501,23 @@ def _unsupported_out_1d(module, api):
     )
 
 
-def _unsupported_active_autograd_1d(module, api):
+def _unsupported_rank3_dim0(module, api):
     return getattr(module, api)(
         [
-            module.tensor([1.0, 2.0], dtype=module.float32, requires_grad=True),
-            module.tensor([3.0], dtype=module.float32, requires_grad=True),
+            module.ones((2, 2, 3), dtype=module.float32),
+            module.zeros((1, 2, 3), dtype=module.float32),
         ],
         dim=0,
     )
 
 
-def _unsupported_rank2_dim0(module, api):
+def _unsupported_rank3_dim2(module, api):
     return getattr(module, api)(
         [
-            module.ones((2, 3), dtype=module.float32),
-            module.zeros((1, 3), dtype=module.float32),
+            module.ones((2, 3, 2), dtype=module.float32),
+            module.zeros((2, 3, 1), dtype=module.float32),
         ],
-        dim=0,
-    )
-
-
-def _unsupported_rank2_dim1(module, api):
-    return getattr(module, api)(
-        [
-            module.ones((2, 2), dtype=module.float32),
-            module.zeros((2, 1), dtype=module.float32),
-        ],
-        dim=1,
+        dim=2,
     )
 
 
@@ -512,25 +530,18 @@ UNSUPPORTED_CELLS = (
         "cat(): the 'out' argument is not supported",
     ),
     UnsupportedCell(
-        "active_autograd_1d",
-        "active autograd",
-        _unsupported_active_autograd_1d,
-        "RuntimeError",
-        "cat(): autograd recording is not supported",
+        "rank3_dim0",
+        "rank >=3 cat",
+        _unsupported_rank3_dim0,
+        "NotImplementedError",
+        "cat(): only exact native CPU float32 rank-1 or rank-2 Tensor inputs are supported",
     ),
     UnsupportedCell(
-        "rank2_dim0",
-        "general-dimensional cat",
-        _unsupported_rank2_dim0,
+        "rank3_dim2",
+        "rank >=3 cat",
+        _unsupported_rank3_dim2,
         "NotImplementedError",
-        "cat(): only exact native CPU float32 1-D Tensor inputs are supported",
-    ),
-    UnsupportedCell(
-        "rank2_dim1",
-        "general-dimensional cat",
-        _unsupported_rank2_dim1,
-        "NotImplementedError",
-        "cat(): only exact native CPU float32 1-D Tensor inputs are supported",
+        "cat(): only exact native CPU float32 rank-1 or rank-2 Tensor inputs are supported",
     ),
 )
 
@@ -1146,6 +1157,11 @@ def _aggregate_rows(rows):
             for row in rows
             if row["category"] == "axis keyword"
         ],
+        "active autograd": [
+            row["ratios"]["steady_torch_rs_over_pytorch"]
+            for row in rows
+            if row["category"] == "active autograd"
+        ],
         "no_grad": [
             row["ratios"]["steady_torch_rs_over_pytorch"]
             for row in rows
@@ -1325,6 +1341,7 @@ def render_markdown_summary(report):
         _group_line("Offset cells", groups["offset cells"]),
         _group_line("Noncontiguous cells", groups["noncontiguous cells"]),
         _group_line("Axis-keyword cells", groups["axis keyword cells"]),
+        _group_line("Active-autograd cells", groups["active autograd cells"]),
         _group_line("`no_grad` cells", groups["no_grad cells"]),
         "",
         (
@@ -1466,6 +1483,7 @@ def _validate_expected_artifact_shape(report):
         "offset",
         "noncontiguous",
         "axis keyword",
+        "active autograd",
         "no_grad",
     ):
         if required_category not in categories:

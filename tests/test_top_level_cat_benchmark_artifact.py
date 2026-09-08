@@ -35,7 +35,7 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
             ("cat", "concat", "concatenate"),
         )
         workloads = benchmark_top_level_cat.WORKLOADS
-        self.assertEqual(len(workloads), 9)
+        self.assertEqual(len(workloads), 10)
         categories = {workload.category for workload in workloads}
         self.assertEqual(
             categories,
@@ -47,6 +47,7 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
                 "noncontiguous",
                 "axis keyword",
                 "no_grad",
+                "active autograd",
             },
         )
         names = {workload.name for workload in workloads}
@@ -60,6 +61,7 @@ class TopLevelCatBenchmarkArtifactTests(unittest.TestCase):
             "tuple_dim_negative_one_513_509",
             "axis_keyword_17_19",
             "no_grad_grad_inputs_257_263",
+            "active_autograd_1d_257_263",
         ):
             self.assertIn(required_name, names)
         self.assertTrue(
