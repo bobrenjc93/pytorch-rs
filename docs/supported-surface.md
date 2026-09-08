@@ -878,7 +878,8 @@ division through `/`, `Tensor.div()`, `Tensor.divide()`, `torch.div()`, and
 `torch.divide()`, plus the listed unary kernels,
 `Tensor.sum(dim=None)`, supported rank-1 `Tensor.sum(dim=0)`/`Tensor.sum(dim=-1)`,
 `torch.sum(input, dim=None, *, dtype=None)`, supported rank-1 top-level sum forms,
-`Tensor.mean(dim=None)`, `torch.mean(input, dim=None, *, dtype=None)`,
+`Tensor.mean(dim=None)`, supported rank-1 `Tensor.mean(dim=0)`/`Tensor.mean(dim=-1)`,
+`torch.mean(input, dim=None, *, dtype=None)`, supported rank-1 top-level mean forms,
 `Tensor.relu()`, `torch.relu()`, and rank-2 matrix multiplication through `@`,
 `Tensor.matmul()`, `torch.matmul()`, and `torch.mm(input, mat2, *, out=None)`.
 `torch.mm` is limited to exact native CPU float32 rank-2 operands and delegates
