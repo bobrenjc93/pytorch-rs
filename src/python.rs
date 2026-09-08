@@ -482,29 +482,20 @@ impl PyTensorBase {
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
-        let BoundNarrowArguments {
-            arguments: [dimension, start, length],
-            tensor_start_unsupported,
-        } = bind_narrow_arguments(args, kwargs, NarrowCallKind::Method)?;
+        let narrow = bind_narrow_arguments(args, kwargs, NarrowCallKind::Method)?;
 
         let tensor = slf.as_any().cast::<PyTensor>()?;
-        if let Some(result) = dispatch_tensorbase_method_mode(
-            slf.py(),
-            tensor,
-            "narrow",
-            "torch.Tensor.narrow",
-            args,
-            kwargs,
-        )? {
+        if let Some(result) = dispatch_narrow_method(slf.py(), tensor, &narrow, args, kwargs)? {
             return Ok(result);
         }
         if !slf.as_any().is_exact_instance_of::<PyTensor>() {
             return Err(narrow_unsupported_native_input());
         }
-        if tensor_start_unsupported {
+        if narrow.tensor_start_unsupported {
             return Err(narrow_tensor_start_unsupported());
         }
 
+        let [dimension, start, length] = &narrow.arguments;
         let length = extract_select_index(&length.value)?;
         let start = extract_select_index(&start.value)?;
         let dimension = extract_dimension_swap_dimension(&dimension.value)?;
@@ -4064,26 +4055,16 @@ fn dispatch_top_level_narrow(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let [dimension, start, length] = &narrow.arguments;
-    if torch_function_mode_stack::is_empty()
-        && let BoundTensorOrTorchFunction::Tensor(tensor) = input
-    {
-        if narrow.tensor_start_unsupported {
-            return Err(narrow_tensor_start_unsupported());
-        }
-        let length = extract_select_index(&length.value)?;
-        let start = extract_select_index(&start.value)?;
-        let dimension = extract_dimension_swap_dimension(&dimension.value)?;
-        return narrow_dimension(py, tensor, dimension, start, length);
+    let overrides = ordered_top_level_narrow_overrides(input, narrow)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_narrow(py, input, narrow);
     }
 
     let function = variable_function(py, "narrow")?;
-    let types = match input {
-        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
-        BoundTensorOrTorchFunction::Override(probed) => {
-            PyTuple::new(py, [probed.dispatch_type.clone()])?
-        }
-    };
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
 
     // Concrete integer conversion and tensor bounds checks remain deferred
     // until every torch-function handler has had an opportunity to replace
@@ -4098,39 +4079,144 @@ fn dispatch_top_level_narrow(
         }
     }
 
-    match input {
-        BoundTensorOrTorchFunction::Override(probed) => {
-            let handler = resolve_torch_function_override(py, probed)?;
-            let result =
-                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
-            if !is_not_implemented(py, &result) {
-                return Ok(result);
-            }
-            Err(torch_function_dispatch_error(
-                py,
-                "torch.narrow",
-                active_mode.get(),
-                Some(probed.dispatch_type.as_unbound()),
-            )?)
-        }
-        BoundTensorOrTorchFunction::Tensor(tensor) => {
-            if active_mode.get().is_some() {
-                return Err(torch_function_dispatch_error(
-                    py,
-                    "torch.narrow",
-                    active_mode.get(),
-                    None,
-                )?);
-            }
-            if narrow.tensor_start_unsupported {
-                return Err(narrow_tensor_start_unsupported());
-            }
-            let length = extract_select_index(&length.value)?;
-            let start = extract_select_index(&start.value)?;
-            let dimension = extract_dimension_swap_dimension(&dimension.value)?;
-            narrow_dimension(py, tensor, dimension, start, length)
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
         }
     }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_top_level_narrow(py, input, narrow);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.narrow",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_narrow(
+    py: Python<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
+    narrow: &BoundNarrowArguments<'_>,
+) -> PyResult<Py<PyAny>> {
+    let BoundTensorOrTorchFunction::Tensor(tensor) = input else {
+        unreachable!("narrow input override was dispatched before the native path")
+    };
+    apply_bound_narrow(py, tensor, narrow)
+}
+
+fn apply_bound_narrow(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    narrow: &BoundNarrowArguments<'_>,
+) -> PyResult<Py<PyAny>> {
+    if narrow.tensor_start_unsupported {
+        return Err(narrow_tensor_start_unsupported());
+    }
+    if narrow.start_override.is_some() {
+        unreachable!("narrow start override was dispatched before the native path");
+    }
+
+    let [dimension, start, length] = &narrow.arguments;
+    let length = extract_select_index(&length.value)?;
+    let start = extract_select_index(&start.value)?;
+    let dimension = extract_dimension_swap_dimension(&dimension.value)?;
+    narrow_dimension(py, tensor, dimension, start, length)
+}
+
+fn ordered_top_level_narrow_overrides<'py>(
+    input: &BoundTensorOrTorchFunction<'py>,
+    narrow: &BoundNarrowArguments<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(
+            usize::from(matches!(input, BoundTensorOrTorchFunction::Override(_)))
+                + usize::from(narrow.start_override.is_some()),
+        )
+        .map_err(|_| PyMemoryError::new_err("unable to allocate narrow dispatch operands"))?;
+    if let BoundTensorOrTorchFunction::Override(probed) = input {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    if let Some(probed) = &narrow.start_override {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
+fn ordered_narrow_method_overrides<'py>(
+    narrow: &BoundNarrowArguments<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(usize::from(narrow.start_override.is_some()))
+        .map_err(|_| PyMemoryError::new_err("unable to allocate narrow dispatch operands"))?;
+    if let Some(probed) = &narrow.start_override {
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
+
+fn dispatch_narrow_method(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    narrow: &BoundNarrowArguments<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    let overrides = ordered_narrow_method_overrides(narrow)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return Ok(None);
+    }
+
+    let function = py.get_type::<PyTensorBase>().getattr("narrow")?.unbind();
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+    let argument_count = args
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("narrow dispatch argument count overflowed"))?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate narrow dispatch arguments"))?;
+    call_arguments.push(tensor.clone().into_any());
+    call_arguments.extend(args.iter());
+    let call_args = PyTuple::new(py, call_arguments)?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.Tensor.narrow",
+        active_mode.get(),
+        &overrides,
+    )?)
 }
 
 pub(crate) fn dispatch_tensorbase_method_mode(
@@ -13025,31 +13111,33 @@ impl NarrowCallKind {
     }
 }
 
-#[derive(Clone, Copy)]
-enum NarrowIntegerStatus {
+enum NarrowStartStatus<'py> {
     Valid,
     TensorStart,
+    Override(ProbedTorchFunctionOverride<'py>),
     Invalid,
 }
 
-struct NarrowTypeValidity<const N: usize> {
+struct NarrowTypeValidity<'py, const N: usize> {
     tensor_start_overload_invalid: [bool; N],
     integer_start_overload_invalid: [bool; N],
     tensor_start_unsupported: bool,
+    start_override: Option<ProbedTorchFunctionOverride<'py>>,
 }
 
 struct BoundNarrowArguments<'py> {
     arguments: [ParsedCallArgument<'py>; 3],
     tensor_start_unsupported: bool,
+    start_override: Option<ProbedTorchFunctionOverride<'py>>,
 }
 
 type NarrowArgumentMismatches<'a, 'py, const N: usize> = (
     &'a [&'a str; N],
     &'a [Option<ParsedCallArgument<'py>>; N],
-    &'a NarrowTypeValidity<N>,
+    &'a NarrowTypeValidity<'py, N>,
 );
 
-impl<const N: usize> NarrowTypeValidity<N> {
+impl<const N: usize> NarrowTypeValidity<'_, N> {
     fn tensor_start_overload_matches(&self) -> bool {
         self.tensor_start_overload_invalid
             .iter()
@@ -13096,9 +13184,18 @@ fn bind_narrow_arguments<'py>(
             positional, keywords, kind, None,
         )?);
     }
+    let tensor_start_overload_matches = validity.tensor_start_overload_matches();
     let tensor_start_unsupported =
-        validity.tensor_start_unsupported && validity.tensor_start_overload_matches();
-    if !validity.integer_start_overload_matches() && !tensor_start_unsupported {
+        validity.tensor_start_unsupported && tensor_start_overload_matches;
+    let start_override = if tensor_start_overload_matches {
+        validity.start_override.clone()
+    } else {
+        None
+    };
+    if !validity.integer_start_overload_matches()
+        && !tensor_start_unsupported
+        && start_override.is_none()
+    {
         return Err(narrow_invalid_combination_error(
             positional,
             keywords,
@@ -13111,6 +13208,7 @@ fn bind_narrow_arguments<'py>(
         arguments: arguments
             .map(|argument| argument.expect("all required narrow arguments were bound")),
         tensor_start_unsupported,
+        start_override,
     })
 }
 
@@ -13176,9 +13274,18 @@ fn bind_top_level_narrow_arguments<'py>(
             None,
         )?);
     }
+    let tensor_start_overload_matches = validity.tensor_start_overload_matches();
     let tensor_start_unsupported =
-        validity.tensor_start_unsupported && validity.tensor_start_overload_matches();
-    if !validity.integer_start_overload_matches() && !tensor_start_unsupported {
+        validity.tensor_start_unsupported && tensor_start_overload_matches;
+    let start_override = if tensor_start_overload_matches {
+        validity.start_override.clone()
+    } else {
+        None
+    };
+    if !validity.integer_start_overload_matches()
+        && !tensor_start_unsupported
+        && start_override.is_none()
+    {
         return Err(narrow_invalid_combination_error(
             positional,
             keywords,
@@ -13195,6 +13302,7 @@ fn bind_top_level_narrow_arguments<'py>(
         BoundNarrowArguments {
             arguments: [dimension, start, length],
             tensor_start_unsupported,
+            start_override,
         },
     ))
 }
@@ -13225,13 +13333,14 @@ fn bind_narrow_keywords<'py, const N: usize>(
     Ok(keyword_error)
 }
 
-fn narrow_method_argument_validity(
-    arguments: &[Option<ParsedCallArgument<'_>>; 3],
+fn narrow_method_argument_validity<'py>(
+    arguments: &[Option<ParsedCallArgument<'py>>; 3],
     length: usize,
-) -> PyResult<NarrowTypeValidity<3>> {
+) -> PyResult<NarrowTypeValidity<'py, 3>> {
     let mut tensor_start_overload_invalid = [false; 3];
     let mut integer_start_overload_invalid = [false; 3];
     let mut tensor_start_unsupported = false;
+    let mut start_override = None;
     if length >= 1 {
         let invalid = !is_dimension_swap_integer(
             &arguments[0]
@@ -13248,14 +13357,22 @@ fn narrow_method_argument_validity(
             .expect("narrow start is present before validation gap")
             .value;
         let start_is_tensor = value.cast::<PyTensor>().is_ok();
-        tensor_start_overload_invalid[1] = !start_is_tensor;
-        match narrow_integer_status(value, start_is_tensor)? {
-            NarrowIntegerStatus::Valid => {}
-            NarrowIntegerStatus::TensorStart => {
+        match narrow_start_status(value, start_is_tensor)? {
+            NarrowStartStatus::Valid => {
+                tensor_start_overload_invalid[1] = true;
+            }
+            NarrowStartStatus::TensorStart => {
                 tensor_start_unsupported = true;
                 integer_start_overload_invalid[1] = true;
             }
-            NarrowIntegerStatus::Invalid => integer_start_overload_invalid[1] = true,
+            NarrowStartStatus::Override(probed) => {
+                start_override = Some(probed);
+                integer_start_overload_invalid[1] = true;
+            }
+            NarrowStartStatus::Invalid => {
+                tensor_start_overload_invalid[1] = true;
+                integer_start_overload_invalid[1] = true;
+            }
         }
     }
     if length >= 3 {
@@ -13272,16 +13389,18 @@ fn narrow_method_argument_validity(
         tensor_start_overload_invalid,
         integer_start_overload_invalid,
         tensor_start_unsupported,
+        start_override,
     })
 }
 
-fn narrow_top_level_argument_validity(
-    arguments: &[Option<ParsedCallArgument<'_>>; 4],
+fn narrow_top_level_argument_validity<'py>(
+    arguments: &[Option<ParsedCallArgument<'py>>; 4],
     length: usize,
-) -> PyResult<NarrowTypeValidity<4>> {
+) -> PyResult<NarrowTypeValidity<'py, 4>> {
     let mut tensor_start_overload_invalid = [false; 4];
     let mut integer_start_overload_invalid = [false; 4];
     let mut tensor_start_unsupported = false;
+    let mut start_override = None;
     if length >= 1 {
         let input = &arguments[0]
             .as_ref()
@@ -13308,14 +13427,22 @@ fn narrow_top_level_argument_validity(
             .expect("narrow start is present before validation gap")
             .value;
         let start_is_tensor = value.cast::<PyTensor>().is_ok();
-        tensor_start_overload_invalid[2] = !start_is_tensor;
-        match narrow_integer_status(value, start_is_tensor)? {
-            NarrowIntegerStatus::Valid => {}
-            NarrowIntegerStatus::TensorStart => {
+        match narrow_start_status(value, start_is_tensor)? {
+            NarrowStartStatus::Valid => {
+                tensor_start_overload_invalid[2] = true;
+            }
+            NarrowStartStatus::TensorStart => {
                 tensor_start_unsupported = true;
                 integer_start_overload_invalid[2] = true;
             }
-            NarrowIntegerStatus::Invalid => integer_start_overload_invalid[2] = true,
+            NarrowStartStatus::Override(probed) => {
+                start_override = Some(probed);
+                integer_start_overload_invalid[2] = true;
+            }
+            NarrowStartStatus::Invalid => {
+                tensor_start_overload_invalid[2] = true;
+                integer_start_overload_invalid[2] = true;
+            }
         }
     }
     if length >= 4 {
@@ -13332,20 +13459,24 @@ fn narrow_top_level_argument_validity(
         tensor_start_overload_invalid,
         integer_start_overload_invalid,
         tensor_start_unsupported,
+        start_override,
     })
 }
 
-fn narrow_integer_status(
-    value: &Bound<'_, PyAny>,
+fn narrow_start_status<'py>(
+    value: &Bound<'py, PyAny>,
     start_is_tensor: bool,
-) -> PyResult<NarrowIntegerStatus> {
+) -> PyResult<NarrowStartStatus<'py>> {
     if start_is_tensor {
-        return Ok(NarrowIntegerStatus::TensorStart);
+        return Ok(NarrowStartStatus::TensorStart);
+    }
+    if let Some(probed) = probe_torch_function_override(value) {
+        return Ok(NarrowStartStatus::Override(probed));
     }
     if narrow_integer_is_valid(value)? {
-        Ok(NarrowIntegerStatus::Valid)
+        Ok(NarrowStartStatus::Valid)
     } else {
-        Ok(NarrowIntegerStatus::Invalid)
+        Ok(NarrowStartStatus::Invalid)
     }
 }
 

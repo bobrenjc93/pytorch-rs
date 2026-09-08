@@ -310,6 +310,83 @@ class TensorNarrowReferenceTests(unittest.TestCase):
             self.mode_dispatch_contract(reference_torch),
         )
 
+    def start_override_dispatch_contract(self, module):
+        tensor = module.zeros((2, 3, 4), dtype=module.float32)
+        marker = object()
+        events = []
+
+        class StartOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append((func, types, args, kwargs))
+                return marker
+
+        start = StartOverride()
+        method_result = tensor.narrow(0, start, 1)
+        top_level_result = module.narrow(tensor, 0, start, 1)
+
+        def describe_call(call):
+            func, dispatch_types, args, kwargs = call
+            described_args = []
+            for argument in args:
+                if argument is tensor:
+                    described_args.append("input")
+                elif argument is start:
+                    described_args.append("start")
+                else:
+                    described_args.append(argument)
+            return {
+                "function_name": func.__name__,
+                "function_qualname": func.__qualname__,
+                "dispatch_types": tuple(
+                    dispatch_type.__name__ for dispatch_type in dispatch_types
+                ),
+                "args": tuple(described_args),
+                "kwargs": kwargs,
+            }
+
+        def dispatch_error(action):
+            error_type, message = self.error(action)
+            return error_type, message.split("\n\n", maxsplit=1)[0]
+
+        class DecliningMethodStart:
+            calls = 0
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls += 1
+                return NotImplemented
+
+        method_decline = dispatch_error(
+            lambda: tensor.narrow(0, DecliningMethodStart(), 1)
+        )
+
+        class DecliningTopLevelStart:
+            calls = 0
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls += 1
+                return NotImplemented
+
+        top_level_decline = dispatch_error(
+            lambda: module.narrow(tensor, 0, DecliningTopLevelStart(), 1)
+        )
+
+        return {
+            "method_result_is_marker": method_result is marker,
+            "top_level_result_is_marker": top_level_result is marker,
+            "calls": tuple(describe_call(call) for call in events),
+            "method_decline": method_decline + (DecliningMethodStart.calls,),
+            "top_level_decline": top_level_decline + (DecliningTopLevelStart.calls,),
+        }
+
+    def test_start_override_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.start_override_dispatch_contract(torch),
+            self.start_override_dispatch_contract(reference_torch),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

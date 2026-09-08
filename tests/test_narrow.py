@@ -306,6 +306,68 @@ class TensorNarrowTests(unittest.TestCase):
         self.assertEqual(args, (tensor, 0, tensor_start, 1))
         self.assertIsNone(kwargs)
 
+    def test_start_torch_function_overrides_dispatch_before_native_limits(self):
+        tensor = torch.zeros((2, 3, 4))
+        descriptor = inspect.getattr_static(torch.Tensor, "narrow")
+        marker = object()
+        events = []
+
+        class StartOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append((func, types, args, kwargs))
+                return marker
+
+        start = StartOverride()
+        self.assertIs(tensor.narrow(0, start, 1), marker)
+        self.assertIs(torch.narrow(tensor, 0, start, 1), marker)
+        self.assertEqual(len(events), 2)
+
+        method_function, method_types, method_args, method_kwargs = events[0]
+        self.assertIs(method_function, descriptor)
+        self.assertEqual(method_types, (StartOverride,))
+        self.assertEqual(method_args, (tensor, 0, start, 1))
+        self.assertIsNone(method_kwargs)
+
+        top_function, top_types, top_args, top_kwargs = events[1]
+        self.assertIs(top_function, torch.narrow)
+        self.assertEqual(top_types, (StartOverride,))
+        self.assertEqual(top_args, (tensor, 0, start, 1))
+        self.assertIsNone(top_kwargs)
+
+        class IntegerStartOverride(int):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append((func, types, args, kwargs))
+                return marker
+
+        self.assertIs(tensor.narrow(0, IntegerStartOverride(0), 1), marker)
+        self.assertIs(torch.narrow(tensor, 0, IntegerStartOverride(0), 1), marker)
+        self.assertEqual(events[-2][1], (IntegerStartOverride,))
+        self.assertEqual(events[-1][1], (IntegerStartOverride,))
+
+        class DecliningStart:
+            calls = 0
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls += 1
+                return NotImplemented
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^Multiple dispatch failed for 'torch\.Tensor\.narrow'; all __torch_function__ handlers returned NotImplemented:",
+        ):
+            tensor.narrow(0, DecliningStart(), 1)
+        self.assertEqual(DecliningStart.calls, 1)
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^Multiple dispatch failed for 'torch\.narrow'; all __torch_function__ handlers returned NotImplemented:",
+        ):
+            torch.narrow(tensor, 0, DecliningStart(), 1)
+        self.assertEqual(DecliningStart.calls, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
