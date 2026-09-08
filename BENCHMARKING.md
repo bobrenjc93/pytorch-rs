@@ -82,6 +82,7 @@ and generated workload matrix in its JSON output.
 
 - [`+` and `Tensor.add` release timings](docs/tensor-add-release-timings.md)
 - [`torch.sub` and `torch.subtract` release timings](docs/top-level-subtract-release-timings.md)
+- [`torch.stack` release timings](docs/top-level-stack-release-timings.md)
 - [`*`, `Tensor.mul`/`Tensor.multiply`, and `torch.mul`/`torch.multiply` release timings](docs/tensor-mul-release-timings.md)
 - [`torch.div` and `torch.divide` release timings](docs/top-level-division-release-timings.md)
 - [`Tensor.abs` and `torch.abs` release timings](docs/tensor-abs-release-timings.md)
