@@ -1,6 +1,8 @@
 import inspect
 import pickle
 import re
+import subprocess
+import sys
 import types
 import unittest
 
@@ -299,6 +301,42 @@ class TensorPowTests(unittest.TestCase):
             with self.subTest(call=call):
                 with self.assertRaises(TypeError):
                     call()
+
+    def test_package_reinitialization_keeps_rpow_absent_and_pow_pickleable(self):
+        source = r'''
+import importlib
+import inspect
+import pickle
+import sys
+
+import torch_rs as torch
+
+def assert_pow_surface(module):
+    assert not hasattr(module.Tensor, "__rpow__")
+    assert (module.tensor([2.0]) ** 2).tolist() == [4.0]
+    descriptor = inspect.getattr_static(module.Tensor, "pow")
+    function = module.pow
+    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+        assert pickle.loads(pickle.dumps(descriptor, protocol=protocol)) is descriptor
+        assert pickle.loads(pickle.dumps(function, protocol=protocol)) is function
+
+assert_pow_surface(torch)
+for name in list(sys.modules):
+    if name == "torch_rs" or name.startswith("torch_rs."):
+        del sys.modules[name]
+assert_pow_surface(importlib.import_module("torch_rs"))
+'''
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
 
 if __name__ == "__main__":

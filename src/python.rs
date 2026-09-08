@@ -23402,7 +23402,9 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     tensor_type.setattr("__pos__", positive_descriptor)?;
     // PyO3 exposes the reflected power wrapper when installing nb_power, but
     // this narrow pow slice intentionally leaves Tensor.__rpow__ unsupported.
-    tensor_type.delattr("__rpow__")?;
+    if tensor_type.hasattr("__rpow__")? {
+        tensor_type.delattr("__rpow__")?;
+    }
     register_scalar_conversions(&tensor_base)?;
     module.add_class::<PyDType>()?;
     module.add("finfo", finfo_type_object(py)?.clone_ref(py))?;
