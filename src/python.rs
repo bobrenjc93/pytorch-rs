@@ -5465,12 +5465,24 @@ fn ordered_top_level_pow_overrides<'py>(
     Ok(overrides)
 }
 
+fn top_level_pow_is_scalar_base_scalar_exponent(call: &BoundTopLevelPowCall<'_>) -> bool {
+    matches!(call.input, BoundPowBase::Scalar)
+        && matches!(
+            call.exponent,
+            BoundPowExponent::Square | BoundPowExponent::UnsupportedScalar
+        )
+}
+
 fn dispatch_top_level_pow(
     py: Python<'_>,
     call: &BoundTopLevelPowCall<'_>,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
+    if top_level_pow_is_scalar_base_scalar_exponent(call) {
+        return Err(top_level_pow_binding_error(args, kwargs)?);
+    }
+
     let overrides = ordered_top_level_pow_overrides(call)?;
     if torch_function_mode_stack::is_empty() && overrides.is_empty() {
         return apply_top_level_pow(py, call);
