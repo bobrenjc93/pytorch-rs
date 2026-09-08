@@ -188,7 +188,7 @@ SUPPORTED_SURFACE_SUBSECTION_ANCHORS = (
 )
 SUPPORTED_SURFACE_INDEX_SUMMARIES = (
     "CPU `float32` tensors",
-    "inference-only `torch.nn.functional.softsign`",
+    "inference-only softsign aliases",
     "Functional linear, loss, and deterministic dropout paths",
     "autocast cache state helpers",
     "grad/autograd state queries",
