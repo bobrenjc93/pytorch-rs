@@ -359,6 +359,94 @@ class TensorToReferenceTests(unittest.TestCase):
             self.torch_function_override_contract(reference_torch),
         )
 
+    def device_string_subclass_contract(self, module):
+        tensor = module.tensor([1.0], dtype=module.float32)
+
+        class DeviceString(str):
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return "override"
+
+        outcomes = []
+        for specification in ("cpu", "cpu:0"):
+            DeviceString.calls.clear()
+            result = tensor.to(device=DeviceString(specification))
+            outcomes.append(
+                (
+                    specification,
+                    len(DeviceString.calls),
+                    self.tensor_contract(result, tensor),
+                )
+            )
+        return tuple(outcomes)
+
+    def test_device_string_subclasses_parse_as_devices_without_dispatch(self):
+        self.assertEqual(
+            self.device_string_subclass_contract(torch),
+            self.device_string_subclass_contract(reference_torch),
+        )
+
+    def device_like_override_outside_device_slot_contract(self, module):
+        tensor = module.tensor([1.0], dtype=module.float32)
+        marker = object()
+
+        class DeviceString(str):
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        class DeviceOrdinal(int):
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        outcomes = []
+        for name, value, call in (
+            (
+                "dtype positional string",
+                DeviceString("dtype"),
+                lambda value: tensor.to("cuda", value),
+            ),
+            (
+                "copy keyword string",
+                DeviceString("copy"),
+                lambda value: tensor.to("cuda", copy=value),
+            ),
+            (
+                "non_blocking keyword int",
+                DeviceOrdinal(0),
+                lambda value: tensor.to("cuda", non_blocking=value),
+            ),
+        ):
+            type(value).calls.clear()
+            result = call(value)
+            outcomes.append(
+                (
+                    name,
+                    result is marker,
+                    tuple(
+                        self.serialize_to_dispatch_call(module, tensor, value, dispatch_call)
+                        for dispatch_call in type(value).calls
+                    ),
+                )
+            )
+        return tuple(outcomes)
+
+    def test_device_like_overrides_outside_device_slots_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.device_like_override_outside_device_slot_contract(torch),
+            self.device_like_override_outside_device_slot_contract(reference_torch),
+        )
+
     def callable_contract(self, module):
         tensor = module.tensor([1.0], dtype=module.float32)
         descriptor = inspect.getattr_static(module.Tensor, "to")

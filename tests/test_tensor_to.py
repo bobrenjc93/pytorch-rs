@@ -251,6 +251,121 @@ class TensorToTests(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "not an acceptable base type"):
             type("TensorSubclass", (torch.Tensor,), {})
 
+    def test_device_subclasses_with_torch_function_parse_as_native_devices(self):
+        tensor = torch.tensor([1.0], dtype=torch.float32)
+        marker = object()
+
+        class DeviceString(str):
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        class DeviceOrdinal(int):
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        DeviceString.calls.clear()
+        self.assert_identity(tensor, tensor.to(device=DeviceString("cpu")))
+        self.assertEqual(DeviceString.calls, [])
+
+        DeviceString.calls.clear()
+        self.assert_fresh_clone(tensor, tensor.to(device=DeviceString("cpu:0")))
+        self.assertEqual(DeviceString.calls, [])
+
+        DeviceString.calls.clear()
+        with self.assertRaisesRegex(RuntimeError, r"only 'cpu' is implemented"):
+            tensor.to(device=DeviceString("cuda"))
+        self.assertEqual(DeviceString.calls, [])
+
+        for call in (
+            lambda: tensor.to(DeviceOrdinal(0)),
+            lambda: tensor.to(device=DeviceOrdinal(0)),
+        ):
+            DeviceOrdinal.calls.clear()
+            with self.subTest(call=call):
+                with self.assertRaisesRegex(
+                    NotImplementedError, "CUDA device ordinals are not supported"
+                ):
+                    call()
+                self.assertEqual(DeviceOrdinal.calls, [])
+
+    def test_device_like_torch_function_overrides_outside_device_slots_dispatch(self):
+        tensor = torch.tensor([1.0], dtype=torch.float32)
+        descriptor = inspect.getattr_static(torch.Tensor, "to")
+        marker = object()
+
+        class DeviceString(str):
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        class DeviceOrdinal(int):
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        def assert_dispatch(value, call, expected_tail, expected_kwargs):
+            type(value).calls.clear()
+            self.assertIs(call(value), marker)
+            self.assertEqual(len(type(value).calls), 1)
+
+            function, dispatch_types, args, kwargs = type(value).calls[0]
+            self.assertIs(function, descriptor)
+            self.assertEqual(dispatch_types, (type(value),))
+            self.assertIs(args[0], tensor)
+            self.assertEqual(len(args), len(expected_tail) + 1)
+            for actual, expected in zip(args[1:], expected_tail, strict=True):
+                if expected is value:
+                    self.assertIs(actual, expected)
+                else:
+                    self.assertEqual(actual, expected)
+            if expected_kwargs is None:
+                self.assertIsNone(kwargs)
+            else:
+                self.assertEqual(tuple(kwargs), tuple(expected_kwargs))
+                for key, expected in expected_kwargs.items():
+                    if expected is value:
+                        self.assertIs(kwargs[key], expected)
+                    else:
+                        self.assertEqual(kwargs[key], expected)
+
+        dtype = DeviceString("dtype")
+        assert_dispatch(
+            dtype,
+            lambda value: tensor.to("cuda", value),
+            ("cuda", dtype),
+            None,
+        )
+
+        copy = DeviceString("copy")
+        assert_dispatch(
+            copy,
+            lambda value: tensor.to("cuda", copy=value),
+            ("cuda",),
+            {"copy": copy},
+        )
+
+        non_blocking = DeviceOrdinal(0)
+        assert_dispatch(
+            non_blocking,
+            lambda value: tensor.to("cuda", non_blocking=value),
+            ("cuda",),
+            {"non_blocking": non_blocking},
+        )
+
     def test_tensorbase_descriptor_metadata_documentation_and_unbound_calls(self):
         tensor = torch.tensor([1.0], dtype=torch.float32)
         descriptor = inspect.getattr_static(torch.Tensor, "to")

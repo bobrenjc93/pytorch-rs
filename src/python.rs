@@ -10191,13 +10191,16 @@ fn contains_to_torch_function_override_operand(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> bool {
-    args.iter()
-        .any(|value| probe_torch_function_override(&value).is_some())
-        || kwargs.is_some_and(|kwargs| {
-            kwargs
-                .iter()
-                .any(|(_, value)| probe_torch_function_override(&value).is_some())
+    args.iter().enumerate().any(|(index, value)| {
+        let native_device_slot = index == 0 && is_to_native_device_argument(&value);
+        !native_device_slot && probe_torch_function_override(&value).is_some()
+    }) || kwargs.is_some_and(|kwargs| {
+        kwargs.iter().any(|(key, value)| {
+            let native_device_slot = key.extract::<String>().is_ok_and(|key| key == "device")
+                && is_to_native_device_argument(&value);
+            !native_device_slot && probe_torch_function_override(&value).is_some()
         })
+    })
 }
 
 fn is_to_native_dtype_or_none_argument(value: &Bound<'_, PyAny>) -> bool {
@@ -10276,28 +10279,20 @@ fn classify_to_first_argument<'py>(
         }
         return Ok(ToFirstArgument::Tensor(value.cast::<PyTensor>()?.clone()));
     }
-    if let Some(probed) = probe_torch_function_override(value) {
-        insert_ordered_torch_function_override(overrides, &probed)?;
-        return Ok(ToFirstArgument::Override);
-    }
     if let Ok(dtype) = value.cast::<PyDType>() {
         if !defer_native_validation {
             validate_to_dtype(dtype.try_borrow()?.inner())?;
         }
         return Ok(ToFirstArgument::DType);
     }
-    if value.cast::<PyDevice>().is_ok() || value.cast::<PyString>().is_ok() {
+    if is_to_native_device_argument(value) {
         return Ok(ToFirstArgument::Device {
             indexed_cpu: parse_to_device(value, defer_native_validation, overrides)?.indexed_cpu,
         });
     }
-    if value.is_instance_of::<PyInt>() && !value.is_instance_of::<PyBool>() {
-        if defer_native_validation {
-            return Ok(ToFirstArgument::Device { indexed_cpu: false });
-        }
-        return Err(PyNotImplementedError::new_err(
-            "to(): CUDA device ordinals are not supported",
-        ));
+    if let Some(probed) = probe_torch_function_override(value) {
+        insert_ordered_torch_function_override(overrides, &probed)?;
+        return Ok(ToFirstArgument::Override);
     }
     Err(invalid_to_arguments_error())
 }
@@ -10314,18 +10309,31 @@ fn parse_to_device<'py>(
     if device.is_none() {
         return Ok(ParsedToDevice { indexed_cpu: false });
     }
-    if defer_native_validation
-        && (device.cast::<PyDevice>().is_ok()
-            || device.cast::<PyString>().is_ok()
-            || (device.is_instance_of::<PyInt>() && !device.is_instance_of::<PyBool>()))
-    {
-        return Ok(ParsedToDevice { indexed_cpu: false });
+    if is_to_native_device_argument(device) {
+        if defer_native_validation {
+            return Ok(ParsedToDevice { indexed_cpu: false });
+        }
+        return parse_to_native_device(device);
     }
     if let Some(probed) = probe_torch_function_override(device) {
         insert_ordered_torch_function_override(overrides, &probed)?;
         return Ok(ParsedToDevice { indexed_cpu: false });
     }
+    parse_to_native_device(device)
+}
 
+fn is_to_native_device_argument(value: &Bound<'_, PyAny>) -> bool {
+    value.cast::<PyDevice>().is_ok()
+        || value.cast::<PyString>().is_ok()
+        || (value.is_instance_of::<PyInt>() && !value.is_instance_of::<PyBool>())
+}
+
+fn parse_to_native_device(device: &Bound<'_, PyAny>) -> PyResult<ParsedToDevice> {
+    if device.is_instance_of::<PyInt>() && !device.is_instance_of::<PyBool>() {
+        return Err(PyNotImplementedError::new_err(
+            "to(): CUDA device ordinals are not supported",
+        ));
+    }
     let descriptor = parse_device_descriptor("to", device)?;
     debug_assert!(descriptor.inner().is_cpu());
     Ok(ParsedToDevice {
