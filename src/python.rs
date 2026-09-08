@@ -6177,17 +6177,25 @@ fn apply_sum_reduction(
         }
         BoundSumReduction::Dimension { dimension, keepdim } => {
             let dimension = extract_bound_sum_dimension(dimension)?;
-            if input.shape().len() != 1 {
-                return Err(sum_unsupported_reduction());
+            match input.shape().len() {
+                1 => {
+                    normalize_dimension(dimension, input.shape().len())?;
+                    let mut output = input.sum();
+                    if *keepdim {
+                        output = output
+                            .reshape([1_i64])
+                            .map_err(|error| tensor_error(&error))?;
+                    }
+                    output
+                }
+                2 => {
+                    let dimension = normalize_dimension(dimension, input.shape().len())?;
+                    input
+                        .sum_rank_two_dimension(dimension, *keepdim)
+                        .map_err(|error| tensor_error(&error))?
+                }
+                _ => return Err(sum_unsupported_reduction()),
             }
-            normalize_dimension(dimension, input.shape().len())?;
-            let mut output = input.sum();
-            if *keepdim {
-                output = output
-                    .reshape([1_i64])
-                    .map_err(|error| tensor_error(&error))?;
-            }
-            output
         }
         BoundSumReduction::Unsupported => {
             return Err(sum_unsupported_reduction());
@@ -6341,7 +6349,13 @@ fn extract_bound_mean_dimension(dimension: &BoundSumDimension<'_>) -> PyResult<i
 
 fn sum_unsupported_reduction() -> PyErr {
     PyNotImplementedError::new_err(
-        "sum(): only full reductions with dim=None and rank-1 dim=0/-1 reductions are supported; broader dim reductions and concrete out are not supported",
+        "sum(): only full reductions with dim=None, rank-1 dim=0/-1 reductions, and rank-2 single-dimension reductions are supported; multi-dim reductions, higher-rank dim reductions, and concrete out are not supported",
+    )
+}
+
+fn sum_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "sum(): only exact native CPU float32 Tensor inputs are supported",
     )
 }
 
@@ -8980,9 +8994,17 @@ impl PyTensor {
     #[allow(clippy::doc_markdown)]
     #[doc = "\nsum(dim=None, keepdim=False, dtype=None) -> Tensor\n\nSee :func:`torch.sum`\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
-    fn sum(&self, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+    fn sum(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
         let call = bind_method_sum_arguments(args, kwargs)?;
-        let output = apply_sum_reduction(&self.inner, &call.reduction)?;
+        if !slf.as_any().is_exact_instance_of::<PyTensor>() {
+            return Err(sum_unsupported_native_input());
+        }
+        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+        let output = apply_sum_reduction(&tensor.inner, &call.reduction)?;
         Ok(Self::new(output))
     }
 
@@ -16234,11 +16256,16 @@ fn parse_top_level_sum_input<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<BoundTensorOrTorchFunction<'py>> {
-    if let Ok(tensor) = input.value.cast::<PyTensor>() {
-        return Ok(BoundTensorOrTorchFunction::Tensor(tensor.clone()));
+    if input.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundTensorOrTorchFunction::Tensor(
+            input.value.cast::<PyTensor>()?.clone(),
+        ));
     }
     if let Some(probed) = probe_torch_function_override(&input.value) {
         return Ok(BoundTensorOrTorchFunction::Override(probed));
+    }
+    if input.value.is_instance_of::<PyTensor>() {
+        return Err(sum_unsupported_native_input());
     }
     if overload_mismatch_on_non_tensor {
         return Err(top_level_sum_invalid_combination(positional, keywords)?);
