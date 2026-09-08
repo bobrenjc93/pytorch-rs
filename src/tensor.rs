@@ -13,7 +13,6 @@ use crate::tensor_error::TensorError;
 
 const F32_SIGN_MASK: u32 = 0x8000_0000;
 const F32_QUIET_NAN_MASK: u32 = 0x0040_0000;
-#[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
 const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
 // Keep tiny latency cases on the single-row loop while still row-blocking the
@@ -101,12 +100,6 @@ enum GradFn {
         #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
         node: AutogradNode,
     },
-    Stack {
-        inputs: Vec<SavedTensor>,
-        dimension: usize,
-        output_shape: Vec<usize>,
-        output_elements: usize,
-    },
     Multiply {
         left: SavedTensor,
         right: SavedTensor,
@@ -189,7 +182,7 @@ impl GradFn {
                 left.take_parent(pending);
                 right.take_parent(pending);
             }
-            Self::Concat { inputs, .. } | Self::Stack { inputs, .. } => {
+            Self::Concat { inputs, .. } => {
                 for input in inputs {
                     input.take_parent(pending);
                 }
@@ -243,7 +236,6 @@ impl GradFn {
             }
             Self::AddSubtract { .. }
             | Self::Concat { .. }
-            | Self::Stack { .. }
             | Self::Negate { .. }
             | Self::ZeroVjp(_)
             | Self::Sum { .. }
@@ -271,7 +263,6 @@ impl GradFn {
             Self::SavedOutputUnary(node) => node.output.storage = None,
             Self::AddSubtract { .. }
             | Self::Concat { .. }
-            | Self::Stack { .. }
             | Self::Negate { .. }
             | Self::ZeroVjp(_)
             | Self::Sum { .. }
@@ -1279,7 +1270,6 @@ impl Tensor {
             | GradFn::Concat { node, .. }
             | GradFn::Negate { node, .. }
             | GradFn::Transform { node, .. } => *node,
-            GradFn::Stack { .. } => AutogradNode::Stack,
             #[cfg(any(feature = "python-bindings", test))]
             GradFn::SquaredDifference { .. } => AutogradNode::SquaredDifference,
             GradFn::SavedInputUnary(node) => node.identity,
@@ -1650,16 +1640,17 @@ impl Tensor {
         if inputs.iter().any(|input| input.requires_grad()) && is_grad_enabled() {
             let mut saved_inputs = try_result_vector(inputs.len(), output.elements)?;
             for input in inputs {
-                saved_inputs.push(SavedTensor::try_from_tensor(input, false)?);
+                saved_inputs.push(SavedTensor::try_from_stack_input(input, dimension)?);
             }
             let output_shape = try_clone_result_shape(&output.shape, output.elements)?;
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
-                    grad_fn: Mutex::new(Some(GradFn::Stack {
+                    grad_fn: Mutex::new(Some(GradFn::Concat {
                         inputs: saved_inputs,
                         dimension,
                         output_shape,
                         output_elements: output.elements,
+                        node: AutogradNode::Stack,
                     })),
                 },
             }));
@@ -2095,46 +2086,8 @@ impl Tensor {
     #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
     pub(crate) fn unsqueeze_axis(&self, axis: usize) -> Result<Self, TensorError> {
         debug_assert!(axis <= self.shape.len());
-        let mut shape = try_result_vector(self.shape.len() + 1, self.elements)?;
-        shape.extend_from_slice(&self.shape[..axis]);
-        shape.push(1);
-        shape.extend_from_slice(&self.shape[axis..]);
-
-        let inserted_stride = if axis == self.shape.len() {
-            1
-        } else {
-            // PyTorch carries sizes and strides through signed 64-bit
-            // arithmetic here, including wrapping for zero-element views.
-            let inserted_stride =
-                signed_wrapping_stride_product_value(self.strides[axis], self.shape[axis])?;
-            // Packed SymInt values below -2^62 identify symbolic nodes
-            // instead of concrete integers, even in an eager stride list.
-            if inserted_stride < MIN_CONCRETE_SYMINT {
-                return Err(TensorError::NonConcreteInteger);
-            }
-            if inserted_stride < 0 {
-                let mut strides = try_result_vector(self.strides.len() + 1, self.elements)?;
-                for &stride in &self.strides[..axis] {
-                    strides.push(
-                        i64::try_from(stride)
-                            .map_err(|_| TensorError::StrideCalculationOverflow)?,
-                    );
-                }
-                strides.push(inserted_stride);
-                for &stride in &self.strides[axis..] {
-                    strides.push(
-                        i64::try_from(stride)
-                            .map_err(|_| TensorError::StrideCalculationOverflow)?,
-                    );
-                }
-                return Err(TensorError::NegativeStrides { strides });
-            }
-            usize::try_from(inserted_stride).map_err(|_| TensorError::StrideCalculationOverflow)?
-        };
-        let mut strides = try_result_vector(self.strides.len() + 1, self.elements)?;
-        strides.extend_from_slice(&self.strides[..axis]);
-        strides.push(inserted_stride);
-        strides.extend_from_slice(&self.strides[axis..]);
+        let (shape, strides) =
+            unsqueezed_shape_and_strides(&self.shape, &self.strides, self.elements, axis)?;
 
         self.finish_view_transform(
             Self {
@@ -2729,21 +2682,21 @@ impl Tensor {
             }
         }
 
+        let mut shape = try_result_vector(output_rank, first.elements)?;
+        shape.extend_from_slice(&first.shape[..dimension]);
+        shape.push(inputs.len());
+        shape.extend_from_slice(&first.shape[dimension..]);
         let elements = first
             .elements
             .checked_mul(inputs.len())
             .ok_or(TensorError::ElementCountOverflow)?;
-        let mut shape = try_result_vector(output_rank, elements)?;
-        shape.extend_from_slice(&first.shape[..dimension]);
-        shape.push(inputs.len());
-        shape.extend_from_slice(&first.shape[dimension..]);
         if element_count(&shape)? != elements {
             return Err(TensorError::ElementCountOverflow);
         }
         validate_storage_capacity(elements)?;
 
         let strides = contiguous_strides(&shape, elements)?;
-        let data = materialize_stack(inputs, dimension, &shape, elements)?;
+        let data = materialize_stack(inputs, dimension, elements)?;
         let output = Self::from_owned_parts(data, shape, strides, first.dtype(), first.device());
         Self::finish_stack_vjp(inputs, output, dimension)
     }
@@ -5108,6 +5061,24 @@ impl SavedTensor {
         })
     }
 
+    fn try_from_stack_input(tensor: &Tensor, dimension: usize) -> Result<Self, TensorError> {
+        let (shape, strides) = unsqueezed_shape_and_strides(
+            &tensor.shape,
+            &tensor.strides,
+            tensor.elements,
+            dimension,
+        )?;
+        Ok(Self {
+            storage: None,
+            shape,
+            strides,
+            offset: tensor.offset,
+            elements: tensor.elements,
+            output_nr: tensor.output_nr,
+            autograd: tensor.autograd.as_ref().map(Arc::clone),
+        })
+    }
+
     fn contiguous_slice(&self) -> Option<&[f32]> {
         if self.elements == 0 {
             return Some(&[]);
@@ -5268,7 +5239,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                             push_saved_parent(&mut stack, right);
                             push_saved_parent(&mut stack, left);
                         }
-                        GradFn::Concat { inputs, .. } | GradFn::Stack { inputs, .. } => {
+                        GradFn::Concat { inputs, .. } => {
                             for input in inputs.iter().rev() {
                                 push_saved_parent(&mut stack, input);
                             }
@@ -5351,19 +5322,6 @@ fn apply_grad_fn(
             output_elements,
             ..
         } => apply_concat_grad_fn(
-            inputs,
-            *dimension,
-            output_shape,
-            *output_elements,
-            upstream,
-            gradients,
-        )?,
-        GradFn::Stack {
-            inputs,
-            dimension,
-            output_shape,
-            output_elements,
-        } => apply_stack_grad_fn(
             inputs,
             *dimension,
             output_shape,
@@ -5494,47 +5452,84 @@ fn apply_add_subtract_grad_fn(
 fn materialize_stack(
     inputs: &[&Tensor],
     dimension: usize,
-    output_shape: &[usize],
     output_elements: usize,
 ) -> Result<Vec<f32>, TensorError> {
+    let Some(first) = inputs.first() else {
+        return Ok(Vec::new());
+    };
+    let inner = element_count(&first.shape[dimension..])?;
+    let outer = element_count(&first.shape[..dimension])?;
+    if let Some(data) = materialize_stack_small_rank_fast_path(inputs, dimension, output_elements)?
+    {
+        return Ok(data);
+    }
     if let Some(data) =
-        materialize_stack_small_rank_fast_path(inputs, dimension, output_shape, output_elements)?
+        materialize_stack_from_contiguous_slices(inputs, inner, outer, output_elements)?
     {
         return Ok(data);
     }
 
-    let Some(first) = inputs.first().copied() else {
-        return Err(TensorError::ShapeMismatch {
-            left: Vec::new(),
-            right: Vec::new(),
-        });
-    };
-    debug_assert_eq!(output_shape.len(), first.shape.len() + 1);
-    debug_assert_eq!(output_shape[dimension], inputs.len());
-
-    let inner = element_count(&first.shape[dimension..])?;
-    let outer = element_count(&first.shape[..dimension])?;
-    let mut iterators = try_result_vector(inputs.len(), output_elements)?;
+    let mut materialized_inputs = try_result_vector(inputs.len(), output_elements)?;
     for input in inputs {
-        iterators.push(input.logical_values());
+        materialized_inputs.push(input.try_to_vec()?);
+    }
+    let mut slices = try_result_vector(materialized_inputs.len(), output_elements)?;
+    for values in &materialized_inputs {
+        slices.push(values.as_slice());
+    }
+    let mut data = try_result_vector(output_elements, output_elements)?;
+    append_stack_blocks(&mut data, &slices, inner, outer)?;
+    debug_assert_eq!(data.len(), output_elements);
+    Ok(data)
+}
+
+fn materialize_stack_from_contiguous_slices(
+    inputs: &[&Tensor],
+    inner: usize,
+    outer: usize,
+    output_elements: usize,
+) -> Result<Option<Vec<f32>>, TensorError> {
+    let mut slices = try_result_vector(inputs.len(), output_elements)?;
+    for input in inputs {
+        let Some(values) = input.contiguous_slice() else {
+            return Ok(None);
+        };
+        slices.push(values);
     }
 
     let mut data = try_result_vector(output_elements, output_elements)?;
-    for _ in 0..outer {
-        for values in &mut iterators {
-            for _ in 0..inner {
-                data.push(values.next().ok_or(TensorError::IndexCalculationOverflow)?);
-            }
+    append_stack_blocks(&mut data, &slices, inner, outer)?;
+    debug_assert_eq!(data.len(), output_elements);
+    Ok(Some(data))
+}
+
+fn append_stack_blocks(
+    data: &mut Vec<f32>,
+    input_slices: &[&[f32]],
+    inner: usize,
+    outer: usize,
+) -> Result<(), TensorError> {
+    for outer_index in 0..outer {
+        let start = outer_index
+            .checked_mul(inner)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let end = start
+            .checked_add(inner)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        for values in input_slices {
+            data.extend_from_slice(
+                values
+                    .get(start..end)
+                    .ok_or(TensorError::IndexCalculationOverflow)?,
+            );
         }
     }
-    debug_assert_eq!(data.len(), output_elements);
-    Ok(data)
+    Ok(())
 }
 
 fn materialize_stack_small_rank_fast_path(
     inputs: &[&Tensor],
     dimension: usize,
-    output_shape: &[usize],
     output_elements: usize,
 ) -> Result<Option<Vec<f32>>, TensorError> {
     let Some(first) = inputs.first().copied() else {
@@ -5562,7 +5557,7 @@ fn materialize_stack_small_rank_fast_path(
             Ok(Some(data))
         }
         (1, 1) if inputs.iter().all(|input| can_append_rank_1_fast(input)) => {
-            let [length, _] = output_shape else {
+            let [length] = first.shape.as_slice() else {
                 return Err(TensorError::IndexCalculationOverflow);
             };
             let mut data = try_result_vector(output_elements, output_elements)?;
@@ -5583,7 +5578,7 @@ fn materialize_stack_small_rank_fast_path(
             Ok(Some(data))
         }
         (2, 1) if inputs.iter().all(|input| can_append_rank_2_fast(input)) => {
-            let [rows, _, _] = output_shape else {
+            let [rows, _] = first.shape.as_slice() else {
                 return Err(TensorError::IndexCalculationOverflow);
             };
             let mut data = try_result_vector(output_elements, output_elements)?;
@@ -5596,7 +5591,7 @@ fn materialize_stack_small_rank_fast_path(
             Ok(Some(data))
         }
         (2, 2) if inputs.iter().all(|input| can_append_rank_2_fast(input)) => {
-            let [rows, columns, _] = output_shape else {
+            let [rows, columns] = first.shape.as_slice() else {
                 return Err(TensorError::IndexCalculationOverflow);
             };
             let mut data = try_result_vector(output_elements, output_elements)?;
@@ -5995,58 +5990,6 @@ fn apply_concat_grad_fn(
         axis_start = axis_start
             .checked_add(input_axis)
             .ok_or(TensorError::IndexCalculationOverflow)?;
-    }
-    Ok(())
-}
-
-fn apply_stack_grad_fn(
-    inputs: &[SavedTensor],
-    dimension: usize,
-    output_shape: &[usize],
-    output_elements: usize,
-    upstream: &[f32],
-    gradients: &mut Gradients,
-) -> Result<(), TensorError> {
-    debug_assert_eq!(output_elements, upstream.len());
-    if upstream.len() != output_elements || dimension >= output_shape.len() {
-        return Err(TensorError::IndexCalculationOverflow);
-    }
-
-    let inner = element_count(&output_shape[dimension + 1..])?;
-    let outer = element_count(&output_shape[..dimension])?;
-    let output_axis = output_shape[dimension];
-    if output_axis != inputs.len() {
-        return Err(TensorError::IndexCalculationOverflow);
-    }
-    let output_block = output_axis
-        .checked_mul(inner)
-        .ok_or(TensorError::IndexCalculationOverflow)?;
-
-    for (input_index, input) in inputs.iter().enumerate() {
-        if let Some(meta) = &input.autograd {
-            let mut gradient = try_result_vector(input.elements, input.elements)?;
-            let axis_offset = input_index
-                .checked_mul(inner)
-                .ok_or(TensorError::IndexCalculationOverflow)?;
-            for outer_index in 0..outer {
-                let output_base = outer_index
-                    .checked_mul(output_block)
-                    .and_then(|base| base.checked_add(axis_offset))
-                    .ok_or(TensorError::IndexCalculationOverflow)?;
-                let output_end = output_base
-                    .checked_add(inner)
-                    .ok_or(TensorError::IndexCalculationOverflow)?;
-                gradient.extend_from_slice(
-                    upstream
-                        .get(output_base..output_end)
-                        .ok_or(TensorError::IndexCalculationOverflow)?,
-                );
-            }
-            if gradient.len() != input.elements {
-                return Err(TensorError::IndexCalculationOverflow);
-            }
-            add_gradient(gradients, meta, input.output_nr, gradient);
-        }
     }
     Ok(())
 }
@@ -7763,6 +7706,54 @@ fn try_clone_result_shape(shape: &[usize], elements: usize) -> Result<Vec<usize>
     let mut cloned = try_result_vector(shape.len(), elements)?;
     cloned.extend_from_slice(shape);
     Ok(cloned)
+}
+
+fn unsqueezed_shape_and_strides(
+    shape: &[usize],
+    strides: &[usize],
+    elements: usize,
+    axis: usize,
+) -> Result<(Vec<usize>, Vec<usize>), TensorError> {
+    let mut output_shape = try_result_vector(shape.len() + 1, elements)?;
+    output_shape.extend_from_slice(&shape[..axis]);
+    output_shape.push(1);
+    output_shape.extend_from_slice(&shape[axis..]);
+
+    let inserted_stride = if axis == shape.len() {
+        1
+    } else {
+        // PyTorch carries sizes and strides through signed 64-bit arithmetic
+        // here, including wrapping for zero-element views.
+        let inserted_stride = signed_wrapping_stride_product_value(strides[axis], shape[axis])?;
+        // Packed SymInt values below -2^62 identify symbolic nodes instead of
+        // concrete integers, even in an eager stride list.
+        if inserted_stride < MIN_CONCRETE_SYMINT {
+            return Err(TensorError::NonConcreteInteger);
+        }
+        if inserted_stride < 0 {
+            let mut output_strides = try_result_vector(strides.len() + 1, elements)?;
+            for &stride in &strides[..axis] {
+                output_strides.push(
+                    i64::try_from(stride).map_err(|_| TensorError::StrideCalculationOverflow)?,
+                );
+            }
+            output_strides.push(inserted_stride);
+            for &stride in &strides[axis..] {
+                output_strides.push(
+                    i64::try_from(stride).map_err(|_| TensorError::StrideCalculationOverflow)?,
+                );
+            }
+            return Err(TensorError::NegativeStrides {
+                strides: output_strides,
+            });
+        }
+        usize::try_from(inserted_stride).map_err(|_| TensorError::StrideCalculationOverflow)?
+    };
+    let mut output_strides = try_result_vector(strides.len() + 1, elements)?;
+    output_strides.extend_from_slice(&strides[..axis]);
+    output_strides.push(inserted_stride);
+    output_strides.extend_from_slice(&strides[axis..]);
+    Ok((output_shape, output_strides))
 }
 
 fn try_clone_reshape_shape(shape: &[i64], elements: usize) -> Result<Vec<i64>, TensorError> {
@@ -13267,14 +13258,10 @@ mod tests {
         expected_bits: &[u32],
     ) {
         let references = inputs.iter().collect::<Vec<_>>();
-        let fast_path = materialize_stack_small_rank_fast_path(
-            &references,
-            dimension,
-            expected_shape,
-            expected_bits.len(),
-        )
-        .unwrap()
-        .unwrap_or_else(|| panic!("{case}: expected stack fast path"));
+        let fast_path =
+            materialize_stack_small_rank_fast_path(&references, dimension, expected_bits.len())
+                .unwrap()
+                .unwrap_or_else(|| panic!("{case}: expected stack fast path"));
         assert!(
             fast_path
                 .iter()
@@ -13291,8 +13278,7 @@ mod tests {
             materialize_stack_small_rank_fast_path(
                 &shared_references,
                 dimension,
-                expected_shape,
-                expected_bits.len(),
+                expected_bits.len()
             )
             .unwrap()
             .is_none(),
