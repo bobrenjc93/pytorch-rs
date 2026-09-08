@@ -246,6 +246,43 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                     ),
                     "credit mismatch",
                 ),
+                (
+                    "python-executable",
+                    lambda artifact: artifact.__getitem__("environment").__setitem__(
+                        "python_executable",
+                        str(REPOSITORY_ROOT.parent / "stale-venv" / "bin" / "python"),
+                    ),
+                    "python_executable mismatch",
+                ),
+                (
+                    "numpy-path",
+                    lambda artifact: artifact["environment"]["numpy"].__setitem__(
+                        "path",
+                        str(REPOSITORY_ROOT.parent / "stale" / "numpy.py"),
+                    ),
+                    "numpy.path mismatch",
+                ),
+                (
+                    "torch-rs-path",
+                    lambda artifact: artifact["environment"]["torch_rs"].__setitem__(
+                        "path",
+                        str(
+                            REPOSITORY_ROOT.parent
+                            / "stale"
+                            / "torch_rs"
+                            / "__init__.py"
+                        ),
+                    ),
+                    "torch_rs.path mismatch",
+                ),
+                (
+                    "torch-rs-extension-path",
+                    lambda artifact: artifact["environment"]["torch_rs"].__setitem__(
+                        "extension_path",
+                        str(REPOSITORY_ROOT.parent / "stale" / "torch_rs.abi3.so"),
+                    ),
+                    "torch_rs.extension_path mismatch",
+                ),
             )
             for label, mutate, expected_message in tamper_cases:
                 with self.subTest(tamper=label):

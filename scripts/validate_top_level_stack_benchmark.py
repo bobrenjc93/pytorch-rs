@@ -15,6 +15,8 @@ import argparse
 from collections import Counter
 from dataclasses import dataclass
 import gc
+import importlib
+import importlib.machinery
 import importlib.util
 import json
 import math
@@ -708,6 +710,135 @@ def _expected_aggregates(cases, unsupported, error_parity):
     return aggregates
 
 
+def _absolute_non_resolved(path):
+    path = Path(path)
+    if path.is_absolute():
+        return path
+    return REPOSITORY_ROOT / path
+
+
+def _require_recorded_path(errors, label, value, *, root):
+    if not isinstance(value, str) or not value:
+        errors.append(f"missing provenance field {label}")
+        return None
+    path = Path(value)
+    if not path.is_absolute():
+        errors.append(f"{label} is not absolute: {value!r}")
+        return None
+    absolute = _absolute_non_resolved(path)
+    try:
+        absolute.relative_to(root)
+    except ValueError:
+        errors.append(f"{label} is outside {root}: {value}")
+    if not absolute.exists():
+        errors.append(f"{label} does not exist: {value}")
+    return absolute
+
+
+def _module_path(module):
+    spec = getattr(module, "__spec__", None)
+    origin = getattr(spec, "origin", None) or getattr(module, "__file__", None)
+    if origin in (None, "built-in", "frozen"):
+        return None
+    return str(Path(origin).resolve(strict=True))
+
+
+def _validate_recorded_path(errors, label, recorded, current, *, root):
+    recorded_path = _require_recorded_path(errors, label, recorded, root=root)
+    if current in (None, ""):
+        errors.append(f"current {label} is unavailable")
+        return
+    current_path = _absolute_non_resolved(current)
+    if recorded_path is not None and recorded_path != current_path:
+        errors.append(f"{label} mismatch: {recorded!r} != {str(current_path)!r}")
+
+
+def _validate_current_runtime_paths(errors, environment):
+    try:
+        import numpy as np
+        import torch as reference_torch
+        import torch_rs
+    except Exception as error:
+        errors.append(f"could not import current benchmark runtime: {error}")
+        return
+
+    try:
+        native = importlib.import_module("torch_rs.torch_rs")
+    except Exception as error:
+        errors.append(f"could not import current torch_rs native extension: {error}")
+        native = None
+
+    expected_venv = REPOSITORY_ROOT / ".venv"
+    _validate_recorded_path(
+        errors,
+        "python_executable",
+        environment.get("python_executable"),
+        sys.executable,
+        root=expected_venv,
+    )
+    runtime_paths = (
+        ("numpy.path", environment.get("numpy", {}).get("path"), _module_path(np)),
+        (
+            "pytorch.path",
+            environment.get("pytorch", {}).get("path"),
+            _module_path(reference_torch),
+        ),
+        (
+            "torch_rs.path",
+            environment.get("torch_rs", {}).get("path"),
+            _module_path(torch_rs),
+        ),
+        (
+            "torch_rs.extension_path",
+            environment.get("torch_rs", {}).get("extension_path"),
+            _module_path(native) if native is not None else None,
+        ),
+    )
+    for label, recorded, current in runtime_paths:
+        _validate_recorded_path(
+            errors,
+            label,
+            recorded,
+            current,
+            root=REPOSITORY_ROOT,
+        )
+
+    if native is not None:
+        native_spec = getattr(native, "__spec__", None)
+        if native_spec is None or not isinstance(
+            native_spec.loader,
+            importlib.machinery.ExtensionFileLoader,
+        ):
+            errors.append("torch_rs.torch_rs is not a native extension module")
+        native_path = _module_path(native)
+        if native_path is not None and not Path(native_path).name.endswith(
+            tuple(importlib.machinery.EXTENSION_SUFFIXES)
+        ):
+            errors.append(f"native module has an unrecognized ABI suffix: {native_path}")
+        torch_rs_c_path = _module_path(getattr(torch_rs, "_C", None))
+        if native_path != torch_rs_c_path:
+            errors.append("torch_rs._C does not point to torch_rs.torch_rs")
+
+    current_versions = {
+        "numpy.version": np.__version__,
+        "pytorch.version": reference_torch.__version__,
+        "torch_rs.version": benchmark_top_level_stack._package_version(
+            "torch-rs",
+            torch_rs,
+        ),
+    }
+    recorded_versions = {
+        "numpy.version": environment.get("numpy", {}).get("version"),
+        "pytorch.version": environment.get("pytorch", {}).get("version"),
+        "torch_rs.version": environment.get("torch_rs", {}).get("version"),
+    }
+    for label, current in current_versions.items():
+        if recorded_versions[label] != current:
+            errors.append(
+                f"{label} mismatch: {recorded_versions[label]!r} != {current!r}"
+            )
+
+
 def _validate_environment_provenance(errors, environment, validator):
     if environment.get("benchmark_version") != (
         benchmark_top_level_stack.BENCHMARK_VERSION
@@ -769,14 +900,10 @@ def _validate_environment_provenance(errors, environment, validator):
     for section, key in (
         ("rust", "rustc"),
         ("rust", "cargo"),
-        ("numpy", "version"),
-        ("numpy", "path"),
-        ("pytorch", "path"),
-        ("torch_rs", "path"),
-        ("torch_rs", "extension_path"),
     ):
         if environment.get(section, {}).get(key) in (None, ""):
             errors.append(f"missing provenance field {section}.{key}")
+    _validate_current_runtime_paths(errors, environment)
 
 
 def _validate_unsupported_rows(errors, unsupported, error_parity):
