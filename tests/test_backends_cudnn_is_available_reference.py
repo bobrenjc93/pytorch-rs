@@ -11,6 +11,13 @@ import unittest
 
 import torch_rs as torch
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -340,12 +347,12 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
         self.assertEqual(result.cpu().tolist(), [[[[54.0, 63.0], [90.0, 99.0]]]])
 
         self.assertTrue(hasattr(torch.backends.cudnn, "flags"))
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
-        self.assertFalse(hasattr(torch.Tensor, "to"))
         with self.assertRaises(RuntimeError):
             torch.tensor([1.0], device="cuda:0")
+        with self.assertRaisesRegex(RuntimeError, r"only 'cpu' is implemented"):
+            torch.tensor([1.0]).to("cuda:0")
 
     def test_configuration_and_execution_surface_remains_unsupported(self):
         actual = torch.backends.cudnn
@@ -385,8 +392,7 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
         self.assertIs(type(actual.allow_tf32), bool)
         self.assertIs(type(expected.allow_tf32), bool)
 
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertTrue(hasattr(reference_torch, "cuda"))
 
 

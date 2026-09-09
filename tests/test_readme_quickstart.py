@@ -51,6 +51,10 @@ HISTORICAL_TIMING_REPORTS = (
         "docs/top-level-subtract-release-timings.md",
     ),
     (
+        "`torch.stack` release timings",
+        "docs/top-level-stack-release-timings.md",
+    ),
+    (
         "`*`, `Tensor.mul`/`Tensor.multiply`, and "
         "`torch.mul`/`torch.multiply` release timings",
         "docs/tensor-mul-release-timings.md",
@@ -125,6 +129,7 @@ HISTORICAL_TIMING_GROUPS = (
         (
             "docs/tensor-add-release-timings.md",
             "docs/top-level-subtract-release-timings.md",
+            "docs/top-level-stack-release-timings.md",
             "docs/tensor-mul-release-timings.md",
             "docs/top-level-division-release-timings.md",
             "docs/tensor-abs-release-timings.md",
@@ -267,9 +272,14 @@ SUPPORTED_SURFACE_NAMESPACE_SUMMARIES = (
 )
 SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
     (
-        "Create CPU `float32` tensors",
+        "Create CPU `float32` tensors and narrow CUDA zeros",
         ("`torch.tensor`", "`torch.as_tensor`", "`torch.zeros`"),
-        ("dtype conversions", "accelerator or meta devices", "concrete `out`"),
+        (
+            "dtype conversions",
+            "accelerator or meta devices",
+            "narrow CUDA zeros path",
+            "concrete `out`",
+        ),
         ("[Tensors](#tensors)", "[Creation](#creation)"),
     ),
     (
@@ -319,7 +329,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         ),
         (
             "Module layers",
-            '`l1_loss` reductions other than `"none"`/`"sum"`',
+            '`l1_loss` reductions other than `"none"`/`"mean"`/`"sum"`',
             '`mse_loss` reductions other than `"none"`/`"mean"`/`"sum"`',
             "loss `weight` arguments",
             "legacy loss reduction arguments",
@@ -356,6 +366,9 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
             "`torch.accelerator.max_memory_allocated`",
             "`torch.accelerator.memory_reserved`",
             "`torch.accelerator.max_memory_reserved`",
+            "`torch.cuda.device_count`",
+            "`torch.cuda.is_available`",
+            "`torch.cuda.is_initialized`",
             "`torch.backends.nnpack.set_flags`",
             "`torch.backends.cuda.enable_flash_sdp`",
             "`torch.backends.cuda.enable_cudnn_sdp`",
@@ -364,7 +377,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         ),
         (
             "Additional dtypes",
-            "CUDA tensors/transfers/streams/events/synchronization/runtime/kernels",
+            "CUDA tensors/transfers beyond the 1-D float32 zeros-to-CPU path",
             "memory-management APIs outside the named helper set",
             "backend APIs outside [Backend and compiler metadata]",
         ),
@@ -419,20 +432,23 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
     ),
 )
 README_SCOPE_ROW_LABELS = (
-    "Eager CPU tensors",
-    "CPU-build device probes",
+    "Eager tensors",
+    "Runtime device probes",
     "CPU-build backend probes",
     "`torch.compile` eager subset",
     "Larger PyTorch stacks",
 )
 README_SCOPE_REQUIRED_SNIPPETS = (
     "CPU `float32` tensors",
+    "1-D CUDA `float32` zero tensors",
+    "synchronized `.cpu()`/`.to(\"cpu\")` copies",
     "core construction and layout/view operations",
     "selected math and neural-network functions",
     "limited first-order autograd",
-    "`torch.cuda.device_count() == 0`",
-    "`torch.cuda.is_available() is False`",
-    "`torch.cuda.is_initialized() is False`",
+    "`torch.cuda.device_count()`",
+    "`torch.cuda.is_available()`",
+    "`torch.cuda.is_initialized()`",
+    "runtime CUDA visibility",
     "`torch.set_default_device(...)`",
     "CPU-equivalent no-op",
     "`None` or `\"cpu\"`",
@@ -441,18 +457,18 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "`enable_cudnn_sdp(...)`",
     "`sdp_kernel(...)` as a context manager/decorator",
     "`torch.nn.functional.scaled_dot_product_attention`",
-    "CUDA tensors",
+    "CUDA math kernels",
     "actual attention-kernel dispatch",
     "general CUDA `torch.compile` execution outside the private H100 benchmark path",
-    "Device selection",
+    "Current-device CUDA allocation for unindexed `\"cuda\"`",
     "mutable default-device routing",
     "streams",
     "events",
     "synchronization",
     "allocator APIs",
-    "runtime initialization",
+    "general runtime management",
     "Additional tensor dtypes",
-    "non-CPU tensor execution",
+    "general non-CPU tensor execution",
     "PyTorch 2.13-shaped argument binding",
     "`disable=True` pass-through",
     "backend default/name resolution through the `torch.compiler` registry",
@@ -677,8 +693,8 @@ class ReadmeQuickstartTests(unittest.TestCase):
             (
                 "dtypes, promotion, devices, dispatch",
                 "10%",
-                ("CPU-build CUDA probes", "float32 dtype helpers"),
-                ("Actual CUDA tensors/runtime",),
+                ("Runtime CUDA probes", "float32 dtype helpers"),
+                ("general CUDA tensors/runtime",),
             ),
             (
                 "creation, elementwise, reductions",

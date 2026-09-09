@@ -13,6 +13,13 @@ import unittest
 import torch_rs as torch
 
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 DEFAULT_STATE = (True, False, 10, False, True)
 TARGET_STATE = (False, True, 17, True, False)
 DEFAULT_MODES = ("none", "auto")
@@ -501,8 +508,7 @@ print(json.dumps({
         self.assertIs(self.cudnn.is_available(), False)
         self.assertIs(self.cudnn.version(), None)
         self.assertFalse(hasattr(torch, "cudnn_convolution"))
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
 
 
 if __name__ == "__main__":

@@ -528,7 +528,16 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(repr(indexed), "device(type='cpu', index=3)")
 
     def test_device_constructor_rejects_unsupported_values_and_types(self):
-        for specification in ("cuda", "meta", "CPU"):
+        cuda = torch.device("cuda")
+        cuda_indexed = torch.device("cuda:0")
+        self.assertEqual(cuda.type, "cuda")
+        self.assertIsNone(cuda.index)
+        self.assertEqual(str(cuda), "cuda")
+        self.assertEqual(cuda_indexed.type, "cuda")
+        self.assertEqual(cuda_indexed.index, 0)
+        self.assertEqual(str(cuda_indexed), "cuda:0")
+
+        for specification in ("meta", "CPU"):
             with self.subTest(specification=specification):
                 with self.assertRaisesRegex(RuntimeError, "only 'cpu' is implemented"):
                     torch.device(specification)

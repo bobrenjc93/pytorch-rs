@@ -6,6 +6,7 @@
 //! benchmark integrity, and existing performance remain merge gates.
 
 mod autograd_node;
+pub mod cuda;
 mod device;
 mod dtype;
 mod grad_mode;
@@ -67,12 +68,13 @@ mod python_torch_function_mode;
 mod python_torch_function_probe;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_variable_functions;
+mod reduction;
 mod storage;
 mod tensor;
 mod tensor_error;
 
 #[cfg(feature = "python-bindings")]
-pub(crate) use grad_mode::{enter_enable_grad, enter_no_grad, exit_grad_mode};
+pub(crate) use grad_mode::{enter_enable_grad, enter_no_grad, exit_grad_mode, set_grad_enabled};
 
 pub use device::Device;
 pub use dtype::{DType, FloatingPointInfo};

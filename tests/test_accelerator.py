@@ -17,6 +17,13 @@ from unittest import mock
 import torch_rs as torch
 
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 MODULE_DOC = """
 This package introduces support for the current :ref:`accelerator<accelerators>` in python.
 """
@@ -1677,21 +1684,18 @@ class AcceleratorTests(unittest.TestCase):
                 self.assertFalse(hasattr(memory, name))
                 self.assertNotIn(name, memory.__all__)
 
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertIs(importlib.import_module("torch_rs.cuda"), torch.cuda)
+        self.assertEqual(str(torch.device("cuda")), "cuda")
+        self.assertEqual(str(torch.device("cuda:0")), "cuda:0")
         for specification in ("cuda", "cuda:0"):
             with self.subTest(specification=specification):
                 with self.assertRaisesRegex(
                     RuntimeError, r"only 'cpu' is implemented"
                 ):
-                    torch.device(specification)
-                with self.assertRaisesRegex(
-                    RuntimeError, r"only 'cpu' is implemented"
-                ):
                     torch.tensor([1.0], device=specification)
 
-    def test_importing_and_calling_does_not_import_external_runtimes(self):
+    def test_importing_and_calling_does_not_import_external_python_runtimes(self):
         script = r'''
 import os
 import sys
@@ -1843,8 +1847,9 @@ assert torch.accelerator.memory_reserved() == 0
 assert torch.accelerator.max_memory_reserved() == 0
 assert torch.accelerator.memory_stats() == OrderedDict()
 assert set(sys.modules) == modules_before_calls
-assert torch.cuda.is_available() is False
-assert torch.cuda.device_count() == 0
+device_count = torch.cuda.device_count()
+assert type(device_count) is int and device_count >= 0
+assert torch.cuda.is_available() is (device_count > 0)
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked
     for name in sys.modules

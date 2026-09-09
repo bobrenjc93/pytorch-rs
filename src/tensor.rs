@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Formatter;
 use std::iter::FusedIterator;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 
 use crate::autograd_node::AutogradNode;
 use crate::device::Device;
@@ -26,13 +29,44 @@ fn full_reduction_mean_divisor(elements: usize) -> f32 {
     elements as f32
 }
 
+fn reduced_rank_two_sum_shape(
+    rows: usize,
+    columns: usize,
+    dimension: usize,
+    keepdim: bool,
+) -> Result<Vec<usize>, TensorError> {
+    let mut shape = try_result_vector(if keepdim { 2 } else { 1 }, rows.saturating_mul(columns))?;
+    match (dimension, keepdim) {
+        (0, false) => shape.push(columns),
+        (0, true) => {
+            shape.push(1);
+            shape.push(columns);
+        }
+        (1, false) => shape.push(rows),
+        (1, true) => {
+            shape.push(rows);
+            shape.push(1);
+        }
+        _ => {
+            return Err(TensorError::DimensionOutOfRange {
+                dimension: dimension_for_error(dimension),
+                rank: 2,
+            });
+        }
+    }
+    Ok(shape)
+}
+
 struct AutogradMeta {
     kind: AutogradKind,
 }
 
 enum AutogradKind {
     Leaf {
+        requires_grad: Arc<AtomicBool>,
+        inherited_requires_grad: Option<Arc<AtomicBool>>,
         shape: Vec<usize>,
+        strides: Vec<usize>,
         dtype: DType,
         device: Device,
         grad: Mutex<Option<Arc<Storage>>>,
@@ -127,6 +161,7 @@ enum GradFn {
     ZeroVjp(ZeroVjpNode),
     Sum {
         input: SavedTensor,
+        reduction: SumGradient,
     },
     Mean {
         input: SavedTensor,
@@ -143,6 +178,14 @@ enum GradFn {
         dimension: usize,
         output_count: usize,
         output_elements: usize,
+    },
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+    Chunk {
+        input: SavedTensor,
+        dimension: usize,
+        lengths: Vec<usize>,
+        #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+        node: AutogradNode,
     },
 }
 
@@ -165,6 +208,12 @@ enum TransformMapping {
         dimension: usize,
         index: usize,
     },
+}
+
+#[derive(Clone, Copy)]
+enum SumGradient {
+    Full,
+    Dimension { dimension: usize },
 }
 
 impl SavedTensor {
@@ -194,10 +243,11 @@ impl GradFn {
             }
             Self::MultiplyScalar { input, .. }
             | Self::Negate { input, .. }
-            | Self::Sum { input }
+            | Self::Sum { input, .. }
             | Self::Mean { input, .. }
             | Self::Transform { input, .. }
-            | Self::Unbind { input, .. } => input.take_parent(pending),
+            | Self::Unbind { input, .. }
+            | Self::Chunk { input, .. } => input.take_parent(pending),
             Self::SavedInputUnary(node) => node.input.take_parent(pending),
             Self::SavedOutputUnary(node) => node.input.take_parent(pending),
             Self::ZeroVjp(node) => node.input.take_parent(pending),
@@ -241,7 +291,8 @@ impl GradFn {
             | Self::Sum { .. }
             | Self::Mean { .. }
             | Self::Transform { .. }
-            | Self::Unbind { .. } => {}
+            | Self::Unbind { .. }
+            | Self::Chunk { .. } => {}
         }
         Ok(())
     }
@@ -268,13 +319,41 @@ impl GradFn {
             | Self::Sum { .. }
             | Self::Mean { .. }
             | Self::Transform { .. }
-            | Self::Unbind { .. } => {}
+            | Self::Unbind { .. }
+            | Self::Chunk { .. } => {}
         }
         Ok(())
     }
 }
 
 impl AutogradMeta {
+    fn requires_grad(&self) -> bool {
+        match &self.kind {
+            AutogradKind::Leaf { requires_grad, .. } => requires_grad.load(Ordering::Relaxed),
+            AutogradKind::NonLeaf { .. } => true,
+        }
+    }
+
+    fn records_grad_edge(&self) -> bool {
+        self.requires_grad()
+    }
+
+    fn accumulates_recorded_leaf_gradient(&self) -> bool {
+        match &self.kind {
+            AutogradKind::Leaf {
+                requires_grad,
+                inherited_requires_grad,
+                ..
+            } => {
+                requires_grad.load(Ordering::Relaxed)
+                    || inherited_requires_grad
+                        .as_deref()
+                        .is_some_and(|flag| flag.load(Ordering::Relaxed))
+            }
+            AutogradKind::NonLeaf { .. } => true,
+        }
+    }
+
     fn take_grad_fn(&mut self) -> Option<GradFn> {
         let AutogradKind::NonLeaf { grad_fn } = &mut self.kind else {
             return None;
@@ -305,6 +384,10 @@ impl Drop for AutogradMeta {
     }
 }
 
+fn requires_grad_flag(requires_grad: bool) -> Arc<AtomicBool> {
+    Arc::new(AtomicBool::new(requires_grad))
+}
+
 /// A tensor with immutable shared storage and native shape/stride metadata.
 ///
 /// Metadata-only views may have a nonzero storage offset and non-contiguous
@@ -316,7 +399,8 @@ pub struct Tensor {
     offset: usize,
     elements: usize,
     output_nr: usize,
-    view_requires_grad: bool,
+    leaf_requires_grad: Arc<AtomicBool>,
+    view_requires_grad: Option<Arc<AtomicBool>>,
     autograd: Option<Arc<AutogradMeta>>,
 }
 
@@ -578,6 +662,14 @@ impl Clone for Tensor {
 #[allow(clippy::missing_fields_in_debug)]
 impl std::fmt::Debug for Tensor {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.is_cuda() {
+            return formatter
+                .debug_struct("Tensor")
+                .field("device", &self.device())
+                .field("shape", &self.shape)
+                .field("strides", &self.strides)
+                .finish();
+        }
         formatter
             .debug_struct("Tensor")
             .field("data", &self.logical_values().collect::<Vec<_>>())
@@ -586,28 +678,11 @@ impl std::fmt::Debug for Tensor {
     }
 }
 
+/// CPU value equality convenience; use [`Tensor::try_equal`] for fallible
+/// device dispatch. Comparing CUDA tensors panics at the operation boundary.
 impl PartialEq for Tensor {
     fn eq(&self, other: &Self) -> bool {
-        self.shape == other.shape
-            && self.dtype() == other.dtype()
-            && self.device() == other.device()
-            && {
-                let left_contiguous = self.contiguous_slice();
-                let right_contiguous = other.contiguous_slice();
-                if let (Some(left), Some(right)) = (left_contiguous, right_contiguous) {
-                    contiguous_values_equal(left, right)
-                } else if self.strides == other.strides
-                    && let (Some(left), Some(right)) =
-                        (self.dense_physical_slice(), other.dense_physical_slice())
-                {
-                    // Identical dense strides map each logical index to the
-                    // same position within both physical storage intervals.
-                    contiguous_values_equal(left, right)
-                } else {
-                    self.logical_values_from_contiguous_slice(left_contiguous)
-                        .eq(other.logical_values_from_contiguous_slice(right_contiguous))
-                }
-            }
+        self.try_equal(other).expect("equal(): unsupported device")
     }
 }
 
@@ -689,6 +764,36 @@ fn contiguous_values_equal(left: &[f32], right: &[f32]) -> bool {
 }
 
 impl Tensor {
+    /// Compares CPU tensor shapes, metadata and logical values.
+    ///
+    /// # Errors
+    /// Returns [`TensorError::UnsupportedDevice`] if either operand is CUDA,
+    /// before accessing values (including empty or mismatched tensors).
+    pub fn try_equal(&self, other: &Self) -> Result<bool, TensorError> {
+        validate_cpu_storage_device("equal", self.device())?;
+        validate_cpu_storage_device("equal", other.device())?;
+        Ok(self.shape == other.shape
+            && self.dtype() == other.dtype()
+            && self.device() == other.device()
+            && {
+                let left_contiguous = self.contiguous_slice();
+                let right_contiguous = other.contiguous_slice();
+                if let (Some(left), Some(right)) = (left_contiguous, right_contiguous) {
+                    contiguous_values_equal(left, right)
+                } else if self.strides == other.strides
+                    && let (Some(left), Some(right)) =
+                        (self.dense_physical_slice(), other.dense_physical_slice())
+                {
+                    // Identical dense strides map each logical index to the
+                    // same position within both physical storage intervals.
+                    contiguous_values_equal(left, right)
+                } else {
+                    self.logical_values_from_contiguous_slice(left_contiguous)
+                        .eq(other.logical_values_from_contiguous_slice(right_contiguous))
+                }
+            })
+    }
+
     /// Creates a tensor after validating that `shape` describes `data`.
     ///
     /// # Errors
@@ -713,6 +818,7 @@ impl Tensor {
                 elements: data.len(),
             });
         }
+        validate_cpu_storage_device("tensor", device)?;
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
@@ -733,8 +839,45 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
+        validate_cpu_storage_device("zeros", device)?;
         let data = filled_storage(elements, 0.0)?;
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+    }
+
+    /// Allocates a rank-one float32 CUDA zero tensor using the optional runtime.
+    ///
+    /// # Errors
+    /// Returns layout, allocation, or CUDA runtime errors.
+    pub fn cuda_zeros_float32(
+        shape: impl Into<Vec<usize>>,
+        device: Device,
+    ) -> Result<Self, TensorError> {
+        let shape = shape.into();
+        if shape.len() != 1 {
+            return Err(TensorError::UnsupportedCudaZeroTensor {
+                reason: "shape rank is not 1",
+            });
+        }
+        let Device::Cuda(device_index) = device else {
+            return Err(TensorError::UnsupportedDevice {
+                operation: "zeros",
+                device,
+            });
+        };
+        let (elements, strides) = validated_layout(&shape)?;
+        validate_storage_capacity(elements)?;
+        let storage = Storage::cuda_zeros_float32(elements, device_index)?;
+        Ok(Self {
+            storage: Arc::new(storage),
+            shape,
+            strides,
+            offset: 0,
+            elements,
+            output_nr: 0,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
+            autograd: None,
+        })
     }
 
     /// Creates a one-filled tensor.
@@ -754,6 +897,7 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
+        validate_cpu_storage_device("ones", device)?;
         let data = filled_storage(elements, 1.0)?;
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
@@ -766,6 +910,7 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
+        validate_cpu_storage_device("empty", device)?;
         // Public `torch.empty` values are unspecified. The current safe storage
         // model exposes initialized `f32` slices everywhere, so this backing
         // allocation is zero-initialized as an implementation detail.
@@ -837,6 +982,7 @@ impl Tensor {
         shape.push(n);
         shape.push(m);
         let (elements, strides) = validated_layout(&shape)?;
+        validate_cpu_storage_device("eye", device)?;
         let mut data = filled_storage(elements, 0.0)?;
 
         let diagonal = n.min(m);
@@ -867,6 +1013,7 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
+        validate_cpu_storage_device("full", device)?;
         validate_storage_capacity(elements)?;
         let data = filled_storage(elements, fill_value)?;
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
@@ -894,7 +1041,8 @@ impl Tensor {
             offset: 0,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -907,7 +1055,8 @@ impl Tensor {
             offset: 0,
             elements: 1,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -1234,11 +1383,36 @@ impl Tensor {
 
     /// Returns whether operations on this tensor may require reverse-mode gradients.
     ///
-    /// Views made while recording is disabled preserve this property without
+    /// Unrecorded metadata views can inherit this property dynamically without
     /// retaining a backward edge to their source tensor.
     #[must_use]
     pub fn requires_grad(&self) -> bool {
-        self.autograd.is_some() || self.view_requires_grad
+        self.autograd
+            .as_deref()
+            .is_some_and(AutogradMeta::requires_grad)
+            || self
+                .view_requires_grad
+                .as_deref()
+                .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    }
+
+    fn inherited_requires_grad_flag(&self) -> Arc<AtomicBool> {
+        if let Some(requires_grad) = self.view_requires_grad.as_ref() {
+            return Arc::clone(requires_grad);
+        }
+
+        if let Some(metadata) = self.autograd.as_deref() {
+            return match &metadata.kind {
+                AutogradKind::Leaf { requires_grad, .. } => Arc::clone(requires_grad),
+                AutogradKind::NonLeaf { .. } => requires_grad_flag(true),
+            };
+        }
+
+        Arc::clone(&self.leaf_requires_grad)
+    }
+
+    fn view_requires_grad_flag(&self) -> Arc<AtomicBool> {
+        self.inherited_requires_grad_flag()
     }
 
     /// Returns whether this tensor has no recorded autograd operation producing it.
@@ -1278,6 +1452,7 @@ impl Tensor {
             GradFn::Sum { .. } => AutogradNode::Sum,
             GradFn::Mean { .. } => AutogradNode::Mean,
             GradFn::Unbind { .. } => AutogradNode::Unbind,
+            GradFn::Chunk { node, .. } => *node,
         };
         Some(node.python_name())
     }
@@ -1316,25 +1491,108 @@ impl Tensor {
     /// Calling this with `true` on a tensor which already participates in a
     /// graph preserves that graph. Freshly marked tensors accumulate gradients
     /// according to their current logical shape.
+    ///
+    /// # Panics
+    /// Panics when enabling gradients on a non-CPU tensor. Use
+    /// [`Self::try_with_requires_grad`] for fallible device dispatch.
     #[must_use]
-    pub fn with_requires_grad(mut self, requires_grad: bool) -> Self {
+    pub fn with_requires_grad(self, requires_grad: bool) -> Self {
+        self.try_with_requires_grad(requires_grad)
+            .expect("with_requires_grad(): unsupported device")
+    }
+
+    /// Fallible gradient builder, preserving existing CPU graph semantics.
+    ///
+    /// # Errors
+    /// Returns [`TensorError::UnsupportedDevice`] before changing any shared
+    /// gradient flags when enabling gradients on a non-CPU tensor.
+    pub fn try_with_requires_grad(mut self, requires_grad: bool) -> Result<Self, TensorError> {
+        if requires_grad {
+            validate_cpu_storage_device("with_requires_grad", self.device())?;
+        }
         if !requires_grad {
+            self.leaf_requires_grad.store(false, Ordering::Relaxed);
             self.autograd = None;
             self.output_nr = 0;
-            self.view_requires_grad = false;
+            self.view_requires_grad = None;
         } else if self.autograd.is_none() {
+            self.leaf_requires_grad.store(true, Ordering::Relaxed);
             self.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::Leaf {
+                    requires_grad: Arc::clone(&self.leaf_requires_grad),
+                    inherited_requires_grad: self.view_requires_grad.clone(),
                     shape: self.shape.clone(),
+                    strides: leaf_gradient_strides_unchecked(
+                        &self.shape,
+                        &self.strides,
+                        self.elements,
+                    ),
                     dtype: self.dtype(),
                     device: self.device(),
                     grad: Mutex::new(None),
                 },
             }));
             self.output_nr = 0;
-            self.view_requires_grad = false;
+        } else if let Some(metadata) = self.autograd.as_deref()
+            && let AutogradKind::Leaf {
+                requires_grad: flag,
+                ..
+            } = &metadata.kind
+        {
+            self.leaf_requires_grad.store(true, Ordering::Relaxed);
+            flag.store(true, Ordering::Relaxed);
         }
-        self
+        Ok(self)
+    }
+
+    /// Updates the leaf gradient-recording flag in place.
+    ///
+    /// Disabling a non-leaf tensor is rejected to preserve its recorded graph.
+    /// Enabling a non-leaf is a no-op. Existing leaf gradient storage is
+    /// retained across toggles.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for non-CPU tensors or when disabling a non-leaf tensor.
+    pub fn requires_grad_(&mut self, requires_grad: bool) -> Result<(), TensorError> {
+        validate_cpu_storage_device("requires_grad_", self.device())?;
+        if let Some(metadata) = self.autograd.as_deref() {
+            match &metadata.kind {
+                AutogradKind::Leaf {
+                    requires_grad: flag,
+                    ..
+                } => {
+                    self.leaf_requires_grad
+                        .store(requires_grad, Ordering::Relaxed);
+                    flag.store(requires_grad, Ordering::Relaxed);
+                    return Ok(());
+                }
+                AutogradKind::NonLeaf { .. } => {
+                    return if requires_grad {
+                        Ok(())
+                    } else {
+                        Err(TensorError::RequiresGradOnlyLeaf)
+                    };
+                }
+            }
+        }
+
+        if requires_grad {
+            self.leaf_requires_grad.store(true, Ordering::Relaxed);
+            self.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::Leaf {
+                    requires_grad: Arc::clone(&self.leaf_requires_grad),
+                    inherited_requires_grad: self.view_requires_grad.clone(),
+                    shape: self.shape.clone(),
+                    strides: leaf_gradient_strides(&self.shape, &self.strides, self.elements)?,
+                    dtype: self.dtype(),
+                    device: self.device(),
+                    grad: Mutex::new(None),
+                },
+            }));
+            self.output_nr = 0;
+        }
+        Ok(())
     }
 
     /// Returns a detached, contiguous snapshot of an accumulated leaf gradient.
@@ -1349,7 +1607,13 @@ impl Tensor {
         let Some(meta) = &self.autograd else {
             return Ok(None);
         };
-        let AutogradKind::Leaf { shape, grad, .. } = &meta.kind else {
+        let AutogradKind::Leaf {
+            shape,
+            strides,
+            grad,
+            ..
+        } = &meta.kind
+        else {
             return Ok(None);
         };
         let grad = grad
@@ -1360,7 +1624,7 @@ impl Tensor {
         };
         let elements = storage.len();
         let shape = try_clone_result_shape(shape, elements)?;
-        let strides = contiguous_strides(&shape, elements)?;
+        let strides = try_clone_result_shape(strides, elements)?;
         let values = storage.try_copy_values(|values| copied_storage(values, elements))?;
         Ok(Some(Self::from_owned_parts(
             values,
@@ -1376,7 +1640,13 @@ impl Tensor {
         let Some(meta) = &self.autograd else {
             return Ok(None);
         };
-        let AutogradKind::Leaf { shape, grad, .. } = &meta.kind else {
+        let AutogradKind::Leaf {
+            shape,
+            strides,
+            grad,
+            ..
+        } = &meta.kind
+        else {
             return Ok(None);
         };
         let grad = grad
@@ -1387,7 +1657,7 @@ impl Tensor {
         };
         let elements = storage.len();
         let shape = try_clone_result_shape(shape, elements)?;
-        let strides = contiguous_strides(&shape, elements)?;
+        let strides = try_clone_result_shape(strides, elements)?;
         Ok(Some(Self {
             storage: Arc::clone(storage),
             shape,
@@ -1395,7 +1665,8 @@ impl Tensor {
             offset: 0,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }))
     }
@@ -1427,6 +1698,7 @@ impl Tensor {
     }
 
     fn implicit_backward_root(&self) -> Result<&Arc<AutogradMeta>, TensorError> {
+        validate_cpu_storage_device("backward", self.device())?;
         if !self.requires_grad() {
             return Err(TensorError::DoesNotRequireGrad);
         }
@@ -1435,9 +1707,15 @@ impl Tensor {
                 elements: self.elements,
             });
         }
-        self.autograd
+        let metadata = self
+            .autograd
             .as_ref()
-            .ok_or(TensorError::DoesNotRequireGrad)
+            .ok_or(TensorError::DoesNotRequireGrad)?;
+        if metadata.requires_grad() {
+            Ok(metadata)
+        } else {
+            Err(TensorError::DoesNotRequireGrad)
+        }
     }
 
     #[cfg(any(feature = "python-bindings", test))]
@@ -1476,7 +1754,7 @@ impl Tensor {
             let gradient = gradients
                 .remove(&gradient_key(&meta, output_nr))
                 .expect("every unique leaf root must have an aggregated gradient");
-            accumulate_leaf_gradient(&meta, gradient);
+            accumulate_leaf_gradient(&meta, gradient)?;
         }
         Ok(())
     }
@@ -1485,12 +1763,22 @@ impl Tensor {
         self.requires_grad() && is_grad_enabled()
     }
 
+    fn grad_edge(&self) -> Option<Arc<AutogradMeta>> {
+        self.autograd
+            .as_ref()
+            .filter(|metadata| metadata.records_grad_edge())
+            .map(Arc::clone)
+    }
+
     fn is_finite_owned(&self) -> bool {
         if self.offset != 0
             || self.storage.len() != self.elements
             || self.dtype() != DType::Float32
             || self.device() != Device::Cpu
-            || self.view_requires_grad
+            || self
+                .view_requires_grad
+                .as_deref()
+                .is_some_and(|flag| flag.load(Ordering::Relaxed))
         {
             return false;
         }
@@ -1500,8 +1788,8 @@ impl Tensor {
 
     fn is_finite_owned_leaf(&self) -> bool {
         // Factory-created leaves span their complete allocation. Recorded
-        // views are non-leaves, while views created under no_grad carry
-        // view_requires_grad without leaf metadata.
+        // views are non-leaves, while unrecorded views can dynamically inherit
+        // a source flag without leaf metadata.
         if !self.is_finite_owned() {
             return false;
         }
@@ -1556,7 +1844,7 @@ impl Tensor {
         mapping: TransformMapping,
         node: AutogradNode,
     ) -> Result<(), TensorError> {
-        output.view_requires_grad = self.requires_grad();
+        output.view_requires_grad = Some(self.view_requires_grad_flag());
         self.record_transform(output, mapping, node)
     }
 
@@ -1791,8 +2079,13 @@ impl Tensor {
     }
 
     /// Returns logical values in row-major index order.
+    ///
+    /// # Panics
+    /// Panics on non-CPU storage. Copy CUDA tensors to CPU before iterating.
     #[must_use]
     pub fn logical_values(&self) -> LogicalValues<'_> {
+        validate_cpu_storage_device("logical_values", self.device())
+            .expect("logical_values(): unsupported device; copy to CPU first");
         self.logical_values_from_contiguous_slice(self.contiguous_slice())
     }
 
@@ -1980,6 +2273,7 @@ impl Tensor {
             strides.push(self.strides[dimension]);
         }
 
+        let records_grad = self.records_grad();
         let mut output = Self {
             storage: Arc::clone(&self.storage),
             shape,
@@ -1987,10 +2281,11 @@ impl Tensor {
             offset: self.offset,
             elements: self.elements,
             output_nr: 0,
-            view_requires_grad: self.requires_grad(),
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: Some(self.view_requires_grad_flag()),
             autograd: None,
         };
-        if self.records_grad() {
+        if records_grad {
             let mut saved_dimensions = try_result_vector(dimensions.len(), self.elements)?;
             saved_dimensions.extend_from_slice(dimensions);
             let output_shape = try_clone_result_shape(&output.shape, output.elements)?;
@@ -2097,7 +2392,8 @@ impl Tensor {
                 offset: self.offset,
                 elements: self.elements,
                 output_nr: 0,
-                view_requires_grad: false,
+                leaf_requires_grad: requires_grad_flag(false),
+                view_requires_grad: None,
                 autograd: None,
             },
             TransformMapping::Identity,
@@ -2189,7 +2485,8 @@ impl Tensor {
             offset: self.offset,
             elements: self.elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         };
         self.record_view_transform(&mut output, TransformMapping::Identity, node)?;
@@ -2348,6 +2645,15 @@ impl Tensor {
         &self,
         memory_format: MemoryFormat,
     ) -> Result<Self, TensorError> {
+        self.try_clone_with_memory_format_and_node(memory_format, AutogradNode::Clone)
+    }
+
+    fn try_clone_with_memory_format_and_node(
+        &self,
+        memory_format: MemoryFormat,
+        node: AutogradNode,
+    ) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("clone", self.device())?;
         let expected_rank = match memory_format {
             MemoryFormat::ChannelsLast => Some(4),
             MemoryFormat::ChannelsLast3d => Some(5),
@@ -2385,7 +2691,7 @@ impl Tensor {
         };
         let data = self.materialize_with_strides(&strides, |value| value)?;
         let mut output = Self::from_owned_parts(data, shape, strides, self.dtype(), self.device());
-        self.record_transform(&mut output, TransformMapping::Identity, AutogradNode::Clone)?;
+        self.record_transform(&mut output, TransformMapping::Identity, node)?;
         Ok(output)
     }
 
@@ -2427,6 +2733,9 @@ impl Tensor {
         &self,
         memory_format: MemoryFormat,
     ) -> Result<Self, TensorError> {
+        if memory_format == MemoryFormat::Preserve {
+            return self.try_clone_with_memory_format_and_node(memory_format, AutogradNode::Copy);
+        }
         // PyTorch's device-copy path validates canonical destination metadata
         // before checking a requested channel-last format's rank. Keep this
         // copy-specific preflight separate from contiguous's existing
@@ -2435,12 +2744,98 @@ impl Tensor {
         self.try_contiguous_impl(memory_format, false, AutogradNode::Copy)
     }
 
+    /// Copies a CUDA tensor or view to CPU, preserving dense strides.
+    ///
+    /// # Errors
+    /// Returns allocation, unsupported gradient, or CUDA runtime errors.
+    pub fn try_copy_cuda_to_cpu(&self) -> Result<Self, TensorError> {
+        if self.device().is_cpu() {
+            return self.try_clone();
+        }
+        if self.requires_grad() {
+            return Err(TensorError::UnsupportedCudaZeroTensor {
+                reason: "requires_grad is true",
+            });
+        }
+        let shape = try_clone_result_shape(&self.shape, self.elements)?;
+        let dense = self.elements == 0 || self.is_non_overlapping_and_dense();
+        let strides = if dense {
+            try_clone_result_shape(&self.strides, self.elements)?
+        } else {
+            elementwise_output_strides(
+                &shape,
+                &[ElementwiseLayout::from_tensor(self)],
+                self.elements,
+            )?
+        };
+        let data = if dense {
+            self.storage
+                .copy_cuda_to_cpu_float32(self.offset, self.elements)?
+        } else {
+            self.copy_cuda_packed(&strides)?
+        };
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            DType::Float32,
+            Device::Cpu,
+        ))
+    }
+
+    fn copy_cuda_packed(&self, output_strides: &[usize]) -> Result<Vec<f32>, TensorError> {
+        // Traverse the packed destination in physical order, retaining the
+        // same dimension ordering as CPU clone(preserve_format). Plan only
+        // O(rank) metadata; regions are generated lazily, never span-sized.
+        let mut dimensions = try_result_vector(self.shape.len(), self.elements)?;
+        dimensions.extend(0..self.shape.len());
+        dimensions.sort_unstable_by_key(|&dimension| std::cmp::Reverse(output_strides[dimension]));
+        let mut shape = try_result_vector(self.shape.len(), self.elements)?;
+        let mut strides = try_result_vector(self.shape.len(), self.elements)?;
+        for &dimension in &dimensions {
+            shape.push(self.shape[dimension]);
+            strides.push(self.strides[dimension]);
+        }
+        let mut width = 1usize;
+        let mut rows = 1;
+        let mut source_pitch = 1;
+        for (&size, &stride) in shape.iter().zip(&strides).rev() {
+            if size == 1 {
+                continue;
+            }
+            if stride != width {
+                rows = size;
+                source_pitch = stride;
+                break;
+            }
+            width = width
+                .checked_mul(size)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+        }
+        let region_elements = width
+            .checked_mul(rows)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let regions = (0..self.elements).step_by(region_elements).map(|index| {
+            logical_offset_for_linear_index(&shape, &strides, self.offset, index).map(|start| {
+                crate::cuda::CudaCopyRegion {
+                    start,
+                    width,
+                    rows,
+                    source_pitch,
+                }
+            })
+        });
+        self.storage
+            .copy_cuda_regions_to_cpu_float32(self.elements, regions)
+    }
+
     fn try_contiguous_impl(
         &self,
         memory_format: MemoryFormat,
         reuse_matching_storage: bool,
         node: AutogradNode,
     ) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("contiguous", self.device())?;
         let expected_rank = match memory_format {
             MemoryFormat::ChannelsLast => Some(4),
             MemoryFormat::ChannelsLast3d => Some(5),
@@ -2464,7 +2859,8 @@ impl Tensor {
                 offset: self.offset,
                 elements: self.elements,
                 output_nr: 0,
-                view_requires_grad: false,
+                leaf_requires_grad: requires_grad_flag(false),
+                view_requires_grad: None,
                 autograd: None,
             };
             self.record_view_transform(&mut output, TransformMapping::Identity, node)?;
@@ -2527,6 +2923,16 @@ impl Tensor {
         start: usize,
         length: usize,
     ) -> Result<Self, TensorError> {
+        self.slice_dimension_impl(dimension, start, length, true)
+    }
+
+    fn slice_dimension_impl(
+        &self,
+        dimension: usize,
+        start: usize,
+        length: usize,
+        record_history: bool,
+    ) -> Result<Self, TensorError> {
         let Some(&size) = self.shape.get(dimension) else {
             return if self.shape.is_empty() {
                 Err(TensorError::SliceCannotApplyToScalar)
@@ -2550,24 +2956,125 @@ impl Tensor {
         let strides = try_clone_result_shape(&self.strides, self.elements)?;
         let elements = element_count(&shape)?;
         validate_view_bounds(&shape, &strides, offset, elements, self.storage.len())?;
-        self.finish_view_transform(
-            Self {
-                storage: Arc::clone(&self.storage),
-                shape,
-                strides,
-                offset,
-                elements,
-                output_nr: 0,
-                view_requires_grad: false,
-                autograd: None,
-            },
-            TransformMapping::Slice {
-                dimension,
-                start,
-                length,
-            },
-            AutogradNode::Slice,
-        )
+        let records_grad = record_history && self.records_grad();
+        let mut output = Self {
+            storage: Arc::clone(&self.storage),
+            shape,
+            strides,
+            offset,
+            elements,
+            output_nr: 0,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: Some(self.view_requires_grad_flag()),
+            autograd: None,
+        };
+        if records_grad {
+            self.record_transform(
+                &mut output,
+                TransformMapping::Slice {
+                    dimension,
+                    start,
+                    length,
+                },
+                AutogradNode::Slice,
+            )?;
+        }
+        Ok(output)
+    }
+
+    /// Splits one dimension into PyTorch-style uneven shared-storage chunks.
+    ///
+    /// The caller passes an already-normalized dimension and a positive chunk
+    /// count. The returned tensors keep the selected dimension, preserve
+    /// strides, and share storage, dtype, and device with `self`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a missing dimension, checked arithmetic overflow,
+    /// or view metadata allocation failure.
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+    pub(crate) fn chunk_dimension(
+        &self,
+        dimension: usize,
+        chunks: usize,
+    ) -> Result<Vec<Self>, TensorError> {
+        debug_assert!(chunks > 0);
+        let Some(&size) = self.shape.get(dimension) else {
+            return Err(TensorError::InvalidScalarIndex);
+        };
+
+        let lengths = Self::chunk_lengths(size, chunks)?;
+        let mut outputs = try_result_vector(lengths.len(), self.elements)?;
+        let mut start = 0_usize;
+        for &length in &lengths {
+            outputs.push(self.slice_dimension_impl(dimension, start, length, false)?);
+            start = start
+                .checked_add(length)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+        }
+
+        if self.records_grad() && !outputs.is_empty() {
+            let node = if size == 0 {
+                AutogradNode::SplitWithSizes
+            } else {
+                AutogradNode::Split
+            };
+            let autograd = Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Chunk {
+                        input: SavedTensor::try_from_tensor(self, false)?,
+                        dimension,
+                        lengths,
+                        node,
+                    })),
+                },
+            });
+            for (output_nr, output) in outputs.iter_mut().enumerate() {
+                output.autograd = Some(Arc::clone(&autograd));
+                output.output_nr = output_nr;
+            }
+        }
+
+        Ok(outputs)
+    }
+
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+    fn chunk_lengths(size: usize, chunks: usize) -> Result<Vec<usize>, TensorError> {
+        let chunk_size = if size == 0 {
+            0
+        } else {
+            size.checked_add(chunks)
+                .and_then(|value| value.checked_sub(1))
+                .ok_or(TensorError::IndexCalculationOverflow)?
+                / chunks
+        };
+        let output_count = if size == 0 {
+            chunks
+        } else {
+            size.checked_add(chunk_size)
+                .and_then(|value| value.checked_sub(1))
+                .ok_or(TensorError::IndexCalculationOverflow)?
+                / chunk_size
+        };
+
+        let mut lengths = try_result_vector(output_count, size)?;
+        let mut consumed = 0_usize;
+        for _ in 0..output_count {
+            let remaining = size
+                .checked_sub(consumed)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            let length = if size == 0 {
+                0
+            } else {
+                chunk_size.min(remaining)
+            };
+            lengths.push(length);
+            consumed = consumed
+                .checked_add(length)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+        }
+
+        Ok(lengths)
     }
 
     fn metadata_alias_with_grad_fn(&self, node: AutogradNode) -> Result<Self, TensorError> {
@@ -2584,7 +3091,8 @@ impl Tensor {
             offset: self.offset,
             elements: self.elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         })
     }
@@ -2595,15 +3103,24 @@ impl Tensor {
     ///
     /// # Panics
     ///
-    /// Panics if this tensor is a non-contiguous view. Use
+    /// Panics if this tensor is a non-contiguous view or is not on CPU. Use
     /// [`Self::logical_values`] or [`Self::try_to_vec`] for arbitrary layouts.
     pub fn as_slice(&self) -> &[f32] {
+        validate_cpu_storage_device("as_slice", self.device())
+            .expect("as_slice(): unsupported device; copy to CPU first");
         self.contiguous_slice()
             .expect("as_slice requires a contiguous tensor")
     }
 
+    /// Consumes a CPU tensor into its logical values.
+    ///
+    /// # Panics
+    /// Panics on non-CPU storage. Use [`Self::try_to_vec`] for fallible dispatch
+    /// or [`Self::try_copy_cuda_to_cpu`] for CUDA storage.
     #[must_use]
     pub fn into_vec(self) -> Vec<f32> {
+        validate_cpu_storage_device("into_vec", self.device())
+            .expect("into_vec(): unsupported device; use try_to_vec or copy to CPU first");
         if !self.is_contiguous() {
             return self.logical_values().collect();
         }
@@ -2629,6 +3146,7 @@ impl Tensor {
     ///
     /// Returns an error if result allocation fails.
     pub fn try_to_vec(&self) -> Result<Vec<f32>, TensorError> {
+        validate_cpu_storage_device("tolist", self.device())?;
         if let Some(values) = self.contiguous_slice() {
             return copied_storage(values, self.elements);
         }
@@ -2656,6 +3174,9 @@ impl Tensor {
     /// dimension, non-matching input shapes, or allocation/arithmetic
     /// overflow.
     pub fn stack(inputs: &[&Self], dimension: usize) -> Result<Self, TensorError> {
+        for input in inputs {
+            validate_cpu_storage_device("stack", input.device())?;
+        }
         let Some(first) = inputs.first().copied() else {
             return Err(TensorError::ShapeMismatch {
                 left: Vec::new(),
@@ -2706,6 +3227,9 @@ impl Tensor {
         dimension: usize,
         node: AutogradNode,
     ) -> Result<Self, TensorError> {
+        for input in inputs {
+            validate_cpu_storage_device("cat", input.device())?;
+        }
         let Some(first) = inputs.first().copied() else {
             return Err(TensorError::ShapeMismatch {
                 left: Vec::new(),
@@ -3219,6 +3743,7 @@ impl Tensor {
         let strides = try_clone_result_shape(&self.strides[indices.len()..], self.elements)?;
         let elements = element_count(&shape)?;
         validate_view_bounds(&shape, &strides, offset, elements, self.storage.len())?;
+        let records_grad = record_history && self.records_grad();
         let mut output = Self {
             storage: Arc::clone(&self.storage),
             shape,
@@ -3226,10 +3751,11 @@ impl Tensor {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: self.requires_grad(),
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: Some(self.view_requires_grad_flag()),
             autograd: None,
         };
-        if record_history && self.records_grad() {
+        if records_grad {
             let input_start = if elements == 0 {
                 0
             } else {
@@ -3294,6 +3820,7 @@ impl Tensor {
         strides.extend_from_slice(&self.strides[dimension + 1..]);
         let elements = element_count(&shape)?;
         validate_view_bounds(&shape, &strides, offset, elements, self.storage.len())?;
+        let records_grad = record_history && self.records_grad();
         let mut output = Self {
             storage: Arc::clone(&self.storage),
             shape,
@@ -3301,10 +3828,11 @@ impl Tensor {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: self.requires_grad(),
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: Some(self.view_requires_grad_flag()),
             autograd: None,
         };
-        if record_history && self.records_grad() {
+        if records_grad {
             self.record_transform(
                 &mut output,
                 TransformMapping::Select {
@@ -3534,7 +4062,8 @@ impl Tensor {
                 offset: 0,
                 elements: self.elements,
                 output_nr: 0,
-                view_requires_grad: false,
+                leaf_requires_grad: requires_grad_flag(false),
+                view_requires_grad: None,
                 autograd: None,
             },
             TransformMapping::Identity,
@@ -3575,7 +4104,8 @@ impl Tensor {
                 offset: self.offset,
                 elements: self.elements,
                 output_nr: 0,
-                view_requires_grad: false,
+                leaf_requires_grad: requires_grad_flag(false),
+                view_requires_grad: None,
                 autograd: None,
             },
             TransformMapping::Identity,
@@ -3590,6 +4120,8 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn add(&self, other: &Self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("add", self.device())?;
+        validate_cpu_storage_device("add", other.device())?;
         let output = self.zip_map(other, |left, right| left + right)?;
         self.finish_add_subtract_vjp(other, output, AutogradNode::Add, 1.0)
     }
@@ -3601,6 +4133,8 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn sub(&self, other: &Self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("sub", self.device())?;
+        validate_cpu_storage_device("sub", other.device())?;
         if let Some(output) = self.sub_same_shape_matching_dense_no_grad(other)? {
             return Ok(output);
         }
@@ -4173,6 +4707,8 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn mul(&self, other: &Self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("mul", self.device())?;
+        validate_cpu_storage_device("mul", other.device())?;
         let mut output = self.multiply_values(other)?;
         if (self.requires_grad() || other.requires_grad()) && is_grad_enabled() {
             let left_has_edge = self.autograd.is_some();
@@ -4200,6 +4736,7 @@ impl Tensor {
     /// Returns an error when result metadata or storage allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn square(&self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("square", self.device())?;
         let output = self.multiply_values(self)?;
         self.finish_saved_input_unary_vjp(output, AutogradNode::Power, apply_square_vjp)
     }
@@ -4213,6 +4750,8 @@ impl Tensor {
     /// when the shapes are not broadcastable, or when result shape calculation
     /// or allocation fails.
     pub fn div(&self, other: &Self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("div", self.device())?;
+        validate_cpu_storage_device("div", other.device())?;
         if self.records_grad() || other.records_grad() {
             return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
         }
@@ -4315,6 +4854,7 @@ impl Tensor {
     /// Returns an error when gradient recording is enabled for this tensor, or
     /// when result allocation fails.
     pub fn scalar_div(&self, scalar: f32) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("div", self.device())?;
         if self.records_grad() {
             return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
         }
@@ -4347,6 +4887,7 @@ impl Tensor {
         &self,
         scalar: f32,
     ) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("div", self.device())?;
         if self.records_grad() {
             return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
         }
@@ -4543,8 +5084,22 @@ impl Tensor {
         self.finish_saved_input_unary_vjp(output, AutogradNode::Sqrt, apply_sqrt_vjp)
     }
 
+    /// Computes the full CPU sum.
+    ///
+    /// # Panics
+    /// Panics on non-CPU tensors. Use [`Self::try_sum`] for fallible dispatch.
     #[must_use]
     pub fn sum(&self) -> Self {
+        self.try_sum().expect("sum(): unsupported device")
+    }
+
+    /// Computes the full sum while validating the native execution device.
+    ///
+    /// # Errors
+    /// Returns [`TensorError::UnsupportedDevice`] before accessing non-CPU
+    /// storage, including for empty CUDA tensors.
+    pub fn try_sum(&self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("sum", self.device())?;
         let contiguous_values = self.contiguous_slice();
         let total = if let Some(values) = contiguous_values {
             values
@@ -4567,11 +5122,81 @@ impl Tensor {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Sum {
                         input: SavedTensor::from_tensor_metadata(self),
+                        reduction: SumGradient::Full,
                     })),
                 },
             }));
         }
-        output
+        Ok(output)
+    }
+
+    /// Sums a rank-two tensor along one normalized dimension.
+    ///
+    /// The reduction materializes a fresh contiguous output. Empty reduction
+    /// axes produce zero-filled outputs for each unreduced coordinate, matching
+    /// `PyTorch`'s additive identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when called for a non-rank-two tensor, an invalid
+    /// dimension, or when result allocation fails.
+    pub fn sum_rank_two_dimension(
+        &self,
+        dimension: usize,
+        keepdim: bool,
+    ) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("sum", self.device())?;
+        let [rows, columns] = self.shape.as_slice() else {
+            return Err(TensorError::DimensionOutOfRange {
+                dimension: dimension_for_error(dimension),
+                rank: self.shape.len(),
+            });
+        };
+        if dimension >= 2 {
+            return Err(TensorError::DimensionOutOfRange {
+                dimension: dimension_for_error(dimension),
+                rank: self.shape.len(),
+            });
+        }
+
+        let shape = reduced_rank_two_sum_shape(*rows, *columns, dimension, keepdim)?;
+        let elements = element_count(&shape)?;
+        validate_storage_capacity(elements)?;
+        let strides = contiguous_strides(&shape, elements)?;
+        let data = self.materialize_rank_two_dimension_sum(dimension, elements)?;
+        let mut output = Self::from_owned_parts(data, shape, strides, self.dtype(), self.device());
+        if self.requires_grad() && is_grad_enabled() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Sum {
+                        input: SavedTensor::from_tensor_metadata(self),
+                        reduction: SumGradient::Dimension { dimension },
+                    })),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
+    fn materialize_rank_two_dimension_sum(
+        &self,
+        dimension: usize,
+        output_elements: usize,
+    ) -> Result<Vec<f32>, TensorError> {
+        let mut data = filled_storage(output_elements, 0.0)?;
+        if self.elements == 0 {
+            return Ok(data);
+        }
+        self.storage.with_cpu_values(|values| {
+            crate::reduction::dimension_sum(
+                &values[self.offset..],
+                &mut data,
+                self.shape[dimension],
+                self.strides[dimension],
+                self.strides[1 - dimension],
+            );
+        });
+        Ok(data)
     }
 
     /// Computes the arithmetic mean of every element.
@@ -4584,6 +5209,7 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn mean(&self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("mean", self.device())?;
         let divisor = full_reduction_mean_divisor(self.elements);
         let mut output = self.sum().div_scalar_values(divisor)?;
         if self.requires_grad() && is_grad_enabled() {
@@ -4622,6 +5248,7 @@ impl Tensor {
     ///
     /// Returns an error unless the tensor contains exactly one element.
     pub fn item(&self) -> Result<f32, TensorError> {
+        validate_cpu_storage_device("item", self.device())?;
         if self.elements != 1 {
             return Err(TensorError::ItemRequiresOneElement {
                 elements: self.elements,
@@ -4637,6 +5264,8 @@ impl Tensor {
     /// Returns an error unless both tensors are matrices with compatible inner
     /// dimensions.
     pub fn matmul(&self, other: &Self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("matmul", self.device())?;
+        validate_cpu_storage_device("matmul", other.device())?;
         self.matmul_with_initializer(other, |_, _, output_elements| {
             filled_storage(output_elements, 0.0)
         })
@@ -4650,14 +5279,17 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error unless both matrix operands and the row bias have
-    /// compatible shapes, or when result allocation fails.
+    /// Returns an error unless both matrix operands and the row bias are on
+    /// the CPU and have compatible shapes, or when result allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn matmul_with_row_bias(
         &self,
         other: &Self,
         bias: &Self,
     ) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("matmul", self.device())?;
+        validate_cpu_storage_device("matmul", other.device())?;
+        validate_cpu_storage_device("matmul", bias.device())?;
         self.matmul_with_initializer(other, |rows, columns, output_elements| {
             if bias.shape.len() != 1 || (bias.shape[0] != columns && bias.shape[0] != 1) {
                 let mut expected_bias_shape = try_result_vector(1, output_elements)?;
@@ -4957,6 +5589,7 @@ impl Tensor {
         scalar: f32,
         operation: impl Fn(f32, f32) -> f32,
     ) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("scalar operation", self.device())?;
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
         let strides =
@@ -4972,6 +5605,7 @@ impl Tensor {
     }
 
     fn unary_map(&self, operation: impl Fn(f32) -> f32) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("unary operation", self.device())?;
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
         let strides = self.unary_output_strides(&shape, elements)?;
@@ -5039,7 +5673,7 @@ impl SavedTensor {
             offset: tensor.offset,
             elements: tensor.elements,
             output_nr: tensor.output_nr,
-            autograd: tensor.autograd.as_ref().map(Arc::clone),
+            autograd: tensor.grad_edge(),
         }
     }
 
@@ -5057,7 +5691,7 @@ impl SavedTensor {
             offset: tensor.offset,
             elements: tensor.elements,
             output_nr: tensor.output_nr,
-            autograd: tensor.autograd.as_ref().map(Arc::clone),
+            autograd: tensor.grad_edge(),
         })
     }
 
@@ -5075,7 +5709,7 @@ impl SavedTensor {
             offset: tensor.offset,
             elements: tensor.elements,
             output_nr: tensor.output_nr,
-            autograd: tensor.autograd.as_ref().map(Arc::clone),
+            autograd: tensor.grad_edge(),
         })
     }
 
@@ -5150,7 +5784,9 @@ fn run_backward(root: &Arc<AutogradMeta>, root_output_nr: usize) -> Result<(), T
     for (meta, grad_fn) in topology.iter().rev() {
         match grad_fn {
             None => {
-                if let Some(upstream) = gradients.remove(&gradient_key(meta, 0)) {
+                if meta.accumulates_recorded_leaf_gradient()
+                    && let Some(upstream) = gradients.remove(&gradient_key(meta, 0))
+                {
                     leaf_gradients.push((Arc::clone(meta), upstream));
                 }
             }
@@ -5168,6 +5804,14 @@ fn run_backward(root: &Arc<AutogradMeta>, root_output_nr: usize) -> Result<(), T
                     *output_elements,
                     &mut gradients,
                 )?;
+            }
+            Some(GradFn::Chunk {
+                input,
+                dimension,
+                lengths,
+                ..
+            }) => {
+                apply_chunk_grad_fn(meta, input, *dimension, lengths, &mut gradients)?;
             }
             Some(grad_fn) => {
                 let Some(upstream) = gradients.remove(&gradient_key(meta, 0)) else {
@@ -5195,7 +5839,7 @@ fn run_backward(root: &Arc<AutogradMeta>, root_output_nr: usize) -> Result<(), T
         }
     }
     for (meta, gradient) in leaf_gradients {
-        accumulate_leaf_gradient(&meta, gradient);
+        accumulate_leaf_gradient(&meta, gradient)?;
     }
     Ok(())
 }
@@ -5251,10 +5895,11 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                         }
                         GradFn::MultiplyScalar { input, .. }
                         | GradFn::Negate { input, .. }
-                        | GradFn::Sum { input }
+                        | GradFn::Sum { input, .. }
                         | GradFn::Mean { input, .. }
                         | GradFn::Transform { input, .. }
-                        | GradFn::Unbind { input, .. } => {
+                        | GradFn::Unbind { input, .. }
+                        | GradFn::Chunk { input, .. } => {
                             push_saved_parent(&mut stack, input);
                         }
                         GradFn::SavedInputUnary(node) => {
@@ -5286,7 +5931,9 @@ fn apply_grad_fn(
     gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
     match grad_fn {
-        GradFn::Sum { input } => apply_sum_grad_fn(input, upstream, gradients)?,
+        GradFn::Sum { input, reduction } => {
+            apply_sum_grad_fn(input, *reduction, upstream, gradients)?;
+        }
         GradFn::Mean { input, divisor } => {
             apply_mean_grad_fn(input, *divisor, upstream, gradients)?;
         }
@@ -5362,7 +6009,7 @@ fn apply_grad_fn(
                 add_gradient(gradients, meta, input.output_nr, gradient);
             }
         }
-        GradFn::Unbind { .. } => unreachable!(),
+        GradFn::Unbind { .. } | GradFn::Chunk { .. } => unreachable!(),
     }
     Ok(())
 }
@@ -5445,84 +6092,6 @@ fn apply_add_subtract_grad_fn(
     }
     if let (Some(meta), Some(gradient)) = (&right.autograd, right_gradient) {
         add_gradient(gradients, meta, right.output_nr, gradient.values);
-    }
-    Ok(())
-}
-
-fn materialize_stack(
-    inputs: &[&Tensor],
-    dimension: usize,
-    output_elements: usize,
-) -> Result<Vec<f32>, TensorError> {
-    let Some(first) = inputs.first() else {
-        return Ok(Vec::new());
-    };
-    let inner = element_count(&first.shape[dimension..])?;
-    let outer = element_count(&first.shape[..dimension])?;
-    if let Some(data) = materialize_stack_small_rank_fast_path(inputs, dimension, output_elements)?
-    {
-        return Ok(data);
-    }
-    if let Some(data) =
-        materialize_stack_from_contiguous_slices(inputs, inner, outer, output_elements)?
-    {
-        return Ok(data);
-    }
-
-    let mut materialized_inputs = try_result_vector(inputs.len(), output_elements)?;
-    for input in inputs {
-        materialized_inputs.push(input.try_to_vec()?);
-    }
-    let mut slices = try_result_vector(materialized_inputs.len(), output_elements)?;
-    for values in &materialized_inputs {
-        slices.push(values.as_slice());
-    }
-    let mut data = try_result_vector(output_elements, output_elements)?;
-    append_stack_blocks(&mut data, &slices, inner, outer)?;
-    debug_assert_eq!(data.len(), output_elements);
-    Ok(data)
-}
-
-fn materialize_stack_from_contiguous_slices(
-    inputs: &[&Tensor],
-    inner: usize,
-    outer: usize,
-    output_elements: usize,
-) -> Result<Option<Vec<f32>>, TensorError> {
-    let mut slices = try_result_vector(inputs.len(), output_elements)?;
-    for input in inputs {
-        let Some(values) = input.contiguous_slice() else {
-            return Ok(None);
-        };
-        slices.push(values);
-    }
-
-    let mut data = try_result_vector(output_elements, output_elements)?;
-    append_stack_blocks(&mut data, &slices, inner, outer)?;
-    debug_assert_eq!(data.len(), output_elements);
-    Ok(Some(data))
-}
-
-fn append_stack_blocks(
-    data: &mut Vec<f32>,
-    input_slices: &[&[f32]],
-    inner: usize,
-    outer: usize,
-) -> Result<(), TensorError> {
-    for outer_index in 0..outer {
-        let start = outer_index
-            .checked_mul(inner)
-            .ok_or(TensorError::IndexCalculationOverflow)?;
-        let end = start
-            .checked_add(inner)
-            .ok_or(TensorError::IndexCalculationOverflow)?;
-        for values in input_slices {
-            data.extend_from_slice(
-                values
-                    .get(start..end)
-                    .ok_or(TensorError::IndexCalculationOverflow)?,
-            );
-        }
     }
     Ok(())
 }
@@ -5666,6 +6235,84 @@ fn materialize_concat(
     debug_assert_eq!(output_block.checked_mul(outer), Some(output_elements));
     debug_assert_eq!(data.len(), output_elements);
     Ok(data)
+}
+
+fn materialize_stack(
+    inputs: &[&Tensor],
+    dimension: usize,
+    output_elements: usize,
+) -> Result<Vec<f32>, TensorError> {
+    let Some(first) = inputs.first() else {
+        return Ok(Vec::new());
+    };
+    let inner = element_count(&first.shape[dimension..])?;
+    let outer = element_count(&first.shape[..dimension])?;
+    if let Some(data) = materialize_stack_small_rank_fast_path(inputs, dimension, output_elements)?
+    {
+        return Ok(data);
+    }
+    if let Some(data) =
+        materialize_stack_from_contiguous_slices(inputs, inner, outer, output_elements)?
+    {
+        return Ok(data);
+    }
+
+    let mut materialized_inputs = try_result_vector(inputs.len(), output_elements)?;
+    for input in inputs {
+        materialized_inputs.push(input.try_to_vec()?);
+    }
+    let mut slices = try_result_vector(materialized_inputs.len(), output_elements)?;
+    for values in &materialized_inputs {
+        slices.push(values.as_slice());
+    }
+    let mut data = try_result_vector(output_elements, output_elements)?;
+    append_stack_blocks(&mut data, &slices, inner, outer)?;
+    debug_assert_eq!(data.len(), output_elements);
+    Ok(data)
+}
+
+fn materialize_stack_from_contiguous_slices(
+    inputs: &[&Tensor],
+    inner: usize,
+    outer: usize,
+    output_elements: usize,
+) -> Result<Option<Vec<f32>>, TensorError> {
+    let mut slices = try_result_vector(inputs.len(), output_elements)?;
+    for input in inputs {
+        let Some(values) = input.contiguous_slice() else {
+            return Ok(None);
+        };
+        slices.push(values);
+    }
+
+    let mut data = try_result_vector(output_elements, output_elements)?;
+    append_stack_blocks(&mut data, &slices, inner, outer)?;
+    debug_assert_eq!(data.len(), output_elements);
+    Ok(Some(data))
+}
+
+fn append_stack_blocks(
+    data: &mut Vec<f32>,
+    input_slices: &[&[f32]],
+    inner: usize,
+    outer: usize,
+) -> Result<(), TensorError> {
+    for outer_index in 0..outer {
+        let start = outer_index
+            .checked_mul(inner)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let end = start
+            .checked_add(inner)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        for values in input_slices {
+            data.extend_from_slice(
+                values
+                    .get(start..end)
+                    .ok_or(TensorError::IndexCalculationOverflow)?,
+            );
+        }
+    }
+    Ok(())
 }
 
 fn materialize_concat_small_rank_fast_path(
@@ -6138,14 +6785,71 @@ fn apply_squared_difference_grad_fn(
 
 fn apply_sum_grad_fn(
     input: &SavedTensor,
+    reduction: SumGradient,
     upstream: &[f32],
     gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
     if let Some(meta) = &input.autograd {
-        let gradient = filled_storage(input.elements, upstream[0])?;
+        let gradient = match reduction {
+            SumGradient::Full => {
+                let upstream = upstream
+                    .first()
+                    .copied()
+                    .ok_or(TensorError::IndexCalculationOverflow)?;
+                filled_storage(input.elements, upstream)?
+            }
+            SumGradient::Dimension { dimension } => {
+                sum_dimension_backward(input, dimension, upstream)?
+            }
+        };
         add_gradient(gradients, meta, input.output_nr, gradient);
     }
     Ok(())
+}
+
+fn sum_dimension_backward(
+    input: &SavedTensor,
+    dimension: usize,
+    upstream: &[f32],
+) -> Result<Vec<f32>, TensorError> {
+    let [rows, columns] = input.shape.as_slice() else {
+        return Err(TensorError::IndexCalculationOverflow);
+    };
+    if dimension >= 2 {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
+
+    let mut gradient = try_result_vector(input.elements, input.elements)?;
+    if input.elements == 0 {
+        return Ok(gradient);
+    }
+
+    match dimension {
+        0 => {
+            if upstream.len() != *columns {
+                return Err(TensorError::IndexCalculationOverflow);
+            }
+            for _ in 0..*rows {
+                gradient.extend_from_slice(upstream);
+            }
+        }
+        1 => {
+            if upstream.len() != *rows {
+                return Err(TensorError::IndexCalculationOverflow);
+            }
+            for &value in upstream {
+                gradient.resize(
+                    gradient
+                        .len()
+                        .checked_add(*columns)
+                        .ok_or(TensorError::IndexCalculationOverflow)?,
+                    value,
+                );
+            }
+        }
+        _ => unreachable!("rank-two sum dimensions are validated above"),
+    }
+    Ok(gradient)
 }
 
 fn apply_mean_grad_fn(
@@ -6169,7 +6873,7 @@ fn apply_unbind_grad_fn(
     output_elements: usize,
     gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
-    let mut assembled = None;
+    let mut assembled: Option<Vec<f32>> = None;
     let input_strides = contiguous_strides(&input.shape, input.elements)?;
     let mut coordinates = try_result_vector(input.shape.len().saturating_sub(1), output_elements)?;
     coordinates.resize(input.shape.len().saturating_sub(1), 0_usize);
@@ -6222,6 +6926,41 @@ fn apply_unbind_grad_fn(
                 .get_mut(input_index)
                 .ok_or(TensorError::IndexCalculationOverflow)? = value;
         }
+    }
+    if let (Some(meta), Some(gradient)) = (&input.autograd, assembled) {
+        add_gradient(gradients, meta, input.output_nr, gradient);
+    }
+    Ok(())
+}
+
+fn apply_chunk_grad_fn(
+    node: &Arc<AutogradMeta>,
+    input: &SavedTensor,
+    dimension: usize,
+    lengths: &[usize],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    let mut assembled: Option<Vec<f32>> = None;
+    let mut start = 0_usize;
+    for (output_nr, &length) in lengths.iter().enumerate() {
+        if let Some(output_gradient) = gradients.remove(&gradient_key(node, output_nr)) {
+            let mut output_shape = try_clone_result_shape(&input.shape, input.elements)?;
+            output_shape[dimension] = length;
+            if output_gradient.len() != element_count(&output_shape)? {
+                return Err(TensorError::IndexCalculationOverflow);
+            }
+
+            if assembled.is_none() {
+                assembled = Some(filled_storage(input.elements, 0.0)?);
+            }
+            let gradient = assembled
+                .as_mut()
+                .expect("chunk gradient storage was initialized above");
+            slice_backward_into(gradient, input, dimension, start, length, &output_gradient)?;
+        }
+        start = start
+            .checked_add(length)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
     }
     if let (Some(meta), Some(gradient)) = (&input.autograd, assembled) {
         add_gradient(gradients, meta, input.output_nr, gradient);
@@ -6563,8 +7302,23 @@ fn slice_backward(
     upstream: &[f32],
 ) -> Result<Vec<f32>, TensorError> {
     let mut gradient = filled_storage(input.elements, 0.0)?;
+    slice_backward_into(&mut gradient, input, dimension, start, length, upstream)?;
+    Ok(gradient)
+}
+
+fn slice_backward_into(
+    gradient: &mut [f32],
+    input: &SavedTensor,
+    dimension: usize,
+    start: usize,
+    length: usize,
+    upstream: &[f32],
+) -> Result<(), TensorError> {
+    if gradient.len() != input.elements {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
     if upstream.is_empty() {
-        return Ok(gradient);
+        return Ok(());
     }
 
     let input_strides = contiguous_strides(&input.shape, input.elements)?;
@@ -6604,7 +7358,7 @@ fn slice_backward(
             .get_mut(input_index)
             .ok_or(TensorError::IndexCalculationOverflow)? = value;
     }
-    Ok(gradient)
+    Ok(())
 }
 
 fn select_backward(
@@ -6679,8 +7433,13 @@ fn add_gradient(
         .or_insert(contribution);
 }
 
-fn accumulate_leaf_gradient(meta: &AutogradMeta, contribution: Vec<f32>) {
+fn accumulate_leaf_gradient(
+    meta: &AutogradMeta,
+    contribution: Vec<f32>,
+) -> Result<(), TensorError> {
     let AutogradKind::Leaf {
+        shape,
+        strides,
         dtype,
         device,
         grad,
@@ -6689,6 +7448,7 @@ fn accumulate_leaf_gradient(meta: &AutogradMeta, contribution: Vec<f32>) {
     else {
         unreachable!("only leaf nodes are queued for gradient accumulation");
     };
+    let contribution = gradient_storage_values(shape, strides, contribution)?;
     let mut grad = grad
         .lock()
         .expect("leaf gradient mutex must not be poisoned");
@@ -6701,6 +7461,25 @@ fn accumulate_leaf_gradient(meta: &AutogradMeta, contribution: Vec<f32>) {
             *device,
         )));
     }
+    Ok(())
+}
+
+fn gradient_storage_values(
+    shape: &[usize],
+    strides: &[usize],
+    contribution: Vec<f32>,
+) -> Result<Vec<f32>, TensorError> {
+    if layout_is_contiguous(shape, strides, contribution.len()) {
+        return Ok(contribution);
+    }
+
+    let mut values = try_result_vector(contribution.len(), contribution.len())?;
+    values.resize(contribution.len(), 0.0);
+    for (index, value) in contribution.into_iter().enumerate() {
+        let offset = logical_offset_for_linear_index(shape, strides, 0, index)?;
+        values[offset] = value;
+    }
+    Ok(values)
 }
 
 fn autograd_id(meta: &Arc<AutogradMeta>) -> usize {
@@ -7202,6 +7981,28 @@ fn layout_is_contiguous(shape: &[usize], strides: &[usize], elements: usize) -> 
         expected_stride = next_stride;
     }
     true
+}
+
+fn leaf_gradient_strides(
+    shape: &[usize],
+    strides: &[usize],
+    elements: usize,
+) -> Result<Vec<usize>, TensorError> {
+    if layout_is_non_overlapping_and_dense(shape, strides, elements)
+        && validate_view_bounds(shape, strides, 0, elements, elements).is_ok()
+    {
+        return try_clone_result_shape(strides, elements);
+    }
+    contiguous_strides(shape, elements)
+}
+
+fn leaf_gradient_strides_unchecked(
+    shape: &[usize],
+    strides: &[usize],
+    elements: usize,
+) -> Vec<usize> {
+    leaf_gradient_strides(shape, strides, elements)
+        .expect("validated tensor metadata should produce valid leaf gradient strides")
 }
 
 fn layout_is_non_overlapping_and_dense(
@@ -8201,6 +9002,14 @@ fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorEr
     Ok(data)
 }
 
+fn validate_cpu_storage_device(operation: &'static str, device: Device) -> Result<(), TensorError> {
+    if device.is_cpu() {
+        Ok(())
+    } else {
+        Err(TensorError::UnsupportedDevice { operation, device })
+    }
+}
+
 fn copied_storage(values: &[f32], elements: usize) -> Result<Vec<f32>, TensorError> {
     validate_storage_capacity(elements)?;
 
@@ -8565,8 +9374,8 @@ mod tests {
         TensorError, contiguous_strides, contiguous_values_equal, full_reduction_mean_divisor,
         l1_loss_difference_value, log_value, logical_offset_for_linear_index,
         materialize_concat_small_rank_fast_path, materialize_contiguous_trailing_broadcast,
-        materialize_stack_small_rank_fast_path, rsqrt_value, sqrt_value, squared_difference_value,
-        try_result_vector, validate_view_bounds,
+        materialize_stack_small_rank_fast_path, requires_grad_flag, rsqrt_value, sqrt_value,
+        squared_difference_value, try_result_vector, validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -8581,7 +9390,8 @@ mod tests {
             offset: tensor.offset,
             elements: tensor.elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -12991,6 +13801,38 @@ mod tests {
     }
 
     #[test]
+    fn stack_does_not_capture_disabled_leaf_grad_edges() {
+        for shape in [&[][..], &[4][..], &[2, 2][..]] {
+            for dimension in 0..=shape.len() {
+                let mut disabled = Tensor::ones(shape).unwrap().with_requires_grad(true);
+                let active = Tensor::ones(shape).unwrap().with_requires_grad(true);
+                disabled.requires_grad_(false).unwrap();
+
+                let stacked = Tensor::stack(&[&disabled, &active, &active], dimension).unwrap();
+                assert!(stacked.requires_grad());
+                disabled.requires_grad_(true).unwrap();
+                stacked.sum().backward().unwrap();
+
+                assert!(disabled.grad().unwrap().is_none());
+                assert_eq!(
+                    active.grad().unwrap().unwrap().as_slice(),
+                    vec![2.0; active.numel()]
+                );
+
+                Tensor::stack(&[&disabled], dimension)
+                    .unwrap()
+                    .sum()
+                    .backward()
+                    .unwrap();
+                assert_eq!(
+                    disabled.grad().unwrap().unwrap().as_slice(),
+                    vec![1.0; disabled.numel()]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn stack_trailing_matrix_dimension_backpropagates_to_original_inputs() {
         let left = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
             .unwrap()
@@ -13148,6 +13990,26 @@ mod tests {
             .backward()
             .unwrap();
         let gradient = signed_source.grad().unwrap().unwrap();
+        assert_eq!(gradient.as_slice()[0].to_bits(), (-0.0_f32).to_bits());
+        assert_eq!(gradient.as_slice()[1].to_bits(), 1.0_f32.to_bits());
+    }
+
+    #[test]
+    fn chunk_backward_preserves_signed_zero_when_outputs_contribute() {
+        let source = Tensor::from_vec(vec![1.0, 2.0], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        let chunks = source.chunk_dimension(0, 2).unwrap();
+        chunks[0]
+            .mul_scalar(-0.0)
+            .unwrap()
+            .sum()
+            .add(&chunks[1].sum())
+            .unwrap()
+            .backward()
+            .unwrap();
+
+        let gradient = source.grad().unwrap().unwrap();
         assert_eq!(gradient.as_slice()[0].to_bits(), (-0.0_f32).to_bits());
         assert_eq!(gradient.as_slice()[1].to_bits(), 1.0_f32.to_bits());
     }
@@ -13443,7 +14305,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13467,7 +14330,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13491,7 +14355,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13515,7 +14380,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13539,7 +14405,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13563,7 +14430,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13587,7 +14455,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13611,7 +14480,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13635,7 +14505,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -13659,7 +14530,8 @@ mod tests {
             offset,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         }
     }
@@ -16975,7 +17847,8 @@ mod tests {
             offset: 0,
             elements: 4,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         };
         let right = Tensor::ones([2, 1]).unwrap();
@@ -17276,7 +18149,8 @@ mod tests {
             offset: 0,
             elements,
             output_nr: 0,
-            view_requires_grad: false,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
             autograd: None,
         };
 

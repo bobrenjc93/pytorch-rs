@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
+use crate::Device;
 use crate::memory_format::MemoryFormat;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,6 +89,17 @@ pub enum TensorError {
     AllocationFailed {
         elements: usize,
     },
+    UnsupportedDevice {
+        operation: &'static str,
+        device: Device,
+    },
+    UnsupportedCudaZeroTensor {
+        reason: &'static str,
+    },
+    CudaRuntimeError {
+        operation: &'static str,
+        message: String,
+    },
     UnsupportedMemoryFormat {
         memory_format: MemoryFormat,
     },
@@ -107,6 +119,7 @@ pub enum TensorError {
     DoesNotRequireGradAt {
         index: usize,
     },
+    RequiresGradOnlyLeaf,
     BackwardGraphFreed,
 }
 
@@ -195,6 +208,9 @@ impl Display for TensorError {
             error @ (Self::StorageCapacityOverflow { .. } | Self::AllocationFailed { .. }) => {
                 format_storage_error(formatter, error)
             }
+            error @ (Self::UnsupportedDevice { .. }
+            | Self::UnsupportedCudaZeroTensor { .. }
+            | Self::CudaRuntimeError { .. }) => format_device_error(formatter, error),
             error @ (Self::UnsupportedMemoryFormat { .. }
             | Self::ContiguousPreserveFormatUnsupported
             | Self::ContiguousMemoryFormatRankMismatch { .. }) => {
@@ -204,6 +220,7 @@ impl Display for TensorError {
             | Self::AutogradRecordingUnsupported { .. }
             | Self::DoesNotRequireGrad
             | Self::DoesNotRequireGradAt { .. }
+            | Self::RequiresGradOnlyLeaf
             | Self::BackwardGraphFreed) => format_autograd_error(formatter, error),
         }
     }
@@ -345,6 +362,23 @@ fn format_storage_error(formatter: &mut Formatter<'_>, error: &TensorError) -> s
     }
 }
 
+fn format_device_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
+    match error {
+        TensorError::UnsupportedDevice { operation, device } => write!(
+            formatter,
+            "{operation}(): device '{device}' is not supported; only 'cpu' is implemented"
+        ),
+        TensorError::UnsupportedCudaZeroTensor { reason } => write!(
+            formatter,
+            "zeros(): CUDA storage is only implemented for 1-D float32 tensors with requires_grad=False ({reason})"
+        ),
+        TensorError::CudaRuntimeError { operation, message } => {
+            write!(formatter, "{operation}(): CUDA runtime error: {message}")
+        }
+        _ => unreachable!("only device errors are formatted here"),
+    }
+}
+
 fn format_memory_format_error(
     formatter: &mut Formatter<'_>,
     error: &TensorError,
@@ -386,6 +420,9 @@ fn format_autograd_error(formatter: &mut Formatter<'_>, error: &TensorError) -> 
         TensorError::DoesNotRequireGradAt { index } => write!(
             formatter,
             "element {index} of tensors does not require grad and does not have a grad_fn"
+        ),
+        TensorError::RequiresGradOnlyLeaf => formatter.write_str(
+            "you can only change requires_grad flags of leaf variables. If you want to use a computed variable in a subgraph that doesn't require differentiation use var_no_grad = var.detach().",
         ),
         TensorError::BackwardGraphFreed => formatter.write_str(
             "Trying to backward through the graph a second time (or directly access saved tensors after they have already been freed). Saved intermediate values of the graph are freed when you call .backward() or autograd.grad(). Specify retain_graph=True if you need to backward through the graph a second time or if you need to access saved tensors after calling backward.",
