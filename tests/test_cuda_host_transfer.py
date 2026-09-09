@@ -117,6 +117,32 @@ class CudaHostTransferTests(unittest.TestCase):
             self.assertEqual(gradient.tolist(), [5.0, 5.0])
             self.assertEqual(uploaded.cpu().tolist(), [3.0, 3.0])
 
+    def test_split_views_upload_with_preserve_format_and_cpu_only_split(self):
+        values = np.arange(120, dtype=np.float32)
+        a, b = native.tensor(values), torch.tensor(values)
+        for view, size, dim in (
+            (lambda x: x.reshape(4, 5, 6), 2, 1),
+            (lambda x: x.reshape(4, 5, 6)[1:].transpose(0, 2), 4, 0),
+            (lambda x: x.reshape(20, 6)[20:20][:, 6:6], 0, 1),
+            (lambda x: x.reshape(20, 6)[20:20], 4, 1),
+        ):
+            actual_parts = view(a).split(size, dim)
+            expected_parts = view(b).split(size, dim)
+            self.assertEqual(len(actual_parts), len(expected_parts))
+            for index, (actual, expected) in enumerate(zip(actual_parts, expected_parts)):
+                with self.subTest(size=size, dim=dim, part=index):
+                    uploaded = self.assert_transfer(actual, expected)
+                    with self.assertRaisesRegex(NotImplementedError, "exact native CPU float32"):
+                        uploaded.split(1, dim)
+
+        leaf = native.ones((2, 5), requires_grad=True)
+        for source in (leaf, leaf * 2):
+            with native.no_grad():
+                parts = source.split(2, 1)
+                for part in parts:
+                    with self.assertRaisesRegex(NotImplementedError, "requires_grad"):
+                        part.to("cuda:0")
+
     def test_source_and_view_lifetimes_and_allocation_reuse(self):
         a = native.tensor(np.arange(1033, dtype=np.float32))
         uploaded = a.to("cuda:0")

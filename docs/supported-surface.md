@@ -793,8 +793,8 @@ PyTorch's non-complex `RuntimeError` path without mutating storage, metadata, or
 autograd state. Complex dtypes and imaginary views remain unsupported.
 
 `Tensor.type()` returns the exact legacy type string for the tensor device
-(`"torch.FloatTensor"` on CPU or `"torch.cuda.FloatTensor"` for the narrow CUDA
-zero-storage tensors) when its dtype is omitted or explicitly `None`;
+(`"torch.FloatTensor"` on CPU or `"torch.cuda.FloatTensor"` for native CUDA
+float32 tensors) when its dtype is omitted or explicitly `None`;
 `torch.float32`, its `torch.float` alias, and the matching legacy string return
 the exact tensor wrapper through positional or `dtype=` forms, with strict-bool
 `non_blocking` accepted as an identity-only hint. CUDA tensors also support the
