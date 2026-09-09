@@ -614,6 +614,17 @@ class ReadmeQuickstartTests(unittest.TestCase):
             "[exhaustive supported surface](docs/supported-surface.md)", route
         )
         self.assertNotIn("The current native backend supports eager CPU", section)
+        for snippet in (
+            "exact native CPU `float32` tensors",
+            "integer-size `Tensor.split` and `torch.split`",
+            "also `torch.functional.split`",
+            "shared-storage tuple views",
+            "uneven and empty splits with backward support",
+            "Section-list sizes and CUDA splits remain unsupported",
+        ):
+            with self.subTest(split_contract=snippet):
+                self.assertIn(snippet, " ".join(route.split()))
+        self.assertNotIn("top-level `torch.split` function remain unavailable", section)
 
         for row_label in README_SCOPE_ROW_LABELS:
             with self.subTest(scope_row=row_label):
