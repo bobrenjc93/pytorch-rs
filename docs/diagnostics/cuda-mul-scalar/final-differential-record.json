@@ -1,0 +1,36 @@
+[
+  {
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_cuda_mul_scalar"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "exit_status": 0,
+    "start_epoch": 1788994399.958899,
+    "end_epoch": 1788994417.0596316,
+    "test_sha256": "2eda98e059743bbe510ab872630643c2997d6dc5145d26fee05f30d34e7d95ec",
+    "native_sha256": "ea676a228ab2e97df4cb91bce6116c64b944d8a84d9f71489310a98ca97eac08",
+    "log": "differential-final.log"
+  },
+  {
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67",
+    "CUDA_VISIBLE_DEVICES": "0,1",
+    "exit_status": 0,
+    "start_epoch": 1788994417.0642602,
+    "end_epoch": 1788994421.2642307,
+    "test_sha256": "2eda98e059743bbe510ab872630643c2997d6dc5145d26fee05f30d34e7d95ec",
+    "native_sha256": "ea676a228ab2e97df4cb91bce6116c64b944d8a84d9f71489310a98ca97eac08",
+    "log": "two-device-final.log"
+  }
+]

@@ -121,7 +121,9 @@ on the legacy default stream before return. Contiguous float32 CUDA negation
 and contiguous offset views; see [validation](cuda-neg-validation.md).
 Bounded eager native neg/add capture also supports contiguous float32 CUDA
 tensors; see the [capture guide](compile-cuda-add.md) for its guards and scope.
-Noncontiguous CUDA negation, other CUDA math, CUDA autograd,
+Contiguous float32 CUDA scalar multiplication also uses the native driver kernel;
+see its [scope and validation](cuda-mul-scalar-validation.md).
+Noncontiguous CUDA negation/multiplication, tensor-tensor multiplication, other CUDA math, CUDA autograd,
 asynchronous transfers, dtype changes, unindexed CUDA targets, nondefault
 streams, and general CUDA runtime management remain unsupported.
 
@@ -129,11 +131,11 @@ After a current-worktree release build, run the focused hardware tests:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest \
-  tests.test_cuda_neg tests.test_cuda_add tests.test_cuda_host_transfer tests.test_cuda_native_views tests.test_cuda_zero_roundtrip
+  tests.test_cuda_mul_scalar tests.test_cuda_neg tests.test_cuda_add tests.test_cuda_host_transfer tests.test_cuda_native_views tests.test_cuda_zero_roundtrip
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/diagnose_compile_cuda_neg_add.py \
   --case-set neg_add_v1 --output target/compile-neg-add-diagnostic.json
 CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest \
-  tests.test_cuda_neg.CudaNegDeviceTests tests.test_cuda_add.CudaAddDeviceTests tests.test_cuda_host_transfer.CudaHostTransferDeviceGuardTests
+  tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests tests.test_cuda_neg.CudaNegDeviceTests tests.test_cuda_add.CudaAddDeviceTests tests.test_cuda_host_transfer.CudaHostTransferDeviceGuardTests
 # Standalone Rust needs TORCH_RS_CUDART set when libcudart is not on the loader path.
 CUDA_VISIBLE_DEVICES=0 cargo test --locked --test cuda_add
 CUDA_VISIBLE_DEVICES=0 cargo test --locked cuda

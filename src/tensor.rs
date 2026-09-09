@@ -4926,12 +4926,50 @@ impl Tensor {
         self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Subtract)
     }
 
-    /// Multiplies every element by a scalar.
+    /// Multiplies every element by a scalar. CUDA supports contiguous float32
+    /// inputs without autograd, including scalar, empty and offset views.
     ///
     /// # Errors
     ///
-    /// Returns an error when result allocation fails.
+    /// Returns an error when allocation fails, CUDA layout/autograd is unsupported,
+    /// or a CUDA allocation or kernel launch fails.
     pub fn mul_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
+        if self.is_cuda() {
+            let reason = if self.dtype() != DType::Float32 {
+                Some("only float32 is supported")
+            } else if self.requires_grad() {
+                Some("autograd is unsupported")
+            } else if !self.is_contiguous() {
+                Some("input must be contiguous")
+            } else {
+                None
+            };
+            if let Some(reason) = reason {
+                return Err(TensorError::UnsupportedCudaScalarMultiplication { reason });
+            }
+            let shape = try_clone_result_shape(&self.shape, self.elements)?;
+            // Use the shared scalar layout planner: singleton strides can differ
+            // from canonical contiguous strides while addressing the same bytes.
+            let strides = elementwise_output_strides(
+                &shape,
+                &[ElementwiseLayout::from_tensor(self)],
+                self.elements,
+            )?;
+            let storage =
+                self.storage
+                    .cuda_mul_scalar_float32(self.offset, self.elements, scalar)?;
+            return Ok(Self {
+                storage: Arc::new(storage),
+                shape,
+                strides,
+                offset: 0,
+                elements: self.elements,
+                output_nr: 0,
+                leaf_requires_grad: requires_grad_flag(false),
+                view_requires_grad: None,
+                autograd: None,
+            });
+        }
         let mut output = self.map_scalar(scalar, |value, scalar| value * scalar)?;
         if self.requires_grad() && is_grad_enabled() {
             let input = SavedTensor::try_from_tensor(self, false)?;

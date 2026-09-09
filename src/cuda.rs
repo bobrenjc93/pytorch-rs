@@ -309,6 +309,31 @@ impl CudaFloat32Storage {
 
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn negate(&self, offset: usize, elements: usize) -> Result<Self, TensorError> {
+        self.unary_pointwise(offset, elements, |input, output, count| {
+            // SAFETY: unary_pointwise checks bounds, guards the device and holds
+            // both allocations through legacy-stream completion, even on errors.
+            unsafe { pointwise::launch_negate(input, output, count) }
+        })
+    }
+
+    pub(crate) fn mul_scalar(
+        &self,
+        offset: usize,
+        elements: usize,
+        scalar: f32,
+    ) -> Result<Self, TensorError> {
+        self.unary_pointwise(offset, elements, |input, output, count| {
+            // SAFETY: the shared pointwise lifetime and device contract above.
+            unsafe { pointwise::launch_mul_scalar(input, output, count, scalar) }
+        })
+    }
+
+    fn unary_pointwise(
+        &self,
+        offset: usize,
+        elements: usize,
+        launch: impl FnOnce(u64, u64, usize) -> Result<(), TensorError>,
+    ) -> Result<Self, TensorError> {
         // Empty views may have offsets beyond storage; never form their pointer.
         if elements != 0
             && offset
@@ -319,15 +344,12 @@ impl CudaFloat32Storage {
         }
         let (result, _guard) = Self::allocate(elements, self.device_index)?;
         if elements != 0 {
-            // SAFETY: checked contiguous bounds, guarded device and fresh output.
-            // Both allocations remain live through completion, also on errors.
-            let launched = unsafe {
-                pointwise::launch_negate(
-                    (self.data_ptr + offset * 4) as u64,
-                    result.data_ptr as u64,
-                    elements,
-                )
-            };
+            // Bounds are checked and both allocations stay live through completion.
+            let launched = launch(
+                (self.data_ptr + offset * 4) as u64,
+                result.data_ptr as u64,
+                elements,
+            );
             let completed = self.runtime.check(
                 unsafe { (self.runtime.stream_synchronize)(std::ptr::without_provenance_mut(1)) },
                 "cudaStreamSynchronize",
@@ -765,6 +787,74 @@ mod tests {
             )
             .unwrap();
         assert_eq!(current, 1);
+    }
+
+    #[test]
+    fn scalar_multiplication_bounds_and_launch_failure_cleanup() {
+        use super::{CACHE_HEALTHY, CudaFloat32Storage, Ordering};
+        use crate::TensorError;
+        if super::device_count() == 0 {
+            eprintln!("skipping CUDA multiplication errors: no CUDA runtime/device");
+            return;
+        }
+        let input = CudaFloat32Storage::from_host(&[1.25, -2.5, 4.0], 0).unwrap();
+        for (offset, count) in [(3, 1), (usize::MAX, 2), (0, 4)] {
+            assert!(matches!(
+                input.mul_scalar(offset, count, 2.0),
+                Err(TensorError::IndexCalculationOverflow)
+            ));
+        }
+        assert_eq!(
+            input.mul_scalar(usize::MAX, 0, f32::NAN).unwrap().elements,
+            0
+        );
+        assert_eq!(
+            input
+                .mul_scalar(1, 2, -1.5)
+                .unwrap()
+                .copy_range(0, 2)
+                .unwrap(),
+            [3.75, -6.0]
+        );
+        let runtime = super::runtime().unwrap();
+        let current = usize::from(
+            std::env::var("CUDA_VISIBLE_DEVICES").as_deref() == Ok("0,1")
+                && super::device_count() >= 2,
+        );
+        let _guard = runtime.guard(current).unwrap();
+        // Inject a launch failure at the shared launch boundary, after a real
+        // allocation on device 0. Never induce a device fault or exhaust the GPU.
+        let error = TensorError::CudaRuntimeError {
+            operation: "cuLaunchKernel",
+            message: "injected launch failure".into(),
+        };
+        let result = input.unary_pointwise(0, 3, |_, _, _| Err(error.clone()));
+        assert!(matches!(result, Err(actual) if actual == error));
+        assert!(!CACHE_HEALTHY.load(Ordering::Relaxed));
+        let mut restored = -1;
+        // SAFETY: valid writable ordinal and legacy stream handle.
+        unsafe {
+            runtime
+                .check((runtime.get_device)(&raw mut restored), "cudaGetDevice")
+                .unwrap();
+            runtime
+                .check(
+                    (runtime.stream_synchronize)(std::ptr::without_provenance_mut(1)),
+                    "cudaStreamSynchronize",
+                )
+                .unwrap();
+        }
+        assert_eq!(usize::try_from(restored).unwrap(), current);
+        assert_eq!(input.copy_range(0, 3).unwrap(), [1.25, -2.5, 4.0]);
+        // A handled error leaves future correct execution usable, with reuse disabled.
+        assert_eq!(
+            input
+                .mul_scalar(0, 3, 2.0)
+                .unwrap()
+                .copy_range(0, 3)
+                .unwrap(),
+            [2.5, -5.0, 8.0]
+        );
     }
 
     #[test]

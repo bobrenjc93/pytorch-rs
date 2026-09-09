@@ -1,0 +1,81 @@
+{
+  "source": {
+    "commit": "41dcf4a5a015337a61f4507940cbeb20fd4ff006",
+    "source_sha256": "7fa54535257b6e105d2330485dab6d09fc86b2a9ed263adc9c0ee383f4fcc930",
+    "production_diff_sha256": "2bf6b39868b3bdc845965e43b1ed9b0547f410b91cb2079cb094dde074295a25"
+  },
+  "production_unchanged_since_fresh_build": true,
+  "clean_committed_candidate": false,
+  "pending_dependency": "Burner must commit the implementation and recapture; this agent was prohibited from committing.",
+  "source_extension_sha256": "ea676a228ab2e97df4cb91bce6116c64b944d8a84d9f71489310a98ca97eac08",
+  "installed_extension_sha256": "d2633dd2db5dd11b25b6a70bb10860eac30f55b75f0ba661b2b99f6321c7d9fc",
+  "installed_wheel_sha256": "46df1c09ac87215e4bbb0fe2bcf098662d9c9005b59c9513c059c71d85060537",
+  "tools": {
+    "uv": "uv 0.12.11 (x86_64-unknown-linux-gnu)",
+    "maturin": "maturin 1.14.1",
+    "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)"
+  },
+  "cuda_math_passed": 3,
+  "cuda_math_denominator": 6,
+  "compile_eligible_passed": 38,
+  "cuda_add_rows": {
+    "clean": 76,
+    "saturated": 76
+  },
+  "cache_note": "The first private performance run had new CUDA/Triton/Inductor caches and a rebuilt pointwise library, but reused the reduction library. Both raw runs are retained.",
+  "test_note": "The installed full suite leaves only the two baseline-reproduced boolean-buffer failures. Source-copy full-suite provenance failure was resolved by using the installed wheel.",
+  "rust_commands": [
+    [
+      "cargo",
+      "test",
+      "--locked",
+      "--all-targets"
+    ],
+    [
+      "cargo",
+      "test",
+      "--locked",
+      "--all-targets",
+      "--features",
+      "python-bindings"
+    ],
+    [
+      "cargo",
+      "clippy",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    [
+      "cargo",
+      "clippy",
+      "--locked",
+      "--all-targets",
+      "--features",
+      "python-bindings",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    [
+      "cargo",
+      "fmt",
+      "--all",
+      "--check"
+    ]
+  ],
+  "rust_environment": {
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/cargo-home",
+    "RUSTC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustc",
+    "RUSTDOC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustdoc",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/cuda-cache",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/xdg-cache"
+  },
+  "rust_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/rust-tests"
+}

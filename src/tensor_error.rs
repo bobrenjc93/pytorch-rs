@@ -99,6 +99,9 @@ pub enum TensorError {
     UnsupportedCudaAddition {
         reason: &'static str,
     },
+    UnsupportedCudaScalarMultiplication {
+        reason: &'static str,
+    },
     UnsupportedCudaNegation {
         reason: &'static str,
     },
@@ -218,6 +221,7 @@ impl Display for TensorError {
             error @ (Self::UnsupportedDevice { .. }
             | Self::UnsupportedCudaZeroTensor { .. }
             | Self::UnsupportedCudaAddition { .. }
+            | Self::UnsupportedCudaScalarMultiplication { .. }
             | Self::UnsupportedCudaNegation { .. }
             | Self::UnsupportedCudaTransfer { .. }
             | Self::CudaRuntimeError { .. }) => format_device_error(formatter, error),
@@ -387,6 +391,12 @@ fn format_device_error(formatter: &mut Formatter<'_>, error: &TensorError) -> st
         }
         TensorError::UnsupportedCudaAddition { reason } => {
             write!(formatter, "add(): unsupported CUDA addition ({reason})")
+        }
+        TensorError::UnsupportedCudaScalarMultiplication { reason } => {
+            write!(
+                formatter,
+                "mul(): unsupported CUDA scalar multiplication ({reason})"
+            )
         }
         TensorError::UnsupportedCudaNegation { reason } => {
             write!(formatter, "neg(): unsupported CUDA negation ({reason})")

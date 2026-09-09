@@ -1,0 +1,23 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.github/scripts/verify_native_extension.py", line 43, in require_inside_virtualenv
+    path.relative_to(expected)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/pathlib.py", line 682, in relative_to
+    raise ValueError(f"{str(self)!r} is not in the subpath of {str(other)!r}")
+ValueError: '/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/python/torch_rs/__init__.py' is not in the subpath of '/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/scripts/diagnose_compile_cuda_neg_add.py", line 157, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/scripts/diagnose_compile_cuda_neg_add.py", line 132, in main
+    provenance = environment(mask)
+                 ^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/scripts/diagnose_compile_cuda_neg_add.py", line 89, in environment
+    runpy.run_path(str(ROOT / ".github/scripts/verify_native_extension.py"))["verify"]()
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.github/scripts/verify_native_extension.py", line 81, in verify
+    require_inside_virtualenv("torch_rs", package_path, expected)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.github/scripts/verify_native_extension.py", line 45, in require_inside_virtualenv
+    raise RuntimeError(
+RuntimeError: torch_rs resolved outside the workspace virtualenv: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/python/torch_rs/__init__.py
