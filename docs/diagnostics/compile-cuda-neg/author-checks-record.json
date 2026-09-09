@@ -1,0 +1,83 @@
+{
+  "commands": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "exit_code": 0,
+      "log": "fmt.log"
+    },
+    {
+      "command": "cargo clippy --locked --all-targets --features python-bindings -- -D warnings",
+      "exit_code": 0,
+      "log": "clippy.log"
+    },
+    {
+      "command": "cargo test --locked --all-targets",
+      "exit_code": 0,
+      "log": "rust-default-tests.log"
+    },
+    {
+      "command": "cargo test --locked --all-targets --features python-bindings",
+      "exit_code": 0,
+      "log": "rust-tests.log"
+    },
+    {
+      "command": ".venv/bin/python -u -m unittest discover -s tests -p test_*.py",
+      "exit_code": 1,
+      "log": "python-full.log",
+      "note": "Five failures: one obsolete neg-specific assertion subsequently corrected and verified in final focused run; four baseline factory/bool-buffer assertions. Full suite not repeated after test-only correction."
+    },
+    {
+      "command": "bash scripts/evaluate_torch_compile_coverage.sh",
+      "exit_code": 0,
+      "stdout": "compile-evaluation.json",
+      "stderr": "compile-evaluation.log"
+    },
+    {
+      "command": ".venv/bin/python -m unittest -v tests.test_compile_cuda_neg tests.test_compile_cuda_boundary tests.test_cuda_neg tests.test_cuda_add tests.test_cuda_native_views tests.test_top_level_compile tests.test_readme_quickstart tests.test_cuda_math_evaluator tests.test_hardware_heterogeneity_evaluation",
+      "exit_code": 0,
+      "log": "focused-final.log"
+    },
+    {
+      "command": "PYTHONHASHSEED=6 target/baseline-env/bin/python -m unittest -v tests.test_nn_factory_kwargs_reference",
+      "exit_code": 1,
+      "log": "baseline-factory-seed6.log"
+    },
+    {
+      "command": "PYTHONHASHSEED=6 .venv/bin/python -m unittest -v tests.test_nn_factory_kwargs_reference",
+      "exit_code": 0,
+      "log": "candidate-factory-seed6.log"
+    },
+    {
+      "command": "target/baseline-env/bin/python -m unittest -v tests.test_tensor_buffer_reference",
+      "exit_code": 1,
+      "log": "baseline-buffer.log"
+    },
+    {
+      "command": "PYTHONHASHSEED=6 .venv/bin/python -m unittest -v tests.test_nn_factory_kwargs_reference tests.test_tensor_buffer_reference",
+      "exit_code": 1,
+      "log": "candidate-baseline-failures-seed6.log"
+    },
+    {
+      "command": "CUDA_CACHE_PATH=$PWD/target/cache/benchmark-final-cuda TORCHINDUCTOR_CACHE_DIR=$PWD/target/cache/benchmark-final-inductor TRITON_CACHE_DIR=$PWD/target/cache/benchmark-final-triton .venv/bin/python scripts/benchmark_compile_cuda.py --include-unprepared-comparison --output target/validation/cuda-performance-fresh.json",
+      "exit_code": 0,
+      "log": "cuda-performance-fresh.log",
+      "note": "Renamed worktree-local private pointwise test cache before run, forcing a fresh nvcc compilation."
+    },
+    {
+      "command": ".venv/bin/python -m unittest tests.test_readme_quickstart",
+      "exit_code": 0,
+      "log": "docs-final.log"
+    }
+  ],
+  "environment_setup": "export UV_CACHE_DIR=\"$PWD/target/cache/uv\"\nexport UV_PYTHON_INSTALL_DIR=\"$PWD/target/python\"\nexport TMPDIR=\"$PWD/target/tmp\"\nexport XDG_CACHE_HOME=\"$PWD/target/cache\"\nexport CUDA_CACHE_PATH=\"$PWD/target/cache/cuda\"\nexport TORCHINDUCTOR_CACHE_DIR=\"$PWD/target/cache/inductor\"\nexport TRITON_CACHE_DIR=\"$PWD/target/cache/triton\"\nexport CARGO_HOME=\"$PWD/target/cargo-home\"\nexport CARGO_TARGET_DIR=\"$PWD/target/candidate-build\"\nexport RUSTC=\"$(rustup which --toolchain 1.92.0 rustc)\"\nexport RUSTDOC=\"$(rustup which --toolchain 1.92.0 rustdoc)\"\nexport PATH=\"$(dirname \"$RUSTC\"):$PATH\"\nexport PYO3_PYTHON=\"$PWD/.venv/bin/python\"\nexport TORCH_RS_CUDART=\"$PWD/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13\"\nexport CUDA_VISIBLE_DEVICES=0\nexport PYTHONDONTWRITEBYTECODE=1\nexport PYTHONNOUSERSITE=1\n",
+  "final_test_source_sha256": {
+    "tests/test_compile_cuda_neg.py": "9a54906a2860a61b4daaa7da2ec02bcba60144038c22dd47768568e4dc9c057c",
+    "tests/test_compile_cuda_boundary.py": "899a97c9e51f67ebba037bc703e31db54b0955e6387249bd3824e62dc9599980",
+    "tests/test_cuda_neg.py": "a4cac0d9d68fef2ddf8343a7d0f6f01e4986b3919aa67e177d018b3475d361b6",
+    "tests/test_readme_quickstart.py": "b6743de6404ee88bebb03e69d9e2631b318e029ccd745e1de57e43e8ba95d6a1"
+  },
+  "production_change_after_fresh_build": false,
+  "git_diff_stat": " ARCHITECTURE.md                     | 10 ++++++--\n FEATURES.md                         | 12 ++++++----\n README.md                           |  2 +-\n docs/README.md                      |  2 +-\n docs/compile-cuda-add.md            | 48 +++++++++++++++++++++++++++----------\n docs/cuda-neg-validation.md         |  6 +++--\n docs/supported-surface.md           | 12 +++++-----\n python/torch_rs/_compile_trace.py   |  7 +++++-\n src/python.rs                       | 11 ++++++---\n tests/test_compile_cuda_boundary.py | 15 ++++++++++--\n tests/test_cuda_neg.py              |  5 ++--\n tests/test_readme_quickstart.py     |  6 +++--\n 12 files changed, 96 insertions(+), 40 deletions(-)\n",
+  "test_and_documentation_only_changes_during_validation": true,
+  "clean_commit_candidate_validation_pending": true
+}

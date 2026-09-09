@@ -20,8 +20,8 @@ use crate::python::{
     asarray_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
     atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
     cat_variable_function, ceil_variable_function, chunk_variable_function,
-    concat_variable_function, concatenate_variable_function, conj_variable_function,
-    cos_variable_function, detach_variable_function, div_variable_function,
+    column_stack_variable_function, concat_variable_function, concatenate_variable_function,
+    conj_variable_function, cos_variable_function, detach_variable_function, div_variable_function,
     divide_variable_function, empty_like_variable_function, exp_variable_function,
     fix_variable_function, floor_variable_function, full_like_variable_function,
     get_device_variable_function, hstack_variable_function, imag_variable_function,
@@ -62,6 +62,7 @@ const VARIABLE_FUNCTION_NAMES: &[&str] = &[
     "concatenate",
     "stack",
     "hstack",
+    "column_stack",
     "vstack",
     "row_stack",
     "abs",
@@ -1198,6 +1199,20 @@ Concrete out tensors, higher ranks, and other dtype/device metadata are
 unsupported.
 ";
 
+const COLUMN_STACK_DOC: &std::ffi::CStr = c"
+column_stack(tensors, *, out=None) -> Tensor
+
+Stacks tensors in sequence column wise.
+
+Scalars become (1, 1) views and vectors become (n, 1) column views before
+concatenation along dimension 1. All normalized inputs must have equal row
+counts. The native implementation supports non-empty tuple/list inputs of
+exact native CPU float32 scalar, rank-1, or rank-2 tensors, including empty
+and strided views, fresh output storage, first-order autograd, and
+__torch_function__ dispatch. Concrete out tensors, higher ranks, and other
+dtype/device metadata are unsupported.
+";
+
 const VSTACK_DOC: &std::ffi::CStr = c"
 vstack(tensors, *, out=None) -> Tensor
 
@@ -1516,6 +1531,7 @@ variable_function_callback!(concat_callback, concat_variable_function);
 variable_function_callback!(concatenate_callback, concatenate_variable_function);
 variable_function_callback!(stack_callback, stack_variable_function);
 variable_function_callback!(hstack_callback, hstack_variable_function);
+variable_function_callback!(column_stack_callback, column_stack_variable_function);
 variable_function_callback!(vstack_callback, vstack_variable_function);
 variable_function_callback!(row_stack_callback, row_stack_variable_function);
 variable_function_callback!(abs_callback, abs_variable_function);
@@ -1621,6 +1637,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"concatenate", concatenate_callback, CONCATENATE_DOC),
         variable_function_method!(c"stack", stack_callback, STACK_DOC),
         variable_function_method!(c"hstack", hstack_callback, HSTACK_DOC),
+        variable_function_method!(c"column_stack", column_stack_callback, COLUMN_STACK_DOC),
         variable_function_method!(c"vstack", vstack_callback, VSTACK_DOC),
         variable_function_method!(c"row_stack", row_stack_callback, ROW_STACK_DOC),
         variable_function_method!(c"abs", abs_callback, ABS_DOC),

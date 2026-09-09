@@ -1,0 +1,19 @@
+{
+  "recorded_at": "2026-09-09T21:46:35.634850+00:00",
+  "preserved_old_caches": [
+    {
+      "old": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/torch_rs_private_cuda_pointwise",
+      "moved_to": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/post-commit-df1964bd/prior-torch_rs_private_cuda_pointwise"
+    },
+    {
+      "old": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/torch_rs_private_cuda_pointwise_reduce",
+      "moved_to": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/post-commit-df1964bd/prior-torch_rs_private_cuda_pointwise_reduce"
+    }
+  ],
+  "fresh_cache_paths": {
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/post-commit-df1964bd/performance-cuda",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/post-commit-df1964bd/performance-inductor",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/post-commit-df1964bd/performance-triton"
+  },
+  "protocol": "Two predeclared full-matrix runs: fresh private kernels and compiler caches, then reuse. No best-result selection or extra retries."
+}

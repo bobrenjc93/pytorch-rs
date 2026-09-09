@@ -2476,6 +2476,14 @@ pub(crate) fn hstack_variable_function(
     atleast_stack_variable_function(AtleastStackOperation::Hstack, py, args, kwargs)
 }
 
+pub(crate) fn column_stack_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    atleast_stack_variable_function(AtleastStackOperation::ColumnStack, py, args, kwargs)
+}
+
 pub(crate) fn vstack_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -3313,6 +3321,7 @@ impl CatAlias {
 #[derive(Clone, Copy)]
 enum AtleastStackOperation {
     Hstack,
+    ColumnStack,
     Vstack,
     RowStack,
 }
@@ -3321,6 +3330,7 @@ impl AtleastStackOperation {
     const fn name(self) -> &'static str {
         match self {
             Self::Hstack => "hstack",
+            Self::ColumnStack => "column_stack",
             Self::Vstack => "vstack",
             Self::RowStack => "row_stack",
         }
@@ -3329,6 +3339,7 @@ impl AtleastStackOperation {
     const fn qualified_name(self) -> &'static str {
         match self {
             Self::Hstack => "torch.hstack",
+            Self::ColumnStack => "torch.column_stack",
             Self::Vstack => "torch.vstack",
             Self::RowStack => "torch.row_stack",
         }
@@ -5651,10 +5662,9 @@ fn apply_top_level_atleast_stack(
     if tensors.is_empty() {
         return Err(PyRuntimeError::new_err(format!(
             "{} expects a non-empty TensorList",
-            if matches!(alias, AtleastStackOperation::Hstack) {
-                "hstack"
-            } else {
-                "vstack"
+            match alias {
+                AtleastStackOperation::RowStack => "vstack",
+                _ => alias.name(),
             }
         )));
     }
@@ -5672,15 +5682,18 @@ fn apply_top_level_atleast_stack(
     }
 
     let horizontal = matches!(alias, AtleastStackOperation::Hstack);
+    let columns = matches!(alias, AtleastStackOperation::ColumnStack);
     let minimum_rank = if horizontal { 1 } else { 2 };
     // hstack chooses the axis from the first operand after atleast_1d, even
     // when that operand is a neutral empty vector preceding a matrix.
-    let dimension = usize::from(horizontal && borrowed_tensors[0].inner.shape().len() == 2);
+    let dimension =
+        usize::from(columns || (horizontal && borrowed_tensors[0].inner.shape().len() == 2));
     let mut normalized_views = try_size_vector(borrowed_tensors.len())?;
     for tensor in &borrowed_tensors {
         let view = match tensor.inner.shape().len() {
             0 if horizontal => Some(tensor.inner.reshape([1])),
             0 => Some(tensor.inner.reshape([1, 1])),
+            1 if columns => Some(tensor.inner.unsqueeze_back()),
             1 if !horizontal => Some(tensor.inner.unsqueeze_front()),
             _ => None,
         };
@@ -9552,8 +9565,8 @@ fn _backward_leaf_roots(roots: &Bound<'_, PyAny>) -> PyResult<()> {
     CoreTensor::backward_leaf_roots(&native_roots).map_err(|error| tensor_error(&error))
 }
 
-// CUDA tracing supports addition only. Keep unary execution guarded even for
-// alias/identity operations that the public eager Tensor API can perform.
+// CUDA tracing supports addition and negation. Keep other unary execution
+// guarded even for alias/identity operations supported by public eager APIs.
 fn require_compile_cpu_tensor(tensor: &CoreTensor) -> PyResult<()> {
     if !tensor.device().is_cpu() {
         return Err(PyNotImplementedError::new_err(
@@ -9613,7 +9626,12 @@ fn compile_trace_unary(input: &Bound<'_, PyAny>, target: &str) -> PyResult<Py<Py
     }
 
     let tensor = input.cast::<PyTensor>()?;
-    require_compile_cpu_tensor(&tensor.try_borrow()?.inner)?;
+    // CoreTensor::negate validates CUDA layout/dtype/autograd and reuses the
+    // native kernel, fresh allocation and device/completion guards. Captured
+    // execution remains unfused; all other unary targets stay CPU-only.
+    if target != "neg" {
+        require_compile_cpu_tensor(&tensor.try_borrow()?.inner)?;
+    }
     if target == "float" {
         return Ok(tensor.clone().unbind());
     }

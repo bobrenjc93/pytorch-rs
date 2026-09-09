@@ -7,8 +7,10 @@ views are supported. The kernel flips the sign bit into fresh device storage;
 it does not compute on the CPU or import PyTorch. Allocation, device guards,
 context initialization and legacy-stream completion follow the existing CUDA
 storage contracts. Inputs remain alive through completion, including errors.
-Noncontiguous CUDA negation, CUDA autograd and compiled CUDA negation remain
-explicitly unsupported.
+Noncontiguous CUDA negation and CUDA autograd remain explicitly unsupported.
+Compiled unary minus and `Tensor.neg`/`negative` now use the shared bounded
+[CUDA neg/add capture path](compile-cuda-add.md); the historical measurements
+below cover the public eager kernel.
 
 ## Composite validation and provenance
 

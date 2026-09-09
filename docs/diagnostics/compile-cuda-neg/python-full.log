@@ -1,0 +1,111 @@
+..........................................................................................................................................................................................................................................................................................................torch_rs/_grad_mode.py:25: DeprecationWarning: the (type, exc, tb) signature of throw() is deprecated, use the single-arg signature instead.
+........................../data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py:56: DeprecationWarning: the (type, exc, tb) signature of throw() is deprecated, use the single-arg signature instead.
+  response = gen.throw(*sys.exc_info())
+................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................./data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+.W0909 13:33:17.721000 2553975 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2] torch._dynamo hit config.recompile_limit (2)
+W0909 13:33:17.721000 2553975 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2]    function: 'cpu_float32_recompile_limit_reset' (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/tests/test_compile_corpus.py:278)
+W0909 13:33:17.721000 2553975 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2]    last reason: 0/1: tensor 'x' rank mismatch. expected 1, actual 2
+W0909 13:33:17.721000 2553975 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2] To log all recompilation reasons, use TORCH_LOGS="recompiles".
+W0909 13:33:17.721000 2553975 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2] To diagnose recompilation issues, see https://docs.pytorch.org/docs/main/user_guide/torch_compiler/compile/programming_model.recompilation.html
+.................................................................................ss..........................................................................................................................................................................................................................................................................................................................ss.................................................................................................................................................................................................sss.........s................................s......F......s...............................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................s.....................................................F..F........................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................./data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/tests/test_size_value_reference.py:270: PendingDeprecationWarning: the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+  np.matrix([[1]]),
+.........................................................................................................................................................................................................................................FF............................................................................................................................................................................................................................................................................................................................................................./data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/tests/test_tensor_requires_grad_reference.py:178: UserWarning: The .grad attribute of a Tensor that is not a leaf Tensor is being accessed. Its .grad attribute won't be populated during autograd.backward(). If you indeed want the .grad field to be populated for a non-leaf Tensor, use .retain_grad() on the non-leaf Tensor. If you access the non-leaf Tensor by mistake, make sure you access the leaf Tensor instead. See github.com/pytorch/pytorch/pull/30531 for more information. (Triggered internally at /__w/pytorch/pytorch/build/aten/src/ATen/core/TensorBody.h:493.)
+  "non_leaf_grad": self.grad_payload(non_leaf.grad),
+/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/tests/test_tensor_requires_grad_reference.py:179: UserWarning: The .grad attribute of a Tensor that is not a leaf Tensor is being accessed. Its .grad attribute won't be populated during autograd.backward(). If you indeed want the .grad field to be populated for a non-leaf Tensor, use .retain_grad() on the non-leaf Tensor. If you access the non-leaf Tensor by mistake, make sure you access the leaf Tensor instead. See github.com/pytorch/pytorch/pull/30531 for more information. (Triggered internally at /__w/pytorch/pytorch/build/aten/src/ATen/core/TensorBody.h:493.)
+  "view_grad": self.grad_payload(view.grad),
+....................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+======================================================================
+FAIL: test_unsupported_layout_autograd_and_compilation (test_cuda_neg.CudaNegTests.test_unsupported_layout_autograd_and_compilation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/tests/test_cuda_neg.py", line 139, in test_unsupported_layout_autograd_and_compilation
+    with self.assertRaisesRegex(NotImplementedError, "CUDA unary operation.*unsupported"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: NotImplementedError not raised
+
+======================================================================
+FAIL: test_canonical_values_freshness_and_input_preservation_match (test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_canonical_values_freshness_and_input_preservation_match) (case=5)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/tests/test_nn_factory_kwargs_reference.py", line 153, in test_canonical_values_freshness_and_input_preservation_match
+    self.assertEqual(list(actual), list(expected))
+AssertionError: Lists differ: ['memory_format', 'dtype', 'device'] != ['dtype', 'memory_format', 'device']
+
+First differing element 0:
+'memory_format'
+'dtype'
+
+- ['memory_format', 'dtype', 'device']
+?                   ---------
+
++ ['dtype', 'memory_format', 'device']
+?  +++++++++
+
+
+======================================================================
+FAIL: test_mapping_access_and_failure_order_match (test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_mapping_access_and_failure_order_match)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/tests/test_nn_factory_kwargs_reference.py", line 360, in test_mapping_access_and_failure_order_match
+    self.assertEqual(list(actual), list(expected))
+AssertionError: Lists differ: ['pin_memory', 'requires_grad', 'memory_format', 'dtype', 'device'] != ['pin_memory', 'requires_grad', 'dtype', 'memory_format', 'device']
+
+First differing element 2:
+'memory_format'
+'dtype'
+
+- ['pin_memory', 'requires_grad', 'memory_format', 'dtype', 'device']
+?                                                  ---------
+
++ ['pin_memory', 'requires_grad', 'dtype', 'memory_format', 'device']
+?                                 +++++++++
+
+
+======================================================================
+FAIL: test_numeric_buffers_match_pytorch_2_13 (test_tensor_buffer_reference.TensorBufferReferenceTests.test_numeric_buffers_match_pytorch_2_13) (case='bool including noncanonical bytes')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/tests/test_tensor_buffer_reference.py", line 31, in assert_matches
+    np.testing.assert_array_equal(np.asarray(actual), expected.numpy())
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1128, in assert_array_equal
+    assert_array_compare(operator.__eq__, actual, desired, err_msg=err_msg,
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError: 
+Arrays are not equal
+
+Mismatched elements: 2 / 6 (33.3%)
+Mismatch at indices:
+ [2]: 0.0 (ACTUAL), 1.0 (DESIRED)
+ [4]: 0.0 (ACTUAL), 1.0 (DESIRED)
+Max absolute difference among violations: 1.
+Max relative difference among violations: 1.
+ ACTUAL: array([0., 1., 0., 1., 0., 1.], dtype=float32)
+ DESIRED: array([0., 1., 1., 1., 1., 1.], dtype=float32)
+
+======================================================================
+FAIL: test_numeric_buffers_match_pytorch_2_13 (test_tensor_buffer_reference.TensorBufferReferenceTests.test_numeric_buffers_match_pytorch_2_13) (case='native-prefixed bool')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/tests/test_tensor_buffer_reference.py", line 31, in assert_matches
+    np.testing.assert_array_equal(np.asarray(actual), expected.numpy())
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1128, in assert_array_equal
+    assert_array_compare(operator.__eq__, actual, desired, err_msg=err_msg,
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError: 
+Arrays are not equal
+
+Mismatched elements: 1 / 2 (50%)
+Mismatch at index:
+ [0]: 0.0 (ACTUAL), 1.0 (DESIRED)
+Max absolute difference among violations: 1.
+Max relative difference among violations: 1.
+ ACTUAL: array([0., 1.], dtype=float32)
+ DESIRED: array([1., 1.], dtype=float32)
+
+----------------------------------------------------------------------
+Ran 5311 tests in 491.326s
+
+FAILED (failures=5, skipped=11)

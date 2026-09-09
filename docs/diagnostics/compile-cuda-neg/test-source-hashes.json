@@ -1,0 +1,6 @@
+{
+  "tests/test_compile_cuda_neg.py": "9a54906a2860a61b4daaa7da2ec02bcba60144038c22dd47768568e4dc9c057c",
+  "tests/test_compile_cuda_boundary.py": "899a97c9e51f67ebba037bc703e31db54b0955e6387249bd3824e62dc9599980",
+  "tests/test_cuda_neg.py": "a4cac0d9d68fef2ddf8343a7d0f6f01e4986b3919aa67e177d018b3475d361b6",
+  "tests/test_readme_quickstart.py": "b6743de6404ee88bebb03e69d9e2631b318e029ccd745e1de57e43e8ba95d6a1"
+}

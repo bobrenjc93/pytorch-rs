@@ -1,0 +1,24 @@
+{
+  "completed_at": "2026-09-09T21:47:11.795228+00:00",
+  "source": {
+    "commit": "df1964bd297b6368bf8eb3b235394cde5f6e723b",
+    "source_sha256": "8410743f4640d29b08c1599f025161046e2ac785f0284c9fcf137abcb79494e9",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "git_status": "",
+  "tracked_snapshot_sha256": "235df6fcd15cc4f6878c74dbda40a4b6261ac85b2e08de2835a549a0c257abe4",
+  "commands": 11,
+  "all_exit_statuses": {
+    "install": 0,
+    "provenance": 0,
+    "preflight": 0,
+    "compile-evaluation": 0,
+    "focused": 0,
+    "two-device": 0,
+    "neg-add-single": 0,
+    "neg-add-multi": 0,
+    "cuda-math": 0,
+    "cuda-performance-fresh": 0,
+    "cuda-performance": 0
+  }
+}

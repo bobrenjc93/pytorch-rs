@@ -1,0 +1,7 @@
+......../data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+..s
+----------------------------------------------------------------------
+Ran 11 tests in 8.272s
+
+OK (skipped=1)

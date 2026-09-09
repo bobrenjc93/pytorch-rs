@@ -1,9 +1,11 @@
-# Marker-free CUDA addition graph capture
+# Marker-free CUDA negation and addition graph capture
 
 The generic bytecode compiler accepts exact native contiguous float32 CUDA
-Tensors for one- and two-input addition graphs with
+Tensors for one- and two-input negation/addition graphs with
 `torch.compile(fn, backend="eager", fullgraph=True)`. This is graph capture and
-native operation execution, with one Rust/CUDA addition per graph operation.
+native operation execution, with one Rust/CUDA kernel per negation or addition.
+This is unfused bounded capture, not a general Inductor compiler or a
+performance-parity claim.
 It does not provide Inductor-style fusion, general default-backend CUDA
 compilation, or a new CUDA performance score.
 
@@ -11,8 +13,8 @@ compilation, or a new CUDA performance score.
 import torch_rs as torch
 
 def combine(left, right):
-    intermediate = right + left
-    return intermediate.add(left)
+    intermediate = -right + left.neg()
+    return intermediate.negative().add(left)
 
 compiled = torch.compile(combine, backend="eager", fullgraph=True)
 x = torch.tensor([1., 2., 3.]).to("cuda:0")
@@ -20,7 +22,8 @@ y = torch.tensor([4., 5., 6.]).to("cuda:0")
 assert compiled(x, y).cpu().tolist() == [6., 9., 12.]
 ```
 
-The existing operator `+` and positional `.add(tensor)` syntax supports
+Unary `-`, zero-argument `.neg()` and `.negative()` compose arbitrarily with
+operator `+` and positional `.add(tensor)`. This syntax supports
 self-addition, chains, scalar tensors, empty tensors, and contiguous views with
 nonzero offsets. Exact same-module helpers, live global tensor captures, and
 tuple/list tensor outputs retain the existing bytecode restrictions. Names and
@@ -35,11 +38,11 @@ variants guard rank and exact strides; a reused graph recomputes operation
 shapes and requires equal CUDA addition operand shapes before executing any
 operation. Dynamic shapes do not enable broadcasting.
 
-CUDA graphs reject unary operations (including `float` and `detach`), scalar
+CUDA graphs reject other unary operations (including `float` and `detach`), scalar
 number operands, broadcasting, noncontiguous layouts, gradients, mixed CPU/CUDA
 inputs, and mixed CUDA ordinals. Keyword method arguments, other operations,
-mutations, unsupported bytecode, and unsupported compiler options retain their
-existing rejection behavior. Float64 CUDA tensors and CUDA tensors requiring
+closures, mutations, top-level `torch.neg`/`negative` calls, unsupported bytecode,
+and unsupported compiler options retain their existing rejection behavior. Float64 CUDA tensors and CUDA tensors requiring
 gradients cannot currently be constructed by the native substrate; the
 compiler metadata boundary also explicitly rejects those properties.
 
@@ -49,7 +52,8 @@ The Rust metadata hook reads dtype, device including ordinal, shape, strides,
 requires-grad, and storage offset from the actual tensor, without Python
 property dispatch. The compiler uses that native device metadata. CUDA input and
 capture metadata guard the exact offset as well as shape/stride/dtype/device;
-addition outputs have canonical contiguous strides and offset zero. CPU traces
+negation and addition outputs own fresh CUDA storage with canonical contiguous
+strides and offset zero, including scalar, empty, and offset-view inputs. CPU traces
 retain their established offset-polymorphic behavior (`storage_offset=None`
 in trace metadata), while the raw native metadata hook reports their real offset.
 
@@ -60,8 +64,33 @@ Rebinding a global creates a specialization or hits the existing recompile
 limit; an incompatible device transition is rejected. Rejected calls leave the
 graph cache unchanged. A new graph is published only after successful native
 execution, and the entire graph is validated before executing any operation.
-Private metadata-only recorders can still describe CUDA unary graphs, but such
-graphs cannot execute. Native unary hooks enforce CPU-only execution.
+Private metadata-only recorders can still describe unsupported CUDA unary graphs;
+the executor rejects these before any kernel runs. Native unary hooks admit
+only negation on CUDA and retain CPU-only guards for all other unary targets.
+
+## Negation validation
+
+`tests/test_compile_cuda_neg.py` exercises generated shapes and graph lengths,
+all three unary spellings, neg/add compositions, scalar/empty/offset inputs,
+IEEE values, fresh output storage, cold and CPU-warmed caches, dynamic shape,
+stride/offset/device guards, live global/helper captures, rejected closures,
+nested outputs, repeated inputs, preserved inputs, streams, and two-device
+ownership. Unsupported late operations fail before graph execution or cache
+insertion. The original Python function is blocked during differential tests;
+a subprocess additionally blocks installed-PyTorch imports.
+
+Run `tests.test_compile_cuda_neg` on GPU 0 and
+`tests.test_compile_cuda_neg.CompileCudaNegDeviceTests` on GPUs 0,1 alongside the
+existing boundary tests below. See [candidate validation](compile-cuda-neg-validation.md)
+for raw logs and fresh build evidence measured at clean integrated commit
+`df1964bd297b6368bf8eb3b235394cde5f6e723b`. Source-PR reports remain pinned to
+their original measured revisions in that guide.
+The fixed scoring corpora and historical measurements are unchanged. The frozen
+addition-only diagnostic retains two obsolete `reject_neg` expectations and
+returns exit 1 on supported negation; those are historical expectation failures,
+not harness passes. Use the maintained `neg_add_v1` diagnostic below for current
+neg/add behavior. It retains the addition matrix and unsupported guards, adds
+all three negation spellings and composed graphs, and records every raw outcome.
 
 ## Reproduction and evidence
 
@@ -81,12 +110,12 @@ export TRITON_CACHE_DIR="$PWD/target/cache/triton"
 export CUDA_VISIBLE_DEVICES=0
 .venv/bin/python .github/scripts/verify_native_extension.py
 .venv/bin/python -m unittest tests.test_compile_cuda_boundary
-.venv/bin/python scripts/diagnose_compile_cuda_add.py \
-  --output target/compile-cuda-add-single.json
+.venv/bin/python scripts/diagnose_compile_cuda_neg_add.py \
+  --case-set neg_add_v1 --output target/compile-cuda-neg-add-single.json
 CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest \
   tests.test_compile_cuda_boundary.CompileCudaDeviceTests
-CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python scripts/diagnose_compile_cuda_add.py \
-  --output target/compile-cuda-add-multi.json
+CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python scripts/diagnose_compile_cuda_neg_add.py \
+  --case-set neg_add_v1 --output target/compile-cuda-neg-add-multi.json
 ```
 
 The diagnostic is separate from the frozen 38-case coverage corpus and all
@@ -97,7 +126,13 @@ sets, materializes output, records metadata and value hashes, and detects calls
 to the original function by the native compiler. Unsupported native behavior
 is explicit, including rejection during input construction. Reference-ineligible
 mixed-device operations are recorded separately. No timings or scores are
-computed. The unit tests separately prove cache reuse, IEEE edge behavior,
+computed. Exit 0 requires every supported case to match both reference runs and
+every unsupported case to reject. Unexpected reference failures, wrong outputs,
+unexpected acceptance, and execution errors return nonzero, with raw results
+retained. Only the declared nonscalar mixed-device cases may be reference-ineligible.
+The canonical `.venv` import guard and installed-source hash
+checks run before the cases; dirty-worktree status is recorded explicitly.
+The unit tests separately prove cache reuse, IEEE edge behavior,
 layout/offset guards, global transitions, failures without cache publication,
 PyTorch import independence, and restoration of current device on GPUs 0/1.
 

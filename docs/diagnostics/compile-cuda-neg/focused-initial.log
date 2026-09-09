@@ -1,0 +1,55 @@
+test_ownership_captures_and_device_restoration (tests.test_compile_cuda_neg.CompileCudaNegDeviceTests.test_ownership_captures_and_device_restoration) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_captures_nested_outputs_and_repeated_inputs (tests.test_compile_cuda_neg.CompileCudaNegTests.test_captures_nested_outputs_and_repeated_inputs) ... ok
+test_cold_cpu_warmed_and_device_guards (tests.test_compile_cuda_neg.CompileCudaNegTests.test_cold_cpu_warmed_and_device_guards) ... ok
+test_generated_shapes_lengths_and_forms (tests.test_compile_cuda_neg.CompileCudaNegTests.test_generated_shapes_lengths_and_forms) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_offsets_ieee_metadata_dynamic_and_stride_guards (tests.test_compile_cuda_neg.CompileCudaNegTests.test_offsets_ieee_metadata_dynamic_and_stride_guards) ... ok
+test_reject_before_execution_and_cache_insertion (tests.test_compile_cuda_neg.CompileCudaNegTests.test_reject_before_execution_and_cache_insertion) ... ok
+test_stream_completion_and_independent_storage (tests.test_compile_cuda_neg.CompileCudaNegTests.test_stream_completion_and_independent_storage) ... ok
+test_cpu_cuda_cache_separation_and_original_bypass (tests.test_compile_cuda_boundary.CompileCudaBoundaryTests.test_cpu_cuda_cache_separation_and_original_bypass) ... ok
+test_dynamic_cache_hit_preflights_late_shape_mismatch (tests.test_compile_cuda_boundary.CompileCudaBoundaryTests.test_dynamic_cache_hit_preflights_late_shape_mismatch) ... ok
+test_global_capture_transitions_and_recompile_limit (tests.test_compile_cuda_boundary.CompileCudaBoundaryTests.test_global_capture_transitions_and_recompile_limit) ... ok
+test_ieee_edges_and_dynamic_offset_guards (tests.test_compile_cuda_boundary.CompileCudaBoundaryTests.test_ieee_edges_and_dynamic_offset_guards) ... ok
+test_native_failure_does_not_publish_cache (tests.test_compile_cuda_boundary.CompileCudaBoundaryTests.test_native_failure_does_not_publish_cache) ... ok
+test_no_pytorch_import_or_original_execution (tests.test_compile_cuda_boundary.CompileCudaBoundaryTests.test_no_pytorch_import_or_original_execution) ... ok
+test_offset_layout_metadata_and_cache_guards (tests.test_compile_cuda_boundary.CompileCudaBoundaryTests.test_offset_layout_metadata_and_cache_guards) ... ok
+test_private_trace_entrypoints_keep_unsupported_guards (tests.test_compile_cuda_boundary.CompileCudaBoundaryTests.test_private_trace_entrypoints_keep_unsupported_guards) ... ok
+test_seeded_shapes_structures_and_changed_data_against_reference (tests.test_compile_cuda_boundary.CompileCudaBoundaryTests.test_seeded_shapes_structures_and_changed_data_against_reference) ... ok
+test_unsupported_fresh_and_cpu_warmed_leave_cache_unchanged (tests.test_compile_cuda_boundary.CompileCudaBoundaryTests.test_unsupported_fresh_and_cpu_warmed_leave_cache_unchanged) ... ok
+test_ordinals_captures_and_current_device_restoration (tests.test_compile_cuda_boundary.CompileCudaDeviceTests.test_ordinals_captures_and_current_device_restoration) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_benchmarking_indexes_historical_release_timing_reports (tests.test_readme_quickstart.ReadmeQuickstartTests.test_benchmarking_indexes_historical_release_timing_reports) ... ok
+test_detailed_support_contracts_live_in_focused_docs (tests.test_readme_quickstart.ReadmeQuickstartTests.test_detailed_support_contracts_live_in_focused_docs) ... ok
+test_docs_readme_indexes_contracts_guides_and_timing_evidence (tests.test_readme_quickstart.ReadmeQuickstartTests.test_docs_readme_indexes_contracts_guides_and_timing_evidence) ... ok
+test_entry_point_links_resolve (tests.test_readme_quickstart.ReadmeQuickstartTests.test_entry_point_links_resolve) ... 
+  test_entry_point_links_resolve (tests.test_readme_quickstart.ReadmeQuickstartTests.test_entry_point_links_resolve) (source='compile-cuda-add.md', target='compile-cuda-neg-validation.md') ... FAIL
+test_first_success_example_is_short_and_runs (tests.test_readme_quickstart.ReadmeQuickstartTests.test_first_success_example_is_short_and_runs) ... ok
+test_readme_keeps_quickstart_scope_and_evaluation_route (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_keeps_quickstart_scope_and_evaluation_route) ... ok
+test_readme_links_contributing_guide (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_links_contributing_guide) ... ok
+test_readme_routes_benchmark_policy_to_focused_docs (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_routes_benchmark_policy_to_focused_docs) ... ok
+test_readme_routes_to_supported_surface_anchors (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_routes_to_supported_surface_anchors) ... ok
+test_readme_scope_is_scan_friendly_table (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_scope_is_scan_friendly_table) ... 
+  test_readme_scope_is_scan_friendly_table (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_scope_is_scan_friendly_table) (scope_snippet='[CUDA addition capture](docs/compile-cuda-add.md)') ... FAIL
+test_source_install_commands_are_locked (tests.test_readme_quickstart.ReadmeQuickstartTests.test_source_install_commands_are_locked) ... ok
+test_stale_wheel_recovery_uses_wheel_test_workflow (tests.test_readme_quickstart.ReadmeQuickstartTests.test_stale_wheel_recovery_uses_wheel_test_workflow) ... ok
+
+======================================================================
+FAIL: test_entry_point_links_resolve (tests.test_readme_quickstart.ReadmeQuickstartTests.test_entry_point_links_resolve) (source='compile-cuda-add.md', target='compile-cuda-neg-validation.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/tests/test_readme_quickstart.py", line 686, in test_entry_point_links_resolve
+    self.assertTrue(destination.is_file(), target)
+AssertionError: False is not true : compile-cuda-neg-validation.md
+
+======================================================================
+FAIL: test_readme_scope_is_scan_friendly_table (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_scope_is_scan_friendly_table) (scope_snippet='[CUDA addition capture](docs/compile-cuda-add.md)')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/tests/test_readme_quickstart.py", line 645, in test_readme_scope_is_scan_friendly_table
+    self.assertIn(snippet, table)
+AssertionError: '[CUDA addition capture](docs/compile-cuda-add.md)' not found in '| Surface | Supported today | Limits |\n| --- | --- | --- |\n| CPU tensors | Native `float32` construction, views, selected math and NN functions, limited first-order autograd. | No additional tensor dtypes or full training stack. |\n| NVIDIA CUDA | Native storage, synchronous CPU transfers, same-shape contiguous `float32` addition, and contiguous `float32` negation. | Direct factories: 1-D zeros only. No general CUDA math or accelerator training. |\n| `torch.compile` | Bounded eager CPU capture and [CUDA neg/add capture](docs/compile-cuda-add.md), without fusion. | No full Inductor compiler, general graph capture, or eager fallback. |\n| Compatibility helpers | Selected device/backend probes, state, data, and JIT helpers. | No full module, `DataLoader`, optimizer, model-serialization, or distributed stacks. |'
+
+----------------------------------------------------------------------
+Ran 30 tests in 15.756s
+
+FAILED (failures=2, skipped=2)

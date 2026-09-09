@@ -1,0 +1,8 @@
+{
+  "commit": "e4cddf0ecb45c23c683953fa2f8c45904b170a80",
+  "source_sha256": "a0e6ac3f54ad339bc95ca4d89fd875aa6c336ff78fdc35ea59f92f53a894f87d",
+  "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "git_status": "",
+  "build_command": "maturin build --release --locked --out target/baseline-wheels",
+  "extension_sha256": "3ed24401080b51dd53081d2ec809ac70df4ba3c82c3dbed3769c9352fb48bdb6"
+}
