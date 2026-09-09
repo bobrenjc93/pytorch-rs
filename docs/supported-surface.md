@@ -1203,8 +1203,10 @@ probe and does not import PyTorch.
 
 - `Tensor.is_shared()` returns the exact `False` singleton for every supported
   CPU tensor, including views, empty tensors, and accumulated gradients, because
-  ordinary and mutex-backed gradient storage are process-local. Shared-memory
-  mutation and storage-object APIs remain unsupported.
+  ordinary and mutex-backed gradient storage are process-local. It returns the
+  exact `True` singleton for the supported CUDA zero tensors, including empty
+  tensors; their CPU copies return `False`. Shared-memory mutation and
+  storage-object APIs remain unsupported.
 - `Tensor.is_distributed()` returns the exact `False` singleton for every
   supported local CPU tensor without inspecting or changing storage, layout, or
   autograd state.

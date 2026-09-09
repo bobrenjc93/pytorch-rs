@@ -27,14 +27,15 @@ def _candidate_libraries() -> list[str]:
         candidates.append(found)
     candidates.extend(("libcudart.so.13", "libcudart.so.12", "libcudart.so"))
 
-    try:
-        spec = importlib.util.find_spec("nvidia.cuda_runtime")
-    except Exception:
-        spec = None
-    if spec is not None and spec.submodule_search_locations is not None:
-        for location in spec.submodule_search_locations:
-            library_dir = pathlib.Path(location) / "lib"
-            candidates.extend(str(path) for path in library_dir.glob("libcudart.so*"))
+    for package in ("nvidia.cuda_runtime", "nvidia.cu13"):
+        try:
+            spec = importlib.util.find_spec(package)
+        except Exception:
+            spec = None
+        if spec is not None and spec.submodule_search_locations is not None:
+            for location in spec.submodule_search_locations:
+                library_dir = pathlib.Path(location) / "lib"
+                candidates.extend(str(path) for path in library_dir.glob("libcudart.so*"))
 
     unique: list[str] = []
     seen: set[str] = set()

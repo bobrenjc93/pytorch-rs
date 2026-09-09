@@ -3,14 +3,14 @@ use std::sync::{Arc, Mutex};
 #[cfg(feature = "python-bindings")]
 use pyo3::prelude::*;
 #[cfg(feature = "python-bindings")]
-use pyo3::types::PyModule;
+use pyo3::types::{PyBytes, PyBytesMethods, PyModule};
 
 use crate::device::Device;
 use crate::dtype::DType;
 #[cfg(feature = "python-bindings")]
 use crate::tensor_error::TensorError;
 
-/// Crate-private CPU float32 storage shared by tensors and autograd snapshots.
+/// Crate-private float32 storage shared by tensors and autograd snapshots.
 pub(crate) struct Storage {
     payload: StoragePayload,
 }
@@ -65,11 +65,12 @@ impl CudaFloat32Storage {
             .owner
             .bind(py)
             .call_method0("copy_to_host")
-            .and_then(|bytes| bytes.extract::<Vec<u8>>())
+            .and_then(|bytes| bytes.cast_into::<PyBytes>().map_err(Into::into))
             .map_err(|error| TensorError::CudaRuntimeError {
                 operation: "cpu",
                 message: error.to_string(),
             })?;
+        let bytes = bytes.as_bytes();
         if bytes.len() != self.elements.saturating_mul(std::mem::size_of::<f32>()) {
             return Err(TensorError::CudaRuntimeError {
                 operation: "cpu",
@@ -81,10 +82,18 @@ impl CudaFloat32Storage {
             });
         }
 
-        Ok(bytes
-            .chunks_exact(std::mem::size_of::<f32>())
-            .map(|bytes| f32::from_ne_bytes(bytes.try_into().expect("chunk size is 4")))
-            .collect())
+        let mut values = Vec::new();
+        values
+            .try_reserve_exact(self.elements)
+            .map_err(|_| TensorError::AllocationFailed {
+                elements: self.elements,
+            })?;
+        values.extend(
+            bytes
+                .chunks_exact(std::mem::size_of::<f32>())
+                .map(|bytes| f32::from_ne_bytes(bytes.try_into().expect("chunk size is 4"))),
+        );
+        Ok(values)
     }
 }
 
