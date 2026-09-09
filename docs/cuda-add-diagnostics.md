@@ -85,9 +85,10 @@ sustained batches. Performance claims must retain that limitation.
 The [baseline raw report](benchmark-data/cuda-add-before.json) and
 [candidate raw report](benchmark-data/cuda-add-candidate.json) use the same
 byte-identical runner, fixed seed, timing boundaries and output checks. The
-candidate build includes allocation reuse, graph replay, reduction threading
-and compiler device checks from the committed composite. This matrix
-measures CUDA addition performance; it does not measure CPU reduction speed.
+candidate build includes allocation reuse, graph replay, reduction threading,
+compiler device checks and thread-count overflow checks from the committed
+composite. This matrix measures CUDA addition performance; it does not measure
+CPU reduction speed.
 Each report contains 76 cells per cache condition, with 18 raw samples per
 implementation per cell. All bitwise output checks passed. These are feature
 diagnostics, not evaluator scores or a claim of full PyTorch performance parity.
@@ -95,46 +96,47 @@ diagnostics, not evaluator scores or a claim of full PyTorch performance parity.
 | Cache condition | Boundary | Before capped parity | Candidate capped parity |
 | --- | --- | ---: | ---: |
 | Clean | Isolated | 91.11% | 97.94% |
-| Clean | 32-call batch | 58.37% | 70.57% |
-| Clean | 64-call batch | 54.96% | 68.64% |
-| Clean | 32-call chain | 56.95% | 69.76% |
-| Saturated | Isolated | 78.08% | 98.20% |
-| Saturated | 32-call batch | 37.82% | 75.77% |
-| Saturated | 64-call batch | 36.94% | 73.97% |
-| Saturated | 32-call chain | 37.23% | 75.01% |
+| Clean | 32-call batch | 58.37% | 79.50% |
+| Clean | 64-call batch | 54.96% | 77.90% |
+| Clean | 32-call chain | 56.95% | 78.43% |
+| Saturated | Isolated | 78.08% | 98.18% |
+| Saturated | 32-call batch | 37.82% | 71.19% |
+| Saturated | 64-call batch | 36.94% | 69.90% |
+| Saturated | 32-call chain | 37.23% | 71.75% |
 
 Selected saturated-process operator cells below use 64-call batches. Values
 are median microseconds per call; the raw reports retain every cell and sample.
 
 | Elements | Native before | Native candidate | PyTorch before → candidate run |
 | ---: | ---: | ---: | ---: |
-| 3,079 | 12.76 | 8.96 | 4.70 → 6.24 |
-| 1,048,603 | 164.20 | 9.44 | 5.44 → 5.43 |
-| 4,194,359 | 205.40 | 33.00 | 27.75 → 26.83 |
-| 17,000,003 | 380.57 | 106.54 | 97.87 → 97.64 |
-| 33,554,467 | 646.19 | 204.86 | 185.93 → 185.77 |
-| 67,108,867 | 1218.67 | 400.72 | 365.28 → 365.15 |
+| 3,079 | 12.76 | 8.31 | 4.70 → 4.68 |
+| 1,048,603 | 164.20 | 9.35 | 5.44 → 5.09 |
+| 4,194,359 | 205.40 | 33.30 | 27.75 → 27.39 |
+| 17,000,003 | 380.57 | 106.40 | 97.87 → 97.98 |
+| 33,554,467 | 646.19 | 204.99 | 185.93 → 185.93 |
+| 67,108,867 | 1218.67 | 399.44 | 365.28 → 365.26 |
 
 The severe allocation-cache cliffs are reduced in these measured cells,
 including outputs above 64 MiB. Small-call sustained throughput still trails
-PyTorch: the saturated 3,079-element cell takes 8.96 µs versus
-6.24 µs. Completion remains synchronous per native call. A
+PyTorch: the saturated 3,079-element cell takes 8.31 µs versus
+4.68 µs. Completion remains synchronous per native call. A
 67,108,867-element output exceeds the unused-pool budget; its isolated candidate
-latency is 679.17 µs versus PyTorch’s 480.83 µs in the saturated
+latency is 698.54 µs versus PyTorch’s 495.11 µs in the saturated
 process. That remaining cost stays visible alongside improved batch latency.
 
-Clean and saturated conditions run in separate processes. The higher saturated
-aggregate does not establish a speedup caused by saturation: for 3,079 elements,
-the clean process records 8.22 µs native and 4.65 µs PyTorch,
-while the saturated process records 8.96 µs and 6.24 µs respectively.
-The comparison with the original baseline also includes multiple implementation
-repairs; it does not isolate graph replay's contribution.
+Clean and saturated conditions run in separate processes. Their ratios do not
+isolate the effect of saturation: for 3,079 elements, the clean process records
+9.04 µs native and 6.33 µs PyTorch, while the saturated process
+records 8.31 µs and 4.68 µs respectively. The raw samples retain
+variation in both implementations. The comparison with the original baseline
+also includes multiple implementation repairs; it does not isolate graph
+replay's contribution.
 
 | Build stage | Baseline seconds | Candidate seconds |
 | --- | ---: | ---: |
-| Locked dependency setup | 0.112 | 0.120 |
-| Release wheel build | 44.327 | 45.724 |
-| Wheel installation | 0.194 | 0.210 |
+| Locked dependency setup | 0.112 | 0.119 |
+| Release wheel build | 44.327 | 44.486 |
+| Wheel installation | 0.194 | 0.181 |
 
 Both builds used empty per-export Cargo targets and warm worktree-local
 Cargo/uv download caches. Timing used CPython 3.12.13, PyTorch 2.13.0+cu130,
@@ -147,7 +149,7 @@ compiler, import, source, wheel and native hashes.
 
 The baseline is the unchanged clean export of
 `cc0068c2acec798aa222edaf8c0fb62defbeb936`. The candidate is a clean export of
-`2181d81ec70804016da8ed7f6f4b275edc832d89`, rebuilt with `--revision HEAD` from a clean
+`e62f5cf20d8bf58f1f7eedd5afa5e51fd1ee8019`, rebuilt with `--revision HEAD` from a clean
 composite worktree. Its report records that commit in `measured_code_commit`,
 `source_matches_commit: true`, and an empty `origin_status`. The exported file
 hashes were checked against the committed Git archive. Source, build, wheel,
@@ -159,18 +161,23 @@ measured commit and this evidence refresh.
 
 ## Validation
 
-The clean-export wheel matches all 60 package members of the wheel previously
-used to validate the compiler fix, including the native extension, byte for byte.
-That implementation passed full suites on managed CPython 3.12.12 and 3.14.5:
-5,221 tests each, eight expected skips each. It also passed `cargo fmt --check`,
-Clippy with `-D warnings` with and without `python-bindings`,
-`cargo test --all-targets` (352 tests), its `--features python-bindings` variant
-(363 tests), and `cargo test --doc`. Those full suites were not repeated for
-this evidence-only refresh.
+The clean-export wheel matches all 60 package members of the wheel used to
+validate the `set_num_threads` overflow fix, including the native extension,
+byte for byte. Earlier checks of that implementation passed 38 focused thread
+configuration and reduction tests on each of Python 3.12 and 3.14, plus 363 Rust
+tests with `python-bindings`, `cargo fmt --check`, and Clippy with
+`python-bindings` and `-D warnings`.
 
-This refresh reran wheel/import verification, 60 focused CUDA, compiler
-and README tests (five single-GPU skips), and all five two-GPU device-guard
-tests. Both complete diagnostic matrices passed their bitwise output checks.
+Independent review reported one environment-path validator failure in each
+5,222-test full Python suite; that validator passed with canonical installed-wheel
+paths. This refresh verifies the canonical wheel imports and reruns the focused
+checks below. It does not claim new full-suite passes or repeat the full
+Python/Rust suites for an evidence-only change.
+
+This refresh reran wheel/import verification, 61 focused CUDA, compiler,
+thread-count overflow and README tests (five single-GPU skips), and all five
+two-GPU device-guard tests. Both complete diagnostic matrices passed their
+bitwise output checks.
 The audit also verified all 5,472 raw samples, medians and capped aggregates,
 matching output hashes, and the unchanged runner and workload matrix.
 
@@ -188,7 +195,8 @@ env -u PYTHONPATH CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest \
   tests.test_compile_cuda_boundary tests.test_cuda_add \
   tests.test_cuda_host_transfer tests.test_cuda_native_views \
   tests.test_cuda_zero_roundtrip tests.test_composite_cuda_mean_convert \
-  tests.test_readme_quickstart
+  tests.test_readme_quickstart \
+  tests.test_get_num_threads_reference.GetNumThreadsReferenceTests.test_set_num_threads_signed_integer_boundaries_match_reference
 env -u PYTHONPATH CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest \
   tests.test_cuda_add.CudaAddDeviceTests \
   tests.test_cuda_host_transfer.CudaHostTransferDeviceGuardTests \
@@ -201,7 +209,6 @@ CUDA_VISIBLE_DEVICES=0 compute-sanitizer --tool memcheck \
   tests.test_cuda_zero_roundtrip tests.test_composite_cuda_mean_convert
 ```
 
-All commands used worktree-local caches and temporary directories. The full
-3.12 correctness run additionally used an empty worktree-local
-`PYTHONPYCACHEPREFIX` with `PYTHONDONTWRITEBYTECODE=1`; the performance diagnostic
-retains the same CPython 3.12.13 interpreter on both implementations.
+All commands used worktree-local caches and temporary directories. The
+performance diagnostic uses the same CPython 3.12.13 interpreter on both
+implementations.
