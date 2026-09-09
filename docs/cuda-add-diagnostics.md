@@ -6,14 +6,15 @@ historical reports. The three public forms, scalar and empty tensors, nonzero
 seeded data, generated shapes, offset inputs, chained calls, cache saturation,
 and outputs above 64 MiB and 256 MiB are included.
 
-Run from a locked Python 3.12 development/reference environment. Keep caches in
+Run from a clean worktree at the committed implementation revision, using a
+locked Python 3.12 development/reference environment. Keep caches in
 this worktree, including `UV_CACHE_DIR`, `CARGO_HOME`, `TMPDIR`, and
 `CUDA_CACHE_PATH`. The build helper uses an empty target directory for each
 source export and records actual setup, build and installation durations. Its
 shared download caches are explicitly recorded as warm.
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/build_cuda_add_diagnostic.py --name candidate
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/build_cuda_add_diagnostic.py --name candidate --revision HEAD
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/diagnose_cuda_add.py \
   --build-record target/cuda-add-diagnostic/candidate/build-record.json \
   --output docs/benchmark-data/cuda-add-candidate.json
@@ -25,13 +26,14 @@ release wheel, force-installs it into `.venv`, and checks the installed native
 extension against the wheel bytes. The diagnostic verifies source file hashes
 and the installed extension hash before retaining evidence.
 
-A committed baseline is a clean commit export. An uncommitted candidate is an
-immutable source export with a recorded overlay, source manifest, origin status
-and patch hash; its `measured_code_commit` is explicitly null. This distinction
-is necessary when integration may not create commits. Such a report is repair
-diagnostic evidence, not clean-commit or exact-HEAD release evidence. Burner
-must validate its delivered commit independently. No provenance is rewritten to
-make an uncommitted candidate appear committed.
+Retained baseline and candidate evidence must use clean committed source.
+The candidate command above exports `HEAD` without an implementation overlay.
+Omitting `--revision` remains useful for local scratch diagnostics under
+`target/`, but those reports record an uncommitted overlay and are not suitable
+as retained release evidence. After measurement, keep the follow-up diff limited
+to reports and their documentation so the measured implementation and benchmark
+harness remain unchanged. In Burner workflows, Burner owns both implementation
+and subsequent evidence commits.
 
 Each cache condition runs in a fresh process. The clean condition runs the
 ordered matrix without a saturation prelude; it does not claim cold allocation
@@ -81,39 +83,39 @@ scores or a claim of full PyTorch performance parity.
 
 | Cache condition | Boundary | Before capped parity | Candidate capped parity |
 | --- | --- | ---: | ---: |
-| Clean | Isolated | 91.11% | 96.35% |
-| Clean | 32-call batch | 58.37% | 69.99% |
-| Clean | 64-call batch | 54.96% | 67.77% |
-| Clean | 32-call chain | 56.95% | 69.27% |
-| Saturated | Isolated | 78.08% | 96.99% |
-| Saturated | 32-call batch | 37.82% | 69.78% |
-| Saturated | 64-call batch | 36.94% | 67.16% |
-| Saturated | 32-call chain | 37.23% | 68.17% |
+| Clean | Isolated | 91.11% | 96.45% |
+| Clean | 32-call batch | 58.37% | 68.62% |
+| Clean | 64-call batch | 54.96% | 65.29% |
+| Clean | 32-call chain | 56.95% | 67.17% |
+| Saturated | Isolated | 78.08% | 96.93% |
+| Saturated | 32-call batch | 37.82% | 69.10% |
+| Saturated | 64-call batch | 36.94% | 67.58% |
+| Saturated | 32-call chain | 37.23% | 68.06% |
 
 Selected saturated-process operator cells below use 64-call batches. Values
 are median microseconds per call; the raw reports retain every cell and sample.
 
 | Elements | Native before | Native candidate | PyTorch before → candidate run |
 | ---: | ---: | ---: | ---: |
-| 3,079 | 12.76 | 8.61 | 4.70 → 4.61 |
-| 1,048,603 | 164.20 | 9.66 | 5.44 → 5.04 |
-| 4,194,359 | 205.40 | 32.49 | 27.75 → 26.71 |
-| 17,000,003 | 380.57 | 106.79 | 97.87 → 97.88 |
-| 33,554,467 | 646.19 | 204.01 | 185.93 → 185.87 |
-| 67,108,867 | 1218.67 | 399.23 | 365.28 → 365.25 |
+| 3,079 | 12.76 | 8.63 | 4.70 → 4.65 |
+| 1,048,603 | 164.20 | 9.92 | 5.44 → 5.69 |
+| 4,194,359 | 205.40 | 33.21 | 27.75 → 26.96 |
+| 17,000,003 | 380.57 | 106.48 | 97.87 → 97.56 |
+| 33,554,467 | 646.19 | 204.02 | 185.93 → 185.63 |
+| 67,108,867 | 1218.67 | 399.24 | 365.28 → 365.05 |
 
 The severe allocation-cache cliffs are substantially reduced, including above
 64 MiB and in chains. Small-call sustained throughput still trails PyTorch:
-for example, the saturated 3,079-element cell takes 8.61 µs versus 4.61 µs.
+for example, the saturated 3,079-element cell takes 8.63 µs versus 4.65 µs.
 Completion remains synchronous per native call. A 67,108,867-element output
-exceeds the unused-pool budget; its isolated candidate latency is 688.04 µs
-versus PyTorch’s 496.70 µs in the saturated process. That remaining allocation
+exceeds the unused-pool budget; its isolated candidate latency is 693.80 µs
+versus PyTorch’s 480.46 µs in the saturated process. That remaining allocation
 cost is visible even though its batch latency improves substantially.
 
 | Build stage | Baseline seconds | Candidate seconds |
 | --- | ---: | ---: |
-| Locked dependency setup | 0.112 | 0.100 |
-| Release wheel build | 44.327 | 45.026 |
+| Locked dependency setup | 0.112 | 0.104 |
+| Release wheel build | 44.327 | 44.674 |
 | Wheel installation | 0.194 | 0.176 |
 
 Both builds used empty per-export Cargo targets and warm worktree-local
@@ -123,12 +125,23 @@ one pinned CPU thread, H100, CUDA runtime 13000 and driver 580.82.07. Rust
 record full hardware, library, compiler, import, source, wheel and native hashes.
 
 The baseline is a clean export of `cc0068c2acec798aa222edaf8c0fb62defbeb936`.
-The candidate records an immutable uncommitted source export rather than
-claiming that its code is that baseline commit. Its implementation and runner
-match the recorded export; subsequent documentation changes report these
-measurements. Burner’s delivered-commit validation remains necessary.
+The candidate is a clean export of `3c167233398803251121b8f1a9b7e0ab55ee54c5`,
+rebuilt with `--revision HEAD` from a clean composite worktree. Its report records
+that commit in `measured_code_commit`, `source_matches_commit: true`, and an empty
+`origin_status`. The installed native extension matches the release wheel, and
+the runner matches the committed source. Only regenerated evidence and this
+report documentation change after the measured commit; implementation and
+benchmark-harness files remain unchanged. Burner owns the subsequent delivery.
 
 ## Integration validation
+
+For the committed-source provenance refresh, wheel/import verification passed,
+as did 55 focused documentation/CUDA tests (four single-GPU skips) and all three
+two-GPU device-guard tests. Both complete diagnostic matrices passed their
+bitwise output checks. The rebuilt native extension and all Python package
+files match the previously validated wheel byte for byte. The broader checks
+below were performed during integration; this evidence-only refresh did not
+repeat the full Python/Rust suites or memory-sanitizer runs.
 
 The same verified release-wheel native extension passed the full Python suite
 with managed CPython 3.12.12 and 3.14.5: 5,210 tests each, seven skips each.
