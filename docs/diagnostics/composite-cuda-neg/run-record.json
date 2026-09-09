@@ -9,29 +9,29 @@
     "--seed",
     "4480763905421893394",
     "--build-record",
-    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/final-validation/cuda/build-record.json",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/post-commit-519f375/cuda/build-record.json",
     "--output",
-    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/final-validation/cuda/evaluation.json"
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/post-commit-519f375/cuda/evaluation.json"
   ],
   "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
-  "started_at": "2026-09-09T19:48:00.826963+00:00",
-  "ended_at": "2026-09-09T19:48:46.976770+00:00",
-  "wall_seconds": 46.149812060408294,
+  "started_at": "2026-09-09T20:00:55.905098+00:00",
+  "ended_at": "2026-09-09T20:01:42.032287+00:00",
+  "wall_seconds": 46.12720028497279,
   "exit_status": 0,
   "log": "run.log",
   "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "source_before": {
-    "commit": "e3a3ba3bd11f90378000b780b29389e5b1195c59",
+    "commit": "519f375c1f11cf66e3e83f3158c632cd171ec7a3",
     "source_sha256": "a0e6ac3f54ad339bc95ca4d89fd875aa6c336ff78fdc35ea59f92f53a894f87d",
     "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   "source_after": {
-    "commit": "e3a3ba3bd11f90378000b780b29389e5b1195c59",
+    "commit": "519f375c1f11cf66e3e83f3158c632cd171ec7a3",
     "source_sha256": "a0e6ac3f54ad339bc95ca4d89fd875aa6c336ff78fdc35ea59f92f53a894f87d",
     "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
-  "report_sha256": "564fffd0349e0372f7f0a8c51d25f28a7bd4e2423278231752bf8b84a3157f89",
-  "build_record_sha256": "0a7f74cc1746ae8177f27a503a2244261c6e8cf906ed143e87b11f4f44cee7a0",
+  "report_sha256": "7ab41af18725b837a280d342c1de290428611b8ef163d3e9a89f9d375ac09bd1",
+  "build_record_sha256": "126fbbe0c9324db8c14d0bcead6bf48bc4e4dfb65f30892b9c8c43e32ab95278",
   "evaluator_sha256": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
   "matrix_sha256": "33ce3417e04bc87f73e5b95acc7480295c476d406d4dc04ae6b7d1e4e6a6e513"
 }

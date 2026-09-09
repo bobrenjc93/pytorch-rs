@@ -20,12 +20,13 @@ The durable [raw six-case report](diagnostics/composite-cuda-neg/evaluation.json
 measurement, including all failure slots. They supersede the leaf's report,
 whose raw files were only in its disposable worktree.
 
-This capture freshly built clean commit `e3a3ba3bd11f90378000b780b29389e5b1195c59` inside the
-current composite worktree. Burner had already committed the integrated source;
-no new commit was created for validation. The receipts bind the production
+This capture freshly built clean commit `519f375c1f11cf66e3e83f3158c632cd171ec7a3` inside the
+current composite worktree after Burner committed the integrated implementation.
+This post-commit capture replaces the earlier `e3a3ba3` measurement; no new
+commit was created for validation. The receipts bind the production
 fingerprint, empty production diff, clean checkout status, native extension,
 commands, timestamps, and local interpreter/package/runtime paths to that commit.
-Reports were first written under `target/final-validation/` and copied here
+Reports were first written under `target/post-commit-519f375/` and copied here
 byte-for-byte after CUDA and text measurements, preserving a clean checkout for
 both captures. Subsequent changes contain only documentation and evidence; the
 implementation and benchmark/evaluator harnesses remain identical to the measured
@@ -39,7 +40,9 @@ A bounded correctness result does not establish general CUDA support, compiler
 parity, accelerator training support, or a performance improvement.
 
 The [integration check record](diagnostics/composite-integration/README.md)
-retains full/focused test logs, compile evaluation, and baseline failure reproductions.
+retains the earlier author full/focused test logs, compile evaluation, and
+baseline failure reproductions at their original measured revisions. Those
+unchanged checks were not rerun in this evidence-only step.
 
 ## Recorded result
 
@@ -48,15 +51,18 @@ passed all three seeds: **2/6 fixed cases**. Trailing-vector addition, scalar
 multiplication, axis reduction, and matrix multiplication remain unsupported;
 all twelve failing candidate slots are retained with zero credit.
 
-Measured code commit: `e3a3ba3bd11f90378000b780b29389e5b1195c59` (clean).
+Measured code commit: `519f375c1f11cf66e3e83f3158c632cd171ec7a3` (clean).
 Measured production fingerprint: `a0e6ac3f54ad339bc95ca4d89fd875aa6c336ff78fdc35ea59f92f53a894f87d`.
 Native extension SHA-256: `e2e9c8bea89c8b8963cff95851ae2c4b2ce2038185ce630058f0dd2955abc7bd`.
-Build: `2026-09-09T19:47:20.744864+00:00` to `2026-09-09T19:48:00.656594+00:00`;
-evaluator: `2026-09-09T19:48:00.826963+00:00` to `2026-09-09T19:48:46.976770+00:00` (exit 0).
+Build: `2026-09-09T20:00:15.259120+00:00` to `2026-09-09T20:00:55.739371+00:00`;
+evaluator: `2026-09-09T20:00:55.905098+00:00` to `2026-09-09T20:01:42.032287+00:00` (exit 0).
 Source stability, receipt/report/log hashes, unchanged evaluator/matrix hashes,
 all worker package/interpreter/extension/runtime paths, and successful-worker
 input preservation were independently checked after capture. Every worker used
 the worktree-local CUDA runtime 13000; candidate workers loaded no PyTorch modules.
+The [evidence checks](diagnostics/composite-cuda-neg/evidence-checks.log) retain
+the provenance/matrix/sample audit and 28 passing focused tests, run with
+`PYTHONPATH=python .venv/bin/python -m unittest tests.test_default_collate_reference tests.test_cuda_math_evaluator`.
 
 ## Reproduce from this checkout
 
@@ -83,7 +89,7 @@ export XDG_CACHE_HOME="$PWD/target/cuda-neg-validation/xdg-cache"
 export TORCH_RS_CUDART="$PWD/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
 export CUDA_VISIBLE_DEVICES=0
 export PYTHONDONTWRITEBYTECODE=1
-mkdir -p target/final-validation/cuda
+mkdir -p target/post-commit-519f375/cuda
 .venv/bin/python - <<'PYTHON'
 import importlib.util
 from pathlib import Path
@@ -91,15 +97,15 @@ path = Path("docs/diagnostics/composite-cuda-neg/reproduce.py").resolve()
 spec = importlib.util.spec_from_file_location("capture", path)
 capture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(capture)
-capture.OUT = Path("target/final-validation/cuda").resolve()
+capture.OUT = Path("target/post-commit-519f375/cuda").resolve()
 capture.main()
 PYTHON
 # Capture text while the tracked checkout is still clean, then retain both reports.
 PYTHONPATH=python .venv/bin/python scripts/benchmark_text_collation.py \
   --cpu 24 --seed 20260909 --samples 12 \
-  --output target/final-validation/text-collation.json
-cp target/final-validation/cuda/* docs/diagnostics/composite-cuda-neg/
-cp target/final-validation/text-collation.json docs/diagnostics/text-collation.json
+  --output target/post-commit-519f375/text-collation.json
+cp target/post-commit-519f375/cuda/* docs/diagnostics/composite-cuda-neg/
+cp target/post-commit-519f375/text-collation.json docs/diagnostics/text-collation.json
 ```
 
 The [capture script](diagnostics/composite-cuda-neg/reproduce.py) follows the

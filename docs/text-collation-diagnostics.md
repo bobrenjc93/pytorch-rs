@@ -33,29 +33,30 @@ about general PyTorch performance. The unchanged Burner evaluators own scores.
 ## Recorded local sample
 
 The [raw report](diagnostics/text-collation.json) measures clean commit
-`e3a3ba3bd11f90378000b780b29389e5b1195c59`, with the same production fingerprint
+`519f375c1f11cf66e3e83f3158c632cd171ec7a3`, with the same production fingerprint
 and extension hash as the [CUDA build receipt](diagnostics/composite-cuda-neg/build-record.json).
 Its git status is empty and its production diff is empty. The original capture
-output under `target/final-validation/` was copied here unchanged after both
+output under `target/post-commit-519f375/` was copied here unchanged after both
 measurements; the source and benchmark harness remain unchanged. No historical
-workload was rerun or replaced.
+workload was rerun or replaced. This post-commit capture supersedes the earlier
+`e3a3ba3` text measurement with the same matrix and sampling procedure.
 
-Captured `2026-09-09T19:48:54.318392+00:00` to `2026-09-09T19:49:11.044221+00:00` on CPU 24,
+Captured `2026-09-09T20:01:43.626266+00:00` to `2026-09-09T20:02:00.730475+00:00` on CPU 24,
 CPython 3.12.14, PyTorch 2.13.0+cu130, AMD EPYC 9654.
 
 | Case group | Geometric mean of reference/candidate median |
 | --- | ---: |
-| dict | 0.428 |
-| direct | 1.512 |
-| direct_mixed | 1.536 |
-| namedtuple | 1.063 |
-| sequence | 1.798 |
-| all | 1.137 |
+| dict | 0.431 |
+| direct | 1.489 |
+| direct_mixed | 1.487 |
+| namedtuple | 1.061 |
+| sequence | 1.793 |
+| all | 1.126 |
 
 Ratios above one mean the candidate median was lower in this sample; below one
 mean the reference median was lower. Results vary by container and nesting.
-The text capture finished before the full validation suite started. This is a
-shared host; CPU affinity does not guarantee exclusive CPU ownership. Raw
+No other validation process was launched by this evidence refresh during text
+timing. This is a shared host; CPU affinity does not guarantee exclusive CPU ownership. Raw
 samples and MAD expose variability.
 These observations support no universal timing or score claim. Inputs, balanced
 order, sample counts, summaries, source/harness fingerprints, and extension hash

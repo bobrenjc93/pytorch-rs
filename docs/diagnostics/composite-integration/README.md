@@ -1,17 +1,24 @@
 # Composite integration checks
 
-Fresh validation uses the integrated production code at
-`e3a3ba3bd11f90378000b780b29389e5b1195c59`. The
-[CUDA build receipt](../composite-cuda-neg/build-record.json) binds a fresh
-release extension to that clean commit; [CUDA](../../cuda-neg-validation.md)
-and [text](../../text-collation-diagnostics.md) measurements ran before tracked
-files changed. Subsequent changes are documentation and evidence only.
+Author validation used the integrated production code at
+`e3a3ba3bd11f90378000b780b29389e5b1195c59`. The logs and receipts below remain
+pinned to that completed run. The implementation, tests, and measurement
+harnesses are unchanged between that revision and Burner's committed
+implementation `519f375c1f11cf66e3e83f3158c632cd171ec7a3`.
+
+The subsequent [CUDA](../../cuda-neg-validation.md) and
+[text](../../text-collation-diagnostics.md) evidence refresh freshly built and
+measured clean `519f375c`; its [build receipt](../composite-cuda-neg/build-record.json)
+and [focused evidence checks](../composite-cuda-neg/evidence-checks.log) describe
+that capture. It did not rerun the author full suites or baseline measurements
+below. Their provenance and results have not been reattributed to the later run.
+
 The [check receipt](checks-record.json) retains actual commands, directories,
 environment, timestamps, exit statuses, source fingerprints, and log hashes.
 The [installed-wheel receipt](installed-provenance.json) verifies all 59 Python
 sources against this checkout and records the separate stripped extension hash.
 
-These reports replace the prior dirty-merge diagnostics. The current full-suite
+These reports replace the prior dirty-merge diagnostics. The retained full-suite
 run is CPython 3.12.14; CPython 3.14.7 has focused reference/GPU checks and
 baseline comparisons below. No full 3.14 pass is claimed.
 
