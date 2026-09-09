@@ -1,7 +1,7 @@
 # Documentation Index
 
 Use this page to find the durable project contracts, runnable examples,
-contributor guides, and historical timing evidence. Burner-managed progress
+contributor guides, and historical validation and timing evidence. Burner-managed progress
 artifacts are generated at merge time and are not source documentation.
 
 ## Current Contracts
@@ -23,8 +23,13 @@ artifacts are generated at merge time and are not source documentation.
 - [Contributing guide](../CONTRIBUTING.md): Locked setup, environment expectations, test selection, draft workflow, and documentation ownership.
 - [Setup troubleshooting](troubleshooting.md): Short fixes for common environment, import, reference dependency, and stale wheel failures.
 - [Architecture map](../ARCHITECTURE.md): Source map for the Rust core, Python bindings, wrappers, and test layout.
+- [CUDA addition graph capture](compile-cuda-add.md): Public bounded eager compilation, device/cache guards, unsupported cases, and reproduction.
 - [CUDA-add diagnostics](cuda-add-diagnostics.md): Latency, sustained throughput, cache saturation, and release provenance.
 - [Rank-2 mean diagnostics](rank2-mean-diagnostics.md): Both reduction axes and layouts at matched CPU worker budgets.
+
+## Historical Validation Evidence
+
+- [CUDA addition capture validation](compile-cuda-add-validation.md): Source validation history, baseline caveats, and composite correctness evidence; no performance score.
 
 ## Historical Timing Evidence
 

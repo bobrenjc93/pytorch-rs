@@ -465,7 +465,10 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "other CUDA math/autograd, CUDA broadcasting, noncontiguous addition and scalar arithmetic",
     "exact Python bool/int/float/complex scalars, `None`, and strings/bytes",
     "actual attention-kernel dispatch",
-    "general CUDA `torch.compile` execution outside the private H100 benchmark path",
+    "CUDA `torch.compile` execution beyond the [bounded addition capture](docs/compile-cuda-add.md)",
+    "[bounded CUDA addition capture](docs/compile-cuda-add.md)",
+    "guards device ordinal and storage offset",
+    "executes native additions without fusion",
     "Current-device CUDA allocation for unindexed `\"cuda\"`",
     "mutable default-device routing",
     "streams",
@@ -528,6 +531,11 @@ DOCS_INDEX_EXAMPLES = (
     ),
 )
 DOCS_INDEX_GUIDES = (
+    (
+        "CUDA addition graph capture",
+        "compile-cuda-add.md",
+        "Public bounded eager compilation, device/cache guards, unsupported cases, and reproduction.",
+    ),
     (
         "Repository README",
         "../README.md",

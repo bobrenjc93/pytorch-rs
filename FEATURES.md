@@ -136,8 +136,9 @@ and other CUDA math remain unsupported. Dtype changes, autograd inputs
 (including under `no_grad`), asynchronous transfers, CUDA-to-CUDA copies, unindexed CUDA targets, broader
 CUDA factories and autograd, device selection APIs, streams, events,
 synchronization APIs, allocator APIs, memory APIs, general runtime management,
-and general `torch.compile` CUDA execution remain unsupported outside the
-private benchmark-only H100 pointwise-reduce compile evidence path. See the
+and general `torch.compile` CUDA execution remain unsupported beyond the
+[bounded native CUDA addition capture](docs/compile-cuda-add.md) and private
+benchmark-only H100 pointwise-reduce compile evidence paths. See the
 [exact transfer contract](docs/supported-surface.md) for supported argument
 forms, layout guarantees, and operation boundaries.
 
@@ -191,3 +192,12 @@ changing the configured default backend. Unsupported compiler programs and
 `isolate_recompiles=True` fail before user code runs and without active
 `__torch_function__` modes, forwarding to installed PyTorch, graph-break eager
 fallback, callable backend invocation, or unguarded graph caching.
+
+The generic eager compiler also captures unmarked one- and two-input native
+CUDA float32 addition graphs with equal operand shapes and contiguous layouts,
+including scalar/empty/offset inputs, self-addition, chains, and global captures.
+CUDA metadata and caches guard the actual device ordinal and storage offset.
+CUDA unary operations, broadcasting, gradients, mixed devices, and other layouts
+remain unsupported. This is bounded graph capture under explicit
+`backend="eager"` and the existing fullgraph options, with no new fusion or
+CUDA performance claim. See [scope and differential diagnostics](docs/compile-cuda-add.md).

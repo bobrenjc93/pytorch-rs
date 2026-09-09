@@ -24,21 +24,21 @@ use crate::python::{
     cos_variable_function, detach_variable_function, div_variable_function,
     divide_variable_function, empty_like_variable_function, exp_variable_function,
     fix_variable_function, floor_variable_function, full_like_variable_function,
-    get_device_variable_function, imag_variable_function, is_conj_variable_function,
-    is_inference_variable_function, log_variable_function, matmul_variable_function,
-    mean_variable_function, mm_variable_function, moveaxis_variable_function,
-    movedim_variable_function, mul_variable_function, multiply_variable_function,
-    narrow_variable_function, neg_variable_function, negative_variable_function,
-    ones_like_variable_function, permute_variable_function, positive_variable_function,
-    pow_variable_function, promote_types_variable_function, ravel_variable_function,
-    real_variable_function, reciprocal_variable_function, reshape_variable_function,
-    resolve_conj_variable_function, resolve_neg_variable_function, row_stack_variable_function,
-    rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
-    sigmoid_variable_function, sin_variable_function, sqrt_variable_function,
-    square_variable_function, stack_variable_function, sub_variable_function,
-    subtract_variable_function, sum_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function, unsqueeze_variable_function,
-    vstack_variable_function, zeros_like_variable_function,
+    get_device_variable_function, hstack_variable_function, imag_variable_function,
+    is_conj_variable_function, is_inference_variable_function, log_variable_function,
+    matmul_variable_function, mean_variable_function, mm_variable_function,
+    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
+    multiply_variable_function, narrow_variable_function, neg_variable_function,
+    negative_variable_function, ones_like_variable_function, permute_variable_function,
+    positive_variable_function, pow_variable_function, promote_types_variable_function,
+    ravel_variable_function, real_variable_function, reciprocal_variable_function,
+    reshape_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
+    row_stack_variable_function, rsqrt_variable_function, scalar_tensor_variable_function,
+    select_variable_function, sigmoid_variable_function, sin_variable_function,
+    sqrt_variable_function, square_variable_function, stack_variable_function,
+    sub_variable_function, subtract_variable_function, sum_variable_function,
+    tanh_variable_function, trunc_variable_function, unbind_variable_function,
+    unsqueeze_variable_function, vstack_variable_function, zeros_like_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
@@ -61,6 +61,7 @@ const VARIABLE_FUNCTION_NAMES: &[&str] = &[
     "concat",
     "concatenate",
     "stack",
+    "hstack",
     "vstack",
     "row_stack",
     "abs",
@@ -1183,6 +1184,20 @@ autograd. Concrete ``out`` tensors, empty input sequences, mixed dtype/device
 metadata, and unhandled tensor subclasses remain unsupported.
 ";
 
+const HSTACK_DOC: &std::ffi::CStr = c"
+hstack(tensors, *, out=None) -> Tensor
+
+Stacks tensors in sequence horizontally (column wise).
+
+Each scalar is viewed as a length-one vector (atleast_1d). Concatenation uses
+dimension 0 if the first normalized tensor is a vector, otherwise dimension 1.
+The native implementation supports non-empty tuple/list inputs of exact native
+CPU float32 scalar, rank-1, or rank-2 tensors, including empty and strided views,
+fresh output storage, first-order autograd, and __torch_function__ dispatch.
+Concrete out tensors, higher ranks, and other dtype/device metadata are
+unsupported.
+";
+
 const VSTACK_DOC: &std::ffi::CStr = c"
 vstack(tensors, *, out=None) -> Tensor
 
@@ -1500,6 +1515,7 @@ variable_function_callback!(cat_callback, cat_variable_function);
 variable_function_callback!(concat_callback, concat_variable_function);
 variable_function_callback!(concatenate_callback, concatenate_variable_function);
 variable_function_callback!(stack_callback, stack_variable_function);
+variable_function_callback!(hstack_callback, hstack_variable_function);
 variable_function_callback!(vstack_callback, vstack_variable_function);
 variable_function_callback!(row_stack_callback, row_stack_variable_function);
 variable_function_callback!(abs_callback, abs_variable_function);
@@ -1579,6 +1595,10 @@ macro_rules! variable_function_method {
     unsafe_code,
     reason = "PyType_FromSpec requires an audited raw type specification"
 )]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the public variable-function registration table is kept together"
+)]
 fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
     // CPython descriptors retain pointers to their method definitions. Leak
     // this tiny table deliberately so it remains valid for the type lifetime.
@@ -1600,6 +1620,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"concat", concat_callback, CONCAT_DOC),
         variable_function_method!(c"concatenate", concatenate_callback, CONCATENATE_DOC),
         variable_function_method!(c"stack", stack_callback, STACK_DOC),
+        variable_function_method!(c"hstack", hstack_callback, HSTACK_DOC),
         variable_function_method!(c"vstack", vstack_callback, VSTACK_DOC),
         variable_function_method!(c"row_stack", row_stack_callback, ROW_STACK_DOC),
         variable_function_method!(c"abs", abs_callback, ABS_DOC),
