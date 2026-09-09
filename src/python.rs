@@ -13583,7 +13583,7 @@ fn validate_creation_sequence_leading_dimension(
         return Ok(true);
     }
     let dimension = dimensions.get_item(0)?;
-    let valid = if dimension.is_instance_of::<PyBool>() || is_numpy_bool_scalar(&dimension)? {
+    let valid = if dimension.is_instance_of::<PyBool>() {
         false
     } else {
         validate_creation_sequence_dimension_type(function, 0, &dimension).is_ok()
@@ -13604,15 +13604,15 @@ fn validate_creation_sequence_dimension_type(
     index: usize,
     dimension: &Bound<'_, PyAny>,
 ) -> PyResult<()> {
+    // Ordinary dimensions must not import NumPy or inspect its scalar classes.
+    if dimension.is_instance_of::<PyInt>() {
+        return Ok(());
+    }
     if is_numpy_bool_scalar(dimension)? {
         return Err(creation_sequence_dimension_type_error_at(
             function, index, dimension,
         )?);
     }
-    if dimension.is_instance_of::<PyInt>() {
-        return Ok(());
-    }
-
     let indexed = PyModule::import(dimension.py(), "operator")
         .and_then(|operator| operator.getattr("index"))
         .and_then(|index| index.call1((dimension,)));
@@ -13629,13 +13629,16 @@ fn bind_creation_positional_dimension<'py>(
     dimension: &Bound<'py, PyAny>,
     sequence_error: PyErr,
 ) -> PyResult<PendingCreationSize<'py>> {
-    if dimension.is_instance_of::<PyBool>() || is_numpy_bool_scalar(dimension)? {
+    if dimension.is_instance_of::<PyBool>() {
         return Err(creation_dimension_type_error(function, dimension)?);
     }
 
     let indexed = if dimension.is_instance_of::<PyInt>() {
         dimension.clone()
     } else {
+        if is_numpy_bool_scalar(dimension)? {
+            return Err(creation_dimension_type_error(function, dimension)?);
+        }
         let indexed = PyModule::import(dimension.py(), "operator")
             .and_then(|operator| operator.getattr("index"))
             .and_then(|index| index.call1((dimension,)));
@@ -13774,14 +13777,14 @@ fn extract_variadic_creation_dimension(
     position: usize,
     dimension: &Bound<'_, PyAny>,
 ) -> PyResult<i64> {
-    if is_numpy_bool_scalar(dimension)? {
-        return Err(creation_dimension_unpack_type_error(
-            function, position, dimension,
-        )?);
-    }
     let indexed = if dimension.is_instance_of::<PyInt>() {
         dimension.clone()
     } else {
+        if is_numpy_bool_scalar(dimension)? {
+            return Err(creation_dimension_unpack_type_error(
+                function, position, dimension,
+            )?);
+        }
         let indexed = PyModule::import(dimension.py(), "operator")
             .and_then(|operator| operator.getattr("index"))
             .and_then(|index| index.call1((dimension,)));
