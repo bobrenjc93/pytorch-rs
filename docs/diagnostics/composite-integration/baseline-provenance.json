@@ -1,0 +1,25 @@
+{
+  "baseline_commit": "31310e8fd1a1ff4f8dadcca93566dba70d115241",
+  "archive_sha256": "41823df1042d604866e1f66c87ae666518885b3ad4fcfb545ddc7abc16bc2d3d",
+  "tracked_files_verified_unchanged": 864,
+  "baseline_extension_sha256": "5425ea74b71ae560f3bf39606c0f99630dda7cbbec3e56f493b7f8f49c91ba21",
+  "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline/python/torch_rs/torch_rs.abi3.so",
+  "build_command": [
+    "cargo",
+    "build",
+    "--locked",
+    "--release",
+    "--features",
+    "extension-module"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline",
+  "started_at": "2026-09-09T19:51:00.157221+00:00",
+  "ended_at": "2026-09-09T19:51:39.815544+00:00",
+  "wall_seconds": 39.65832889545709,
+  "exit_status": 0,
+  "build_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/final-validation/baseline-build",
+  "log": "baseline-build.log",
+  "log_sha256": "9188fc66d0cc187d4fc2c2343b8375af178a1ccdc15e8d003e729b2aa02966be",
+  "python": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)"
+}

@@ -234,8 +234,8 @@ class DefaultConvertReferenceTests(unittest.TestCase):
 
     def test_default_collate_boundary_remains_fail_closed(self):
         with self.assertRaises(TypeError):
-            torch.utils.data.default_collate(["a", "b"])
-        reference_torch.utils.data.default_collate(["a", "b"])
+            torch.utils.data.default_collate([1, 2])
+        reference_torch.utils.data.default_collate([1, 2])
 
     def test_imports_exports_signature_and_loader_boundary_match(self):
         actual_data = importlib.import_module("torch_rs.utils.data")

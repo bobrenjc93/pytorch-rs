@@ -1,0 +1,30 @@
+test_arbitrary_objects_and_foreign_tensors_fail_closed (tests.test_default_collate_reference.DefaultCollateReferenceTests.test_arbitrary_objects_and_foreign_tensors_fail_closed) ... ok
+test_imports_exports_signature_and_loader_boundary_match (tests.test_default_collate_reference.DefaultCollateReferenceTests.test_imports_exports_signature_and_loader_boundary_match) ... ok
+test_nested_tensor_and_text_records_match_pytorch_2_13 (tests.test_default_collate_reference.DefaultCollateReferenceTests.test_nested_tensor_and_text_records_match_pytorch_2_13) ... ok
+test_plain_tuple_returns_pytorch_compatible_list (tests.test_default_collate_reference.DefaultCollateReferenceTests.test_plain_tuple_returns_pytorch_compatible_list) ... ok
+test_pytorch_supported_non_tensor_collation_paths_fail_closed (tests.test_default_collate_reference.DefaultCollateReferenceTests.test_pytorch_supported_non_tensor_collation_paths_fail_closed) ... ok
+test_recursive_list_namedtuple_and_dict_outputs_match_pytorch_2_13 (tests.test_default_collate_reference.DefaultCollateReferenceTests.test_recursive_list_namedtuple_and_dict_outputs_match_pytorch_2_13) ... ok
+test_tensor_values_metadata_and_autograd_match_pytorch_2_13 (tests.test_default_collate_reference.DefaultCollateReferenceTests.test_tensor_values_metadata_and_autograd_match_pytorch_2_13) ... ok
+test_text_batch_identity_matches_pytorch_2_13 (tests.test_default_collate_reference.DefaultCollateReferenceTests.test_text_batch_identity_matches_pytorch_2_13) ... ok
+test_text_led_mixed_tails_match_reference_without_inspection (tests.test_default_collate_reference.DefaultCollateReferenceTests.test_text_led_mixed_tails_match_reference_without_inspection) ... ok
+test_binding_bounds_and_overflow_errors_match (tests.test_split_reference.TensorSplitReferenceTests.test_binding_bounds_and_overflow_errors_match) ... ok
+test_empty_backward_and_no_grad_match (tests.test_split_reference.TensorSplitReferenceTests.test_empty_backward_and_no_grad_match) ... ok
+test_integer_subclasses_and_invalid_argument_types_match (tests.test_split_reference.TensorSplitReferenceTests.test_integer_subclasses_and_invalid_argument_types_match) ... ok
+test_invalid_section_lengths_sums_scalars_and_dimensions_match (tests.test_split_reference.TensorSplitReferenceTests.test_invalid_section_lengths_sums_scalars_and_dimensions_match) ... ok
+test_section_integer_protocol_and_invalid_types_match (tests.test_split_reference.TensorSplitReferenceTests.test_section_integer_protocol_and_invalid_types_match) ... ok
+test_section_positional_and_keyword_forms_match (tests.test_split_reference.TensorSplitReferenceTests.test_section_positional_and_keyword_forms_match) ... ok
+test_selected_combined_repeated_nested_and_signed_zero_gradients_match (tests.test_split_reference.TensorSplitReferenceTests.test_selected_combined_repeated_nested_and_signed_zero_gradients_match) ... ok
+test_values_layout_aliasing_empty_and_oversized_match (tests.test_split_reference.TensorSplitReferenceTests.test_values_layout_aliasing_empty_and_oversized_match) ... ok
+test_device_guard_and_context_cache (tests.test_cuda_neg.CudaNegDeviceTests.test_device_guard_and_context_cache) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_completion_and_independent_output (tests.test_cuda_neg.CudaNegTests.test_completion_and_independent_output) ... ok
+test_generated_shapes_public_forms_and_input_preservation (tests.test_cuda_neg.CudaNegTests.test_generated_shapes_public_forms_and_input_preservation) ... ok
+test_ieee_bits_and_offset_views (tests.test_cuda_neg.CudaNegTests.test_ieee_bits_and_offset_views) ... ok
+test_large_allocation_lifetime_outside_front_cache (tests.test_cuda_neg.CudaNegTests.test_large_allocation_lifetime_outside_front_cache) ... ok
+test_lifetimes_reuse_and_fresh_thread_context (tests.test_cuda_neg.CudaNegTests.test_lifetimes_reuse_and_fresh_thread_context) ... ok
+test_no_pytorch_forwarding (tests.test_cuda_neg.CudaNegTests.test_no_pytorch_forwarding) ... ok
+test_unsupported_layout_autograd_and_compilation (tests.test_cuda_neg.CudaNegTests.test_unsupported_layout_autograd_and_compilation) ... ok
+
+----------------------------------------------------------------------
+Ran 25 tests in 4.624s
+
+OK (skipped=1)

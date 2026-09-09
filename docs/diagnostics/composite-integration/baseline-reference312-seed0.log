@@ -1,0 +1,58 @@
+test_buffer_errors_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_buffer_errors_match_pytorch_2_13) ... ok
+test_buffer_only_exporters_are_rejected_like_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_buffer_only_exporters_are_rejected_like_pytorch_2_13) ... ok
+test_bytes_and_character_views_match_dtype_sensitive_pytorch_dispatch (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_bytes_and_character_views_match_dtype_sensitive_pytorch_dispatch) ... ok
+test_float16_edge_value_bits_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_float16_edge_value_bits_match_pytorch_2_13) ... ok
+test_numeric_buffers_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_numeric_buffers_match_pytorch_2_13) ... 
+  test_numeric_buffers_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_numeric_buffers_match_pytorch_2_13) (case='bool including noncanonical bytes') ... FAIL
+  test_numeric_buffers_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_numeric_buffers_match_pytorch_2_13) (case='native-prefixed bool') ... FAIL
+test_numpy_and_ctypes_sequence_dispatch_matches_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_numpy_and_ctypes_sequence_dispatch_matches_pytorch_2_13) ... ok
+test_sequence_length_exceptions_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_sequence_length_exceptions_match_pytorch_2_13) ... ok
+test_strided_reversed_and_empty_buffers_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_strided_reversed_and_empty_buffers_match_pytorch_2_13) ... ok
+
+======================================================================
+FAIL: test_numeric_buffers_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_numeric_buffers_match_pytorch_2_13) (case='bool including noncanonical bytes')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline/tests/test_tensor_buffer_reference.py", line 31, in assert_matches
+    np.testing.assert_array_equal(np.asarray(actual), expected.numpy())
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1128, in assert_array_equal
+    assert_array_compare(operator.__eq__, actual, desired, err_msg=err_msg,
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError: 
+Arrays are not equal
+
+Mismatched elements: 2 / 6 (33.3%)
+Mismatch at indices:
+ [2]: 0.0 (ACTUAL), 1.0 (DESIRED)
+ [4]: 0.0 (ACTUAL), 1.0 (DESIRED)
+Max absolute difference among violations: 1.
+Max relative difference among violations: 1.
+ ACTUAL: array([0., 1., 0., 1., 0., 1.], dtype=float32)
+ DESIRED: array([0., 1., 1., 1., 1., 1.], dtype=float32)
+
+======================================================================
+FAIL: test_numeric_buffers_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_numeric_buffers_match_pytorch_2_13) (case='native-prefixed bool')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline/tests/test_tensor_buffer_reference.py", line 31, in assert_matches
+    np.testing.assert_array_equal(np.asarray(actual), expected.numpy())
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1128, in assert_array_equal
+    assert_array_compare(operator.__eq__, actual, desired, err_msg=err_msg,
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError: 
+Arrays are not equal
+
+Mismatched elements: 1 / 2 (50%)
+Mismatch at index:
+ [0]: 0.0 (ACTUAL), 1.0 (DESIRED)
+Max absolute difference among violations: 1.
+Max relative difference among violations: 1.
+ ACTUAL: array([0., 1.], dtype=float32)
+ DESIRED: array([1., 1.], dtype=float32)
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.026s
+
+FAILED (failures=2)

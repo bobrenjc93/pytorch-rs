@@ -67,6 +67,25 @@ intentionally rejects that layout; it requires both `torch_rs` and the native
 `torch_rs.torch_rs` extension to resolve inside `.venv`. Use the workflow above
 when recovering a stale wheel or preparing an install for wheel verification.
 
+## Exact-HEAD validation
+
+`./scripts/test-python-exact-head.sh` exports the exact `HEAD` commit to a
+temporary directory under `target/`, creates a Python 3.12 environment there,
+and installs both locked development and reference dependency groups. Local
+edits are excluded. It builds with locked Maturin and Cargo dependencies,
+force-installs the release wheel, verifies native-extension provenance, and
+checks for PyTorch 2.13.0 before running the full unittest suite.
+
+The script clears inherited environment, import, optimization, and warning
+settings, including ambient Cargo, PyO3, and Python runtime settings. It selects
+and verifies the committed Rust channel, uses a fresh Cargo home, rejects
+`.cargo/config` files above the archived checkout, and ignores external uv
+configuration. Git and tar settings are cleared, and each extracted file is
+checked against `HEAD`. It rejects a symlinked `target/` and uses its verified
+physical path to keep artifacts inside the worktree. `CUDA_VISIBLE_DEVICES` is
+preserved so hardware-aware tests use available GPUs and skip CUDA cases when
+PyTorch reports none.
+
 ## Optional native CUDA runtime
 
 CPU builds need neither the CUDA toolkit nor a CUDA runtime. The native backend
@@ -97,7 +116,10 @@ CUDA float32 tensor addition uses `+`, `Tensor.add`, or `torch.add` with
 default-equivalent alpha, including offset views, scalars and empties. The Rust
 API is `Tensor::add`. It loads embedded PTX through `libcuda.so.1` (`nvcuda.dll`
 on Windows) and the driver JIT; nvcc and NVRTC are not used. Results complete
-on the legacy default stream before return. Other CUDA math, CUDA autograd,
+on the legacy default stream before return. Contiguous float32 CUDA negation
+(`-x`, `neg`, and `negative` methods/functions) also supports scalars, empties,
+and contiguous offset views; see [validation](cuda-neg-validation.md).
+Noncontiguous CUDA negation, compiled CUDA negation, other CUDA math, CUDA autograd,
 asynchronous transfers, dtype changes, unindexed CUDA targets, nondefault
 streams, and general CUDA runtime management remain unsupported.
 
@@ -105,9 +127,9 @@ After a current-worktree release build, run the focused hardware tests:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest \
-  tests.test_cuda_add tests.test_cuda_host_transfer tests.test_cuda_native_views tests.test_cuda_zero_roundtrip
+  tests.test_cuda_neg tests.test_cuda_add tests.test_cuda_host_transfer tests.test_cuda_native_views tests.test_cuda_zero_roundtrip
 CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest \
-  tests.test_cuda_add.CudaAddDeviceTests tests.test_cuda_host_transfer.CudaHostTransferDeviceGuardTests
+  tests.test_cuda_neg.CudaNegDeviceTests tests.test_cuda_add.CudaAddDeviceTests tests.test_cuda_host_transfer.CudaHostTransferDeviceGuardTests
 # Standalone Rust needs TORCH_RS_CUDART set when libcudart is not on the loader path.
 CUDA_VISIBLE_DEVICES=0 cargo test --locked --test cuda_add
 CUDA_VISIBLE_DEVICES=0 cargo test --locked cuda

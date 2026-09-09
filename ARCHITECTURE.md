@@ -4,7 +4,8 @@
 tensor core. The native implementation is intentionally small today: tensors
 carry strided CPU `float32` storage and optional native CUDA `float32` storage,
 Python-facing metadata objects, selected CPU operators, and limited eager
-reverse-mode autograd. CUDA storage, transfers, and same-shape contiguous addition work without Python.
+reverse-mode autograd. Native CUDA storage and transfers, same-shape contiguous
+addition, and contiguous negation execute without Python.
 
 ## Source Map
 
@@ -12,9 +13,9 @@ reverse-mode autograd. CUDA storage, transfers, and same-shape contiguous additi
 | --- | --- | --- |
 | Crate entry | [src/lib.rs](src/lib.rs) | Declares the Rust modules and re-exports `Tensor`, `TensorError`, `DType`, `Device`, and `MemoryFormat`. Python-only modules are gated behind `python-bindings`. |
 | Storage | [src/storage.rs](src/storage.rs) | Owns `Storage`, native CPU/CUDA payload dispatch, the CPU `f32` payload, inline scalar storage, owned vectors, and mutex-backed leaf-gradient buffers. |
-| CUDA backend | [src/cuda.rs](src/cuda.rs), [src/cuda/pointwise.rs](src/cuda/pointwise.rs), [src/cuda/pool.rs](src/cuda/pool.rs), [src/cuda/add.ptx](src/cuda/add.ptx) | Loads the optional CUDA runtime, owns device allocations, restores the calling thread's device, and performs synchronous host-to-device and device-to-host transfers from/to Rust buffers. A front cache retains at most 32 buffers / 64 MiB across devices; optional private pools budget another 256 MiB of unused backing per device, as detailed below. The optional driver loads an embedded general float32 addition kernel. Python only discovers optional wheel library paths. |
+| CUDA backend | [src/cuda.rs](src/cuda.rs), [src/cuda/pointwise.rs](src/cuda/pointwise.rs), [src/cuda/pool.rs](src/cuda/pool.rs), [src/cuda/add.ptx](src/cuda/add.ptx), [src/cuda/neg.ptx](src/cuda/neg.ptx) | Loads the optional CUDA runtime, owns device allocations, restores the calling thread's device, and performs synchronous host-to-device and device-to-host transfers from/to Rust buffers. A front cache retains at most 32 buffers / 64 MiB across devices; optional private pools budget another 256 MiB of unused backing per device, as detailed below. The optional driver loads embedded contiguous float32 addition and negation kernels. Python only discovers optional wheel library paths. |
 | Dimension reduction kernels | [src/reduction.rs](src/reduction.rs) | Uses layout-aware slices and four-level float32 accumulation for rank-2 single-axis sums and means. [src/parallel.rs](src/parallel.rs) manages an explicit worker budget; large reductions split independent outputs without changing their accumulation order. |
-| Tensor layout | [src/tensor.rs](src/tensor.rs) | `Tensor` stores shared storage plus shape, strides, storage offset, element count, output number, view grad state, and optional autograd metadata. It also implements contiguity, view, stride, indexing, and materialization helpers. Integer-size split and chunk reuse slice views and one shared multi-output backward node per call. |
+| Tensor layout | [src/tensor.rs](src/tensor.rs) | `Tensor` stores shared storage plus shape, strides, storage offset, element count, output number, view grad state, and optional autograd metadata. It also implements contiguity, view, stride, indexing, and materialization helpers. Integer-size and list/tuple-section split and chunk reuse `partition_dimension` slice views and one shared multi-output backward node per call; explicit sections use `SplitWithSizes` metadata. |
 | Metadata types | [src/dtype.rs](src/dtype.rs), [src/device.rs](src/device.rs), [src/memory_format.rs](src/memory_format.rs) | Define the currently compiled native dtype/device/memory-format enums and query behavior. |
 | Tensor operations | [src/tensor.rs](src/tensor.rs) | Constructors, unary and binary kernels, reductions, matrix multiply, layout transforms, and backward kernels live with the core tensor representation. |
 | Autograd | [src/tensor.rs](src/tensor.rs), [src/autograd_node.rs](src/autograd_node.rs), [src/grad_mode.rs](src/grad_mode.rs) | `AutogradMeta`, `GradFn`, `SavedTensor`, backward traversal, VJP kernels, Python-visible node names, and thread-local grad-mode context state. |
@@ -130,7 +131,13 @@ to avoid the copy engine's per-row cost. Large gaps are always skipped; no
 allocation or transfer grows with an arbitrary backing span. Packed outputs
 retain CPU clone's dimension ordering, including transposed and selected views.
 CUDA addition accepts same-shape contiguous float32 inputs on one device,
-including offsets, scalars and empty tensors. Other CUDA materialization and
+including offsets, scalars and empty tensors. Native float32 CUDA negation
+also accepts contiguous inputs, offsets, scalars, and empties. The
+[src/cuda/neg.ptx](src/cuda/neg.ptx) sign-bit kernel uses the shared 64-bit
+grid-stride launcher, fresh device storage, device guards, and synchronized
+completion. Noncontiguous CUDA negation, CUDA autograd, and compiled CUDA
+negation remain unsupported; see [validation](docs/cuda-neg-validation.md).
+Other CUDA materialization and
 arithmetic reject at the operation boundary.
 Direct public CUDA factory allocation remains rank-1 float32 zeros without
 autograd. Transfers do not add dtype conversions, autograd (even under

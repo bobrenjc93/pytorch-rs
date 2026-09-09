@@ -1,0 +1,13 @@
+test_buffer_errors_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_buffer_errors_match_pytorch_2_13) ... ok
+test_buffer_only_exporters_are_rejected_like_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_buffer_only_exporters_are_rejected_like_pytorch_2_13) ... ok
+test_bytes_and_character_views_match_dtype_sensitive_pytorch_dispatch (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_bytes_and_character_views_match_dtype_sensitive_pytorch_dispatch) ... ok
+test_float16_edge_value_bits_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_float16_edge_value_bits_match_pytorch_2_13) ... ok
+test_numeric_buffers_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_numeric_buffers_match_pytorch_2_13) ... ok
+test_numpy_and_ctypes_sequence_dispatch_matches_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_numpy_and_ctypes_sequence_dispatch_matches_pytorch_2_13) ... ok
+test_sequence_length_exceptions_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_sequence_length_exceptions_match_pytorch_2_13) ... ok
+test_strided_reversed_and_empty_buffers_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_strided_reversed_and_empty_buffers_match_pytorch_2_13) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.023s
+
+OK

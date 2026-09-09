@@ -26,12 +26,7 @@ class TopLevelSplitTests(unittest.TestCase):
                              [[0., 1., 2.], [3., 4., 5.], [6.]])
             self.assertTrue(outputs[0].is_set_to(source.narrow(0, 0, 3)))
 
-    def test_unsupported_sections_and_metadata_are_explicit(self):
-        source = torch.ones((4,))
-        for sections in ([2, 2], (2, 2), [], ()):
-            with self.subTest(sections=sections):
-                with self.assertRaisesRegex(NotImplementedError, 'section-list'):
-                    torch.split(source, sections)
+    def test_unsupported_metadata_is_explicit(self):
         class DuckTensor:
             dtype = torch.float32
             device = torch.device('cpu')
@@ -64,8 +59,9 @@ class TopLevelSplitTests(unittest.TestCase):
     def test_real_cuda_input_is_rejected(self):
         source = torch.zeros((5,), device='cuda:0')
         self.assertEqual(str(source.device), 'cuda:0')
-        with self.assertRaisesRegex(NotImplementedError, 'exact native CPU float32'):
-            torch.split(source, 2)
+        for size in (2, [0, 2, 3]):
+            with self.assertRaisesRegex(NotImplementedError, 'exact native CPU float32'):
+                torch.split(source, size)
 
 
 if __name__ == '__main__':

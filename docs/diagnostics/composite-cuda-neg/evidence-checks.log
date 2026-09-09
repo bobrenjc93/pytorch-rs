@@ -1,0 +1,8 @@
+Verified clean measured commit, source and harness hashes, build/run/log receipts, 18 CUDA trials, immutable successful inputs, all 12 unsupported slots, local interpreter/package/extension/runtime paths, 100 paired text cells, medians/MAD/geomeans, and unchanged historical workload bytes.
+Measured commit: 519f375c1f11cf66e3e83f3158c632cd171ec7a3
+Verified identical CUDA matrix/seeds/accounting and text matrix/order/sample treatment; all unsupported outcomes and slow text results retained.
+............................
+----------------------------------------------------------------------
+Ran 28 tests in 16.982s
+
+OK
