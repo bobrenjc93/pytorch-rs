@@ -81,9 +81,10 @@ a subprocess additionally blocks installed-PyTorch imports.
 
 Run `tests.test_compile_cuda_neg` on GPU 0 and
 `tests.test_compile_cuda_neg.CompileCudaNegDeviceTests` on GPUs 0,1 alongside the
-existing boundary tests below. See [source candidate validation](compile-cuda-neg-validation.md)
-for raw logs and source-PR build evidence measured at clean commit
-`c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b`.
+existing boundary tests below. See [candidate validation](compile-cuda-neg-validation.md)
+for raw logs and fresh build evidence measured at clean integrated commit
+`df1964bd297b6368bf8eb3b235394cde5f6e723b`. Source-PR reports remain pinned to
+their original measured revisions in that guide.
 The fixed scoring corpora and historical measurements are unchanged. The frozen
 addition-only diagnostic retains two obsolete `reject_neg` expectations and
 returns exit 1 on supported negation; those are historical expectation failures,

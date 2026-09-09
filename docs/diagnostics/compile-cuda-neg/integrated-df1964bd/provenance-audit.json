@@ -1,0 +1,239 @@
+{
+  "checked_at": "2026-09-09T21:53:29.029444+00:00",
+  "commit": "df1964bd297b6368bf8eb3b235394cde5f6e723b",
+  "status": "clean",
+  "source": {
+    "commit": "df1964bd297b6368bf8eb3b235394cde5f6e723b",
+    "source_sha256": "8410743f4640d29b08c1599f025161046e2ac785f0284c9fcf137abcb79494e9",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "installed": [
+    {
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+      "native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/bin/python",
+      "prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv",
+      "native_sha256": "dcd9618c0afa51ae9c30ff98edb5566204fda17a9523ae5c8e0a74ccb7b56a89"
+    },
+    {
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/torch-compile-coverage/venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+      "native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/torch-compile-coverage/venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/torch-compile-coverage/venv/bin/python",
+      "prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/torch-compile-coverage/venv",
+      "native_sha256": "dcd9618c0afa51ae9c30ff98edb5566204fda17a9523ae5c8e0a74ccb7b56a89"
+    }
+  ],
+  "source_bundle_hashes_preserved": 49,
+  "fixed_compile_cases": 38,
+  "fixed_math_cases": 6,
+  "fixed_performance_cases": 4,
+  "fixed_diagnostic_cases": [
+    168,
+    12
+  ],
+  "performance_matrix_reference_sampling_unchanged": true,
+  "current_artifact_worktree_paths_verified": true,
+  "current_files_checked": [
+    "source-files.json",
+    "build.log",
+    "install.log",
+    "checks-record.json",
+    "provenance.log",
+    "build-record.json",
+    "preflight.log",
+    "compile-evaluation.log",
+    "compile-evaluation.json",
+    "focused.log",
+    "two-device.log",
+    "scope-audit.json",
+    "neg-add-single.log",
+    "neg-add-single.json",
+    "neg-add-multi.log",
+    "neg-add-multi.json",
+    "cuda-math.log",
+    "cuda-math.json",
+    "performance-cache-record.json",
+    "cuda-performance-fresh.log",
+    "cuda-performance-fresh.json",
+    "cuda-performance.log",
+    "cuda-performance.json",
+    "capture-complete.json",
+    "provenance-audit.log"
+  ],
+  "performance": [
+    {
+      "report": "cuda-performance-fresh.json",
+      "aggregates": {
+        "common_success_geomean_speed_ratio": 1.4672754597636624,
+        "common_success_shape_count": 4,
+        "common_success_weight": 1.0,
+        "coverage_adjusted_capped_speed_ratio": 0.9304278057173108,
+        "coverage_adjusted_overall_percent": 93.04278057173107,
+        "denominator_weight": 1.0,
+        "full_matrix_weight": 1.0,
+        "per_workload": [
+          {
+            "candidate_status": "ok",
+            "capped_steady_speed_ratio": 0.7217112228692429,
+            "eligible_cuda_compile_evidence": true,
+            "name": "square_256x256",
+            "pytorch_cold_first_call_us": 3159146.09,
+            "pytorch_steady_median_us": 43.626,
+            "shape": [
+              256,
+              256
+            ],
+            "steady_speed_ratio": 0.7217112228692429,
+            "torch_rs_cold_first_call_us": 906.782,
+            "torch_rs_steady_median_us": 60.448,
+            "weight": 0.25,
+            "weighted_score_contribution_percent": 18.042780571731072
+          },
+          {
+            "candidate_status": "ok",
+            "capped_steady_speed_ratio": 1.0,
+            "eligible_cuda_compile_evidence": true,
+            "name": "square_1024x1024",
+            "pytorch_cold_first_call_us": 834018.97,
+            "pytorch_steady_median_us": 614.3126666666666,
+            "shape": [
+              1024,
+              1024
+            ],
+            "steady_speed_ratio": 1.9790384534845884,
+            "torch_rs_cold_first_call_us": 249.207,
+            "torch_rs_steady_median_us": 310.4096666666667,
+            "weight": 0.25,
+            "weighted_score_contribution_percent": 25.0
+          },
+          {
+            "candidate_status": "ok",
+            "capped_steady_speed_ratio": 1.0,
+            "eligible_cuda_compile_evidence": true,
+            "name": "tall_4096x256",
+            "pytorch_cold_first_call_us": 1166860.866,
+            "pytorch_steady_median_us": 761.779,
+            "shape": [
+              4096,
+              256
+            ],
+            "steady_speed_ratio": 1.9857973429865636,
+            "torch_rs_cold_first_call_us": 254.405,
+            "torch_rs_steady_median_us": 383.6136666666667,
+            "weight": 0.25,
+            "weighted_score_contribution_percent": 25.0
+          },
+          {
+            "candidate_status": "ok",
+            "capped_steady_speed_ratio": 1.0,
+            "eligible_cuda_compile_evidence": true,
+            "name": "wide_256x4096",
+            "pytorch_cold_first_call_us": 615742.563,
+            "pytorch_steady_median_us": 744.75,
+            "shape": [
+              256,
+              4096
+            ],
+            "steady_speed_ratio": 1.6341578299876098,
+            "torch_rs_cold_first_call_us": 410.701,
+            "torch_rs_steady_median_us": 455.7393333333333,
+            "weight": 0.25,
+            "weighted_score_contribution_percent": 25.0
+          }
+        ],
+        "torch_rs_cuda_compile_score_percent": 93.04278057173107,
+        "workload_count": 4,
+        "zero_credit_cell_count": 0,
+        "zero_credit_unsupported_cell_count": 0,
+        "zero_credit_weight": 0
+      }
+    },
+    {
+      "report": "cuda-performance.json",
+      "aggregates": {
+        "common_success_geomean_speed_ratio": 0.9027332852496183,
+        "common_success_shape_count": 4,
+        "common_success_weight": 1.0,
+        "coverage_adjusted_capped_speed_ratio": 0.7737623833530365,
+        "coverage_adjusted_overall_percent": 77.37623833530365,
+        "denominator_weight": 1.0,
+        "full_matrix_weight": 1.0,
+        "per_workload": [
+          {
+            "candidate_status": "ok",
+            "capped_steady_speed_ratio": 1.0,
+            "eligible_cuda_compile_evidence": true,
+            "name": "square_256x256",
+            "pytorch_cold_first_call_us": 2096149.335,
+            "pytorch_steady_median_us": 740.8373333333334,
+            "shape": [
+              256,
+              256
+            ],
+            "steady_speed_ratio": 1.6834954706830978,
+            "torch_rs_cold_first_call_us": 2014.938,
+            "torch_rs_steady_median_us": 440.059,
+            "weight": 0.25,
+            "weighted_score_contribution_percent": 25.0
+          },
+          {
+            "candidate_status": "ok",
+            "capped_steady_speed_ratio": 1.0,
+            "eligible_cuda_compile_evidence": true,
+            "name": "square_1024x1024",
+            "pytorch_cold_first_call_us": 47907.592,
+            "pytorch_steady_median_us": 627.9233333333334,
+            "shape": [
+              1024,
+              1024
+            ],
+            "steady_speed_ratio": 1.943401326296069,
+            "torch_rs_cold_first_call_us": 1988.949,
+            "torch_rs_steady_median_us": 323.1053333333333,
+            "weight": 0.25,
+            "weighted_score_contribution_percent": 25.0
+          },
+          {
+            "candidate_status": "ok",
+            "capped_steady_speed_ratio": 1.0,
+            "eligible_cuda_compile_evidence": true,
+            "name": "tall_4096x256",
+            "pytorch_cold_first_call_us": 50447.935,
+            "pytorch_steady_median_us": 755.6963333333334,
+            "shape": [
+              4096,
+              256
+            ],
+            "steady_speed_ratio": 2.135567914422383,
+            "torch_rs_cold_first_call_us": 1865.211,
+            "torch_rs_steady_median_us": 353.862,
+            "weight": 0.25,
+            "weighted_score_contribution_percent": 25.0
+          },
+          {
+            "candidate_status": "ok",
+            "capped_steady_speed_ratio": 0.09504953341214602,
+            "eligible_cuda_compile_evidence": true,
+            "name": "wide_256x4096",
+            "pytorch_cold_first_call_us": 46497.368,
+            "pytorch_steady_median_us": 44.086666666666666,
+            "shape": [
+              256,
+              4096
+            ],
+            "steady_speed_ratio": 0.09504953341214602,
+            "torch_rs_cold_first_call_us": 241.515,
+            "torch_rs_steady_median_us": 463.8283333333333,
+            "weight": 0.25,
+            "weighted_score_contribution_percent": 2.3762383353036505
+          }
+        ],
+        "torch_rs_cuda_compile_score_percent": 77.37623833530365,
+        "workload_count": 4,
+        "zero_credit_cell_count": 0,
+        "zero_credit_unsupported_cell_count": 0,
+        "zero_credit_weight": 0
+      }
+    }
+  ]
+}

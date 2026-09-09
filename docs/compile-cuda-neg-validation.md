@@ -5,6 +5,65 @@ The shared marker-free eager graph path accepts unary minus, `Tensor.neg()` and
 with same-shape addition. This is unfused bounded capture, not a general
 Inductor compiler or a performance-parity claim. See the [owning guide](compile-cuda-add.md).
 
+## Integrated clean-commit evidence
+
+The current capture measures clean implementation commit
+`df1964bd297b6368bf8eb3b235394cde5f6e723b` in the composite worktree. It supersedes
+the source-PR measurements below for validation of the integrated candidate.
+The release wheel was rebuilt in a new empty Cargo target, using the existing
+locked worktree dependencies. Installed Python sources and native binaries were
+verified against the checkout and wheel. Every measurement checked the complete
+tracked source snapshot and empty git status before and after execution. Reports
+were staged under `target/post-commit-df1964bd/reports/` and copied byte-for-byte
+only after the captures and provenance audit completed. This refresh changes
+only evidence and its documentation.
+
+The [build receipt](diagnostics/compile-cuda-neg/integrated-df1964bd/build-record.json),
+[command receipts](diagnostics/compile-cuda-neg/integrated-df1964bd/checks-record.json),
+[source hashes](diagnostics/compile-cuda-neg/integrated-df1964bd/source-files.json),
+[provenance audit](diagnostics/compile-cuda-neg/integrated-df1964bd/provenance-audit.json),
+and [artifact hashes](diagnostics/compile-cuda-neg/integrated-df1964bd/artifact-sha256.json)
+bind the actual source/native hashes, commands, timestamps, environments, caches,
+local import/build paths and raw results. All current worktree paths resolve
+inside this composite. The original source-PR, author, baseline, kernel and
+earlier composite artifacts remain unchanged.
+
+This capture used CPython 3.12.14+meta, PyTorch 2.13.0+cu130, CUDA runtime 13.0,
+NVIDIA H100 and driver 580.82.07. Rust/Cargo 1.92.0 built the release ABI3
+extension with thin LTO and one codegen unit. Native neg/add uses driver-JIT PTX;
+the unchanged private performance benchmark uses nvcc 12.6.85. This was a fresh
+native build, not a dependency-installation timing.
+
+| Check | Result | Raw evidence |
+| --- | --- | --- |
+| Focused integrated tests | 124 tests; passed, 6 device-specific skips | [log](diagnostics/compile-cuda-neg/integrated-df1964bd/focused.log) |
+| Two-device checks, GPUs 0,1 | 6 passed | [log](diagnostics/compile-cuda-neg/integrated-df1964bd/two-device.log) |
+| Fixed compile evaluator | 38/38 eligible cases passed | [report](diagnostics/compile-cuda-neg/integrated-df1964bd/compile-evaluation.json) |
+| Fixed CUDA math evaluator | 2/6 cases passed on all three seeds | [report](diagnostics/compile-cuda-neg/integrated-df1964bd/cuda-math.json) |
+| Current `neg_add_v1` diagnostic | 168 single-device and 12 two-device expectations met | [GPU 0](diagnostics/compile-cuda-neg/integrated-df1964bd/neg-add-single.json), [GPUs 0,1](diagnostics/compile-cuda-neg/integrated-df1964bd/neg-add-multi.json) |
+| Fixed CUDA performance, fresh caches | 4/4 correct; 1.4673x geometric-mean ratio, 93.04% capped score | [report](diagnostics/compile-cuda-neg/integrated-df1964bd/cuda-performance-fresh.json) |
+| Fixed CUDA performance, reused caches | 4/4 correct; 0.9027x geometric-mean ratio, 77.38% capped score | [report](diagnostics/compile-cuda-neg/integrated-df1964bd/cuda-performance.json) |
+
+The compile denominator remains 38, and the CUDA math denominator remains six
+with seeds 9173, 260909 and 903217. All four unsupported math cases retain zero
+credit. The maintained diagnostic separately records 128 native passes and 40
+unsupported outcomes on GPU 0, and eight passes and four unsupported outcomes
+on GPUs 0,1. Unsupported outcomes are successful guard checks, not native
+execution credit. The frozen addition-only diagnostic and its obsolete
+`reject_neg` results remain preserved below.
+
+Both performance runs retain the same four shapes, reference/options, five
+warmups, 17 samples, three calls per sample, synchronization and materialization.
+The first run used new CUDA/Triton/Inductor cache directories and rebuilt both
+private kernel libraries; the second reused those caches. The
+[cache receipt](diagnostics/compile-cuda-neg/integrated-df1964bd/performance-cache-record.json)
+records the old caches preserved locally and the new paths. These were the two
+predeclared runs, with no selection or retry of slow outcomes. Raw timings,
+dispersion, memory pressure and zero-credit rules remain intact. The results do
+not establish performance non-regression or general neg/add compilation parity.
+Full suites and unrelated historical failure reproductions were not rerun in
+this evidence step; independent review and merge gates still apply.
+
 ## Source-PR clean-commit evidence
 
 The retained source-PR reports measure clean implementation commit
