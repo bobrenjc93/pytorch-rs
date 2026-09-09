@@ -6,9 +6,6 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-#[cfg(feature = "python-bindings")]
-use pyo3::prelude::Python;
-
 use crate::autograd_node::AutogradNode;
 use crate::device::Device;
 use crate::dtype::DType;
@@ -30,6 +27,34 @@ static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 #[allow(clippy::cast_precision_loss)]
 fn full_reduction_mean_divisor(elements: usize) -> f32 {
     elements as f32
+}
+
+fn reduced_rank_two_sum_shape(
+    rows: usize,
+    columns: usize,
+    dimension: usize,
+    keepdim: bool,
+) -> Result<Vec<usize>, TensorError> {
+    let mut shape = try_result_vector(if keepdim { 2 } else { 1 }, rows.saturating_mul(columns))?;
+    match (dimension, keepdim) {
+        (0, false) => shape.push(columns),
+        (0, true) => {
+            shape.push(1);
+            shape.push(columns);
+        }
+        (1, false) => shape.push(rows),
+        (1, true) => {
+            shape.push(rows);
+            shape.push(1);
+        }
+        _ => {
+            return Err(TensorError::DimensionOutOfRange {
+                dimension: dimension_for_error(dimension),
+                rank: 2,
+            });
+        }
+    }
+    Ok(shape)
 }
 
 struct AutogradMeta {
@@ -136,6 +161,7 @@ enum GradFn {
     ZeroVjp(ZeroVjpNode),
     Sum {
         input: SavedTensor,
+        reduction: SumGradient,
     },
     Mean {
         input: SavedTensor,
@@ -184,6 +210,12 @@ enum TransformMapping {
     },
 }
 
+#[derive(Clone, Copy)]
+enum SumGradient {
+    Full,
+    Dimension { dimension: usize },
+}
+
 impl SavedTensor {
     fn take_parent(&mut self, pending: &mut Vec<Arc<AutogradMeta>>) {
         if let Some(parent) = self.autograd.take() {
@@ -211,7 +243,7 @@ impl GradFn {
             }
             Self::MultiplyScalar { input, .. }
             | Self::Negate { input, .. }
-            | Self::Sum { input }
+            | Self::Sum { input, .. }
             | Self::Mean { input, .. }
             | Self::Transform { input, .. }
             | Self::Unbind { input, .. }
@@ -791,9 +823,11 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
-    #[cfg(feature = "python-bindings")]
-    pub(crate) fn cuda_zeros_float32(
-        py: Python<'_>,
+    /// Allocates a rank-one float32 CUDA zero tensor using the optional runtime.
+    ///
+    /// # Errors
+    /// Returns layout, allocation, or CUDA runtime errors.
+    pub fn cuda_zeros_float32(
         shape: impl Into<Vec<usize>>,
         device: Device,
     ) -> Result<Self, TensorError> {
@@ -811,7 +845,7 @@ impl Tensor {
         };
         let (elements, strides) = validated_layout(&shape)?;
         validate_storage_capacity(elements)?;
-        let storage = Storage::cuda_zeros_float32(py, elements, device_index)?;
+        let storage = Storage::cuda_zeros_float32(elements, device_index)?;
         Ok(Self {
             storage: Arc::new(storage),
             shape,
@@ -2666,40 +2700,44 @@ impl Tensor {
         self.try_contiguous_impl(memory_format, false, AutogradNode::Copy)
     }
 
-    #[cfg(feature = "python-bindings")]
-    pub(crate) fn try_copy_cuda_to_cpu(&self, py: Python<'_>) -> Result<Self, TensorError> {
+    /// Copies a CUDA tensor or view to CPU, preserving dense strides.
+    ///
+    /// # Errors
+    /// Returns allocation, unsupported gradient, or CUDA runtime errors.
+    pub fn try_copy_cuda_to_cpu(&self) -> Result<Self, TensorError> {
         if self.device().is_cpu() {
-            return self.try_copy_with_memory_format(MemoryFormat::Preserve);
-        }
-        if self.dtype() != DType::Float32 {
-            return Err(TensorError::UnsupportedCudaZeroTensor {
-                reason: "dtype is not float32",
-            });
-        }
-        if self.shape.len() != 1 {
-            return Err(TensorError::UnsupportedCudaZeroTensor {
-                reason: "shape rank is not 1",
-            });
-        }
-        if self.offset != 0 || !self.is_contiguous() || self.elements != self.storage.len() {
-            return Err(TensorError::UnsupportedCudaZeroTensor {
-                reason: "tensor is not the original contiguous allocation",
-            });
+            return self.try_clone();
         }
         if self.requires_grad() {
             return Err(TensorError::UnsupportedCudaZeroTensor {
                 reason: "requires_grad is true",
             });
         }
-
-        let data = self.storage.copy_cuda_to_cpu_float32(py)?;
-        Ok(Self::from_owned_parts(
+        let span = if self.elements == 0 {
+            0
+        } else {
+            self.shape
+                .iter()
+                .zip(&self.strides)
+                .try_fold(1usize, |span, (&size, &stride)| {
+                    span.checked_add((size - 1).checked_mul(stride)?)
+                })
+                .ok_or(TensorError::IndexCalculationOverflow)?
+        };
+        let data = self.storage.copy_cuda_to_cpu_float32(self.offset, span)?;
+        let mut host = Self::from_owned_parts(
             data,
             self.shape.clone(),
             self.strides.clone(),
             DType::Float32,
             Device::Cpu,
-        ))
+        );
+        host.elements = self.elements;
+        if span == self.elements {
+            Ok(host)
+        } else {
+            host.try_clone()
+        }
     }
 
     fn try_contiguous_impl(
@@ -4966,11 +5004,81 @@ impl Tensor {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Sum {
                         input: SavedTensor::from_tensor_metadata(self),
+                        reduction: SumGradient::Full,
                     })),
                 },
             }));
         }
         output
+    }
+
+    /// Sums a rank-two tensor along one normalized dimension.
+    ///
+    /// The reduction materializes a fresh contiguous output. Empty reduction
+    /// axes produce zero-filled outputs for each unreduced coordinate, matching
+    /// `PyTorch`'s additive identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when called for a non-rank-two tensor, an invalid
+    /// dimension, or when result allocation fails.
+    pub fn sum_rank_two_dimension(
+        &self,
+        dimension: usize,
+        keepdim: bool,
+    ) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("sum", self.device())?;
+        let [rows, columns] = self.shape.as_slice() else {
+            return Err(TensorError::DimensionOutOfRange {
+                dimension: dimension_for_error(dimension),
+                rank: self.shape.len(),
+            });
+        };
+        if dimension >= 2 {
+            return Err(TensorError::DimensionOutOfRange {
+                dimension: dimension_for_error(dimension),
+                rank: self.shape.len(),
+            });
+        }
+
+        let shape = reduced_rank_two_sum_shape(*rows, *columns, dimension, keepdim)?;
+        let elements = element_count(&shape)?;
+        validate_storage_capacity(elements)?;
+        let strides = contiguous_strides(&shape, elements)?;
+        let data = self.materialize_rank_two_dimension_sum(dimension, elements)?;
+        let mut output = Self::from_owned_parts(data, shape, strides, self.dtype(), self.device());
+        if self.requires_grad() && is_grad_enabled() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Sum {
+                        input: SavedTensor::from_tensor_metadata(self),
+                        reduction: SumGradient::Dimension { dimension },
+                    })),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
+    fn materialize_rank_two_dimension_sum(
+        &self,
+        dimension: usize,
+        output_elements: usize,
+    ) -> Result<Vec<f32>, TensorError> {
+        let mut data = filled_storage(output_elements, 0.0)?;
+        if self.elements == 0 {
+            return Ok(data);
+        }
+        self.storage.with_cpu_values(|values| {
+            crate::reduction::dimension_sum(
+                &values[self.offset..],
+                &mut data,
+                self.shape[dimension],
+                self.strides[dimension],
+                self.strides[1 - dimension],
+            );
+        });
+        Ok(data)
     }
 
     /// Computes the arithmetic mean of every element.
@@ -5669,7 +5777,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                         }
                         GradFn::MultiplyScalar { input, .. }
                         | GradFn::Negate { input, .. }
-                        | GradFn::Sum { input }
+                        | GradFn::Sum { input, .. }
                         | GradFn::Mean { input, .. }
                         | GradFn::Transform { input, .. }
                         | GradFn::Unbind { input, .. }
@@ -5705,7 +5813,9 @@ fn apply_grad_fn(
     gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
     match grad_fn {
-        GradFn::Sum { input } => apply_sum_grad_fn(input, upstream, gradients)?,
+        GradFn::Sum { input, reduction } => {
+            apply_sum_grad_fn(input, *reduction, upstream, gradients)?;
+        }
         GradFn::Mean { input, divisor } => {
             apply_mean_grad_fn(input, *divisor, upstream, gradients)?;
         }
@@ -6340,14 +6450,71 @@ fn apply_squared_difference_grad_fn(
 
 fn apply_sum_grad_fn(
     input: &SavedTensor,
+    reduction: SumGradient,
     upstream: &[f32],
     gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
     if let Some(meta) = &input.autograd {
-        let gradient = filled_storage(input.elements, upstream[0])?;
+        let gradient = match reduction {
+            SumGradient::Full => {
+                let upstream = upstream
+                    .first()
+                    .copied()
+                    .ok_or(TensorError::IndexCalculationOverflow)?;
+                filled_storage(input.elements, upstream)?
+            }
+            SumGradient::Dimension { dimension } => {
+                sum_dimension_backward(input, dimension, upstream)?
+            }
+        };
         add_gradient(gradients, meta, input.output_nr, gradient);
     }
     Ok(())
+}
+
+fn sum_dimension_backward(
+    input: &SavedTensor,
+    dimension: usize,
+    upstream: &[f32],
+) -> Result<Vec<f32>, TensorError> {
+    let [rows, columns] = input.shape.as_slice() else {
+        return Err(TensorError::IndexCalculationOverflow);
+    };
+    if dimension >= 2 {
+        return Err(TensorError::IndexCalculationOverflow);
+    }
+
+    let mut gradient = try_result_vector(input.elements, input.elements)?;
+    if input.elements == 0 {
+        return Ok(gradient);
+    }
+
+    match dimension {
+        0 => {
+            if upstream.len() != *columns {
+                return Err(TensorError::IndexCalculationOverflow);
+            }
+            for _ in 0..*rows {
+                gradient.extend_from_slice(upstream);
+            }
+        }
+        1 => {
+            if upstream.len() != *rows {
+                return Err(TensorError::IndexCalculationOverflow);
+            }
+            for &value in upstream {
+                gradient.resize(
+                    gradient
+                        .len()
+                        .checked_add(*columns)
+                        .ok_or(TensorError::IndexCalculationOverflow)?,
+                    value,
+                );
+            }
+        }
+        _ => unreachable!("rank-two sum dimensions are validated above"),
+    }
+    Ok(gradient)
 }
 
 fn apply_mean_grad_fn(

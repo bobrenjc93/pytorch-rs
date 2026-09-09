@@ -678,7 +678,7 @@ Example::
                 let inner = tensor
                     .try_borrow()?
                     .inner
-                    .try_copy_cuda_to_cpu(slf.py())
+                    .try_copy_cuda_to_cpu()
                     .map_err(|error| tensor_error(&error))?;
                 return Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any());
             }
@@ -807,7 +807,7 @@ Example::
             let inner = tensor
                 .try_borrow()?
                 .inner
-                .try_copy_cuda_to_cpu(slf.py())
+                .try_copy_cuda_to_cpu()
                 .map_err(|error| tensor_error(&error))?;
             return Py::new(slf.py(), PyTensor::new(inner));
         }
@@ -1740,7 +1740,7 @@ Example::
             let inner = tensor
                 .try_borrow()?
                 .inner
-                .try_copy_cuda_to_cpu(slf.py())
+                .try_copy_cuda_to_cpu()
                 .map_err(|error| tensor_error(&error))?;
             return Py::new(slf.py(), PyTensor::new(inner));
         }
@@ -1894,7 +1894,7 @@ fn as_tensor_native_tensor(
         let inner = tensor
             .try_borrow()?
             .inner
-            .try_copy_cuda_to_cpu(py)
+            .try_copy_cuda_to_cpu()
             .map_err(|error| tensor_error(&error))?;
         return Ok(Py::new(py, PyTensor::new(inner))?.into_any());
     }
@@ -6281,17 +6281,25 @@ fn apply_sum_reduction(
         }
         BoundSumReduction::Dimension { dimension, keepdim } => {
             let dimension = extract_bound_sum_dimension(dimension)?;
-            if input.shape().len() != 1 {
-                return Err(sum_unsupported_reduction());
+            match input.shape().len() {
+                1 => {
+                    normalize_dimension(dimension, input.shape().len())?;
+                    let mut output = input.sum();
+                    if *keepdim {
+                        output = output
+                            .reshape([1_i64])
+                            .map_err(|error| tensor_error(&error))?;
+                    }
+                    output
+                }
+                2 => {
+                    let dimension = normalize_dimension(dimension, input.shape().len())?;
+                    input
+                        .sum_rank_two_dimension(dimension, *keepdim)
+                        .map_err(|error| tensor_error(&error))?
+                }
+                _ => return Err(sum_unsupported_reduction()),
             }
-            normalize_dimension(dimension, input.shape().len())?;
-            let mut output = input.sum();
-            if *keepdim {
-                output = output
-                    .reshape([1_i64])
-                    .map_err(|error| tensor_error(&error))?;
-            }
-            output
         }
         BoundSumReduction::Unsupported => {
             return Err(sum_unsupported_reduction());
@@ -6445,7 +6453,13 @@ fn extract_bound_mean_dimension(dimension: &BoundSumDimension<'_>) -> PyResult<i
 
 fn sum_unsupported_reduction() -> PyErr {
     PyNotImplementedError::new_err(
-        "sum(): only full reductions with dim=None and rank-1 dim=0/-1 reductions are supported; broader dim reductions and concrete out are not supported",
+        "sum(): only full reductions with dim=None, rank-1 dim=0/-1 reductions, and rank-2 single-dimension reductions are supported; multi-dim reductions, higher-rank dim reductions, and concrete out are not supported",
+    )
+}
+
+fn sum_unsupported_native_input() -> PyErr {
+    PyNotImplementedError::new_err(
+        "sum(): only exact native CPU float32 Tensor inputs are supported",
     )
 }
 
@@ -9086,9 +9100,17 @@ impl PyTensor {
     #[allow(clippy::doc_markdown)]
     #[doc = "\nsum(dim=None, keepdim=False, dtype=None) -> Tensor\n\nSee :func:`torch.sum`\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
-    fn sum(&self, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+    fn sum(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
         let call = bind_method_sum_arguments(args, kwargs)?;
-        let output = apply_sum_reduction(&self.inner, &call.reduction)?;
+        if !slf.as_any().is_exact_instance_of::<PyTensor>() {
+            return Err(sum_unsupported_native_input());
+        }
+        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+        let output = apply_sum_reduction(&tensor.inner, &call.reduction)?;
         Ok(Self::new(output))
     }
 
@@ -9166,10 +9188,10 @@ impl PyTensor {
             .ok_or_else(|| PyTypeError::new_err("len() of a 0-d tensor"))
     }
 
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+    fn __repr__(&self) -> PyResult<String> {
         let values = if self.inner.device().is_cuda() {
             self.inner
-                .try_copy_cuda_to_cpu(py)
+                .try_copy_cuda_to_cpu()
                 .and_then(|tensor| tensor.try_to_vec())
         } else {
             self.inner.try_to_vec()
@@ -10105,7 +10127,7 @@ fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
                 "zeros(): unindexed CUDA devices are not supported; use 'cuda:0'",
             ));
         }
-        return CoreTensor::cuda_zeros_float32(args.py(), dimensions, device)
+        return CoreTensor::cuda_zeros_float32(dimensions, device)
             .map(PyTensor::new)
             .map_err(|error| creation_factory_error(&error, &shape, scalar_dimension));
     }
@@ -16518,11 +16540,16 @@ fn parse_top_level_sum_input<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<BoundTensorOrTorchFunction<'py>> {
-    if let Ok(tensor) = input.value.cast::<PyTensor>() {
-        return Ok(BoundTensorOrTorchFunction::Tensor(tensor.clone()));
+    if input.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundTensorOrTorchFunction::Tensor(
+            input.value.cast::<PyTensor>()?.clone(),
+        ));
     }
     if let Some(probed) = probe_torch_function_override(&input.value) {
         return Ok(BoundTensorOrTorchFunction::Override(probed));
+    }
+    if input.value.is_instance_of::<PyTensor>() {
+        return Err(sum_unsupported_native_input());
     }
     if overload_mismatch_on_non_tensor {
         return Err(top_level_sum_invalid_combination(positional, keywords)?);
@@ -25521,8 +25548,24 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     Ok(())
 }
 
+#[pyfunction]
+fn _cuda_configure_runtime(paths: Vec<String>) {
+    crate::cuda::configure_candidates(paths);
+}
+#[pyfunction]
+fn _cuda_device_count() -> usize {
+    crate::cuda::device_count()
+}
+#[pyfunction]
+fn _cuda_is_initialized() -> bool {
+    crate::cuda::is_initialized()
+}
+
 #[pymodule]
 fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(_cuda_configure_runtime, module)?)?;
+    module.add_function(wrap_pyfunction!(_cuda_device_count, module)?)?;
+    module.add_function(wrap_pyfunction!(_cuda_is_initialized, module)?)?;
     let py = module.py();
     cpython_compat::initialize_torch_function_descriptor_caller(py)?;
     for (name, enabled) in NATIVE_BUILD_CAPABILITIES {

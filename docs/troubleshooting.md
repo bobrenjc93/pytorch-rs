@@ -60,3 +60,26 @@ VIRTUAL_ENV="$PWD/.venv" PYO3_PYTHON="$PWD/.venv/bin/python" \
 `./scripts/test-python.sh` performs the stricter path: it builds one release
 wheel from the current worktree, force-installs it into `.venv`, verifies native
 extension provenance, and then runs the suite.
+
+## Optional native CUDA runtime
+
+CPU builds need neither the CUDA toolkit nor a CUDA runtime. The native backend
+loads `libcudart` at first use; no CUDA compiler is used for public zero tensors.
+Python discovers libraries from optional `nvidia.cuda_runtime` / `nvidia.cu13`
+wheel packages without importing PyTorch. The supported reference environment
+(`uv sync --locked --no-install-project --group dev --group reference`) includes
+a runtime wheel. System CUDA 12/13 library names are fallback candidates.
+
+For standalone Rust, or to select a particular installed runtime, set
+`TORCH_RS_CUDART` to its absolute shared-library path before the first probe or
+allocation. This override is authoritative: a bad path produces a runtime error
+on allocation and availability probes return false. A runtime or driver error
+never silently creates CPU storage. `cuda::configure_candidates` is also
+available to Rust embedders before the first backend call.
+
+Use `CUDA_VISIBLE_DEVICES=0` for single-GPU checks. Record the loaded libcudart
+path (on Linux, `/proc/self/maps`), PyTorch version, driver and GPU model;
+`nvcc --version` describes the compiler and need not match the runtime. Public
+CUDA tensors support rank-1 float32 zeros and metadata views with synchronous
+`.cpu()` / `.to("cpu")` transfers. CPU-to-CUDA copies, CUDA math/autograd,
+nondefault streams, and general CUDA runtime management remain unsupported.

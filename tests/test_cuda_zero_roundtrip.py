@@ -108,29 +108,21 @@ class CudaZeroRoundtripTests(unittest.TestCase):
 import os
 import resource
 import torch_rs as torch
-from torch_rs import _cuda_public_storage as storage
 
 resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 torch.zeros((1,), device="cuda:0").cpu()
 elements = 4 * 1024 * 1024
 tensor = torch.zeros((elements,), device="cuda:0")
-copy_to_host = storage.CudaFloat32Storage.copy_to_host
 original_limit = resource.getrlimit(resource.RLIMIT_AS)
+with open("/proc/self/statm", encoding="ascii") as statm:
+    virtual_bytes = int(statm.read().split()[0]) * os.sysconf("SC_PAGE_SIZE")
+limit = virtual_bytes + 4 * 1024 * 1024
+if original_limit[1] != resource.RLIM_INFINITY and limit > original_limit[1]:
+    os._exit(77)
 
-def constrained_copy(owner):
-    data = copy_to_host(owner)
-    with open("/proc/self/statm", encoding="ascii") as statm:
-        virtual_bytes = int(statm.read().split()[0]) * os.sysconf("SC_PAGE_SIZE")
-    limit = virtual_bytes + 4 * 1024 * 1024
-    if original_limit[1] != resource.RLIM_INFINITY and limit > original_limit[1]:
-        os._exit(77)
-    # The Python bytes already exist; only the Rust float buffer is constrained.
-    resource.setrlimit(resource.RLIMIT_AS, (limit, original_limit[1]))
-    return data
-
-storage.CudaFloat32Storage.copy_to_host = constrained_copy
 for copy in (tensor.cpu, lambda: tensor.to("cpu")):
     try:
+        resource.setrlimit(resource.RLIMIT_AS, (limit, original_limit[1]))
         copy()
     except RuntimeError as error:
         assert str(error) == f"failed to allocate storage for {elements} elements", str(error)
@@ -139,7 +131,6 @@ for copy in (tensor.cpu, lambda: tensor.to("cpu")):
     finally:
         resource.setrlimit(resource.RLIMIT_AS, original_limit)
 
-storage.CudaFloat32Storage.copy_to_host = copy_to_host
 assert tensor.cpu().numel() == elements
 assert torch.zeros((2,), device="cuda:0").cpu().tolist() == [0.0, 0.0]
 """
@@ -159,14 +150,10 @@ assert torch.zeros((2,), device="cuda:0").cpu().tolist() == [0.0, 0.0]
 
     def test_cuda13_wheel_runtime_without_system_libraries_or_pytorch_import(self):
         script = r"""
-import ctypes
-import ctypes.util
 import importlib.util
 import pathlib
 import sys
-from unittest.mock import patch
 import torch_rs as torch
-from torch_rs import _cuda_public_storage as storage
 
 assert "torch" not in sys.modules
 try:
@@ -181,21 +168,14 @@ cuda13_libraries = {
     for path in (pathlib.Path(location) / "lib").glob("libcudart.so*")
 }
 assert cuda13_libraries
-assert storage._RUNTIME is None
-load_library = ctypes.CDLL
-
-def wheel_only_library(name, *args, **kwargs):
-    if name not in cuda13_libraries:
-        raise OSError("only the CUDA 13 wheel runtime is available in this test")
-    return load_library(name, *args, **kwargs)
-
-with patch.object(ctypes.util, "find_library", return_value=None), patch.object(
-    ctypes, "CDLL", side_effect=wheel_only_library
-):
-    assert torch.cuda.is_available()
-    assert torch.cuda.device_count() == 1
-    assert torch.zeros((3,), device="cuda:0").cpu().tolist() == [0.0] * 3
-assert "nvidia/cu13/lib/libcudart.so" in storage._RUNTIME._name
+# An explicit wheel path forces the native loader to use this runtime.
+import os
+os.environ["TORCH_RS_CUDART"] = sorted(cuda13_libraries)[0]
+assert torch.cuda.is_available()
+assert torch.cuda.device_count() == 1
+assert torch.zeros((3,), device="cuda:0").cpu().tolist() == [0.0] * 3
+with open("/proc/self/maps", encoding="utf8") as maps:
+    assert os.environ["TORCH_RS_CUDART"] in maps.read()
 assert "torch" not in sys.modules
 """
         completed = subprocess.run(

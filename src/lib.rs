@@ -6,6 +6,7 @@
 //! benchmark integrity, and existing performance remain merge gates.
 
 mod autograd_node;
+pub mod cuda;
 mod device;
 mod dtype;
 mod grad_mode;
@@ -67,6 +68,7 @@ mod python_torch_function_mode;
 mod python_torch_function_probe;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_variable_functions;
+mod reduction;
 mod storage;
 mod tensor;
 mod tensor_error;

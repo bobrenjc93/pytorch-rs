@@ -24,3 +24,6 @@ def is_initialized():
     from torch_rs import _cuda_public_storage
 
     return _cuda_public_storage.is_initialized()
+
+# Discover optional wheel runtime paths before the first native allocation.
+from torch_rs import _cuda_public_storage as _storage

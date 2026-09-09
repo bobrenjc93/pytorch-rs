@@ -159,7 +159,7 @@ fn apply_type_target(
                 let inner = tensor
                     .try_borrow()?
                     .inner()
-                    .try_copy_cuda_to_cpu(py)
+                    .try_copy_cuda_to_cpu()
                     .map_err(|error| tensor_error(&error))?;
                 Ok(Py::new(py, PyTensor::new(inner))?.into_any())
             }
