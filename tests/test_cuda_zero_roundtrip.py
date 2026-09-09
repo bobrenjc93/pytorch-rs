@@ -480,9 +480,9 @@ assert "torch" not in sys.modules
                 lambda: reference_torch.tensor([0.0], device="cuda:0"),
             ),
             (
-                "cpu_to_cuda_transfer",
-                lambda module: module.zeros((1,)).to("cuda:0"),
-                lambda: reference_torch.zeros((1,)).to("cuda:0"),
+                "cpu_to_cuda_transfer_with_autograd",
+                lambda module: module.zeros((1,), requires_grad=True).to("cuda:0"),
+                lambda: reference_torch.zeros((1,), requires_grad=True).to("cuda:0"),
             ),
             (
                 "cuda_math",

@@ -377,7 +377,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         ),
         (
             "Additional dtypes",
-            "CUDA tensors/transfers beyond the 1-D float32 zeros-to-CPU path",
+            "CUDA factories beyond 1-D float32 zeros and transfers beyond explicit CPU/CUDA float32 copies without autograd",
             "memory-management APIs outside the named helper set",
             "backend APIs outside [Backend and compiler metadata]",
         ),
