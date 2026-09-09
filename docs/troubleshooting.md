@@ -83,6 +83,8 @@ path (on Linux, `/proc/self/maps`), PyTorch version, driver and GPU model;
 CUDA tensors support rank-1 float32 zeros and metadata views with synchronous
 `.cpu()` / `.to("cpu")` transfers. CPU-to-CUDA copies, CUDA math/autograd,
 nondefault streams, and general CUDA runtime management remain unsupported.
+`tensor(cuda_tensor)` copy construction also remains unsupported, including
+empty inputs; use `.cpu()` or `.to("cpu")` for an explicit host transfer.
 
 After building the current checkout with `./scripts/test-python.sh`, run this
 smoke check through the repository environment (PyTorch is not required):

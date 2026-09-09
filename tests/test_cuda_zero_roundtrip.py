@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 import unittest
+import warnings
 
 import torch_rs as torch
 
@@ -39,6 +40,35 @@ _CUDA_TWO_GPU_SKIP_REASON = _cuda_two_gpu_test_unavailable()
 
 @unittest.skipIf(_CUDA_ROUNDTRIP_SKIP_REASON is not None, _CUDA_ROUNDTRIP_SKIP_REASON)
 class CudaZeroRoundtripTests(unittest.TestCase):
+    def test_tensor_copy_construction_rejects_cuda_before_sequence_conversion(self):
+        expected = reference_torch.zeros((0,), device="cuda:0")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            copied = reference_torch.tensor(expected)
+        self.assertEqual(copied.device, expected.device)
+        self.assertEqual(copied.shape, expected.shape)
+
+        empty = torch.zeros((0,), device="cuda:0")
+        sources = (empty, empty.reshape(0, 3), empty.reshape(3, 0),
+                   torch.zeros((4,), device="cuda:0")[2:2],
+                   torch.zeros((1,), device="cuda:0").select(0, 0),
+                   torch.zeros((1,), device="cuda:0"),
+                   torch.zeros((3,), device="cuda:0"))
+        for source in sources:
+            before = self.cuda_metadata(torch, source)
+            for data in (source, [source]):
+                for kwargs in ({}, {"dtype": torch.float32}, {"device": "cpu"},
+                               {"requires_grad": True}):
+                    with self.subTest(shape=source.shape, nested=isinstance(data, list), kwargs=kwargs):
+                        with self.assertRaisesRegex(
+                            NotImplementedError,
+                            r"tensor\(\): copy construction from CUDA tensors is not supported",
+                        ):
+                            torch.tensor(data, **kwargs)
+            self.assertEqual(self.cuda_metadata(torch, source), before)
+            self.assertIs(torch.as_tensor(source), source)
+            self.assertEqual(source.cpu().device.type, "cpu")
+
     def assert_cuda_probe_matches_pytorch(self):
         self.assertIs(type(torch.cuda.device_count()), int)
         self.assertEqual(torch.cuda.device_count(), reference_torch.cuda.device_count())

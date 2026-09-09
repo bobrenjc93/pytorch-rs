@@ -9418,6 +9418,7 @@ fn tensor(
     let requires_grad = requires_grad.0;
     let dtype_was_explicit = dtype.is_some();
     let (dtype, device) = parse_metadata("tensor", dtype, device)?;
+    reject_cuda_copy_construction(data)?;
     let (flattened, shape) = if let Ok(scalar) = data.extract::<f32>() {
         (vec![scalar], Vec::new())
     } else if data.cast::<PyBytes>().is_ok() {
@@ -25467,7 +25468,21 @@ fn is_sequence_input(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     Ok(value.hasattr("__len__")? && value.hasattr("__getitem__")?)
 }
 
+fn reject_cuda_copy_construction(value: &Bound<'_, PyAny>) -> PyResult<()> {
+    if let Ok(tensor) = value.cast::<PyTensor>()
+        && tensor.try_borrow()?.inner.device().is_cuda()
+    {
+        return Err(PyNotImplementedError::new_err(
+            "tensor(): copy construction from CUDA tensors is not supported; use .cpu() for an explicit transfer",
+        ));
+    }
+    Ok(())
+}
+
 fn flatten_rectangular(value: &Bound<'_, PyAny>, output: &mut Vec<f32>) -> PyResult<Vec<usize>> {
+    // Empty CUDA tensors never read an element, so generic sequence handling
+    // would otherwise silently construct CPU storage, including nested inputs.
+    reject_cuda_copy_construction(value)?;
     if let Ok(scalar) = value.extract::<f32>() {
         output.push(scalar);
         return Ok(Vec::new());
