@@ -17,6 +17,13 @@ rerun; all existing raw JSON, result tables, samples, seeds, denominators, and
 aggregates are preserved. The four reports share these costs; do not sum them
 four times.
 
+This disclosure follows the [historical-report policy](../BENCHMARKING.md#historical-release-timing-reports).
+The source revision is the one measured by the four workload reports. Later
+changes, including Rayon dependencies and additional native CUDA execution, are
+outside this snapshot. The recorded `capture_checkout_commit` identifies the
+checkout that exported the historical source, not the source built by the rerun.
+These timings provide no setup-cost or performance claim for the current HEAD.
+
 | Setup stage | Wall seconds | Initial state | Exit status |
 | --- | ---: | --- | ---: |
 | Create virtualenv | 0.056061 | Absent virtualenv, installed system Python | 0 |
@@ -61,5 +68,9 @@ python3 -m unittest tests.test_benchmark_setup_evidence
 Schema v1 is enforced by that validator: all setup stages require positive finite
 wall durations, UTC timestamps, successful exit status, commands, cache disclosure,
 and retained logs. It checks source attribution, log hashes, all four report
-links, and hashes of the unchanged workload JSON and result sections. This is
-setup-disclosure validation, with no workload execution or scoring changes.
+links, and hashes of the unchanged workload JSON and result sections. Those
+hashes identify the historical snapshots to which the setup costs apply; they do
+not certify the recorded worktree paths as current or enforce current-HEAD
+provenance. A future current-revision measurement needs its own setup and
+workload capture. This validator only checks historical setup disclosure, with
+no workload execution or scoring changes.
