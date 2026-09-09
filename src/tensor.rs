@@ -3049,6 +3049,50 @@ impl Tensor {
         };
 
         let lengths = Self::chunk_lengths(size, chunks)?;
+        let node = if size == 0 {
+            AutogradNode::SplitWithSizes
+        } else {
+            AutogradNode::Split
+        };
+        self.partition_dimension(dimension, lengths, node)
+    }
+
+    /// Splits a normalized dimension into views of at most `split_size` elements.
+    /// The caller validates that `split_size` is positive unless the dimension
+    /// is empty. An empty dimension always produces one empty view.
+    #[cfg_attr(not(any(feature = "python-bindings", test)), allow(dead_code))]
+    pub(crate) fn split_dimension(
+        &self,
+        dimension: usize,
+        split_size: usize,
+    ) -> Result<Vec<Self>, TensorError> {
+        let Some(&size) = self.shape.get(dimension) else {
+            return Err(TensorError::InvalidScalarIndex);
+        };
+        debug_assert!(split_size > 0 || size == 0);
+        let count = if size == 0 {
+            1
+        } else {
+            size.div_ceil(split_size)
+        };
+        let mut lengths = try_result_vector(count, size)?;
+        let mut remaining = size;
+        for _ in 0..count {
+            let length = split_size.min(remaining);
+            lengths.push(length);
+            remaining -= length;
+        }
+        self.partition_dimension(dimension, lengths, AutogradNode::Split)
+    }
+
+    // All outputs share one backward node; recording separate slice histories
+    // would lose output numbering and multi-output gradient assembly.
+    fn partition_dimension(
+        &self,
+        dimension: usize,
+        lengths: Vec<usize>,
+        node: AutogradNode,
+    ) -> Result<Vec<Self>, TensorError> {
         let mut outputs = try_result_vector(lengths.len(), self.elements)?;
         let mut start = 0_usize;
         for &length in &lengths {
@@ -3059,11 +3103,6 @@ impl Tensor {
         }
 
         if self.records_grad() && !outputs.is_empty() {
-            let node = if size == 0 {
-                AutogradNode::SplitWithSizes
-            } else {
-                AutogradNode::Split
-            };
             let autograd = Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Chunk {
@@ -14056,6 +14095,70 @@ mod tests {
         let gradient = signed_source.grad().unwrap().unwrap();
         assert_eq!(gradient.as_slice()[0].to_bits(), (-0.0_f32).to_bits());
         assert_eq!(gradient.as_slice()[1].to_bits(), 1.0_f32.to_bits());
+    }
+
+    #[test]
+    fn split_views_preserve_offset_strides_and_share_one_backward_node() {
+        let leaf = Tensor::from_vec((0_u8..30).map(f32::from).collect(), [2, 3, 5])
+            .unwrap()
+            .with_requires_grad(true);
+        let source = leaf.index_integer(1).unwrap().transpose(0, 1).unwrap();
+        let outputs = source.split_dimension(0, 2).unwrap();
+        assert_eq!(outputs.len(), 3);
+        for (index, output) in outputs.iter().enumerate() {
+            assert!(output.shares_storage_with(&leaf));
+            assert_eq!(output.shape(), [if index == 2 { 1 } else { 2 }, 3]);
+            assert_eq!(output.stride(), [1, 5]);
+            assert_eq!(output.storage_offset(), 15 + index * 2);
+            assert_eq!(output.output_nr, index);
+            assert!(Arc::ptr_eq(
+                outputs[0].autograd.as_ref().unwrap(),
+                output.autograd.as_ref().unwrap()
+            ));
+        }
+        // An output with nonzero output_nr is itself split, and its first
+        // child contributes twice. Unused sibling outputs must contribute zero.
+        let nested = outputs[1].split_dimension(0, 1).unwrap();
+        nested[0]
+            .sum()
+            .add(&nested[0].sum())
+            .unwrap()
+            .add(&outputs[2].sum())
+            .unwrap()
+            .backward()
+            .unwrap();
+        let mut expected = vec![0.0; 30];
+        for row in 0..3 {
+            expected[15 + row * 5 + 2] = 2.0;
+            expected[15 + row * 5 + 4] = 1.0;
+        }
+        assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), expected);
+    }
+
+    #[test]
+    fn split_empty_and_oversized_dimensions() {
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+        for split_size in [0, 1, usize::MAX] {
+            let outputs = empty.split_dimension(1, split_size).unwrap();
+            assert_eq!(outputs.len(), 1);
+            assert_eq!(outputs[0].shape(), [2, 0, 3]);
+            assert_eq!(outputs[0].stride(), empty.stride());
+            assert!(outputs[0].shares_storage_with(&empty));
+            assert_eq!(outputs[0].output_nr, 0);
+            #[cfg(feature = "python-bindings")]
+            assert_eq!(outputs[0].grad_fn_name(), Some("SplitBackward0"));
+            outputs[0].sum().backward().unwrap();
+            assert_eq!(empty.grad().unwrap().unwrap().shape(), [2, 0, 3]);
+        }
+        let chunks = empty.chunk_dimension(1, 3).unwrap();
+        assert_eq!(chunks.len(), 3);
+        #[cfg(feature = "python-bindings")]
+        assert_eq!(chunks[0].grad_fn_name(), Some("SplitWithSizesBackward0"));
+        let source = Tensor::zeros([3]).unwrap();
+        let outputs = source.split_dimension(0, usize::MAX).unwrap();
+        assert_eq!(outputs.len(), 1);
+        assert!(outputs[0].shares_storage_with(&source));
+        assert_eq!(outputs[0].shape(), [3]);
     }
 
     #[test]

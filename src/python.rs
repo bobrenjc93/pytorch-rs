@@ -8687,6 +8687,52 @@ impl DivisionOperation {
 
 #[pymethods]
 impl PyTensor {
+    /// Returns shared-storage tuple views of at most `split_size` elements along `dim`.
+    /// Only integer split sizes on exact native CPU float32 tensors are supported.
+    #[pyo3(signature = (*args, **kwargs), text_signature = "($self, split_size, dim=0)")]
+    fn split(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let (split_size, dimension) = bind_split_arguments(args, kwargs)?;
+        let tensor = slf.try_borrow()?;
+        if !slf.as_any().is_exact_instance_of::<Self>()
+            || tensor.inner.dtype() != DType::Float32
+            || tensor.inner.device() != Device::Cpu
+        {
+            return Err(PyNotImplementedError::new_err(
+                "split(): only exact native CPU float32 Tensor inputs are supported",
+            ));
+        }
+        if tensor.inner.shape().is_empty() {
+            return Err(PyRuntimeError::new_err(
+                "split expects at least a 1-dimensional tensor",
+            ));
+        }
+        if split_size < 0 {
+            return Err(PyRuntimeError::new_err(format!(
+                "split expects split_size be non-negative, but got split_size={split_size}"
+            )));
+        }
+        let axis = normalize_dimension(dimension, tensor.inner.shape().len())?;
+        let size = tensor.inner.shape()[axis];
+        if split_size == 0 && size != 0 {
+            return Err(PyRuntimeError::new_err(format!(
+                "split_size can only be 0 if dimension size is 0, but got dimension size of {size}"
+            )));
+        }
+        let split_size = usize::try_from(split_size)
+            .map_err(|_| PyOverflowError::new_err("split size exceeds the platform limit"))?;
+        let outputs = tensor
+            .inner
+            .split_dimension(axis, split_size)
+            .map_err(|error| tensor_error(&error))?;
+        Ok(PyTuple::new(slf.py(), outputs.into_iter().map(Self::new))?
+            .into_any()
+            .unbind())
+    }
+
     #[classattr]
     fn __array_priority__() -> f64 {
         1000.0
@@ -15301,6 +15347,58 @@ fn extract_select_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {
     }
     let concrete = call_python_index(index)?;
     extract_dimension_swap_dimension(&concrete)
+}
+
+fn bind_split_arguments(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<(i64, i64)> {
+    if let Some(error) = chunk_keyword_error(
+        "Tensor.split",
+        &["split_size", "dim"],
+        positional.len(),
+        keywords,
+        0,
+    )? {
+        return Err(error);
+    }
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "Tensor.split() takes from 2 to 3 positional arguments but {} were given",
+            positional.len() + 1
+        )));
+    }
+    let split_size = if positional.is_empty() {
+        keyword_argument(keywords, "split_size")?
+    } else {
+        Some(positional.get_item(0)?)
+    }
+    .ok_or_else(|| {
+        PyTypeError::new_err("Tensor.split() missing 1 required positional argument: 'split_size'")
+    })?;
+    let dimension = if positional.len() < 2 {
+        keyword_argument(keywords, "dim")?
+    } else {
+        Some(positional.get_item(1)?)
+    };
+    if split_size.is_instance_of::<PyList>() || split_size.is_instance_of::<PyTuple>() {
+        return Err(PyNotImplementedError::new_err(
+            "split(): section-list split sizes are not supported",
+        ));
+    }
+    // Tensor.split's Python wrapper accepts Python ints, not NumPy integers
+    // or arbitrary __index__ providers, for its integer-size overload.
+    if split_size.is_instance_of::<PyBool>() || !split_size.is_instance_of::<PyInt>() {
+        return Err(PyTypeError::new_err("split(): split_size must be int"));
+    }
+    if let Some(dimension) = &dimension {
+        validate_dimension_swap_dimension("split", "dim", Some(2), dimension)?;
+    }
+    let split_size = extract_dimension_swap_dimension(&split_size)?;
+    let dimension = dimension
+        .as_ref()
+        .map_or(Ok(0), extract_dimension_swap_dimension)?;
+    Ok((split_size, dimension))
 }
 
 struct BoundChunkArguments<'py> {
