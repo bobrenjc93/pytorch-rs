@@ -432,79 +432,101 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
     ),
 )
 README_SCOPE_ROW_LABELS = (
-    "Eager tensors",
-    "Runtime device probes",
-    "CPU-build backend probes",
-    "`torch.compile` eager subset",
-    "Larger PyTorch stacks",
+    "CPU tensors",
+    "NVIDIA CUDA",
+    "`torch.compile`",
+    "Compatibility helpers",
 )
 README_SCOPE_REQUIRED_SNIPPETS = (
-    "CPU `float32` tensors",
-    "synchronous float32 host uploads to explicit `\"cuda:N\"` devices",
-    "including scalar and multidimensional tensors",
-    "Direct CUDA factories remain limited to 1-D float32 zeros",
-    "autograd through CUDA transfers, asynchronous transfers, CUDA-to-CUDA copies",
-    "synchronized `.cpu()`/`.to(\"cpu\")` copies",
-    "core construction and layout/view operations",
-    "selected math and neural-network functions",
+    "Native `float32`",
     "limited first-order autograd",
+    "synchronous CPU transfers",
+    "same-shape contiguous `float32` addition",
+    "1-D zeros only",
+    "No general CUDA math or accelerator training",
+    "Bounded eager CPU capture",
+    "[CUDA addition capture](docs/compile-cuda-add.md)",
+    "without fusion",
+    "No full Inductor compiler",
+    "general graph capture, or eager fallback",
+    "No additional tensor dtypes or full training stack",
+    "device/backend probes",
+    "No full module, `DataLoader`, optimizer, model-serialization, or distributed stacks",
+)
+# Detailed contracts belong in the focused guide, not in the README overview.
+SUPPORTED_SURFACE_DETAIL_SNIPPETS = (
+    'synchronous `Tensor.to("cuda:N")`',
+    "Scalars, empty tensors, contiguous inputs, offset views, transposes",
+    "only rank-1 float32 `zeros` can create CUDA storage directly",
+    "Autograd inputs (including under `no_grad`), asynchronous copies, dtype changes",
+    "Dtype-changing conversions, CUDA-to-CUDA copies, unindexed CUDA targets",
+    '`x + y`, `x.add(y)`, and `torch.add(x, y)`',
+    "both inputs have identical shapes, are contiguous",
+    "numeric default-equivalent `alpha=1`",
+    "CUDA broadcasting, noncontiguous operands, Python scalar arithmetic",
     "`torch.cuda.device_count()`",
     "`torch.cuda.is_available()`",
     "`torch.cuda.is_initialized()`",
-    "runtime CUDA visibility",
-    "`torch.set_default_device(...)`",
-    "CPU-equivalent no-op",
-    "`None` or `\"cpu\"`",
-    "`torch.backends.cuda` preference flags",
-    "`enable_flash_sdp(...)`",
-    "`enable_cudnn_sdp(...)`",
-    "`sdp_kernel(...)` as a context manager/decorator",
-    "`torch.nn.functional.scaled_dot_product_attention`",
-    "Same-shape contiguous CUDA float32 tensors also support native `+`, `Tensor.add`, and `torch.add`",
-    "with default alpha, including offset views, scalars, and empties",
-    "other CUDA math/autograd, CUDA broadcasting, noncontiguous addition and scalar arithmetic",
-    "exact Python bool/int/float/complex scalars, `None`, and strings/bytes",
-    "actual attention-kernel dispatch",
-    "CUDA `torch.compile` execution beyond the [bounded addition capture](docs/compile-cuda-add.md)",
-    "[bounded CUDA addition capture](docs/compile-cuda-add.md)",
-    "guards device ordinal and storage offset",
-    "executes native additions without fusion",
-    "Current-device CUDA allocation for unindexed `\"cuda\"`",
-    "mutable default-device routing",
-    "streams",
-    "events",
-    "synchronization",
-    "allocator APIs",
+    "report runtime CUDA visibility without importing PyTorch",
+    "current-device allocation for unindexed",
+    "streams, events, synchronization APIs, allocator APIs",
     "general runtime management",
-    "Additional tensor dtypes",
-    "general non-CPU tensor execution",
-    "PyTorch 2.13-shaped argument binding",
-    "`disable=True` pass-through",
-    "backend default/name resolution through the `torch.compiler` registry",
-    "native `backend=\"eager\"` execution for `fullgraph=True` "
-    "or no-break `fullgraph=False`",
-    "straight-line one- or two-input CPU `float32` Tensor functions",
-    "Tensor `neg`, `abs`, `relu`, `square`, `detach`, "
-    "zero-argument `float`, and binary `add`",
+    "`torch.set_default_device(device)`",
+    "CPU-only compatibility no-op",
+    '(`None`, `"cpu"`, unindexed `torch.device("cpu")`',
+    "mutable default-device routing",
+    "enable_flash_sdp(enabled)",
+    "`torch.backends.cuda.sdp_kernel(enable_flash=True",
+    "context-manager/decorator",
+    "actual attention-kernel dispatch",
+    "`torch.nn.functional.scaled_dot_product_attention`",
+    "`Tensor.split(split_size, dim=0)`",
+    "`torch.split(tensor, split_size_or_sections, dim=0)`",
+    "`torch.functional.split`",
+    "tuple of shared-storage slice views",
+    "last may be shorter",
+    "empty split dimension produces one empty view",
+    "chunk multi-output backward machinery",
+    "list/tuple section sizes",
+    "Zero-length sections are preserved",
+    "CUDA splits",
+    "unsupported dtype/device metadata",
+    "`disable=True` returns the original callable without invoking the backend",
+    "resolves registered backend names to their registered callables",
+    '`backend="eager"` with exact `fullgraph=True`',
+    "no-break `fullgraph=False`",
+    "one or two positional exact native CPU `float32` Tensor inputs",
+    "Tensor `neg`/`negative`, Tensor `abs`/`absolute`, Tensor `relu`",
+    "Tensor `square`, Tensor `detach`, zero-argument Tensor `float`",
+    "one same-module exact Python helper call",
     "module-global exact native CPU `float32` Tensor constants",
-    "captured-global identity/metadata recompilation",
-    "`Tensor.float()` identity graphlets that preserve values, shape, stride, "
-    "storage offset, device, dtype, and `requires_grad`",
-    "private benchmark-only H100 CUDA pointwise-reduce forward-output path",
-    "storage-aliasing detach graphlets with `requires_grad=False` outputs",
-    "square decomposition graphlets",
+    "tuple/list output pytrees with Tensor leaves",
     "Tensor broadcasting",
-    "broader graph capture/execution",
+    "square decomposition graphlets",
+    "storage-aliasing detach graphlets with `requires_grad=False` outputs",
+    "preserve values, shape, stride, storage offset, dtype, device, and `requires_grad`",
+    "no-grad inference ReLU graphlets",
+    "CUDA cache keys additionally guard the exact storage offset and device ordinal",
+    "native Rust/CUDA addition kernel without fusion",
+    "private benchmark-only H100 pointwise-reduce workload",
+    '`backend="inductor"`, `fullgraph=True`, and `dynamic=False`',
+    "global binding identity, and global metadata",
+    "exact non-negative integer `recompile_limit` values",
+    "`torch.compiler.reset()` clears those native graph caches",
     "active `__torch_function__` modes",
-    "eager fallback",
-    "installed-PyTorch forwarding",
-    "callable backend invocation",
-    "general inductor/CUDA compilation",
-    "Full module",
-    "optimizer",
-    "model-serialization",
-    "compiler execution",
-    "distributed stacks",
+    "`Tensor.float(...)` memory-format arguments, `Tensor.to(...)`",
+    "dtype-changing conversion methods, non-Tensor globals",
+    "`isolate_recompiles=True`",
+    "eager fallback, installed-PyTorch forwarding, backend invocation",
+    "CUDA compile autograd/training workloads",
+    "general CUDA compile execution",
+    "`torch.utils.data.default_collate`",
+    "`torch.utils.data.default_convert`",
+    "`DataLoader`",
+    "optimizers",
+    "`torch.save`",
+    "`torch.load`",
+    "distributed backend initialization/execution",
 )
 DOCS_INDEX_CONTRACTS = (
     (
@@ -604,34 +626,73 @@ class ReadmeQuickstartTests(unittest.TestCase):
         section = match.group("section")
         table, route = section.strip().split("\n\n", maxsplit=1)
         table_lines = table.splitlines()
-        self.assertEqual(
-            table_lines[0],
-            "| Surface | Supported today | Unsupported boundary |",
-        )
+        self.assertEqual(table_lines[0], "| Surface | Supported today | Limits |")
         self.assertEqual(table_lines[1], "| --- | --- | --- |")
         self.assertEqual(len(table_lines), len(README_SCOPE_ROW_LABELS) + 2)
-        self.assertIn(
-            "[exhaustive supported surface](docs/supported-surface.md)", route
-        )
-        self.assertNotIn("The current native backend supports eager CPU", section)
-        for snippet in (
-            "exact native CPU `float32` tensors",
-            "integer-size `Tensor.split` and `torch.split`",
-            "also `torch.functional.split`",
-            "shared-storage tuple views",
-            "uneven and empty splits with backward support",
-            "Section-list sizes and CUDA splits remain unsupported",
-        ):
-            with self.subTest(split_contract=snippet):
-                self.assertIn(snippet, " ".join(route.split()))
-        self.assertNotIn("top-level `torch.split` function remain unavailable", section)
-
+        self.assertLessEqual(len(section.split()), 300)
+        for line in table_lines[2:]:
+            cells = [cell.strip() for cell in line.strip("|").split("|")]
+            self.assertEqual(len(cells), 3)
+            for cell in cells:
+                self.assertLessEqual(len(cell.split()), 25, cell)
         for row_label in README_SCOPE_ROW_LABELS:
             with self.subTest(scope_row=row_label):
                 self.assertIn(f"| {row_label} |", table)
         for snippet in README_SCOPE_REQUIRED_SNIPPETS:
             with self.subTest(scope_snippet=snippet):
                 self.assertIn(snippet, table)
+        for snippet in (
+            "[exhaustive supported surface](docs/supported-surface.md)",
+            "docs/supported-surface.md#jit-and-compiler",
+            "private H100 compile benchmark path",
+            "fixed workload",
+            "`torch.cuda.is_available()`",
+            "`torch.cuda.device_count()`",
+            "report runtime GPU visibility",
+            "backend build flags do not",
+            "docs/troubleshooting.md#optional-native-cuda-runtime",
+            "`CUDA_VISIBLE_DEVICES=0`",
+            "hardware-only cases skip when unavailable",
+        ):
+            with self.subTest(scope_route=snippet):
+                self.assertIn(snippet, " ".join(route.split()))
+        self.assertIn("not a general PyTorch replacement", readme)
+
+    def test_detailed_support_contracts_live_in_focused_docs(self):
+        supported = " ".join(SUPPORTED_SURFACE.read_text(encoding="utf-8").split())
+        for snippet in SUPPORTED_SURFACE_DETAIL_SNIPPETS:
+            with self.subTest(supported_contract=snippet):
+                self.assertIn(snippet, supported)
+
+    def test_entry_point_links_resolve(self):
+        # Check hand-authored entry points, including cross-document anchors.
+        sources = {
+            README: README.read_text(encoding="utf-8").split("## License", 1)[0],
+            SUPPORTED_SURFACE: SUPPORTED_SURFACE.read_text(encoding="utf-8"),
+            TROUBLESHOOTING: TROUBLESHOOTING.read_text(encoding="utf-8"),
+            REPOSITORY_ROOT / "docs/compile-cuda-add.md": (
+                REPOSITORY_ROOT / "docs/compile-cuda-add.md"
+            ).read_text(encoding="utf-8"),
+        }
+        for source, content in sources.items():
+            for target in re.findall(r"\[[^\]\n]+\]\(([^)]+)\)", content):
+                if "://" in target:
+                    continue
+                with self.subTest(source=source.name, target=target):
+                    filename, _, anchor = target.partition("#")
+                    destination = source.parent / filename if filename else source
+                    self.assertTrue(destination.is_file(), target)
+                    if anchor:
+                        headings = re.findall(
+                            r"^#{1,6} (.+)$",
+                            destination.read_text(encoding="utf-8"),
+                            flags=re.MULTILINE,
+                        )
+                        slugs = {
+                            re.sub(r"[^\w -]", "", heading.lower()).replace(" ", "-")
+                            for heading in headings
+                        }
+                        self.assertIn(anchor, slugs, target)
 
     def test_first_success_example_is_short_and_runs(self):
         readme = README.read_text(encoding="utf-8")
@@ -1005,7 +1066,7 @@ class ReadmeQuickstartTests(unittest.TestCase):
         self.assertIn(
             "[exhaustive supported surface](docs/supported-surface.md)", scope
         )
-        self.assertNotRegex(scope, r"docs/supported-surface\.md#")
+        self.assertIn("docs/supported-surface.md#jit-and-compiler", scope)
         self.assertTrue(SUPPORTED_SURFACE.is_file())
 
         supported = SUPPORTED_SURFACE.read_text(encoding="utf-8")

@@ -90,6 +90,68 @@ class DefaultCollateReferenceTests(unittest.TestCase):
                         self.assertIs(left, source)
                         self.assertIs(right, source)
 
+    def test_text_led_mixed_tails_match_reference_without_inspection(self):
+        class Opaque:
+            def __eq__(self, other):
+                raise AssertionError("metadata must not be compared")
+
+            def __iter__(self):
+                raise AssertionError("metadata must not be traversed")
+
+        class TextSubclass(str):
+            pass
+
+        class BytesSubclass(bytes):
+            pass
+
+        tails = [b"raw", "label", TextSubclass("s"), BytesSubclass(b"b"),
+                 np.str_("n"), np.bytes_(b"n"), 1, 1.0, True, 1j, None,
+                 Opaque(), torch.tensor([1.0]), reference_torch.tensor([1.0]),
+                 np.array([1.0]), ["nested"], ("nested",), {"key": "value"}]
+        # Snapshot mutable tails independently; assertions use identity so opaque
+        # metadata need not implement equality or iteration.
+        native_before = tails[12].tolist()
+        reference_before = tails[13].tolist()
+        array_before = tails[14].copy()
+        for first in ("雪/🙂.png", b"\x00\xff"):
+            values = [first, *tails]
+            for batch_type in (list, tuple):
+                for kind in ("direct", "dict", "list", "tuple", "namedtuple"):
+                    with self.subTest(first=type(first), batch_type=batch_type, kind=kind):
+                        wrap = {"direct": lambda x: x,
+                                "dict": lambda x: {"metadata": x},
+                                "list": lambda x: [x],
+                                "tuple": lambda x: (x,),
+                                "namedtuple": lambda x: Point(x, "tag")}[kind]
+                        batch = batch_type(wrap(value) for value in values)
+                        before = tuple(map(id, batch))
+                        actual = torch.utils.data.default_collate(batch)
+                        expected = reference_torch.utils.data.default_collate(batch)
+                        self.assertIs(type(actual), type(expected))
+                        if kind == "direct":
+                            self.assertIs(actual, batch)
+                            self.assertIs(expected, batch)
+                            left, right = actual, expected
+                        elif kind == "dict":
+                            self.assertEqual(list(actual), list(expected))
+                            left, right = actual["metadata"], expected["metadata"]
+                        else:
+                            left, right = actual[0], expected[0]
+                        self.assertIs(type(left), type(right))
+                        self.assertEqual(len(left), len(values))
+                        for a, b, value in zip(left, right, values, strict=True):
+                            self.assertIs(a, value)
+                            self.assertIs(b, value)
+                        self.assertEqual(tuple(map(id, batch)), before)
+                        for record, value in zip(batch, values, strict=True):
+                            source = (record if kind == "direct" else
+                                      record["metadata"] if kind == "dict" else record[0])
+                            self.assertIs(source, value)
+        self.assertEqual(tails[12].tolist(), native_before)
+        self.assertEqual(tails[13].tolist(), reference_before)
+        np.testing.assert_array_equal(tails[14], array_before)
+        self.assertEqual(tails[15:], [["nested"], ("nested",), {"key": "value"}])
+
     def test_nested_tensor_and_text_records_match_pytorch_2_13(self):
         # Both implementations receive the same immutable metadata objects.
         filenames = ["雪/🙂.png", ""]

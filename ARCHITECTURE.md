@@ -130,7 +130,13 @@ to avoid the copy engine's per-row cost. Large gaps are always skipped; no
 allocation or transfer grows with an arbitrary backing span. Packed outputs
 retain CPU clone's dimension ordering, including transposed and selected views.
 CUDA addition accepts same-shape contiguous float32 inputs on one device,
-including offsets, scalars and empty tensors. Other CUDA materialization and
+including offsets, scalars and empty tensors. Native float32 CUDA negation
+also accepts contiguous inputs, offsets, scalars, and empties. The
+[src/cuda/neg.ptx](src/cuda/neg.ptx) sign-bit kernel uses the shared 64-bit
+grid-stride launcher, fresh device storage, device guards, and synchronized
+completion. Noncontiguous CUDA negation, CUDA autograd, and compiled CUDA
+negation remain unsupported; see [validation](docs/cuda-neg-validation.md).
+Other CUDA materialization and
 arithmetic reject at the operation boundary.
 Direct public CUDA factory allocation remains rank-1 float32 zeros without
 autograd. Transfers do not add dtype conversions, autograd (even under

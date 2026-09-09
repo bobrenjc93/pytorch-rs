@@ -1,0 +1,10 @@
+test_device_guard_and_context_cache (tests.test_cuda_neg.CudaNegDeviceTests.test_device_guard_and_context_cache) ... ok
+test_cross_thread_pool_release_on_both_devices (tests.test_cuda_add.CudaAddDeviceTests.test_cross_thread_pool_release_on_both_devices) ... ok
+test_device_restoration_success_failure_and_drop (tests.test_cuda_add.CudaAddDeviceTests.test_device_restoration_success_failure_and_drop) ... ok
+test_replay_eviction_restores_context_across_devices (tests.test_cuda_add.CudaAddDeviceTests.test_replay_eviction_restores_context_across_devices) ... ok
+test_current_device_restored_on_success_failure_and_drop (tests.test_cuda_host_transfer.CudaHostTransferDeviceGuardTests.test_current_device_restored_on_success_failure_and_drop) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 3.926s
+
+OK

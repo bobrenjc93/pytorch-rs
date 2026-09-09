@@ -1,0 +1,6852 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-09-09T19:37:06.380069+00:00",
+  "ended_at": "2026-09-09T19:37:23.118250+00:00",
+  "source": {
+    "commit": "174cccaa30e362a8de752db527916c7ce2d71ec1",
+    "source_sha256": "a0e6ac3f54ad339bc95ca4d89fd875aa6c336ff78fdc35ea59f92f53a894f87d",
+    "production_diff_sha256": "8430e5caebcc9d27ff55e24eabe9524a8b7aa48bf62d0c19cd39b8f770f915d9"
+  },
+  "git_status": " M ARCHITECTURE.md\n M FEATURES.md\nUU README.md\n M docs/README.md\n M docs/cuda-neg-validation.md\nUU docs/supported-surface.md\nMM docs/troubleshooting.md\n M python/torch_rs/utils/data/_utils/collate.py\n M tests/test_default_collate.py\n M tests/test_default_collate_reference.py\nMM tests/test_readme_quickstart.py\n?? docs/diagnostics/composite-cuda-neg/\n?? docs/text-collation-diagnostics.md\n?? scripts/benchmark_text_collation.py\n",
+  "worktree": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+    "scripts/benchmark_text_collation.py",
+    "--cpu",
+    "24",
+    "--seed",
+    "20260909",
+    "--samples",
+    "12",
+    "--output",
+    "docs/diagnostics/text-collation.json"
+  ],
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+  "platform": "Linux-6.13.2-0_fbk12_0_g0b66b3635210-x86_64-with-glibc2.34",
+  "cpu_affinity": [
+    24
+  ],
+  "cpu": "Architecture:                         x86_64\nCPU op-mode(s):                       32-bit, 64-bit\nAddress sizes:                        52 bits physical, 57 bits virtual\nByte Order:                           Little Endian\nCPU(s):                               384\nOn-line CPU(s) list:                  0-383\nVendor ID:                            AuthenticAMD\nModel name:                           AMD EPYC 9654 96-Core Processor\nCPU family:                           25\nModel:                                17\nThread(s) per core:                   2\nCore(s) per socket:                   96\nSocket(s):                            2\nStepping:                             1\nFrequency boost:                      enabled\nCPU(s) scaling MHz:                   100%\nCPU max MHz:                          2400.0000\nCPU min MHz:                          1500.0000\nBogoMIPS:                             4792.63\nFlags:                                fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good amd_lbr_v2 nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpb cat_l3 cdp_l3 hw_pstate ssbd mba perfmon_v2 ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local avx512_bf16 clzero irperf xsaveerptr rdpru wbnoinvd amd_ppin cppc arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif x2avic v_spec_ctrl vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid overflow_recov succor smca fsrm flush_l1d debug_swap\nVirtualization:                       AMD-V\nL1d cache:                            6 MiB (192 instances)\nL1i cache:                            6 MiB (192 instances)\nL2 cache:                             192 MiB (192 instances)\nL3 cache:                             768 MiB (24 instances)\nNUMA node(s):                         2\nNUMA node0 CPU(s):                    0-95,192-287\nNUMA node1 CPU(s):                    96-191,288-383\nVulnerability Gather data sampling:   Not affected\nVulnerability Itlb multihit:          Not affected\nVulnerability L1tf:                   Not affected\nVulnerability Mds:                    Not affected\nVulnerability Meltdown:               Not affected\nVulnerability Mmio stale data:        Not affected\nVulnerability Reg file data sampling: Not affected\nVulnerability Retbleed:               Not affected\nVulnerability Spec rstack overflow:   Vulnerable\nVulnerability Spec store bypass:      Vulnerable\nVulnerability Spectre v1:             Vulnerable: __user pointer sanitization and usercopy barriers only; no swapgs barriers\nVulnerability Spectre v2:             Vulnerable; IBPB: disabled; STIBP: disabled; PBRSB-eIBRS: Not affected; BHI: Not affected\nVulnerability Srbds:                  Not affected\nVulnerability Tsx async abort:        Not affected\n",
+  "reference_version": "2.13.0+cu130",
+  "reference_package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
+  "candidate_package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
+  "extension": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/torch_rs.abi3.so",
+    "sha256": "e2e9c8bea89c8b8963cff95851ae2c4b2ce2038185ce630058f0dd2955abc7bd"
+  },
+  "harness_sha256": "af1934c26b301d84fee8f69882f1851c4dcdec48e8b0361e168dc5de5ba7d2be",
+  "seed": 20260909,
+  "samples": 12,
+  "method": "Precreated inputs; paired public calls; equal warmup/iterations; balanced randomized first order; per-call nanoseconds; semantic checks outside timing.",
+  "cases": [
+    {
+      "size": 8,
+      "text": "str",
+      "container": "list",
+      "kind": "namedtuple",
+      "iterations_per_sample": 2500,
+      "warmup_iterations_each": 2500,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          2821.6968,
+          1176.2396,
+          1162.6108,
+          1151.2936,
+          1150.4244,
+          1147.2396,
+          1264.3888,
+          1181.6356,
+          1150.8932,
+          1158.7288,
+          1126.0636,
+          1141.3308
+        ],
+        "reference": [
+          3181.6212,
+          1649.5916,
+          1640.602,
+          1632.3096,
+          1636.1592,
+          1637.2768,
+          1654.3748,
+          1639.392,
+          2413.0828,
+          1630.146,
+          1634.8452,
+          1632.2056
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 1155.0112,
+          "mad_ns": 10.725999999999885
+        },
+        "reference": {
+          "median_ns": 1638.3344000000002,
+          "mad_ns": 6.076800000000162
+        }
+      },
+      "reference_over_candidate": 1.4184575872511023,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          109.07205,
+          108.88525,
+          108.9478,
+          108.8597,
+          109.24125,
+          108.56975,
+          109.719,
+          109.45155,
+          110.76055,
+          108.9859,
+          110.61935,
+          213.7569
+        ],
+        "reference": [
+          162.1393,
+          162.20735,
+          164.2455,
+          162.6581,
+          162.15535,
+          163.44075,
+          161.63255,
+          162.5339,
+          167.234,
+          162.76625,
+          162.4017,
+          163.98705
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 109.15665,
+          "mad_ns": 0.2959249999999969
+        },
+        "reference": {
+          "median_ns": 162.596,
+          "mad_ns": 0.4486750000000086
+        }
+      },
+      "reference_over_candidate": 1.4895656838131255,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "str",
+      "container": "tuple",
+      "kind": "sequence",
+      "iterations_per_sample": 19,
+      "warmup_iterations_each": 19,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          77303.78947368421,
+          77584.21052631579,
+          76967.47368421052,
+          76435.63157894737,
+          77965.31578947368,
+          76803.05263157895,
+          76557.94736842105,
+          76808.31578947368,
+          77495.63157894737,
+          78372.78947368421,
+          76314.42105263157,
+          76717.1052631579
+        ],
+        "reference": [
+          5073890.263157895,
+          82757.31578947368,
+          85859.8947368421,
+          83065.63157894737,
+          82921.78947368421,
+          82599.73684210527,
+          82385.15789473684,
+          82873.84210526316,
+          81949.73684210527,
+          82986.1052631579,
+          82016.73684210527,
+          82402.05263157895
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 76887.8947368421,
+          "mad_ns": 434.0789473684199
+        },
+        "reference": {
+          "median_ns": 82815.57894736843,
+          "mad_ns": 331.7894736842136
+        }
+      },
+      "reference_over_candidate": 1.0770951556264419,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "str",
+      "container": "tuple",
+      "kind": "dict",
+      "iterations_per_sample": 8,
+      "warmup_iterations_each": 8,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          989656.0,
+          993568.125,
+          1003292.875,
+          988180.0,
+          999091.375,
+          991885.5,
+          1009906.625,
+          992345.0,
+          996337.375,
+          989006.25,
+          990399.625,
+          1025281.125
+        ],
+        "reference": [
+          136825.75,
+          149503.625,
+          144283.25,
+          136963.375,
+          139078.0,
+          136206.0,
+          135313.5,
+          136679.25,
+          136646.75,
+          135541.25,
+          134024.0,
+          134914.125
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 992956.5625,
+          "mad_ns": 3665.5625
+        },
+        "reference": {
+          "median_ns": 136663.0,
+          "mad_ns": 1235.625
+        }
+      },
+      "reference_over_candidate": 0.137632405244313,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "str",
+      "container": "list",
+      "kind": "sequence",
+      "iterations_per_sample": 8,
+      "warmup_iterations_each": 8,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          13025913.75,
+          640238.625,
+          633932.75,
+          636848.5,
+          625451.25,
+          633323.125,
+          624522.375,
+          625428.625,
+          624735.125,
+          11719023.0,
+          625050.625,
+          630058.125
+        ],
+        "reference": [
+          681489.75,
+          701110.625,
+          684907.375,
+          676974.125,
+          674842.125,
+          672850.375,
+          676705.125,
+          674288.875,
+          674252.625,
+          685326.75,
+          699667.25,
+          689948.75
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 631690.625,
+          "mad_ns": 6451.0
+        },
+        "reference": {
+          "median_ns": 679231.9375,
+          "mad_ns": 5327.375
+        }
+      },
+      "reference_over_candidate": 1.075260437021683,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "bytes",
+      "container": "list",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          109.7395,
+          110.81715,
+          110.01995,
+          112.11615,
+          110.1241,
+          111.35045,
+          110.28885,
+          110.1206,
+          110.5407,
+          109.89025,
+          110.62485,
+          109.50615
+        ],
+        "reference": [
+          162.78525,
+          162.52585,
+          159.58895,
+          160.5524,
+          160.90245,
+          161.0141,
+          160.4367,
+          160.5058,
+          159.89385,
+          159.9535,
+          160.60945,
+          159.34555
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 110.206475,
+          "mad_ns": 0.3763000000000005
+        },
+        "reference": {
+          "median_ns": 160.5291,
+          "mad_ns": 0.5303000000000111
+        }
+      },
+      "reference_over_candidate": 1.4566213101362693,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "str",
+      "container": "list",
+      "kind": "namedtuple",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          1192.2622,
+          1208.00405,
+          841.09195,
+          848.1987,
+          844.85415,
+          851.40255,
+          847.9844,
+          847.36595,
+          854.677,
+          832.0042,
+          827.87995,
+          840.7244
+        ],
+        "reference": [
+          2202.451,
+          1601.70965,
+          1470.0074,
+          1484.0757,
+          1481.4357,
+          1478.02255,
+          1480.21235,
+          1619.27425,
+          1472.26185,
+          1470.065,
+          1466.33135,
+          1463.8536
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 847.6751750000001,
+          "mad_ns": 6.76700000000011
+        },
+        "reference": {
+          "median_ns": 1479.11745,
+          "mad_ns": 9.081249999999955
+        }
+      },
+      "reference_over_candidate": 1.7449106610913783,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "bytes",
+      "container": "list",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          113.009,
+          110.392,
+          112.08255,
+          111.22825,
+          111.3069,
+          111.14065,
+          109.9258,
+          112.19625,
+          110.7706,
+          111.2583,
+          111.9679,
+          110.9714
+        ],
+        "reference": [
+          162.62655,
+          164.40925,
+          162.50235,
+          162.63355,
+          160.8018,
+          161.20185,
+          161.6956,
+          162.64555,
+          161.4432,
+          161.6185,
+          162.5564,
+          163.2575
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 111.24327500000001,
+          "mad_ns": 0.5986499999999992
+        },
+        "reference": {
+          "median_ns": 162.52937500000002,
+          "mad_ns": 0.78094999999999
+        }
+      },
+      "reference_over_candidate": 1.4610265204795525,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "str",
+      "container": "list",
+      "kind": "dict",
+      "iterations_per_sample": 312,
+      "warmup_iterations_each": 312,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          8345.830128205129,
+          8420.397435897436,
+          8720.083333333334,
+          8361.817307692309,
+          8328.336538461539,
+          8504.211538461539,
+          8510.951923076924,
+          8502.285256410256,
+          8594.509615384615,
+          8512.689102564103,
+          8357.03205128205,
+          8430.34935897436
+        ],
+        "reference": [
+          2723.5416666666665,
+          2671.253205128205,
+          2645.2179487179487,
+          2630.13141025641,
+          2662.650641025641,
+          2690.128205128205,
+          2698.474358974359,
+          2673.3076923076924,
+          2674.849358974359,
+          2759.301282051282,
+          2700.7852564102564,
+          2705.5352564102564
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 8466.317307692309,
+          "mad_ns": 75.43589743589746
+        },
+        "reference": {
+          "median_ns": 2682.488782051282,
+          "mad_ns": 19.067307692307622
+        }
+      },
+      "reference_over_candidate": 0.3168424575362929,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "str",
+      "container": "list",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          105.46155,
+          105.6974,
+          105.73795,
+          109.8086,
+          105.39495,
+          104.93675,
+          105.5662,
+          106.9488,
+          105.4876,
+          105.45805,
+          105.0149,
+          110.044
+        ],
+        "reference": [
+          165.6897,
+          166.79135,
+          166.73525,
+          165.6466,
+          165.3281,
+          166.9656,
+          165.566,
+          166.72875,
+          165.99465,
+          165.3997,
+          165.22095,
+          167.47285
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 105.5269,
+          "mad_ns": 0.19077500000000214
+        },
+        "reference": {
+          "median_ns": 165.842175,
+          "mad_ns": 0.5676500000000004
+        }
+      },
+      "reference_over_candidate": 1.57156303274331,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "str",
+      "container": "tuple",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          105.53015,
+          106.7855,
+          104.5712,
+          105.46605,
+          105.92675,
+          105.55365,
+          106.52415,
+          106.4185,
+          105.26425,
+          105.5096,
+          105.92775,
+          105.21415
+        ],
+        "reference": [
+          167.8875,
+          166.71975,
+          166.1173,
+          166.14835,
+          164.61905,
+          165.55495,
+          166.7668,
+          164.68515,
+          164.90545,
+          165.28755,
+          164.51835,
+          163.7783
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 105.5419,
+          "mad_ns": 0.3562999999999974
+        },
+        "reference": {
+          "median_ns": 165.42125,
+          "mad_ns": 0.7691499999999962
+        }
+      },
+      "reference_over_candidate": 1.5673514499928463,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "bytes",
+      "container": "list",
+      "kind": "dict",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          785.76875,
+          608.5892,
+          611.26675,
+          626.40165,
+          610.93825,
+          632.09425,
+          626.08565,
+          608.7419,
+          610.9358,
+          613.24225,
+          630.76475,
+          624.15275
+        ],
+        "reference": [
+          1408.278,
+          1362.5959,
+          1353.1396,
+          1342.6322,
+          1342.99875,
+          1338.35725,
+          1338.9296,
+          1344.4109,
+          1343.78845,
+          1345.04285,
+          1346.1826,
+          1345.9963
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 618.6975,
+          "mad_ns": 7.760474999999985
+        },
+        "reference": {
+          "median_ns": 1344.726875,
+          "mad_ns": 1.9114000000000715
+        }
+      },
+      "reference_over_candidate": 2.1734803761127206,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "bytes",
+      "container": "list",
+      "kind": "namedtuple",
+      "iterations_per_sample": 312,
+      "warmup_iterations_each": 312,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          3400.2371794871797,
+          3378.3173076923076,
+          3395.9070512820513,
+          3375.9102564102564,
+          3384.221153846154,
+          3396.5833333333335,
+          3574.9903846153848,
+          3360.1153846153848,
+          3384.3846153846152,
+          3367.5929487179487,
+          3364.8333333333335,
+          3376.551282051282
+        ],
+        "reference": [
+          2941.63141025641,
+          3038.378205128205,
+          2962.653846153846,
+          3074.878205128205,
+          2949.076923076923,
+          2951.4198717948716,
+          2956.525641025641,
+          2962.3653846153848,
+          2949.400641025641,
+          2952.4134615384614,
+          2947.022435897436,
+          2969.974358974359
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 3381.2692307692305,
+          "mad_ns": 14.15705128205127
+        },
+        "reference": {
+          "median_ns": 2954.4695512820513,
+          "mad_ns": 7.671474358974365
+        }
+      },
+      "reference_over_candidate": 0.8737753043728839,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "bytes",
+      "container": "list",
+      "kind": "sequence",
+      "iterations_per_sample": 2500,
+      "warmup_iterations_each": 2500,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          924.074,
+          946.544,
+          906.1752,
+          912.7888,
+          901.696,
+          907.6692,
+          893.684,
+          903.034,
+          907.0884,
+          913.29,
+          922.6316,
+          905.354
+        ],
+        "reference": [
+          2418.014,
+          2518.7344,
+          2417.6532,
+          2433.1408,
+          2440.8408,
+          2482.9844,
+          2460.7308,
+          2413.912,
+          2443.7612,
+          2435.052,
+          2426.4388,
+          2425.2332
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 907.3788,
+          "mad_ns": 5.5464000000000055
+        },
+        "reference": {
+          "median_ns": 2434.0964000000004,
+          "mad_ns": 12.873599999999897
+        }
+      },
+      "reference_over_candidate": 2.682558155425276,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "str",
+      "container": "list",
+      "kind": "sequence",
+      "iterations_per_sample": 312,
+      "warmup_iterations_each": 312,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          3776.7051282051284,
+          3736.003205128205,
+          3738.730769230769,
+          4068.3333333333335,
+          3743.772435897436,
+          3773.721153846154,
+          3715.49358974359,
+          3781.201923076923,
+          3705.701923076923,
+          3768.875,
+          3722.522435897436,
+          3781.233974358974
+        ],
+        "reference": [
+          5668.0,
+          5710.977564102564,
+          5729.919871794872,
+          6541.36858974359,
+          5707.705128205128,
+          5665.528846153846,
+          5620.554487179487,
+          5695.089743589743,
+          5640.038461538462,
+          5638.400641025641,
+          5684.080128205128,
+          5658.753205128205
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 3756.323717948718,
+          "mad_ns": 22.62980769230785
+        },
+        "reference": {
+          "median_ns": 5676.040064102564,
+          "mad_ns": 33.30128205128176
+        }
+      },
+      "reference_over_candidate": 1.5110625415431926,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "str",
+      "container": "tuple",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          106.2107,
+          106.51865,
+          104.91225,
+          106.57575,
+          106.53015,
+          106.71195,
+          111.3254,
+          109.80965,
+          105.38195,
+          107.38095,
+          106.7685,
+          107.1651
+        ],
+        "reference": [
+          166.00465,
+          181.4475,
+          165.0111,
+          166.75075,
+          165.51745,
+          167.26955,
+          168.3592,
+          165.2305,
+          169.0938,
+          168.545,
+          167.32665,
+          163.50285
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 106.64385,
+          "mad_ns": 0.4771999999999963
+        },
+        "reference": {
+          "median_ns": 167.01015,
+          "mad_ns": 1.5137749999999954
+        }
+      },
+      "reference_over_candidate": 1.5660551452334102,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "namedtuple",
+      "iterations_per_sample": 312,
+      "warmup_iterations_each": 312,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          3384.801282051282,
+          3831.3076923076924,
+          3358.641025641026,
+          3434.971153846154,
+          3388.426282051282,
+          3385.7628205128203,
+          3375.875,
+          3451.1826923076924,
+          3371.221153846154,
+          3367.8173076923076,
+          3408.9070512820513,
+          3445.4391025641025
+        ],
+        "reference": [
+          2973.923076923077,
+          3448.903846153846,
+          3072.6634615384614,
+          3002.1378205128203,
+          2993.2147435897436,
+          2991.25641025641,
+          3010.483974358974,
+          3001.36858974359,
+          3007.2083333333335,
+          3106.6570512820513,
+          3001.4647435897436,
+          2979.5384615384614
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 3387.0945512820513,
+          "mad_ns": 20.544871794871824
+        },
+        "reference": {
+          "median_ns": 3001.801282051282,
+          "mad_ns": 9.613782051281987
+        }
+      },
+      "reference_over_candidate": 0.8862466744292888,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          111.19325,
+          111.86125,
+          110.9939,
+          113.53675,
+          161.2845,
+          159.79875,
+          109.50265,
+          110.6063,
+          110.1466,
+          112.7711,
+          108.69195,
+          110.4401
+        ],
+        "reference": [
+          161.8689,
+          163.18685,
+          160.60245,
+          165.52795,
+          242.4533,
+          173.47245,
+          160.4272,
+          161.18335,
+          159.5799,
+          159.72315,
+          159.0261,
+          163.27705
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 111.093575,
+          "mad_ns": 1.2689499999999967
+        },
+        "reference": {
+          "median_ns": 161.52612499999998,
+          "mad_ns": 1.7769499999999994
+        }
+      },
+      "reference_over_candidate": 1.4539645969625155,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "str",
+      "container": "tuple",
+      "kind": "dict",
+      "iterations_per_sample": 19,
+      "warmup_iterations_each": 19,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          133241.05263157896,
+          124590.57894736843,
+          122821.63157894737,
+          122989.73684210527,
+          122538.57894736843,
+          122748.36842105263,
+          133514.1052631579,
+          129190.21052631579,
+          123625.47368421052,
+          123710.84210526316,
+          123377.73684210527,
+          126952.05263157895
+        ],
+        "reference": [
+          24405.36842105263,
+          18976.105263157893,
+          19038.315789473683,
+          18700.947368421053,
+          19807.36842105263,
+          18789.473684210527,
+          18631.894736842107,
+          19905.36842105263,
+          18881.736842105263,
+          18948.157894736843,
+          17874.42105263158,
+          18764.684210526317
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 123668.15789473684,
+          "mad_ns": 921.1052631579005
+        },
+        "reference": {
+          "median_ns": 18914.947368421053,
+          "mad_ns": 182.13157894736833
+        }
+      },
+      "reference_over_candidate": 0.15294921255737448,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "str",
+      "container": "list",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          117.70105,
+          108.3669,
+          107.24625,
+          108.1977,
+          107.9518,
+          107.38645,
+          109.061,
+          107.5302,
+          107.51065,
+          108.2232,
+          107.8887,
+          108.6544
+        ],
+        "reference": [
+          167.45935,
+          168.10935,
+          165.29155,
+          166.5855,
+          165.29705,
+          166.32515,
+          165.67515,
+          166.1734,
+          166.26105,
+          174.3172,
+          173.9752,
+          179.62575
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 108.07475,
+          "mad_ns": 0.5543249999999986
+        },
+        "reference": {
+          "median_ns": 166.45532500000002,
+          "mad_ns": 1.0811499999999938
+        }
+      },
+      "reference_over_candidate": 1.5401870002012499,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "str",
+      "container": "tuple",
+      "kind": "namedtuple",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          785.75025,
+          783.17785,
+          783.17135,
+          793.1915,
+          793.8615,
+          1028.2291,
+          1119.77105,
+          818.12525,
+          789.58755,
+          796.28865,
+          784.5524,
+          790.72525
+        ],
+        "reference": [
+          1453.33265,
+          1449.14585,
+          1445.5294,
+          1437.6725,
+          1764.2816,
+          2256.0596,
+          2364.3885,
+          1443.11175,
+          1439.1327,
+          1432.49665,
+          1444.54585,
+          1449.47485
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 791.9583749999999,
+          "mad_ns": 6.80704999999989
+        },
+        "reference": {
+          "median_ns": 1447.3376250000001,
+          "mad_ns": 7.099974999999972
+        }
+      },
+      "reference_over_candidate": 1.827542546033433,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "bytes",
+      "container": "list",
+      "kind": "dict",
+      "iterations_per_sample": 8,
+      "warmup_iterations_each": 8,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          1012434.125,
+          998708.5,
+          1030798.25,
+          998150.0,
+          1001478.75,
+          1000208.125,
+          1029391.125,
+          1005712.75,
+          995759.0,
+          1008524.5,
+          1016854.625,
+          1024011.75
+        ],
+        "reference": [
+          141133.5,
+          143893.875,
+          151014.75,
+          139196.875,
+          140442.375,
+          140542.625,
+          143652.25,
+          142466.75,
+          140977.0,
+          141142.375,
+          144707.625,
+          148608.625
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 1007118.625,
+          "mad_ns": 8689.375
+        },
+        "reference": {
+          "median_ns": 141804.5625,
+          "mad_ns": 1604.9375
+        }
+      },
+      "reference_over_candidate": 0.14080224412491626,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "str",
+      "container": "tuple",
+      "kind": "sequence",
+      "iterations_per_sample": 2500,
+      "warmup_iterations_each": 2500,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          932.7272,
+          913.0732,
+          919.1224,
+          913.8384,
+          891.3724,
+          897.2136,
+          899.4368,
+          902.0608,
+          895.6992,
+          924.3504,
+          917.616,
+          911.1144
+        ],
+        "reference": [
+          2410.6832,
+          2400.2392,
+          2501.356,
+          2416.1352,
+          2412.1652,
+          2434.7996,
+          2452.7908,
+          2400.5036,
+          2431.6868,
+          2404.562,
+          2421.5912,
+          2418.3108
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 912.0938000000001,
+          "mad_ns": 11.144800000000032
+        },
+        "reference": {
+          "median_ns": 2417.223,
+          "mad_ns": 13.562400000000025
+        }
+      },
+      "reference_over_candidate": 2.650191241295577,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "dict",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          619.62545,
+          616.03895,
+          616.04745,
+          619.7942,
+          619.6915,
+          626.298,
+          624.9114,
+          625.9094,
+          623.3255,
+          620.39405,
+          616.68045,
+          622.37905
+        ],
+        "reference": [
+          1384.45545,
+          1392.90525,
+          1374.58405,
+          1374.71225,
+          1367.69815,
+          1380.175,
+          1373.00915,
+          1370.7958,
+          1380.61715,
+          1378.90705,
+          1389.7009,
+          1385.5601
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 620.0941250000001,
+          "mad_ns": 3.3225250000000415
+        },
+        "reference": {
+          "median_ns": 1379.541025,
+          "mad_ns": 5.488024999999993
+        }
+      },
+      "reference_over_candidate": 2.2247284232857387,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          111.17065,
+          109.63635,
+          109.9528,
+          108.56475,
+          109.0314,
+          110.15415,
+          109.94235,
+          109.81415,
+          109.92075,
+          109.8061,
+          109.4731,
+          111.12815
+        ],
+        "reference": [
+          163.49485,
+          161.8248,
+          161.6095,
+          162.11525,
+          162.57295,
+          163.7582,
+          161.7712,
+          165.63305,
+          162.62205,
+          161.84035,
+          161.60345,
+          162.89695
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 109.86744999999999,
+          "mad_ns": 0.2589000000000041
+        },
+        "reference": {
+          "median_ns": 162.3441,
+          "mad_ns": 0.5628750000000053
+        }
+      },
+      "reference_over_candidate": 1.4776360059326035,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "str",
+      "container": "list",
+      "kind": "namedtuple",
+      "iterations_per_sample": 312,
+      "warmup_iterations_each": 312,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          3422.6153846153848,
+          3392.5352564102564,
+          3358.4134615384614,
+          3386.147435897436,
+          3426.048076923077,
+          3480.298076923077,
+          3394.0128205128203,
+          3379.6634615384614,
+          3421.1378205128203,
+          3401.108974358974,
+          3382.2948717948716,
+          3364.897435897436
+        ],
+        "reference": [
+          3080.49358974359,
+          3048.7147435897436,
+          2966.4134615384614,
+          2948.6891025641025,
+          2966.602564102564,
+          2991.448717948718,
+          2956.201923076923,
+          2960.63141025641,
+          2972.6698717948716,
+          2942.5929487179487,
+          2977.6794871794873,
+          2950.0384615384614
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 3393.274038461538,
+          "mad_ns": 20.737179487179446
+        },
+        "reference": {
+          "median_ns": 2966.5080128205127,
+          "mad_ns": 13.820512820512931
+        }
+      },
+      "reference_over_candidate": 0.8742317829907675,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "bytes",
+      "container": "list",
+      "kind": "sequence",
+      "iterations_per_sample": 312,
+      "warmup_iterations_each": 312,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          3632.772435897436,
+          3678.7051282051284,
+          3638.451923076923,
+          3798.019230769231,
+          3681.9455128205127,
+          3753.753205128205,
+          3632.2596153846152,
+          3834.5833333333335,
+          3622.596153846154,
+          3622.8205128205127,
+          3746.403846153846,
+          3635.5929487179487
+        ],
+        "reference": [
+          5599.849358974359,
+          5536.195512820513,
+          5573.977564102564,
+          5942.195512820513,
+          5555.9358974358975,
+          5633.875,
+          5561.714743589743,
+          5686.455128205128,
+          5594.423076923077,
+          5567.942307692308,
+          5657.791666666667,
+          5559.371794871795
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 3658.5785256410254,
+          "mad_ns": 31.038461538461434
+        },
+        "reference": {
+          "median_ns": 5584.20032051282,
+          "mad_ns": 26.546474358974137
+        }
+      },
+      "reference_over_candidate": 1.5263305902486823,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "bytes",
+      "container": "list",
+      "kind": "sequence",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          541.98145,
+          547.1808,
+          555.574,
+          540.25385,
+          549.92345,
+          596.6902,
+          546.35455,
+          547.80725,
+          543.0766,
+          551.2995,
+          543.9449,
+          545.1287
+        ],
+        "reference": [
+          1980.59735,
+          1990.9044,
+          2013.5977,
+          1985.70605,
+          1986.02155,
+          1988.8443,
+          1987.1432,
+          1996.5259,
+          1982.3695,
+          1995.1819,
+          2044.52405,
+          1999.3497
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 546.767675,
+          "mad_ns": 3.423425000000009
+        },
+        "reference": {
+          "median_ns": 1989.87435,
+          "mad_ns": 5.9795500000000175
+        }
+      },
+      "reference_over_candidate": 3.639341608846938,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "bytes",
+      "container": "list",
+      "kind": "namedtuple",
+      "iterations_per_sample": 19,
+      "warmup_iterations_each": 19,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          67896.94736842105,
+          70787.63157894737,
+          67590.63157894737,
+          67687.1052631579,
+          68203.21052631579,
+          68778.78947368421,
+          68300.68421052632,
+          67705.57894736843,
+          73236.57894736843,
+          71481.31578947368,
+          70269.47368421052,
+          68916.8947368421
+        ],
+        "reference": [
+          51354.52631578947,
+          50955.0,
+          50780.47368421053,
+          50499.05263157895,
+          50823.68421052631,
+          50763.63157894737,
+          51235.89473684211,
+          4869054.52631579,
+          53005.47368421053,
+          52732.36842105263,
+          52952.21052631579,
+          52121.47368421053
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 68539.73684210527,
+          "mad_ns": 843.3947368421068
+        },
+        "reference": {
+          "median_ns": 51295.21052631579,
+          "mad_ns": 663.8684210526299
+        }
+      },
+      "reference_over_candidate": 0.7484010428065163,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "bytes",
+      "container": "list",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          112.13365,
+          115.6194,
+          112.0936,
+          112.32945,
+          110.9078,
+          113.0891,
+          114.23835,
+          111.20075,
+          111.8222,
+          114.5533,
+          112.47915,
+          110.96935
+        ],
+        "reference": [
+          160.23895,
+          160.96705,
+          160.1593,
+          161.8158,
+          161.51535,
+          159.72065,
+          160.7497,
+          162.17285,
+          162.93195,
+          158.9615,
+          161.4643,
+          163.37315
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 112.23155,
+          "mad_ns": 0.9441750000000013
+        },
+        "reference": {
+          "median_ns": 161.215675,
+          "mad_ns": 0.9669500000000113
+        }
+      },
+      "reference_over_candidate": 1.4364559252723499,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "str",
+      "container": "list",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          105.8276,
+          108.03345,
+          113.5708,
+          105.1646,
+          107.0865,
+          107.5627,
+          107.82665,
+          107.66435,
+          106.9979,
+          105.5462,
+          105.99685,
+          106.3108
+        ],
+        "reference": [
+          164.613,
+          165.3061,
+          184.52015,
+          164.243,
+          165.49035,
+          165.3181,
+          163.7402,
+          165.75325,
+          163.75025,
+          166.08225,
+          163.51735,
+          165.1934
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 107.04220000000001,
+          "mad_ns": 0.8878499999999931
+        },
+        "reference": {
+          "median_ns": 165.24975,
+          "mad_ns": 0.7346249999999941
+        }
+      },
+      "reference_over_candidate": 1.5437813311011919,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "str",
+      "container": "list",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          106.0845,
+          105.3414,
+          106.24425,
+          107.5242,
+          106.6328,
+          106.2262,
+          105.75495,
+          110.6344,
+          107.1025,
+          107.17665,
+          106.0389,
+          107.71045
+        ],
+        "reference": [
+          168.0237,
+          164.97405,
+          168.19745,
+          165.1173,
+          165.3106,
+          167.9541,
+          165.7833,
+          173.1404,
+          179.05385,
+          171.75985,
+          165.4678,
+          166.02615
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 106.438525,
+          "mad_ns": 0.6737750000000062
+        },
+        "reference": {
+          "median_ns": 166.990125,
+          "mad_ns": 1.6009250000000037
+        }
+      },
+      "reference_over_candidate": 1.568888003662208,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "sequence",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          533.99785,
+          529.43345,
+          526.81495,
+          525.80345,
+          522.8505,
+          523.3287,
+          522.1114,
+          521.9802,
+          527.24615,
+          522.9196,
+          520.12185,
+          518.97815
+        ],
+        "reference": [
+          1982.57285,
+          1993.7307,
+          1998.2335,
+          2000.6191,
+          1988.67905,
+          1979.12605,
+          1969.1295,
+          1978.97385,
+          2020.60685,
+          1981.14865,
+          1982.8492,
+          1981.715
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 523.12415,
+          "mad_ns": 2.8408000000000015
+        },
+        "reference": {
+          "median_ns": 1982.711025,
+          "mad_ns": 4.8525999999999385
+        }
+      },
+      "reference_over_candidate": 3.790134760553494,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "str",
+      "container": "list",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          105.5867,
+          107.90025,
+          106.85165,
+          108.57475,
+          107.0755,
+          106.411,
+          105.49305,
+          107.6128,
+          107.0154,
+          112.85575,
+          106.9057,
+          108.1271
+        ],
+        "reference": [
+          166.1989,
+          166.80335,
+          175.18755,
+          181.4325,
+          167.223,
+          166.68615,
+          168.4839,
+          168.14985,
+          167.235,
+          166.05975,
+          167.246,
+          199.3065
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 107.04545,
+          "mad_ns": 0.7446249999999992
+        },
+        "reference": {
+          "median_ns": 167.2405,
+          "mad_ns": 0.9754749999999888
+        }
+      },
+      "reference_over_candidate": 1.5623317011605817,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "bytes",
+      "container": "list",
+      "kind": "namedtuple",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          829.33715,
+          848.4806,
+          829.21695,
+          819.01455,
+          832.38275,
+          831.07675,
+          824.1022,
+          827.86695,
+          814.055,
+          818.91235,
+          814.21425,
+          819.0
+        ],
+        "reference": [
+          1467.4866,
+          1463.9432,
+          1467.22715,
+          1463.4545,
+          1479.4577,
+          1460.54405,
+          1464.34635,
+          1523.77075,
+          1460.92665,
+          1461.54605,
+          1629.8647,
+          1459.4634
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 825.984575,
+          "mad_ns": 6.684100000000001
+        },
+        "reference": {
+          "median_ns": 1464.144775,
+          "mad_ns": 3.279974999999922
+        }
+      },
+      "reference_over_candidate": 1.7726054690549156,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "str",
+      "container": "tuple",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          105.72995,
+          107.2342,
+          106.2512,
+          106.1731,
+          106.2167,
+          109.6524,
+          106.98885,
+          106.26175,
+          106.98835,
+          106.1246,
+          107.06445,
+          108.44155
+        ],
+        "reference": [
+          166.39975,
+          167.4428,
+          166.27455,
+          165.3096,
+          165.0427,
+          165.3031,
+          165.49985,
+          165.16335,
+          168.7648,
+          165.5965,
+          165.8053,
+          167.1028
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 106.62505,
+          "mad_ns": 0.44567499999999427
+        },
+        "reference": {
+          "median_ns": 165.7009,
+          "mad_ns": 0.5555999999999983
+        }
+      },
+      "reference_over_candidate": 1.5540522607023395,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "str",
+      "container": "list",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          106.4085,
+          107.30435,
+          106.31785,
+          107.02945,
+          108.6744,
+          109.0169,
+          107.98235,
+          109.89675,
+          109.9238,
+          111.4386,
+          112.4546,
+          107.54615
+        ],
+        "reference": [
+          168.6842,
+          170.9486,
+          170.09235,
+          168.27105,
+          169.78985,
+          169.4679,
+          171.65415,
+          175.62165,
+          173.16095,
+          175.7614,
+          170.2085,
+          169.9626
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 108.328375,
+          "mad_ns": 1.43365
+        },
+        "reference": {
+          "median_ns": 170.15042499999998,
+          "mad_ns": 1.1321999999999974
+        }
+      },
+      "reference_over_candidate": 1.5706911970201713,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          111.3244,
+          175.5436,
+          115.29795,
+          113.19475,
+          110.5943,
+          113.91535,
+          111.16865,
+          109.03295,
+          111.4897,
+          109.7345,
+          112.73905,
+          111.09105
+        ],
+        "reference": [
+          161.44425,
+          186.75405,
+          229.60985,
+          165.54595,
+          160.7427,
+          162.36815,
+          161.0952,
+          161.95,
+          169.07025,
+          160.8969,
+          189.99195,
+          160.84985
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 111.40705,
+          "mad_ns": 1.5022750000000045
+        },
+        "reference": {
+          "median_ns": 162.159075,
+          "mad_ns": 1.362799999999993
+        }
+      },
+      "reference_over_candidate": 1.4555548773618905,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "str",
+      "container": "list",
+      "kind": "sequence",
+      "iterations_per_sample": 2500,
+      "warmup_iterations_each": 2500,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          905.51,
+          890.2588,
+          890.0224,
+          887.4424,
+          895.1864,
+          886.874,
+          882.8076,
+          893.2112,
+          888.34,
+          887.3984,
+          894.814,
+          900.9432
+        ],
+        "reference": [
+          2394.4184,
+          2417.0528,
+          2426.6272,
+          2631.1164,
+          2408.2956,
+          2410.4628,
+          2413.0344,
+          2407.254,
+          2409.4932,
+          2402.9352,
+          2401.0884,
+          2413.1468
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 890.1406,
+          "mad_ns": 3.1685999999999694
+        },
+        "reference": {
+          "median_ns": 2409.978,
+          "mad_ns": 5.105800000000045
+        }
+      },
+      "reference_over_candidate": 2.7074127390661658,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "bytes",
+      "container": "list",
+      "kind": "namedtuple",
+      "iterations_per_sample": 2500,
+      "warmup_iterations_each": 2500,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          1083.6516,
+          1074.65,
+          1082.4456,
+          1087.2008,
+          1078.7,
+          1086.844,
+          1079.4412,
+          1090.3532,
+          1097.7088,
+          1094.412,
+          1070.896,
+          1075.4148
+        ],
+        "reference": [
+          1640.9588,
+          1620.9884,
+          1633.1824,
+          1635.6828,
+          1630.7632,
+          1625.1628,
+          1654.5872,
+          1648.8384,
+          1663.5088,
+          1618.4524,
+          1631.7968,
+          1628.4876
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 1083.0486,
+          "mad_ns": 5.826599999999985
+        },
+        "reference": {
+          "median_ns": 1632.4895999999999,
+          "mad_ns": 7.898000000000025
+        }
+      },
+      "reference_over_candidate": 1.5073096442763507,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "str",
+      "container": "tuple",
+      "kind": "dict",
+      "iterations_per_sample": 2500,
+      "warmup_iterations_each": 2500,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          1453.7032,
+          1460.0848,
+          1457.044,
+          1447.642,
+          1466.2224,
+          1444.3368,
+          1460.854,
+          1452.4012,
+          1448.1228,
+          1448.0588,
+          1489.2732,
+          1539.0924
+        ],
+        "reference": [
+          1491.5888,
+          1557.5124,
+          1498.6872,
+          1508.7024,
+          1533.9804,
+          1529.9904,
+          1506.5228,
+          1512.0516,
+          1502.9016,
+          1504.1236,
+          1519.6872,
+          1533.0712
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 1455.3736,
+          "mad_ns": 7.282799999999838
+        },
+        "reference": {
+          "median_ns": 1510.377,
+          "mad_ns": 10.5
+        }
+      },
+      "reference_over_candidate": 1.0377933198733302,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "bytes",
+      "container": "list",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          110.18365,
+          109.9158,
+          111.6609,
+          110.5182,
+          113.9449,
+          109.64385,
+          109.4621,
+          110.68395,
+          110.1912,
+          108.89075,
+          109.9408,
+          109.7856
+        ],
+        "reference": [
+          160.0296,
+          159.77075,
+          159.80375,
+          161.57745,
+          160.9019,
+          163.12625,
+          161.3491,
+          162.18885,
+          160.7747,
+          159.53685,
+          164.7858,
+          164.57995
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 110.062225,
+          "mad_ns": 0.4371749999999963
+        },
+        "reference": {
+          "median_ns": 161.1255,
+          "mad_ns": 1.2088249999999903
+        }
+      },
+      "reference_over_candidate": 1.463949143314157,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "sequence",
+      "iterations_per_sample": 19,
+      "warmup_iterations_each": 19,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          75208.52631578948,
+          74872.21052631579,
+          74821.63157894737,
+          75819.47368421052,
+          75093.1052631579,
+          75221.15789473684,
+          74199.63157894737,
+          75953.84210526316,
+          79423.78947368421,
+          76519.42105263157,
+          74593.42105263157,
+          74636.1052631579
+        ],
+        "reference": [
+          82673.52631578948,
+          87465.47368421052,
+          82703.0,
+          81612.94736842105,
+          82183.78947368421,
+          84194.21052631579,
+          83977.05263157895,
+          5257223.7894736845,
+          83770.42105263157,
+          82629.73684210527,
+          82545.42105263157,
+          84629.57894736843
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 75150.81578947368,
+          "mad_ns": 536.0526315789466
+        },
+        "reference": {
+          "median_ns": 83236.71052631579,
+          "mad_ns": 848.9210526315801
+        }
+      },
+      "reference_over_candidate": 1.1075955683501002,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "bytes",
+      "container": "list",
+      "kind": "dict",
+      "iterations_per_sample": 2500,
+      "warmup_iterations_each": 2500,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          1465.2928,
+          1473.3568,
+          1477.0988,
+          1480.2712,
+          1469.2468,
+          1464.4716,
+          1455.55,
+          1462.9972,
+          1464.864,
+          1484.9504,
+          1479.8948,
+          1462.9812
+        ],
+        "reference": [
+          1486.3048,
+          1533.532,
+          1539.1364,
+          1502.7656,
+          1556.7912,
+          1531.2444,
+          1539.7612,
+          1534.678,
+          1502.6212,
+          1523.8776,
+          1503.5588,
+          1511.8872
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 1467.2698,
+          "mad_ns": 5.187800000000038
+        },
+        "reference": {
+          "median_ns": 1527.5610000000001,
+          "mad_ns": 13.937000000000012
+        }
+      },
+      "reference_over_candidate": 1.0410907387312136,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "str",
+      "container": "tuple",
+      "kind": "sequence",
+      "iterations_per_sample": 312,
+      "warmup_iterations_each": 312,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          3501.7083333333335,
+          3511.048076923077,
+          3507.0384615384614,
+          3494.451923076923,
+          3500.9679487179487,
+          3482.673076923077,
+          3513.8076923076924,
+          3583.8205128205127,
+          4159.048076923077,
+          3671.483974358974,
+          3521.641025641026,
+          3507.1346153846152
+        ],
+        "reference": [
+          5417.746794871795,
+          5432.384615384615,
+          5412.772435897436,
+          5417.1057692307695,
+          5381.826923076923,
+          5426.157051282052,
+          5379.580128205128,
+          5471.0,
+          5631.788461538462,
+          5413.1891025641025,
+          5421.3108974358975,
+          5414.3141025641025
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 3509.091346153846,
+          "mad_ns": 10.336538461538566
+        },
+        "reference": {
+          "median_ns": 5417.426282051282,
+          "mad_ns": 6.692307692308077
+        }
+      },
+      "reference_over_candidate": 1.54382595026746,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "namedtuple",
+      "iterations_per_sample": 8,
+      "warmup_iterations_each": 8,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          529282.0,
+          533036.375,
+          555720.625,
+          540238.5,
+          543578.625,
+          529235.625,
+          539061.75,
+          533997.875,
+          13027936.625,
+          538862.625,
+          529857.875,
+          533061.375
+        ],
+        "reference": [
+          392427.5,
+          392452.5,
+          390510.875,
+          394425.375,
+          390445.625,
+          426724.375,
+          389406.625,
+          388952.25,
+          401178.125,
+          394191.25,
+          399330.375,
+          394724.625
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 536430.25,
+          "mad_ns": 5190.3125
+        },
+        "reference": {
+          "median_ns": 393321.875,
+          "mad_ns": 2843.625
+        }
+      },
+      "reference_over_candidate": 0.7332209080304476,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "bytes",
+      "container": "list",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          109.37645,
+          110.389,
+          109.47565,
+          109.5758,
+          110.061,
+          109.3249,
+          108.9623,
+          108.741,
+          110.85325,
+          111.14065,
+          108.56525,
+          111.5132
+        ],
+        "reference": [
+          162.37015,
+          160.9485,
+          162.9886,
+          160.5759,
+          161.11875,
+          162.38615,
+          160.26195,
+          160.8839,
+          167.1784,
+          162.4377,
+          161.7492,
+          161.93145
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 109.525725,
+          "mad_ns": 0.6740749999999949
+        },
+        "reference": {
+          "median_ns": 161.840325,
+          "mad_ns": 0.8067000000000064
+        }
+      },
+      "reference_over_candidate": 1.4776466898530005,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "str",
+      "container": "tuple",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          104.20815,
+          104.9112,
+          104.42195,
+          106.13255,
+          105.4806,
+          106.71645,
+          104.8461,
+          107.9358,
+          104.7595,
+          105.59175,
+          104.79855,
+          105.17765
+        ],
+        "reference": [
+          166.71525,
+          164.9741,
+          165.35265,
+          164.1348,
+          164.6656,
+          165.7618,
+          164.7873,
+          164.86695,
+          165.0347,
+          166.27105,
+          164.90645,
+          165.09875
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 105.04442499999999,
+          "mad_ns": 0.49175000000001035
+        },
+        "reference": {
+          "median_ns": 165.00439999999998,
+          "mad_ns": 0.2779499999999757
+        }
+      },
+      "reference_over_candidate": 1.5708058757044936,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "sequence",
+      "iterations_per_sample": 8,
+      "warmup_iterations_each": 8,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          612146.0,
+          610894.25,
+          611200.875,
+          603874.75,
+          606498.75,
+          604753.625,
+          12564123.625,
+          611522.625,
+          622911.125,
+          614892.75,
+          610080.375,
+          617775.875
+        ],
+        "reference": [
+          664457.625,
+          662544.875,
+          659982.25,
+          658459.875,
+          652850.125,
+          667218.125,
+          660633.25,
+          657751.25,
+          664296.25,
+          667720.125,
+          658616.375,
+          664957.25
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 611361.75,
+          "mad_ns": 4197.0
+        },
+        "reference": {
+          "median_ns": 661589.0625,
+          "mad_ns": 3050.9375
+        }
+      },
+      "reference_over_candidate": 1.0821564523786449,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "str",
+      "container": "tuple",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          107.37445,
+          107.1922,
+          105.39445,
+          105.24275,
+          106.41,
+          106.414,
+          105.6413,
+          105.99135,
+          105.89375,
+          105.29625,
+          106.3374,
+          105.3689
+        ],
+        "reference": [
+          166.4433,
+          166.573,
+          165.3296,
+          169.2165,
+          165.56445,
+          167.8239,
+          166.34115,
+          168.3492,
+          166.3041,
+          168.9927,
+          166.52745,
+          166.28905
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 105.94255,
+          "mad_ns": 0.5097749999999976
+        },
+        "reference": {
+          "median_ns": 166.48537499999998,
+          "mad_ns": 0.558624999999978
+        }
+      },
+      "reference_over_candidate": 1.5714684515334016,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "str",
+      "container": "list",
+      "kind": "dict",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          603.51655,
+          603.38935,
+          601.07485,
+          598.81745,
+          599.70675,
+          599.81945,
+          600.9762,
+          599.529,
+          604.33125,
+          602.4489,
+          600.89455,
+          598.3487
+        ],
+        "reference": [
+          1366.9149,
+          1362.8618,
+          1391.3604,
+          1367.2284,
+          1386.62325,
+          1376.2185,
+          1372.50935,
+          1372.1463,
+          1364.03105,
+          1368.7662,
+          1361.99195,
+          1365.82275
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 600.935375,
+          "mad_ns": 1.459949999999992
+        },
+        "reference": {
+          "median_ns": 1367.9973,
+          "mad_ns": 4.33052500000008
+        }
+      },
+      "reference_over_candidate": 2.2764466145798123,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "str",
+      "container": "tuple",
+      "kind": "namedtuple",
+      "iterations_per_sample": 8,
+      "warmup_iterations_each": 8,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          544200.75,
+          542742.375,
+          541563.0,
+          546181.375,
+          550968.5,
+          12015658.875,
+          548969.25,
+          549694.125,
+          542630.875,
+          542469.375,
+          542704.75,
+          550860.875
+        ],
+        "reference": [
+          411362.25,
+          404179.0,
+          404027.5,
+          409219.125,
+          406556.25,
+          411423.625,
+          406392.375,
+          406607.625,
+          403818.375,
+          401916.75,
+          406870.5,
+          408002.125
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 545191.0625,
+          "mad_ns": 3174.875
+        },
+        "reference": {
+          "median_ns": 406581.9375,
+          "mad_ns": 2478.6875
+        }
+      },
+      "reference_over_candidate": 0.7457604598938193,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "str",
+      "container": "tuple",
+      "kind": "dict",
+      "iterations_per_sample": 312,
+      "warmup_iterations_each": 312,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          8479.785256410256,
+          8431.439102564103,
+          8345.833333333334,
+          8633.317307692309,
+          8369.070512820514,
+          8288.339743589744,
+          8356.711538461539,
+          8273.990384615385,
+          8246.865384615385,
+          8261.634615384615,
+          8253.673076923076,
+          8392.086538461539
+        ],
+        "reference": [
+          2560.3173076923076,
+          2649.266025641026,
+          2571.326923076923,
+          2639.4102564102564,
+          2707.397435897436,
+          2533.3846153846152,
+          2535.7596153846152,
+          2652.378205128205,
+          2594.599358974359,
+          2563.076923076923,
+          2538.0384615384614,
+          2521.474358974359
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 8351.272435897437,
+          "mad_ns": 78.72435897435935
+        },
+        "reference": {
+          "median_ns": 2567.201923076923,
+          "mad_ns": 32.62980769230762
+        }
+      },
+      "reference_over_candidate": 0.30740248779838164,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "bytes",
+      "container": "list",
+      "kind": "dict",
+      "iterations_per_sample": 312,
+      "warmup_iterations_each": 312,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          8431.50641025641,
+          8377.836538461539,
+          8245.903846153846,
+          8473.746794871795,
+          8482.253205128205,
+          8395.51923076923,
+          8425.535256410256,
+          8336.426282051281,
+          8339.057692307691,
+          8238.583333333334,
+          8311.64423076923,
+          8403.128205128205
+        ],
+        "reference": [
+          2484.2403846153848,
+          2574.375,
+          2500.352564102564,
+          2599.5416666666665,
+          2538.3621794871797,
+          2546.128205128205,
+          2572.096153846154,
+          2551.7147435897436,
+          2528.855769230769,
+          2687.173076923077,
+          2569.1121794871797,
+          2478.233974358974
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 8386.677884615385,
+          "mad_ns": 48.93589743589837
+        },
+        "reference": {
+          "median_ns": 2548.9214743589746,
+          "mad_ns": 24.314102564102313
+        }
+      },
+      "reference_over_candidate": 0.30392504748927396,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "str",
+      "container": "list",
+      "kind": "namedtuple",
+      "iterations_per_sample": 8,
+      "warmup_iterations_each": 8,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          574064.75,
+          575890.0,
+          571716.125,
+          559962.125,
+          12144570.25,
+          560858.5,
+          568078.125,
+          559212.25,
+          556396.75,
+          555047.25,
+          559634.25,
+          559441.25
+        ],
+        "reference": [
+          433126.5,
+          426859.5,
+          426037.0,
+          417292.625,
+          436625.625,
+          423102.5,
+          423068.75,
+          428527.125,
+          422039.75,
+          418766.0,
+          422629.25,
+          433827.625
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 560410.3125,
+          "mad_ns": 4688.3125
+        },
+        "reference": {
+          "median_ns": 424569.75,
+          "mad_ns": 3243.6875
+        }
+      },
+      "reference_over_candidate": 0.757605169872744,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "str",
+      "container": "tuple",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          107.428,
+          107.59075,
+          106.89625,
+          106.427,
+          107.7205,
+          107.33635,
+          109.726,
+          109.6519,
+          106.51015,
+          107.9343,
+          107.23525,
+          113.05755
+        ],
+        "reference": [
+          166.5715,
+          165.95605,
+          164.4022,
+          165.57095,
+          166.22745,
+          167.18745,
+          165.0717,
+          164.75925,
+          165.901,
+          165.10875,
+          165.68765,
+          171.9146
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 107.509375,
+          "mad_ns": 0.5190249999999992
+        },
+        "reference": {
+          "median_ns": 165.79432500000001,
+          "mad_ns": 0.7041000000000253
+        }
+      },
+      "reference_over_candidate": 1.542138301892277,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          109.14465,
+          109.2282,
+          110.3775,
+          109.3279,
+          109.62735,
+          112.6224,
+          109.4135,
+          110.4396,
+          108.6739,
+          118.03055,
+          109.01045,
+          113.8953
+        ],
+        "reference": [
+          167.2966,
+          161.4588,
+          160.2504,
+          159.5589,
+          167.1749,
+          166.8519,
+          167.9811,
+          169.0162,
+          159.39265,
+          181.22415,
+          159.8113,
+          160.3721
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 109.520425,
+          "mad_ns": 0.6782499999999985
+        },
+        "reference": {
+          "median_ns": 164.15535,
+          "mad_ns": 3.8653499999999923
+        }
+      },
+      "reference_over_candidate": 1.4988560353011777,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "namedtuple",
+      "iterations_per_sample": 2500,
+      "warmup_iterations_each": 2500,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          1037.4376,
+          1074.6416,
+          1055.9536,
+          1051.2024,
+          1104.0584,
+          1051.4108,
+          1110.9444,
+          1214.3812,
+          1059.4788,
+          1034.6332,
+          1052.7408,
+          1050.3048
+        ],
+        "reference": [
+          1575.6356,
+          1589.7812,
+          1585.4424,
+          1577.3224,
+          1595.0612,
+          1568.5452,
+          1572.4068,
+          1610.308,
+          1589.2484,
+          1583.712,
+          1595.4136,
+          1592.6776
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 1054.3472000000002,
+          "mad_ns": 11.020600000000059
+        },
+        "reference": {
+          "median_ns": 1587.3454,
+          "mad_ns": 7.892000000000166
+        }
+      },
+      "reference_over_candidate": 1.505524366167046,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "sequence",
+      "iterations_per_sample": 2500,
+      "warmup_iterations_each": 2500,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          860.8064,
+          859.6524,
+          861.3472,
+          877.0348,
+          860.9948,
+          856.2232,
+          856.2956,
+          883.192,
+          870.5208,
+          855.4384,
+          854.8692,
+          953.5104
+        ],
+        "reference": [
+          2409.5652,
+          2413.0344,
+          2412.0292,
+          2381.6548,
+          2372.3252,
+          2391.418,
+          2389.8316,
+          2403.7168,
+          2402.3984,
+          2376.1424,
+          2385.2124,
+          2396.5096
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 860.9006,
+          "mad_ns": 5.069800000000043
+        },
+        "reference": {
+          "median_ns": 2393.9638,
+          "mad_ns": 11.031000000000176
+        }
+      },
+      "reference_over_candidate": 2.780766792356748,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "namedtuple",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          788.7227,
+          782.0341,
+          782.82275,
+          785.8549,
+          773.6499,
+          783.84485,
+          785.7562,
+          788.8234,
+          783.31755,
+          785.77225,
+          791.5615,
+          782.62745
+        ],
+        "reference": [
+          1433.57025,
+          1429.0694,
+          1426.90515,
+          1442.82625,
+          1453.98915,
+          1434.82915,
+          1427.0719,
+          1476.66895,
+          1451.8539,
+          1470.8737,
+          1434.5257,
+          1444.9575
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 784.800525,
+          "mad_ns": 2.0754249999999956
+        },
+        "reference": {
+          "median_ns": 1438.8277,
+          "mad_ns": 10.75705000000005
+        }
+      },
+      "reference_over_candidate": 1.833367402500145,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "str",
+      "container": "tuple",
+      "kind": "namedtuple",
+      "iterations_per_sample": 2500,
+      "warmup_iterations_each": 2500,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          1026.8012,
+          1030.9356,
+          1034.8296,
+          1037.1368,
+          1029.5736,
+          1028.0432,
+          1031.4004,
+          1034.5292,
+          1042.0004,
+          1033.3272,
+          1071.5128,
+          1042.5412
+        ],
+        "reference": [
+          1582.8428,
+          1605.1644,
+          1600.7456,
+          1589.7332,
+          1600.6172,
+          1592.4812,
+          1586.6404,
+          1592.0964,
+          1592.3012,
+          1593.5868,
+          1590.566,
+          1588.6876
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 1033.9281999999998,
+          "mad_ns": 3.781600000000026
+        },
+        "reference": {
+          "median_ns": 1592.1988000000001,
+          "mad_ns": 2.9884000000001834
+        }
+      },
+      "reference_over_candidate": 1.5399510333502853,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "str",
+      "container": "list",
+      "kind": "sequence",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          537.96635,
+          536.8582,
+          538.48215,
+          537.88825,
+          530.89915,
+          536.17415,
+          536.02245,
+          536.77055,
+          539.14615,
+          539.99895,
+          554.01565,
+          654.2898
+        ],
+        "reference": [
+          2026.8523,
+          2025.1297,
+          2029.85035,
+          2051.88815,
+          2039.24555,
+          2004.1219,
+          2006.63875,
+          2017.50715,
+          2103.1382,
+          2091.1215,
+          2205.21365,
+          2229.583
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 537.9273000000001,
+          "mad_ns": 1.48599999999999
+        },
+        "reference": {
+          "median_ns": 2034.5479500000001,
+          "mad_ns": 22.624700000000075
+        }
+      },
+      "reference_over_candidate": 3.7821987283411715,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "sequence",
+      "iterations_per_sample": 312,
+      "warmup_iterations_each": 312,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          4135.9358974358975,
+          3982.628205128205,
+          4094.9455128205127,
+          4198.211538461538,
+          3800.7179487179487,
+          3617.7179487179487,
+          3755.9358974358975,
+          4065.2820512820513,
+          4036.974358974359,
+          3874.6121794871797,
+          3891.9134615384614,
+          3723.8044871794873
+        ],
+        "reference": [
+          6059.166666666667,
+          5938.695512820513,
+          6296.0641025641025,
+          6217.38782051282,
+          5825.541666666667,
+          5426.028846153846,
+          5789.141025641025,
+          5735.698717948718,
+          6160.698717948718,
+          5760.445512820513,
+          6158.740384615385,
+          5897.673076923077
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 3937.270833333333,
+          "mad_ns": 147.113782051282
+        },
+        "reference": {
+          "median_ns": 5918.184294871795,
+          "mad_ns": 170.11217948717967
+        }
+      },
+      "reference_over_candidate": 1.5031184151132932,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "str",
+      "container": "list",
+      "kind": "dict",
+      "iterations_per_sample": 2500,
+      "warmup_iterations_each": 2500,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          1629.6296,
+          1614.01,
+          1584.1564,
+          1628.1028,
+          1634.1,
+          1662.9436,
+          1697.7324,
+          2700.3532,
+          1660.7804,
+          1687.0604,
+          1608.3092,
+          1585.9152
+        ],
+        "reference": [
+          1683.1104,
+          1625.7912,
+          1631.368,
+          1695.1048,
+          1576.8052,
+          1771.8884,
+          2081.0724,
+          2638.5156,
+          2136.1236,
+          1699.8236,
+          1638.5628,
+          1671.3604
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 1631.8647999999998,
+          "mad_ns": 29.997200000000248
+        },
+        "reference": {
+          "median_ns": 1689.1076,
+          "mad_ns": 60.528000000000134
+        }
+      },
+      "reference_over_candidate": 1.035078151082124,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "str",
+      "container": "tuple",
+      "kind": "dict",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          655.7335,
+          675.4168,
+          642.02275,
+          661.9269,
+          701.1147,
+          609.7189,
+          604.2161,
+          607.02635,
+          622.0921,
+          621.77465,
+          609.16005,
+          617.5758
+        ],
+        "reference": [
+          1509.066,
+          1517.03805,
+          1507.7885,
+          1427.6478,
+          1408.613,
+          1405.22135,
+          1379.9061,
+          1410.6526,
+          1417.5515,
+          1416.57155,
+          1432.0765,
+          1407.4347
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 621.933375,
+          "mad_ns": 16.312149999999974
+        },
+        "reference": {
+          "median_ns": 1417.061525,
+          "mad_ns": 11.213224999999966
+        }
+      },
+      "reference_over_candidate": 2.2784780202541794,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "bytes",
+      "container": "list",
+      "kind": "dict",
+      "iterations_per_sample": 19,
+      "warmup_iterations_each": 19,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          125386.05263157895,
+          127790.15789473684,
+          131280.2105263158,
+          127280.94736842105,
+          125128.73684210527,
+          125894.63157894737,
+          128498.1052631579,
+          129425.31578947368,
+          137602.8947368421,
+          125898.36842105263,
+          125932.1052631579,
+          128402.68421052632
+        ],
+        "reference": [
+          18774.736842105263,
+          20173.684210526317,
+          17963.0,
+          18587.57894736842,
+          18533.315789473683,
+          17748.42105263158,
+          20248.526315789473,
+          18128.526315789473,
+          18285.052631578947,
+          17900.263157894737,
+          18398.894736842107,
+          18534.842105263157
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 127535.55263157895,
+          "mad_ns": 1639.0526315789466
+        },
+        "reference": {
+          "median_ns": 18466.105263157893,
+          "mad_ns": 323.105263157895
+        }
+      },
+      "reference_over_candidate": 0.14479182378659736,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "dict",
+      "iterations_per_sample": 19,
+      "warmup_iterations_each": 19,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          123487.31578947368,
+          124283.84210526316,
+          127439.63157894737,
+          124538.42105263157,
+          139626.47368421053,
+          141352.26315789475,
+          124514.68421052632,
+          126913.05263157895,
+          127356.8947368421,
+          127315.73684210527,
+          132092.47368421053,
+          122811.05263157895
+        ],
+        "reference": [
+          17342.526315789473,
+          18110.526315789473,
+          17405.263157894737,
+          17498.052631578947,
+          17815.36842105263,
+          18853.78947368421,
+          17273.473684210527,
+          17819.052631578947,
+          18089.473684210527,
+          22239.947368421053,
+          17598.736842105263,
+          18401.526315789473
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 127114.3947368421,
+          "mad_ns": 2715.1315789473665
+        },
+        "reference": {
+          "median_ns": 17817.210526315786,
+          "mad_ns": 365.5526315789448
+        }
+      },
+      "reference_over_candidate": 0.1401667416440268,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "str",
+      "container": "list",
+      "kind": "dict",
+      "iterations_per_sample": 19,
+      "warmup_iterations_each": 19,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          130699.31578947368,
+          124316.47368421052,
+          126162.94736842105,
+          126377.52631578948,
+          126670.05263157895,
+          123330.26315789473,
+          134326.8947368421,
+          123563.78947368421,
+          123122.57894736843,
+          123520.57894736843,
+          123392.42105263157,
+          124300.15789473684
+        ],
+        "reference": [
+          18675.57894736842,
+          18552.263157894737,
+          18626.052631578947,
+          18332.473684210527,
+          18297.157894736843,
+          22891.473684210527,
+          19438.36842105263,
+          19121.052631578947,
+          18267.105263157893,
+          18677.21052631579,
+          18260.263157894737,
+          18260.78947368421
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 124308.31578947368,
+          "mad_ns": 1081.8947368420995
+        },
+        "reference": {
+          "median_ns": 18589.15789473684,
+          "mad_ns": 307.0263157894715
+        }
+      },
+      "reference_over_candidate": 0.14954074292357963,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "str",
+      "container": "tuple",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          106.5557,
+          106.63935,
+          105.2207,
+          106.25825,
+          106.44105,
+          113.6745,
+          108.746,
+          106.13005,
+          107.5512,
+          105.37495,
+          107.09905,
+          105.3694
+        ],
+        "reference": [
+          166.08575,
+          165.03115,
+          167.72875,
+          164.68315,
+          167.5735,
+          179.94775,
+          165.34765,
+          167.64915,
+          165.0562,
+          167.0322,
+          164.81035,
+          164.4603
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 106.49837500000001,
+          "mad_ns": 0.8267499999999899
+        },
+        "reference": {
+          "median_ns": 165.7167,
+          "mad_ns": 1.1449750000000023
+        }
+      },
+      "reference_over_candidate": 1.5560490946458103,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "bytes",
+      "container": "list",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          110.66395,
+          111.76755,
+          109.8782,
+          115.4647,
+          112.46365,
+          110.3925,
+          110.43005,
+          110.7911,
+          109.9388,
+          112.92335,
+          109.73305,
+          109.2708
+        ],
+        "reference": [
+          160.60245,
+          162.619,
+          161.19135,
+          167.7813,
+          161.41265,
+          164.0001,
+          161.2109,
+          162.3211,
+          163.93505,
+          165.08925,
+          161.7507,
+          161.961
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 110.547,
+          "mad_ns": 0.7413749999999908
+        },
+        "reference": {
+          "median_ns": 162.14105,
+          "mad_ns": 0.9399250000000023
+        }
+      },
+      "reference_over_candidate": 1.4667159669642778,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "str",
+      "container": "list",
+      "kind": "namedtuple",
+      "iterations_per_sample": 19,
+      "warmup_iterations_each": 19,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          68488.36842105263,
+          69291.15789473684,
+          70033.31578947368,
+          68751.42105263157,
+          69266.36842105263,
+          68336.0,
+          70041.78947368421,
+          68373.47368421052,
+          68253.21052631579,
+          69313.26315789473,
+          68388.21052631579,
+          71898.26315789473
+        ],
+        "reference": [
+          52417.21052631579,
+          51584.84210526316,
+          51736.15789473684,
+          51664.47368421053,
+          51964.94736842105,
+          52279.10526315789,
+          51906.94736842105,
+          51803.63157894737,
+          51401.47368421053,
+          51371.94736842105,
+          51738.78947368421,
+          4772604.894736842
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 69008.8947368421,
+          "mad_ns": 628.0526315789539
+        },
+        "reference": {
+          "median_ns": 51771.21052631579,
+          "mad_ns": 190.0526315789466
+        }
+      },
+      "reference_over_candidate": 0.7502106898500498,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "namedtuple",
+      "iterations_per_sample": 19,
+      "warmup_iterations_each": 19,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          68287.52631578948,
+          68416.1052631579,
+          68543.68421052632,
+          67991.84210526316,
+          68649.1052631579,
+          74696.21052631579,
+          67083.05263157895,
+          67138.94736842105,
+          71151.31578947368,
+          66962.84210526316,
+          79813.8947368421,
+          4323606.684210527
+        ],
+        "reference": [
+          50593.89473684211,
+          51067.26315789474,
+          50643.47368421053,
+          50544.36842105263,
+          50915.94736842105,
+          50639.26315789474,
+          52427.73684210526,
+          51466.78947368421,
+          50754.68421052631,
+          51488.94736842105,
+          50510.63157894737,
+          52480.47368421053
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 68479.8947368421,
+          "mad_ns": 1368.8947368421068
+        },
+        "reference": {
+          "median_ns": 50835.31578947368,
+          "mad_ns": 266.18421052630947
+        }
+      },
+      "reference_over_candidate": 0.7423392805264395,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "str",
+      "container": "tuple",
+      "kind": "sequence",
+      "iterations_per_sample": 8,
+      "warmup_iterations_each": 8,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          650758.25,
+          651700.875,
+          649801.875,
+          640656.75,
+          632092.5,
+          627097.375,
+          858938.25,
+          640052.0,
+          628477.0,
+          635781.75,
+          13691828.5,
+          631118.5
+        ],
+        "reference": [
+          689913.75,
+          687611.5,
+          11891399.75,
+          675339.25,
+          672304.625,
+          678620.375,
+          1004602.375,
+          676393.25,
+          693584.25,
+          690792.5,
+          672846.75,
+          683552.875
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 640354.375,
+          "mad_ns": 9925.6875
+        },
+        "reference": {
+          "median_ns": 685582.1875,
+          "mad_ns": 8595.5
+        }
+      },
+      "reference_over_candidate": 1.0706293487883174,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "bytes",
+      "container": "list",
+      "kind": "sequence",
+      "iterations_per_sample": 19,
+      "warmup_iterations_each": 19,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          78102.36842105263,
+          77867.26315789473,
+          82676.15789473684,
+          78776.0,
+          78144.52631578948,
+          78107.1052631579,
+          77427.15789473684,
+          78381.73684210527,
+          78637.36842105263,
+          77586.36842105263,
+          77866.73684210527,
+          78285.78947368421
+        ],
+        "reference": [
+          85833.57894736843,
+          87644.68421052632,
+          86190.42105263157,
+          86797.63157894737,
+          86737.57894736843,
+          84934.26315789473,
+          85707.05263157895,
+          4578052.157894737,
+          84848.36842105263,
+          85851.94736842105,
+          85937.94736842105,
+          85087.68421052632
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 78125.81578947368,
+          "mad_ns": 258.8157894736796
+        },
+        "reference": {
+          "median_ns": 85894.94736842105,
+          "mad_ns": 824.9473684210534
+        }
+      },
+      "reference_over_candidate": 1.0994438458074207,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          109.57075,
+          113.037,
+          109.4561,
+          114.7902,
+          109.8387,
+          108.96185,
+          110.9433,
+          109.8667,
+          109.57825,
+          112.3995,
+          108.67295,
+          113.05105
+        ],
+        "reference": [
+          160.8363,
+          161.4738,
+          161.05815,
+          161.0081,
+          161.1398,
+          161.4397,
+          160.4853,
+          160.71965,
+          159.94095,
+          159.8353,
+          162.51335,
+          178.90915
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 109.8527,
+          "mad_ns": 0.9907249999999976
+        },
+        "reference": {
+          "median_ns": 161.033125,
+          "mad_ns": 0.42362499999998704
+        }
+      },
+      "reference_over_candidate": 1.4659004739983634,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "str",
+      "container": "list",
+      "kind": "sequence",
+      "iterations_per_sample": 19,
+      "warmup_iterations_each": 19,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          78918.8947368421,
+          77484.57894736843,
+          77880.47368421052,
+          77920.0,
+          76875.73684210527,
+          77237.36842105263,
+          77063.42105263157,
+          77857.26315789473,
+          81985.57894736843,
+          77198.36842105263,
+          77913.63157894737,
+          77729.68421052632
+        ],
+        "reference": [
+          86351.15789473684,
+          85008.57894736843,
+          85682.78947368421,
+          84271.68421052632,
+          92417.15789473684,
+          85090.31578947368,
+          85023.8947368421,
+          90683.0,
+          4821529.947368421,
+          85321.21052631579,
+          84132.05263157895,
+          84304.94736842105
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 77793.47368421053,
+          "mad_ns": 432.5000000000073
+        },
+        "reference": {
+          "median_ns": 85205.76315789473,
+          "mad_ns": 917.4473684210461
+        }
+      },
+      "reference_over_candidate": 1.095281636397587,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "bytes",
+      "container": "list",
+      "kind": "sequence",
+      "iterations_per_sample": 8,
+      "warmup_iterations_each": 8,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          11858919.375,
+          635912.0,
+          637712.25,
+          630371.125,
+          635938.375,
+          627887.5,
+          631161.125,
+          629588.75,
+          10860526.5,
+          631812.125,
+          624876.5,
+          626490.25
+        ],
+        "reference": [
+          687839.375,
+          683057.125,
+          692676.625,
+          675465.625,
+          695409.625,
+          674600.625,
+          677373.5,
+          682273.375,
+          684103.625,
+          684397.875,
+          678561.5,
+          683588.0
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 631486.625,
+          "mad_ns": 4438.5625
+        },
+        "reference": {
+          "median_ns": 683322.5625,
+          "mad_ns": 4638.9375
+        }
+      },
+      "reference_over_candidate": 1.0820855667370628,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "str",
+      "container": "list",
+      "kind": "dict",
+      "iterations_per_sample": 8,
+      "warmup_iterations_each": 8,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          1030969.75,
+          1016555.375,
+          1015578.875,
+          1028387.0,
+          1019183.0,
+          1020755.5,
+          1013176.5,
+          1033886.625,
+          1020462.5,
+          1013856.25,
+          1019178.125,
+          1019096.75
+        ],
+        "reference": [
+          152065.125,
+          150746.75,
+          156087.375,
+          151593.125,
+          151609.375,
+          150862.0,
+          151069.75,
+          151310.125,
+          151580.5,
+          150814.375,
+          150954.625,
+          151881.0
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 1019180.5625,
+          "mad_ns": 3113.4375
+        },
+        "reference": {
+          "median_ns": 151445.3125,
+          "mad_ns": 463.1875
+        }
+      },
+      "reference_over_candidate": 0.14859517348772044,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          109.04495,
+          109.1812,
+          109.39545,
+          110.5743,
+          110.00095,
+          110.6314,
+          108.9894,
+          110.5818,
+          112.33545,
+          108.7906,
+          109.32085,
+          109.35895
+        ],
+        "reference": [
+          177.24765,
+          184.411,
+          178.63675,
+          178.66025,
+          178.7419,
+          179.2462,
+          179.0248,
+          178.2271,
+          179.03135,
+          179.97175,
+          179.9317,
+          181.28175
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 109.37719999999999,
+          "mad_ns": 0.4871999999999872
+        },
+        "reference": {
+          "median_ns": 179.028075,
+          "mad_ns": 0.5961499999999944
+        }
+      },
+      "reference_over_candidate": 1.6367951913195804,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "str",
+      "container": "tuple",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          108.73,
+          107.2337,
+          106.766,
+          106.3819,
+          116.4722,
+          109.3069,
+          107.26825,
+          107.0174,
+          107.0269,
+          107.57625,
+          132.16395,
+          107.2132
+        ],
+        "reference": [
+          166.05825,
+          164.51135,
+          167.5189,
+          165.47535,
+          165.6301,
+          172.1735,
+          166.1228,
+          165.14085,
+          168.19945,
+          166.913,
+          166.3777,
+          167.0342
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 107.250975,
+          "mad_ns": 0.4051249999999982
+        },
+        "reference": {
+          "median_ns": 166.25025,
+          "mad_ns": 0.7794250000000034
+        }
+      },
+      "reference_over_candidate": 1.5501047892571607,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          109.1997,
+          109.54925,
+          110.1121,
+          109.49315,
+          109.2012,
+          110.5012,
+          109.05295,
+          108.83615,
+          108.8722,
+          109.24775,
+          108.8231,
+          110.48215
+        ],
+        "reference": [
+          160.7482,
+          178.482,
+          159.0396,
+          178.4465,
+          160.7241,
+          160.8333,
+          160.0722,
+          179.0078,
+          162.30505,
+          178.81205,
+          179.75895,
+          178.0073
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 109.224475,
+          "mad_ns": 0.3385249999999971
+        },
+        "reference": {
+          "median_ns": 170.156175,
+          "mad_ns": 9.087249999999997
+        }
+      },
+      "reference_over_candidate": 1.5578575680954292,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "dict",
+      "iterations_per_sample": 8,
+      "warmup_iterations_each": 8,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          1050228.75,
+          1056242.875,
+          1059576.625,
+          1037260.5,
+          1037560.875,
+          1040760.75,
+          1048051.75,
+          1055894.875,
+          1071895.375,
+          1042022.75,
+          1042340.625,
+          1048849.25
+        ],
+        "reference": [
+          168894.25,
+          175931.125,
+          169907.125,
+          167762.625,
+          165739.5,
+          164846.875,
+          169546.5,
+          164334.875,
+          169788.125,
+          164993.375,
+          165996.0,
+          169857.0
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 1048450.5,
+          "mad_ns": 7567.0625
+        },
+        "reference": {
+          "median_ns": 168328.4375,
+          "mad_ns": 1955.5625
+        }
+      },
+      "reference_over_candidate": 0.1605497231390514,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "str",
+      "container": "tuple",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          110.01845,
+          109.2172,
+          107.9293,
+          108.1566,
+          108.50665,
+          111.8232,
+          108.65035,
+          109.1466,
+          109.408,
+          107.444,
+          109.38145,
+          107.25275
+        ],
+        "reference": [
+          179.90665,
+          180.47805,
+          165.54645,
+          167.46535,
+          165.19895,
+          181.3353,
+          165.9065,
+          180.38735,
+          181.49255,
+          165.7968,
+          180.3919,
+          166.6226
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 108.898475,
+          "mad_ns": 0.6257000000000019
+        },
+        "reference": {
+          "median_ns": 173.686,
+          "mad_ns": 7.356349999999992
+        }
+      },
+      "reference_over_candidate": 1.594935098953406,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "dict",
+      "iterations_per_sample": 312,
+      "warmup_iterations_each": 312,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          8301.59935897436,
+          8275.051282051281,
+          8512.23717948718,
+          8452.785256410256,
+          8355.009615384615,
+          8338.99358974359,
+          8339.573717948719,
+          8362.939102564103,
+          8331.576923076924,
+          8287.50641025641,
+          8360.5,
+          8308.27564102564
+        ],
+        "reference": [
+          2606.0576923076924,
+          2642.073717948718,
+          2643.1634615384614,
+          2610.519230769231,
+          2611.25641025641,
+          2599.028846153846,
+          2565.900641025641,
+          2560.3173076923076,
+          2634.628205128205,
+          2574.730769230769,
+          2541.6634615384614,
+          2568.6923076923076
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 8339.283653846154,
+          "mad_ns": 27.3317307692314
+        },
+        "reference": {
+          "median_ns": 2602.5432692307695,
+          "mad_ns": 32.96794871794873
+        }
+      },
+      "reference_over_candidate": 0.31208235350412294,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 64,
+      "text": "str",
+      "container": "tuple",
+      "kind": "namedtuple",
+      "iterations_per_sample": 312,
+      "warmup_iterations_each": 312,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          3287.698717948718,
+          3330.775641025641,
+          3322.5929487179487,
+          3313.923076923077,
+          3296.8141025641025,
+          3326.6666666666665,
+          3303.5865384615386,
+          3307.0865384615386,
+          3438.1826923076924,
+          3311.86858974359,
+          3326.2820512820513,
+          3295.2403846153848
+        ],
+        "reference": [
+          2921.599358974359,
+          2808.221153846154,
+          2911.102564102564,
+          2888.9551282051284,
+          2873.996794871795,
+          2863.6923076923076,
+          2878.4583333333335,
+          2856.147435897436,
+          2883.753205128205,
+          3016.647435897436,
+          2879.483974358974,
+          2915.5320512820513
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 3312.8958333333335,
+          "mad_ns": 13.578525641025408
+        },
+        "reference": {
+          "median_ns": 2881.61858974359,
+          "mad_ns": 21.698717948718013
+        }
+      },
+      "reference_over_candidate": 0.869818652536441,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "bytes",
+      "container": "list",
+      "kind": "namedtuple",
+      "iterations_per_sample": 8,
+      "warmup_iterations_each": 8,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          592252.25,
+          561106.375,
+          574743.25,
+          567345.875,
+          561754.875,
+          570295.25,
+          561753.625,
+          581308.125,
+          573354.875,
+          560157.5,
+          562286.875,
+          561642.125
+        ],
+        "reference": [
+          417660.5,
+          425061.875,
+          433370.625,
+          427275.125,
+          11330736.625,
+          422610.5,
+          432761.0,
+          419533.375,
+          421661.75,
+          421888.25,
+          420453.625,
+          414601.0
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 564816.375,
+          "mad_ns": 4184.4375
+        },
+        "reference": {
+          "median_ns": 422249.375,
+          "mad_ns": 3700.6875
+        }
+      },
+      "reference_over_candidate": 0.747586992321177,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          109.90425,
+          109.68145,
+          109.71645,
+          111.2613,
+          111.376,
+          110.9043,
+          110.54325,
+          111.41555,
+          112.18975,
+          109.9829,
+          110.3054,
+          110.1266
+        ],
+        "reference": [
+          160.72715,
+          159.6941,
+          161.9981,
+          160.3165,
+          162.94,
+          161.6686,
+          161.18885,
+          160.948,
+          159.59045,
+          159.6445,
+          160.91995,
+          164.36515
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 110.42432500000001,
+          "mad_ns": 0.6139750000000106
+        },
+        "reference": {
+          "median_ns": 160.933975,
+          "mad_ns": 0.899374999999992
+        }
+      },
+      "reference_over_candidate": 1.4574141612366658,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "bytes",
+      "container": "list",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          109.1166,
+          109.1421,
+          109.8672,
+          109.9879,
+          110.07705,
+          110.1822,
+          110.55475,
+          113.3395,
+          109.74155,
+          112.4902,
+          109.44755,
+          110.53675
+        ],
+        "reference": [
+          159.5068,
+          160.50435,
+          159.7146,
+          160.25995,
+          161.51835,
+          159.8158,
+          160.13025,
+          162.8709,
+          160.53985,
+          161.59495,
+          159.9725,
+          159.3125
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 110.032475,
+          "mad_ns": 0.513274999999993
+        },
+        "reference": {
+          "median_ns": 160.1951,
+          "mad_ns": 0.4299000000000035
+        }
+      },
+      "reference_over_candidate": 1.4558892726897217,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "bytes",
+      "container": "list",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          109.1852,
+          109.15215,
+          109.3344,
+          108.96885,
+          109.1536,
+          112.707,
+          118.33705,
+          111.4356,
+          110.0174,
+          110.76855,
+          109.97535,
+          109.6484
+        ],
+        "reference": [
+          160.973,
+          160.0772,
+          159.33355,
+          161.66205,
+          159.7442,
+          163.3341,
+          167.4368,
+          161.11625,
+          159.941,
+          161.59995,
+          159.60345,
+          160.3005
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 109.811875,
+          "mad_ns": 0.6589999999999989
+        },
+        "reference": {
+          "median_ns": 160.63675,
+          "mad_ns": 0.9278750000000002
+        }
+      },
+      "reference_over_candidate": 1.4628358727141304,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "str",
+      "container": "list",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          107.05945,
+          108.35245,
+          108.19015,
+          106.92375,
+          106.78205,
+          108.50465,
+          107.96535,
+          108.30585,
+          107.30585,
+          107.51015,
+          108.5918,
+          106.6013
+        ],
+        "reference": [
+          169.4929,
+          167.84595,
+          165.94555,
+          168.1073,
+          166.0928,
+          165.80985,
+          167.27105,
+          165.83785,
+          165.9025,
+          167.578,
+          166.82085,
+          165.80585
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 107.73775,
+          "mad_ns": 0.6465000000000032
+        },
+        "reference": {
+          "median_ns": 166.456825,
+          "mad_ns": 0.6489750000000072
+        }
+      },
+      "reference_over_candidate": 1.5450185751976442,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "bytes",
+      "container": "list",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          110.7621,
+          110.9263,
+          112.20475,
+          109.93685,
+          112.84275,
+          111.4496,
+          109.3264,
+          109.6083,
+          110.7265,
+          110.88125,
+          110.5838,
+          111.22025
+        ],
+        "reference": [
+          162.4943,
+          161.98505,
+          162.8704,
+          161.2705,
+          162.70915,
+          163.04465,
+          161.91495,
+          159.2129,
+          160.28195,
+          161.44575,
+          160.6225,
+          162.03515
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 110.821675,
+          "mad_ns": 0.5132499999999993
+        },
+        "reference": {
+          "median_ns": 161.95,
+          "mad_ns": 0.7193249999999978
+        }
+      },
+      "reference_over_candidate": 1.4613567246660004,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8192,
+      "text": "str",
+      "container": "tuple",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          108.04245,
+          108.743,
+          107.082,
+          108.4881,
+          107.63235,
+          106.8797,
+          107.75305,
+          107.44205,
+          108.407,
+          107.86065,
+          110.2588,
+          107.8807
+        ],
+        "reference": [
+          167.0487,
+          166.66415,
+          171.69225,
+          165.63155,
+          166.64765,
+          166.80335,
+          164.07475,
+          166.12335,
+          167.53445,
+          166.1258,
+          165.5224,
+          165.51085
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 107.870675,
+          "mad_ns": 0.4824750000000009
+        },
+        "reference": {
+          "median_ns": 166.386725,
+          "mad_ns": 0.7085749999999962
+        }
+      },
+      "reference_over_candidate": 1.5424648543267205,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "dict",
+      "iterations_per_sample": 2500,
+      "warmup_iterations_each": 2500,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          1523.9896,
+          1483.0396,
+          1465.4488,
+          1524.4064,
+          1525.8324,
+          1510.0804,
+          1510.4568,
+          1529.802,
+          1513.9704,
+          1506.8796,
+          1501.86,
+          1521.4216
+        ],
+        "reference": [
+          1569.9272,
+          1598.314,
+          1569.218,
+          1564.9552,
+          1557.9528,
+          1546.8484,
+          1563.5976,
+          1576.7812,
+          1600.954,
+          1574.2056,
+          1576.5768,
+          1576.2688
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 1512.2136,
+          "mad_ns": 11.064800000000105
+        },
+        "reference": {
+          "median_ns": 1572.0664000000002,
+          "mad_ns": 5.912999999999897
+        }
+      },
+      "reference_over_candidate": 1.039579593782254,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "str",
+      "container": "list",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          107.52465,
+          107.415,
+          106.7926,
+          107.74805,
+          108.63685,
+          107.57625,
+          107.8141,
+          107.37845,
+          108.2978,
+          107.3113,
+          108.1085,
+          108.83715
+        ],
+        "reference": [
+          168.1419,
+          165.8629,
+          167.0642,
+          166.9536,
+          167.08575,
+          168.06575,
+          167.5715,
+          167.09125,
+          166.50985,
+          165.8219,
+          165.62755,
+          168.0392
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 107.66215,
+          "mad_ns": 0.3172749999999951
+        },
+        "reference": {
+          "median_ns": 167.074975,
+          "mad_ns": 0.7646749999999969
+        }
+      },
+      "reference_over_candidate": 1.5518450541810656,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "str",
+      "container": "list",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          108.43855,
+          108.43455,
+          107.79205,
+          108.46205,
+          106.60825,
+          104.9723,
+          107.04445,
+          106.14355,
+          112.61535,
+          108.39295,
+          106.31235,
+          107.727
+        ],
+        "reference": [
+          166.7788,
+          166.98465,
+          167.01565,
+          168.8825,
+          165.37215,
+          167.8975,
+          165.80835,
+          168.26205,
+          166.6206,
+          166.94105,
+          167.9611,
+          166.5695
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 107.759525,
+          "mad_ns": 0.7088000000000036
+        },
+        "reference": {
+          "median_ns": 166.96285,
+          "mad_ns": 0.6640000000000015
+        }
+      },
+      "reference_over_candidate": 1.5494022454163565,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "bytes",
+      "container": "tuple",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          112.3915,
+          110.62235,
+          110.732,
+          110.29835,
+          110.6569,
+          109.42155,
+          110.76055,
+          110.5147,
+          118.02955,
+          108.76705,
+          110.3179,
+          108.6464
+        ],
+        "reference": [
+          160.64,
+          160.7492,
+          160.04815,
+          163.0101,
+          160.7181,
+          164.54495,
+          160.7522,
+          160.1092,
+          162.33205,
+          159.94145,
+          160.32255,
+          161.34155
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 110.568525,
+          "mad_ns": 0.2603999999999971
+        },
+        "reference": {
+          "median_ns": 160.73365,
+          "mad_ns": 0.6161750000000126
+        }
+      },
+      "reference_over_candidate": 1.4537016750472165,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1024,
+      "text": "str",
+      "container": "tuple",
+      "kind": "namedtuple",
+      "iterations_per_sample": 19,
+      "warmup_iterations_each": 19,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          68966.42105263157,
+          67710.31578947368,
+          69247.8947368421,
+          68645.42105263157,
+          68210.0,
+          68258.52631578948,
+          69461.8947368421,
+          68013.94736842105,
+          68936.94736842105,
+          68083.0,
+          68326.52631578948,
+          68989.63157894737
+        ],
+        "reference": [
+          50962.36842105263,
+          51248.57894736842,
+          51532.15789473684,
+          52104.63157894737,
+          51447.26315789474,
+          51554.84210526316,
+          52108.31578947369,
+          51874.26315789474,
+          51856.36842105263,
+          51571.15789473684,
+          51709.84210526316,
+          51856.31578947369
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 68485.97368421053,
+          "mad_ns": 461.5
+        },
+        "reference": {
+          "median_ns": 51640.5,
+          "mad_ns": 215.8421052631602
+        }
+      },
+      "reference_over_candidate": 0.7540303104707955,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 8,
+      "text": "str",
+      "container": "list",
+      "kind": "direct",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "reference",
+        "candidate"
+      ],
+      "first_in_pair": [
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          108.03345,
+          107.1982,
+          107.9568,
+          108.5542,
+          107.87975,
+          108.46105,
+          107.12505,
+          113.07155,
+          111.1196,
+          107.5542,
+          110.13665,
+          108.7225
+        ],
+        "reference": [
+          167.3447,
+          165.50185,
+          165.81735,
+          164.82735,
+          166.2535,
+          168.19545,
+          167.1694,
+          165.23295,
+          166.13735,
+          166.61105,
+          167.41675,
+          166.1283
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 108.24725000000001,
+          "mad_ns": 0.5841500000000011
+        },
+        "reference": {
+          "median_ns": 166.195425,
+          "mad_ns": 0.8280250000000109
+        }
+      },
+      "reference_over_candidate": 1.5353316135051929,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "str",
+      "container": "tuple",
+      "kind": "sequence",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "reference",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          550.85935,
+          525.27765,
+          556.8399,
+          532.2732,
+          531.55265,
+          522.9982,
+          518.78785,
+          524.8475,
+          523.9116,
+          530.6423,
+          540.00645,
+          543.40205
+        ],
+        "reference": [
+          2045.32525,
+          2034.7302,
+          2024.8488,
+          2062.0651,
+          2029.79375,
+          2044.2281,
+          2049.62275,
+          2049.8691,
+          2055.4896,
+          2027.6685,
+          2033.35865,
+          2034.74525
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 531.097475,
+          "mad_ns": 7.642575000000022
+        },
+        "reference": {
+          "median_ns": 2039.486675,
+          "mad_ns": 9.914499999999975
+        }
+      },
+      "reference_over_candidate": 3.840136266887731,
+      "identity_order_container_inputs_checked": true
+    },
+    {
+      "size": 1,
+      "text": "bytes",
+      "container": "list",
+      "kind": "direct_mixed",
+      "iterations_per_sample": 20000,
+      "warmup_iterations_each": 20000,
+      "warmup_order": [
+        "candidate",
+        "reference"
+      ],
+      "first_in_pair": [
+        "candidate",
+        "candidate",
+        "candidate",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "candidate",
+        "reference",
+        "candidate",
+        "candidate",
+        "reference"
+      ],
+      "raw_ns_per_call": {
+        "candidate": [
+          114.031,
+          110.49015,
+          111.031,
+          110.3489,
+          110.2172,
+          108.95785,
+          111.722,
+          109.8186,
+          109.417,
+          110.3905,
+          111.8873,
+          110.5908
+        ],
+        "reference": [
+          163.10175,
+          162.50985,
+          161.86835,
+          161.91745,
+          161.0762,
+          161.2845,
+          162.7147,
+          162.59745,
+          161.09925,
+          162.7788,
+          159.73415,
+          170.98115
+        ]
+      },
+      "summary": {
+        "candidate": {
+          "median_ns": 110.440325,
+          "mad_ns": 0.6062000000000012
+        },
+        "reference": {
+          "median_ns": 162.21365,
+          "mad_ns": 0.7266249999999985
+        }
+      },
+      "reference_over_candidate": 1.4687900456649325,
+      "identity_order_container_inputs_checked": true
+    }
+  ],
+  "geomean_reference_over_candidate": {
+    "dict": 0.4346098938150371,
+    "direct": 1.5181410723617368,
+    "direct_mixed": 1.5157619451834656,
+    "namedtuple": 1.0554767284831288,
+    "sequence": 1.787696344335976,
+    "all": 1.1354212826441392
+  }
+}

@@ -153,12 +153,7 @@ def _collate(batch):
         _ensure_tensor_batch(batch)
         return torch.stack(batch, dim=0)
     if type(elem) in (str, bytes):
-        for index, value in enumerate(batch):
-            if type(value) is not type(elem):
-                raise TypeError(
-                    f"default_collate(): expected exact Python {type(elem).__name__} "
-                    f"as element {index} in batch, but got {type(value).__name__}"
-                )
+        # PyTorch dispatches on the first leaf; text metadata passes through.
         return batch
     if isinstance(elem, dict):
         return _collate_dict(batch, elem)
@@ -174,8 +169,9 @@ def default_collate(batch):
 
     The supported subset mirrors PyTorch's tensor default-collation behavior for
     exact native CPU float32 tensor leaves by returning ``torch.stack(batch,
-    dim=0)``. Homogeneous batches of exact Python ``str`` or ``bytes`` leaves
-    are returned unchanged, preserving batch type and leaf identity. Lists,
+    dim=0)``. Batches led by an exact Python ``str`` or ``bytes``
+    are returned unchanged, including heterogeneous tails, preserving batch
+    type, order, and leaf identity. Lists,
     plain tuples, namedtuples, and dicts are traversed recursively when every
     batch element has the same structure. Lists, namedtuples, and dicts
     preserve container type and dict key order; plain
@@ -184,9 +180,10 @@ def default_collate(batch):
     Text fields collected from dicts are lists; those transposed from sequences
     or namedtuples are tuples, matching PyTorch.
 
-    NumPy inputs, numeric scalars, text subclasses, mixed leaf batches,
-    arbitrary objects, worker shared-memory collation, and tensors outside the
-    exact native CPU float32 subset remain unsupported.
+    This text-led passthrough treats tails as opaque metadata, without executing
+    or converting them. NumPy-, numeric-, text-subclass-, and arbitrary-object-led
+    batches, mixed tensor-led batches, worker shared-memory collation, and
+    tensors outside the exact native CPU float32 subset remain unsupported.
     """
     return _collate(batch)
 

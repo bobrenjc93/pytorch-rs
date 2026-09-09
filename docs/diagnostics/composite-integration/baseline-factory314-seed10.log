@@ -1,0 +1,68 @@
+test_canonical_values_freshness_and_input_preservation_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_canonical_values_freshness_and_input_preservation_match) ... 
+  test_canonical_values_freshness_and_input_preservation_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_canonical_values_freshness_and_input_preservation_match) (case=5) ... FAIL
+test_canonical_values_freshness_and_input_preservation_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_canonical_values_freshness_and_input_preservation_match) ... FAIL
+test_errors_and_call_validation_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_errors_and_call_validation_match) ... ok
+test_imports_metadata_documentation_copy_and_pickle_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_imports_metadata_documentation_copy_and_pickle_match) ... ok
+test_mapping_access_and_failure_order_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_mapping_access_and_failure_order_match) ... FAIL
+test_reload_behavior_matches (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_reload_behavior_matches) ... ok
+
+======================================================================
+FAIL: test_canonical_values_freshness_and_input_preservation_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_canonical_values_freshness_and_input_preservation_match) (case=5)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline/tests/test_nn_factory_kwargs_reference.py", line 153, in test_canonical_values_freshness_and_input_preservation_match
+    self.assertEqual(list(actual), list(expected))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: ['memory_format', 'device', 'dtype'] != ['memory_format', 'dtype', 'device']
+
+First differing element 1:
+'device'
+'dtype'
+
+- ['memory_format', 'device', 'dtype']
+?                           ---------
+
++ ['memory_format', 'dtype', 'device']
+?                   +++++++++
+
+
+======================================================================
+FAIL: test_canonical_values_freshness_and_input_preservation_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_canonical_values_freshness_and_input_preservation_match)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline/tests/test_nn_factory_kwargs_reference.py", line 188, in test_canonical_values_freshness_and_input_preservation_match
+    self.assertEqual(list(actual), list(expected))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: ['device', 'dtype'] != ['dtype', 'device']
+
+First differing element 0:
+'device'
+'dtype'
+
+- ['device', 'dtype']
++ ['dtype', 'device']
+
+======================================================================
+FAIL: test_mapping_access_and_failure_order_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_mapping_access_and_failure_order_match)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline/tests/test_nn_factory_kwargs_reference.py", line 360, in test_mapping_access_and_failure_order_match
+    self.assertEqual(list(actual), list(expected))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: ['pin_memory', 'requires_grad', 'memory_format', 'device', 'dtype'] != ['pin_memory', 'requires_grad', 'memory_format', 'dtype', 'device']
+
+First differing element 3:
+'device'
+'dtype'
+
+- ['pin_memory', 'requires_grad', 'memory_format', 'device', 'dtype']
+?                                                          ---------
+
++ ['pin_memory', 'requires_grad', 'memory_format', 'dtype', 'device']
+?                                                  +++++++++
+
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.003s
+
+FAILED (failures=3)

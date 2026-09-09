@@ -1,0 +1,32 @@
+[
+  {
+    "seed": 2,
+    "returncode": 0,
+    "stdout": "['device', 'dtype'] ['device', 'dtype']\n",
+    "stderr": ""
+  },
+  {
+    "seed": 3,
+    "returncode": 0,
+    "stdout": "['device', 'dtype'] ['device', 'dtype']\n",
+    "stderr": ""
+  },
+  {
+    "seed": 4,
+    "returncode": 0,
+    "stdout": "['dtype', 'device'] ['dtype', 'device']\n",
+    "stderr": ""
+  },
+  {
+    "seed": 5,
+    "returncode": 0,
+    "stdout": "['device', 'dtype'] ['device', 'dtype']\n",
+    "stderr": ""
+  },
+  {
+    "seed": 6,
+    "returncode": 1,
+    "stdout": "['dtype', 'device'] ['device', 'dtype']\n",
+    "stderr": ""
+  }
+]

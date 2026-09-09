@@ -31,17 +31,16 @@ class DefaultCollateTests(unittest.TestCase):
                     for actual, source in zip(result, values, strict=True):
                         self.assertIs(actual, source)
 
-    def test_mixed_text_batches_fail_closed_at_any_depth(self):
+    def test_non_text_leading_mixed_batches_fail_closed_at_any_depth(self):
         tensor = torch.tensor([1.0])
         for text in ("label", b"label"):
             for other in (
-                b"other" if type(text) is str else "other",
                 StringSubclass("label"), BytesSubclass(b"label"),
                 np.str_("label"), np.bytes_(b"label"),
                 1, 1.0, True, 1j, None, object(), tensor,
                 np.array([1.0]), [text], (text,), {"label": text},
             ):
-                for values in ([text, other], [other, text]):
+                for values in ([other, text],):
                     for wrap in (
                         lambda value: value,
                         lambda value: {"label": value},
