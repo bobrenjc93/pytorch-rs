@@ -98,6 +98,22 @@ class CudaZeroRoundtripTests(unittest.TestCase):
                     self.cuda_metadata(reference_torch, expected),
                 )
 
+    def test_requires_grad_mutation_on_cuda_fails_closed(self):
+        for elements in (0, 2):
+            for args in ((), (True,), (False,)):
+                with self.subTest(elements=elements, args=args):
+                    actual = torch.zeros((elements,), device="cuda:0")
+                    expected = reference_torch.zeros((elements,), device="cuda:0")
+                    self.assertIs(expected.requires_grad_(*args), expected)
+                    with self.assertRaisesRegex(
+                        NotImplementedError, "device 'cuda:0' is not supported"
+                    ):
+                        actual.requires_grad_(*args)
+                    self.assertFalse(actual.requires_grad)
+                    self.assertTrue(actual.is_leaf)
+                    self.assertIsNone(actual.grad)
+                    self.assertEqual(actual.cpu().tolist(), [0.0] * elements)
+
     def test_cpu_and_to_cpu_copy_values_match_pytorch(self):
         for elements in (0, 7):
             with self.subTest(elements=elements):

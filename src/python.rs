@@ -1794,6 +1794,10 @@ impl PyTensor {
         &self.inner
     }
 
+    pub(crate) fn inner_mut(&mut self) -> &mut CoreTensor {
+        &mut self.inner
+    }
+
     pub(crate) const fn grad_cache(&self) -> &PyOnceLock<Py<PyTensor>> {
         &self.grad_cache
     }
