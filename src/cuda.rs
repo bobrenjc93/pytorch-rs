@@ -19,6 +19,7 @@ struct Runtime {
     free: unsafe extern "C" fn(*mut c_void) -> Status,
     memset: unsafe extern "C" fn(*mut c_void, c_int, usize) -> Status,
     memcpy: unsafe extern "C" fn(*mut c_void, *const c_void, usize, c_int) -> Status,
+    stream_synchronize: unsafe extern "C" fn(*mut c_void) -> Status,
     memcpy_2d: unsafe extern "C" fn(
         *mut c_void,
         usize,
@@ -29,6 +30,7 @@ struct Runtime {
         c_int,
     ) -> Status,
     error_name: unsafe extern "C" fn(Status) -> *const c_char,
+    get_last_error: unsafe extern "C" fn() -> Status,
 }
 static CANDIDATES: OnceLock<Vec<String>> = OnceLock::new();
 static RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
@@ -116,8 +118,10 @@ impl Runtime {
                 free: *library.get(b"cudaFree\0")?,
                 memset: *library.get(b"cudaMemset\0")?,
                 memcpy: *library.get(b"cudaMemcpy\0")?,
+                stream_synchronize: *library.get(b"cudaStreamSynchronize\0")?,
                 memcpy_2d: *library.get(b"cudaMemcpy2D\0")?,
                 error_name: *library.get(b"cudaGetErrorName\0")?,
+                get_last_error: *library.get(b"cudaGetLastError\0")?,
                 _library: library,
             })
         }
@@ -126,6 +130,10 @@ impl Runtime {
         if status == 0 {
             return Ok(());
         }
+        // SAFETY: no-argument CUDA ABI. We report this call's status below;
+        // consume its thread-local error so a handled failure (e.g. invalid
+        // device) cannot poison a subsequent launch by another runtime user.
+        unsafe { (self.get_last_error)() };
         // SAFETY: CUDA returns a static NUL-terminated error string or null.
         let name = unsafe {
             let pointer = (self.error_name)(status);
@@ -193,12 +201,53 @@ pub(crate) struct CudaFloat32Storage {
 }
 impl CudaFloat32Storage {
     pub(crate) fn zeros(elements: usize, device_index: usize) -> Result<Self, TensorError> {
+        let (result, _guard) = Self::allocate(elements, device_index)?;
+        if elements != 0 {
+            // SAFETY: allocation size was checked; legacy default stream
+            // ordering composes memset, reuse, and blocking host copies.
+            result.runtime.check(
+                unsafe { (result.runtime.memset)(result.data_ptr as *mut c_void, 0, elements * 4) },
+                "cudaMemset",
+            )?;
+        }
+        Ok(result)
+    }
+
+    pub(crate) fn from_host(values: &[f32], device_index: usize) -> Result<Self, TensorError> {
+        let (result, _guard) = Self::allocate(values.len(), device_index)?;
+        if !values.is_empty() {
+            // SAFETY: the source slice is live throughout the transfer and
+            // the destination owns exactly values.len() checked floats.
+            unsafe {
+                result.runtime.check(
+                    (result.runtime.memcpy)(
+                        result.data_ptr as *mut c_void,
+                        values.as_ptr().cast(),
+                        values.len() * 4,
+                        1, // cudaMemcpyHostToDevice
+                    ),
+                    "cudaMemcpy",
+                )?;
+                // Pageable H2D cudaMemcpy can return after staging. Complete
+                // the default-stream transfer before publishing the storage.
+                result.runtime.check(
+                    (result.runtime.stream_synchronize)(std::ptr::null_mut()),
+                    "cudaStreamSynchronize",
+                )?;
+            }
+        }
+        Ok(result)
+    }
+
+    // Only the initializing constructors above may publish this allocation.
+    // Retain one guard across allocation and initialization, including errors.
+    fn allocate(elements: usize, device_index: usize) -> Result<(Self, DeviceGuard), TensorError> {
         let bytes = elements
             .checked_mul(4)
             .filter(|bytes| isize::try_from(*bytes).is_ok())
             .ok_or(TensorError::AllocationFailed { elements })?;
         let runtime = runtime()?;
-        let _guard = runtime.guard(device_index)?;
+        let guard = runtime.guard(device_index)?;
         let cached = {
             let mut cache = CACHE
                 .lock()
@@ -222,13 +271,8 @@ impl CudaFloat32Storage {
             data_ptr: pointer as usize,
             runtime,
         };
-        if bytes != 0 {
-            // SAFETY: this allocation owns at least bytes bytes. Legacy default
-            // stream ordering composes memset, reuse, and blocking host copies.
-            runtime.check(unsafe { (runtime.memset)(pointer, 0, bytes) }, "cudaMemset")?;
-        }
         INITIALIZED.store(true, Ordering::Relaxed);
-        Ok(result)
+        Ok((result, guard))
     }
     pub(crate) fn copy_range(
         &self,
@@ -432,6 +476,16 @@ impl Drop for CudaFloat32Storage {
 #[cfg(test)]
 mod tests {
     use crate::{Device, Tensor};
+    #[test]
+    fn cuda_allocation_checks_byte_overflow_before_loading_runtime() {
+        for elements in [usize::MAX, isize::MAX as usize / size_of::<f32>() + 1] {
+            assert!(matches!(
+                super::CudaFloat32Storage::allocate(elements, 0),
+                Err(crate::TensorError::AllocationFailed { .. })
+            ));
+        }
+    }
+
     #[test]
     fn standalone_native_cuda_roundtrip() {
         if super::device_count() == 0 {

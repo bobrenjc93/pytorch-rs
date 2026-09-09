@@ -377,7 +377,7 @@ SUPPORTED_SURFACE_TASK_INDEX_ROWS = (
         ),
         (
             "Additional dtypes",
-            "CUDA tensors/transfers beyond the 1-D float32 zeros-to-CPU path",
+            "CUDA factories beyond 1-D float32 zeros and transfers beyond explicit CPU/CUDA float32 copies without autograd",
             "memory-management APIs outside the named helper set",
             "backend APIs outside [Backend and compiler metadata]",
         ),
@@ -440,7 +440,10 @@ README_SCOPE_ROW_LABELS = (
 )
 README_SCOPE_REQUIRED_SNIPPETS = (
     "CPU `float32` tensors",
-    "1-D CUDA `float32` zero tensors",
+    "synchronous float32 host uploads to explicit `\"cuda:N\"` devices",
+    "including scalar and multidimensional tensors",
+    "Direct CUDA factories remain limited to 1-D float32 zeros",
+    "autograd through CUDA transfers, asynchronous transfers, CUDA-to-CUDA copies",
     "synchronized `.cpu()`/`.to(\"cpu\")` copies",
     "core construction and layout/view operations",
     "selected math and neural-network functions",
@@ -693,8 +696,9 @@ class ReadmeQuickstartTests(unittest.TestCase):
             (
                 "dtypes, promotion, devices, dispatch",
                 "10%",
-                ("Runtime CUDA probes", "float32 dtype helpers"),
-                ("general CUDA tensors/runtime",),
+                ("runtime CUDA probes", "float32 dtype helpers",
+                 "synchronous float32 CPU uploads to explicit indexed CUDA devices"),
+                ("Broader CUDA factories/operations/runtime", "autograd or asynchronous transfers"),
             ),
             (
                 "creation, elementwise, reductions",
