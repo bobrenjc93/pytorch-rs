@@ -15,6 +15,12 @@ class TopLevelSplitReferenceTests(method_tests.TensorSplitReferenceTests):
     def split(module, source, size, dim=0):
         return module.split(source, split_size_or_sections=size, dim=dim)
 
+    @staticmethod
+    def section_call_forms(module, source, sections):
+        return (module.split(source, sections), module.split(source, sections, -1),
+                module.split(source, split_size_or_sections=sections),
+                module.split(dim=-1, split_size_or_sections=sections, tensor=source))
+
     def error_contract(self, module):
         source = module.zeros((2, 3))
         scalar = module.tensor(1.)
