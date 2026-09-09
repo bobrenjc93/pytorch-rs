@@ -1,0 +1,133 @@
+{
+  "denominator": 6,
+  "passed": 3,
+  "fraction": 0.5,
+  "cases": [
+    {
+      "case_id": "cuda_f32_add_same_shape",
+      "credit": 1,
+      "trials": [
+        {
+          "seed": 8503945240872567646,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 8613321571747136749,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 4480763905421893394,
+          "credit": 1,
+          "reason": "passed"
+        }
+      ]
+    },
+    {
+      "case_id": "cuda_f32_add_trailing_vector",
+      "credit": 0,
+      "trials": [
+        {
+          "seed": 8503945240872567646,
+          "credit": 0,
+          "reason": "candidate_missing_failed_skipped_forwarded_or_invalid"
+        },
+        {
+          "seed": 8613321571747136749,
+          "credit": 0,
+          "reason": "candidate_missing_failed_skipped_forwarded_or_invalid"
+        },
+        {
+          "seed": 4480763905421893394,
+          "credit": 0,
+          "reason": "candidate_missing_failed_skipped_forwarded_or_invalid"
+        }
+      ]
+    },
+    {
+      "case_id": "cuda_f32_neg",
+      "credit": 1,
+      "trials": [
+        {
+          "seed": 8503945240872567646,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 8613321571747136749,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 4480763905421893394,
+          "credit": 1,
+          "reason": "passed"
+        }
+      ]
+    },
+    {
+      "case_id": "cuda_f32_mul_scalar",
+      "credit": 1,
+      "trials": [
+        {
+          "seed": 8503945240872567646,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 8613321571747136749,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 4480763905421893394,
+          "credit": 1,
+          "reason": "passed"
+        }
+      ]
+    },
+    {
+      "case_id": "cuda_f32_sum_axis",
+      "credit": 0,
+      "trials": [
+        {
+          "seed": 8503945240872567646,
+          "credit": 0,
+          "reason": "candidate_missing_failed_skipped_forwarded_or_invalid"
+        },
+        {
+          "seed": 8613321571747136749,
+          "credit": 0,
+          "reason": "candidate_missing_failed_skipped_forwarded_or_invalid"
+        },
+        {
+          "seed": 4480763905421893394,
+          "credit": 0,
+          "reason": "candidate_missing_failed_skipped_forwarded_or_invalid"
+        }
+      ]
+    },
+    {
+      "case_id": "cuda_f32_matmul",
+      "credit": 0,
+      "trials": [
+        {
+          "seed": 8503945240872567646,
+          "credit": 0,
+          "reason": "candidate_missing_failed_skipped_forwarded_or_invalid"
+        },
+        {
+          "seed": 8613321571747136749,
+          "credit": 0,
+          "reason": "candidate_missing_failed_skipped_forwarded_or_invalid"
+        },
+        {
+          "seed": 4480763905421893394,
+          "credit": 0,
+          "reason": "candidate_missing_failed_skipped_forwarded_or_invalid"
+        }
+      ]
+    }
+  ]
+}

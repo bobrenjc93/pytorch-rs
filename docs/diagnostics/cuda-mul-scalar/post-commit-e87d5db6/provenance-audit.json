@@ -1,0 +1,206 @@
+{
+  "measured_at": "2026-09-09T23:28:45.544409+00:00",
+  "source": {
+    "commit": "e87d5db6d54c6f095867dba0720c3b8af73c4be6",
+    "source_sha256": "7fa54535257b6e105d2330485dab6d09fc86b2a9ed263adc9c0ee383f4fcc930",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "clean_committed_candidate": true,
+  "all_measurements_completed_before_documentation_edits": true,
+  "source_extension_sha256": "ea676a228ab2e97df4cb91bce6116c64b944d8a84d9f71489310a98ca97eac08",
+  "installed_extension_sha256": "d2633dd2db5dd11b25b6a70bb10860eac30f55b75f0ba661b2b99f6321c7d9fc",
+  "wheel_sha256": "6e8c375b426c18dfbeecfb4c2ae4a17d2a1e399ae9115c7e548d0f3cef8762e4",
+  "rust_test_binaries": {
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/post-commit-e87d5db6/rust-check-build/debug/deps/pytorch_rs-a84bc75b3d7dfab2": "9625f3adca7b7ec97536802d6b6cb391304e785d0147e6c507b073d0a204f334"
+  },
+  "runtime_record_note": "native_runtime in command receipts describes the installed-wheel environment. The cargo test command executes its separately hashed Rust test binary, not the Python extension.",
+  "original_artifact_manifest_sha256": "511bb77175a48ae9e09e9515c8fe8f7a84f3826cc1d2f9ea01a28180425ce2f1",
+  "original_artifacts_preserved": 50,
+  "cuda_math_passed": 3,
+  "cuda_math_denominator": 6,
+  "compile_eligible_passed": 38,
+  "neg_add_summary": {
+    "cases": 168,
+    "reference_eligible": 164,
+    "native_pass": 128,
+    "native_unsupported": 40,
+    "expectation_failures": 0
+  },
+  "cuda_add_rows": {
+    "clean": 76,
+    "saturated": 76
+  },
+  "private_performance_aggregates": [
+    {
+      "common_success_geomean_speed_ratio": 1.2850381967500208,
+      "common_success_shape_count": 4,
+      "common_success_weight": 1.0,
+      "coverage_adjusted_capped_speed_ratio": 1.0,
+      "coverage_adjusted_overall_percent": 100.0,
+      "denominator_weight": 1.0,
+      "full_matrix_weight": 1.0,
+      "per_workload": [
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_256x256",
+          "pytorch_cold_first_call_us": 2928555.248,
+          "pytorch_steady_median_us": 41.873333333333335,
+          "shape": [
+            256,
+            256
+          ],
+          "steady_speed_ratio": 1.2091984560147084,
+          "torch_rs_cold_first_call_us": 196.226,
+          "torch_rs_steady_median_us": 34.629,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_1024x1024",
+          "pytorch_cold_first_call_us": 842705.15,
+          "pytorch_steady_median_us": 46.400333333333336,
+          "shape": [
+            1024,
+            1024
+          ],
+          "steady_speed_ratio": 1.2710562840132948,
+          "torch_rs_cold_first_call_us": 169.677,
+          "torch_rs_steady_median_us": 36.50533333333333,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "tall_4096x256",
+          "pytorch_cold_first_call_us": 809597.328,
+          "pytorch_steady_median_us": 52.30566666666667,
+          "shape": [
+            4096,
+            256
+          ],
+          "steady_speed_ratio": 1.3336704686464158,
+          "torch_rs_cold_first_call_us": 154.844,
+          "torch_rs_steady_median_us": 39.21933333333334,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "wide_256x4096",
+          "pytorch_cold_first_call_us": 576926.37,
+          "pytorch_steady_median_us": 45.24166666666667,
+          "shape": [
+            256,
+            4096
+          ],
+          "steady_speed_ratio": 1.3303111982357265,
+          "torch_rs_cold_first_call_us": 162.115,
+          "torch_rs_steady_median_us": 34.00833333333333,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        }
+      ],
+      "torch_rs_cuda_compile_score_percent": 100.0,
+      "workload_count": 4,
+      "zero_credit_cell_count": 0,
+      "zero_credit_unsupported_cell_count": 0,
+      "zero_credit_weight": 0
+    },
+    {
+      "common_success_geomean_speed_ratio": 1.336779133436781,
+      "common_success_shape_count": 4,
+      "common_success_weight": 1.0,
+      "coverage_adjusted_capped_speed_ratio": 1.0,
+      "coverage_adjusted_overall_percent": 100.0,
+      "denominator_weight": 1.0,
+      "full_matrix_weight": 1.0,
+      "per_workload": [
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_256x256",
+          "pytorch_cold_first_call_us": 1949864.587,
+          "pytorch_steady_median_us": 59.58,
+          "shape": [
+            256,
+            256
+          ],
+          "steady_speed_ratio": 1.627631674801486,
+          "torch_rs_cold_first_call_us": 173.633,
+          "torch_rs_steady_median_us": 36.605333333333334,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_1024x1024",
+          "pytorch_cold_first_call_us": 45917.371,
+          "pytorch_steady_median_us": 46.029666666666664,
+          "shape": [
+            1024,
+            1024
+          ],
+          "steady_speed_ratio": 1.2754840020690164,
+          "torch_rs_cold_first_call_us": 176.006,
+          "torch_rs_steady_median_us": 36.088,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "tall_4096x256",
+          "pytorch_cold_first_call_us": 41103.302,
+          "pytorch_steady_median_us": 49.625,
+          "shape": [
+            4096,
+            256
+          ],
+          "steady_speed_ratio": 1.2983700060176344,
+          "torch_rs_cold_first_call_us": 150.027,
+          "torch_rs_steady_median_us": 38.221,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "wide_256x4096",
+          "pytorch_cold_first_call_us": 40779.633,
+          "pytorch_steady_median_us": 40.898666666666664,
+          "shape": [
+            256,
+            4096
+          ],
+          "steady_speed_ratio": 1.1847016906929813,
+          "torch_rs_cold_first_call_us": 151.789,
+          "torch_rs_steady_median_us": 34.522333333333336,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        }
+      ],
+      "torch_rs_cuda_compile_score_percent": 100.0,
+      "workload_count": 4,
+      "zero_credit_cell_count": 0,
+      "zero_credit_unsupported_cell_count": 0,
+      "zero_credit_weight": 0
+    }
+  ],
+  "cache_note": "Exactly one fresh driver/compiler cache run, rebuilding pointwise but reusing existing reduction library, followed by one reused-cache run. Same setup as author; no timing selection or retries.",
+  "full_suite_note": "Original author Rust/full Python checks and baseline reproductions remain unchanged; no unrelated full-suite rerun in this evidence-only step. Fresh focused checks are recorded in checks-record.json.",
+  "scope": "Evidence refresh only; unchanged evaluator, corpus, workload matrix, compiler support and unsupported outcomes."
+}

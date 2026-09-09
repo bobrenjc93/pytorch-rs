@@ -1,0 +1,21 @@
+{
+  "fresh_paths": {
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/post-commit-e87d5db6/perf-cuda-cache",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/post-commit-e87d5db6/perf-inductor-cache",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/post-commit-e87d5db6/perf-triton-cache"
+  },
+  "measured_at": "2026-09-09T23:21:27.703466+00:00",
+  "pointwise_absent_before_first_run": true,
+  "pointwise_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/torch_rs_private_cuda_pointwise",
+  "policy": "Exactly one fresh driver/compiler cache run, rebuilding pointwise but reusing existing reduction library, followed by one reused-cache run. Same setup as author; no timing selection or retries.",
+  "reduction_cache_before": {
+    "008df4c027d70965/libtorch_rs_private_pointwise_reduce.so": "81a6961f8f4853310874388bf78912af5f04ebb88b2387c4fdc9593197988e46",
+    "008df4c027d70965/torch_rs_private_pointwise_reduce.cu": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7"
+  },
+  "reduction_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/torch_rs_private_cuda_pointwise_reduce",
+  "source": {
+    "commit": "e87d5db6d54c6f095867dba0720c3b8af73c4be6",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_sha256": "7fa54535257b6e105d2330485dab6d09fc86b2a9ed263adc9c0ee383f4fcc930"
+  }
+}

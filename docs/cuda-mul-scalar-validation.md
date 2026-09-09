@@ -57,16 +57,61 @@ and an injected launch failure after a real GPU allocation, followed by successf
 execution with reuse disabled. The injection does not induce a hardware fault or
 exhaust GPU memory. Hardware-only tests skip clearly without the required devices.
 
-This work was authorized without permission to create commits. Therefore the
-candidate evidence is a fresh release build of explicitly uncommitted sources,
-identified by HEAD plus production/source/native hashes, **not a clean committed
-candidate measurement**. Burner must commit the implementation and recapture
-before treating this as clean-commit release evidence. No commit was created and
-no external producer or Burner installation was modified.
+## Clean committed measurement
 
-## Retained results
+The post-commit [capture](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/) measures clean implementation commit
+`e87d5db6d54c6f095867dba0720c3b8af73c4be6` on H100 GPU 0 against
+PyTorch 2.13.0+cu130; explicit device checks use GPUs 0,1. All measurements
+completed with an empty tracked-worktree status before evidence and documentation
+were copied into the repository. No implementation or measurement harness changed.
 
-The [raw evidence directory](diagnostics/cuda-mul-scalar/) records the fresh
+The [fresh build receipt](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/build-record.json) records an initially absent
+Cargo target, release configuration, compiler/runtime paths and source fingerprint
+`7fa54535257b6e105d2330485dab6d09fc86b2a9ed263adc9c0ee383f4fcc930`.
+The [installed-wheel receipt](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/installed-runtime.json) verifies the wheel's
+native binary and every packaged Python source against the checkout. Math-evaluator
+workers use the source-copy binary; the Python checks and diagnostics use the
+installed wheel with `PYTHONPATH` empty. Both native hashes reproduce the author's
+original build. [Command receipts](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/checks-record.json) and the
+[final audit](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/provenance-audit.json) retain clean source identities,
+commands, timestamps, device masks, cache paths, and artifact hashes.
+
+| Clean-commit check | Result | Raw evidence |
+| --- | --- | --- |
+| Scalar differential, GPU 0 | 8 passed; 2 two-device skips | [log](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/differential-final.log) |
+| Existing CUDA/compiler/scalar binding checks | 53 passed; 6 two-device skips | [log](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/focused.log) |
+| Scalar ownership/allocation recovery, GPUs 0,1 | 2 passed | [log](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/two-device-final.log) |
+| Rust bounds/launch failure cleanup, GPUs 0,1 | 1 passed | [log](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/rust-two-device.log) |
+| Fixed CUDA math evaluator | 3/6 on each of the same three seeds; unsupported cases remain zero | [report](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/evaluation.json) |
+| Fixed compile evaluator | 38/38 eligible cases passed | [report](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/compile-evaluation.json) |
+| Existing neg/add diagnostic | 168 expectations met; 128 native passes, 40 unsupported | [report](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/neg-add-diagnostic.json) |
+| Fixed CUDA performance, fresh / reused caches | 4/4 correct each; reference/native geometric means 1.2850× / 1.3368× | [fresh](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/cuda-performance-fresh.json), [reused](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/cuda-performance-reused.json) |
+| Public-add diagnostic | 76 rows per cache condition; all bitwise checks passed | [report](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/cuda-add-regression.json) |
+
+The performance recapture preserves the author's setup: new CUDA/Triton/Inductor
+caches and a rebuilt private pointwise library in the first run, an existing
+pointwise-reduce library in both runs, then reuse of all caches in the second.
+The [cache receipt](diagnostics/cuda-mul-scalar/post-commit-e87d5db6/performance-cache-record.json) hashes the reduction
+cache before measurement. Both runs retain the unchanged four shapes, five
+warmups, 17 samples and three calls per sample. No timing run was selected or
+retried. These private workload results establish no scalar-multiply compiler support.
+
+The public-add recapture retains five warmups, nine samples, both implementation
+orders and two fresh processes. Capped parity for isolated / 32-call / 64-call
+work is 97.08 / 69.54 / 67.23 percent without the saturation prelude,
+and 96.94 / 69.99 / 68.03 percent after saturation. All slow rows remain
+in the raw report. These measurements establish neither general performance
+non-regression nor scalar-multiplication performance parity.
+
+## Original author validation and superseded measurements
+
+The original provisional files below remain byte-for-byte intact. Their CUDA,
+compiler and performance measurements are superseded by the clean-commit recapture
+above and are not current-candidate performance evidence. The author’s full Rust
+and Python validation and historical baseline reproductions were preserved without
+rerunning unrelated full suites during this evidence-only step.
+
+The [original evidence directory](diagnostics/cuda-mul-scalar/) records the author’s fresh
 release build, source hashes, native binaries, test commands, baseline
 reproductions and unchanged evaluator outputs. The source snapshot is based on
 HEAD `41dcf4a5a015337a61f4507940cbeb20fd4ff006` plus the explicitly recorded
@@ -115,9 +160,9 @@ scalar-multiplication speed claim. Historical evidence remains unchanged.
 Both full-suite failures are the existing noncanonical boolean-buffer cases in
 `test_tensor_buffer_reference`: native conversion produces `[0., 1.]` for the
 rejected comparison, while PyTorch produces `[1., 1.]`. Both reproduce in the
-freshly compiled, unmodified HEAD archive inside this worktree at hash seeds
+freshly compiled, unmodified baseline `41dcf4a5` archive inside this worktree at hash seeds
 0 and 6. The [baseline receipt](diagnostics/cuda-mul-scalar/baseline-record.json)
-verifies the archive's production blobs against HEAD and records the native
+verifies the archive's production blobs against that baseline and records the native
 binary and commands; [seed 0](diagnostics/cuda-mul-scalar/baseline-failures-seed0.log)
 and [seed 6](diagnostics/cuda-mul-scalar/baseline-failures-seed6.log) preserve
 those failures. Factory-keyword tests passed in both baseline reproductions.
