@@ -21,20 +21,22 @@ Converts an exact native ``float32`` Tensor to equivalent supported metadata or
 storage. CPU requests that leave dtype and device unchanged return ``self``
 unless ``copy=True`` or an indexed CPU device such as ``"cpu:0"`` is requested;
 CPU copy requests return a fresh Tensor and record ``ToCopyBackward0`` when
-autograd is active. CUDA tensors created by the public 1-D float32
-``torch.zeros`` path support synchronized transfer to CPU.
+autograd is active. CPU tensors without autograd support synchronized copies
+to explicit CUDA devices, preserving dense strides and packing sparse views.
+Native CUDA tensors support synchronized transfer to CPU.
 
 Supported forms include ``to()``, ``to(torch.float32)``, ``to(torch.float)``,
 ``to("cpu")``, ``to(torch.device("cpu"))``, ``to(device="cpu")``,
-``to("cpu", torch.float32)``, ``to(device="cpu", dtype=torch.float32)``, and
+``to("cpu", torch.float32)``, ``to(device="cpu", dtype=torch.float32)``,
+``to("cuda:0")``, ``to(device=torch.device("cuda", 0))``, and
 ``to(other)`` when ``other`` is another exact native ``float32`` Tensor on CPU
-or the same narrow CUDA storage path. ``copy`` may be ``True`` or ``False``;
+or CUDA. ``copy`` may be ``True`` or ``False``;
 ``non_blocking`` must be ``False``; ``memory_format`` may be omitted, ``None``,
 or ``torch.preserve_format``.
 
-Unsupported: dtype-changing conversions such as ``torch.float64``, CPU-to-CUDA
-transfers, CUDA-to-CUDA copies, devices other than CPU and the narrow CUDA
-zero-tensor storage path, ``non_blocking=True``, memory formats other than
+Unsupported: dtype-changing conversions such as ``torch.float64``, autograd
+through CUDA transfers, CUDA-to-CUDA copies, unindexed CUDA targets, devices
+other than CPU and CUDA, ``non_blocking=True``, memory formats other than
 ``torch.preserve_format``, Tensor subclasses, and non-native tensors.
 
 Example::

@@ -64,7 +64,8 @@ extension provenance, and then runs the suite.
 ## Optional native CUDA runtime
 
 CPU builds need neither the CUDA toolkit nor a CUDA runtime. The native backend
-loads `libcudart` at first use; no CUDA compiler is used for public zero tensors.
+loads `libcudart` at first use; no CUDA compiler is used for public zero tensors
+or CPU/CUDA copies.
 Python discovers libraries from optional `nvidia.cuda_runtime` / `nvidia.cu13`
 wheel packages without importing PyTorch. The supported reference environment
 (`uv sync --locked --no-install-project --group dev --group reference`) includes
@@ -80,9 +81,32 @@ available to Rust embedders before the first backend call.
 Use `CUDA_VISIBLE_DEVICES=0` for single-GPU checks. Record the loaded libcudart
 path (on Linux, `/proc/self/maps`), PyTorch version, driver and GPU model;
 `nvcc --version` describes the compiler and need not match the runtime. Public
-CUDA tensors support rank-1 float32 zeros and metadata views with synchronous
-`.cpu()` / `.to("cpu")` transfers. CPU-to-CUDA copies, CUDA math/autograd,
-nondefault streams, and general CUDA runtime management remain unsupported.
+CUDA tensors support rank-1 float32 zeros, metadata views, and synchronous
+`.cpu()` / `.to("cpu")` transfers. CPU float32 tensors without autograd can be
+copied using `.to("cuda:N")` or the equivalent indexed `torch.device` and
+`device=` forms. Scalars, empty tensors, dense and sparse views are supported;
+preserve-format packing copies only the logical payload. The checked Rust API
+is `Tensor::try_copy_cpu_to_cuda(Device::Cuda(index))`. CUDA math/autograd,
+asynchronous transfers, dtype changes, unindexed CUDA targets, nondefault
+streams, and general CUDA runtime management remain unsupported.
+
+After a current-worktree release build, run the focused hardware tests:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest \
+  tests.test_cuda_host_transfer tests.test_cuda_native_views tests.test_cuda_zero_roundtrip
+CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest \
+  tests.test_cuda_host_transfer.CudaHostTransferDeviceGuardTests
+# Standalone Rust needs TORCH_RS_CUDART set when libcudart is not on the loader path.
+CUDA_VISIBLE_DEVICES=0 cargo test --locked cuda
+```
+
+Hardware-only tests skip clearly when the reference runtime or required devices
+are unavailable. The two-device test checks current-device restoration after
+copies, invalid ordinals, cached drops and direct frees. GPU transfer diagnostics
+must warm both implementations equally, synchronize timing boundaries,
+materialize outputs, and use matching shapes/layouts, threads and sampling.
+
 `tensor(cuda_tensor)` copy construction also remains unsupported, including
 empty inputs; use `.cpu()` or `.to("cpu")` for an explicit host transfer.
 
