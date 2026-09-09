@@ -1,7 +1,6 @@
 import copy
 import importlib
 import inspect
-import os
 import pickle
 import re
 import subprocess
@@ -9,13 +8,12 @@ import sys
 import types
 import typing
 import unittest
-from unittest import mock
 
 import torch_rs as torch
 
 
 MODULE_DOC = """
-CPU-build CUDA compatibility probes.
+CUDA availability probes for the narrow public tensor storage path.
 """
 
 FUNCTION_DOCS = {
@@ -62,35 +60,16 @@ def _restore_backend_preferences(snapshot):
 
 
 class CudaProbeTests(unittest.TestCase):
-    def test_returns_cpu_build_probe_values_without_runtime_probes(self):
-        cases = (
-            (torch.cuda.is_available, False, bool),
-            (torch.cuda.device_count, 0, int),
-            (torch.cuda.is_initialized, False, bool),
-        )
-        environments = (
-            {},
-            {"CUDA_VISIBLE_DEVICES": ""},
-            {"CUDA_VISIBLE_DEVICES": "0"},
-            {
-                "CUDA_VISIBLE_DEVICES": "0",
-                "NVIDIA_VISIBLE_DEVICES": "all",
-                "PYTORCH_NVML_BASED_CUDA_CHECK": "1",
-            },
-        )
+    def test_returns_runtime_probe_values(self):
+        count = torch.cuda.device_count()
+        available = torch.cuda.is_available()
+        initialized = torch.cuda.is_initialized()
 
-        for function, expected_value, expected_type in cases:
-            with self.subTest(function=function.__name__):
-                self.assertEqual(function.__code__.co_names, ())
-                self.assertEqual(function.__code__.co_freevars, ())
-                self.assertEqual(function.__code__.co_cellvars, ())
-
-            for environment in environments:
-                with self.subTest(function=function.__name__, environment=environment):
-                    with mock.patch.dict(os.environ, environment, clear=True):
-                        result = function()
-                    self.assertIs(type(result), expected_type)
-                    self.assertEqual(result, expected_value)
+        self.assertIs(type(count), int)
+        self.assertGreaterEqual(count, 0)
+        self.assertIs(type(available), bool)
+        self.assertIs(available, count > 0)
+        self.assertIs(type(initialized), bool)
 
         self.assertFalse(hasattr(torch.cuda, "_initialized"))
         self.assertFalse(hasattr(torch.cuda, "_cached_device_count"))
@@ -187,9 +166,11 @@ class CudaProbeTests(unittest.TestCase):
         self.assertIsNot(cuda.device_count, old_device_count)
         self.assertIsNot(cuda.is_available, old_is_available)
         self.assertIsNot(cuda.is_initialized, old_is_initialized)
-        self.assertEqual(cuda.device_count(), 0)
-        self.assertIs(cuda.is_available(), False)
-        self.assertIs(cuda.is_initialized(), False)
+        count = cuda.device_count()
+        self.assertIs(type(count), int)
+        self.assertGreaterEqual(count, 0)
+        self.assertIs(cuda.is_available(), count > 0)
+        self.assertIs(type(cuda.is_initialized()), bool)
 
         for function, old_function in (
             (cuda.device_count, old_device_count),
@@ -315,9 +296,11 @@ class CudaProbeTests(unittest.TestCase):
         expected = (True, False, False, False, False, False, True, False)
         self.assertEqual(_backend_preferences(), expected)
 
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        count = torch.cuda.device_count()
+        self.assertIs(type(count), int)
+        self.assertGreaterEqual(count, 0)
+        self.assertIs(torch.cuda.is_available(), count > 0)
+        self.assertIs(type(torch.cuda.is_initialized()), bool)
         importlib.reload(torch.cuda)
 
         self.assertEqual(_backend_preferences(), expected)
@@ -341,7 +324,7 @@ class RejectExternalRuntimeImport:
 
 sys.meta_path.insert(0, RejectExternalRuntimeImport())
 os.environ.update(
-    CUDA_VISIBLE_DEVICES="0",
+    CUDA_VISIBLE_DEVICES="",
     NVIDIA_VISIBLE_DEVICES="all",
     PYTORCH_NVML_BASED_CUDA_CHECK="1",
 )
@@ -354,9 +337,6 @@ assert cuda.device_count is device_count
 assert cuda.is_available is is_available
 assert cuda.is_initialized is is_initialized
 assert cuda.__all__ == ["device_count", "is_available", "is_initialized"]
-assert device_count.__code__.co_names == ()
-assert is_available.__code__.co_names == ()
-assert is_initialized.__code__.co_names == ()
 assert type(device_count()) is int and device_count() == 0
 assert is_available() is False
 assert is_initialized() is False

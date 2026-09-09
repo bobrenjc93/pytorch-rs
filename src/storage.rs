@@ -1,15 +1,19 @@
 use std::sync::{Arc, Mutex};
 
+use crate::cuda::CudaFloat32Storage;
+
 use crate::device::Device;
 use crate::dtype::DType;
+use crate::tensor_error::TensorError;
 
-/// Crate-private CPU float32 storage shared by tensors and autograd snapshots.
+/// Crate-private float32 storage shared by tensors and autograd snapshots.
 pub(crate) struct Storage {
     payload: StoragePayload,
 }
 
 enum StoragePayload {
     CpuFloat32(StorageData<f32>),
+    CudaFloat32(CudaFloat32Storage),
 }
 
 enum StorageData<T> {
@@ -139,6 +143,7 @@ impl Storage {
                 (Device::Cpu, DType::Float32) => {
                     StoragePayload::CpuFloat32(StorageData::Inline(value))
                 }
+                _ => unreachable!("non-CPU storage must use a device-specific constructor"),
             },
         }
     }
@@ -149,6 +154,7 @@ impl Storage {
                 (Device::Cpu, DType::Float32) => {
                     StoragePayload::CpuFloat32(StorageData::Owned(data))
                 }
+                _ => unreachable!("non-CPU storage must use a device-specific constructor"),
             },
         }
     }
@@ -159,43 +165,71 @@ impl Storage {
                 (Device::Cpu, DType::Float32) => {
                     StoragePayload::CpuFloat32(StorageData::SharedGradient(Mutex::new(data)))
                 }
+                _ => unreachable!("non-CPU storage must use a device-specific constructor"),
             },
         }
+    }
+
+    pub(crate) fn cuda_zeros_float32(
+        elements: usize,
+        device_index: usize,
+    ) -> Result<Self, TensorError> {
+        Ok(Self {
+            payload: StoragePayload::CudaFloat32(CudaFloat32Storage::zeros(
+                elements,
+                device_index,
+            )?),
+        })
     }
 
     pub(crate) fn len(&self) -> usize {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.len(),
+            StoragePayload::CudaFloat32(data) => data.elements,
         }
     }
 
     pub(crate) const fn dtype(&self) -> DType {
         match &self.payload {
-            StoragePayload::CpuFloat32(_) => DType::Float32,
+            StoragePayload::CpuFloat32(_) | StoragePayload::CudaFloat32(_) => DType::Float32,
         }
     }
 
     pub(crate) const fn device(&self) -> Device {
         match &self.payload {
             StoragePayload::CpuFloat32(_) => Device::Cpu,
+            StoragePayload::CudaFloat32(data) => Device::Cuda(data.device_index),
         }
     }
 
     pub(crate) fn data_ptr(&self) -> *const u8 {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.data_ptr(),
+            StoragePayload::CudaFloat32(data) => data.data_ptr as *const u8,
+        }
+    }
+
+    pub(crate) fn with_cpu_values<R>(&self, read: impl FnOnce(&[f32]) -> R) -> R {
+        match &self.payload {
+            StoragePayload::CpuFloat32(data) => data.with_values(read),
+            StoragePayload::CudaFloat32(_) => unreachable!("CPU kernel requires CPU storage"),
         }
     }
 
     pub(crate) fn owned_values(&self) -> Option<&[f32]> {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.owned_values(),
+            StoragePayload::CudaFloat32(_) => None,
         }
     }
 
     pub(crate) fn value(&self, index: usize) -> Option<f32> {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.value(index),
+            StoragePayload::CudaFloat32(_) => {
+                let _ = index;
+                None
+            }
         }
     }
 
@@ -205,12 +239,18 @@ impl Storage {
     ) -> Result<Vec<f32>, E> {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.try_copy_values(copy),
+            StoragePayload::CudaFloat32(_) => unreachable!(
+                "CUDA storage must be copied through the synchronized device-to-host path"
+            ),
         }
     }
 
     pub(crate) fn copy_range(&self, start: usize, end: usize) -> Vec<f32> {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.copy_range(start, end),
+            StoragePayload::CudaFloat32(_) => unreachable!(
+                "CUDA storage ranges must be copied through the synchronized device-to-host path"
+            ),
         }
     }
 
@@ -222,12 +262,17 @@ impl Storage {
     ) -> Option<R> {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.with_shared_gradient_range(start, end, read),
+            StoragePayload::CudaFloat32(_) => None,
         }
     }
 
     pub(crate) fn into_range(self, start: usize, end: usize) -> Vec<f32> {
         match self.payload {
             StoragePayload::CpuFloat32(data) => data.into_range(start, end),
+            StoragePayload::CudaFloat32(_) => {
+                let _ = (start, end);
+                unreachable!("CUDA storage cannot be moved into a host range")
+            }
         }
     }
 
@@ -245,12 +290,42 @@ impl Storage {
                     })
                 },
             ),
+            StoragePayload::CudaFloat32(_) => Ok(Arc::clone(storage)),
         }
     }
 
     pub(crate) fn accumulate_shared_gradient(&self, contribution: Vec<f32>) {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.accumulate_shared_gradient(contribution),
+            StoragePayload::CudaFloat32(_) => {
+                let _ = contribution;
+                unreachable!("CUDA gradients are not supported")
+            }
+        }
+    }
+
+    pub(crate) fn copy_cuda_to_cpu_float32(
+        &self,
+        start: usize,
+        elements: usize,
+    ) -> Result<Vec<f32>, TensorError> {
+        match &self.payload {
+            StoragePayload::CpuFloat32(data) => Ok(data.copy_range(start, start + elements)),
+            StoragePayload::CudaFloat32(data) => data.copy_range(start, elements),
+        }
+    }
+
+    pub(crate) fn copy_cuda_regions_to_cpu_float32(
+        &self,
+        elements: usize,
+        regions: impl IntoIterator<Item = Result<crate::cuda::CudaCopyRegion, TensorError>>,
+    ) -> Result<Vec<f32>, TensorError> {
+        match &self.payload {
+            StoragePayload::CudaFloat32(data) => data.copy_regions(elements, regions),
+            StoragePayload::CpuFloat32(_) => Err(TensorError::UnsupportedDevice {
+                operation: "CUDA transfer",
+                device: Device::Cpu,
+            }),
         }
     }
 }

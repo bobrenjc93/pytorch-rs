@@ -16,6 +16,13 @@ import numpy as np
 import torch_rs as torch
 
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 CUDNN_SDP_ENABLED_DOC = """
     .. warning:: This flag is beta and subject to change.
 
@@ -95,7 +102,7 @@ class CudaCudnnSdpTests(unittest.TestCase):
         self.cuda.enable_mem_efficient_sdp(self.original_mem_efficient)
         self.cuda.allow_fp16_bf16_reduction_math_sdp(self.original_reduction)
 
-    def test_fresh_process_defaults_to_exact_true_without_cuda_probing(self):
+    def test_fresh_process_defaults_to_exact_true_with_runtime_cuda_probe(self):
         script = r'''
 import json
 import os
@@ -173,8 +180,14 @@ print(json.dumps({
             0,
             msg=completed.stdout + completed.stderr,
         )
+        observed = json.loads(completed.stdout)
+        cuda_available = observed.pop("cuda_available")
+        cuda_devices = observed.pop("cuda_devices")
+        self.assertIs(type(cuda_devices), int)
+        self.assertGreaterEqual(cuda_devices, 0)
+        self.assertIs(cuda_available, cuda_devices > 0)
         self.assertEqual(
-            json.loads(completed.stdout),
+            observed,
             {
                 "initial": True,
                 "initial_type": "bool",
@@ -193,8 +206,6 @@ print(json.dumps({
                 "cudnn_available": False,
                 "cudnn_version": None,
                 "cuda": True,
-                "cuda_available": False,
-                "cuda_devices": 0,
                 "can_use_cudnn_attention": False,
                 "sdp_kernel": True,
                 "execution": False,
@@ -547,8 +558,7 @@ print(json.dumps({
         self.assertFalse(
             hasattr(torch.nn.functional, "scaled_dot_product_attention")
         )
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
         with self.assertRaisesRegex(
             RuntimeError,
