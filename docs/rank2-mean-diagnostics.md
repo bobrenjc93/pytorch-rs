@@ -40,8 +40,8 @@ the clean committed implementation and runner revision:
 Without `--revision`, the helper records a hashed uncommitted source overlay.
 Such scratch reports must stay under `target/`; they do not replace clean
 committed-source evidence. Burner owns the implementation commit and the later
-artifact-only evidence commit. No current candidate measurement is claimed by
-the older retained CUDA allocation-repair report.
+artifact-only evidence commit. The retained CUDA-add candidate report measures
+CUDA addition only; run this diagnostic separately for CPU mean performance.
 
 Correctness checks cover cancellation-sensitive column tails, both axes,
 transposes, offsets, gradients, configuration errors, and pool replacement
