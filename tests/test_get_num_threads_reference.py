@@ -35,6 +35,43 @@ class GetNumThreadsReferenceTests(unittest.TestCase):
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
+    def test_set_num_threads_signed_integer_boundaries_match_reference(self):
+        class IntSubclass(int):
+            def __int__(self):
+                raise AssertionError("integer storage must be read without __int__")
+
+            def __index__(self):
+                raise AssertionError("integer storage must be read without __index__")
+
+        # Valid, enormous positive budgets would try to create billions of
+        # workers. Probe the positive overflow edges and the safe negative
+        # boundaries instead; ordinary positive budgets are covered separately.
+        values = (
+            -(1 << 100), -(1 << 63) - 1, -(1 << 63), -(1 << 63) + 1,
+            -(1 << 31) - 1, -(1 << 31), -(1 << 31) + 1, -1, 0,
+            1 << 31, (1 << 31) + 1,
+            (1 << 63) - 2, (1 << 63) - 1, 1 << 63, (1 << 63) + 1,
+            1 << 100,
+        )
+        original_native = torch.get_num_threads()
+        original_reference = reference_torch.get_num_threads()
+        try:
+            torch.set_num_threads(2)
+            reference_torch.set_num_threads(2)
+            for integer_type in (int, IntSubclass):
+                for value in values:
+                    value = integer_type(value)
+                    with self.subTest(value=value, integer_type=integer_type):
+                        self.assert_error_matches(
+                            lambda: torch.set_num_threads(value),
+                            lambda: reference_torch.set_num_threads(value),
+                        )
+                        self.assertEqual(torch.get_num_threads(), 2)
+                        self.assertEqual(reference_torch.get_num_threads(), 2)
+        finally:
+            torch.set_num_threads(original_native)
+            reference_torch.set_num_threads(original_reference)
+
     def threaded_outcome(self, module):
         function = module.get_num_threads
 

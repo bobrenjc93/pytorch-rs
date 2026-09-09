@@ -25723,7 +25723,13 @@ fn set_num_threads(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>
             python_type_name(&value)?
         )));
     }
-    let threads = value.extract::<i32>()?;
+    // PyTorch unpacks int64 first, then checks the C int range. Preserve the
+    // distinct overflow errors before validating positivity or changing pools.
+    let unpacked = value
+        .extract::<i64>()
+        .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"))?;
+    let threads = i32::try_from(unpacked)
+        .map_err(|_| PyValueError::new_err("Overflow when unpacking long"))?;
     if threads <= 0 {
         return Err(PyRuntimeError::new_err(
             "set_num_threads expects a positive integer",
