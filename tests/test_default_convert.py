@@ -13,6 +13,14 @@ Point = namedtuple("Point", ["x", "y"])
 
 
 class DefaultConvertTests(unittest.TestCase):
+    def test_exact_python_scalar_leaves_are_preserved(self):
+        for value in (True, False, 1, -(2**200), -0.0, float("nan"), 1 + 2j, None):
+            with self.subTest(value=value):
+                self.assertIs(default_convert(value), value)
+                result = default_convert({"value": [Point(value, (value,))]})
+                self.assertIs(result["value"][0].x, value)
+                self.assertIs(result["value"][0].y[0], value)
+
     def test_tensor_leaves_are_preserved_without_batching(self):
         base = torch.tensor([[1.0, -0.0, 3.0], [4.0, 5.0, 6.0]])
         first = base[0]
@@ -65,27 +73,42 @@ class DefaultConvertTests(unittest.TestCase):
         self.assertEqual(default_convert(Point([], ())), Point([], []))
 
     def test_unsupported_leaves_fail_closed(self):
+        class IntSubclass(int):
+            pass
+
+        class FloatSubclass(float):
+            pass
+
+        class ComplexSubclass(complex):
+            pass
+
         unsupported_values = (
             np.asarray([1.0], dtype=np.float32),
             np.float32(1.0),
             np.int64(1),
-            1.0,
-            1,
-            True,
+            np.bool_(True),
+            np.float64(1.0),
+            np.complex128(1 + 2j),
+            IntSubclass(1),
+            FloatSubclass(1.0),
+            ComplexSubclass(1 + 2j),
             object(),
-            None,
             {"ok": torch.tensor([1.0]), "bad": object()},
             [torch.tensor([1.0]), object()],
         )
         for value in unsupported_values:
-            with self.subTest(value_type=type(value).__name__):
-                with self.assertRaisesRegex(
-                    TypeError,
-                    r"^default_convert\(\): only exact native tensors, "
-                    r"strings, bytes, and list, tuple, namedtuple, or dict "
-                    r"containers are supported; found ",
+            for data in (value, {"nested": [Point(None, (value,))]}):
+                with self.subTest(
+                    value_type=type(value).__name__, nested=data is not value
                 ):
-                    default_convert(value)
+                    with self.assertRaisesRegex(
+                        TypeError,
+                        r"^default_convert\(\): only exact native tensors, "
+                        r"exact Python bool, int, float, complex, None, "
+                        r"strings, bytes, and list, tuple, namedtuple, or dict "
+                        r"containers are supported; found ",
+                    ):
+                        default_convert(data)
 
     def test_default_collate_remains_separate_and_fail_closed(self):
         left = torch.tensor([1.0])
@@ -98,12 +121,14 @@ class DefaultConvertTests(unittest.TestCase):
         self.assertIs(converted[1], right)
         self.assertEqual(collated.shape, (2, 1))
 
-        with self.assertRaisesRegex(
-            TypeError,
-            r"^default_collate\(\): only batches of exact native CPU float32 "
-            r"tensors",
-        ):
-            default_collate(["a", "b"])
+        for value in (True, 1, 1.0, 1 + 2j, None, "a", b"a"):
+            with self.subTest(value_type=type(value).__name__):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^default_collate\(\): only batches of exact native CPU float32 "
+                    r"tensors",
+                ):
+                    default_collate([value, value])
 
     def test_imports_exports_and_signature(self):
         data_module = importlib.import_module("torch_rs.utils.data")
