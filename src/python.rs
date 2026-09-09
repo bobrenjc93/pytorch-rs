@@ -6425,6 +6425,12 @@ fn apply_mean_reduction(
         }
         BoundSumReduction::Dimension { dimension, keepdim } => {
             let dimension = extract_bound_mean_dimension(dimension)?;
+            if input.shape().len() == 2 {
+                let dimension = normalize_dimension(dimension, input.shape().len())?;
+                return input
+                    .mean_rank_two_dimension(dimension, *keepdim)
+                    .map_err(|error| tensor_error(&error));
+            }
             if input.shape().len() != 1 {
                 return Err(mean_unsupported_reduction());
             }
@@ -17381,7 +17387,7 @@ fn mean_method_invalid_combination(
 
 fn mean_unsupported_reduction() -> PyErr {
     PyNotImplementedError::new_err(
-        "mean(): only full reductions with dim=None and rank-1 dim=0/-1 reductions are supported; broader dim reductions, concrete out, and dtype conversions are not supported",
+        "mean(): only full reductions with dim=None and single-dimension rank-1/rank-2 reductions are supported; broader dim reductions, concrete out, and dtype conversions are not supported",
     )
 }
 

@@ -600,12 +600,10 @@ class TensorMeanReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_dimension_keepdim_out_and_cross_dtype_reductions_remain_unsupported(self):
+    def test_multidimension_out_and_cross_dtype_reductions_remain_unsupported(self):
         actual = torch.ones((2, 3))
         expected = reference_torch.ones((2, 3), dtype=reference_torch.float32)
         cases = (
-            (lambda: actual.mean(0), lambda: expected.mean(0)),
-            (lambda: actual.mean(dim=0), lambda: expected.mean(dim=0)),
             (lambda: actual.mean((0, 1)), lambda: expected.mean((0, 1))),
             (lambda: actual.mean(dim=[0, 1]), lambda: expected.mean(dim=[0, 1])),
             (
@@ -616,7 +614,6 @@ class TensorMeanReferenceTests(unittest.TestCase):
                 lambda: actual.mean(dim=None, dtype=reference_torch.float64),
                 lambda: expected.mean(dim=None, dtype=reference_torch.float64),
             ),
-            (lambda: torch.mean(actual, 0), lambda: reference_torch.mean(expected, 0)),
             (
                 lambda: torch.mean(actual, dim=(0, 1)),
                 lambda: reference_torch.mean(expected, dim=(0, 1)),

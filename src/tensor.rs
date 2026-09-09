@@ -161,11 +161,12 @@ enum GradFn {
     ZeroVjp(ZeroVjpNode),
     Sum {
         input: SavedTensor,
-        reduction: SumGradient,
+        reduction: ReductionGradient,
     },
     Mean {
         input: SavedTensor,
         divisor: f32,
+        reduction: ReductionGradient,
     },
     Transform {
         input: SavedTensor,
@@ -211,7 +212,7 @@ enum TransformMapping {
 }
 
 #[derive(Clone, Copy)]
-enum SumGradient {
+enum ReductionGradient {
     Full,
     Dimension { dimension: usize },
 }
@@ -1450,7 +1451,10 @@ impl Tensor {
             GradFn::SavedOutputUnary(node) => node.identity,
             GradFn::ZeroVjp(node) => node.identity,
             GradFn::Sum { .. } => AutogradNode::Sum,
-            GradFn::Mean { .. } => AutogradNode::Mean,
+            GradFn::Mean { reduction, .. } => match reduction {
+                ReductionGradient::Full => AutogradNode::Mean,
+                ReductionGradient::Dimension { .. } => AutogradNode::MeanDimension,
+            },
             GradFn::Unbind { .. } => AutogradNode::Unbind,
             GradFn::Chunk { node, .. } => *node,
         };
@@ -5249,7 +5253,7 @@ impl Tensor {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Sum {
                         input: SavedTensor::from_tensor_metadata(self),
-                        reduction: SumGradient::Full,
+                        reduction: ReductionGradient::Full,
                     })),
                 },
             }));
@@ -5297,7 +5301,7 @@ impl Tensor {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Sum {
                         input: SavedTensor::from_tensor_metadata(self),
-                        reduction: SumGradient::Dimension { dimension },
+                        reduction: ReductionGradient::Dimension { dimension },
                     })),
                 },
             }));
@@ -5345,6 +5349,40 @@ impl Tensor {
                     grad_fn: Mutex::new(Some(GradFn::Mean {
                         input: SavedTensor::from_tensor_metadata(self),
                         divisor,
+                        reduction: ReductionGradient::Full,
+                    })),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
+    /// Computes the arithmetic mean along one normalized rank-two dimension.
+    ///
+    /// Uses the dimension sum's layout-aware reads and fresh contiguous output,
+    /// divided by the reduced axis length. Empty reduction axes produce NaNs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a non-CPU or non-rank-two tensor, an invalid
+    /// dimension, or when result allocation fails.
+    pub fn mean_rank_two_dimension(
+        &self,
+        dimension: usize,
+        keepdim: bool,
+    ) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("mean", self.device())?;
+        let sum = self.sum_rank_two_dimension(dimension, keepdim)?;
+        let divisor = full_reduction_mean_divisor(self.shape[dimension]);
+        // Preserve the sum's contiguous strides, including empty kept axes.
+        let mut output = sum.unary_map(|value| value / divisor)?;
+        if self.records_grad() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Mean {
+                        input: SavedTensor::from_tensor_metadata(self),
+                        divisor,
+                        reduction: ReductionGradient::Dimension { dimension },
                     })),
                 },
             }));
@@ -6061,8 +6099,12 @@ fn apply_grad_fn(
         GradFn::Sum { input, reduction } => {
             apply_sum_grad_fn(input, *reduction, upstream, gradients)?;
         }
-        GradFn::Mean { input, divisor } => {
-            apply_mean_grad_fn(input, *divisor, upstream, gradients)?;
+        GradFn::Mean {
+            input,
+            divisor,
+            reduction,
+        } => {
+            apply_mean_grad_fn(input, *divisor, *reduction, upstream, gradients)?;
         }
         GradFn::MultiplyScalar { input, scalar } => {
             apply_multiply_scalar_grad_fn(input, *scalar, upstream, gradients)?;
@@ -6848,21 +6890,21 @@ fn apply_squared_difference_grad_fn(
 
 fn apply_sum_grad_fn(
     input: &SavedTensor,
-    reduction: SumGradient,
+    reduction: ReductionGradient,
     upstream: &[f32],
     gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
     if let Some(meta) = &input.autograd {
         let gradient = match reduction {
-            SumGradient::Full => {
+            ReductionGradient::Full => {
                 let upstream = upstream
                     .first()
                     .copied()
                     .ok_or(TensorError::IndexCalculationOverflow)?;
                 filled_storage(input.elements, upstream)?
             }
-            SumGradient::Dimension { dimension } => {
-                sum_dimension_backward(input, dimension, upstream)?
+            ReductionGradient::Dimension { dimension } => {
+                reduction_dimension_backward(input, dimension, upstream)?
             }
         };
         add_gradient(gradients, meta, input.output_nr, gradient);
@@ -6870,7 +6912,7 @@ fn apply_sum_grad_fn(
     Ok(())
 }
 
-fn sum_dimension_backward(
+fn reduction_dimension_backward(
     input: &SavedTensor,
     dimension: usize,
     upstream: &[f32],
@@ -6918,11 +6960,21 @@ fn sum_dimension_backward(
 fn apply_mean_grad_fn(
     input: &SavedTensor,
     divisor: f32,
+    reduction: ReductionGradient,
     upstream: &[f32],
     gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
     if let Some(meta) = &input.autograd {
-        let gradient = filled_storage(input.elements, upstream[0] / divisor)?;
+        let gradient = match reduction {
+            ReductionGradient::Full => filled_storage(input.elements, upstream[0] / divisor)?,
+            ReductionGradient::Dimension { dimension } => {
+                let mut gradient = reduction_dimension_backward(input, dimension, upstream)?;
+                for value in &mut gradient {
+                    *value /= divisor;
+                }
+                gradient
+            }
+        };
         add_gradient(gradients, meta, input.output_nr, gradient);
     }
     Ok(())
@@ -9730,6 +9782,67 @@ mod tests {
         assert_eq!(shared_offset.storage_offset(), 4);
         assert!(shared_offset.contiguous_slice().is_none());
         assert_matches_logical_fold(&shared_offset);
+    }
+
+    #[test]
+    fn rank_two_mean_broadcasts_weighted_gradients_along_each_axis() {
+        for keepdim in [false, true] {
+            for dimension in [0, 1] {
+                let leaf = Tensor::from_vec(vec![1.0, 2.0, 4.0, 7.0, 8.0, 10.0], [2, 3])
+                    .unwrap()
+                    .with_requires_grad(true);
+                let output = leaf.mean_rank_two_dimension(dimension, keepdim).unwrap();
+                let (shape, values, weights, gradient) = if dimension == 0 {
+                    (
+                        if keepdim { vec![1, 3] } else { vec![3] },
+                        vec![4.0, 5.0, 7.0],
+                        vec![7.0, -3.0, 2.0],
+                        vec![3.5, -1.5, 1.0, 3.5, -1.5, 1.0],
+                    )
+                } else {
+                    (
+                        if keepdim { vec![2, 1] } else { vec![2] },
+                        vec![7.0 / 3.0, 25.0 / 3.0],
+                        vec![7.0, -3.0],
+                        vec![7.0 / 3.0, 7.0 / 3.0, 7.0 / 3.0, -1.0, -1.0, -1.0],
+                    )
+                };
+                assert_eq!(output.shape(), shape);
+                assert_eq!(output.logical_values().collect::<Vec<_>>(), values);
+                let weights = Tensor::from_vec(weights, shape).unwrap();
+                output.mul(&weights).unwrap().sum().backward().unwrap();
+                assert_eq!(
+                    leaf.grad()
+                        .unwrap()
+                        .unwrap()
+                        .logical_values()
+                        .collect::<Vec<_>>(),
+                    gradient
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rank_two_mean_validates_dimensions_and_preserves_empty_gradients() {
+        let vector = Tensor::from_vec(vec![1.0, 2.0], [2]).unwrap();
+        assert!(vector.mean_rank_two_dimension(0, false).is_err());
+        let matrix = Tensor::from_vec(vec![1.0, 2.0], [1, 2]).unwrap();
+        assert!(matrix.mean_rank_two_dimension(2, false).is_err());
+        for shape in [[0, 3], [2, 0], [0, 0]] {
+            for dimension in [0, 1] {
+                let leaf = Tensor::from_vec(Vec::new(), shape)
+                    .unwrap()
+                    .with_requires_grad(true);
+                let output = leaf.mean_rank_two_dimension(dimension, true).unwrap();
+                assert_eq!(output.numel(), shape[1 - dimension]);
+                assert!(output.logical_values().all(f32::is_nan));
+                output.sum().backward().unwrap();
+                let gradient = leaf.grad().unwrap().unwrap();
+                assert_eq!(gradient.shape(), shape);
+                assert_eq!(gradient.numel(), 0);
+            }
+        }
     }
 
     #[test]
