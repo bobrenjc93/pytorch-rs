@@ -47,7 +47,7 @@ compiler metadata boundary also explicitly rejects those properties.
 
 The Rust metadata hook reads dtype, device including ordinal, shape, strides,
 requires-grad, and storage offset from the actual tensor, without Python
-property dispatch. Python no longer labels CUDA storage as CPU. CUDA input and
+property dispatch. The compiler uses that native device metadata. CUDA input and
 capture metadata guard the exact offset as well as shape/stride/dtype/device;
 addition outputs have canonical contiguous strides and offset zero. CPU traces
 retain their established offset-polymorphic behavior (`storage_offset=None`
@@ -61,7 +61,7 @@ limit; an incompatible device transition is rejected. Rejected calls leave the
 graph cache unchanged. A new graph is published only after successful native
 execution, and the entire graph is validated before executing any operation.
 Private metadata-only recorders can still describe CUDA unary graphs, but such
-graphs cannot execute. Native unary hooks retain PR1909's CPU guard.
+graphs cannot execute. Native unary hooks enforce CPU-only execution.
 
 ## Reproduction and evidence
 
@@ -107,60 +107,7 @@ PyTorch, driver, GPU, native runtime, and release build configuration. Native
 addition uses embedded PTX 6.0 targeting sm_50, JIT-compiled by the NVIDIA driver;
 CUDA 12.6 nvcc is available on this host but is not used by this native path.
 
-The reports were regenerated from clean implementation commit
-`278c9b1eb90f6d4d2bcdc518572c2d3992b41261` after it was committed by Burner.
-The release wheel was rebuilt and installed for Python 3.12.13 and 3.14.5;
-all three diagnostics ran before any retained report or documentation changed.
-`git status --porcelain=v1 --untracked-files=all` was empty before the build and
-after the complete diagnostic batch, with HEAD unchanged. Every recorded source
-hash was checked against that commit. All 59 packaged Python files also matched
-the committed source and installed package, and the installed native extension
-matched the rebuilt wheel. The refreshed wheel's SHA-256 is
-`87e0488be1bfd6103d0e7ac68a36188759562d1bd764d27abe46a2de9e7fee05`.
-Case outcomes and output hashes are unchanged from the initial diagnostics;
-the reports now reference the commit containing the measured implementation
-and harness. No implementation or harness changes accompany this evidence
-refresh.
-
-The H100 differential reports contain 82 single-device cases per interpreter:
-56 supported passes and 26 explicit unsupported outcomes, with 80 cases eligible
-on reference PyTorch. The additional reference-eligible mixed-device case uses a
-CPU scalar tensor and a CUDA scalar tensor, which PyTorch permits and this
-bounded compiler rejects. The six-case two-device report has four eligible
-passes and two mixed-ordinal rejections that are also reference-ineligible.
-These are diagnostic counts, not a coverage score or an expanded denominator.
-
-A host-specific baseline issue was also checked without changing this feature:
-on GCC-built CPython 3.12.13, two noncanonical boolean-buffer subcases fail in
-both this wheel and a release wheel rebuilt from unmodified base `e5a8a9c`.
-The existing native buffer decoder uses the low bit; that matches Clang-built
-CPython 3.12.12's memoryview behavior but not this GCC build's nonzero-byte
-behavior. CUDA graph diagnostics pass on the GCC interpreter too. The stack
-benchmark smoke test additionally requires canonical package paths and an
-interpreter under `.venv`; managed validation environments were placed at
-`.venv/compat312` and `.venv/compat314` to meet that existing contract. No buffer
-implementation, benchmark validator, or scoring corpus was changed.
-
-The managed Python 3.12 full run also exposed existing `nn.factory_kwargs`
-dictionary-order comparisons: both implementations iterate a set of keys, and
-three ordering assertions failed in that run. The unchanged baseline wheel
-also reproduces an ordering mismatch with `PYTHONHASHSEED=6`; isolated reruns
-can pass. The `nn.factory_kwargs` source and its tests are unchanged by this
-branch; the ordering issue remains a separate baseline failure.
-
-Final checks on the release abi3 wheel:
-
-- Python 3.14.5: full suite, 5,230 tests, passed with nine skips.
-- Python 3.12.12: full suite, 5,230 tests, nine skips; only the three baseline
-  `nn.factory_kwargs` ordering assertions described above failed. All compiler
-  tests passed. The focused compiler/unchanged-corpus run also passed (73 tests,
-  one two-device skip under the single-device mask).
-- Rust: formatting and Clippy with warnings denied passed; all-target tests
-  passed both without Python bindings (352 tests) and with them (363 tests).
-- All three H100 differential reports passed their declared supported/rejected
-  outcomes. Six CUDA/compiler multi-device tests passed on Python 3.12; the
-  compiler multi-device test also passed on Python 3.14 with the final wheel.
-- Native-extension provenance passed for both managed environments. All 59
-  packaged Python files matched the working tree and installed wheel; the
-  installed extension matched the wheel. The wheel's SHA-256 is
-  `d17b73a381e65ec95a7bc58f5d48fad7d352190ec2a2a6ed3a797f42cac4121c`.
+See [validation history](compile-cuda-add-validation.md) for source validation
+results, known baseline Python factory-order and boolean-buffer failures, and
+composite evidence provenance. Those historical results are separate from the
+usage and reproduction contract above.

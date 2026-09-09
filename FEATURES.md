@@ -136,8 +136,9 @@ and other CUDA math remain unsupported. Dtype changes, autograd inputs
 (including under `no_grad`), asynchronous transfers, CUDA-to-CUDA copies, unindexed CUDA targets, broader
 CUDA factories and autograd, device selection APIs, streams, events,
 synchronization APIs, allocator APIs, memory APIs, general runtime management,
-and general `torch.compile` CUDA execution remain unsupported outside the
-private benchmark-only H100 pointwise-reduce compile evidence path. See the
+and general `torch.compile` CUDA execution remain unsupported beyond the
+[bounded native CUDA addition capture](docs/compile-cuda-add.md) and private
+benchmark-only H100 pointwise-reduce compile evidence paths. See the
 [exact transfer contract](docs/supported-surface.md) for supported argument
 forms, layout guarantees, and operation boundaries.
 
