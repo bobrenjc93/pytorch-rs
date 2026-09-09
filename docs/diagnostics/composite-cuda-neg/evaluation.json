@@ -5,17 +5,17 @@
   "capability": "math_reductions_linalg",
   "scope": "correctness evidence for this six-case cell only; no overall score or transfer credit",
   "source": {
-    "commit": "174cccaa30e362a8de752db527916c7ce2d71ec1",
+    "commit": "e3a3ba3bd11f90378000b780b29389e5b1195c59",
     "source_sha256": "a0e6ac3f54ad339bc95ca4d89fd875aa6c336ff78fdc35ea59f92f53a894f87d",
-    "production_diff_sha256": "8430e5caebcc9d27ff55e24eabe9524a8b7aa48bf62d0c19cd39b8f770f915d9"
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   "source_unchanged_during_run": true,
   "evaluator_sha256": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
   "matrix_sha256": "33ce3417e04bc87f73e5b95acc7480295c476d406d4dc04ae6b7d1e4e6a6e513",
   "build_record": {
-    "commit": "174cccaa30e362a8de752db527916c7ce2d71ec1",
+    "commit": "e3a3ba3bd11f90378000b780b29389e5b1195c59",
     "source_sha256": "a0e6ac3f54ad339bc95ca4d89fd875aa6c336ff78fdc35ea59f92f53a894f87d",
-    "production_diff_sha256": "8430e5caebcc9d27ff55e24eabe9524a8b7aa48bf62d0c19cd39b8f770f915d9",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "command": [
       "cargo",
       "build",
@@ -25,17 +25,17 @@
       "extension-module"
     ],
     "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
-    "started_at": "2026-09-09T19:34:48.881328+00:00",
-    "ended_at": "2026-09-09T19:35:30.471814+00:00",
-    "wall_seconds": 41.59049104060978,
+    "started_at": "2026-09-09T19:47:20.744864+00:00",
+    "ended_at": "2026-09-09T19:48:00.656594+00:00",
+    "wall_seconds": 39.91172753274441,
     "exit_status": 0,
     "log": "build.log",
-    "log_sha256": "ed6f33b4f2a83044fbf99fcfd1b4563e28bd45cc4a776f3cc7127198a04dff37",
+    "log_sha256": "91decd49d917c3e042833f612b8b01621872c1a16195464cd31a70da0c9ecfbc",
     "build_command": "cargo build --locked --release --features extension-module",
     "source_unchanged_during_build": true,
-    "git_status_before_build": " M ARCHITECTURE.md\n M FEATURES.md\nUU README.md\n M docs/README.md\n M docs/cuda-neg-validation.md\nUU docs/supported-surface.md\nMM docs/troubleshooting.md\n M python/torch_rs/utils/data/_utils/collate.py\n M tests/test_default_collate.py\n M tests/test_default_collate_reference.py\nMM tests/test_readme_quickstart.py\n?? docs/diagnostics/composite-cuda-neg/\n?? docs/text-collation-diagnostics.md\n?? scripts/benchmark_text_collation.py\n",
-    "clean_checkout": false,
-    "measurement_kind": "uncommitted-integration-validation",
+    "git_status_before_build": "",
+    "clean_checkout": true,
+    "measurement_kind": "clean-code",
     "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/torch_rs.abi3.so",
     "extension_sha256": "e2e9c8bea89c8b8963cff95851ae2c4b2ce2038185ce630058f0dd2955abc7bd",
     "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
@@ -46,7 +46,7 @@
     "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
     "environment": {
       "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/cargo-home",
-      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/evidence-build",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/final-validation/build",
       "RUSTC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustc",
       "RUSTDOC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustdoc",
       "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
@@ -55,7 +55,7 @@
       "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/cache/xdg",
       "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
       "CUDA_VISIBLE_DEVICES": "0",
-      "PATH": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:/home/bobren/.cache/dotslash/obj/cas/a8/1a50e227dda8b1985278602c10213580/extract/tar.zst/linux_x86_64/codex-path:/home/bobren/.local/bin:/data/users/bobren/depot_tools:/home/bobren/.codex/tmp/arg0/codex-arg0WfLJ0Q:/home/bobren/.cache/dotslash/obj/cas/a8/1a50e227dda8b1985278602c10213580/extract/tar.zst/linux_x86_64/codex-path:/home/bobren/.cache/dotslash/obj/cas/bb/b1dfffa15633565c1690f3bd8f330077/extract/tar.zst/linux_x86_64/codex-path:/data/users/bobren/depot_tools:/home/bobren/.codex/tmp/arg0/codex-arg0sPfTy1:/home/bobren/.cache/dotslash/obj/cas/bb/b1dfffa15633565c1690f3bd8f330077/extract/tar.zst/linux_x86_64/codex-path:/usr/local/cuda-12.6/bin:/home/bobren/.config/emacs/bin:/data/users/bobren/fbsource/fbcode/common/rust/cargo_from_buck/bin:/data/users/bobren/fbsource/fbcode/third-party-buck/platform007/build/rust/bin:/data/users/bobren/fbsource/xplat/third-party/node/bin:/data/users/bobren/depot_tools:/home/bobren/local/a/pytorch-env/bin:/usr/local/cuda-12.6/bin:/home/bobren/.config/emacs/bin:/data/users/bobren/fbsource/fbcode/common/rust/cargo_from_buck/bin:/data/users/bobren/fbsource/fbcode/third-party-buck/platform007/build/rust/bin:/data/users/bobren/fbsource/xplat/third-party/node/bin:/home/bobren/miniconda3/bin:/home/bobren/.cargo/bin:/data/users/bobren/depot_tools:/usr/share/Modules/bin:/usr/condabin:/usr/lib64/ccache:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/local/sbin:/usr/sbin:/sbin:/var/www/scripts/bin:/home/bobren/.yarn/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/local/sbin:/usr/sbin:/sbin:/var/www/scripts/bin:/home/bobren/.yarn/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db"
+      "PATH": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:/home/bobren/.cache/dotslash/obj/cas/a8/1a50e227dda8b1985278602c10213580/extract/tar.zst/linux_x86_64/codex-path:/home/bobren/.local/bin:/data/users/bobren/depot_tools:/home/bobren/.codex/tmp/arg0/codex-arg0SascQO:/home/bobren/.cache/dotslash/obj/cas/a8/1a50e227dda8b1985278602c10213580/extract/tar.zst/linux_x86_64/codex-path:/home/bobren/.cache/dotslash/obj/cas/bb/b1dfffa15633565c1690f3bd8f330077/extract/tar.zst/linux_x86_64/codex-path:/data/users/bobren/depot_tools:/home/bobren/.codex/tmp/arg0/codex-arg0sPfTy1:/home/bobren/.cache/dotslash/obj/cas/bb/b1dfffa15633565c1690f3bd8f330077/extract/tar.zst/linux_x86_64/codex-path:/usr/local/cuda-12.6/bin:/home/bobren/.config/emacs/bin:/data/users/bobren/fbsource/fbcode/common/rust/cargo_from_buck/bin:/data/users/bobren/fbsource/fbcode/third-party-buck/platform007/build/rust/bin:/data/users/bobren/fbsource/xplat/third-party/node/bin:/data/users/bobren/depot_tools:/home/bobren/local/a/pytorch-env/bin:/usr/local/cuda-12.6/bin:/home/bobren/.config/emacs/bin:/data/users/bobren/fbsource/fbcode/common/rust/cargo_from_buck/bin:/data/users/bobren/fbsource/fbcode/third-party-buck/platform007/build/rust/bin:/data/users/bobren/fbsource/xplat/third-party/node/bin:/home/bobren/miniconda3/bin:/home/bobren/.cargo/bin:/data/users/bobren/depot_tools:/usr/share/Modules/bin:/usr/condabin:/usr/lib64/ccache:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/local/sbin:/usr/sbin:/sbin:/var/www/scripts/bin:/home/bobren/.yarn/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/local/sbin:/usr/sbin:/sbin:/var/www/scripts/bin:/home/bobren/.yarn/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db"
     },
     "cache_state": "empty Cargo build target; previously fetched Cargo registry; local Python environment; evaluator allocates a new temporary CUDA JIT cache",
     "profile": {
@@ -74,7 +74,7 @@
     4480763905421893394
   ],
   "CUDA_VISIBLE_DEVICES": "0",
-  "gpu_inventory": "index, uuid, name, memory.total [MiB], memory.used [MiB], driver_version, compute_cap\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 97871 MiB, 1925 MiB, 580.82.07, 9.0\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 97871 MiB, 130 MiB, 580.82.07, 9.0\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 97871 MiB, 4 MiB, 580.82.07, 9.0\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 97871 MiB, 4 MiB, 580.82.07, 9.0\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 97871 MiB, 102 MiB, 580.82.07, 9.0\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 97871 MiB, 108 MiB, 580.82.07, 9.0\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 97871 MiB, 60 MiB, 580.82.07, 9.0\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 97871 MiB, 114 MiB, 580.82.07, 9.0\n",
+  "gpu_inventory": "index, uuid, name, memory.total [MiB], memory.used [MiB], driver_version, compute_cap\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 97871 MiB, 116 MiB, 580.82.07, 9.0\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 97871 MiB, 130 MiB, 580.82.07, 9.0\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 97871 MiB, 4 MiB, 580.82.07, 9.0\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 97871 MiB, 4 MiB, 580.82.07, 9.0\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 97871 MiB, 102 MiB, 580.82.07, 9.0\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 97871 MiB, 108 MiB, 580.82.07, 9.0\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 97871 MiB, 60 MiB, 580.82.07, 9.0\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 97871 MiB, 114 MiB, 580.82.07, 9.0\n",
   "trials": [
     {
       "case_id": "cuda_f32_add_same_shape",
@@ -84,7 +84,7 @@
         "role": "reference",
         "case_id": "cuda_f32_add_same_shape",
         "seed": 8503945240872567646,
-        "pid": 3687271,
+        "pid": 908300,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -100,7 +100,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          99483975680,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -653,7 +653,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_add_same_shape",
         "seed": 8503945240872567646,
-        "pid": 3695597,
+        "pid": 912249,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -1218,7 +1218,7 @@
         "role": "reference",
         "case_id": "cuda_f32_add_same_shape",
         "seed": 8613321571747136749,
-        "pid": 3699243,
+        "pid": 913230,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -1234,7 +1234,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          99503702016,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -1787,7 +1787,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_add_same_shape",
         "seed": 8613321571747136749,
-        "pid": 3707472,
+        "pid": 917566,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -2352,7 +2352,7 @@
         "role": "reference",
         "case_id": "cuda_f32_add_same_shape",
         "seed": 4480763905421893394,
-        "pid": 3709678,
+        "pid": 919581,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -2368,7 +2368,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          98856140800,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -2921,7 +2921,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_add_same_shape",
         "seed": 4480763905421893394,
-        "pid": 3715330,
+        "pid": 926123,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -3486,7 +3486,7 @@
         "role": "reference",
         "case_id": "cuda_f32_add_trailing_vector",
         "seed": 8503945240872567646,
-        "pid": 3718942,
+        "pid": 928090,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -3502,7 +3502,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          97553809408,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -3897,7 +3897,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_add_trailing_vector",
         "seed": 8503945240872567646,
-        "pid": 3727529,
+        "pid": 936045,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -4064,7 +4064,7 @@
         "role": "reference",
         "case_id": "cuda_f32_add_trailing_vector",
         "seed": 8613321571747136749,
-        "pid": 3728587,
+        "pid": 937109,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -4080,7 +4080,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          99503702016,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -4475,7 +4475,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_add_trailing_vector",
         "seed": 8613321571747136749,
-        "pid": 3733106,
+        "pid": 941342,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -4642,7 +4642,7 @@
         "role": "reference",
         "case_id": "cuda_f32_add_trailing_vector",
         "seed": 4480763905421893394,
-        "pid": 3734025,
+        "pid": 943233,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -4658,7 +4658,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          99503702016,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -5053,7 +5053,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_add_trailing_vector",
         "seed": 4480763905421893394,
-        "pid": 3742598,
+        "pid": 946503,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -5220,7 +5220,7 @@
         "role": "reference",
         "case_id": "cuda_f32_neg",
         "seed": 8503945240872567646,
-        "pid": 3743453,
+        "pid": 948916,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -5236,7 +5236,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          98856140800,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -5577,7 +5577,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_neg",
         "seed": 8503945240872567646,
-        "pid": 3747682,
+        "pid": 953092,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -5930,7 +5930,7 @@
         "role": "reference",
         "case_id": "cuda_f32_neg",
         "seed": 8613321571747136749,
-        "pid": 3749946,
+        "pid": 954598,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -5946,7 +5946,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          98591899648,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -6287,7 +6287,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_neg",
         "seed": 8613321571747136749,
-        "pid": 3756752,
+        "pid": 958114,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -6640,7 +6640,7 @@
         "role": "reference",
         "case_id": "cuda_f32_neg",
         "seed": 4480763905421893394,
-        "pid": 3759473,
+        "pid": 958806,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -6656,7 +6656,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          98564636672,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -6997,7 +6997,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_neg",
         "seed": 4480763905421893394,
-        "pid": 3765419,
+        "pid": 960408,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -7350,7 +7350,7 @@
         "role": "reference",
         "case_id": "cuda_f32_mul_scalar",
         "seed": 8503945240872567646,
-        "pid": 3769212,
+        "pid": 960549,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -7366,7 +7366,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          98564636672,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -7707,7 +7707,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_mul_scalar",
         "seed": 8503945240872567646,
-        "pid": 3780057,
+        "pid": 962707,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -7847,7 +7847,7 @@
         "role": "reference",
         "case_id": "cuda_f32_mul_scalar",
         "seed": 8613321571747136749,
-        "pid": 3781745,
+        "pid": 963308,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -7863,7 +7863,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          98562539520,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -8204,7 +8204,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_mul_scalar",
         "seed": 8613321571747136749,
-        "pid": 3786498,
+        "pid": 965793,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -8344,7 +8344,7 @@
         "role": "reference",
         "case_id": "cuda_f32_mul_scalar",
         "seed": 4480763905421893394,
-        "pid": 3789703,
+        "pid": 967098,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -8360,7 +8360,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          98542813184,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -8701,7 +8701,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_mul_scalar",
         "seed": 4480763905421893394,
-        "pid": 3796614,
+        "pid": 970814,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -8841,7 +8841,7 @@
         "role": "reference",
         "case_id": "cuda_f32_sum_axis",
         "seed": 8503945240872567646,
-        "pid": 3798691,
+        "pid": 971151,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -8857,7 +8857,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          97893941248,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -9113,7 +9113,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_sum_axis",
         "seed": 8503945240872567646,
-        "pid": 3807845,
+        "pid": 973876,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -9253,7 +9253,7 @@
         "role": "reference",
         "case_id": "cuda_f32_sum_axis",
         "seed": 8613321571747136749,
-        "pid": 3811061,
+        "pid": 974899,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -9269,7 +9269,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          97891844096,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -9525,7 +9525,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_sum_axis",
         "seed": 8613321571747136749,
-        "pid": 3816418,
+        "pid": 980271,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -9665,7 +9665,7 @@
         "role": "reference",
         "case_id": "cuda_f32_sum_axis",
         "seed": 4480763905421893394,
-        "pid": 3817095,
+        "pid": 981121,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -9681,7 +9681,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          97891844096,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -9937,7 +9937,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_sum_axis",
         "seed": 4480763905421893394,
-        "pid": 3820499,
+        "pid": 983644,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -10077,7 +10077,7 @@
         "role": "reference",
         "case_id": "cuda_f32_matmul",
         "seed": 8503945240872567646,
-        "pid": 3822177,
+        "pid": 983921,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -10093,7 +10093,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          98562539520,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -10538,7 +10538,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_matmul",
         "seed": 8503945240872567646,
-        "pid": 3827517,
+        "pid": 985604,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -10758,7 +10758,7 @@
         "role": "reference",
         "case_id": "cuda_f32_matmul",
         "seed": 8613321571747136749,
-        "pid": 3828423,
+        "pid": 985708,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -10774,7 +10774,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          98562473984,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -11219,7 +11219,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_matmul",
         "seed": 8613321571747136749,
-        "pid": 3835446,
+        "pid": 988480,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",
@@ -11439,7 +11439,7 @@
         "role": "reference",
         "case_id": "cuda_f32_matmul",
         "seed": 4480763905421893394,
-        "pid": 3838061,
+        "pid": 989027,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -11455,7 +11455,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          97906589696,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -11900,7 +11900,7 @@
         "role": "candidate",
         "case_id": "cuda_f32_matmul",
         "seed": 4480763905421893394,
-        "pid": 3841722,
+        "pid": 992334,
         "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/__init__.py",

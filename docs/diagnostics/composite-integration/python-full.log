@@ -1,16 +1,12 @@
- Downloading crates ...
-  Downloaded rustversion v1.0.23
-  Downloaded windows-link v0.2.1
-  Downloaded portable-atomic v1.14.0
 📦 Including license file `LICENSE`
 🍹 Building a mixed python/rust project
 🐍 Found CPython 3.12 at /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python
 🔗 Found pyo3 bindings with abi3-py3.10 support
 📡 Using build options features from pyproject.toml
-   Compiling cfg-if v1.0.4
-   Compiling once_cell v1.21.4
-   Compiling either v1.18.0
    Compiling inventory v0.3.24
+   Compiling once_cell v1.21.4
+   Compiling cfg-if v1.0.4
+   Compiling either v1.18.0
    Compiling crossbeam-utils v0.8.23
    Compiling libc v0.2.189
    Compiling pyo3-ffi v0.29.2
@@ -21,12 +17,14 @@
    Compiling rayon-core v1.13.0
    Compiling rayon v1.12.0
    Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b)
-    Finished `release` profile [optimized] target(s) in 42.01s
-📦 Built wheel for abi3 Python ≥ 3.10 to /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/python-test-wheels.PcoJpC/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl
-Resolved 1 package in 1ms
-Prepared 1 package in 43ms
-Installed 1 package in 16ms
- + torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/python-test-wheels.PcoJpC/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
+    Finished `release` profile [optimized] target(s) in 41.42s
+📦 Built wheel for abi3 Python ≥ 3.10 to /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/python-test-wheels.nMRskP/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl
+Resolved 1 package in 2ms
+Prepared 1 package in 41ms
+Uninstalled 1 package in 4ms
+Installed 1 package in 21ms
+ - torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/python-test-wheels.PcoJpC/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
+ + torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/python-test-wheels.nMRskP/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
 verified native-extension provenance for torch-rs 0.1.0
 interpreter: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python
 virtualenv: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv
@@ -37,71 +35,18 @@ torch_rs.torch_rs: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/comp
   response = gen.throw(*sys.exc_info())
 ................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................./data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
   warnings.warn(
-.W0909 12:33:17.178000 3277758 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2] torch._dynamo hit config.recompile_limit (2)
-W0909 12:33:17.178000 3277758 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2]    function: 'cpu_float32_recompile_limit_reset' (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/tests/test_compile_corpus.py:278)
-W0909 12:33:17.178000 3277758 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2]    last reason: 0/1: tensor 'x' rank mismatch. expected 1, actual 2
-W0909 12:33:17.178000 3277758 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2] To log all recompilation reasons, use TORCH_LOGS="recompiles".
-W0909 12:33:17.178000 3277758 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2] To diagnose recompilation issues, see https://docs.pytorch.org/docs/main/user_guide/torch_compiler/compile/programming_model.recompilation.html
-.................................................................................s....................................................................................................................................................................................................................................................................................................................ss.................................................................................................................................................................................................sss.........s................................s.............s...............................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................s.....................................................FF..F........................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................./data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/tests/test_size_value_reference.py:270: PendingDeprecationWarning: the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+.W0909 12:51:51.211000 1278521 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2] torch._dynamo hit config.recompile_limit (2)
+W0909 12:51:51.211000 1278521 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2]    function: 'cpu_float32_recompile_limit_reset' (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/tests/test_compile_corpus.py:278)
+W0909 12:51:51.211000 1278521 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2]    last reason: 0/1: tensor 'x' rank mismatch. expected 1, actual 2
+W0909 12:51:51.211000 1278521 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2] To log all recompilation reasons, use TORCH_LOGS="recompiles".
+W0909 12:51:51.211000 1278521 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2] To diagnose recompilation issues, see https://docs.pytorch.org/docs/main/user_guide/torch_compiler/compile/programming_model.recompilation.html
+.................................................................................s....................................................................................................................................................................................................................................................................................................................ss.................................................................................................................................................................................................sss.........s................................s.............s...............................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................s................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................../data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/tests/test_size_value_reference.py:270: PendingDeprecationWarning: the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
   np.matrix([[1]]),
 .........................................................................................................................................................................................................................................FF............................................................................................................................................................................................................................................................................................................................................................./data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/tests/test_tensor_requires_grad_reference.py:178: UserWarning: The .grad attribute of a Tensor that is not a leaf Tensor is being accessed. Its .grad attribute won't be populated during autograd.backward(). If you indeed want the .grad field to be populated for a non-leaf Tensor, use .retain_grad() on the non-leaf Tensor. If you access the non-leaf Tensor by mistake, make sure you access the leaf Tensor instead. See github.com/pytorch/pytorch/pull/30531 for more information. (Triggered internally at /__w/pytorch/pytorch/build/aten/src/ATen/core/TensorBody.h:493.)
   "non_leaf_grad": self.grad_payload(non_leaf.grad),
 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/tests/test_tensor_requires_grad_reference.py:179: UserWarning: The .grad attribute of a Tensor that is not a leaf Tensor is being accessed. Its .grad attribute won't be populated during autograd.backward(). If you indeed want the .grad field to be populated for a non-leaf Tensor, use .retain_grad() on the non-leaf Tensor. If you access the non-leaf Tensor by mistake, make sure you access the leaf Tensor instead. See github.com/pytorch/pytorch/pull/30531 for more information. (Triggered internally at /__w/pytorch/pytorch/build/aten/src/ATen/core/TensorBody.h:493.)
   "view_grad": self.grad_payload(view.grad),
 ....................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
-======================================================================
-FAIL: test_canonical_values_freshness_and_input_preservation_match (test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_canonical_values_freshness_and_input_preservation_match) (case=5)
-----------------------------------------------------------------------
-Traceback (most recent call last):
-  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/tests/test_nn_factory_kwargs_reference.py", line 153, in test_canonical_values_freshness_and_input_preservation_match
-    self.assertEqual(list(actual), list(expected))
-AssertionError: Lists differ: ['dtype', 'memory_format', 'device'] != ['device', 'memory_format', 'dtype']
-
-First differing element 0:
-'dtype'
-'device'
-
-- ['dtype', 'memory_format', 'device']
-?    ^^^                       ^^^^
-
-+ ['device', 'memory_format', 'dtype']
-?    ^^^^                       ^^^
-
-
-======================================================================
-FAIL: test_canonical_values_freshness_and_input_preservation_match (test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_canonical_values_freshness_and_input_preservation_match)
-----------------------------------------------------------------------
-Traceback (most recent call last):
-  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/tests/test_nn_factory_kwargs_reference.py", line 188, in test_canonical_values_freshness_and_input_preservation_match
-    self.assertEqual(list(actual), list(expected))
-AssertionError: Lists differ: ['dtype', 'device'] != ['device', 'dtype']
-
-First differing element 0:
-'dtype'
-'device'
-
-- ['dtype', 'device']
-+ ['device', 'dtype']
-
-======================================================================
-FAIL: test_mapping_access_and_failure_order_match (test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_mapping_access_and_failure_order_match)
-----------------------------------------------------------------------
-Traceback (most recent call last):
-  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/tests/test_nn_factory_kwargs_reference.py", line 360, in test_mapping_access_and_failure_order_match
-    self.assertEqual(list(actual), list(expected))
-AssertionError: Lists differ: ['pin_memory', 'requires_grad', 'dtype', 'memory_format', 'device'] != ['pin_memory', 'requires_grad', 'device', 'memory_format', 'dtype']
-
-First differing element 2:
-'dtype'
-'device'
-
-- ['pin_memory', 'requires_grad', 'dtype', 'memory_format', 'device']
-?                                   ^^^                       ^^^^
-
-+ ['pin_memory', 'requires_grad', 'device', 'memory_format', 'dtype']
-?                                   ^^^^                       ^^^
-
-
 ======================================================================
 FAIL: test_numeric_buffers_match_pytorch_2_13 (test_tensor_buffer_reference.TensorBufferReferenceTests.test_numeric_buffers_match_pytorch_2_13) (case='bool including noncanonical bytes')
 ----------------------------------------------------------------------
@@ -146,9 +91,9 @@ Max relative difference among violations: 1.
  DESIRED: array([1., 1.], dtype=float32)
 
 ----------------------------------------------------------------------
-Ran 5304 tests in 475.167s
+Ran 5304 tests in 371.622s
 
-FAILED (failures=5, skipped=10)
+FAILED (failures=2, skipped=10)
 Python suite failed; resolved native-extension paths:
 verified native-extension provenance for torch-rs 0.1.0
 interpreter: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python

@@ -32,29 +32,31 @@ about general PyTorch performance. The unchanged Burner evaluators own scores.
 
 ## Recorded local sample
 
-The [raw report](diagnostics/text-collation.json) records uncommitted integration
-validation, with the same production fingerprint and extension hash as the
-[CUDA build receipt](diagnostics/composite-cuda-neg/build-record.json). Its
-checkout commit is the base of the working changes, not a clean measured HEAD.
-Burner must repeat the capture after committing the integration if using it as
-final-candidate evidence. No historical workload was rerun or replaced.
+The [raw report](diagnostics/text-collation.json) measures clean commit
+`e3a3ba3bd11f90378000b780b29389e5b1195c59`, with the same production fingerprint
+and extension hash as the [CUDA build receipt](diagnostics/composite-cuda-neg/build-record.json).
+Its git status is empty and its production diff is empty. The original capture
+output under `target/final-validation/` was copied here unchanged after both
+measurements; the source and benchmark harness remain unchanged. No historical
+workload was rerun or replaced.
 
-Captured `2026-09-09T19:37:06.380069+00:00` to `2026-09-09T19:37:23.118250+00:00` on CPU 24,
+Captured `2026-09-09T19:48:54.318392+00:00` to `2026-09-09T19:49:11.044221+00:00` on CPU 24,
 CPython 3.12.14, PyTorch 2.13.0+cu130, AMD EPYC 9654.
 
 | Case group | Geometric mean of reference/candidate median |
 | --- | ---: |
-| dict | 0.435 |
-| direct | 1.518 |
-| direct_mixed | 1.516 |
-| namedtuple | 1.055 |
-| sequence | 1.788 |
-| all | 1.135 |
+| dict | 0.428 |
+| direct | 1.512 |
+| direct_mixed | 1.536 |
+| namedtuple | 1.063 |
+| sequence | 1.798 |
+| all | 1.137 |
 
 Ratios above one mean the candidate median was lower in this sample; below one
 mean the reference median was lower. Results vary by container and nesting.
-This shared host also ran validation processes during capture; CPU affinity does
-not guarantee exclusive CPU ownership. Raw samples and MAD expose variability.
+The text capture finished before the full validation suite started. This is a
+shared host; CPU affinity does not guarantee exclusive CPU ownership. Raw
+samples and MAD expose variability.
 These observations support no universal timing or score claim. Inputs, balanced
 order, sample counts, summaries, source/harness fingerprints, and extension hash
 were independently verified after capture.

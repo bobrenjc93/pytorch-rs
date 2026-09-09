@@ -1,7 +1,7 @@
 {
-  "commit": "174cccaa30e362a8de752db527916c7ce2d71ec1",
+  "commit": "e3a3ba3bd11f90378000b780b29389e5b1195c59",
   "source_sha256": "a0e6ac3f54ad339bc95ca4d89fd875aa6c336ff78fdc35ea59f92f53a894f87d",
-  "production_diff_sha256": "8430e5caebcc9d27ff55e24eabe9524a8b7aa48bf62d0c19cd39b8f770f915d9",
+  "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "command": [
     "cargo",
     "build",
@@ -11,17 +11,17 @@
     "extension-module"
   ],
   "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
-  "started_at": "2026-09-09T19:34:48.881328+00:00",
-  "ended_at": "2026-09-09T19:35:30.471814+00:00",
-  "wall_seconds": 41.59049104060978,
+  "started_at": "2026-09-09T19:47:20.744864+00:00",
+  "ended_at": "2026-09-09T19:48:00.656594+00:00",
+  "wall_seconds": 39.91172753274441,
   "exit_status": 0,
   "log": "build.log",
-  "log_sha256": "ed6f33b4f2a83044fbf99fcfd1b4563e28bd45cc4a776f3cc7127198a04dff37",
+  "log_sha256": "91decd49d917c3e042833f612b8b01621872c1a16195464cd31a70da0c9ecfbc",
   "build_command": "cargo build --locked --release --features extension-module",
   "source_unchanged_during_build": true,
-  "git_status_before_build": " M ARCHITECTURE.md\n M FEATURES.md\nUU README.md\n M docs/README.md\n M docs/cuda-neg-validation.md\nUU docs/supported-surface.md\nMM docs/troubleshooting.md\n M python/torch_rs/utils/data/_utils/collate.py\n M tests/test_default_collate.py\n M tests/test_default_collate_reference.py\nMM tests/test_readme_quickstart.py\n?? docs/diagnostics/composite-cuda-neg/\n?? docs/text-collation-diagnostics.md\n?? scripts/benchmark_text_collation.py\n",
-  "clean_checkout": false,
-  "measurement_kind": "uncommitted-integration-validation",
+  "git_status_before_build": "",
+  "clean_checkout": true,
+  "measurement_kind": "clean-code",
   "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python/torch_rs/torch_rs.abi3.so",
   "extension_sha256": "e2e9c8bea89c8b8963cff95851ae2c4b2ce2038185ce630058f0dd2955abc7bd",
   "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
@@ -32,7 +32,7 @@
   "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
   "environment": {
     "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/cargo-home",
-    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/evidence-build",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/final-validation/build",
     "RUSTC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustc",
     "RUSTDOC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustdoc",
     "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
@@ -41,7 +41,7 @@
     "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/cache/xdg",
     "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
     "CUDA_VISIBLE_DEVICES": "0",
-    "PATH": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:/home/bobren/.cache/dotslash/obj/cas/a8/1a50e227dda8b1985278602c10213580/extract/tar.zst/linux_x86_64/codex-path:/home/bobren/.local/bin:/data/users/bobren/depot_tools:/home/bobren/.codex/tmp/arg0/codex-arg0WfLJ0Q:/home/bobren/.cache/dotslash/obj/cas/a8/1a50e227dda8b1985278602c10213580/extract/tar.zst/linux_x86_64/codex-path:/home/bobren/.cache/dotslash/obj/cas/bb/b1dfffa15633565c1690f3bd8f330077/extract/tar.zst/linux_x86_64/codex-path:/data/users/bobren/depot_tools:/home/bobren/.codex/tmp/arg0/codex-arg0sPfTy1:/home/bobren/.cache/dotslash/obj/cas/bb/b1dfffa15633565c1690f3bd8f330077/extract/tar.zst/linux_x86_64/codex-path:/usr/local/cuda-12.6/bin:/home/bobren/.config/emacs/bin:/data/users/bobren/fbsource/fbcode/common/rust/cargo_from_buck/bin:/data/users/bobren/fbsource/fbcode/third-party-buck/platform007/build/rust/bin:/data/users/bobren/fbsource/xplat/third-party/node/bin:/data/users/bobren/depot_tools:/home/bobren/local/a/pytorch-env/bin:/usr/local/cuda-12.6/bin:/home/bobren/.config/emacs/bin:/data/users/bobren/fbsource/fbcode/common/rust/cargo_from_buck/bin:/data/users/bobren/fbsource/fbcode/third-party-buck/platform007/build/rust/bin:/data/users/bobren/fbsource/xplat/third-party/node/bin:/home/bobren/miniconda3/bin:/home/bobren/.cargo/bin:/data/users/bobren/depot_tools:/usr/share/Modules/bin:/usr/condabin:/usr/lib64/ccache:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/local/sbin:/usr/sbin:/sbin:/var/www/scripts/bin:/home/bobren/.yarn/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/local/sbin:/usr/sbin:/sbin:/var/www/scripts/bin:/home/bobren/.yarn/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db"
+    "PATH": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:/home/bobren/.cache/dotslash/obj/cas/a8/1a50e227dda8b1985278602c10213580/extract/tar.zst/linux_x86_64/codex-path:/home/bobren/.local/bin:/data/users/bobren/depot_tools:/home/bobren/.codex/tmp/arg0/codex-arg0SascQO:/home/bobren/.cache/dotslash/obj/cas/a8/1a50e227dda8b1985278602c10213580/extract/tar.zst/linux_x86_64/codex-path:/home/bobren/.cache/dotslash/obj/cas/bb/b1dfffa15633565c1690f3bd8f330077/extract/tar.zst/linux_x86_64/codex-path:/data/users/bobren/depot_tools:/home/bobren/.codex/tmp/arg0/codex-arg0sPfTy1:/home/bobren/.cache/dotslash/obj/cas/bb/b1dfffa15633565c1690f3bd8f330077/extract/tar.zst/linux_x86_64/codex-path:/usr/local/cuda-12.6/bin:/home/bobren/.config/emacs/bin:/data/users/bobren/fbsource/fbcode/common/rust/cargo_from_buck/bin:/data/users/bobren/fbsource/fbcode/third-party-buck/platform007/build/rust/bin:/data/users/bobren/fbsource/xplat/third-party/node/bin:/data/users/bobren/depot_tools:/home/bobren/local/a/pytorch-env/bin:/usr/local/cuda-12.6/bin:/home/bobren/.config/emacs/bin:/data/users/bobren/fbsource/fbcode/common/rust/cargo_from_buck/bin:/data/users/bobren/fbsource/fbcode/third-party-buck/platform007/build/rust/bin:/data/users/bobren/fbsource/xplat/third-party/node/bin:/home/bobren/miniconda3/bin:/home/bobren/.cargo/bin:/data/users/bobren/depot_tools:/usr/share/Modules/bin:/usr/condabin:/usr/lib64/ccache:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/local/sbin:/usr/sbin:/sbin:/var/www/scripts/bin:/home/bobren/.yarn/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/local/sbin:/usr/sbin:/sbin:/var/www/scripts/bin:/home/bobren/.yarn/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db"
   },
   "cache_state": "empty Cargo build target; previously fetched Cargo registry; local Python environment; evaluator allocates a new temporary CUDA JIT cache",
   "profile": {

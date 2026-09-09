@@ -71,6 +71,6 @@ test_real_import_blocker_rejects_even_swallowed_forwarding (tests.test_cuda_math
 test_worker_crash_timeout_invalid_json_and_missing_interpreter_fail_closed (tests.test_cuda_math_evaluator.IsolationTests.test_worker_crash_timeout_invalid_json_and_missing_interpreter_fail_closed) ... ok
 
 ----------------------------------------------------------------------
-Ran 69 tests in 49.518s
+Ran 69 tests in 33.068s
 
 OK (skipped=5)

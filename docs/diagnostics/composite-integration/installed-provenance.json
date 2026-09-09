@@ -1,0 +1,13 @@
+{
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+  "resolved_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "candidate_package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch_rs",
+  "installed_extension": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "sha256": "4183f9612972067120d72ef244e3da118ec1e361f0da4dc43e3025d03ad85029"
+  },
+  "reference_package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch/__init__.py",
+  "reference_version": "2.13.0+cu130",
+  "source_python_files_verified": 59
+}

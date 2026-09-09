@@ -20,15 +20,16 @@ The durable [raw six-case report](diagnostics/composite-cuda-neg/evaluation.json
 measurement, including all failure slots. They supersede the leaf's report,
 whose raw files were only in its disposable worktree.
 
-This capture is **uncommitted integration validation**, not a clean final-commit
-attestation. The receipt identifies the actual checkout commit, production
-source fingerprint, production diff hash, dirty status, extension hash, build
-configuration, commands, timestamps, and local paths. The task forbids staging
-outside the worktree and making commits; Burner must finish its pending merge
-and repeat this capture after committing the integrated implementation. Do not
-attribute these results to an unchanged clean HEAD or award current final-commit
-performance credit from them. The capture procedure below works for that clean
-rerun without changing evaluator definitions.
+This capture freshly built clean commit `e3a3ba3bd11f90378000b780b29389e5b1195c59` inside the
+current composite worktree. Burner had already committed the integrated source;
+no new commit was created for validation. The receipts bind the production
+fingerprint, empty production diff, clean checkout status, native extension,
+commands, timestamps, and local interpreter/package/runtime paths to that commit.
+Reports were first written under `target/final-validation/` and copied here
+byte-for-byte after CUDA and text measurements, preserving a clean checkout for
+both captures. Subsequent changes contain only documentation and evidence; the
+implementation and benchmark/evaluator harnesses remain identical to the measured
+commit. Rebuild and recapture if those inputs change before publication.
 
 The unchanged `scripts/evaluate_cuda_math.py` uses all three recorded seeds:
 `8503945240872567646`, `8613321571747136749`, `4480763905421893394`.
@@ -47,11 +48,11 @@ passed all three seeds: **2/6 fixed cases**. Trailing-vector addition, scalar
 multiplication, axis reduction, and matrix multiplication remain unsupported;
 all twelve failing candidate slots are retained with zero credit.
 
-Checkout base: `174cccaa30e362a8de752db527916c7ce2d71ec1` with uncommitted integrated changes.
+Measured code commit: `e3a3ba3bd11f90378000b780b29389e5b1195c59` (clean).
 Measured production fingerprint: `a0e6ac3f54ad339bc95ca4d89fd875aa6c336ff78fdc35ea59f92f53a894f87d`.
 Native extension SHA-256: `e2e9c8bea89c8b8963cff95851ae2c4b2ce2038185ce630058f0dd2955abc7bd`.
-Build: `2026-09-09T19:34:48.881328+00:00` to `2026-09-09T19:35:30.471814+00:00`;
-evaluator: `2026-09-09T19:35:30.629810+00:00` to `2026-09-09T19:36:51.984870+00:00` (exit 0).
+Build: `2026-09-09T19:47:20.744864+00:00` to `2026-09-09T19:48:00.656594+00:00`;
+evaluator: `2026-09-09T19:48:00.826963+00:00` to `2026-09-09T19:48:46.976770+00:00` (exit 0).
 Source stability, receipt/report/log hashes, unchanged evaluator/matrix hashes,
 all worker package/interpreter/extension/runtime paths, and successful-worker
 input preservation were independently checked after capture. Every worker used
@@ -67,8 +68,9 @@ Start with a fresh build target; the capture script refuses to reuse one.
 mkdir -p target/cuda-neg-validation/tmp target/cargo-home
 export UV_CACHE_DIR="$PWD/target/cuda-neg-validation/uv-cache"
 export UV_PYTHON_INSTALL_DIR="$PWD/target/cuda-neg-validation/python"
+export UV_PROJECT_ENVIRONMENT="$PWD/.venv"
 export TMPDIR="$PWD/target/cuda-neg-validation/tmp"
-uv sync --locked --no-install-project --group dev --group reference \
+uv --no-config sync --locked --no-install-project --group dev --group reference \
   --python 3.12 --managed-python
 export CARGO_HOME="$PWD/target/cargo-home"
 export CARGO_TARGET_DIR="$PWD/target/cuda-neg-validation/build"
@@ -81,13 +83,34 @@ export XDG_CACHE_HOME="$PWD/target/cuda-neg-validation/xdg-cache"
 export TORCH_RS_CUDART="$PWD/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
 export CUDA_VISIBLE_DEVICES=0
 export PYTHONDONTWRITEBYTECODE=1
-.venv/bin/python docs/diagnostics/composite-cuda-neg/reproduce.py
+mkdir -p target/final-validation/cuda
+.venv/bin/python - <<'PYTHON'
+import importlib.util
+from pathlib import Path
+path = Path("docs/diagnostics/composite-cuda-neg/reproduce.py").resolve()
+spec = importlib.util.spec_from_file_location("capture", path)
+capture = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(capture)
+capture.OUT = Path("target/final-validation/cuda").resolve()
+capture.main()
+PYTHON
+# Capture text while the tracked checkout is still clean, then retain both reports.
+PYTHONPATH=python .venv/bin/python scripts/benchmark_text_collation.py \
+  --cpu 24 --seed 20260909 --samples 12 \
+  --output target/final-validation/text-collation.json
+cp target/final-validation/cuda/* docs/diagnostics/composite-cuda-neg/
+cp target/final-validation/text-collation.json docs/diagnostics/text-collation.json
 ```
 
 The [capture script](diagnostics/composite-cuda-neg/reproduce.py) follows the
 [repository build-receipt procedure](hardware-heterogeneity-evaluator.md#reproduce-and-bind-a-native-build),
 checks source stability across build and run, copies the fresh extension into
 `python/torch_rs`, and retains only text receipts/reports/logs under docs.
+Choose an allowed CPU if CPU 24 is unavailable. This capture reused the local
+Python environment and fetched Cargo registry; it is a fresh native build, not
+a fresh dependency-installation timing. The receipts contain the actual selected
+paths, which can differ from the fresh-setup example above.
+
 The evaluator independently checks native device pointers, immutable inputs,
 materialized outputs, and separate candidate/reference processes, with PyTorch
 imports blocked in candidate workers. It gives each run a new CUDA JIT cache.

@@ -8,17 +8,12 @@ test_numeric_buffers_match_pytorch_2_13 (tests.test_tensor_buffer_reference.Tens
 test_numpy_and_ctypes_sequence_dispatch_matches_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_numpy_and_ctypes_sequence_dispatch_matches_pytorch_2_13) ... ok
 test_sequence_length_exceptions_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_sequence_length_exceptions_match_pytorch_2_13) ... ok
 test_strided_reversed_and_empty_buffers_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_strided_reversed_and_empty_buffers_match_pytorch_2_13) ... ok
-test_canonical_values_freshness_and_input_preservation_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_canonical_values_freshness_and_input_preservation_match) ... ok
-test_errors_and_call_validation_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_errors_and_call_validation_match) ... ok
-test_imports_metadata_documentation_copy_and_pickle_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_imports_metadata_documentation_copy_and_pickle_match) ... ok
-test_mapping_access_and_failure_order_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_mapping_access_and_failure_order_match) ... ok
-test_reload_behavior_matches (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_reload_behavior_matches) ... ok
 
 ======================================================================
 FAIL: test_numeric_buffers_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_numeric_buffers_match_pytorch_2_13) (case='bool including noncanonical bytes')
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/tests/test_tensor_buffer_reference.py", line 31, in assert_matches
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline/tests/test_tensor_buffer_reference.py", line 31, in assert_matches
     np.testing.assert_array_equal(np.asarray(actual), expected.numpy())
   File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1128, in assert_array_equal
     assert_array_compare(operator.__eq__, actual, desired, err_msg=err_msg,
@@ -40,7 +35,7 @@ Max relative difference among violations: 1.
 FAIL: test_numeric_buffers_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_numeric_buffers_match_pytorch_2_13) (case='native-prefixed bool')
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/tests/test_tensor_buffer_reference.py", line 31, in assert_matches
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline/tests/test_tensor_buffer_reference.py", line 31, in assert_matches
     np.testing.assert_array_equal(np.asarray(actual), expected.numpy())
   File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1128, in assert_array_equal
     assert_array_compare(operator.__eq__, actual, desired, err_msg=err_msg,
@@ -58,6 +53,6 @@ Max relative difference among violations: 1.
  DESIRED: array([1., 1.], dtype=float32)
 
 ----------------------------------------------------------------------
-Ran 13 tests in 0.026s
+Ran 8 tests in 0.029s
 
 FAILED (failures=2)

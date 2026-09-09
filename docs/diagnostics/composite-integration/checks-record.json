@@ -1,45 +1,596 @@
 {
-  "measurement_kind": "uncommitted-integration-validation",
   "source": {
-    "commit": "174cccaa30e362a8de752db527916c7ce2d71ec1",
+    "commit": "e3a3ba3bd11f90378000b780b29389e5b1195c59",
     "source_sha256": "a0e6ac3f54ad339bc95ca4d89fd875aa6c336ff78fdc35ea59f92f53a894f87d",
-    "production_diff_sha256": "8430e5caebcc9d27ff55e24eabe9524a8b7aa48bf62d0c19cd39b8f770f915d9"
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
-  "wheel": {
-    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
-    "sha256": "53536f6b5caa862bd5a91a82ccb27e5bc07910daaf1bfef349f6d89de16bd3e1"
+  "source_after": {
+    "commit": "e3a3ba3bd11f90378000b780b29389e5b1195c59",
+    "source_sha256": "a0e6ac3f54ad339bc95ca4d89fd875aa6c336ff78fdc35ea59f92f53a894f87d",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
-  "installed_extension": {
-    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
-    "sha256": "4183f9612972067120d72ef244e3da118ec1e361f0da4dc43e3025d03ad85029"
+  "commands": [
+    {
+      "label": "rust-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--all-targets",
+        "--features",
+        "python-bindings"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": null,
+      "started_at": "2026-09-09T19:49:11.935386+00:00",
+      "ended_at": "2026-09-09T19:49:28.803137+00:00",
+      "wall_seconds": 16.867799339815974,
+      "exit_status": 0,
+      "log": "rust-tests.log"
+    },
+    {
+      "label": "rust-default-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--all-targets"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": null,
+      "started_at": "2026-09-09T19:49:28.925488+00:00",
+      "ended_at": "2026-09-09T19:49:35.174793+00:00",
+      "wall_seconds": 6.249312387779355,
+      "exit_status": 0,
+      "log": "rust-default-tests.log"
+    },
+    {
+      "label": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--all-targets",
+        "--features",
+        "python-bindings",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": null,
+      "started_at": "2026-09-09T19:49:35.290185+00:00",
+      "ended_at": "2026-09-09T19:49:44.496981+00:00",
+      "wall_seconds": 9.206802683882415,
+      "exit_status": 0,
+      "log": "clippy.log"
+    },
+    {
+      "label": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": null,
+      "started_at": "2026-09-09T19:49:44.619963+00:00",
+      "ended_at": "2026-09-09T19:49:45.116608+00:00",
+      "wall_seconds": 0.4966513216495514,
+      "exit_status": 0,
+      "log": "fmt.log"
+    },
+    {
+      "label": "focused",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_default_collate",
+        "tests.test_default_collate_reference",
+        "tests.test_default_convert",
+        "tests.test_default_convert_reference",
+        "tests.test_split",
+        "tests.test_split_reference",
+        "tests.test_top_level_split",
+        "tests.test_top_level_split_reference",
+        "tests.test_readme_quickstart"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": null,
+      "started_at": "2026-09-09T19:49:45.241354+00:00",
+      "ended_at": "2026-09-09T19:49:47.220010+00:00",
+      "wall_seconds": 1.9786597155034542,
+      "exit_status": 0,
+      "log": "focused.log"
+    },
+    {
+      "label": "gpu-focused",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_cuda_neg",
+        "tests.test_cuda_add",
+        "tests.test_compile_cuda_boundary",
+        "tests.test_cuda_native_views",
+        "tests.test_top_level_neg",
+        "tests.test_top_level_negative",
+        "tests.test_cuda_math_evaluator"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": null,
+      "started_at": "2026-09-09T19:49:47.344750+00:00",
+      "ended_at": "2026-09-09T19:50:23.800202+00:00",
+      "wall_seconds": 36.4554569106549,
+      "exit_status": 0,
+      "log": "gpu-focused.log"
+    },
+    {
+      "label": "two-device",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_cuda_neg.CudaNegDeviceTests",
+        "tests.test_cuda_add.CudaAddDeviceTests",
+        "tests.test_cuda_host_transfer.CudaHostTransferDeviceGuardTests"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": {
+        "CUDA_VISIBLE_DEVICES": "0,1"
+      },
+      "started_at": "2026-09-09T19:50:23.932829+00:00",
+      "ended_at": "2026-09-09T19:50:29.192500+00:00",
+      "wall_seconds": 5.2596723241731524,
+      "exit_status": 0,
+      "log": "two-device.log"
+    },
+    {
+      "label": "python-full",
+      "command": [
+        "bash",
+        "scripts/test-python.sh"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": {
+        "PYTHONPATH": null
+      },
+      "started_at": "2026-09-09T19:50:29.325632+00:00",
+      "ended_at": "2026-09-09T19:57:31.298368+00:00",
+      "wall_seconds": 421.9727389793843,
+      "exit_status": 1,
+      "log": "python-full.log"
+    },
+    {
+      "label": "compile-evaluation",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+        "scripts/evaluate_torch_compile_coverage.py",
+        "--subset",
+        "full"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": {
+        "PYTHONPATH": null
+      },
+      "started_at": "2026-09-09T19:57:31.417937+00:00",
+      "ended_at": "2026-09-09T19:57:40.736269+00:00",
+      "wall_seconds": 9.318337487988174,
+      "exit_status": 0,
+      "log": "compile-evaluation.log"
+    },
+    {
+      "label": "baseline-reference312-seed0",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_tensor_buffer_reference",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline",
+      "environment_overrides": {
+        "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline/python",
+        "PYTHONHASHSEED": "0"
+      },
+      "started_at": "2026-09-09T19:57:40.850807+00:00",
+      "ended_at": "2026-09-09T19:57:42.260497+00:00",
+      "wall_seconds": 1.4096975475549698,
+      "exit_status": 1,
+      "log": "baseline-reference312-seed0.log"
+    },
+    {
+      "label": "baseline-reference312-seed1",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_tensor_buffer_reference",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline",
+      "environment_overrides": {
+        "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline/python",
+        "PYTHONHASHSEED": "1"
+      },
+      "started_at": "2026-09-09T19:57:42.379750+00:00",
+      "ended_at": "2026-09-09T19:57:43.865579+00:00",
+      "wall_seconds": 1.4858429627493024,
+      "exit_status": 1,
+      "log": "baseline-reference312-seed1.log"
+    },
+    {
+      "label": "baseline-factory312-seed6",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_nn_factory_kwargs_reference",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline",
+      "environment_overrides": {
+        "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline/python",
+        "PYTHONHASHSEED": "6"
+      },
+      "started_at": "2026-09-09T19:57:43.992044+00:00",
+      "ended_at": "2026-09-09T19:57:45.377725+00:00",
+      "wall_seconds": 1.3856882760301232,
+      "exit_status": 1,
+      "log": "baseline-factory312-seed6.log"
+    },
+    {
+      "label": "candidate-reference312-seed0",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_tensor_buffer_reference",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": {
+        "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python",
+        "PYTHONHASHSEED": "0"
+      },
+      "started_at": "2026-09-09T19:57:45.495276+00:00",
+      "ended_at": "2026-09-09T19:57:47.011255+00:00",
+      "wall_seconds": 1.5159865329042077,
+      "exit_status": 1,
+      "log": "candidate-reference312-seed0.log"
+    },
+    {
+      "label": "candidate-reference312-seed1",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_tensor_buffer_reference",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": {
+        "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python",
+        "PYTHONHASHSEED": "1"
+      },
+      "started_at": "2026-09-09T19:57:47.138862+00:00",
+      "ended_at": "2026-09-09T19:57:48.600082+00:00",
+      "wall_seconds": 1.4612216278910637,
+      "exit_status": 1,
+      "log": "candidate-reference312-seed1.log"
+    },
+    {
+      "label": "candidate-factory312-seed6",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_nn_factory_kwargs_reference",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": {
+        "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python",
+        "PYTHONHASHSEED": "6"
+      },
+      "started_at": "2026-09-09T19:57:48.720462+00:00",
+      "ended_at": "2026-09-09T19:57:50.056668+00:00",
+      "wall_seconds": 1.3362123221158981,
+      "exit_status": 1,
+      "log": "candidate-factory312-seed6.log"
+    },
+    {
+      "label": "baseline-reference314-seed0",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/venv314/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_tensor_buffer_reference",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline",
+      "environment_overrides": {
+        "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline/python",
+        "PYTHONHASHSEED": "0"
+      },
+      "started_at": "2026-09-09T19:57:50.175673+00:00",
+      "ended_at": "2026-09-09T19:57:51.591580+00:00",
+      "wall_seconds": 1.4159168535843492,
+      "exit_status": 0,
+      "log": "baseline-reference314-seed0.log"
+    },
+    {
+      "label": "baseline-reference314-seed1",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/venv314/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_tensor_buffer_reference",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline",
+      "environment_overrides": {
+        "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline/python",
+        "PYTHONHASHSEED": "1"
+      },
+      "started_at": "2026-09-09T19:57:51.707608+00:00",
+      "ended_at": "2026-09-09T19:57:53.121396+00:00",
+      "wall_seconds": 1.4138001622632146,
+      "exit_status": 0,
+      "log": "baseline-reference314-seed1.log"
+    },
+    {
+      "label": "baseline-factory314-seed6",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/venv314/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_nn_factory_kwargs_reference",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline",
+      "environment_overrides": {
+        "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline/python",
+        "PYTHONHASHSEED": "6"
+      },
+      "started_at": "2026-09-09T19:57:53.243905+00:00",
+      "ended_at": "2026-09-09T19:57:54.586274+00:00",
+      "wall_seconds": 1.3423763867467642,
+      "exit_status": 0,
+      "log": "baseline-factory314-seed6.log"
+    },
+    {
+      "label": "baseline-factory314-seed10",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/venv314/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_nn_factory_kwargs_reference",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline",
+      "environment_overrides": {
+        "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/baseline/python",
+        "PYTHONHASHSEED": "10"
+      },
+      "started_at": "2026-09-09T19:57:54.702931+00:00",
+      "ended_at": "2026-09-09T19:57:56.023728+00:00",
+      "wall_seconds": 1.3208003770560026,
+      "exit_status": 1,
+      "log": "baseline-factory314-seed10.log"
+    },
+    {
+      "label": "candidate-reference314-seed0",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/venv314/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_tensor_buffer_reference",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": {
+        "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python",
+        "PYTHONHASHSEED": "0"
+      },
+      "started_at": "2026-09-09T19:57:56.138782+00:00",
+      "ended_at": "2026-09-09T19:57:57.585468+00:00",
+      "wall_seconds": 1.4466922096908092,
+      "exit_status": 0,
+      "log": "candidate-reference314-seed0.log"
+    },
+    {
+      "label": "candidate-reference314-seed1",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/venv314/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_tensor_buffer_reference",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": {
+        "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python",
+        "PYTHONHASHSEED": "1"
+      },
+      "started_at": "2026-09-09T19:57:57.695506+00:00",
+      "ended_at": "2026-09-09T19:57:59.087944+00:00",
+      "wall_seconds": 1.3924462497234344,
+      "exit_status": 0,
+      "log": "candidate-reference314-seed1.log"
+    },
+    {
+      "label": "candidate-factory314-seed6",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/venv314/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_nn_factory_kwargs_reference",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": {
+        "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python",
+        "PYTHONHASHSEED": "6"
+      },
+      "started_at": "2026-09-09T19:57:59.207005+00:00",
+      "ended_at": "2026-09-09T19:58:00.705221+00:00",
+      "wall_seconds": 1.4982223706319928,
+      "exit_status": 0,
+      "log": "candidate-factory314-seed6.log"
+    },
+    {
+      "label": "candidate-factory314-seed10",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/venv314/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_nn_factory_kwargs_reference",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": {
+        "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python",
+        "PYTHONHASHSEED": "10"
+      },
+      "started_at": "2026-09-09T19:58:00.823402+00:00",
+      "ended_at": "2026-09-09T19:58:02.282304+00:00",
+      "wall_seconds": 1.4589055739343166,
+      "exit_status": 1,
+      "log": "candidate-factory314-seed10.log"
+    },
+    {
+      "label": "python314-focused",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/venv314/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_default_collate_reference",
+        "tests.test_split_reference",
+        "tests.test_cuda_neg",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": null,
+      "started_at": "2026-09-09T19:58:02.409144+00:00",
+      "ended_at": "2026-09-09T19:58:09.176770+00:00",
+      "wall_seconds": 6.767621610313654,
+      "exit_status": 0,
+      "log": "python314-focused.log"
+    },
+    {
+      "label": "historical-setup",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+        "scripts/validate_benchmark_setup.py"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": null,
+      "started_at": "2026-09-09T19:58:09.297890+00:00",
+      "ended_at": "2026-09-09T19:58:09.337221+00:00",
+      "wall_seconds": 0.03933234978467226,
+      "exit_status": 0,
+      "log": "historical-setup.log"
+    },
+    {
+      "label": "historical-tests",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_benchmark_setup_evidence"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": null,
+      "started_at": "2026-09-09T19:58:09.456285+00:00",
+      "ended_at": "2026-09-09T19:58:09.661631+00:00",
+      "wall_seconds": 0.2053540274500847,
+      "exit_status": 0,
+      "log": "historical-tests.log"
+    },
+    {
+      "label": "quickstart",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+        "examples/first_success.py"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b",
+      "environment_overrides": null,
+      "started_at": "2026-09-09T19:58:09.779241+00:00",
+      "ended_at": "2026-09-09T19:58:09.866257+00:00",
+      "wall_seconds": 0.08702049031853676,
+      "exit_status": 0,
+      "log": "quickstart.log"
+    }
+  ],
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+  "environment": {
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/final-validation/build",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+    "RUSTC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustc",
+    "RUSTDOC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustdoc",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/python",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/tmp",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/cache/cuda",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/cache/xdg",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/cache/inductor",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/target/integration/cache/triton"
   },
   "logs_sha256": {
-    "python-full.log": "ba86985b0e7f316135dfae9b53dfb9a9f7d82825750870611b511f7ccbe5563b",
-    "rust-tests.log": "e846e6774c913dd926c9e0604ed6446a039a67bcf21566b2ca2c22eee07faed5",
-    "rust-default-tests.log": "a0a7c0d1a50c320fa8cd792660ff627663abd7f72dcd3dd82344419b80570c6e",
-    "clippy.log": "0ad4844f7a55e7c32258dac1d754649a62e05d3129aea198c15cf410ed02d279",
+    "python-full.log": "e3b23b63da2dc0c0d607abbb1d813d63563cab8f0ea0a91acf9ef57c49f5a52f",
+    "rust-tests.log": "065aca84dcd26ee70aede85ac8adc305815d13d78c04e81561a57a9a9f2d07d8",
+    "rust-default-tests.log": "bfca43ea3bc997c52f07d0bbe30b5288a31b292a209a74f47bcb2fa504db1603",
+    "clippy.log": "8552fd12e1f7eeb83ff0823a0a9b759a922b3af468fe011b4173d589f85389cc",
     "fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "focused.log": "3704c8793978eadb345d8958a161cd393fb2c068321e6e06e4ba4b5684c16a45",
-    "docs-final.log": "c05533679139b88754e412c92717df0f0fb12a7735ef233a4f01989b521db61b",
-    "gpu-focused.log": "8ce3d1a48ede745e1585a566b170d31cf5c154fb525fc7db32339419fdecb288",
-    "two-device.log": "d81866323ab8ff01d56da9fbd3d94a01bd3cb6a131aeed845a4f195390156afa",
+    "focused.log": "4d2b594ee4f7a4e64ee3311a8210f60d1ee15306dcb37b1f0a35fb0af9507e29",
+    "gpu-focused.log": "2e85b88dd60d101565f385349c4afda3727c0ccd9a7f52cf16f48cd8a2e77692",
+    "two-device.log": "8c56b91f672965b468708c7e1894ebf32669176228a86a35a6c793b231c245df",
     "compile-evaluation.json": "8dee4cab21979141b96d59e147c1ceac80da8f6f2b5eaf875efa1d653e9a1260",
-    "compile-evaluation.log": "86e053b464521774db48793bd08d3caa9bf287b8f7ee2f38388c63dae81a01ed",
-    "baseline-provenance.json": "52af168a4c55b1c7b1c8f98df317c2d456441b869b318d784f02b38e8798eb3a",
-    "baseline-reference-seed0.log": "4a9429dd813c7e49f208aa668dce6fd4b63ff49c627544671272d1d761e1c9ad",
-    "candidate-reference-seed0.log": "3e67c68c0e6c7ca5372d8fe093c5f364cc99277b1f7c41827f9ad4e221fc2b86",
-    "baseline-reference-seed1.log": "4a9429dd813c7e49f208aa668dce6fd4b63ff49c627544671272d1d761e1c9ad",
-    "candidate-reference-seed1.log": "3e67c68c0e6c7ca5372d8fe093c5f364cc99277b1f7c41827f9ad4e221fc2b86",
-    "baseline-factory-seed6.log": "fcef5773f640db01bb62b81d04ee3f804fd648730ecaee4cf84c7460af6a6e2d",
-    "candidate-factory-seed6.log": "fc18570319062d7729bd1065a7bbaebfa6e02acc116ae4ec6f42e763801fa2e4",
-    "factory-seed-probes.json": "8f38a25b86c8afa13a8ee18ff027f5d65644679dc487bcaa823370e0bdb5bf1e",
-    "baseline-reference314-seed0.log": "d597a56e93b85137f281973d31ebf8434ee3a7eebb181b17bca036442587bc6a",
-    "python314-full.log": "a33d92274435b57ad017dcfd08f35f8307e16a64ca76cbc9ccb0551d862efb02",
-    "python314-canonical-path.log": "6c95f25ea44e22de2a3734566333d237c9a4ba9d95f691186bd3fdff07afcaa9",
+    "compile-evaluation.log": "2772568dea85ee0b71e3c403e977ef481125b1fbf6fa2504e4913b0e6ab39e2a",
+    "baseline-provenance.json": "2e0e2425a101ff0fa9b19662c40837d7e4c1cf142c3827de0b587b93bec00277",
+    "baseline-reference314-seed0.log": "44afc4d86a71ee2c793ca7c18d39c55f295e87177ebd30a8f5679d28a90c5ac0",
     "baseline-factory314-seed6.log": "bdf1fbfb847b5160269b73eaf3c9be20ff2a54dcd642b3419e7c0365a3dd3d99",
     "candidate-factory314-seed6.log": "bdf1fbfb847b5160269b73eaf3c9be20ff2a54dcd642b3419e7c0365a3dd3d99",
     "baseline-factory314-seed10.log": "86baee76441e8b5b90a0ff8da86196319703f7583427271d24fcb910d0a42ef8",
     "candidate-factory314-seed10.log": "b932fd315257b4a8dcb6cc607ddd40cee00ead066bd6149fac1a551e11ba1236",
-    "factory314-seed-probes.json": "7306546ace367bcdd939eb88bb5e12afa24bcd26e3201c706063b80ca233a834"
+    "baseline-build.log": "9188fc66d0cc187d4fc2c2343b8375af178a1ccdc15e8d003e729b2aa02966be",
+    "installed-provenance.json": "ac085c5535c0ad1b0e9be8e1c7d11133a4761fd856ec8680fab0e355497c603a",
+    "baseline-reference312-seed0.log": "6601f729cb3d32b73572c1dbb9c8e1863f161d31f6741d388c73e92b33aaa933",
+    "baseline-reference312-seed1.log": "58d54c3af703be896937030adf9febafd1c2e8e13e2f6a1125f171274ac805e2",
+    "baseline-factory312-seed6.log": "07dc18adc39db3b974f80537f6b35c459ad6a105a512a19b0e8a98f24f9eca6b",
+    "candidate-reference312-seed0.log": "842742b693dbd439da7f86db1db465bf6fc69345eb9c8d0057859d7f9b6db2a4",
+    "candidate-reference312-seed1.log": "cf90ad669c25190a37071ac5449d1cb8b73dc8a418646b55f22d9c1bdde2d559",
+    "candidate-factory312-seed6.log": "fc18570319062d7729bd1065a7bbaebfa6e02acc116ae4ec6f42e763801fa2e4",
+    "baseline-reference314-seed1.log": "44afc4d86a71ee2c793ca7c18d39c55f295e87177ebd30a8f5679d28a90c5ac0",
+    "candidate-reference314-seed0.log": "d3d210589b16b97149f648fdf0ac281020f3fbc3ec467c66d06972d729350214",
+    "candidate-reference314-seed1.log": "44afc4d86a71ee2c793ca7c18d39c55f295e87177ebd30a8f5679d28a90c5ac0",
+    "python314-focused.log": "d5e9a1ff677ff7072d64d597d849abddb665c8f7d9a73a5cf9e103ab20388004",
+    "historical-setup.log": "c33107eb4e09014ddfcce7401e7143218d95b5e69eb41df0cfd6ce32bba1e16d",
+    "historical-tests.log": "5a6603de1caa33e27926fb41473a73b59661c1bd9d7d07e858ddc33094792cac",
+    "quickstart.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "provenance-audit.log": "28964807a63e8524ae6d7439fded196f050ca8bec2e74b1e21e63e32573602d0",
+    "links.log": "8fbfa18047a4641142850c1613d4a903bee1025a02fb251078e423e673088f28",
+    "docs-final.log": "859512f63ea4afb3254bac10c79a66a30f4745f329a9e40cdb02a844c71946a0"
+  },
+  "final_validation": {
+    "recorded_at": "2026-09-09T19:58:57.304794+00:00",
+    "docs_test_command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_2046428b/.venv/bin/python",
+      "-m",
+      "unittest",
+      "tests.test_readme_quickstart",
+      "tests.test_benchmark_setup_evidence"
+    ],
+    "docs_test_exit_status": 0,
+    "documentation_links_checked": 288,
+    "provenance_audit_passed": true,
+    "implementation_and_harness_diff_from_measured_commit": ""
   }
 }
