@@ -1,0 +1,34 @@
+// Appended to add.ptx, which supplies the shared PTX version/target directives.
+// A 64-bit grid-stride loop covers any contiguous float32 allocation. Toggling
+// the sign bit preserves zeros, subnormals and NaN payloads without FTZ.
+.visible .entry neg_f32(
+    .param .u64 input, .param .u64 output, .param .u64 count
+) {
+    .reg .pred done;
+    .reg .b32 tid, block, width, blocks, bits;
+    .reg .b64 a, b, n, i, step, offset, pa, pb, lane;
+    ld.param.u64 a, [input];
+    ld.param.u64 b, [output];
+    ld.param.u64 n, [count];
+    mov.u32 tid, %tid.x;
+    mov.u32 block, %ctaid.x;
+    mov.u32 width, %ntid.x;
+    mov.u32 blocks, %nctaid.x;
+    mul.wide.u32 i, block, width;
+    cvt.u64.u32 lane, tid;
+    add.u64 i, i, lane;
+    mul.wide.u32 step, blocks, width;
+loop:
+    setp.ge.u64 done, i, n;
+    @done bra end;
+    shl.b64 offset, i, 2;
+    add.u64 pa, a, offset;
+    add.u64 pb, b, offset;
+    ld.global.b32 bits, [pa];
+    xor.b32 bits, bits, 0x80000000;
+    st.global.b32 [pb], bits;
+    add.u64 i, i, step;
+    bra loop;
+end:
+    ret;
+}

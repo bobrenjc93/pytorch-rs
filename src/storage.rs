@@ -216,6 +216,22 @@ impl Storage {
         }
     }
 
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn cuda_negate_float32(
+        &self,
+        offset: usize,
+        elements: usize,
+    ) -> Result<Self, TensorError> {
+        match &self.payload {
+            StoragePayload::CudaFloat32(input) => Ok(Self {
+                payload: StoragePayload::CudaFloat32(input.negate(offset, elements)?),
+            }),
+            StoragePayload::CpuFloat32(_) => Err(TensorError::UnsupportedCudaNegation {
+                reason: "input must be CUDA",
+            }),
+        }
+    }
+
     pub(crate) fn len(&self) -> usize {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.len(),

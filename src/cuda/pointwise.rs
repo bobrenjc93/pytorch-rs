@@ -24,8 +24,21 @@ struct Driver {
     error_name: unsafe extern "C" fn(c_int, *mut *const c_char) -> Status,
     // Context, module, function handles. Successful modules and the driver
     // library remain live for the process lifetime, like the CUDA runtime.
-    modules: Mutex<Vec<(usize, usize, usize, usize)>>,
+    modules: Mutex<Vec<Module>>,
 }
+struct Module {
+    context: usize,
+    _handle: usize,
+    functions: [usize; 3],
+}
+
+enum Kernel {
+    Add,
+    AddVector,
+    #[cfg(any(feature = "python-bindings", test))]
+    Negate,
+}
+
 static DRIVER: OnceLock<Result<Driver, String>> = OnceLock::new();
 
 fn driver() -> Result<&'static Driver, TensorError> {
@@ -79,7 +92,7 @@ impl Driver {
         Err(TensorError::CudaRuntimeError { operation, message })
     }
 
-    fn add_function(&self, vectorized: bool) -> Result<usize, TensorError> {
+    fn function(&self, kernel: Kernel) -> Result<usize, TensorError> {
         let mut context = std::ptr::null_mut();
         // SAFETY: writable context handle; the caller holds the runtime device guard.
         self.check(
@@ -103,53 +116,49 @@ impl Driver {
             .modules
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(entry) = modules.iter().find(|entry| entry.0 == context as usize) {
-            return Ok(if vectorized { entry.3 } else { entry.2 });
+        if let Some(entry) = modules
+            .iter()
+            .find(|entry| entry.context == context as usize)
+        {
+            return Ok(entry.functions[kernel as usize]);
         }
         modules
             .try_reserve(1)
             .map_err(|_| TensorError::AllocationFailed { elements: 1 })?;
         let mut module = std::ptr::null_mut();
-        let mut function = std::ptr::null_mut();
-        let mut vector_function = std::ptr::null_mut();
-        // SAFETY: static NUL-terminated PTX and entry name; writable handles.
+        let mut functions = [0; 3];
+        // SAFETY: static NUL-terminated PTX and entry names; writable handles.
         unsafe {
             self.check(
                 (self.load)(
                     &raw mut module,
-                    concat!(include_str!("add.ptx"), "\0").as_ptr().cast(),
+                    concat!(include_str!("add.ptx"), "\n", include_str!("neg.ptx"), "\0")
+                        .as_ptr()
+                        .cast(),
                 ),
                 "cuModuleLoadData",
             )?;
-            if let Err(error) = self.check(
-                (self.function)(&raw mut function, module, c"add_f32".as_ptr()),
-                "cuModuleGetFunction",
-            ) {
-                (self.unload)(module);
-                return Err(error);
+            for (slot, name) in functions
+                .iter_mut()
+                .zip([c"add_f32", c"add_f32x4", c"neg_f32"])
+            {
+                let mut function = std::ptr::null_mut();
+                if let Err(error) = self.check(
+                    (self.function)(&raw mut function, module, name.as_ptr()),
+                    "cuModuleGetFunction",
+                ) {
+                    (self.unload)(module);
+                    return Err(error);
+                }
+                *slot = function as usize;
             }
         }
-        // SAFETY: the module is live and defines this NUL-terminated entry.
-        if let Err(error) = self.check(
-            unsafe { (self.function)(&raw mut vector_function, module, c"add_f32x4".as_ptr()) },
-            "cuModuleGetFunction",
-        ) {
-            unsafe {
-                (self.unload)(module);
-            }
-            return Err(error);
-        }
-        modules.push((
-            context as usize,
-            module as usize,
-            function as usize,
-            vector_function as usize,
-        ));
-        Ok(if vectorized {
-            vector_function as usize
-        } else {
-            function as usize
-        })
+        modules.push(Module {
+            context: context as usize,
+            _handle: module as usize,
+            functions,
+        });
+        Ok(functions[kernel as usize])
     }
 }
 
@@ -170,7 +179,11 @@ pub(super) unsafe fn launch_add(
     let result = (|| {
         let driver = driver()?;
         let vectorized = (left | right | output).is_multiple_of(16);
-        let function = driver.add_function(vectorized)?;
+        let function = driver.function(if vectorized {
+            Kernel::AddVector
+        } else {
+            Kernel::Add
+        })?;
         let mut count = elements as u64;
         let mut arguments = [
             (&raw mut left).cast(),
@@ -224,4 +237,45 @@ pub(super) unsafe fn launch_add(
         )
     })();
     (result, keepalive)
+}
+
+/// # Safety
+/// Input and output refer to `elements` live contiguous floats on the guarded
+/// device, without aliasing. Caller must synchronize the legacy stream before
+/// releasing either allocation, including on launch errors.
+#[cfg(any(feature = "python-bindings", test))]
+pub(super) unsafe fn launch_negate(
+    mut input: u64,
+    mut output: u64,
+    elements: usize,
+) -> Result<(), TensorError> {
+    let driver = driver()?;
+    let function = driver.function(Kernel::Negate)?;
+    let mut count = elements as u64;
+    let mut arguments = [
+        (&raw mut input).cast(),
+        (&raw mut output).cast(),
+        (&raw mut count).cast(),
+    ];
+    let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
+    // SAFETY: parameters survive the launch argument copy; the cached function
+    // belongs to this context. CU_STREAM_LEGACY matches runtime copies/zero-fill.
+    driver.check(
+        unsafe {
+            (driver.launch)(
+                function as *mut c_void,
+                blocks,
+                1,
+                1,
+                256,
+                1,
+                1,
+                0,
+                std::ptr::without_provenance_mut(1),
+                arguments.as_mut_ptr(),
+                std::ptr::null_mut(),
+            )
+        },
+        "cuLaunchKernel",
+    )
 }
