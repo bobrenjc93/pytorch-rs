@@ -730,19 +730,25 @@ subclasses without a handling override, active mode execution beyond ordinary
 `__torch_function__` dispatch, and unsupported argument forms remain
 unsupported.
 
-`Tensor.split(split_size, dim=0)` accepts exact native CPU float32 tensors
-and Python integer split sizes (excluding bool), with integer `dim` normalized
-against the input rank. It returns a tuple of shared-storage slice views of at
+`Tensor.split(split_size, dim=0)` and
+`torch.split(tensor, split_size_or_sections, dim=0)` accept exact native CPU
+float32 tensors and Python integer split sizes (excluding bool), with integer
+`dim` normalized against the input rank. They return a tuple of shared-storage slice views of at
 most `split_size` elements along that dimension; the last view may be shorter.
 Oversized split sizes produce one view. An empty split dimension produces one
 empty view, and `split_size=0` is accepted only when that dimension is empty.
 Strides and storage offsets are preserved for transposed and offset inputs.
 Outputs share the existing chunk multi-output backward machinery, including
 output numbering, `no_grad` view metadata, and accumulation through selected,
-repeated, combined, and nested outputs. Section-list/tuple sizes, Tensor-valued
-or NumPy integer split sizes, tensor subclasses, override dispatch, and the
-top-level `torch.split` entry point remain unavailable. Invalid types, negative
-sizes, scalar inputs, out-of-range dimensions, and overflowing integers are
+repeated, combined, and nested outputs. The top-level function (also available as
+`torch.functional.split`) accepts positional and keyword arguments and dispatches
+`__torch_function__` on the tensor operand, including active modes, before native
+validation. Overrides receive `(tensor, split_size_or_sections)` and `dim` as a
+keyword even when the caller uses a different binding form. Section-list/tuple
+sizes, Tensor-valued or NumPy integer split sizes, unsupported dtype/device
+metadata, and tensor subclasses without a handling override remain unavailable
+in native execution. The method itself does not dispatch overrides. Invalid
+types, negative sizes, scalar inputs, out-of-range dimensions, and overflowing integers are
 rejected; invalid-type error text is not identical to PyTorch's overload listing.
 
 `Tensor.unsqueeze(dim)` and `torch.unsqueeze(input, dim)` accept exact native

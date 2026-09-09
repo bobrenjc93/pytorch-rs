@@ -102,7 +102,6 @@ class TensorSplitTests(unittest.TestCase):
         for sizes in ([1, 1], (1, 1)):
             with self.assertRaisesRegex(NotImplementedError, 'section-list'):
                 source.split(sizes)
-        self.assertFalse(hasattr(torch, 'split'))
 
     @unittest.skipUnless(torch.cuda.is_available(), 'requires an NVIDIA GPU')
     def test_cuda_input_is_outside_the_native_cpu_contract(self):
