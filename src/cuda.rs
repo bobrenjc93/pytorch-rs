@@ -19,6 +19,15 @@ struct Runtime {
     free: unsafe extern "C" fn(*mut c_void) -> Status,
     memset: unsafe extern "C" fn(*mut c_void, c_int, usize) -> Status,
     memcpy: unsafe extern "C" fn(*mut c_void, *const c_void, usize, c_int) -> Status,
+    memcpy_2d: unsafe extern "C" fn(
+        *mut c_void,
+        usize,
+        *const c_void,
+        usize,
+        usize,
+        usize,
+        c_int,
+    ) -> Status,
     error_name: unsafe extern "C" fn(Status) -> *const c_char,
 }
 static CANDIDATES: OnceLock<Vec<String>> = OnceLock::new();
@@ -28,6 +37,7 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 // tensors; storage Arc ownership prevents reuse while any view still exists.
 static CACHE: Mutex<Vec<(usize, usize, usize)>> = Mutex::new(Vec::new());
 const CACHE_BYTES: usize = 64 * 1024 * 1024;
+const COPY_STAGING_ELEMENTS: usize = 256 * 1024 / size_of::<f32>();
 
 /// Supplies optional runtime library paths before the first backend use.
 /// `TORCH_RS_CUDART` takes precedence; system library names remain fallbacks.
@@ -106,6 +116,7 @@ impl Runtime {
                 free: *library.get(b"cudaFree\0")?,
                 memset: *library.get(b"cudaMemset\0")?,
                 memcpy: *library.get(b"cudaMemcpy\0")?,
+                memcpy_2d: *library.get(b"cudaMemcpy2D\0")?,
                 error_name: *library.get(b"cudaGetErrorName\0")?,
                 _library: library,
             })
@@ -165,6 +176,15 @@ impl Drop for DeviceGuard {
     }
 }
 
+/// A rectangle of logical runs, measured in float32 elements. Destination
+/// rows are packed; source rows may be separated by holes in device storage.
+pub(crate) struct CudaCopyRegion {
+    pub(crate) start: usize,
+    pub(crate) width: usize,
+    pub(crate) rows: usize,
+    pub(crate) source_pitch: usize,
+}
+
 pub(crate) struct CudaFloat32Storage {
     pub(crate) elements: usize,
     pub(crate) device_index: usize,
@@ -215,38 +235,171 @@ impl CudaFloat32Storage {
         start: usize,
         elements: usize,
     ) -> Result<Vec<f32>, TensorError> {
+        self.copy_regions(
+            elements,
+            [Ok(CudaCopyRegion {
+                start,
+                width: elements,
+                rows: 1,
+                source_pitch: elements,
+            })],
+        )
+    }
+
+    pub(crate) fn copy_regions(
+        &self,
+        elements: usize,
+        regions: impl IntoIterator<Item = Result<CudaCopyRegion, TensorError>>,
+    ) -> Result<Vec<f32>, TensorError> {
         // Empty views can carry an offset past storage's end without reading it.
         if elements == 0 {
             return Ok(Vec::new());
-        }
-        if start
-            .checked_add(elements)
-            .is_none_or(|end| end > self.elements)
-        {
-            return Err(TensorError::IndexCalculationOverflow);
         }
         let mut values = Vec::<f32>::new();
         values
             .try_reserve_exact(elements)
             .map_err(|_| TensorError::AllocationFailed { elements })?;
-        if elements != 0 {
-            let _guard = self.runtime.guard(self.device_index)?;
-            // SAFETY: destination has reserved capacity, source range was
-            // checked, and synchronous D2H initializes all elements before set_len.
+        let _guard = self.runtime.guard(self.device_index)?;
+        for region in regions {
+            let CudaCopyRegion {
+                start,
+                width,
+                rows,
+                source_pitch,
+            } = region?;
+            let copied = width
+                .checked_mul(rows)
+                .filter(|&count| count > 0)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            let end = values
+                .len()
+                .checked_add(copied)
+                .filter(|&end| end <= elements)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            let source_end = (rows - 1)
+                .checked_mul(source_pitch)
+                .and_then(|span| start.checked_add(span))
+                .and_then(|last| last.checked_add(width))
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            if source_end > self.elements {
+                return Err(TensorError::IndexCalculationOverflow);
+            }
+            // SAFETY: all source rows are within the allocation, whose byte
+            // size is checked at construction. The packed destination lies
+            // within reserved capacity. Blocking copies initialize every row
+            // before set_len; failed copies never expose uninitialized values.
+            unsafe {
+                let destination = values.as_mut_ptr().add(values.len());
+                let source = (self.data_ptr + start * 4) as *const c_void;
+                if rows == 1 {
+                    self.runtime.check(
+                        (self.runtime.memcpy)(destination.cast(), source, width * 4, 2),
+                        "cudaMemcpy",
+                    )?;
+                } else if rows >= 32
+                    && source_pitch <= COPY_STAGING_ELEMENTS / 32
+                    && source_pitch <= width * 8
+                    && source_pitch >= width
+                {
+                    // Short, closely spaced rows are slow through the 2-D copy
+                    // engine. Stage bounded chunks with at most 8x logical
+                    // traffic, never the arbitrary backing span of a view.
+                    self.copy_staged_rows(destination, start, width, rows, source_pitch)?;
+                } else {
+                    // Overlapping rows cannot use cudaMemcpy2D. Excessively
+                    // wide pitches may also exceed the device's pitch limit;
+                    // copy their logical runs individually without staging.
+                    let status = if source_pitch >= width {
+                        (self.runtime.memcpy_2d)(
+                            destination.cast(),
+                            width * 4,
+                            source,
+                            source_pitch * 4,
+                            width * 4,
+                            rows,
+                            2,
+                        )
+                    } else {
+                        12 // cudaErrorInvalidPitchValue
+                    };
+                    if status == 12 {
+                        for row in 0..rows {
+                            self.runtime.check(
+                                (self.runtime.memcpy)(
+                                    destination.add(row * width).cast(),
+                                    (self.data_ptr + (start + row * source_pitch) * 4)
+                                        as *const c_void,
+                                    width * 4,
+                                    2,
+                                ),
+                                "cudaMemcpy",
+                            )?;
+                        }
+                    } else {
+                        self.runtime.check(status, "cudaMemcpy2D")?;
+                    }
+                }
+                values.set_len(end);
+            }
+        }
+        if values.len() != elements {
+            return Err(TensorError::IndexCalculationOverflow);
+        }
+        Ok(values)
+    }
+
+    /// # Safety
+    /// The caller has validated every source row and reserved width * rows
+    /// destination floats. The destination must not overlap CUDA storage.
+    unsafe fn copy_staged_rows(
+        &self,
+        destination: *mut f32,
+        start: usize,
+        width: usize,
+        rows: usize,
+        source_pitch: usize,
+    ) -> Result<(), TensorError> {
+        // Source bounds were checked by copy_regions, so this span and all
+        // byte offsets below fit in the existing device allocation.
+        let elements = ((rows - 1) * source_pitch + width).min(COPY_STAGING_ELEMENTS);
+        let mut staging = Vec::<f32>::new();
+        staging
+            .try_reserve_exact(elements)
+            .map_err(|_| TensorError::AllocationFailed { elements })?;
+        let chunk_rows = (elements - width) / source_pitch + 1;
+        for first_row in (0..rows).step_by(chunk_rows) {
+            let copied_rows = (rows - first_row).min(chunk_rows);
+            let span = (copied_rows - 1) * source_pitch + width;
+            // SAFETY: the staging buffer has capacity for span floats; all
+            // source/destination offsets lie in the caller-validated regions.
+            // Blocking D2H initializes staging before the host gather reads it.
             unsafe {
                 self.runtime.check(
                     (self.runtime.memcpy)(
-                        values.as_mut_ptr().cast(),
-                        (self.data_ptr + start * 4) as *const c_void,
-                        elements * 4,
+                        staging.as_mut_ptr().cast(),
+                        (self.data_ptr + (start + first_row * source_pitch) * 4) as *const c_void,
+                        span * 4,
                         2,
                     ),
                     "cudaMemcpy",
                 )?;
-                values.set_len(elements);
+                staging.set_len(span);
+                if width == 1 {
+                    for row in 0..copied_rows {
+                        *destination.add(first_row + row) = staging[row * source_pitch];
+                    }
+                } else {
+                    for row in 0..copied_rows {
+                        std::ptr::copy_nonoverlapping(
+                            staging.as_ptr().add(row * source_pitch),
+                            destination.add((first_row + row) * width),
+                            width,
+                        );
+                    }
+                }
             }
         }
-        Ok(values)
+        Ok(())
     }
 }
 impl Drop for CudaFloat32Storage {
@@ -300,5 +453,45 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn packed_copy_regions_validate_bounds_and_output_length() {
+        use super::{CudaCopyRegion, CudaFloat32Storage};
+        if super::device_count() == 0 {
+            eprintln!("skipping CUDA region copies: no CUDA runtime/device");
+            return;
+        }
+        let storage = CudaFloat32Storage::zeros(16, 0).unwrap();
+        for source_pitch in [1, 5] {
+            let region = CudaCopyRegion {
+                start: 1,
+                width: 2,
+                rows: 3,
+                source_pitch,
+            };
+            assert_eq!(storage.copy_regions(6, [Ok(region)]).unwrap(), [0.0; 6]);
+        }
+        for (elements, start, width, rows, source_pitch) in [
+            (1, 16, 1, 1, 1), // source out of bounds
+            (4, 0, 2, 2, 16), // final source row out of bounds
+            (1, 0, 2, 1, 2),  // output overrun
+            (2, 0, 1, 1, 1),  // output underrun after a successful copy
+            (1, 0, 1, 0, 1),
+            (1, 0, 0, 1, 1),
+            (1, 0, usize::MAX, 2, 1),
+            (2, 1, 1, 2, usize::MAX),
+        ] {
+            let region = CudaCopyRegion {
+                start,
+                width,
+                rows,
+                source_pitch,
+            };
+            assert!(matches!(
+                storage.copy_regions(elements, [Ok(region)]),
+                Err(crate::TensorError::IndexCalculationOverflow)
+            ));
+        }
     }
 }

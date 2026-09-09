@@ -314,6 +314,20 @@ impl Storage {
             StoragePayload::CudaFloat32(data) => data.copy_range(start, elements),
         }
     }
+
+    pub(crate) fn copy_cuda_regions_to_cpu_float32(
+        &self,
+        elements: usize,
+        regions: impl IntoIterator<Item = Result<crate::cuda::CudaCopyRegion, TensorError>>,
+    ) -> Result<Vec<f32>, TensorError> {
+        match &self.payload {
+            StoragePayload::CudaFloat32(data) => data.copy_regions(elements, regions),
+            StoragePayload::CpuFloat32(_) => Err(TensorError::UnsupportedDevice {
+                operation: "CUDA transfer",
+                device: Device::Cpu,
+            }),
+        }
+    }
 }
 
 #[cfg(test)]

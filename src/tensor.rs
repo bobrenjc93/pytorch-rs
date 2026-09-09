@@ -2757,31 +2757,76 @@ impl Tensor {
                 reason: "requires_grad is true",
             });
         }
-        let span = if self.elements == 0 {
-            0
+        let shape = try_clone_result_shape(&self.shape, self.elements)?;
+        let dense = self.elements == 0 || self.is_non_overlapping_and_dense();
+        let strides = if dense {
+            try_clone_result_shape(&self.strides, self.elements)?
         } else {
-            self.shape
-                .iter()
-                .zip(&self.strides)
-                .try_fold(1usize, |span, (&size, &stride)| {
-                    span.checked_add((size - 1).checked_mul(stride)?)
-                })
-                .ok_or(TensorError::IndexCalculationOverflow)?
+            elementwise_output_strides(
+                &shape,
+                &[ElementwiseLayout::from_tensor(self)],
+                self.elements,
+            )?
         };
-        let data = self.storage.copy_cuda_to_cpu_float32(self.offset, span)?;
-        let mut host = Self::from_owned_parts(
+        let data = if dense {
+            self.storage
+                .copy_cuda_to_cpu_float32(self.offset, self.elements)?
+        } else {
+            self.copy_cuda_packed(&strides)?
+        };
+        Ok(Self::from_owned_parts(
             data,
-            self.shape.clone(),
-            self.strides.clone(),
+            shape,
+            strides,
             DType::Float32,
             Device::Cpu,
-        );
-        host.elements = self.elements;
-        if span == self.elements {
-            Ok(host)
-        } else {
-            host.try_clone()
+        ))
+    }
+
+    fn copy_cuda_packed(&self, output_strides: &[usize]) -> Result<Vec<f32>, TensorError> {
+        // Traverse the packed destination in physical order, retaining the
+        // same dimension ordering as CPU clone(preserve_format). Plan only
+        // O(rank) metadata; regions are generated lazily, never span-sized.
+        let mut dimensions = try_result_vector(self.shape.len(), self.elements)?;
+        dimensions.extend(0..self.shape.len());
+        dimensions.sort_unstable_by_key(|&dimension| std::cmp::Reverse(output_strides[dimension]));
+        let mut shape = try_result_vector(self.shape.len(), self.elements)?;
+        let mut strides = try_result_vector(self.shape.len(), self.elements)?;
+        for &dimension in &dimensions {
+            shape.push(self.shape[dimension]);
+            strides.push(self.strides[dimension]);
         }
+        let mut width = 1usize;
+        let mut rows = 1;
+        let mut source_pitch = 1;
+        for (&size, &stride) in shape.iter().zip(&strides).rev() {
+            if size == 1 {
+                continue;
+            }
+            if stride != width {
+                rows = size;
+                source_pitch = stride;
+                break;
+            }
+            width = width
+                .checked_mul(size)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+        }
+        let region_elements = width
+            .checked_mul(rows)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let regions = (0..self.elements).step_by(region_elements).map(|index| {
+            logical_offset_for_linear_index(&shape, &strides, self.offset, index).map(|start| {
+                crate::cuda::CudaCopyRegion {
+                    start,
+                    width,
+                    rows,
+                    source_pitch,
+                }
+            })
+        });
+        self.storage
+            .copy_cuda_regions_to_cpu_float32(self.elements, regions)
     }
 
     fn try_contiguous_impl(

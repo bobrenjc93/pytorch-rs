@@ -495,6 +495,14 @@ class CudaCurrentDeviceGuardTests(unittest.TestCase):
         self.assertEqual(tensor.to("cpu").tolist(), [0.0])
         self.assertEqual(reference_torch.cuda.current_device(), 0)
 
+        # Exercise both pitched transfers and bounded staging on another GPU.
+        for rows in (3, 20003):
+            view = torch.zeros((rows * 7,), device="cuda:1").reshape(rows, 7).select(1, 2)
+            self.assertEqual(reference_torch.cuda.current_device(), 0)
+            for copy in (view.cpu, lambda: view.to("cpu")):
+                self.assertEqual(copy().tolist(), [0.0] * rows)
+                self.assertEqual(reference_torch.cuda.current_device(), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

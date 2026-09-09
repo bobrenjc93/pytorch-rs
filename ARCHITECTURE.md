@@ -117,6 +117,13 @@ VIRTUAL_ENV="$PWD/.venv" PYO3_PYTHON="$PWD/.venv/bin/python" \
 without `python-bindings`. Shared `Arc<Storage>` ownership keeps allocations
 alive through narrow/select/reshape/transpose views. CPU copies preserve dense
 strides and pack non-dense views; empty views perform no device transfer.
+Sparse transfers allocate the packed output plus layout metadata. Logical
+contiguous runs copy directly into that output; regularly spaced runs batch
+through `cudaMemcpy2D`. Tall selections with short, closely spaced runs use
+at most 256 KiB of staging and at most eight times the logical transfer size
+to avoid the copy engine's per-row cost. Large gaps are always skipped; no
+allocation or transfer grows with an arbitrary backing span. Packed outputs
+retain CPU clone's dimension ordering, including transposed and selected views.
 Unsupported CUDA materialization and arithmetic reject at the operation boundary.
 The public allocation surface remains rank-1 float32 zeros without autograd.
 
