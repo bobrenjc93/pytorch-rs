@@ -662,6 +662,14 @@ impl Clone for Tensor {
 #[allow(clippy::missing_fields_in_debug)]
 impl std::fmt::Debug for Tensor {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.is_cuda() {
+            return formatter
+                .debug_struct("Tensor")
+                .field("device", &self.device())
+                .field("shape", &self.shape)
+                .field("strides", &self.strides)
+                .finish();
+        }
         formatter
             .debug_struct("Tensor")
             .field("data", &self.logical_values().collect::<Vec<_>>())
@@ -670,28 +678,11 @@ impl std::fmt::Debug for Tensor {
     }
 }
 
+/// CPU value equality convenience; use [`Tensor::try_equal`] for fallible
+/// device dispatch. Comparing CUDA tensors panics at the operation boundary.
 impl PartialEq for Tensor {
     fn eq(&self, other: &Self) -> bool {
-        self.shape == other.shape
-            && self.dtype() == other.dtype()
-            && self.device() == other.device()
-            && {
-                let left_contiguous = self.contiguous_slice();
-                let right_contiguous = other.contiguous_slice();
-                if let (Some(left), Some(right)) = (left_contiguous, right_contiguous) {
-                    contiguous_values_equal(left, right)
-                } else if self.strides == other.strides
-                    && let (Some(left), Some(right)) =
-                        (self.dense_physical_slice(), other.dense_physical_slice())
-                {
-                    // Identical dense strides map each logical index to the
-                    // same position within both physical storage intervals.
-                    contiguous_values_equal(left, right)
-                } else {
-                    self.logical_values_from_contiguous_slice(left_contiguous)
-                        .eq(other.logical_values_from_contiguous_slice(right_contiguous))
-                }
-            }
+        self.try_equal(other).expect("equal(): unsupported device")
     }
 }
 
@@ -773,6 +764,36 @@ fn contiguous_values_equal(left: &[f32], right: &[f32]) -> bool {
 }
 
 impl Tensor {
+    /// Compares CPU tensor shapes, metadata and logical values.
+    ///
+    /// # Errors
+    /// Returns [`TensorError::UnsupportedDevice`] if either operand is CUDA,
+    /// before accessing values (including empty or mismatched tensors).
+    pub fn try_equal(&self, other: &Self) -> Result<bool, TensorError> {
+        validate_cpu_storage_device("equal", self.device())?;
+        validate_cpu_storage_device("equal", other.device())?;
+        Ok(self.shape == other.shape
+            && self.dtype() == other.dtype()
+            && self.device() == other.device()
+            && {
+                let left_contiguous = self.contiguous_slice();
+                let right_contiguous = other.contiguous_slice();
+                if let (Some(left), Some(right)) = (left_contiguous, right_contiguous) {
+                    contiguous_values_equal(left, right)
+                } else if self.strides == other.strides
+                    && let (Some(left), Some(right)) =
+                        (self.dense_physical_slice(), other.dense_physical_slice())
+                {
+                    // Identical dense strides map each logical index to the
+                    // same position within both physical storage intervals.
+                    contiguous_values_equal(left, right)
+                } else {
+                    self.logical_values_from_contiguous_slice(left_contiguous)
+                        .eq(other.logical_values_from_contiguous_slice(right_contiguous))
+                }
+            })
+    }
+
     /// Creates a tensor after validating that `shape` describes `data`.
     ///
     /// # Errors
@@ -1470,8 +1491,25 @@ impl Tensor {
     /// Calling this with `true` on a tensor which already participates in a
     /// graph preserves that graph. Freshly marked tensors accumulate gradients
     /// according to their current logical shape.
+    ///
+    /// # Panics
+    /// Panics when enabling gradients on a non-CPU tensor. Use
+    /// [`Self::try_with_requires_grad`] for fallible device dispatch.
     #[must_use]
-    pub fn with_requires_grad(mut self, requires_grad: bool) -> Self {
+    pub fn with_requires_grad(self, requires_grad: bool) -> Self {
+        self.try_with_requires_grad(requires_grad)
+            .expect("with_requires_grad(): unsupported device")
+    }
+
+    /// Fallible gradient builder, preserving existing CPU graph semantics.
+    ///
+    /// # Errors
+    /// Returns [`TensorError::UnsupportedDevice`] before changing any shared
+    /// gradient flags when enabling gradients on a non-CPU tensor.
+    pub fn try_with_requires_grad(mut self, requires_grad: bool) -> Result<Self, TensorError> {
+        if requires_grad {
+            validate_cpu_storage_device("with_requires_grad", self.device())?;
+        }
         if !requires_grad {
             self.leaf_requires_grad.store(false, Ordering::Relaxed);
             self.autograd = None;
@@ -1504,7 +1542,7 @@ impl Tensor {
             self.leaf_requires_grad.store(true, Ordering::Relaxed);
             flag.store(true, Ordering::Relaxed);
         }
-        self
+        Ok(self)
     }
 
     /// Updates the leaf gradient-recording flag in place.
@@ -1660,6 +1698,7 @@ impl Tensor {
     }
 
     fn implicit_backward_root(&self) -> Result<&Arc<AutogradMeta>, TensorError> {
+        validate_cpu_storage_device("backward", self.device())?;
         if !self.requires_grad() {
             return Err(TensorError::DoesNotRequireGrad);
         }
@@ -2040,8 +2079,13 @@ impl Tensor {
     }
 
     /// Returns logical values in row-major index order.
+    ///
+    /// # Panics
+    /// Panics on non-CPU storage. Copy CUDA tensors to CPU before iterating.
     #[must_use]
     pub fn logical_values(&self) -> LogicalValues<'_> {
+        validate_cpu_storage_device("logical_values", self.device())
+            .expect("logical_values(): unsupported device; copy to CPU first");
         self.logical_values_from_contiguous_slice(self.contiguous_slice())
     }
 
@@ -3014,15 +3058,24 @@ impl Tensor {
     ///
     /// # Panics
     ///
-    /// Panics if this tensor is a non-contiguous view. Use
+    /// Panics if this tensor is a non-contiguous view or is not on CPU. Use
     /// [`Self::logical_values`] or [`Self::try_to_vec`] for arbitrary layouts.
     pub fn as_slice(&self) -> &[f32] {
+        validate_cpu_storage_device("as_slice", self.device())
+            .expect("as_slice(): unsupported device; copy to CPU first");
         self.contiguous_slice()
             .expect("as_slice requires a contiguous tensor")
     }
 
+    /// Consumes a CPU tensor into its logical values.
+    ///
+    /// # Panics
+    /// Panics on non-CPU storage. Use [`Self::try_to_vec`] for fallible dispatch
+    /// or [`Self::try_copy_cuda_to_cpu`] for CUDA storage.
     #[must_use]
     pub fn into_vec(self) -> Vec<f32> {
+        validate_cpu_storage_device("into_vec", self.device())
+            .expect("into_vec(): unsupported device; use try_to_vec or copy to CPU first");
         if !self.is_contiguous() {
             return self.logical_values().collect();
         }
@@ -3076,6 +3129,9 @@ impl Tensor {
     /// dimension, non-matching input shapes, or allocation/arithmetic
     /// overflow.
     pub fn stack(inputs: &[&Self], dimension: usize) -> Result<Self, TensorError> {
+        for input in inputs {
+            validate_cpu_storage_device("stack", input.device())?;
+        }
         let Some(first) = inputs.first().copied() else {
             return Err(TensorError::ShapeMismatch {
                 left: Vec::new(),
@@ -3126,6 +3182,9 @@ impl Tensor {
         dimension: usize,
         node: AutogradNode,
     ) -> Result<Self, TensorError> {
+        for input in inputs {
+            validate_cpu_storage_device("cat", input.device())?;
+        }
         let Some(first) = inputs.first().copied() else {
             return Err(TensorError::ShapeMismatch {
                 left: Vec::new(),
@@ -4980,8 +5039,22 @@ impl Tensor {
         self.finish_saved_input_unary_vjp(output, AutogradNode::Sqrt, apply_sqrt_vjp)
     }
 
+    /// Computes the full CPU sum.
+    ///
+    /// # Panics
+    /// Panics on non-CPU tensors. Use [`Self::try_sum`] for fallible dispatch.
     #[must_use]
     pub fn sum(&self) -> Self {
+        self.try_sum().expect("sum(): unsupported device")
+    }
+
+    /// Computes the full sum while validating the native execution device.
+    ///
+    /// # Errors
+    /// Returns [`TensorError::UnsupportedDevice`] before accessing non-CPU
+    /// storage, including for empty CUDA tensors.
+    pub fn try_sum(&self) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("sum", self.device())?;
         let contiguous_values = self.contiguous_slice();
         let total = if let Some(values) = contiguous_values {
             values
@@ -5009,7 +5082,7 @@ impl Tensor {
                 },
             }));
         }
-        output
+        Ok(output)
     }
 
     /// Sums a rank-two tensor along one normalized dimension.

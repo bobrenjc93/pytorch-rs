@@ -120,6 +120,15 @@ strides and pack non-dense views; empty views perform no device transfer.
 Unsupported CUDA materialization and arithmetic reject at the operation boundary.
 The public allocation surface remains rank-1 float32 zeros without autograd.
 
+Native `cat`, `stack`, backward, and gradient mutation reject unsupported devices
+before accessing storage or modifying graph state. Use `try_sum`, `try_equal`,
+and `try_with_requires_grad` for fallible native dispatch; they return
+`TensorError::UnsupportedDevice` for unsupported CUDA operations. Existing CPU
+convenience APIs (`sum`, `PartialEq`, and `with_requires_grad`) retain their
+signatures and panic at the operation boundary on unsupported devices, as
+`Clone` does when `try_clone` fails. CUDA `Debug` displays metadata without
+reading device storage. None of these operations implicitly transfers to CPU.
+
 All CUDA ABI calls and their safety invariants live in `src/cuda.rs`. The runtime
 library remains loaded for the process lifetime. Zero-fill uses the legacy default
 stream; blocking D2H copies establish host visibility without a separate

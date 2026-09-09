@@ -52,6 +52,30 @@ class RankTwoSumNumerics(unittest.TestCase):
             (br * torch.tensor(weights)).sum().backward()
             np.testing.assert_equal(a.grad.tolist(), b.grad.tolist())
 
+    def test_outer_reduction_vector_remainders(self):
+        rng = np.random.default_rng(251)
+        for prefix in (0, 32, 64):
+            for tail in range(1, 32):
+                width = prefix + tail
+                for count in (7, 16, 67, 513):
+                    patterns = [np.resize([-1e8, 1., 1., 1., 1., 1e8, 1.], count),
+                                rng.choice([1e8, -1e8, 1.], count),
+                                rng.choice([3e38, -3e38], count)]
+                    for pattern in patterns:
+                        values = np.repeat(np.asarray(pattern, dtype=np.float32)[:, None], width + 2, axis=1)
+                        a, b = native.tensor(values.tolist()), torch.tensor(values)
+                        for offset in (False, True):
+                            av, bv = (a[:, 1:-1], b[:, 1:-1]) if offset else (a[:, :width], b[:, :width])
+                            for transpose in (False, True):
+                                aa, bb = (av.t(), bv.t()) if transpose else (av, bv)
+                                dim = int(transpose)
+                                for keepdim in (False, True):
+                                    with self.subTest(prefix=prefix, tail=tail, count=count,
+                                                      offset=offset, transpose=transpose, keepdim=keepdim):
+                                        expected = bb.sum(dim, keepdim=keepdim).tolist()
+                                        np.testing.assert_equal(aa.sum(dim, keepdim=keepdim).tolist(), expected)
+                                        np.testing.assert_equal(native.sum(aa, dim, keepdim=keepdim).tolist(), expected)
+
     def test_selected_views_with_two_nonunit_strides(self):
         rng = np.random.default_rng(1894)
         patterns = ([1e8, 1, -1e8, 1], [3e38, 3e38, -3e38, -3e38])
@@ -82,3 +106,16 @@ class RankTwoSumNumerics(unittest.TestCase):
             (av.sum(dim) * native.tensor(weights.tolist())).sum().backward()
             (bv.sum(dim) * torch.tensor(weights)).sum().backward()
             np.testing.assert_equal(a.grad.tolist(), b.grad.tolist())
+
+    def test_long_outer_vector_tails(self):
+        rng = np.random.default_rng(8193251)
+        for count in (4097, 65537):
+            for width in (8, 15, 40, 63):
+                values = rng.choice(np.array([-1e8, 1., 1e8], dtype=np.float32),
+                                    size=(count, width))
+                a, b = native.tensor(values.tolist()), torch.tensor(values)
+                for av, bv, dim in ((a, b, 0), (a.t(), b.t(), 1)):
+                    with self.subTest(count=count, width=width, dim=dim):
+                        np.testing.assert_equal(av.sum(dim).tolist(), bv.sum(dim).tolist())
+                        np.testing.assert_equal(native.sum(av, dim, keepdim=True).tolist(),
+                                                torch.sum(bv, dim, keepdim=True).tolist())

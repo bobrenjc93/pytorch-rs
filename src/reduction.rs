@@ -20,6 +20,25 @@ fn cascade<const N: usize, const CONTIGUOUS: bool>(
     step: usize,
     lane_stride: usize,
 ) -> [f32; N] {
+    cascade_rows(count, |partial: &mut [f32; N], row| {
+        let start = row * step;
+        if CONTIGUOUS {
+            for (sum, value) in partial.iter_mut().zip(&values[start..start + N]) {
+                *sum += value;
+            }
+        } else {
+            for lane in 0..N {
+                partial[lane] += values[start + lane * lane_stride];
+            }
+        }
+    })
+}
+
+#[inline(always)]
+fn cascade_rows<const N: usize>(
+    count: usize,
+    mut add_row: impl FnMut(&mut [f32; N], usize),
+) -> [f32; N] {
     let level_power = ((usize::BITS - count.saturating_sub(1).leading_zeros()) / 4).max(4) as usize;
     let block = 1usize << level_power;
     let mut levels = [[0.0; N]; 4];
@@ -27,16 +46,7 @@ fn cascade<const N: usize, const CONTIGUOUS: bool>(
     while count - position >= block {
         let mut partial = [0.0; N];
         for row in position..position + block {
-            let start = row * step;
-            if CONTIGUOUS {
-                for (sum, value) in partial.iter_mut().zip(&values[start..start + N]) {
-                    *sum += value;
-                }
-            } else {
-                for lane in 0..N {
-                    partial[lane] += values[start + lane * lane_stride];
-                }
-            }
+            add_row(&mut partial, row);
         }
         add(&mut levels[1], &partial);
         position += block;
@@ -50,16 +60,7 @@ fn cascade<const N: usize, const CONTIGUOUS: bool>(
         }
     }
     for row in position..count {
-        let start = row * step;
-        if CONTIGUOUS {
-            for (sum, value) in levels[0].iter_mut().zip(&values[start..start + N]) {
-                *sum += value;
-            }
-        } else {
-            for lane in 0..N {
-                levels[0][lane] += values[start + lane * lane_stride];
-            }
-        }
+        add_row(&mut levels[0], row);
     }
     let mut result = levels[0];
     for level in &levels[1..] {
@@ -75,6 +76,42 @@ fn scalar_row(values: &[f32], count: usize, stride: usize) -> f32 {
         lanes[0] += values[index * stride];
     }
     ((lanes[0] + lanes[1]) + lanes[2]) + lanes[3]
+}
+
+#[inline(always)]
+fn outer_eight(values: &[f32], count: usize, stride: usize) -> [f32; 8] {
+    // Each vector lane has four accumulators along the reduced axis, just
+    // like scalar_row. Full 32-column tiles instead accumulate each column
+    // independently; those two orders differ under cancellation and overflow.
+    let mut partial = cascade_rows(count / 4, |partial: &mut [f32; 32], group| {
+        for row in 0..4 {
+            let start = (group * 4 + row) * stride;
+            for lane in 0..8 {
+                partial[row * 8 + lane] += values[start + lane];
+            }
+        }
+    });
+    for row in count / 4 * 4..count {
+        for lane in 0..8 {
+            partial[lane] += values[row * stride + lane];
+        }
+    }
+    std::array::from_fn(|lane| {
+        ((partial[lane] + partial[8 + lane]) + partial[16 + lane]) + partial[24 + lane]
+    })
+}
+
+#[inline(always)]
+fn vectorized_outer_tail(values: &[f32], output: &mut [f32], count: usize, stride: usize) {
+    let mut index = 0;
+    while output.len() - index >= 8 {
+        let sums = outer_eight(&values[index..], count, stride);
+        output[index..index + 8].copy_from_slice(&sums);
+        index += 8;
+    }
+    for (index, value) in output.iter_mut().enumerate().skip(index) {
+        *value = scalar_row(&values[index..], count, stride);
+    }
 }
 
 #[inline(always)]
@@ -136,6 +173,16 @@ fn dimension_sum_impl<const CONTIGUOUS: bool>(
             output[index..index + 32].copy_from_slice(&sums);
             index += 32;
         }
+        if CONTIGUOUS && output.len() >= 8 {
+            return vectorized_outer_tail(
+                &values[index..],
+                &mut output[index..],
+                count,
+                reduce_stride,
+            );
+        }
+        // Scalar outer reductions use groups of four outputs only when
+        // the operation did not enter the eight-lane vector path.
         while output.len() - index >= 4 {
             let sums = cascade::<4, CONTIGUOUS>(
                 &values[index * output_stride..],
@@ -219,13 +266,11 @@ unsafe fn avx2_sum(
             }
             index += 32;
         }
-        dimension_sum_impl::<true>(
-            &values[index..],
-            &mut output[index..],
-            count,
-            reduce_stride,
-            1,
-        );
+        if output.len() < 8 {
+            dimension_sum_impl::<true>(values, output, count, reduce_stride, 1);
+        } else {
+            vectorized_outer_tail(&values[index..], &mut output[index..], count, reduce_stride);
+        }
     } else {
         dispatch_layout(values, output, count, reduce_stride, output_stride);
     }
@@ -337,6 +382,35 @@ unsafe fn cascade_avx2(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn outer_remainder_cancellation_matches_reference() {
+        for width in 2..96 {
+            let values: Vec<f32> = [-1e8, 1.0, 1.0, 1.0, 1.0, 1e8, 1.0]
+                .into_iter()
+                .flat_map(|value| std::iter::repeat_n(value, width))
+                .collect();
+            let independent_columns = if width < 8 {
+                width / 4 * 4
+            } else {
+                width / 32 * 32
+            };
+            let expected: Vec<f32> = (0..width)
+                .map(|index| {
+                    if index < independent_columns {
+                        1.0
+                    } else {
+                        4.0
+                    }
+                })
+                .collect();
+            let mut actual = vec![0.0; width];
+            super::dimension_sum(&values, &mut actual, 7, width, 1);
+            assert_eq!(actual, expected, "dispatched width {width}");
+            super::dispatch_layout(&values, &mut actual, 7, width, 1);
+            assert_eq!(actual, expected, "portable width {width}");
+        }
+    }
+
     #[test]
     fn dispatched_and_portable_reductions_agree() {
         for count in [1, 5, 16, 33, 257, 4097] {

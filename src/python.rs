@@ -6271,7 +6271,7 @@ fn apply_sum_reduction(
     }
     let output = match reduction {
         BoundSumReduction::Full { keepdim } => {
-            let mut output = input.sum();
+            let mut output = input.try_sum().map_err(|error| tensor_error(&error))?;
             if *keepdim {
                 output = output
                     .reshape(full_reduction_keepdim_shape(input))
@@ -6284,7 +6284,7 @@ fn apply_sum_reduction(
             match input.shape().len() {
                 1 => {
                     normalize_dimension(dimension, input.shape().len())?;
-                    let mut output = input.sum();
+                    let mut output = input.try_sum().map_err(|error| tensor_error(&error))?;
                     if *keepdim {
                         output = output
                             .reshape([1_i64])
@@ -9043,7 +9043,9 @@ impl PyTensor {
         let other = other.try_borrow()?;
         validate_equal_native_tensor(&self.inner)?;
         validate_equal_native_tensor(&other.inner)?;
-        Ok(self.inner == other.inner)
+        self.inner
+            .try_equal(&other.inner)
+            .map_err(|error| tensor_error(&error))
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -9932,7 +9934,10 @@ fn equal(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
     let other = other.try_borrow()?;
     validate_equal_native_tensor(&input.inner)?;
     validate_equal_native_tensor(&other.inner)?;
-    Ok(input.inner == other.inner)
+    input
+        .inner
+        .try_equal(&other.inner)
+        .map_err(|error| tensor_error(&error))
 }
 
 fn validate_equal_native_tensor(tensor: &CoreTensor) -> PyResult<()> {
