@@ -65,8 +65,12 @@ graphs cannot execute. Native unary hooks retain PR1909's CPU guard.
 
 ## Reproduction and evidence
 
-Run from the worktree with a freshly built release wheel, PyTorch 2.13.0,
-and caches/temp directories inside the worktree:
+Run from a clean checkout of the committed implementation with a freshly built
+release wheel, PyTorch 2.13.0, and caches/temp directories inside the worktree.
+Write all diagnostic outputs under ignored `target/` first; copy retained
+reports into `docs/diagnostics/` only after all measurements have finished and
+the checkout is still clean. The report's `base_commit` identifies the committed
+source measured by the diagnostic.
 
 ```bash
 mkdir -p target/tmp target/cache
@@ -102,6 +106,21 @@ source hashes and the installed extension hash. They record Python, Rust,
 PyTorch, driver, GPU, native runtime, and release build configuration. Native
 addition uses embedded PTX 6.0 targeting sm_50, JIT-compiled by the NVIDIA driver;
 CUDA 12.6 nvcc is available on this host but is not used by this native path.
+
+The reports were regenerated from clean implementation commit
+`278c9b1eb90f6d4d2bcdc518572c2d3992b41261` after it was committed by Burner.
+The release wheel was rebuilt and installed for Python 3.12.13 and 3.14.5;
+all three diagnostics ran before any retained report or documentation changed.
+`git status --porcelain=v1 --untracked-files=all` was empty before the build and
+after the complete diagnostic batch, with HEAD unchanged. Every recorded source
+hash was checked against that commit. All 59 packaged Python files also matched
+the committed source and installed package, and the installed native extension
+matched the rebuilt wheel. The refreshed wheel's SHA-256 is
+`87e0488be1bfd6103d0e7ac68a36188759562d1bd764d27abe46a2de9e7fee05`.
+Case outcomes and output hashes are unchanged from the initial diagnostics;
+the reports now reference the commit containing the measured implementation
+and harness. No implementation or harness changes accompany this evidence
+refresh.
 
 The H100 differential reports contain 82 single-device cases per interpreter:
 56 supported passes and 26 explicit unsupported outcomes, with 80 cases eligible
