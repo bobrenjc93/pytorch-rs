@@ -393,6 +393,37 @@ assert "torch" not in sys.modules
                 ):
                     call()
 
+    def test_biased_linear_rejects_cuda_operands_without_panicking(self):
+        cuda_singleton = torch.zeros((1,), device="cuda:0")
+        cuda_empty = torch.zeros((0,), device="cuda:0")
+        cases = (
+            ("rank_one_singleton_bias", torch.ones((1,)), torch.ones((1, 1)), cuda_singleton),
+            ("rank_two_singleton_bias", torch.ones((1, 1)), torch.ones((1, 1)), cuda_singleton),
+            ("broadcast_bias", torch.ones((2, 1)), torch.ones((3, 1)), cuda_singleton),
+            ("empty_rows_cuda_bias", torch.ones((0, 1)), torch.ones((1, 1)), cuda_singleton),
+            ("empty_cuda_bias", torch.ones((1, 1)), torch.ones((0, 1)), cuda_empty),
+            ("cuda_input", cuda_singleton, torch.ones((1, 1)), torch.ones((1,))),
+            ("empty_cuda_input", cuda_empty, torch.ones((1, 0)), torch.ones((1,))),
+        )
+        for name, input, weight, bias in cases:
+            with self.subTest(case=name):
+                with self.assertRaisesRegex(
+                    NotImplementedError, "device 'cuda:0' is not supported"
+                ):
+                    torch.nn.functional.linear(input, weight, bias)
+
+        # Public CUDA weights are currently 1-D, so the binding rejects their
+        # rank before reaching the native matrix multiplication device guard.
+        for weight in (cuda_singleton, cuda_empty):
+            with self.subTest(cuda_weight_numel=weight.numel()):
+                with self.assertRaises(NotImplementedError):
+                    torch.nn.functional.linear(
+                        torch.ones((1,)), weight, torch.ones((1,))
+                    )
+
+        self.assertEqual(cuda_singleton.cpu().tolist(), [0.0])
+        self.assertEqual(cuda_empty.cpu().tolist(), [])
+
     def test_cuda_zero_unsupported_cases_fail_closed(self):
         unsupported_cases = (
             (

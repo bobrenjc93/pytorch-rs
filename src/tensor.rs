@@ -5053,14 +5053,17 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error unless both matrix operands and the row bias have
-    /// compatible shapes, or when result allocation fails.
+    /// Returns an error unless both matrix operands and the row bias are on
+    /// the CPU and have compatible shapes, or when result allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn matmul_with_row_bias(
         &self,
         other: &Self,
         bias: &Self,
     ) -> Result<Self, TensorError> {
+        validate_cpu_storage_device("matmul", self.device())?;
+        validate_cpu_storage_device("matmul", other.device())?;
+        validate_cpu_storage_device("matmul", bias.device())?;
         self.matmul_with_initializer(other, |rows, columns, output_elements| {
             if bias.shape.len() != 1 || (bias.shape[0] != columns && bias.shape[0] != 1) {
                 let mut expected_bias_shape = try_result_vector(1, output_elements)?;
