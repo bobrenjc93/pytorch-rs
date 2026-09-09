@@ -6108,6 +6108,20 @@ fn materialize_stack_small_rank_fast_path(
         return Ok(Some(try_result_vector(0, 0)?));
     }
 
+    // Inner-axis matrix stacking benefits from extracting contiguous slices once,
+    // rather than checking storage and layout for every row or element.
+    if first.shape.len() == 2
+        && matches!(dimension, 1 | 2)
+        && let Some(data) = materialize_stack_from_contiguous_slices(
+            inputs,
+            element_count(&first.shape[dimension..])?,
+            element_count(&first.shape[..dimension])?,
+            output_elements,
+        )?
+    {
+        return Ok(Some(data));
+    }
+
     match (first.shape.len(), dimension) {
         (0, 0) if inputs.iter().all(|input| can_append_scalar_fast(input)) => {
             let mut data = try_result_vector(output_elements, output_elements)?;
@@ -13437,6 +13451,46 @@ mod tests {
         assert_eq!(empty_stacked.shape(), [0, 2, 3]);
         assert_eq!(empty_stacked.stride(), [6, 3, 1]);
         assert!(empty_stacked.as_slice().is_empty());
+    }
+
+    #[test]
+    fn stack_contiguous_matrix_inner_axes_preserve_bits_and_layout() {
+        for shape in [[7, 1], [1, 7], [3, 5], [0, 3], [3, 0]] {
+            let elements = shape.iter().product();
+            let inputs = [0x8000_0000_u32, 0x7fc1_2345, 0x3f80_0000].map(|first_bits| {
+                let bits = (0..elements)
+                    .map(|index| first_bits + u32::try_from(index).unwrap())
+                    .collect::<Vec<_>>();
+                offset_contiguous_tensor(&bits, &shape)
+            });
+            let references = inputs.iter().collect::<Vec<_>>();
+            assert!(inputs.iter().all(Tensor::is_contiguous));
+
+            for dimension in [1, 2] {
+                let stacked = Tensor::stack(&references, dimension).unwrap();
+                let unsqueezed = inputs
+                    .iter()
+                    .map(|input| input.unsqueeze_axis(dimension).unwrap())
+                    .collect::<Vec<_>>();
+                let expected =
+                    Tensor::cat(&unsqueezed.iter().collect::<Vec<_>>(), dimension).unwrap();
+
+                assert_eq!(stacked.shape(), expected.shape());
+                assert_eq!(stacked.stride(), expected.stride());
+                assert_eq!(stacked.storage_offset(), 0);
+                assert!(stacked.is_contiguous());
+                assert!(
+                    stacked
+                        .as_slice()
+                        .iter()
+                        .map(|value| value.to_bits())
+                        .eq(expected.as_slice().iter().map(|value| value.to_bits()))
+                );
+                for input in &inputs {
+                    assert!(!stacked.shares_storage_with(input));
+                }
+            }
+        }
     }
 
     #[test]
