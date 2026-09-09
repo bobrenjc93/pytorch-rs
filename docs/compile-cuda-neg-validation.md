@@ -5,16 +5,22 @@ The shared marker-free eager graph path accepts unary minus, `Tensor.neg()` and
 with same-shape addition. This is unfused bounded capture, not a general
 Inductor compiler or a performance-parity claim. See the [owning guide](compile-cuda-add.md).
 
-## Clean-commit evidence
+## Source-PR clean-commit evidence
 
-The current reports measure clean implementation commit
-`c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b` in the current worktree. They replace
-the pre-commit candidate measurements. A new release build target and fresh
-native wheels were used; every build and measurement checked the complete
+The retained source-PR reports measure clean implementation commit
+`c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b` in its original compiler worktree. They replaced
+the pre-commit compiler candidate measurements. They do not measure the integrated
+column_stack/negation candidate and provide no current-composite performance
+credit. Their original paths, hashes and raw results remain unchanged. An
+integrated candidate requires its own clean-commit build and measurements;
+local checks under ignored `target/` are not a substitute for that gate.
+A new release build target and fresh native wheels were used for the source PR;
+every build and measurement checked the complete
 tracked source tree and an empty git status before and after execution. All
 reports were first written under ignored `target/post-commit-c29e953/` and
-copied here only after measurements finished. The subsequent diff contains
-only evidence and its documentation.
+copied here only after measurements finished. The source PR's subsequent
+`f71ce298afe9c11193090d06271636c642c608dd` diff contains only evidence and its
+documentation; that statement does not apply to the later composite integration.
 
 The [build receipt](diagnostics/compile-cuda-neg/build-record.json),
 [command receipts](diagnostics/compile-cuda-neg/checks-record.json),
@@ -25,9 +31,9 @@ state, local interpreter/import paths, runtime and device configuration.
 [Artifact hashes](diagnostics/compile-cuda-neg/artifact-sha256.json) bind the
 retained raw files. No measurements or provenance fields were hand-edited.
 
-All build outputs, dependencies, caches and temporary files stayed inside this
-worktree. The existing pinned local Python environment and Cargo registry were
-reused; this is a fresh native build, not a dependency-installation timing.
+All build outputs, dependencies, caches and temporary files stayed inside the
+original compiler worktree. The existing pinned local Python environment and
+Cargo registry were reused; this is a fresh native build, not a dependency-installation timing.
 CPython 3.12.14 and PyTorch 2.13.0+cu130 use the worktree-local CUDA 13 runtime.
 The GPUs are NVIDIA H100, compute capability 9.0, driver 580.82.07. Rust/Cargo
 1.92.0 build release extension-module/abi3-py310 with thin LTO and one codegen
@@ -35,7 +41,7 @@ unit. Native negation/addition use embedded PTX 6.0/sm_50 through driver JIT,
 without nvcc. The unchanged private performance benchmark separately records
 nvcc 12.6.85 targeting sm_90 and CUDA runtime 13.0.
 
-## Current measurements
+## Source-PR measurements
 
 | Check | Result | Raw evidence |
 | --- | --- | --- |
@@ -76,7 +82,7 @@ post-commit build. The [original author build receipt](diagnostics/compile-cuda-
 and [original check record](diagnostics/compile-cuda-neg/author-checks-record.json)
 preserve the pre-commit production fingerprint and dirty-patch provenance.
 The [production patch](diagnostics/compile-cuda-neg/production.patch) is an
-original author artifact, not the source identity of the current measurements.
+original author artifact, not the source identity of the clean-commit measurements.
 
 | Author check | Original result | Preserved evidence |
 | --- | --- | --- |
@@ -89,7 +95,7 @@ in `test_cuda_neg.py`, later corrected in the committed implementation. Its
 layout and autograd rejections remain. The earlier
 [focused run](diagnostics/compile-cuda-neg/focused.log) preserves the same
 obsolete assertion failure; the [initial run](diagnostics/compile-cuda-neg/focused-initial.log)
-preserves two documentation failures subsequently fixed. The current focused
+preserves two documentation failures subsequently fixed. The source-PR focused
 suite above verifies the final assertions. This evidence refresh does not
 replace independent review or full-suite merge gates.
 
@@ -151,8 +157,8 @@ Then run:
   --seed 9173 --seed 260909 --seed 903217 \
   --build-record target/compile-neg-build-record.json \
   --output target/compile-neg-cuda-math.json
-.venv/bin/python scripts/diagnose_compile_cuda_add.py \
-  --output target/compile-neg-addition-diagnostic.json
-CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python scripts/diagnose_compile_cuda_add.py \
-  --output target/compile-neg-addition-diagnostic-multi.json
+.venv/bin/python scripts/diagnose_compile_cuda_neg_add.py \
+  --case-set neg_add_v1 --output target/compile-neg-add-diagnostic.json
+CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python scripts/diagnose_compile_cuda_neg_add.py \
+  --case-set neg_add_v1 --output target/compile-neg-add-diagnostic-multi.json
 ```

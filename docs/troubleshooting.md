@@ -119,7 +119,9 @@ on Windows) and the driver JIT; nvcc and NVRTC are not used. Results complete
 on the legacy default stream before return. Contiguous float32 CUDA negation
 (`-x`, `neg`, and `negative` methods/functions) also supports scalars, empties,
 and contiguous offset views; see [validation](cuda-neg-validation.md).
-Noncontiguous CUDA negation, compiled CUDA negation, other CUDA math, CUDA autograd,
+Bounded eager native neg/add capture also supports contiguous float32 CUDA
+tensors; see the [capture guide](compile-cuda-add.md) for its guards and scope.
+Noncontiguous CUDA negation, other CUDA math, CUDA autograd,
 asynchronous transfers, dtype changes, unindexed CUDA targets, nondefault
 streams, and general CUDA runtime management remain unsupported.
 
@@ -128,6 +130,8 @@ After a current-worktree release build, run the focused hardware tests:
 ```bash
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest \
   tests.test_cuda_neg tests.test_cuda_add tests.test_cuda_host_transfer tests.test_cuda_native_views tests.test_cuda_zero_roundtrip
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/diagnose_compile_cuda_neg_add.py \
+  --case-set neg_add_v1 --output target/compile-neg-add-diagnostic.json
 CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest \
   tests.test_cuda_neg.CudaNegDeviceTests tests.test_cuda_add.CudaAddDeviceTests tests.test_cuda_host_transfer.CudaHostTransferDeviceGuardTests
 # Standalone Rust needs TORCH_RS_CUDART set when libcudart is not on the loader path.

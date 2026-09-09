@@ -81,12 +81,15 @@ a subprocess additionally blocks installed-PyTorch imports.
 
 Run `tests.test_compile_cuda_neg` on GPU 0 and
 `tests.test_compile_cuda_neg.CompileCudaNegDeviceTests` on GPUs 0,1 alongside the
-existing boundary tests below. See [candidate validation](compile-cuda-neg-validation.md)
-for raw logs and fresh-build evidence measured at clean commit
+existing boundary tests below. See [source candidate validation](compile-cuda-neg-validation.md)
+for raw logs and source-PR build evidence measured at clean commit
 `c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b`.
-The fixed scoring corpora, diagnostic scripts, and historical measurements are
-unchanged. The older addition diagnostic still labels its negation case
-`reject_neg`; successful execution of that case is now expected.
+The fixed scoring corpora and historical measurements are unchanged. The frozen
+addition-only diagnostic retains two obsolete `reject_neg` expectations and
+returns exit 1 on supported negation; those are historical expectation failures,
+not harness passes. Use the maintained `neg_add_v1` diagnostic below for current
+neg/add behavior. It retains the addition matrix and unsupported guards, adds
+all three negation spellings and composed graphs, and records every raw outcome.
 
 ## Reproduction and evidence
 
@@ -106,12 +109,12 @@ export TRITON_CACHE_DIR="$PWD/target/cache/triton"
 export CUDA_VISIBLE_DEVICES=0
 .venv/bin/python .github/scripts/verify_native_extension.py
 .venv/bin/python -m unittest tests.test_compile_cuda_boundary
-.venv/bin/python scripts/diagnose_compile_cuda_add.py \
-  --output target/compile-cuda-add-single.json
+.venv/bin/python scripts/diagnose_compile_cuda_neg_add.py \
+  --case-set neg_add_v1 --output target/compile-cuda-neg-add-single.json
 CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest \
   tests.test_compile_cuda_boundary.CompileCudaDeviceTests
-CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python scripts/diagnose_compile_cuda_add.py \
-  --output target/compile-cuda-add-multi.json
+CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python scripts/diagnose_compile_cuda_neg_add.py \
+  --case-set neg_add_v1 --output target/compile-cuda-neg-add-multi.json
 ```
 
 The diagnostic is separate from the frozen 38-case coverage corpus and all
@@ -122,7 +125,13 @@ sets, materializes output, records metadata and value hashes, and detects calls
 to the original function by the native compiler. Unsupported native behavior
 is explicit, including rejection during input construction. Reference-ineligible
 mixed-device operations are recorded separately. No timings or scores are
-computed. The unit tests separately prove cache reuse, IEEE edge behavior,
+computed. Exit 0 requires every supported case to match both reference runs and
+every unsupported case to reject. Unexpected reference failures, wrong outputs,
+unexpected acceptance, and execution errors return nonzero, with raw results
+retained. Only the declared nonscalar mixed-device cases may be reference-ineligible.
+The canonical `.venv` import guard and installed-source hash
+checks run before the cases; dirty-worktree status is recorded explicitly.
+The unit tests separately prove cache reuse, IEEE edge behavior,
 layout/offset guards, global transitions, failures without cache publication,
 PyTorch import independence, and restoration of current device on GPUs 0/1.
 
