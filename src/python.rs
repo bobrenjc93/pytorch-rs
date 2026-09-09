@@ -7354,8 +7354,6 @@ fn apply_top_level_addition(
         (BoundAddOperand::Tensor(input), BoundAddOperand::Tensor(other)) => {
             let input = input.try_borrow()?;
             let other = other.try_borrow()?;
-            validate_top_level_add_tensor(&input)?;
-            validate_top_level_add_tensor(&other)?;
             BinaryOperation::Add.apply_tensors(&input.inner, &other.inner)
         }
         (BoundAddOperand::Tensor(input), BoundAddOperand::Scalar(scalar)) => {

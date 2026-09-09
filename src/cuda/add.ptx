@@ -1,0 +1,40 @@
+// General contiguous float32 addition. No FTZ: preserve subnormal arithmetic.
+// A 64-bit grid-stride loop covers any allocation accepted by the backend.
+.version 6.0
+.target sm_50
+.address_size 64
+.visible .entry add_f32(
+    .param .u64 left, .param .u64 right, .param .u64 output, .param .u64 count
+) {
+    .reg .pred done;
+    .reg .b32 tid, block, width, blocks;
+    .reg .b64 a, b, c, n, i, step, offset, pa, pb, pc, lane;
+    .reg .f32 x, y, z;
+    ld.param.u64 a, [left];
+    ld.param.u64 b, [right];
+    ld.param.u64 c, [output];
+    ld.param.u64 n, [count];
+    mov.u32 tid, %tid.x;
+    mov.u32 block, %ctaid.x;
+    mov.u32 width, %ntid.x;
+    mov.u32 blocks, %nctaid.x;
+    mul.wide.u32 i, block, width;
+    cvt.u64.u32 lane, tid;
+    add.u64 i, i, lane;
+    mul.wide.u32 step, blocks, width;
+loop:
+    setp.ge.u64 done, i, n;
+    @done bra end;
+    shl.b64 offset, i, 2;
+    add.u64 pa, a, offset;
+    add.u64 pb, b, offset;
+    add.u64 pc, c, offset;
+    ld.global.f32 x, [pa];
+    ld.global.f32 y, [pb];
+    add.rn.f32 z, x, y;
+    st.global.f32 [pc], z;
+    add.u64 i, i, step;
+    bra loop;
+end:
+    ret;
+}

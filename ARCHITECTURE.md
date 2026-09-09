@@ -4,7 +4,7 @@
 tensor core. The native implementation is intentionally small today: tensors
 carry strided CPU `float32` storage and optional native CUDA `float32` storage,
 Python-facing metadata objects, selected CPU operators, and limited eager
-reverse-mode autograd. CUDA storage and transfers work without Python.
+reverse-mode autograd. CUDA storage, transfers, and same-shape contiguous addition work without Python.
 
 ## Source Map
 
@@ -12,7 +12,7 @@ reverse-mode autograd. CUDA storage and transfers work without Python.
 | --- | --- | --- |
 | Crate entry | [src/lib.rs](src/lib.rs) | Declares the Rust modules and re-exports `Tensor`, `TensorError`, `DType`, `Device`, and `MemoryFormat`. Python-only modules are gated behind `python-bindings`. |
 | Storage | [src/storage.rs](src/storage.rs) | Owns `Storage`, native CPU/CUDA payload dispatch, the CPU `f32` payload, inline scalar storage, owned vectors, and mutex-backed leaf-gradient buffers. |
-| CUDA backend | [src/cuda.rs](src/cuda.rs) | Loads the optional CUDA runtime, owns device allocations, restores the calling thread's device, and performs synchronous host-to-device and device-to-host transfers from/to Rust buffers. A bounded per-device allocation cache retains at most 32 buffers / 64 MiB across devices. Python only discovers optional wheel library paths. |
+| CUDA backend | [src/cuda.rs](src/cuda.rs), [src/cuda/pointwise.rs](src/cuda/pointwise.rs), [src/cuda/add.ptx](src/cuda/add.ptx) | Loads the optional CUDA runtime, owns device allocations, restores the calling thread's device, and performs synchronous host-to-device and device-to-host transfers from/to Rust buffers. A bounded per-device allocation cache retains at most 32 buffers / 64 MiB across devices. The optional driver loads an embedded general float32 addition kernel. Python only discovers optional wheel library paths. |
 | Dimension reduction kernels | [src/reduction.rs](src/reduction.rs) | Uses layout-aware slices and four-level float32 accumulation for rank-2 single-axis sums, with existing tensor autograd metadata. |
 | Tensor layout | [src/tensor.rs](src/tensor.rs) | `Tensor` stores shared storage plus shape, strides, storage offset, element count, output number, view grad state, and optional autograd metadata. It also implements contiguity, view, stride, indexing, and materialization helpers. Integer-size split and chunk reuse slice views and one shared multi-output backward node per call. |
 | Metadata types | [src/dtype.rs](src/dtype.rs), [src/device.rs](src/device.rs), [src/memory_format.rs](src/memory_format.rs) | Define the currently compiled native dtype/device/memory-format enums and query behavior. |
@@ -129,11 +129,13 @@ at most 256 KiB of staging and at most eight times the logical transfer size
 to avoid the copy engine's per-row cost. Large gaps are always skipped; no
 allocation or transfer grows with an arbitrary backing span. Packed outputs
 retain CPU clone's dimension ordering, including transposed and selected views.
-Unsupported CUDA materialization and arithmetic reject at the operation boundary.
+CUDA addition accepts same-shape contiguous float32 inputs on one device,
+including offsets, scalars and empty tensors. Other CUDA materialization and
+arithmetic reject at the operation boundary.
 Direct public CUDA factory allocation remains rank-1 float32 zeros without
 autograd. Transfers do not add dtype conversions, autograd (even under
 `no_grad` for grad-requiring inputs), asynchronous copies, CUDA-to-CUDA copies,
-or broader CUDA operations. See the [exact transfer contract](docs/supported-surface.md)
+or other CUDA math. See the [exact transfer contract](docs/supported-surface.md)
 for Python argument forms and unsupported boundaries.
 
 Native `cat`, `stack`, backward, and gradient mutation reject unsupported devices
@@ -145,7 +147,8 @@ signatures and panic at the operation boundary on unsupported devices, as
 `Clone` does when `try_clone` fails. CUDA `Debug` displays metadata without
 reading device storage. None of these operations implicitly transfers to CPU.
 
-All CUDA ABI calls and their safety invariants live in `src/cuda.rs`. The runtime
+CUDA runtime ABI calls live in `src/cuda.rs`; driver kernel ABI calls live in
+`src/cuda/pointwise.rs`. Both document their safety invariants. The runtime
 library remains loaded for the process lifetime. Zero-fill uses the legacy default
 stream. Host uploads synchronize that stream after `cudaMemcpy` so even
 pageable H2D copies complete before storage is published; blocking D2H copies
@@ -153,3 +156,39 @@ establish host visibility without a separate whole-device synchronization.
 Allocation reuse never occurs while an alias is
 alive. The cache is bounded and does not expose a public allocator API.
 See [optional runtime setup](docs/troubleshooting.md#optional-native-cuda-runtime).
+
+## Native CUDA addition
+
+All three public forms (`x + y`, `x.add(y)`, `torch.add(x, y)`) reach
+`Tensor::add`. CUDA dispatch validates same device, float32 dtype, exact shape,
+contiguity and no gradient tracking before allocation. CPU broadcasting and
+VJP paths retain their existing implementation. CUDA results normalize singleton
+and empty strides to contiguous layout, with independent storage and offset zero.
+
+`Storage::cuda_add_float32` borrows both allocation owners and validates the
+logical offset ranges. `CudaFloat32Storage::add` allocates through the existing
+cache under a device guard. The embedded PTX kernel uses a 64-bit grid-stride
+loop over the element count and round-to-nearest float32 addition without
+flush-to-zero. NVIDIA's driver JIT compiles it; no nvcc, NVRTC, Python, or CPU
+computation is used. Modules/functions are cached by runtime context and kept
+alive with the driver library for process lifetime. A fresh host thread that
+reuses cached storage initializes its guarded runtime context before driver
+module lookup; it cannot assume an earlier `cudaMalloc` ran on that thread.
+External context destruction
+or device reset while native state exists is unsupported.
+
+Launch uses the explicit legacy default stream, ordered after native zero-fill
+and transfers. The caller synchronizes that stream even after a launch failure,
+while all three allocations are still live. Thus chained additions, immediate
+drops, and cache reuse need no deferred ownership or event bookkeeping. A launch
+or completion error disables allocation reuse; later drops use guarded
+`cudaFree`. Inputs never alias the fresh output, while shared or overlapping
+input views are permitted. Empty tensors skip pointer arithmetic and launch.
+Current-device selection is restored on success, error, and uncached frees.
+Public stream selection and external asynchronous writes remain unsupported.
+
+See `tests/cuda_add.rs` and `tests/test_cuda_add.py` for native and H100
+reference coverage, including held-out nonzero shapes, subnormals/signed zeros,
+view ownership, thread/cache reuse, independent-stream reads, and two-device
+restoration. Addition deliberately synchronizes per call; device-resident
+compute diagnostics must report this overhead with symmetric reference timing.

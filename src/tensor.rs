@@ -4197,17 +4197,60 @@ impl Tensor {
         )
     }
 
-    /// Adds tensors element by element with trailing-dimension broadcasting.
+    /// Adds CPU tensors with trailing-dimension broadcasting, or same-shape
+    /// contiguous CUDA float32 tensors without autograd. CUDA completes before return.
     ///
     /// # Errors
     ///
     /// Returns an error when the shapes are not broadcastable or when result
-    /// shape calculation or allocation fails.
+    /// shape calculation or allocation fails. CUDA also rejects mixed devices,
+    /// noncontiguous or unequal shapes, and autograd, and reports driver errors.
     pub fn add(&self, other: &Self) -> Result<Self, TensorError> {
+        if self.is_cuda() || other.is_cuda() {
+            return self.add_cuda(other);
+        }
         validate_cpu_storage_device("add", self.device())?;
         validate_cpu_storage_device("add", other.device())?;
         let output = self.zip_map(other, |left, right| left + right)?;
         self.finish_add_subtract_vjp(other, output, AutogradNode::Add, 1.0)
+    }
+
+    fn add_cuda(&self, other: &Self) -> Result<Self, TensorError> {
+        let reason = if self.device() != other.device() {
+            Some("mixed devices")
+        } else if self.dtype() != DType::Float32 || other.dtype() != DType::Float32 {
+            Some("only float32 is supported")
+        } else if self.requires_grad() || other.requires_grad() {
+            Some("autograd is unsupported")
+        } else if self.shape != other.shape {
+            Some("inputs must have the same shape; broadcasting is unsupported")
+        } else if !self.is_contiguous() || !other.is_contiguous() {
+            Some("inputs must be contiguous")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            return Err(TensorError::UnsupportedCudaAddition { reason });
+        }
+        let shape = try_clone_result_shape(&self.shape, self.elements)?;
+        let strides = contiguous_strides(&shape, self.elements)?;
+        let storage = self.storage.cuda_add_float32(
+            self.offset,
+            &other.storage,
+            other.offset,
+            self.elements,
+        )?;
+        Ok(Self {
+            storage: Arc::new(storage),
+            shape,
+            strides,
+            offset: 0,
+            elements: self.elements,
+            output_nr: 0,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
+            autograd: None,
+        })
     }
 
     /// Subtracts tensors element by element with trailing-dimension broadcasting.

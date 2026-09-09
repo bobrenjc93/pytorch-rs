@@ -9,6 +9,8 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+mod pointwise;
+
 type Status = c_int;
 struct Runtime {
     _library: Library,
@@ -38,6 +40,8 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 // At most 32 allocations and 64 MiB retained. Entries are inaccessible to live
 // tensors; storage Arc ownership prevents reuse while any view still exists.
 static CACHE: Mutex<Vec<(usize, usize, usize)>> = Mutex::new(Vec::new());
+// A failed launch/completion disables reuse; cudaFree handles later drops.
+static CACHE_HEALTHY: AtomicBool = AtomicBool::new(true);
 const CACHE_BYTES: usize = 64 * 1024 * 1024;
 const COPY_STAGING_ELEMENTS: usize = 256 * 1024 / size_of::<f32>();
 
@@ -239,6 +243,57 @@ impl CudaFloat32Storage {
         Ok(result)
     }
 
+    pub(crate) fn add(
+        &self,
+        left_offset: usize,
+        other: &Self,
+        right_offset: usize,
+        elements: usize,
+    ) -> Result<Self, TensorError> {
+        if self.device_index != other.device_index {
+            return Err(TensorError::UnsupportedCudaAddition {
+                reason: "mixed devices",
+            });
+        }
+        // Empty views may point beyond storage; no pointer is formed or read.
+        if elements != 0 {
+            for (storage, offset) in [(self, left_offset), (other, right_offset)] {
+                if offset
+                    .checked_add(elements)
+                    .is_none_or(|end| end > storage.elements)
+                {
+                    return Err(TensorError::IndexCalculationOverflow);
+                }
+            }
+        }
+        let (result, _guard) = Self::allocate(elements, self.device_index)?;
+        if elements != 0 {
+            // SAFETY: bounds and device checked above, output is fresh and all
+            // three storages remain borrowed/owned until stream completion.
+            let launched = unsafe {
+                pointwise::launch_add(
+                    (self.data_ptr + left_offset * 4) as u64,
+                    (other.data_ptr + right_offset * 4) as u64,
+                    result.data_ptr as u64,
+                    elements,
+                )
+            };
+            // Always wait, including after a launch error, before any borrowed
+            // input or unpublished output can be dropped or cached. Explicit
+            // legacy-stream launch composes with native zero-fill and copies.
+            let completed = self.runtime.check(
+                unsafe { (self.runtime.stream_synchronize)(std::ptr::null_mut()) },
+                "cudaStreamSynchronize",
+            );
+            if launched.is_err() || completed.is_err() {
+                CACHE_HEALTHY.store(false, Ordering::Relaxed);
+            }
+            launched?;
+            completed?;
+        }
+        Ok(result)
+    }
+
     // Only the initializing constructors above may publish this allocation.
     // Retain one guard across allocation and initialization, including errors.
     fn allocate(elements: usize, device_index: usize) -> Result<(Self, DeviceGuard), TensorError> {
@@ -248,7 +303,7 @@ impl CudaFloat32Storage {
             .ok_or(TensorError::AllocationFailed { elements })?;
         let runtime = runtime()?;
         let guard = runtime.guard(device_index)?;
-        let cached = {
+        let cached = if CACHE_HEALTHY.load(Ordering::Relaxed) {
             let mut cache = CACHE
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -256,6 +311,8 @@ impl CudaFloat32Storage {
                 .iter()
                 .position(|&(device, size, _)| device == device_index && size == bytes)
                 .map(|index| cache.swap_remove(index).2)
+        } else {
+            None
         };
         let mut pointer = cached.unwrap_or(0) as *mut c_void;
         if bytes != 0 && cached.is_none() {
@@ -456,7 +513,8 @@ impl Drop for CudaFloat32Storage {
             let mut cache = CACHE
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if cache.len() < 32
+            if CACHE_HEALTHY.load(Ordering::Relaxed)
+                && cache.len() < 32
                 && bytes <= CACHE_BYTES
                 && cache.iter().map(|entry| entry.1).sum::<usize>() <= CACHE_BYTES - bytes
             {
@@ -507,6 +565,59 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn addition_checks_storage_bounds_and_restores_device() {
+        if super::device_count() == 0 {
+            eprintln!("skipping CUDA addition bounds: no CUDA runtime/device");
+            return;
+        }
+        let left = super::CudaFloat32Storage::from_host(&[1.25, -2.5, 4.0], 0).unwrap();
+        let right = super::CudaFloat32Storage::from_host(&[3.0, 7.5, -8.0], 0).unwrap();
+        for (a, b, n) in [(3, 0, 1), (0, 3, 1), (usize::MAX, 0, 2), (0, 0, 4)] {
+            assert!(matches!(
+                left.add(a, &right, b, n),
+                Err(crate::TensorError::IndexCalculationOverflow)
+            ));
+        }
+        assert_eq!(
+            left.add(1, &right, 0, 2).unwrap().copy_range(0, 2).unwrap(),
+            [0.5, 11.5]
+        );
+        assert_eq!(
+            left.add(usize::MAX, &right, usize::MAX, 0)
+                .unwrap()
+                .elements,
+            0
+        );
+        if std::env::var("CUDA_VISIBLE_DEVICES").as_deref() != Ok("0,1")
+            || super::device_count() < 2
+        {
+            eprintln!(
+                "skipping two-device CUDA addition guard check: requires CUDA_VISIBLE_DEVICES=0,1"
+            );
+            return;
+        }
+        let runtime = super::runtime().unwrap();
+        let _current = runtime.guard(1).unwrap();
+        let output = left.add(0, &right, 0, 3).unwrap();
+        let other_device = super::CudaFloat32Storage::zeros(3, 1).unwrap();
+        assert!(matches!(
+            left.add(0, &other_device, 0, 3),
+            Err(crate::TensorError::UnsupportedCudaAddition { .. })
+        ));
+        assert_eq!(output.copy_range(0, 3).unwrap(), [4.25, 5.0, -4.0]);
+        drop(output);
+        let mut current = -1;
+        // SAFETY: writable output pointer and the loaded runtime's device ABI.
+        runtime
+            .check(
+                unsafe { (runtime.get_device)(&raw mut current) },
+                "cudaGetDevice",
+            )
+            .unwrap();
+        assert_eq!(current, 1);
     }
 
     #[test]

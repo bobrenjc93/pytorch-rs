@@ -653,6 +653,26 @@ broader CUDA math remain unsupported. Ordinary factory support is unchanged:
 only rank-1 float32 `zeros` can create CUDA storage directly. See the
 [CUDA setup and focused tests](troubleshooting.md#optional-native-cuda-runtime).
 
+Ordinary exact native CUDA float32 tensors support `x + y`, `x.add(y)`, and
+`torch.add(x, y)` when both inputs have identical shapes, are contiguous, reside
+on the same explicit indexed device, and have `requires_grad=False`. Contiguous
+offset views, overlapping/identical input aliases, scalars (rank-0 tensors), and
+empty tensors are included. Method and function forms accept omitted or
+numeric default-equivalent `alpha=1`; existing keyword and legacy method
+argument binding is shared with CPU addition. `torch.add(..., out=None)` is
+accepted. Outputs use fresh contiguous storage with offset zero; inputs and
+views are unchanged. Float32 arithmetic preserves subnormals, signed zero,
+infinities and NaNs as checked against PyTorch on H100.
+
+The native Rust driver kernel computes directly from device storage, and its
+legacy-stream launch completes before return. Source drops, result views,
+chained operations and allocation reuse are safe without caller synchronization.
+This is eager addition only: CUDA broadcasting, noncontiguous operands, Python
+scalar arithmetic, nondefault alpha, boolean alpha, concrete `out`, dtype changes,
+mixed devices, autograd and unrelated CUDA math remain unsupported. Neither
+public stream selection nor externally mutating device pointers asynchronously
+is supported. No general CUDA compilation support is added.
+
 Supported range indexing accepts a single Python `slice(start, stop, step)`
 whose `step` is omitted, `None`, or integer `1`. Bounds follow PyTorch 2.13
 positive-step clamping, including omitted and negative `start`/`stop` values.
@@ -1194,7 +1214,7 @@ the CPU-only compatibility boundary remains visible.
 | --- | --- | --- |
 | Accelerator discovery | `torch.accelerator.current_device_index()` exposes PyTorch 2.13's no-argument current-accelerator ordinal query and raises `RuntimeError("Cannot access accelerator device when none is available.")` for this CPU-only build. Its deprecated `current_device_idx()` compatibility wrapper emits a `FutureWarning` with the text ``Use `current_device_index` instead.`` before delegating and preserves the same runtime result or argument error, alongside `current_accelerator() is None`, `is_available() is False`, and `device_count() == 0`. These discovery calls share one static build-capability boundary and do not inspect host drivers, CUDA visibility, environment variables, or PyTorch, so a CUDA-enabled host cannot change their results. | Accelerator selection remains unsupported. |
 | Accelerator memory helpers | `torch.accelerator.empty_cache()`, positional-only `torch.accelerator.reset_accumulated_memory_stats(device_index=None, /)`, positional-only `torch.accelerator.reset_peak_memory_stats(device_index=None, /)`, `memory_stats(device_index=None, /)`, and the four current/peak allocated/reserved counter queries are defined by the canonical `torch.accelerator.memory` module and are repeatable, thread-safe CPU-build operations because this build has no initialized accelerator allocator. `empty_cache()` and both reset helpers return `None`; each reset ignores the unneeded device token and preserves every counter at zero. `memory_stats()` likewise ignores the token and returns a fresh empty `OrderedDict`, from which all four counter queries return the exact integer `0`. None performs hardware or runtime probes, and all remain stable across module reloads. | Accelerator streams, other memory-management APIs, graphs, execution, and the rest of the `torch.accelerator` namespace remain unsupported. |
-| Runtime CUDA probes | `torch.cuda.device_count()`, `torch.cuda.is_available()`, and `torch.cuda.is_initialized()` are the public names in the top-level CUDA namespace. `device_count()` and `is_available()` report runtime CUDA visibility without importing PyTorch, while `is_initialized()` starts as exact `False` and becomes true after the narrow public CUDA storage path initializes. The functions are reload/copy/pickle compatible as `torch_rs.cuda` functions and stay out of the top-level wildcard namespace. | CUDA device selection APIs, current-device allocation for unindexed `"cuda"`, streams, events, synchronization APIs, allocator APIs, memory APIs, general runtime management, kernels beyond the zero-fill storage path, and cuBLAS execution remain unsupported. |
+| Runtime CUDA probes | `torch.cuda.device_count()`, `torch.cuda.is_available()`, and `torch.cuda.is_initialized()` are the public names in the top-level CUDA namespace. `device_count()` and `is_available()` report runtime CUDA visibility without importing PyTorch, while `is_initialized()` starts as exact `False` and becomes true after the narrow public CUDA storage path initializes. The functions are reload/copy/pickle compatible as `torch_rs.cuda` functions and stay out of the top-level wildcard namespace. | CUDA device selection APIs, current-device allocation for unindexed `"cuda"`, streams, events, synchronization APIs, allocator APIs, memory APIs, general runtime management, kernels beyond zero-fill and same-shape contiguous float32 addition, and cuBLAS execution remain unsupported. |
 
 ##### Grad and autocast state
 

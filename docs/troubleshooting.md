@@ -86,7 +86,12 @@ CUDA tensors support rank-1 float32 zeros, metadata views, and synchronous
 copied using `.to("cuda:N")` or the equivalent indexed `torch.device` and
 `device=` forms. Scalars, empty tensors, dense and sparse views are supported;
 preserve-format packing copies only the logical payload. The checked Rust API
-is `Tensor::try_copy_cpu_to_cuda(Device::Cuda(index))`. CUDA math/autograd,
+is `Tensor::try_copy_cpu_to_cuda(Device::Cuda(index))`. Same-shape contiguous
+CUDA float32 tensor addition uses `+`, `Tensor.add`, or `torch.add` with
+default-equivalent alpha, including offset views, scalars and empties. The Rust
+API is `Tensor::add`. It loads embedded PTX through `libcuda.so.1` (`nvcuda.dll`
+on Windows) and the driver JIT; nvcc and NVRTC are not used. Results complete
+on the legacy default stream before return. Other CUDA math, CUDA autograd,
 asynchronous transfers, dtype changes, unindexed CUDA targets, nondefault
 streams, and general CUDA runtime management remain unsupported.
 
@@ -94,16 +99,17 @@ After a current-worktree release build, run the focused hardware tests:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest \
-  tests.test_cuda_host_transfer tests.test_cuda_native_views tests.test_cuda_zero_roundtrip
+  tests.test_cuda_add tests.test_cuda_host_transfer tests.test_cuda_native_views tests.test_cuda_zero_roundtrip
 CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest \
-  tests.test_cuda_host_transfer.CudaHostTransferDeviceGuardTests
+  tests.test_cuda_add.CudaAddDeviceTests tests.test_cuda_host_transfer.CudaHostTransferDeviceGuardTests
 # Standalone Rust needs TORCH_RS_CUDART set when libcudart is not on the loader path.
+CUDA_VISIBLE_DEVICES=0 cargo test --locked --test cuda_add
 CUDA_VISIBLE_DEVICES=0 cargo test --locked cuda
 ```
 
 Hardware-only tests skip clearly when the reference runtime or required devices
 are unavailable. The two-device test checks current-device restoration after
-copies, invalid ordinals, cached drops and direct frees. GPU transfer diagnostics
+copies, addition, invalid ordinals/mixed devices, cached drops and direct frees. GPU transfer diagnostics
 must warm both implementations equally, synchronize timing boundaries,
 materialize outputs, and use matching shapes/layouts, threads and sampling.
 

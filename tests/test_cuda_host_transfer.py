@@ -197,7 +197,7 @@ class CudaHostTransferTests(unittest.TestCase):
                         source.to("cuda:0")
             uploaded = x.detach().to("cuda:0")
             for call in (lambda: uploaded.to("cuda:0", copy=True),
-                         lambda: uploaded.to("cuda:1"), lambda: uploaded + uploaded,
+                         lambda: uploaded.to("cuda:1"), lambda: uploaded * uploaded,
                          lambda: uploaded.requires_grad_()):
                 with self.assertRaises(NotImplementedError):
                     call()

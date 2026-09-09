@@ -485,11 +485,11 @@ assert "torch" not in sys.modules
                 lambda: reference_torch.zeros((1,), requires_grad=True).to("cuda:0"),
             ),
             (
-                "cuda_math",
+                "cuda_multiplication",
                 lambda module: module.zeros((1,), device="cuda:0")
-                + module.zeros((1,), device="cuda:0"),
+                * module.zeros((1,), device="cuda:0"),
                 lambda: reference_torch.zeros((1,), device="cuda:0")
-                + reference_torch.zeros((1,), device="cuda:0"),
+                * reference_torch.zeros((1,), device="cuda:0"),
             ),
             (
                 "direct_tolist",
