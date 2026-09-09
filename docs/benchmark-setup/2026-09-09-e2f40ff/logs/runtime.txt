@@ -1,0 +1,13 @@
+{
+  "python": "3.12.13 (main, Jul 20 2026, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-14)]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/source/.venv/bin/python",
+  "numpy": "2.5.1",
+  "torch": "2.13.0+cu130",
+  "cuda_runtime": "13.0",
+  "cuda_available": true,
+  "visible_devices": 1,
+  "gpu": "NVIDIA H100",
+  "torch_rs": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/source/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py",
+  "native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/source/.venv/lib64/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+  "native_sha256": "f26ad1aeb66950f28ab2e134da15205e2cc6cbda2848f998f4ec1fb108a558e0"
+}

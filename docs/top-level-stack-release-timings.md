@@ -2,14 +2,19 @@
 
 Date: 2026-09-09 (UTC)
 
-Measured composite commit: `e2f40ff16f8aba5216bc51699b56571e7e82a3e4`.
-The raw JSON records empty `git.status_short` and `git.diff_stat` at capture.
-Interpreter, imports, and generated kernel paths belong to this composite
-worktree. Only benchmark evidence and reports were updated after measurement.
+Historical measured commit: `e2f40ff16f8aba5216bc51699b56571e7e82a3e4`.
+The raw JSON records empty `git.status_short` and `git.diff_stat` for that capture.
+Interpreter, import, and generated kernel paths identify its original
+`composite_b4e9c495` worktree, which is no longer available. These measurements
+and the linked setup rerun describe that historical source revision; they do
+not establish performance, setup costs, or provenance for the current checkout.
 
-The benchmark used the worktree-local `.venv` and a release wheel built from
-this clean checkout, with Rust 1.92.0, thin LTO, and one codegen unit. Native
-extension provenance was verified before measurement. Dependency caches, build
+Setup costs: [same-code setup rerun](benchmark-setup/2026-09-09-e2f40ff/setup.json)
+([timings and limitations](benchmark-setup.md)); original setup timings are unavailable.
+
+The historical benchmark used its capture worktree's `.venv` and a release wheel
+built from that clean source revision, with Rust 1.92.0, thin LTO, and one codegen
+unit. Native extension provenance was verified before measurement. Dependency caches, build
 outputs, temporary files, and compiler caches were kept under `target/`.
 
 Shared build and timing environment (from the repository root):
