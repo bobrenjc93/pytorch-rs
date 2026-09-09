@@ -6414,6 +6414,11 @@ fn materialize_concat(
     output_shape: &[usize],
     output_elements: usize,
 ) -> Result<Vec<f32>, TensorError> {
+    // Shapes and element counts have already been validated. Empty tensors
+    // can have enormous nonzero dimensions, so do not iterate over their rows.
+    if output_elements == 0 {
+        return Ok(Vec::new());
+    }
     if let Some(data) =
         materialize_concat_small_rank_fast_path(inputs, dimension, output_shape, output_elements)?
     {
@@ -6753,6 +6758,16 @@ fn apply_concat_grad_fn(
     debug_assert_eq!(output_elements, upstream.len());
     if upstream.len() != output_elements {
         return Err(TensorError::IndexCalculationOverflow);
+    }
+    if output_elements == 0 {
+        // Keep every tracked input in the graph, including repeated inputs
+        // and views, without traversing empty gradient blocks row by row.
+        for input in inputs {
+            if let Some(meta) = &input.autograd {
+                add_gradient(gradients, meta, input.output_nr, Vec::new());
+            }
+        }
+        return Ok(());
     }
 
     let inner = element_count(&output_shape[dimension + 1..])?;
@@ -13912,6 +13927,32 @@ mod tests {
                 0x4170_0000,
             ],
         );
+    }
+
+    #[test]
+    fn cat_empty_rank_3_preserves_storage_and_view_gradients() {
+        for dimension in 0..3 {
+            let source = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+            let view = source.transpose(0, 2).unwrap();
+            let other = Tensor::zeros([3, 0, 2]).unwrap().with_requires_grad(true);
+            let output = Tensor::cat(&[&view, &other, &view], dimension).unwrap();
+            let mut expected_shape = [3, 0, 2];
+            expected_shape[dimension] *= 3;
+            assert_eq!(output.shape(), expected_shape);
+            assert!(output.as_slice().is_empty());
+            assert!(output.is_contiguous());
+            assert_eq!(output.storage_offset(), 0);
+            assert!(!output.shares_storage_with(&source));
+            assert!(!output.shares_storage_with(&other));
+            assert!(output.requires_grad());
+            assert!(!output.is_leaf());
+            output.sum().backward().unwrap();
+            for leaf in [&source, &other] {
+                let gradient = leaf.grad().unwrap().unwrap();
+                assert_eq!(gradient.shape(), leaf.shape());
+                assert!(gradient.as_slice().is_empty());
+            }
+        }
     }
 
     #[test]
