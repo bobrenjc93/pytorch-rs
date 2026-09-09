@@ -8719,8 +8719,8 @@ impl DivisionOperation {
 
 #[pymethods]
 impl PyTensor {
-    /// Returns shared-storage tuple views of at most `split_size` elements along `dim`.
-    /// Only integer split sizes on exact native CPU float32 tensors are supported.
+    /// Returns shared-storage tuple views using an integer size or list/tuple of sections.
+    /// Supports exact native CPU float32 tensors.
     #[pyo3(signature = (*args, **kwargs), text_signature = "($self, split_size, dim=0)")]
     fn split(
         slf: &Bound<'_, Self>,
@@ -8742,24 +8742,10 @@ impl PyTensor {
                 "split expects at least a 1-dimensional tensor",
             ));
         }
-        if split_size < 0 {
-            return Err(PyRuntimeError::new_err(format!(
-                "split expects split_size be non-negative, but got split_size={split_size}"
-            )));
-        }
-        let axis = normalize_dimension(dimension, tensor.inner.shape().len())?;
-        let size = tensor.inner.shape()[axis];
-        if split_size == 0 && size != 0 {
-            return Err(PyRuntimeError::new_err(format!(
-                "split_size can only be 0 if dimension size is 0, but got dimension size of {size}"
-            )));
-        }
-        let split_size = usize::try_from(split_size)
-            .map_err(|_| PyOverflowError::new_err("split size exceeds the platform limit"))?;
-        let outputs = tensor
-            .inner
-            .split_dimension(axis, split_size)
-            .map_err(|error| tensor_error(&error))?;
+        let outputs = match split_size {
+            SplitSize::Integer(split_size) => split_integer(&tensor.inner, split_size, dimension)?,
+            SplitSize::Sections(sections) => split_sections(&tensor.inner, &sections, dimension)?,
+        };
         Ok(PyTuple::new(slf.py(), outputs.into_iter().map(Self::new))?
             .into_any()
             .unbind())
@@ -15383,10 +15369,105 @@ fn extract_select_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {
     extract_dimension_swap_dimension(&concrete)
 }
 
+enum SplitSize {
+    Integer(i64),
+    Sections(Vec<i64>),
+}
+
+fn split_integer(
+    tensor: &CoreTensor,
+    split_size: i64,
+    dimension: i64,
+) -> PyResult<Vec<CoreTensor>> {
+    if split_size < 0 {
+        return Err(PyRuntimeError::new_err(format!(
+            "split expects split_size be non-negative, but got split_size={split_size}"
+        )));
+    }
+    let axis = normalize_dimension(dimension, tensor.shape().len())?;
+    let size = tensor.shape()[axis];
+    if split_size == 0 && size != 0 {
+        return Err(PyRuntimeError::new_err(format!(
+            "split_size can only be 0 if dimension size is 0, but got dimension size of {size}"
+        )));
+    }
+    let split_size = usize::try_from(split_size)
+        .map_err(|_| PyOverflowError::new_err("split size exceeds the platform limit"))?;
+    tensor
+        .split_dimension(axis, split_size)
+        .map_err(|error| tensor_error(&error))
+}
+
+fn split_sections(
+    tensor: &CoreTensor,
+    sections: &[i64],
+    dimension: i64,
+) -> PyResult<Vec<CoreTensor>> {
+    let axis = normalize_dimension(dimension, tensor.shape().len())?;
+    let size = tensor.shape()[axis];
+    if sections.iter().any(|&length| length < 0) {
+        return Err(PyRuntimeError::new_err(format!(
+            "split_with_sizes expects split_sizes have only non-negative entries, but got split_sizes={sections:?}"
+        )));
+    }
+    // Reject overflow as a sum mismatch, before constructing any views. In
+    // particular, a huge sum must never wrap to the size of an empty dimension.
+    let total = sections.iter().try_fold(0_usize, |sum, &length| {
+        sum.checked_add(usize::try_from(length).ok()?)
+    });
+    if total != Some(size) {
+        return Err(PyRuntimeError::new_err(format!(
+            "split_with_sizes expects split_sizes to sum exactly to {size} (input tensor's size at dimension {dimension}), but got split_sizes={sections:?}"
+        )));
+    }
+    let mut lengths = try_size_vector(sections.len())?;
+    for &length in sections {
+        lengths.push(usize::try_from(length).expect("section sum was checked"));
+    }
+    tensor
+        .split_with_sizes_dimension(axis, lengths)
+        .map_err(|error| tensor_error(&error))
+}
+
+fn parse_split_sections(sequence: &Bound<'_, PySequence>) -> PyResult<Vec<i64>> {
+    let mut sections = try_size_vector(sequence.len()?)?;
+    for index in 0..sequence.len()? {
+        let value = sequence.get_item(index)?;
+        // PyTorch checks the first element's declared type, then unpacks
+        // later elements through the integer protocol (which accepts bool).
+        let indexed = if index == 0 && value.is_instance_of::<PyBool>() {
+            None
+        } else {
+            python_number_index(&value).ok()
+        };
+        let Some(indexed) = indexed else {
+            let actual = python_type_name(&value)?;
+            return Err(PyTypeError::new_err(if index == 0 {
+                format!(
+                    "split_with_sizes(): argument 'split_sizes' (position 2) must be tuple of ints, but found element of type {actual} at pos 0"
+                )
+            } else {
+                format!(
+                    "split_with_sizes(): argument 'split_sizes' failed to unpack the object at pos {} with error \"type must be tuple of ints,but got {actual}\"",
+                    index + 1
+                )
+            }));
+        };
+        let length = indexed.extract::<i64>().map_err(|_| {
+            PyTypeError::new_err(format!(
+                "split_with_sizes(): argument 'split_sizes' failed to unpack the object at pos {} with error \"Overflow when unpacking long long\"",
+                index + 1
+            ))
+        })?;
+        sections.push(length);
+    }
+    Ok(sections)
+}
+
 fn bind_split_arguments(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
-) -> PyResult<(i64, i64)> {
+) -> PyResult<(SplitSize, i64)> {
     if let Some(error) = chunk_keyword_error(
         "Tensor.split",
         &["split_size", "dim"],
@@ -15415,20 +15496,27 @@ fn bind_split_arguments(
     } else {
         Some(positional.get_item(1)?)
     };
-    if split_size.is_instance_of::<PyList>() || split_size.is_instance_of::<PyTuple>() {
-        return Err(PyNotImplementedError::new_err(
-            "split(): section-list split sizes are not supported",
-        ));
+    let split_size =
+        if split_size.is_instance_of::<PyList>() || split_size.is_instance_of::<PyTuple>() {
+            SplitSize::Sections(parse_split_sections(split_size.cast::<PySequence>()?)?)
+        } else {
+            // The integer-size overload accepts Python ints, not NumPy integers
+            // or arbitrary __index__ providers.
+            if split_size.is_instance_of::<PyBool>() || !split_size.is_instance_of::<PyInt>() {
+                return Err(PyTypeError::new_err(
+                    "split(): split_size must be int or a list/tuple of ints",
+                ));
+            }
+            if let Some(dimension) = &dimension {
+                validate_dimension_swap_dimension("split", "dim", Some(2), dimension)?;
+            }
+            SplitSize::Integer(extract_dimension_swap_dimension(&split_size)?)
+        };
+    if let Some(dimension) = &dimension
+        && matches!(split_size, SplitSize::Sections(_))
+    {
+        validate_dimension_swap_dimension("split_with_sizes", "dim", Some(3), dimension)?;
     }
-    // Tensor.split's Python wrapper accepts Python ints, not NumPy integers
-    // or arbitrary __index__ providers, for its integer-size overload.
-    if split_size.is_instance_of::<PyBool>() || !split_size.is_instance_of::<PyInt>() {
-        return Err(PyTypeError::new_err("split(): split_size must be int"));
-    }
-    if let Some(dimension) = &dimension {
-        validate_dimension_swap_dimension("split", "dim", Some(2), dimension)?;
-    }
-    let split_size = extract_dimension_swap_dimension(&split_size)?;
     let dimension = dimension
         .as_ref()
         .map_or(Ok(0), extract_dimension_swap_dimension)?;

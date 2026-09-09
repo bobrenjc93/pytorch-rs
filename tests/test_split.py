@@ -22,6 +22,19 @@ class TensorSplitTests(unittest.TestCase):
             self.assertIsNot(outputs[0], source)
             self.assertTrue(outputs[0].is_set_to(source))
 
+    def test_explicit_sections_and_empty_lists(self):
+        for sections in ([0, 2, 0, 3, 0], (0, 2, 0, 3, 0)):
+            source = torch.tensor([0., 1., 2., 3., 4.], requires_grad=True)
+            outputs = source.split(sections)
+            self.assertIs(type(outputs), tuple)
+            self.assertEqual([o.tolist() for o in outputs], [[], [0., 1.], [], [2., 3., 4.], []])
+            self.assertEqual([o.output_nr for o in outputs], list(range(5)))
+            (outputs[3].sum() + outputs[3].sum() + outputs[0].sum()).backward()
+            self.assertEqual(source.grad.tolist(), [0., 0., 2., 2., 2.])
+        for sections in ([], ()):
+            self.assertEqual(torch.zeros((2, 0, 3)).split(sections, 1), ())
+            self.assertEqual(torch.split(torch.zeros((0,)), sections), ())
+
     def test_transposed_offset_views(self):
         source = torch.tensor([float(i) for i in range(30)]).reshape(2, 3, 5)[1].t()
         outputs = source.split(2)
@@ -99,15 +112,22 @@ class TensorSplitTests(unittest.TestCase):
                 call()
         with self.assertRaisesRegex(RuntimeError, 'at least a 1-dimensional tensor'):
             torch.tensor(1.).split(1)
-        for sizes in ([1, 1], (1, 1)):
-            with self.assertRaisesRegex(NotImplementedError, 'section-list'):
+        for sizes in ([], (), [1], [3], [-1, 3]):
+            with self.assertRaises(RuntimeError):
+                source.split(sizes)
+
+    def test_section_sum_cannot_wrap_to_empty_dimension(self):
+        source = torch.zeros((0,))
+        for sizes in ([2**62] * 4, [2**63 - 1, 2**63 - 1, 2]):
+            with self.assertRaisesRegex(RuntimeError, 'sum exactly to 0'):
                 source.split(sizes)
 
     @unittest.skipUnless(torch.cuda.is_available(), 'requires an NVIDIA GPU')
     def test_cuda_input_is_outside_the_native_cpu_contract(self):
         source = torch.zeros((5,), device='cuda:0')
-        with self.assertRaisesRegex(NotImplementedError, 'exact native CPU float32'):
-            source.split(2)
+        for size in (2, [0, 2, 3]):
+            with self.assertRaisesRegex(NotImplementedError, 'exact native CPU float32'):
+                source.split(size)
 
 
 if __name__ == '__main__':

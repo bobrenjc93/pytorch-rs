@@ -3089,6 +3089,23 @@ impl Tensor {
         self.partition_dimension(dimension, lengths, AutogradNode::Split)
     }
 
+    /// Partitions a normalized dimension using validated nonnegative lengths
+    /// whose checked sum equals the dimension size, including empty sections.
+    #[cfg_attr(not(any(feature = "python-bindings", test)), allow(dead_code))]
+    pub(crate) fn split_with_sizes_dimension(
+        &self,
+        dimension: usize,
+        lengths: Vec<usize>,
+    ) -> Result<Vec<Self>, TensorError> {
+        debug_assert_eq!(
+            lengths
+                .iter()
+                .try_fold(0_usize, |sum, &n| sum.checked_add(n)),
+            self.shape.get(dimension).copied()
+        );
+        self.partition_dimension(dimension, lengths, AutogradNode::SplitWithSizes)
+    }
+
     // All outputs share one backward node; recording separate slice histories
     // would lose output numbering and multi-output gradient assembly.
     fn partition_dimension(
@@ -14289,6 +14306,60 @@ mod tests {
             expected[15 + row * 5 + 4] = 1.0;
         }
         assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), expected);
+    }
+
+    #[test]
+    fn split_sections_share_storage_and_backward_metadata_including_empty_outputs() {
+        let leaf = Tensor::from_vec((0_u8..30).map(f32::from).collect(), [2, 3, 5])
+            .unwrap()
+            .with_requires_grad(true);
+        let source = leaf.index_integer(1).unwrap().transpose(0, 1).unwrap();
+        let lengths = vec![0, 2, 0, 3, 0];
+        let outputs = source
+            .split_with_sizes_dimension(0, lengths.clone())
+            .unwrap();
+        let mut start = 0;
+        for (index, (output, length)) in outputs.iter().zip(lengths).enumerate() {
+            assert!(output.shares_storage_with(&leaf));
+            assert_eq!(output.shape(), [length, 3]);
+            assert_eq!(output.stride(), [1, 5]);
+            assert_eq!(output.storage_offset(), 15 + start);
+            assert_eq!(output.output_nr, index);
+            assert!(Arc::ptr_eq(
+                outputs[0].autograd.as_ref().unwrap(),
+                output.autograd.as_ref().unwrap()
+            ));
+            #[cfg(feature = "python-bindings")]
+            assert_eq!(output.grad_fn_name(), Some("SplitWithSizesBackward0"));
+            start += length;
+        }
+        outputs[3]
+            .sum()
+            .add(&outputs[3].sum())
+            .unwrap()
+            .add(&outputs[4].sum())
+            .unwrap()
+            .backward()
+            .unwrap();
+        let mut expected = vec![0.0; 30];
+        for row in 0..3 {
+            for column in 2..5 {
+                expected[15 + row * 5 + column] = 2.0;
+            }
+        }
+        assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), expected);
+
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+        assert!(
+            empty
+                .split_with_sizes_dimension(1, vec![])
+                .unwrap()
+                .is_empty()
+        );
+        let outputs = empty.split_with_sizes_dimension(1, vec![0, 0, 0]).unwrap();
+        assert_eq!(outputs.len(), 3);
+        outputs[2].sum().backward().unwrap();
+        assert_eq!(empty.grad().unwrap().unwrap().shape(), [2, 0, 3]);
     }
 
     #[test]
