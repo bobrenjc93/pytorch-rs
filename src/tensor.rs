@@ -6152,7 +6152,11 @@ fn materialize_stack_small_rank_fast_path(
             debug_assert_eq!(data.len(), output_elements);
             Ok(Some(data))
         }
-        (2, 0) if inputs.iter().all(|input| can_append_rank_2_fast(input)) => {
+        (2, 0)
+            if inputs
+                .iter()
+                .all(|input| input.contiguous_slice().is_some()) =>
+        {
             let mut data = try_result_vector(output_elements, output_elements)?;
             for input in inputs {
                 append_rank_2_fast(&mut data, input)?;
@@ -6160,34 +6164,7 @@ fn materialize_stack_small_rank_fast_path(
             debug_assert_eq!(data.len(), output_elements);
             Ok(Some(data))
         }
-        (2, 1) if inputs.iter().all(|input| can_append_rank_2_fast(input)) => {
-            let [rows, _] = first.shape.as_slice() else {
-                return Err(TensorError::IndexCalculationOverflow);
-            };
-            let mut data = try_result_vector(output_elements, output_elements)?;
-            for row in 0..*rows {
-                for input in inputs {
-                    append_rank_2_row_fast(&mut data, input, row)?;
-                }
-            }
-            debug_assert_eq!(data.len(), output_elements);
-            Ok(Some(data))
-        }
-        (2, 2) if inputs.iter().all(|input| can_append_rank_2_fast(input)) => {
-            let [rows, columns] = first.shape.as_slice() else {
-                return Err(TensorError::IndexCalculationOverflow);
-            };
-            let mut data = try_result_vector(output_elements, output_elements)?;
-            for row in 0..*rows {
-                for column in 0..*columns {
-                    for input in inputs {
-                        append_rank_2_value_fast(&mut data, input, row, column)?;
-                    }
-                }
-            }
-            debug_assert_eq!(data.len(), output_elements);
-            Ok(Some(data))
-        }
+        // Strided matrices use the logical materializer followed by block copies.
         _ => Ok(None),
     }
 }
@@ -6496,61 +6473,6 @@ fn append_rank_2_row_fast(
         .and_then(|offset| input.offset.checked_add(offset))
         .ok_or(TensorError::IndexCalculationOverflow)?;
     append_rank_2_row_values_fast(data, values, row_offset, columns, column_stride)
-}
-
-fn append_rank_2_value_fast(
-    data: &mut Vec<f32>,
-    input: &Tensor,
-    row: usize,
-    column: usize,
-) -> Result<(), TensorError> {
-    if input.shape.len() != 2 {
-        return Err(TensorError::IndexCalculationOverflow);
-    }
-    if let Some(values) = input.contiguous_slice() {
-        let [rows, columns] = input.shape.as_slice() else {
-            return Err(TensorError::IndexCalculationOverflow);
-        };
-        if row >= *rows || column >= *columns {
-            return Err(TensorError::IndexCalculationOverflow);
-        }
-        let index = row
-            .checked_mul(*columns)
-            .and_then(|offset| offset.checked_add(column))
-            .ok_or(TensorError::IndexCalculationOverflow)?;
-        data.push(
-            values
-                .get(index)
-                .copied()
-                .ok_or(TensorError::IndexCalculationOverflow)?,
-        );
-        return Ok(());
-    }
-
-    let Some((values, [rows, columns], [row_stride, column_stride])) =
-        input.owned_fixed_rank_parts::<2>()
-    else {
-        return Err(TensorError::IndexCalculationOverflow);
-    };
-    if row >= rows || column >= columns {
-        return Err(TensorError::IndexCalculationOverflow);
-    }
-    let offset = row
-        .checked_mul(row_stride)
-        .and_then(|row_offset| input.offset.checked_add(row_offset))
-        .and_then(|row_offset| {
-            column
-                .checked_mul(column_stride)
-                .and_then(|column_offset| row_offset.checked_add(column_offset))
-        })
-        .ok_or(TensorError::IndexCalculationOverflow)?;
-    data.push(
-        values
-            .get(offset)
-            .copied()
-            .ok_or(TensorError::IndexCalculationOverflow)?,
-    );
-    Ok(())
 }
 
 fn append_rank_2_row_values_fast(
@@ -13497,7 +13419,7 @@ mod tests {
     fn stack_small_rank_fast_path_matches_shared_gradient_fallback_for_scalars_and_vectors() {
         let negative_zero = Tensor::from_vec(vec![f32::from_bits(0x8000_0000)], []).unwrap();
         let nan = Tensor::from_vec(vec![f32::from_bits(0x7fc1_2345)], []).unwrap();
-        assert_stack_fast_path_matches_shared_fallback(
+        assert_stack_materialization_matches_shared_fallback::<true>(
             "scalars",
             &[negative_zero, nan],
             0,
@@ -13531,7 +13453,7 @@ mod tests {
         assert_eq!(strided.stride(), [2]);
         assert!(!strided.is_contiguous());
 
-        assert_stack_fast_path_matches_shared_fallback(
+        assert_stack_materialization_matches_shared_fallback::<true>(
             "rank-1 leading",
             &[offset.clone(), strided.clone()],
             0,
@@ -13545,7 +13467,7 @@ mod tests {
                 0x4160_0000,
             ],
         );
-        assert_stack_fast_path_matches_shared_fallback(
+        assert_stack_materialization_matches_shared_fallback::<true>(
             "rank-1 trailing",
             &[offset, strided],
             1,
@@ -13562,7 +13484,50 @@ mod tests {
     }
 
     #[test]
-    fn stack_small_rank_fast_path_matches_shared_gradient_fallback_for_matrices() {
+    fn stack_transposed_offset_matrices_preserve_bits_on_every_axis() {
+        for shape in [[3, 5], [7, 2]] {
+            let elements = shape.iter().product();
+            let inputs = [0x8000_0000_u32, 0x7fc1_2345, 0x3f80_0000].map(|first_bits| {
+                let bits = (0..elements)
+                    .map(|index| first_bits + u32::try_from(index).unwrap())
+                    .collect::<Vec<_>>();
+                offset_contiguous_tensor(&bits, &shape)
+                    .transpose(0, 1)
+                    .unwrap()
+            });
+            assert!(inputs.iter().all(|input| !input.is_contiguous()));
+            assert!(inputs.iter().all(|input| input.storage_offset() != 0));
+            let references = inputs.iter().collect::<Vec<_>>();
+
+            for dimension in 0..=2 {
+                let unsqueezed = inputs
+                    .iter()
+                    .map(|input| input.unsqueeze_axis(dimension).unwrap())
+                    .collect::<Vec<_>>();
+                let expected =
+                    Tensor::cat(&unsqueezed.iter().collect::<Vec<_>>(), dimension).unwrap();
+                let expected_bits = expected
+                    .as_slice()
+                    .iter()
+                    .map(|v| v.to_bits())
+                    .collect::<Vec<_>>();
+                assert_stack_materialization_matches_shared_fallback::<false>(
+                    "transposed offset matrices",
+                    &inputs,
+                    dimension,
+                    expected.shape(),
+                    &expected_bits,
+                );
+                assert_eq!(
+                    Tensor::stack(&references, dimension).unwrap().stride(),
+                    expected.stride()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn stack_mixed_layout_matrices_use_materialization_fallback() {
         let offset = offset_contiguous_tensor(
             &[
                 0x3f80_0000,
@@ -13597,7 +13562,7 @@ mod tests {
         assert_eq!(strided.stride(), [1, 2]);
         assert!(!strided.is_contiguous());
 
-        assert_stack_fast_path_matches_shared_fallback(
+        assert_stack_materialization_matches_shared_fallback::<false>(
             "rank-2 leading",
             &[offset.clone(), strided.clone()],
             0,
@@ -13617,7 +13582,7 @@ mod tests {
                 0x4170_0000,
             ],
         );
-        assert_stack_fast_path_matches_shared_fallback(
+        assert_stack_materialization_matches_shared_fallback::<false>(
             "rank-2 middle",
             &[offset.clone(), strided.clone()],
             1,
@@ -13637,7 +13602,7 @@ mod tests {
                 0x4170_0000,
             ],
         );
-        assert_stack_fast_path_matches_shared_fallback(
+        assert_stack_materialization_matches_shared_fallback::<false>(
             "rank-2 trailing",
             &[offset, strided],
             2,
@@ -14166,7 +14131,7 @@ mod tests {
         left + right
     }
 
-    fn assert_stack_fast_path_matches_shared_fallback(
+    fn assert_stack_materialization_matches_shared_fallback<const EXPECT_FAST_PATH: bool>(
         case: &str,
         inputs: &[Tensor],
         dimension: usize,
@@ -14176,16 +14141,22 @@ mod tests {
         let references = inputs.iter().collect::<Vec<_>>();
         let fast_path =
             materialize_stack_small_rank_fast_path(&references, dimension, expected_bits.len())
-                .unwrap()
-                .unwrap_or_else(|| panic!("{case}: expected stack fast path"));
-        assert!(
-            fast_path
-                .iter()
-                .copied()
-                .map(f32::to_bits)
-                .eq(expected_bits.iter().copied()),
-            "{case}: direct fast-path values"
+                .unwrap();
+        assert_eq!(
+            fast_path.is_some(),
+            EXPECT_FAST_PATH,
+            "{case}: stack materialization dispatch"
         );
+        if let Some(values) = fast_path {
+            assert!(
+                values
+                    .iter()
+                    .copied()
+                    .map(f32::to_bits)
+                    .eq(expected_bits.iter().copied()),
+                "{case}: direct fast-path values"
+            );
+        }
 
         let actual = Tensor::stack(&references, dimension).unwrap();
         let shared_inputs = inputs.iter().map(shared_gradient_copy).collect::<Vec<_>>();
