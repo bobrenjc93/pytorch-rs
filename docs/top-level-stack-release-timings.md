@@ -1,107 +1,70 @@
 # `torch.stack` Release Timings
 
-Date: 2026-09-08
+Date: 2026-09-09 (UTC)
 
-Measured provenance: git head
-`5013f61ba6db1761e4b55a6f8b4a1fd8f3709df4`. The raw JSON artifact records
-the exact git head, worktree status, driver checksum, Python, PyTorch, Rust,
-CPU, thread, and affinity provenance captured when the benchmark ran. Its
-`git.status_short` and `git.diff_stat` were empty at benchmark capture.
+Measured composite commit: `e2f40ff16f8aba5216bc51699b56571e7e82a3e4`.
+The raw JSON records empty `git.status_short` and `git.diff_stat` at capture.
+Interpreter, imports, and generated kernel paths belong to this composite
+worktree. Only benchmark evidence and reports were updated after measurement.
 
-Exact build, check, and timing commands were run from the repository root. The
-benchmark used the worktree-local `.venv` with pinned PyTorch 2.13.0 and did
-not install packages outside the worktree. `CUDA_VISIBLE_DEVICES=` kept this
-CPU-only benchmark from selecting the host GPUs.
+The benchmark used the worktree-local `.venv` and a release wheel built from
+this clean checkout, with Rust 1.92.0, thin LTO, and one codegen unit. Native
+extension provenance was verified before measurement. Dependency caches, build
+outputs, temporary files, and compiler caches were kept under `target/`.
 
-```bash
-PYTHONNOUSERSITE=1 UV_CACHE_DIR="$PWD/target/uv-cache" \
-  uv venv --clear --python 3.12
-PYTHONNOUSERSITE=1 \
-  UV_CACHE_DIR="$PWD/target/uv-cache" \
-  uv sync --locked --no-install-project --group dev --group reference
-PYTHONNOUSERSITE=1 \
-  CONDA_PREFIX= \
-  UV_CACHE_DIR="$PWD/target/uv-cache" \
-  TMPDIR="$PWD/target" \
-  CARGO_TARGET_DIR="$PWD/target/stack-wheel-build" \
-  VIRTUAL_ENV="$PWD/.venv" \
-  PYO3_PYTHON="$PWD/.venv/bin/python" \
-  .venv/bin/maturin build --release --locked --out target/stack-wheel
-PYTHONNOUSERSITE=1 \
-  UV_CACHE_DIR="$PWD/target/uv-cache" \
-  uv pip install --python "$PWD/.venv/bin/python" --force-reinstall --no-deps \
-  target/stack-wheel/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl
-env PYTHONNOUSERSITE=1 .venv/bin/python .github/scripts/verify_native_extension.py
-env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
-  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= PYTHONNOUSERSITE=1 \
-  .venv/bin/python scripts/benchmark_top_level_stack.py \
-  --cpu 24 --threads 1 \
-  --output docs/benchmark-data/top-level-stack-release-timings.json
-.venv/bin/python scripts/benchmark_top_level_stack.py \
-  --render-markdown-summary \
-  docs/benchmark-data/top-level-stack-release-timings.json \
-  > target/top-level-stack-summary.md
-```
-
-Checks run for this evidence:
+Shared build and timing environment (from the repository root):
 
 ```bash
-env PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES= \
-  .venv/bin/python scripts/benchmark_top_level_stack.py --validate-artifact
-env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
-  NUMEXPR_NUM_THREADS=1 CUDA_VISIBLE_DEVICES= PYTHONNOUSERSITE=1 \
-  .venv/bin/python -m unittest \
-  tests.test_top_level_stack tests.test_top_level_stack_reference \
-  tests.test_top_level_stack_benchmark_artifact tests.test_readme_quickstart
-env PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES= \
-  .venv/bin/python -m unittest tests.test_autograd tests.test_no_grad_namespace
-cargo fmt --check
-CARGO_TARGET_DIR="$PWD/target/stack-wheel-build" \
-  cargo test --locked --all-targets
-git diff --check
+export CARGO_HOME="$PWD/target/cargo-home"
+export CARGO_TARGET_DIR="$PWD/target/build"
+export UV_CACHE_DIR="$PWD/target/uv-cache"
+export UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python"
+export TMPDIR="$PWD/target/tmp"
+export XDG_CACHE_HOME="$PWD/target/xdg-cache"
+export TORCHINDUCTOR_CACHE_DIR="$PWD/target/torchinductor-cache"
+export TRITON_CACHE_DIR="$PWD/target/triton-cache"
+export CUDA_CACHE_PATH="$PWD/target/cuda-cache"
+export PYTHONNOUSERSITE=1
+export VIRTUAL_ENV="$PWD/.venv"
+export PYO3_PYTHON="$PWD/.venv/bin/python"
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
+unset CONDA_PREFIX PYTHONPATH
+mkdir -p target/tmp target/evidence
+uv venv --python /usr/bin/python3.12
+uv sync --locked --no-install-project --group dev --group reference
+.venv/bin/maturin build --release --locked --out target/wheels
+uv pip install --python .venv/bin/python --force-reinstall --no-deps target/wheels/torch_rs-*.whl
+.venv/bin/python .github/scripts/verify_native_extension.py
 ```
 
-Results: the checked-in driver produced
-`docs/benchmark-data/top-level-stack-release-timings.json` with two
-implementation orders, 15 untimed warmup blocks, and 81 measured blocks per
-implementation pass. The generated markdown below is validated byte-for-byte
-against that artifact by `scripts/benchmark_top_level_stack.py
---validate-artifact` and `tests.test_top_level_stack_benchmark_artifact`.
+The installed Rust 1.92.0 toolchain was selected on `PATH`; Cargo's registry was
+copied read-only from the host into the worktree-local Cargo home before build.
+All four JSON reports were captured under ignored `target/evidence/` before any
+tracked report was changed, then copied verbatim into `docs/benchmark-data/`.
 
-Setup evidence from regeneration:
+Measurement command, using the shared environment:
 
-- Virtualenv creation used CPython 3.12.12 and recreated `.venv` inside this
-  worktree.
-- Locked dependency installation resolved 36 packages in 27 ms, prepared 31
-  packages in 16.73s, and installed them in 1.33s.
-- Release build used `target/stack-wheel-build`; Cargo reported
-  `Finished release profile [optimized] target(s) in 0.02s`.
-- Release wheel reinstall reported resolving in 2 ms, preparing in 48 ms, and
-  installing in 19 ms.
-- Native-extension verification completed successfully and reported import paths
-  under this worktree-local `.venv`.
+```bash
+CUDA_VISIBLE_DEVICES= .venv/bin/python scripts/benchmark_top_level_stack.py --cpu 24 --threads 1 --output target/evidence/top-level-stack-release-timings.json
+```
 
-Scope: this artifact times the eight same-shape `dim=` workloads listed below:
-scalar, vector, matrix, empty, offset, noncontiguous, autograd forward, and
-autograd forward+backward. `torch.no_grad()` behavior for grad-requiring
-operands and PyTorch 2.13's `axis=` alias are covered by correctness tests, but
-they are not included in this timing denominator.
+The repository driver retains its full workload matrix, warmups, samples,
+implementation orders, materialized checksums, and unsupported denominator
+cells. CPU timing uses CPU 24, one thread, and hidden CUDA devices. The summary
+below is generated by the driver's `--render-markdown-summary` option and
+checked with `--validate-artifact`.
 
-Inputs are created outside timed regions from deterministic CPU `float32`
-values with fixed seeds. Every supported cell first compares `torch_rs` against
-PyTorch for shape, stride, storage offset, contiguity, dtype, device, layout,
-`requires_grad`, leaf status, and exact logical value bits. Backward cells
-materialize the stack output plus leaf gradients. Every warmup and measured
-block materializes its final output bundle as a 64-bit BLAKE2b checksum over
-output metadata and logical bytes; the artifact validates stable equal
-checksum sets for `torch_rs` and PyTorch.
+The eight timed `dim=` workloads cover scalars, vectors, matrices, empty inputs,
+offset views, noncontiguous views, autograd forward, and forward plus backward.
+The `axis=` alias and `no_grad()` behavior remain correctness-only coverage.
+Inputs use fixed seeds and are created outside timing. Output metadata and
+logical value bits are checked against PyTorch; backward cells also materialize
+leaf gradients.
 
-`torch_rs / PyTorch` is a slowdown ratio, so lower is better and 1.00x is
-parity. Capped geomeans clamp each per-cell ratio to `[0.10x, 10.00x]`.
-Only PyTorch-supported boundary gaps are included as zero-credit denominator
-rows. Boundary inputs that both PyTorch and `torch_rs` reject with the same
-error are reported below as error-parity checks and are not included in the
-zero-credit aggregate.
+CPU reports use `torch_rs / PyTorch` slowdown ratios: lower is better and 1.00x
+is parity. Capped geomeans clamp ratios to [0.10x, 10.00x]. PyTorch-supported
+gaps retain zero credit; inputs rejected by both implementations are reported
+as error parity and excluded from that penalty.
 
 ## Aggregate
 
@@ -113,30 +76,30 @@ zero-credit aggregate.
 - Implementation orders: torch_rs then pytorch, pytorch then torch_rs; each implementation appears once before and once after the other implementation
 - Warmup and sampling: 15 untimed warmup blocks and 81 measured blocks per implementation pass
 - CPU affinity: selected CPU 24, pinned affinity [24]; threads=1
-- All supported cells: 0.72x uncapped, 0.72x capped
-- Scalar cells: 0.54x uncapped, 0.54x capped
-- Vector cells: 1.38x uncapped, 1.38x capped
-- Matrix cells: 1.21x uncapped, 1.21x capped
+- All supported cells: 0.74x uncapped, 0.74x capped
+- Scalar cells: 0.49x uncapped, 0.49x capped
+- Vector cells: 1.36x uncapped, 1.36x capped
+- Matrix cells: 1.30x uncapped, 1.30x capped
 - Empty cells: 0.50x uncapped, 0.50x capped
-- Offset cells: 0.78x uncapped, 0.78x capped
-- Noncontiguous cells: 1.03x uncapped, 1.03x capped
-- Autograd forward cells: 0.93x uncapped, 0.93x capped
+- Offset cells: 0.75x uncapped, 0.75x capped
+- Noncontiguous cells: 1.38x uncapped, 1.38x capped
+- Autograd forward cells: 0.96x uncapped, 0.96x capped
 - Autograd forward+backward cells: 0.22x uncapped, 0.22x capped
 
-Including the PyTorch-supported unsupported cells below as zero-credit denominator entries with a 10.00x capped penalty gives a combined capped aggregate of 1.22x.
+Including the PyTorch-supported unsupported cells below as zero-credit denominator entries with a 10.00x capped penalty gives a combined capped aggregate of 1.25x.
 
 ## Supported Timed Cells
 
 | Workload | Category | Input / mode | Output | Repeats | `torch_rs` median +/- MAD, variance | PyTorch median +/- MAD, variance | `torch_rs` / PyTorch | Materialized checksums |
 | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
-| `scalar_three_inputs_dim0` | scalar | three scalar tensors, dim=0 | stack output; (3,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 10000 | 1.277 us +/- 0.005 us, var 0.000 | 2.384 us +/- 0.015 us, var 0.001 | 0.54x | `3595086523326908924`/`3595086523326908924` |
-| `vector_three_inputs_dim_neg1_257` | vector | three vectors of shape (257,), dim=-1 | stack output; (257, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 512 | 5.159 us +/- 0.034 us, var 0.010 | 3.726 us +/- 0.025 us, var 0.018 | 1.38x | `9666124477339715250`/`9666124477339715250` |
-| `matrix_three_inputs_dim1_257x263` | matrix | three matrices of shape (257, 263), dim=1 | stack output; (257, 3, 263), stride (789, 263, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 8 | 28.726 us +/- 1.055 us, var 3.923 | 23.695 us +/- 0.545 us, var 71.765 | 1.21x | `9196514359419668404`/`9196514359419668404` |
-| `empty_two_inputs_dim2_2x0x3` | empty | two empty tensors of shape (2, 0, 3), dim=2 | stack output; (2, 0, 2, 3), stride (6, 6, 3, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 0.853 us +/- 0.006 us, var 0.001 | 1.715 us +/- 0.017 us, var 0.007 | 0.50x | `5914968957525217100`/`5914968957525217100` |
-| `offset_two_inputs_dim0_127x131` | offset | two nonzero-storage-offset views from tensor((3, 127, 131))[1], dim=0 | stack output; (2, 127, 131), stride (16637, 131, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 20 | 3.713 us +/- 0.046 us, var 0.051 | 4.731 us +/- 0.065 us, var 0.124 | 0.78x | `4576909815035170523`/`4576909815035170523` |
-| `noncontig_two_inputs_dim0_512x1024` | noncontiguous | two transposed views from tensor((1024, 512)).transpose(0, 1), dim=0 | stack output; (2, 512, 1024), stride (524288, 1024, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 3 | 2773.220 us +/- 289.152 us, var 153844.460 | 2691.978 us +/- 260.417 us, var 241261.351 | 1.03x | `16879733367057555647`/`16879733367057555647` |
-| `autograd_forward_two_inputs_dim1_127x131` | autograd forward | two requires_grad=True leaves of shape (127, 131), dim=1; forward construction only | stack output; (127, 2, 131), stride (262, 131, 1), offset 0, torch.float32, cpu, requires_grad=True, leaf=False | 20 | 4.866 us +/- 0.062 us, var 0.106 | 5.251 us +/- 0.041 us, var 0.083 | 0.93x | `1017021100399807393`/`1017021100399807393` |
-| `autograd_forward_backward_repeated_dim1_32x33` | autograd forward+backward | left/right/left requires_grad=True leaves of shape (32, 33), dim=1; timed stack(...).sum().backward() | stack output plus accumulated leaf gradients; (32, 3, 33), stride (99, 33, 1), offset 0, torch.float32, cpu, requires_grad=True, leaf=False | 5 | 11.540 us +/- 0.263 us, var 0.960 | 52.675 us +/- 1.597 us, var 9.461 | 0.22x | `15114439219529365358`/`15114439219529365358` |
+| `scalar_three_inputs_dim0` | scalar | three scalar tensors, dim=0 | stack output; (3,), stride (1,), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 10000 | 1.281 us +/- 0.008 us, var 0.013 | 2.606 us +/- 0.020 us, var 0.040 | 0.49x | `3595086523326908924`/`3595086523326908924` |
+| `vector_three_inputs_dim_neg1_257` | vector | three vectors of shape (257,), dim=-1 | stack output; (257, 3), stride (3, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 512 | 5.268 us +/- 0.052 us, var 0.020 | 3.864 us +/- 0.033 us, var 0.009 | 1.36x | `9666124477339715250`/`9666124477339715250` |
+| `matrix_three_inputs_dim1_257x263` | matrix | three matrices of shape (257, 263), dim=1 | stack output; (257, 3, 263), stride (789, 263, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 8 | 31.337 us +/- 2.249 us, var 28.014 | 24.068 us +/- 0.728 us, var 104.241 | 1.30x | `9196514359419668404`/`9196514359419668404` |
+| `empty_two_inputs_dim2_2x0x3` | empty | two empty tensors of shape (2, 0, 3), dim=2 | stack output; (2, 0, 2, 3), stride (6, 6, 3, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 5000 | 0.952 us +/- 0.012 us, var 0.002 | 1.919 us +/- 0.013 us, var 0.018 | 0.50x | `5914968957525217100`/`5914968957525217100` |
+| `offset_two_inputs_dim0_127x131` | offset | two nonzero-storage-offset views from tensor((3, 127, 131))[1], dim=0 | stack output; (2, 127, 131), stride (16637, 131, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 20 | 3.768 us +/- 0.063 us, var 0.082 | 5.052 us +/- 0.065 us, var 0.211 | 0.75x | `4576909815035170523`/`4576909815035170523` |
+| `noncontig_two_inputs_dim0_512x1024` | noncontiguous | two transposed views from tensor((1024, 512)).transpose(0, 1), dim=0 | stack output; (2, 512, 1024), stride (524288, 1024, 1), offset 0, torch.float32, cpu, requires_grad=False, leaf=True | 3 | 3217.832 us +/- 441.285 us, var 269584.560 | 2337.465 us +/- 16.099 us, var 2022.065 | 1.38x | `16879733367057555647`/`16879733367057555647` |
+| `autograd_forward_two_inputs_dim1_127x131` | autograd forward | two requires_grad=True leaves of shape (127, 131), dim=1; forward construction only | stack output; (127, 2, 131), stride (262, 131, 1), offset 0, torch.float32, cpu, requires_grad=True, leaf=False | 20 | 5.242 us +/- 0.076 us, var 0.209 | 5.461 us +/- 0.064 us, var 0.227 | 0.96x | `1017021100399807393`/`1017021100399807393` |
+| `autograd_forward_backward_repeated_dim1_32x33` | autograd forward+backward | left/right/left requires_grad=True leaves of shape (32, 33), dim=1; timed stack(...).sum().backward() | stack output plus accumulated leaf gradients; (32, 3, 33), stride (99, 33, 1), offset 0, torch.float32, cpu, requires_grad=True, leaf=False | 5 | 12.025 us +/- 0.243 us, var 1.151 | 55.234 us +/- 1.178 us, var 9.465 | 0.22x | `15114439219529365358`/`15114439219529365358` |
 
 ## Zero-Credit Unsupported Cells
 
